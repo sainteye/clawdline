@@ -43,7 +43,7 @@ func setup(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	req := projects.LaunchRequest{Assistant: projects.AssistantAntigravity, ProjectRoot: base, SquadPromptPath: prompt, Persona: "backend", Memory: "Synthetic original MEMORY_FIR", Language: "zh-Hant-TW", Executable: filepath.Join(base, "agy"), PermissionMode: "plan"}
+	req := projects.LaunchRequest{Assistant: projects.AssistantAntigravity, ProjectRoot: base, SquadPromptPath: prompt, Persona: "backend", Memory: "Synthetic original MEMORY_FIR", Language: "zh-Hant-TW", Executable: filepath.Join(base, "agy"), PermissionMode: "plan", IntegrationInstructions: "Synthetic frozen WORKFLOW_PINE clawdline codegraph query"}
 	return fixture{config: config, store: s, request: req, prompt: prompt}
 }
 func put(t *testing.T, path string, b []byte) {
@@ -97,6 +97,9 @@ func TestPrepareRoleAndRoleless(t *testing.T) {
 			p := prep(t, f)
 			if !p.Record.Prepared || p.Request.AntigravityContext == nil {
 				t.Fatal("missing durable context")
+			}
+			if !strings.Contains(p.Request.AntigravityContext.Instructions(), "WORKFLOW_PINE") {
+				t.Fatal("native immutable context omitted workflow")
 			}
 			cap, err := os.ReadFile(p.Record.CapabilityPath)
 			if err != nil || !validHash(string(cap)) || len(cap) != 64 || hash(cap) != p.Record.CapabilityDigest {

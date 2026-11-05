@@ -246,7 +246,7 @@ func downloadRuntime(ctx context.Context, pkg runtimePackage, destination string
 }
 
 func bridgeLimits() string {
-	raw, _ := json.Marshal(map[string]any{"version": Version, "chunkBytes": BuildLogBytesLimit, "entries": MaxScanEntries, "fileBytes": MaxFileBytes, "totalBytes": MaxTotalBytes, "metadataBytes": MaxMetadataBytes, "storeBytes": StoreBytesLimit, "queryBytes": QueryBytesLimit, "replyBytes": ReplyBytesLimit, "reconcileSeconds": ReconcileSecondsLimit, "extensions": sourceExtensions})
+	raw, _ := json.Marshal(map[string]any{"version": Version, "chunkBytes": BuildLogBytesLimit, "entries": MaxScanEntries, "fileBytes": MaxFileBytes, "totalBytes": MaxTotalBytes, "metadataBytes": MaxMetadataBytes, "storeBytes": StoreBytesLimit, "queryBytes": QueryBytesLimit, "replyBytes": ReplyBytesLimit, "reconcileSeconds": ReconcileSecondsLimit, "extensions": sourceExtensions, "languages": sourceTypes.Languages})
 	return string(raw)
 }
 func (b *Builder) extract(ctx context.Context, input, output string, phase func(string)) error {

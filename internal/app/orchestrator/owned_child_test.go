@@ -10,12 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/skills"
 )
 
 func ownedFixture(cwd string) OwnedChild {
@@ -29,6 +32,23 @@ func TestOwnedChildDispatchBindingAndExistingReceipts(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	repo := gitRepo(t)
 	const id = "d8300001-0000-4000-8000-000000000001"
+	snapshot, err := skills.ResolveWorkflow("poteto", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := b.Store.PrepareWorkflowLaunch(ctx, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Store.RecordWorkflowTerminal(ctx, parent.ID, "%parent"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Store.BindWorkflowConversation(ctx, parent.ID, "%parent", rootConversation); err != nil {
+		t.Fatal(err)
+	}
+	configDir := t.TempDir()
+	nextconfig.Open(configDir).Set(map[string]any{"codegraph_enabled": false, "workflow_profile": "off"})
+	b.PrepareWorkflow = (workflowlaunch.Service{Store: b.Store, Dir: configDir, Resolve: skills.ResolveWorkflow}).Prepare
 	b.OwnedChildAvailable = func(context.Context) bool { return true }
 	b.TerminalCapabilities = fakeTerminals(lacks(ports.CapReadScreen, "no terminal"), lacks(ports.CapSendKeys, "no terminal"))
 	b.Screen = func(context.Context, string) (string, bool) { t.Fatal("owned screen read"); return "", false }
@@ -38,8 +58,11 @@ func TestOwnedChildDispatchBindingAndExistingReceipts(t *testing.T) {
 		return json.RawMessage(`{"definition_id":"clawdline.persona.backend","scope_id":"global","definition":{"version":"1","body":"Synthetic role"}}`), nil
 	}
 	var row session.Session
-	b.OpenOwnedChild = func(_ context.Context, r Record, cwd, launch string, files squadfiles.Files) (OwnedChild, error) {
+	b.OpenOwnedChild = func(_ context.Context, r Record, cwd, launch string, files squadfiles.Files, workflow workflowlaunch.Prepared) (OwnedChild, error) {
 		opens++
+		if workflow.ID == "" || !strings.Contains(workflow.Text, "clawdline codegraph query") {
+			t.Fatal("Gemini child lost parent consent")
+		}
 		if r.Worktree == nil || cwd != r.Worktree.Path || strings.Join(r.Claims, ",") != "worker.go" {
 			t.Fatal("original worktree/claims lost")
 		}
@@ -65,6 +88,10 @@ func TestOwnedChildDispatchBindingAndExistingReceipts(t *testing.T) {
 		_, _, ok, err := b.Store.SquadSnapshotForConversation(ctx, row.ConversationID)
 		if err != nil || !ok {
 			t.Fatal("squad not bound before send")
+		}
+		workflow, found, err := b.Store.WorkflowSnapshotForConversation(ctx, row.ConversationID)
+		if err != nil || !found || !workflow.CodeGraphEnabled {
+			t.Fatal("workflow not bound before first Gemini input", err)
 		}
 		if !strings.Contains(line, FirstLine(r, w1Secret, b.Language)) {
 			t.Fatal("wrong first input")
@@ -108,7 +135,7 @@ func TestOwnedChildFailureAndUncertainSend(t *testing.T) {
 			b.OwnedChildAvailable = func(context.Context) bool { return true }
 			opens, sends, closes := 0, 0, 0
 			owned := ownedFixture(b.Dir)
-			b.OpenOwnedChild = func(context.Context, Record, string, string, squadfiles.Files) (OwnedChild, error) {
+			b.OpenOwnedChild = func(context.Context, Record, string, string, squadfiles.Files, workflowlaunch.Prepared) (OwnedChild, error) {
 				opens++
 				if mode == "open" {
 					return OwnedChild{}, errors.New("open failed")
@@ -272,7 +299,7 @@ func TestOwnedChildCancelledWhileOpeningNeverReceivesInput(t *testing.T) {
 	b.OwnedChildAvailable = func(context.Context) bool { return true }
 	closed := 0
 	b.CloseOwnedChild = func(context.Context, string, string, string) error { closed++; return nil }
-	b.OpenOwnedChild = func(ctx context.Context, _ Record, cwd, _ string, _ squadfiles.Files) (OwnedChild, error) {
+	b.OpenOwnedChild = func(ctx context.Context, _ Record, cwd, _ string, _ squadfiles.Files, _ workflowlaunch.Prepared) (OwnedChild, error) {
 		if _, err := b.CancelTask(ctx, id, "Synthetic cancellation while opening", "synthetic-key", CancelCaller{Person: true}); err != nil {
 			t.Fatal(err)
 		}

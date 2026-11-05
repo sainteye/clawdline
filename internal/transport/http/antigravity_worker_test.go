@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -54,13 +55,29 @@ func TestOwnedWorkerCallbacksReusePublishedRoleAndNativeSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"codegraph_enabled": true, "workflow_profile": "poteto"}); err != nil {
+		t.Fatal(err)
+	}
+	workflow, err := s.prepareWorkflow(ctx, profile, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	r := orchestrator.Record{Title: place.Label, Persona: "backend", Model: "synthetic-pro", ReasoningEffort: "high", PermissionMode: "edits"}
-	child, err := s.broker.OpenOwnedChild(ctx, r, profile, published.LaunchID, published.Files)
+	child, err := s.broker.OpenOwnedChild(ctx, r, profile, published.LaunchID, published.Files, workflow)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resolved != 1 || child.Model != "synthetic-pro" || child.ReasoningEffort != "high" {
 		t.Fatalf("snapshot/facts=%d %+v", resolved, child)
+	}
+	if child.Row.WorkflowLaunchID != workflow.ID {
+		t.Fatal("native row lost workflow identity")
+	}
+	if err := workflow.Bind(ctx, child.Row.ID, child.Row.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, found, err := s.store.WorkflowSnapshotForConversation(ctx, child.Row.ConversationID); err != nil || !found || !snapshot.CodeGraphEnabled {
+		t.Fatal("Gemini workflow receipt missing", err)
 	}
 	if _, err := os.Stat(filepath.Join(profile, "last-prompt.json")); !os.IsNotExist(err) {
 		t.Fatal("worker configuration sent a prompt")
@@ -85,6 +102,9 @@ func TestOwnedWorkerCallbacksReusePublishedRoleAndNativeSettings(t *testing.T) {
 	prompt, err := os.ReadFile(filepath.Join(profile, "last-prompt.json"))
 	if err != nil || !strings.Contains(string(prompt), "Synthetic worker role") {
 		t.Fatal("published role did not reach native prompt")
+	}
+	if !strings.Contains(string(prompt), "clawdline codegraph query") || !strings.Contains(string(prompt), "Poteto workflow") {
+		t.Fatal("frozen workflow did not reach actual native prompt")
 	}
 	capPath, err := os.ReadFile(filepath.Join(profile, "last-capability-path"))
 	if err != nil || string(capPath) != published.Files.CapabilityPath {

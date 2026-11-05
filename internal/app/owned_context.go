@@ -7,6 +7,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
+	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
@@ -17,14 +18,25 @@ type OwnedContext struct {
 	Files    squadfiles.Files
 	LaunchID string
 	Persona  string
+	Workflow workflowlaunch.Prepared
 }
 
 func (s Starter) PrepareOwnedContext(ctx context.Context, place projects.Place, persona string) (OwnedContext, error) {
+	var workflow workflowlaunch.Prepared
+	if s.PrepareWorkflow != nil {
+		var err error
+		workflow, err = s.PrepareWorkflow(ctx, place.Path, "", "")
+		if err != nil {
+			return OwnedContext{}, err
+		}
+	}
 	prepared, err := s.prepareSquadLaunch(ctx, place.Path, persona, "")
 	if err != nil {
+		workflow.Fail(ctx)
 		return OwnedContext{}, err
 	}
 	fail := func(err error) (OwnedContext, error) {
+		workflow.Fail(ctx)
 		if prepared.launch.ID != "" {
 			_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
 		}
@@ -34,7 +46,20 @@ func (s Starter) PrepareOwnedContext(ctx context.Context, place projects.Place, 
 	if err != nil {
 		return fail(err)
 	}
+	owned, err = owned.WithWorkflow(workflow)
+	if err != nil {
+		return fail(err)
+	}
 	return owned, nil
+}
+
+func (o OwnedContext) WithWorkflow(prepared workflowlaunch.Prepared) (OwnedContext, error) {
+	o.Workflow = prepared
+	o.Context.WorkflowInstructions = prepared.Text
+	if _, _, err := o.Context.Document(); err != nil {
+		return OwnedContext{}, err
+	}
+	return o, nil
 }
 
 // OwnedContextFromPublished reads the immutable publication already prepared by

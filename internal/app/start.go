@@ -76,7 +76,7 @@ type Starter struct {
 	// exactly as before it existed. Nil gives none, which only a test wants.
 	Memory func(dir string) string
 	// IntegrationInstructions reads this machine's explicit opt-ins once for
-	// a new Claude/Codex launch, across every Project. Resumes do not read it.
+	// a new assistant launch, across every Project. Resumes do not read it.
 	IntegrationInstructions func(context.Context, string) (string, error)
 	PrepareWorkflow         func(context.Context, string, string, string) (workflowlaunch.Prepared, error)
 }
@@ -164,10 +164,6 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	if s.Memory != nil && (assistant != projects.AssistantAntigravity || resume == "") {
 		memory = s.Memory(place.Path)
 	}
-	if assistant == projects.AssistantAntigravity {
-		return s.startAntigravity(ctx, place, projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
-			Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona, Memory: memory})
-	}
 	integrations := ""
 	if s.PrepareWorkflow != nil {
 		var err error
@@ -182,6 +178,10 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		if err != nil {
 			return Started{}, err
 		}
+	}
+	if assistant == projects.AssistantAntigravity {
+		return s.startAntigravity(ctx, place, projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
+			Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona, Memory: memory, IntegrationInstructions: integrations}, preparedWorkflow)
 	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
 		Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir,

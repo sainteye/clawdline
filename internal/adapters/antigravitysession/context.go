@@ -17,6 +17,7 @@ type LaunchContext struct {
 	Persona             string `json:"persona,omitempty"`
 	SquadLaunchID       string `json:"squad_launch_id,omitempty"`
 	SquadCapabilityPath string `json:"squad_capability_path,omitempty"`
+	WorkflowLaunchID    string `json:"workflow_launch_id,omitempty"`
 }
 
 type injectedTurn struct {

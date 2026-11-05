@@ -15,6 +15,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
+	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
@@ -49,6 +50,7 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 	}
 	h := s.antigravitySessions.Load()
 	if h == nil {
+		prepared.Workflow.Fail(ctx)
 		if prepared.LaunchID != "" {
 			_ = s.store.FailSquadLaunch(ctx, prepared.LaunchID)
 		}
@@ -56,6 +58,7 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 	}
 	row, err := h.OpenWithModel(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, ownedAntigravityContext(place, prepared), model)
 	if err != nil {
+		prepared.Workflow.Fail(ctx)
 		if prepared.LaunchID != "" {
 			_ = s.store.FailSquadLaunch(ctx, prepared.LaunchID)
 		}
@@ -73,6 +76,9 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 			log.Print("gemini: squad conversation binding pending")
 		}
 	}
+	if err := prepared.Workflow.Bind(ctx, row.ID, row.ConversationID); err != nil {
+		log.Print("gemini: workflow binding pending recovery")
+	}
 	return row, nil
 }
 func ownedAntigravityContext(place projects.Place, prepared app.OwnedContext) antigravitysession.LaunchContext {
@@ -85,6 +91,7 @@ func ownedAntigravityContext(place projects.Place, prepared app.OwnedContext) an
 	return antigravitysession.LaunchContext{
 		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: prepared.Context.Instructions(),
 		Persona: prepared.Persona, SquadLaunchID: prepared.LaunchID, SquadCapabilityPath: prepared.Files.CapabilityPath,
+		WorkflowLaunchID: prepared.Workflow.ID,
 	}
 }
 
@@ -217,7 +224,7 @@ func (s *Server) availableAssistants() []contract.StartAssistant {
 
 // The broker has already published its immutable role snapshot with the task's
 // claims. Reuse it and configure the native worker before its one first input.
-func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.Record, cwd, launchID string, files squadfiles.Files) (orchestrator.OwnedChild, error) {
+func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.Record, cwd, launchID string, files squadfiles.Files, workflow workflowlaunch.Prepared) (orchestrator.OwnedChild, error) {
 	h := s.antigravitySessions.Load()
 	if h == nil {
 		return orchestrator.OwnedChild{}, ownedAntigravityUnavailable()
@@ -236,6 +243,10 @@ func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.R
 	}}
 	place := projects.Place{Path: cwd, Label: r.Title}
 	prepared, err := starter.OwnedContextFromPublished(ctx, place, r.Persona, launchID, files)
+	if err != nil {
+		return orchestrator.OwnedChild{}, err
+	}
+	prepared, err = prepared.WithWorkflow(workflow)
 	if err != nil {
 		return orchestrator.OwnedChild{}, err
 	}

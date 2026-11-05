@@ -417,6 +417,7 @@ func (s *Store) prepareLaunch(ctx context.Context, id string, req projects.Launc
 			return Prepared{}, fail("prompt_unavailable")
 		}
 		c, err = projects.PrepareAntigravityContext(req.SquadPromptPath, string(prompt), req.Memory, req.Language)
+		c.WorkflowInstructions = req.IntegrationInstructions
 		if err != nil {
 			return Prepared{}, fail("request_invalid")
 		}

@@ -18,7 +18,7 @@ import (
 )
 
 func contextLaunch(name string) LaunchContext {
-	return LaunchContext{URI: "file:///synthetic/" + name + ".md", Text: name + " role and memory", Persona: name, SquadLaunchID: name + "-launch", SquadCapabilityPath: "/synthetic/" + name + "-capability"}
+	return LaunchContext{URI: "file:///synthetic/" + name + ".md", Text: name + " role and memory clawdline codegraph query", Persona: name, SquadLaunchID: name + "-launch", SquadCapabilityPath: "/synthetic/" + name + "-capability", WorkflowLaunchID: name + "-workflow"}
 }
 
 func openContext(t *testing.T, h *Host, opts Options, launch LaunchContext) session.Session {
@@ -27,7 +27,7 @@ func openContext(t *testing.T, h *Host, opts Options, launch LaunchContext) sess
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.Persona != launch.Persona || row.SquadLaunchID != launch.SquadLaunchID {
+	if row.Persona != launch.Persona || row.SquadLaunchID != launch.SquadLaunchID || row.WorkflowLaunchID != launch.WorkflowLaunchID {
 		t.Fatalf("identity: %+v", row)
 	}
 	return row
@@ -47,7 +47,7 @@ func TestLaunchContextSurvivesBlankAndAcceptedReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.Persona != launch.Persona || row.SquadLaunchID != launch.SquadLaunchID {
+	if row.Persona != launch.Persona || row.SquadLaunchID != launch.SquadLaunchID || row.WorkflowLaunchID != launch.WorkflowLaunchID {
 		t.Fatal("lost original identity")
 	}
 	denied := errors.New("synthetic authority failure")

@@ -109,6 +109,7 @@ func (s *historyStore) restore(profile string) (map[string]*conversation, error)
 			c.row.Rungs.Thread = saved.AutomaticTitle
 			c.row.Persona = c.launchContext.Persona
 			c.row.SquadLaunchID = c.launchContext.SquadLaunchID
+			c.row.WorkflowLaunchID = c.launchContext.WorkflowLaunchID
 		}
 		c.row.PID = 0
 		if c.row.State == session.StateWorking {

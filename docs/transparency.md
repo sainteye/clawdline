@@ -231,3 +231,5 @@ reviewed: terminal identity/screen/keystroke forwarding and PromptAccepted namin
 callbacks do not change the saved ACP resource composition or provider permissions.
 The public website snapshot must follow this reviewed product revision when it
 is published; a source receipt alone is not website deployment acceptance.
+
+CodeGraph and the managed workflow now also apply to Gemini through the same explicit machine opt-in and frozen parent snapshot. Owned ACP context includes that original workflow text, records its native conversation before first input, and retains the workflow launch ID for recovery. Native terminal context preserves the original workflow bytes. Neither receipt establishes model use; native Project/hook consent and tool permissions remain independent. The reviewed bilingual entries register both providers and transports. The source scope now includes every pinned SDK extension, its special filenames, and validated project custom mappings; offline checks and live reconciliation use the same scope.

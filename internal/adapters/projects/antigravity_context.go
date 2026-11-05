@@ -17,13 +17,14 @@ var ErrSquadContextUnavailable = errors.New("squad_context_unavailable")
 // Squad snapshot and Project memory, never from hook JSON or browser input.
 // Store this exact document with the launch; resume reloads it, not the catalog.
 type AntigravityContext struct {
-	PromptPath   string `json:"prompt_path,omitempty"`
-	PromptHash   string `json:"prompt_hash,omitempty"`
-	Prompt       string `json:"prompt,omitempty"`
-	Memory       string `json:"memory,omitempty"`
-	MemoryHash   string `json:"memory_hash"`
-	Language     string `json:"language,omitempty"`
-	ExplainSteps *bool  `json:"explain_steps,omitempty"`
+	PromptPath           string `json:"prompt_path,omitempty"`
+	PromptHash           string `json:"prompt_hash,omitempty"`
+	Prompt               string `json:"prompt,omitempty"`
+	Memory               string `json:"memory,omitempty"`
+	MemoryHash           string `json:"memory_hash"`
+	Language             string `json:"language,omitempty"`
+	ExplainSteps         *bool  `json:"explain_steps,omitempty"`
+	WorkflowInstructions string `json:"workflow_instructions,omitempty"`
 }
 
 func contextHash(text string) string {
@@ -58,7 +59,7 @@ func PrepareAntigravityContextWithExplanations(promptPath, prompt, memory, langu
 }
 
 func (c AntigravityContext) Validate() error {
-	if len(c.Prompt) > squad.MaxSquadRequestBytes || len(c.Memory) > MemoryLaunchLimit ||
+	if len(c.Prompt) > squad.MaxSquadRequestBytes || len(c.Memory) > MemoryLaunchLimit || len(c.WorkflowInstructions) > squad.MaxSquadRequestBytes ||
 		c.MemoryHash != contextHash(c.Memory) ||
 		(c.Language != "" && CodexBoardLanguage(c.Language) != c.Language) {
 		return ErrSquadContextUnavailable
@@ -99,7 +100,7 @@ func RestoreAntigravityContext(document []byte, digest string) (AntigravityConte
 
 // Instructions joins the immutable role, language and shared Project memory.
 func (c AntigravityContext) Instructions() string {
-	if c.Prompt == "" && c.Language == "" && c.Memory == "" {
+	if c.Prompt == "" && c.Language == "" && c.Memory == "" && c.WorkflowInstructions == "" {
 		return ""
 	}
 	var parts []string
@@ -118,6 +119,9 @@ func (c AntigravityContext) Instructions() string {
 	}
 	if c.Memory != "" {
 		parts = append(parts, c.Memory)
+	}
+	if c.WorkflowInstructions != "" {
+		parts = append(parts, c.WorkflowInstructions)
 	}
 	if len(parts) == 0 {
 		return ""

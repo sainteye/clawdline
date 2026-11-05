@@ -4,8 +4,10 @@ package codegraph
 import (
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -18,7 +20,85 @@ import (
 const Version = "1.6.2"
 const Matched = "source_matched"
 const ownerFile = ".codegraph/clawdline.json"
-const sourceExtensions = " .go .mod .sum .py .ts .tsx .mts .cts .js .jsx .mjs .cjs .ets .rs .java .groovy .gradle .cpp .cc .cxx .c .h .hpp .cu .cuh .metal .rb .rake .swift .kt .kts .cs .scala .php .lua .luau .zig .ps1 .psm1 .psd1 .ex .exs .m .mm .ml .mli .jl .vue .svelte .astro .dart .v .sv .svh .vh .sql .r .f .f90 .f95 .f03 .f08 .pas .pp .dpr .dpk .lpr .inc .dfm .lfm .lpk .sh .bash .json .yaml .yml .tf .tfvars .hcl .sln .csproj .fsproj .vbproj .xaml .razor .cshtml .sol .erl .hrl "
+
+// Pinned SDK EXTENSION_MAP and supported languages, plus conservative config inputs.
+// Native acceptance checks this receipt against the cached SDK on upgrades.
+//
+//go:embed source-types.json
+var sourceTypeDocument []byte
+
+type sourceTypeReceipt struct {
+	Version    string   `json:"version"`
+	Extensions []string `json:"extensions"`
+	Languages  []string `json:"languages"`
+}
+
+var sourceTypes = func() sourceTypeReceipt {
+	var out sourceTypeReceipt
+	if err := json.Unmarshal(sourceTypeDocument, &out); err != nil || out.Version != Version {
+		panic("invalid pinned CodeGraph source types")
+	}
+	return out
+}()
+var sourceExtensions = " " + strings.Join(sourceTypes.Extensions, " ") + " "
+
+func extensionSet() map[string]bool {
+	out := map[string]bool{}
+	for _, ext := range sourceTypes.Extensions {
+		out[ext] = true
+	}
+	return out
+}
+func projectExtensions(r *os.Root) (map[string]bool, error) {
+	extensions := extensionSet()
+	f, err := openProbeFile(r, "codegraph.json")
+	if errors.Is(err, os.ErrNotExist) {
+		return extensions, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, BuildError("unsafe_source")
+	}
+	if st.Size() > MaxFileBytes {
+		return nil, BuildError("source_limit")
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > MaxFileBytes {
+		return nil, BuildError("source_limit")
+	}
+	var config struct {
+		Extensions map[string]json.RawMessage `json:"extensions"`
+	}
+	if json.Unmarshal(raw, &config) != nil {
+		return extensions, nil
+	}
+	languages := map[string]bool{}
+	for _, language := range sourceTypes.Languages {
+		languages[language] = true
+	}
+	for name, rawLanguage := range config.Extensions {
+		var language string
+		if json.Unmarshal(rawLanguage, &language) != nil || !languages[language] {
+			continue
+		}
+		name = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(name)), ".")
+		if name == "" || strings.ContainsAny(name, "./\\") {
+			continue
+		}
+		extensions["."+name] = true
+	}
+	return extensions, nil
+}
 
 type Status struct {
 	State      string `json:"state"`
@@ -47,9 +127,10 @@ func excludedDirectory(name string) bool {
 	// The retired graph directory remains user-owned data, never an input or a deletion target.
 	return name == ".git" || name == ".codegraph" || name == "graphify-out" || name == "node_modules" || name == "venv" || name == ".venv" || name == "dist" || name == "build" || name == "target" || name == "__pycache__" || strings.HasPrefix(name, ".clawdline-codegraph-")
 }
-func sourceName(name string) bool {
+func sourceName(name string, extensions map[string]bool) bool {
 	base := path.Base(name)
-	return base == ".gitignore" || base == ".codegraphignore" || base == "Gemfile" || base == "Cargo.lock" || strings.Contains(sourceExtensions, " "+strings.ToLower(path.Ext(name))+" ") && path.Ext(name) != ""
+	lower := strings.ToLower(name)
+	return base == ".gitignore" || base == ".codegraphignore" || base == "Gemfile" || base == "Cargo.lock" || name == "conf/routes" || strings.HasSuffix(name, "/conf/routes") || strings.HasSuffix(name, ".routes") || strings.HasSuffix(lower, ".app") || strings.HasSuffix(lower, ".app.src") || extensions[strings.ToLower(path.Ext(name))] && path.Ext(name) != ""
 }
 
 // scan owns the conservative source/configuration inventory independently of
@@ -61,6 +142,10 @@ func scan(ctx context.Context, root string, copyTo string) (map[string]string, S
 		return nil, out, err
 	}
 	defer r.Close()
+	extensions, err := projectExtensions(r)
+	if err != nil {
+		return nil, out, err
+	}
 	sources := map[string]string{}
 	err = fs.WalkDir(r.FS(), ".", func(name string, d fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
@@ -79,7 +164,7 @@ func scan(ctx context.Context, root string, copyTo string) (map[string]string, S
 			}
 			return nil
 		}
-		if !sourceName(name) {
+		if !sourceName(name, extensions) {
 			return nil
 		}
 		if d.Type()&os.ModeSymlink != 0 {
