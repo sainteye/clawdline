@@ -380,7 +380,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     (snapshot.control.holder?.name || snapshot.control.holder?.same_device)
       ? holderWords(snapshot.control.holder)
       : nextWord("terminalControlOtherDevice")
-  const phase: CloudTerminalPhase = cloudTerminalPhase({ state: snapshot.state, error, status: meta?.status ?? "",
+  const phase: CloudTerminalPhase = cloudTerminalPhase({ state: snapshot.state, reason: snapshot.reason, error, status: meta?.status ?? "",
     closeStatus: closeRecord?.status ?? "", retrying: !!retryWait && !error, frameTimedOut, needsReview,
     canType: snapshot.canType, hasFrame: !!snapshot.frame, control: snapshot.control })
   useEffect(() => { if (phase === "ended" && !endedAt) setEndedAt(new Date()) }, [phase, endedAt])
@@ -507,7 +507,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         <button className="cloud-primary" type="button" disabled={!!busy} onClick={reconnect}>{nextWord("terminalCloudReconnect")}</button>
       </div>}
       {phase === "error" && <div className="cloud-action">
-        <p role="alert">{frameTimedOut && !error ? nextWord("terminalCloudStaleHelp") : nextWord("terminalErrorHelp", { why: terminalRefusalWords(error) })}</p>
+        <p role="alert">{frameTimedOut && !error ? nextWord("terminalCloudStaleHelp") : nextWord("terminalErrorHelp", { why: terminalRefusalWords(error || snapshot.reason) })}</p>
         <button className="cloud-primary" type="button" disabled={!!busy} onClick={reconnect}>{nextWord("terminalCloudReconnect")}</button>
         {diagnosticsLink}
       </div>}

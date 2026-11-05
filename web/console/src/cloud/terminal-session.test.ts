@@ -1413,5 +1413,11 @@ test("an explicit display disconnect stops renewal and typing without closing th
     await (session as unknown as { reopen(id: string): Promise<void> }).reopen(terminalID)
     await assert.rejects(session.input(new TextEncoder().encode("k")))
     assert.equal(wire.requests.length, before, "disconnect neither closes a host nor reopens its connection")
+    await session.reconnect(terminalID)
+    assert.deepEqual(operations(wire).slice(before), ["open_connection", "read", "capture"],
+      "a deliberate reconnect opens a fresh connection without rekeying the retired identity")
+    await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "same running shell")
+    assert.equal(session.snapshot.canType, true)
   } finally { t.mock.timers.reset(); session.dispose() }
 })

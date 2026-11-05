@@ -137,3 +137,9 @@ test("each other situation has its own phase, in the order the page must say the
   assert.equal(cloudTerminalPhase({ ...live, canType: false, control: { held: true, epoch: 2, holder: { same_client: false, name: "iPad" } } } as typeof live), "other_holder")
   assert.equal(cloudTerminalPhase({ ...live, canType: false, control: { held: false, epoch: 2 } } as typeof live), "watching")
 })
+
+
+test("a deliberate display disconnect offers reconnect instead of an uncertain-input review", () => {
+  assert.equal(cloudTerminalPhase({ ...live, state: "unknown", canType: false,
+    reason: "terminal_connection_disconnected" }), "error")
+})

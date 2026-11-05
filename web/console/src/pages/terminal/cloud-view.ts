@@ -108,6 +108,7 @@ export type CloudTerminalPhase = "ended" | "denied" | "reconnecting" | "offline"
   "watching" | "typing" | "loading"
 
 export interface CloudTerminalPhaseInput {
+  reason?: string
   state: string
   error: string
   /** The terminal's own status from the machine's last read, "" before one. */
@@ -130,7 +131,7 @@ export function cloudTerminalPhase(v: CloudTerminalPhaseInput): CloudTerminalPha
   if (DENIED.has(v.error) || v.state === "revoked") return "denied"
   if (v.retrying || v.state === "stale") return "reconnecting"
   if (v.state === "offline") return "offline"
-  if (v.error || v.frameTimedOut) return "error"
+  if (v.error || v.frameTimedOut || v.reason === "terminal_connection_disconnected") return "error"
   if (v.needsReview || v.state === "unknown") return "needs_review"
   if (v.canType) return "typing"
   if (!v.hasFrame) return "loading"

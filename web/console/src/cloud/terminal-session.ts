@@ -283,7 +283,7 @@ export class CloudTerminalSession {
     if (this.recovering) return
     this.recovering = true
     try {
-      try { await this.start() }
+      try { await this.start({ abandon: this.disconnected }) }
       catch (error) {
         const refusal = error as { code?: string; receiptStatus?: string }
         if (refusal.receiptStatus !== "refused" ||
