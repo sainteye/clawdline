@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravityacp"
@@ -35,7 +36,13 @@ type Options struct {
 	// PromptAccepted runs outside conversation locks immediately after a user prompt is accepted.
 	// It shares the host lifetime and job; callers must not create a work queue.
 	PromptAccepted func(context.Context, session.Session)
+	// InactivityTimeout sets how long a session can remain in StateWorking without receiving
+	// any session/update or permission offer before the watchdog cancels the turn and settles to idle.
+	// Defaults to DefaultInactivityTimeout (90s) if <= 0.
+	InactivityTimeout time.Duration
 }
+
+const DefaultInactivityTimeout = 90 * time.Second
 
 type Host struct {
 	mu       sync.Mutex
@@ -64,6 +71,8 @@ type conversation struct {
 	stopping          bool
 	textIndex         int
 	writeGate         chan struct{}
+	lastActivity      atomic.Int64
+	timedOut          atomic.Bool
 	model             string
 	models            []contract.SessionModel
 	effort            string
@@ -91,6 +100,10 @@ type conversation struct {
 	autoNameAttempted bool
 }
 
+func (c *conversation) touchActivity() {
+	c.lastActivity.Store(time.Now().UnixNano())
+}
+
 type Error struct {
 	Code     string
 	Delivery antigravityprocess.Delivery
@@ -103,6 +116,16 @@ func refusal(code string) error    { return &Error{Code: code, Delivery: antigra
 func New(ctx context.Context, opts Options) (*Host, error) {
 	if ctx == nil || ctx.Err() != nil || !filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) {
 		return nil, refusal("invalid_configuration")
+	}
+	if opts.InactivityTimeout <= 0 {
+		if env := os.Getenv("CLAWDLINE_ACP_INACTIVITY_TIMEOUT"); env != "" {
+			if d, err := time.ParseDuration(env); err == nil && d > 0 {
+				opts.InactivityTimeout = d
+			}
+		}
+	}
+	if opts.InactivityTimeout <= 0 {
+		opts.InactivityTimeout = DefaultInactivityTimeout
 	}
 	life, cancel := context.WithCancel(ctx)
 	h := &Host{ctx: life, cancel: cancel, opts: opts, rows: map[string]*conversation{}}
@@ -369,6 +392,8 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		if inject {
 			contextText = launch.Text
 		}
+		watchdogDone := make(chan struct{})
+		defer close(watchdogDone)
 		result, err := client.PromptContextChecked(turn, text, launch.URI, contextText, func() error {
 			if before != nil {
 				if err := before(); err != nil {
@@ -388,6 +413,54 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			return c.saveState()
 		}, func() {
 			stop()
+			c.touchActivity()
+			c.timedOut.Store(false)
+			inactivityTimeout := h.opts.InactivityTimeout
+			if inactivityTimeout <= 0 {
+				inactivityTimeout = DefaultInactivityTimeout
+			}
+			interval := inactivityTimeout / 2
+			if interval < 10*time.Millisecond {
+				interval = 10 * time.Millisecond
+			} else if interval > time.Second {
+				interval = time.Second
+			}
+			h.jobs.Add(1)
+			go func(cl *antigravityprocess.Client) {
+				defer h.jobs.Done()
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-watchdogDone:
+						return
+					case <-h.ctx.Done():
+						return
+					case <-turn.Done():
+						return
+					case <-ticker.C:
+						c.mu.Lock()
+						isWorking := c.row.State == session.StateWorking
+						hasPerm := c.permission != nil && c.permission.Active()
+						c.mu.Unlock()
+
+						if hasPerm {
+							c.touchActivity()
+							continue
+						}
+						if !isWorking {
+							return
+						}
+						last := c.lastActivity.Load()
+						if time.Since(time.Unix(0, last)) >= inactivityTimeout {
+							c.timedOut.Store(true)
+							_ = cl.Interrupt(context.Background(), nil)
+							return
+						}
+					}
+				}
+			}(client)
+
 			c.mu.Lock()
 			c.row.State = session.StateWorking
 			c.textIndex = -1
@@ -423,6 +496,18 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 				_ = c.saveState()
 				return
 			}
+			if c.timedOut.Load() {
+				c.row.State = session.StateIdle
+				c.uncertain = false
+				if c.client != nil && c.client.Err() != nil {
+					_ = c.client.Close()
+					c.client = nil
+					c.row.PID = 0
+				}
+				c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
+				_ = c.saveState()
+				return
+			}
 			c.row.State = session.StateUnknown
 			c.uncertain = true
 			c.append(contract.TranscriptEntry{Role: "error", Text: err.Error(), At: time.Now().Unix()})
@@ -447,6 +532,10 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		}
 		if result.StopReason != "end_turn" && result.StopReason != "cancelled" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
+		}
+		if c.timedOut.Load() {
+			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
+			_ = c.saveState()
 		}
 		notify = result.StopReason == "end_turn" && c.storeErr == nil
 	}()
@@ -736,6 +825,7 @@ func (c *conversation) bound() {
 	}
 }
 func (c *conversation) update(ctx context.Context, frame json.RawMessage) error {
+	c.touchActivity()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
