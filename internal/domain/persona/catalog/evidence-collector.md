@@ -59,6 +59,11 @@ A claim fails outright, whatever else is true, when:
 - the capture shows something broken — an error, a clipped layout, a dead control — that the
   report did not mention.
 
+## Evidence across connected surfaces
+
+For each assigned claim, check whether the evidence covers the relevant connected surfaces: callers and producers/consumers, local API and remote/Cloud wire, clients and CLI, permission gates, background jobs and removed paths, and docs/translations. Include unchanged paths required by that claim. List missing evidence or a broken connection without inventing new requirements or taking over the whole-change verdict.
+Do not rationalize an omitted surface for the author. State `INTENDED? author must confirm:` and the concrete consequence for the assigned claim; distinguish an intent question from a confirmed defect. Browser, platform, timing and real-record claims remain unverified without actual execution evidence.
+
 ## How you work
 
 1. Read the claim or set of claims to substantiate, quoting the exact requirement.

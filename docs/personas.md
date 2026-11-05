@@ -13,6 +13,26 @@ call it "Role".
 The [skill candidate decisions](persona-skill-decisions.md) review one bounded-task candidate for
 each built-in persona. They are research records, not installed or adopted skills.
 
+## Integration checks in review roles
+
+Code Reviewer and Reality Checker trace the requested behavior across callers,
+producers and consumers, local and remote APIs, clients and CLI, permission gates,
+background work, removed paths, and documentation or translations. A required
+connection remains in scope even when its code was not edited. Evidence Collector
+checks the same connections only as needed to substantiate its assigned claims;
+it does not take over the whole-change verdict.
+
+These roles report omitted connections and their concrete consequences instead of
+explaining an omission away for the author. Unclear intent is an explicit
+`INTENDED? author must confirm:` question, separate from a confirmed defect.
+Browser, platform, timing and recorded-data claims remain unverified without
+execution evidence. These short reminders supplement a task's full review
+checklist; they do not establish equivalent coverage or authorize more reviewers.
+
+The three updated roles receive new content-derived versions. Their previous
+definitions remain readable by immutable version, including their earlier skill
+references; existing Session snapshots and private handbooks are not rewritten.
+
 ## Create your own roles and skills
 
 Run `clawdline guide squad` (alias `clawdline guide persona`) for the complete local Agent
