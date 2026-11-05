@@ -405,6 +405,10 @@ func ended(r Record) time.Time {
 //     read counts as much as the child. A process table that cannot be read
 //     is unknown.
 func (b *Broker) ownerGone(ctx context.Context, rd reading, r Record, paths ...string) (bool, string, map[string]any) {
+	return ownerGoneWithOccupancy(rd, r, func(paths ...string) (string, error) { return b.occupied(ctx, paths...) }, paths...)
+}
+
+func ownerGoneWithOccupancy(rd reading, r Record, occupied func(...string) (string, error), paths ...string) (bool, string, map[string]any) {
 	evidence := map[string]any{"terminal": r.ChildTerminalID, "backend": r.ChildBackend,
 		"reading_sessions": len(rd.sessions), "source_complete": rd.sourceComplete(r.ChildBackend)}
 	switch {
@@ -421,7 +425,7 @@ func (b *Broker) ownerGone(ctx context.Context, rd reading, r Record, paths ...s
 		}
 		evidence["tab"] = "absent_from_complete_source"
 	}
-	inside, err := b.occupied(ctx, paths...)
+	inside, err := occupied(paths...)
 	if err != nil {
 		evidence["process_table"] = err.Error()
 		return false, WhyOwnerUnknown, evidence
@@ -1107,4 +1111,36 @@ func (b *Broker) reclaimedDirty(ctx context.Context, taskID string) (dirty bool,
 		return false, "", true
 	}
 	return false, "", false
+}
+
+// occupancySnapshot reads process directories lazily, at most once for one
+// read-only projection. Errors stay unknown for every row. Each new request
+// gets a fresh reader; destructive reclamation still uses occupied directly.
+func (b *Broker) occupancySnapshot(ctx context.Context) func(...string) (string, error) {
+	var cwds []string
+	var cwdErr error
+	read := false
+	return func(paths ...string) (string, error) {
+		targets := make([]string, 0, len(paths))
+		for _, path := range paths {
+			if path != "" {
+				targets = append(targets, foldPath(path))
+			}
+		}
+		if len(targets) == 0 {
+			return "", nil
+		}
+		if !read {
+			read = true
+			readCWDs := b.ProcessCWDs
+			if readCWDs == nil {
+				readCWDs = lsofCWDs
+			}
+			cwds, cwdErr = readCWDs(ctx)
+		}
+		if cwdErr != nil {
+			return "", cwdErr
+		}
+		return occupiedFromCWDs(cwds, targets...), nil
+	}
 }

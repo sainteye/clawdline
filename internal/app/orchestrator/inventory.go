@@ -194,11 +194,12 @@ func (b *Broker) rows(ctx context.Context, repo string) ([]InventoryRow, error) 
 	}
 	now := b.now()
 	out := []InventoryRow{}
+	occupied := b.occupancySnapshot(ctx)
 	for _, r := range records {
 		if !inRepository(r, repo) {
 			continue
 		}
-		out = append(out, b.row(ctx, r, now))
+		out = append(out, b.row(ctx, r, now, occupied))
 	}
 	for _, u := range bad {
 		home := u.Repository
@@ -241,7 +242,7 @@ func inRepository(r Record, repo string) bool {
 // a branch listing that failed keeps the row visible, and a `dirty` nobody
 // could read is not permission to dispose of a checkout. That rule is the
 // reason this reads as much as it does.
-func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow {
+func (b *Broker) row(ctx context.Context, r Record, now time.Time, occupied func(...string) (string, error)) InventoryRow {
 	row := InventoryRow{
 		Task:      r.ID,
 		Title:     r.Title,
@@ -291,6 +292,24 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 		return row
 	}
 
+	dirty, dirtyKnown := false, false
+	kept := ""
+	if row.OnDisk {
+		dirty, dirtyKnown = b.Git.Dirty(ctx, r.Worktree.Path)
+	} else {
+		// A checkout the sweep took is not unknown: what it held was
+		// recorded before it went (reclaim.go).
+		dirty, kept, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
+	}
+	// Settled rows appear only when they can offer disposal. Without a
+	// known-clean checkout (or its reclamation receipt), no Git fact can
+	// authorize that offer. Avoid re-reading refs and ancestry for every
+	// archived delivery on each inventory read and dispatch admission.
+	// Pending and legacy unresolved landings still need the full advice.
+	if row.Section == VisibilitySettled && (!dirtyKnown || dirty) {
+		return row
+	}
+
 	exists, branchKnown := b.Git.BranchExists(ctx, r.Worktree.Repository, r.Worktree.Branch)
 	row.Branched = exists
 	// Merged into the target the record names, and into nothing else (D19).
@@ -306,16 +325,6 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 		row.Merged = &merged
 	}
 	commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
-	dirty, dirtyKnown := false, false
-	kept := ""
-	if row.OnDisk {
-		dirty, dirtyKnown = b.Git.Dirty(ctx, r.Worktree.Path)
-	} else {
-		// A checkout the sweep took is not unknown: what it held was
-		// recorded before it went (reclaim.go).
-		dirty, kept, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
-	}
-
 	// Droppable is decided first and fails safe: the branch must have been
 	// readable, and the checkout must have been readable and clean. Anything
 	// unknown is not permission.
@@ -344,7 +353,7 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 	// there (D13, G22): `dispose` is advice to remove it, and advice the
 	// sweep would refuse is not advice. The beat's last reading answers.
 	if row.Do == DoDispose {
-		if gone, _, _ := b.ownerGone(ctx, b.lastReading(), r, r.Worktree.Path); !gone {
+		if gone, _, _ := ownerGoneWithOccupancy(b.lastReading(), r, occupied, r.Worktree.Path); !gone {
 			row.Do, row.Why = "", ""
 		}
 	}
