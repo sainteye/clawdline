@@ -1,0 +1,52 @@
+# Local CodeGraph integration
+
+Clawdline uses [CodeGraph](https://github.com/colbymchenry/codegraph) 1.6.2 for optional local code navigation. Graphify is retired from active settings, launch guidance, HTTP/Cloud operations and the viewer. Historical experiment reports and schema-1 workflow receipts remain historical evidence; user-owned Graphify files and installations are never deleted.
+
+## Consent and ownership
+
+`codegraph_enabled` is an independent machine setting, off by default. An old `graphify_enabled` value does not enable it. The toggle permits reading an owned graph, starting its cached local service and adding lookup guidance to new Claude/Codex Sessions. It does not download a runtime or build a missing index. The explicit **Build index** action authorizes those operations. Disabling integration cancels builds, stops managed processes and refuses queries. Existing model context cannot be withdrawn.
+
+Each canonical working directory owns `.codegraph/codegraph.db` and `.codegraph/clawdline.json`. Worktrees never borrow their parent repository's index. The marker records the canonical root, pinned engine version, source SHA-256 inventory, scope-configuration digest and generation. A marker is a cooperative local ownership record, not authentication against a malicious local writer. Foreign or unsupported indexes are refused and preserved.
+
+Schema-2 workflow snapshots freeze CodeGraph selection. Schema-1 snapshots retain their original `graphify_enabled` field and canonical digest exclusively for historical validation and inheritance; they never enable CodeGraph. Resume retains original context rather than adopting the current setting.
+
+## Runtime and first build
+
+`internal/adapters/codegraph/runtime-lock.json` pins the npm platform bundles for macOS, Linux and Windows on arm64/x64. An explicit build downloads at most its one platform archive from registry.npmjs.org, refuses redirects, verifies SHA-512 integrity and safely extracts regular files under the private Clawdline cache. No package-manager lifecycle scripts run. The private cache carries the upstream MIT notice from the pinned release. The bundle includes Node and parser dependencies; system Python, uv and Node are not prerequisites. Unsupported platforms are refused.
+
+The embedded `bridge.cjs` calls the pinned JavaScript SDK directly through the bundled Node executable. The CLI shim, self-updater, detached vendor daemon, global hooks and MCP network listener are not started. Worker environments omit provider keys and Node injection variables. No model API or source upload is used. Ordinary local Git commands may be used by the upstream scanner; this is not an OS sandbox against malicious project Git configuration or local package tampering.
+
+A build copies a conservative bounded source/configuration snapshot, parses it in a private temporary directory outside the watched Project, verifies the native SQLite shape and completed engine stamp, and compares the original source again. The closed native output moves (or is boundedly copied across volumes) to a same-volume publication candidate. Atomic no-replace publication refuses an index created concurrently. Source snapshots are never visible under a watched Project. Interrupted or changed-source builds do not publish incomplete output. Task-owned staging directories are removed; existing user data is preserved.
+
+## Updates and process lifetime
+
+An owned service opens only an existing managed index with a cached runtime. Daemon-owned startup continues independently of any one cancelled reader, with a ten-minute deadline. The viewer can observe a starting service without waiting for it or cancelling its catch-up. It reconciles source content before becoming ready, then uses the native filesystem watcher. Every 60 seconds while active it also compares full content, catching missed events and same-mtime edits. Scope/configuration changes clear upstream configuration caches, run full sync to prune excluded rows, then run full indexing. Ordinary changes use scoped native sync; residual content mismatches use `indexFiles`, bypassing upstream 1.6.2's size/mtime fast path without touching source timestamps. A generation is published only after the conservative inventory and the native file records agree. A failed or concurrent update cannot establish freshness.
+
+At most four canonical roots have active services. Each accepts one request at a time with no query queue; excess work is refused. A service closes after ten minutes idle, on integration disable or daemon shutdown. Startup reconciles edits made while it was stopped. Closing the graph viewer stops its HTTP polling; it does not immediately close an active service. If watching degrades, periodic reconciliation remains available and the viewer does not claim live watching. There is no machine-wide recursive watcher when the feature is unused.
+
+The source scope deliberately excludes dependency/build/cache trees and refuses source symlinks and nonregular files. Its conservative inventory can mark a graph stale for a file the upstream parser ignores. That safe refusal is preferable to claiming a source match. Changes outside the pinned supported-extension/configuration inventory are not covered; this does not establish correctness of inferred edges.
+
+## Query and view boundaries
+
+New launch guidance uses:
+
+```sh
+clawdline codegraph query "question or symbol names"
+clawdline codegraph check .
+```
+
+`query` uses the command's current working directory and this machine's orchestrator credential through `POST /v1/orchestrator/codegraph/query`. The route accepts only bounded directory/question fields, has no Cloud operation, never builds a missing index and never downloads a runtime. It checks current source and generation before and after the native `codegraph_explore` operation; busy, stale, unchecked or timed-out results are refused. Agents fall back to ordinary source search and verify relevant definitions and relationships in current source. A successful source check proves neither edge correctness nor absence of a relationship.
+
+`check` is a read-only local content/metadata/SQLite probe independent of the toggle. It exits zero only with `state=source_matched`; it does not start the service. A standalone vendor CLI bypasses Clawdline's policy and is not the managed integration.
+
+`GET /v1/projects/:place/codegraph` and `GET /v1/sessions/:id/codegraph` resolve only a currently listed Project or selected live Session. They accept no client path, query fields or body. Explicit `POST {}` requires send authority and an Idempotency-Key; acceptance receipts deduplicate lost responses without restarting work. GET is the current progress record. API level 41 advertises the replacement. Cloud uses the narrow `project-codegraph`, `session-codegraph` and corresponding `*-build` operations; obsolete Graphify operations are not aliases. Console and daemon must both support the new vocabulary.
+
+The viewer uses a separate read-only SQLite projection, never a rewritten native database or vendor HTML. It returns at most 300 nodes, 900 links and 120 characters per text field. The most connected nodes have stable tie ordering; search and inspection cover this displayed subset. Groups are source folders, not inferred architecture. Structural containment is labeled EXTRACTED; other edges are conservatively labeled INFERRED. Unverified source paths are omitted. Sigma 4.0.4 and Graphology 0.26.0 remain the bundled MIT visualization libraries, unrelated to the choice of indexing engine.
+
+The open viewer polls at five seconds, or one second during an accepted build, and stops on a failed read or close. A browser read has a 15-second deadline. Source checks, query frames, build/runtime/store sizes and process counts have registered bounds in `internal/domain/capacity`; disk checks are not OS quotas, and there is no hard RSS claim. Native source checks can refuse large projects or a busy index rather than blocking normal source search.
+
+## Verification
+
+`go test ./internal/adapters/codegraph` covers inert projection, stale same-mtime detection, corrupt stores, symlinks, foreign-index preservation, duplicate/build admission, source changes during build, disable and environment isolation. HTTP tests cover credentials, explicit mutation, path rejection, receipts and Cloud boundaries. Workflow tests retain known schema-1 digests and refuse consent migration.
+
+The opt-in `TestCodeGraphNativeLifecycle` runs the pinned runtime, real build/query, live watching, same-mtime edits, addition/move/deletion, worktree isolation, offline restart catch-up and exact process shutdown. Set `CODEGRAPH_NATIVE_TEST_CACHE` to a task-owned temporary cache. The first run may download the one locked platform archive; subsequent runs reuse it. Sandbox restrictions on native watching must be reported separately from product failures. No passing unit test establishes hosted-console deployment or a running dev installation.

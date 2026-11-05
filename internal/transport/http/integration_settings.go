@@ -21,8 +21,8 @@ func (s *Server) integrationSettingsRoute(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return nil, err
 		}
-		graphify, _ := values.Bool("graphify_enabled")
-		return map[string]any{"workflow_profile": profile, "workflow_skills_enabled": profile == "superpowers", "graphify_enabled": graphify}, nil
+		codegraph, _ := values.Bool("codegraph_enabled")
+		return map[string]any{"workflow_profile": profile, "workflow_skills_enabled": profile == "superpowers", "codegraph_enabled": codegraph}, nil
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -39,7 +39,7 @@ func (s *Server) integrationSettingsRoute(w http.ResponseWriter, r *http.Request
 		}
 		changes := make(map[string]any, len(body))
 		for name, raw := range body {
-			if name != "workflow_skills_enabled" && name != "graphify_enabled" && name != "workflow_profile" {
+			if name != "workflow_skills_enabled" && name != "codegraph_enabled" && name != "workflow_profile" {
 				writeRefusal(w, http.StatusBadRequest, "bad_request", "Not an integration setting key: "+name)
 				return
 			}

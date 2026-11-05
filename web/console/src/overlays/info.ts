@@ -1,5 +1,5 @@
 import { readIntegrationSettings } from "../pages/settings/api.js"
-import { GRAPHIFY_SETTING, graphWord, openGraphify } from "../graphify/graphify.js"
+import { CODEGRAPH_SETTING, graphWord, openCodeGraph } from "../codegraph/codegraph.js"
 import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
 import { MENU_FOLLOW } from "../session/menu-follow.js"
 import { client } from "../client.js"
@@ -87,14 +87,14 @@ const T = L.strings
 const esc = L.escapeHTML
 const fill = L.fillString
 
-let graphifyEnabled = false
-let graphifySettingRead = 0
-function loadGraphifySetting(id: string): void {
-  graphifyEnabled = false
-  const version = ++graphifySettingRead
+let codegraphEnabled = false
+let codegraphSettingRead = 0
+function loadCodeGraphSetting(id: string): void {
+  codegraphEnabled = false
+  const version = ++codegraphSettingRead
   void readIntegrationSettings().then(settings => {
-    if (version === graphifySettingRead && forId === id && !hidden()) {graphifyEnabled = settings.graphify_enabled === true; draw()}
-  }, () => { if (version === graphifySettingRead && forId === id) {graphifyEnabled = false; draw()} })
+    if (version === codegraphSettingRead && forId === id && !hidden()) {codegraphEnabled = settings.codegraph_enabled === true; draw()}
+  }, () => { if (version === codegraphSettingRead && forId === id) {codegraphEnabled = false; draw()} })
 }
 
 let forId: string | null = null // whose card this is
@@ -586,7 +586,7 @@ function html(d: Facts): string {
   if (d.protocol) out += sec(++i, catalogWord("acp", "title"), "", protocolStateHTML(d.protocol, key => catalogWord("acp", key), esc, L.clock))
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
-  if (graphifyEnabled && s.cwd) out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-graphify-open>' + esc(graphWord("open")) + "</button>")
+  if (codegraphEnabled && s.cwd) out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-codegraph-open>' + esc(graphWord("open")) + "</button>")
   // Read-only pairings get no buttons rather than dead ones.
   if (host.writable() && (models.length || s.assistant === "codex")) {
     out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
@@ -737,7 +737,7 @@ export const Info = {
     said("")
     overlay.hidden = false
     load(forId, force)
-    loadGraphifySetting(forId)
+    loadCodeGraphSetting(forId)
     focusModalContainer(node("info-sheet"))
   },
 
@@ -748,12 +748,12 @@ export const Info = {
   refresh(): void {
     if (hidden() || !forId || loading) return
     load(forId, true)
-    loadGraphifySetting(forId)
+    loadCodeGraphSetting(forId)
   },
 
   close(): void {
-    graphifySettingRead++
-    graphifyEnabled = false
+    codegraphSettingRead++
+    codegraphEnabled = false
     RoleDetail.close(false)
     const overlay = node("info")
     if (overlay) overlay.hidden = true
@@ -1034,9 +1034,9 @@ export function bindInfo(): () => void {
   const onBody = (ev: MouseEvent) => {
     const t = ev.target as Element | null
     if (!t || !t.closest) return
-    if (t.closest("button[data-graphify-open]") && graphifyEnabled && forId) {
+    if (t.closest("button[data-codegraph-open]") && codegraphEnabled && forId) {
       const target = { kind: "session" as const, id: forId, label: data?.session.title }
-      Info.close(); openGraphify(target); return
+      Info.close(); openCodeGraph(target); return
     }
     const stack = t.closest<HTMLButtonElement>("button[data-devstack]")
     if (stack) {
@@ -1114,8 +1114,8 @@ export function bindInfo(): () => void {
   // The role section needs the catalog; a card open when it arrives draws again.
   void loadPersonas()
   const offPersonas = onPersonas(() => draw())
-  const onGraphifySetting = (event: Event) => {graphifySettingRead++;graphifyEnabled = (event as CustomEvent<boolean>).detail === true; draw()}
-  window.addEventListener(GRAPHIFY_SETTING, onGraphifySetting)
+  const onCodeGraphSetting = (event: Event) => {codegraphSettingRead++;codegraphEnabled = (event as CustomEvent<boolean>).detail === true; draw()}
+  window.addEventListener(CODEGRAPH_SETTING, onCodeGraphSetting)
   overlay.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)
   close.addEventListener("click", onClose)
@@ -1126,7 +1126,7 @@ export function bindInfo(): () => void {
   body.addEventListener("keydown", onKeyDown)
   return () => {
     offPersonas()
-    window.removeEventListener(GRAPHIFY_SETTING, onGraphifySetting)
+    window.removeEventListener(CODEGRAPH_SETTING, onCodeGraphSetting)
     overlay.removeEventListener("click", onOverlay)
     sheet.removeEventListener("click", onSheet)
     close.removeEventListener("click", onClose)

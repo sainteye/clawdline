@@ -8,30 +8,57 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) projectFilesCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
-		"projects.graphify_build_seconds": func() capacity.Reading {
+		"projects.codegraph_service_roots": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: s.codegraphBuilds().ServiceCount(), Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_service_idle_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_reconcile_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_query_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_query_body_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_reply_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_query_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_store_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_view_poll_ms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded local CodeGraph service; no query queue or paid backend"}
+		},
+		"projects.codegraph_build_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "local index build build seconds guard; no queued builds"}
 		},
-		"projects.graphify_build_poll_ms": func() capacity.Reading {
+		"projects.codegraph_build_poll_ms": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "local index build build poll ms guard; no queued builds"}
 		},
-		"projects.graphify_build_log_bytes": func() capacity.Reading {
+		"projects.codegraph_build_log_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "local index build build log bytes guard; no queued builds"}
 		},
-		"projects.graphify_runtime_bytes": func() capacity.Reading {
+		"projects.codegraph_runtime_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "local index build runtime bytes guard; no queued builds"}
 		},
-		"projects.graphify_build_raw_bytes": func() capacity.Reading {
+		"projects.codegraph_build_raw_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "local index build build raw bytes guard; no queued builds"}
 		},
-		"projects.graphify_build_body_bytes": func() capacity.Reading {
+		"projects.codegraph_build_body_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "local index build build body bytes guard; no queued builds"}
 		},
-		"projects.graphify_build_jobs": func() capacity.Reading {
-			_, held := s.graphifyBuilds().Counts()
+		"projects.codegraph_build_jobs": func() capacity.Reading {
+			_, held := s.codegraphBuilds().Counts()
 			return capacity.Reading{Known: true, Used: held, Note: "held build statuses; terminal rows expire after the operation window on the next start"}
 		},
-		"projects.graphify_build_workers": func() capacity.Reading {
-			active, _ := s.graphifyBuilds().Counts()
+		"projects.codegraph_build_workers": func() capacity.Reading {
+			active, _ := s.codegraphBuilds().Counts()
 			return capacity.Reading{Known: true, Used: active, Note: "one active machine-wide build; other roots are refused without a queue"}
 		},
 
@@ -66,20 +93,20 @@ func (s *Server) projectFilesCapacityMeasures() map[string]func() capacity.Readi
 			return capacity.Reading{Known: true, Used: int64(s.opsProber().Cached()), Note: "repository visibility answers kept for ten minutes; the oldest is forgotten first"}
 		},
 
-		"projects.graphify_zoom": func() capacity.Reading {
+		"projects.codegraph_zoom": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "viewer zoom cap; no retained graph cache"}
 		},
-		"projects.graphify_nodes": func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		"projects.codegraph_nodes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand CodeGraph viewer guard; no retained graph cache"}
 		},
-		"projects.graphify_links": func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		"projects.codegraph_links": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand CodeGraph viewer guard; no retained graph cache"}
 		},
-		"projects.graphify_text": func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		"projects.codegraph_text": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand CodeGraph viewer guard; no retained graph cache"}
 		},
-		"projects.graphify_request_ms": func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		"projects.codegraph_request_ms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand CodeGraph viewer guard; no retained graph cache"}
 		},
 		"projects.antigravity_consent_request_ms": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "website whole-response deadline; no automatic retry or retained request"}

@@ -2373,6 +2373,48 @@ const (
 // CloudViewerScopeValues is every value the contract allows, in contract order.
 var CloudViewerScopeValues = []CloudViewerScope{CloudViewerScopeReadonly, CloudViewerScopeOperate}
 
+type CodeGraphBuildStatus struct {
+	Bytes     int64  `json:"bytes"`
+	Error     string `json:"error"`
+	Files     int64  `json:"files"`
+	Phase     string `json:"phase"`
+	StartedAt int64  `json:"started_at"`
+	State     string `json:"state"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+type CodeGraphLink struct {
+	Confidence string `json:"confidence"`
+	Relation   string `json:"relation"`
+	Source     string `json:"source"`
+	Target     string `json:"target"`
+}
+
+type CodeGraphNode struct {
+	Community string `json:"community"`
+	File      string `json:"file"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Location  string `json:"location"`
+}
+
+type CodeGraphView struct {
+	Build             CodeGraphBuildStatus `json:"build"`
+	CanBuild          bool                 `json:"can_build"`
+	CheckedAt         int64                `json:"checked_at"`
+	Generation        string               `json:"generation"`
+	LastSyncedAt      int64                `json:"last_synced_at"`
+	Links             []CodeGraphLink      `json:"links"`
+	Nodes             []CodeGraphNode      `json:"nodes"`
+	Reason            string               `json:"reason"`
+	State             string               `json:"state"`
+	TotalLinks        int64                `json:"total_links"`
+	TotalNodes        int64                `json:"total_nodes"`
+	Truncated         bool                 `json:"truncated"`
+	UnverifiedSources int64                `json:"unverified_sources"`
+	Watching          bool                 `json:"watching"`
+}
+
 // GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the
 // default) is every envelope not yet acknowledged, dead letters included;
 // `pending=false` adds the acknowledged ones of the last seven days.
@@ -3039,45 +3081,6 @@ type GitSnapshot struct {
 	Head string `json:"head"`
 }
 
-type GraphifyBuildStatus struct {
-	Bytes     int64  `json:"bytes"`
-	Error     string `json:"error"`
-	Files     int64  `json:"files"`
-	Phase     string `json:"phase"`
-	StartedAt int64  `json:"started_at"`
-	State     string `json:"state"`
-	UpdatedAt int64  `json:"updated_at"`
-}
-
-type GraphifyLink struct {
-	Confidence string `json:"confidence"`
-	Relation   string `json:"relation"`
-	Source     string `json:"source"`
-	Target     string `json:"target"`
-}
-
-type GraphifyNode struct {
-	Community string `json:"community"`
-	File      string `json:"file"`
-	ID        string `json:"id"`
-	Label     string `json:"label"`
-	Location  string `json:"location"`
-}
-
-type GraphifyView struct {
-	Build             GraphifyBuildStatus `json:"build"`
-	CanBuild          bool                `json:"can_build"`
-	CheckedAt         int64               `json:"checked_at"`
-	Links             []GraphifyLink      `json:"links"`
-	Nodes             []GraphifyNode      `json:"nodes"`
-	Reason            string              `json:"reason"`
-	State             string              `json:"state"`
-	TotalLinks        int64               `json:"total_links"`
-	TotalNodes        int64               `json:"total_nodes"`
-	Truncated         bool                `json:"truncated"`
-	UnverifiedSources int64               `json:"unverified_sources"`
-}
-
 // GET /v1/health, open without a token: that this daemon is alive, which
 // implementation it is, and the two answers a page needs before it can be let
 // in — whether the asker's own credential is one this machine knows, and
@@ -3268,7 +3271,7 @@ type ImageStoreResult struct {
 }
 
 type IntegrationSettingsRequest struct {
-	GraphifyEnabled bool `json:"graphify_enabled,omitempty"`
+	CodegraphEnabled bool `json:"codegraph_enabled,omitempty"`
 
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile       string `json:"workflow_profile,omitempty"`
@@ -3277,7 +3280,7 @@ type IntegrationSettingsRequest struct {
 
 type IntegrationSettingsSnapshot struct {
 	// Machine-wide explicit opt-in; absent settings remain disabled.
-	GraphifyEnabled bool `json:"graphify_enabled"`
+	CodegraphEnabled bool `json:"codegraph_enabled"`
 
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile string `json:"workflow_profile,omitempty"`
@@ -6735,13 +6738,13 @@ type SessionWaitTarget struct {
 }
 
 type SessionWorkflow struct {
-	Digest          string          `json:"digest,omitempty"`
-	GraphifyEnabled *bool           `json:"graphify_enabled"`
-	ProfileID       string          `json:"profile_id,omitempty"`
-	Source          string          `json:"source,omitempty"`
-	Stages          []WorkflowStage `json:"stages,omitempty"`
-	State           string          `json:"state"`
-	Version         string          `json:"version,omitempty"`
+	CodegraphEnabled *bool           `json:"codegraph_enabled"`
+	Digest           string          `json:"digest,omitempty"`
+	ProfileID        string          `json:"profile_id,omitempty"`
+	Source           string          `json:"source,omitempty"`
+	Stages           []WorkflowStage `json:"stages,omitempty"`
+	State            string          `json:"state"`
+	Version          string          `json:"version,omitempty"`
 }
 
 type SessionsSnapshot struct {
@@ -6790,6 +6793,7 @@ type SettingsRequest struct {
 	// tunnel's old keys from the file. The old keys themselves are refused as
 	// `retired_setting`.
 	CloudflareTunnelRetired *bool `json:"cloudflare_tunnel_retired"`
+	CodegraphEnabled        *bool `json:"codegraph_enabled"`
 
 	// Whether a new session is named by an assistant.
 	CodexAutoName *bool `json:"codex_auto_name"`
@@ -6801,8 +6805,7 @@ type SettingsRequest struct {
 	CodexDefaultModel *string `json:"codex_default_model"`
 
 	// Whether the terminal selects the tab the bar points at.
-	FollowTarget    *bool `json:"follow_target"`
-	GraphifyEnabled *bool `json:"graphify_enabled"`
+	FollowTarget *bool `json:"follow_target"`
 
 	// A combination the shell can register (`cmd+shift+k`), or empty for none.
 	Hotkey *string `json:"hotkey"`
@@ -7016,7 +7019,8 @@ type SettingsSnapshot struct {
 	// (`remote_tunnel`, `remote_tunnel_name`, `remote_hostname`, `cloudflared_path`),
 	// removed on 2026-10-20. They start nothing; the settings page explains once, and
 	// writing `cloudflare_tunnel_retired: false` takes them out of the file.
-	CloudflareTunnelRetired bool `json:"cloudflare_tunnel_retired,omitempty"`
+	CloudflareTunnelRetired bool  `json:"cloudflare_tunnel_retired,omitempty"`
+	CodegraphEnabled        *bool `json:"codegraph_enabled"`
 
 	// Whether a new session is named by an assistant. The Swift app's spelling, kept
 	// so a line copied between the two files means the same thing.
@@ -7034,8 +7038,7 @@ type SettingsSnapshot struct {
 	Exists bool `json:"exists"`
 
 	// Whether the terminal selects the tab the bar points at.
-	FollowTarget    *bool `json:"follow_target"`
-	GraphifyEnabled *bool `json:"graphify_enabled"`
+	FollowTarget *bool `json:"follow_target"`
 
 	// The file's `hotkey`, or null when the file does not carry one as a string. Null
 	// means the default, option+space, which the Swift app used to own and no longer

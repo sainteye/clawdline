@@ -33,12 +33,12 @@ func TestWorkflowInfoUsesTheLaunchSnapshotAndPreservesKnownOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{store: st, cfg: config.Config{Dir: t.TempDir()}}
-	if _, err := s.settingsFile().Set(map[string]any{"workflow_profile": "clawdline", "graphify_enabled": true}); err != nil {
+	if _, err := s.settingsFile().Set(map[string]any{"workflow_profile": "clawdline", "codegraph_enabled": true}); err != nil {
 		t.Fatal(err)
 	}
 	info := contract.SessionInfo{}
 	s.fillWorkflowInfo(ctx, session.Session{ID: "%1", ConversationID: "original"}, &info)
-	if info.Workflow == nil || info.Workflow.State != "recorded" || info.Workflow.ProfileID != "poteto" || info.Workflow.Digest != snap.Digest || info.Workflow.GraphifyEnabled == nil || *info.Workflow.GraphifyEnabled {
+	if info.Workflow == nil || info.Workflow.State != "recorded" || info.Workflow.ProfileID != "poteto" || info.Workflow.Digest != snap.Digest || info.Workflow.CodegraphEnabled == nil || *info.Workflow.CodegraphEnabled {
 		t.Fatalf("machine setting substituted for snapshot: %+v", info.Workflow)
 	}
 	encoded, err := json.Marshal(info.Workflow)
@@ -49,11 +49,11 @@ func TestWorkflowInfoUsesTheLaunchSnapshotAndPreservesKnownOff(t *testing.T) {
 	if err := json.Unmarshal(encoded, &wire); err != nil {
 		t.Fatal(err)
 	}
-	if known, ok := wire["graphify_enabled"]; !ok || known != false {
+	if known, ok := wire["codegraph_enabled"]; !ok || known != false {
 		t.Fatalf("known off became absent/unknown: %s", encoded)
 	}
 	s.fillWorkflowInfo(ctx, session.Session{ID: "%old", ConversationID: "legacy"}, &info)
-	if info.Workflow.State != "legacy_unsnapshotted" || info.Workflow.ProfileID != "" || info.Workflow.GraphifyEnabled != nil {
+	if info.Workflow.State != "legacy_unsnapshotted" || info.Workflow.ProfileID != "" || info.Workflow.CodegraphEnabled != nil {
 		t.Fatalf("legacy session acquired current settings: %+v", info.Workflow)
 	}
 	st.Close()

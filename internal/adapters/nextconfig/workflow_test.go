@@ -2,8 +2,27 @@ package nextconfig
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func TestRetiredGraphifySettingDoesNotAuthorizeCodeGraph(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"graphify_enabled":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	v, err := Open(dir).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enabled, _ := v.Bool("codegraph_enabled"); enabled {
+		t.Fatal("retired consent enabled replacement")
+	}
+	if _, err := Open(dir).Set(map[string]any{"codegraph_enabled": true}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestWorkflowSelectionKeepsLegacyConsentAndRejectsInvalidExplicitProfiles(t *testing.T) {
 	for _, test := range []struct {
@@ -31,7 +50,7 @@ func TestWorkflowSelectionKeepsLegacyConsentAndRejectsInvalidExplicitProfiles(t 
 
 func TestOldAndNewSettingsWritersStayConsistentAtomically(t *testing.T) {
 	f := Open(t.TempDir())
-	request := map[string]any{"workflow_profile": "poteto", "graphify_enabled": true}
+	request := map[string]any{"workflow_profile": "poteto", "codegraph_enabled": true}
 	if _, err := f.Set(request); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +62,7 @@ func TestOldAndNewSettingsWritersStayConsistentAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := WorkflowProfile(values)
-	graph, _ := values.Bool("graphify_enabled")
+	graph, _ := values.Bool("codegraph_enabled")
 	if err != nil || got != "clawdline" || !graph {
 		t.Fatalf("legacy writer did not switch only its own setting: %s %v", got, err)
 	}

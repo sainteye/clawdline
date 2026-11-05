@@ -15,20 +15,20 @@ func TestIntegrationSettingsCrossOnlyTheirNarrowMachineRoute(t *testing.T) {
 	r = &router{}
 	answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "integration-settings-update", "session": MachineReplySession, "request": "req-write",
-		"changes": map[string]any{"workflow_skills_enabled": true, "graphify_enabled": false},
+		"changes": map[string]any{"workflow_skills_enabled": true, "codegraph_enabled": false},
 	}))
 	if answer.Status != 200 || len(r.seen) != 1 {
 		t.Fatalf("write answered %+v, asked %+v", answer, r.seen)
 	}
 	got := r.last()
 	if got.Method != "POST" || got.Path != "/v1/settings/integrations" ||
-		string(got.Body) != `{"graphify_enabled":false,"workflow_skills_enabled":true}` ||
+		string(got.Body) != `{"codegraph_enabled":false,"workflow_skills_enabled":true}` ||
 		got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "req-write" {
 		t.Fatalf("write crossed too broadly: %+v body=%s", got, got.Body)
 	}
 	for _, changes := range []any{
 		map[string]any{"remote": true}, map[string]any{"workflow_skills_enabled": "on"},
-		map[string]any{"graphify_enabled": nil}, map[string]any{"project": "/project"}, []any{true},
+		map[string]any{"codegraph_enabled": nil}, map[string]any{"project": "/project"}, []any{true},
 	} {
 		r := &router{}
 		bad := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{

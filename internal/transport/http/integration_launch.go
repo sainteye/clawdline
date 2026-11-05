@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/sainteye/clawdline/internal/adapters/graphify"
+	"github.com/sainteye/clawdline/internal/adapters/codegraph"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/skills"
 )
@@ -31,8 +31,8 @@ func (s *Server) integrationLaunchText(ctx context.Context, root string) (string
 	if profile.Instructions != "" {
 		parts = append(parts, profile.Instructions)
 	}
-	if on, _ := values.Bool("graphify_enabled"); on {
-		text, err := graphify.LaunchInstructions(ctx, root)
+	if on, _ := values.Bool("codegraph_enabled"); on {
+		text, err := codegraph.LaunchInstructions(ctx, root)
 		if err != nil {
 			return "", err
 		}

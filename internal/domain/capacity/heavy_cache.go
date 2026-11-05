@@ -24,5 +24,5 @@ func ToolRegister() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaxHeavyGoDiskReserveKiB"},
 		},
-	}, graphifyToolBounds()...)
+	}, codegraphToolBounds()...)
 }

@@ -172,8 +172,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   const routes: [string, string][] = [
     ["POST", "/v1/tool-library"],
     ["POST", "/v1/tool-library/prepare"],
- ["POST","/v1/projects/p1/graphify"],
- ["POST","/v1/sessions/s1/graphify"],
+ ["POST","/v1/projects/p1/codegraph"],
+ ["POST","/v1/sessions/s1/codegraph"],
     ["GET", "/v1/sessions/s1/native-terminal"],
     ["POST", "/v1/sessions/s1/native-terminal"],
     ["POST", "/v1/sessions/s1/send"],
@@ -336,8 +336,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["project-antigravity-consent-change"], "POST /v1/projects/{project}/antigravity-consent")
   assert.ok(!("project-antigravity-consent-status" in DEFERRED))
   assert.ok(!("project-antigravity-consent-change" in DEFERRED))
-  assert.equal(CARRIED["project-graphify-build"],"POST /v1/projects/{project}/graphify")
-  assert.equal(CARRIED["session-graphify-build"],"POST /v1/sessions/{id}/graphify")
+  assert.equal(CARRIED["project-codegraph-build"],"POST /v1/projects/{project}/codegraph")
+  assert.equal(CARRIED["session-codegraph-build"],"POST /v1/sessions/{id}/codegraph")
   // Issue sync's tracker connections and Retry (pages/work/IssueSync.tsx).
   assert.equal(CARRIED["jira-connect"], "POST /v1/integrations/jira")
   assert.equal(CARRIED["issue-sync.retry"], "POST /v1/issue-sync/{id}/retry")

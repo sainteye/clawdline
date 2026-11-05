@@ -1938,7 +1938,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002", "work.v2.human-interventions", { terminal: "conversation:10000000-0000-4000-8000-000000000002" }],
   ["/v1/projects", "projects", {}],
   ["/v1/projects/cloud-p1/files", "project-file-list", { project: "p1" }],
-  ["/v1/projects/cloud-p1/graphify", "project-graphify", { project: "p1" }],
+  ["/v1/projects/cloud-p1/codegraph", "project-codegraph", { project: "p1" }],
   ["/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-read", { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
   ["/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-status", { project: "p1" }],
   ["/v1/projects/cloud-p1/unify", "project-unify-plan", { project: "p1" }],
@@ -2403,12 +2403,12 @@ test("expanding a stored tool body carries its exact machine and execution pin",
 })
 
 
-test("Graphify session reads preserve the exact session and reject extra fields", async () => {
+test("CodeGraph session reads preserve the exact session and reject extra fields", async () => {
  const client=new FakeClient();const r=reader(client,{t:1000})
- const res=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/graphify")
+ const res=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/codegraph")
  assert.equal(res.status,200)
- assert.deepEqual(client.sessionPageReads,[{identity:{machine:"mac-a",session:"%19"},word:"session-graphify",body:{},answer:"session-graphify"}])
- const bad=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/graphify?path=/elsewhere")
+ assert.deepEqual(client.sessionPageReads,[{identity:{machine:"mac-a",session:"%19"},word:"session-codegraph",body:{},answer:"session-codegraph"}])
+ const bad=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/codegraph?path=/elsewhere")
  assert.equal(bad.status,501);assert.equal(client.sessionPageReads.length,1)
 })
 

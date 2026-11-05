@@ -1,5 +1,6 @@
 # 機器層級工作流程技能試行
 
+Historical pilot record. The active integration is now [local CodeGraph](codegraph-integration.md); the Graphify settings below describe the retired implementation.
 Current machine selection, frozen launch records and Poteto adaptation are described in [machine workflow profiles](workflow-profiles.md). The pilot below records the original two-switch implementation and its separate evaluation checkpoint.
 
 狀態：2026-10-30 本機試行；**尚未評估行為成效**。
@@ -28,7 +29,7 @@ Claude 沿用單一行內 `--append-system-prompt`，Codex 沿用單一 `develop
 
 Graphify 開啟後，提供既有工具／索引的可選查找提示，並要求每次使用前執行唯讀檢查。
 不會安裝 Graphify、建立／刪除索引，也不會攔截直接執行的 Graphify 指令。
-精確界線與保留的實驗報告見 [Graphify 整合說明](graphify-integration.md)。兩開關互不相依。
+精確界線與保留的實驗報告見 [Graphify 整合說明](codegraph-integration.md)。兩開關互不相依。
 
 專用 `GET/POST /v1/settings/integrations` 將 `workflow_skills_enabled` 與
 `graphify_enabled` 布林值存入本機 `config.json`。未知欄位與非布林值在寫入前拒絕。

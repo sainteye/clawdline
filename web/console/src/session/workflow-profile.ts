@@ -27,7 +27,7 @@ export function workflowInfoHTML(record: WorkflowRecord | undefined): string {
     body += '<dl class="flow-facts">' + row("source", record.source || workflowWord("unknown")) +
       row("version", record.version || workflowWord("unknown")) + row("digest", record.digest || workflowWord("unknown")) +
       row("launch", state) + row("use", workflowWord("noUseReceipt")) +
-      row("graphify", workflowWord(typeof record.graphify_enabled === "boolean" ? record.graphify_enabled ? "on" : "off" : "unknown")) + '</dl>'
+      row("codegraph", workflowWord(typeof record.codegraph_enabled === "boolean" ? record.codegraph_enabled ? "on" : "off" : "unknown")) + '</dl>'
     if (record.stages?.length) {
       body += '<details class="flow-steps" data-workflow-detail="steps"><summary><span>' + esc(workflowWord("steps")) + '</span>' + caret + '</summary><ol>'
       for (const stage of record.stages) {

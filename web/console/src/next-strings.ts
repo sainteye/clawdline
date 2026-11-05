@@ -95,7 +95,7 @@ const words = {
     toolLibraryFlow: "How preparation works",
     toolLibraryFlowText: "Inspect → Pin source → Read Skill or library documentation → Install required tools → Verify → Perform your task → Report evidence.",
     toolLibraryNoReceipt: "Delivery alone does not prove installation, loading or use. Read the agent’s results in the conversation.",
-    toolLibraryExisting: "Superpowers / Poteto and Graphify remain managed in existing settings.",
+    toolLibraryExisting: "Superpowers / Poteto and CodeGraph remain managed in existing settings.",
     toolLibraryReadSource: "Read upstream source",
     toolLibraryNewWindow: "opens a new tab",
 
@@ -2440,7 +2440,7 @@ const words = {
     toolLibraryFlow: "準備流程",
     toolLibraryFlowText: "檢查環境 → 固定來源 → 讀取 Skill 或函式庫文件 → 安裝必要工具 → 驗證 → 執行任務 → 回報證據。",
     toolLibraryNoReceipt: "訊息送達不代表已安裝、載入或採用；請查看對話中 agent 的實際回報。",
-    toolLibraryExisting: "Superpowers／Poteto 與 Graphify 仍由既有設定管理。",
+    toolLibraryExisting: "Superpowers／Poteto 與 CodeGraph 仍由既有設定管理。",
     toolLibraryReadSource: "閱讀上游來源",
     toolLibraryNewWindow: "另開分頁",
 

@@ -715,11 +715,11 @@ test("native older pages keep their negotiated view through relay and carrier pu
   }
 })
 
-test("Graphify and Terminal reads cross the real pinned client on relay and carrier without write access", async (t) => {
+test("CodeGraph and Terminal reads cross the real pinned client on relay and carrier without write access", async (t) => {
   const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"])
   const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   for (const [word, body, writeWord] of [
-    ["session-graphify", { state: "index_missing", nodes: [], links: [] }, "session-graphify-build"],
+    ["session-codegraph", { state: "index_missing", nodes: [], links: [] }, "session-codegraph-build"],
     ["native-terminal-screen", { text: "Select a model", execution_generation: genA, frame: "fixture" }, "native-terminal-input"],
   ]) {
     for (const transport of ["relay", "carrier"]) {

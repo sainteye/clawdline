@@ -18,7 +18,7 @@
         "state": { "type": "string" },
         "profile_id": { "type": "string" }, "version": { "type": "string" },
         "source": { "type": "string" }, "digest": { "type": "string" },
-        "graphify_enabled": { "type": "boolean", "nullable": true },
+        "codegraph_enabled": { "type": "boolean", "nullable": true },
         "stages": { "type": "array", "items": { "$ref": "#/$defs/WorkflowStage" } }
       }
     },

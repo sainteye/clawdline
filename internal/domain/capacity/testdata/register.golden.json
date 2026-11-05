@@ -4640,6 +4640,106 @@
     "Sources": null
   },
   {
+    "Register": "tool",
+    "Name": "codegraph.check_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.CheckSecondsLimit"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "codegraph.metadata_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 67108864,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.MaxMetadataBytes"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "codegraph.scan_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.MaxScanEntries"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "codegraph.source_file_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.MaxFileBytes"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "codegraph.total_read_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 268435456,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.MaxTotalBytes"
+    ]
+  },
+  {
     "Register": "daemon",
     "Name": "console.assistant_facts_read_milliseconds",
     "Class": "buffer",
@@ -6970,106 +7070,6 @@
     ]
   },
   {
-    "Register": "tool",
-    "Name": "graphify.check_seconds",
-    "Class": "buffer",
-    "Unit": "seconds",
-    "Limit": 5,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/adapters/graphify.CheckSecondsLimit"
-    ]
-  },
-  {
-    "Register": "tool",
-    "Name": "graphify.metadata_bytes",
-    "Class": "buffer",
-    "Unit": "bytes",
-    "Limit": 67108864,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/adapters/graphify.MaxMetadataBytes"
-    ]
-  },
-  {
-    "Register": "tool",
-    "Name": "graphify.scan_entries",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 20000,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/adapters/graphify.MaxScanEntries"
-    ]
-  },
-  {
-    "Register": "tool",
-    "Name": "graphify.source_file_bytes",
-    "Class": "buffer",
-    "Unit": "bytes",
-    "Limit": 16777216,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/adapters/graphify.MaxFileBytes"
-    ]
-  },
-  {
-    "Register": "tool",
-    "Name": "graphify.total_read_bytes",
-    "Class": "buffer",
-    "Unit": "bytes",
-    "Limit": 268435456,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/adapters/graphify.MaxTotalBytes"
-    ]
-  },
-  {
     "Register": "daemon",
     "Name": "handoff.pack_bytes",
     "Class": "buffer",
@@ -8343,27 +8343,7 @@
   },
   {
     "Register": "daemon",
-    "Name": "projects.folder_rows",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 128,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/transport/http.maxProjectFolderRows"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "projects.graphify_build_body_bytes",
+    "Name": "projects.codegraph_build_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",
     "Limit": 4096,
@@ -8378,12 +8358,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.BuildBodyBytesLimit"
+      "internal/adapters/codegraph.BuildBodyBytesLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_build_jobs",
+    "Name": "projects.codegraph_build_jobs",
     "Class": "buffer",
     "Unit": "rows",
     "Limit": 16,
@@ -8398,12 +8378,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.BuildJobsLimit"
+      "internal/adapters/codegraph.BuildJobsLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_build_log_bytes",
+    "Name": "projects.codegraph_build_log_bytes",
     "Class": "buffer",
     "Unit": "bytes",
     "Limit": 65536,
@@ -8418,12 +8398,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.BuildLogBytesLimit"
+      "internal/adapters/codegraph.BuildLogBytesLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_build_poll_ms",
+    "Name": "projects.codegraph_build_poll_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
     "Limit": 1000,
@@ -8438,12 +8418,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.BuildPollMillisecondsLimit"
+      "internal/adapters/codegraph.BuildPollMillisecondsLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_build_raw_bytes",
+    "Name": "projects.codegraph_build_raw_bytes",
     "Class": "buffer",
     "Unit": "bytes",
     "Limit": 134217728,
@@ -8458,12 +8438,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.BuildRawBytesLimit"
+      "internal/adapters/codegraph.BuildRawBytesLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_build_seconds",
+    "Name": "projects.codegraph_build_seconds",
     "Class": "buffer",
     "Unit": "seconds",
     "Limit": 600,
@@ -8478,12 +8458,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.BuildSecondsLimit"
+      "internal/adapters/codegraph.BuildSecondsLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_build_workers",
+    "Name": "projects.codegraph_build_workers",
     "Class": "buffer",
     "Unit": "rows",
     "Limit": 1,
@@ -8498,12 +8478,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.BuildWorkersLimit"
+      "internal/adapters/codegraph.BuildWorkersLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_links",
+    "Name": "projects.codegraph_links",
     "Class": "buffer",
     "Unit": "rows",
     "Limit": 900,
@@ -8518,12 +8498,12 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.ViewLinkLimit"
+      "internal/adapters/codegraph.ViewLinkLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_nodes",
+    "Name": "projects.codegraph_nodes",
     "Class": "buffer",
     "Unit": "rows",
     "Limit": 300,
@@ -8538,12 +8518,112 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.ViewNodeLimit"
+      "internal/adapters/codegraph.ViewNodeLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_request_ms",
+    "Name": "projects.codegraph_query_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.QueryBodyBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_query_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.QueryBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_query_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 15,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.QuerySecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_reconcile_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 60,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.ReconcileSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_reply_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.ReplyBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_request_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
     "Limit": 15000,
@@ -8561,7 +8641,7 @@
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_runtime_bytes",
+    "Name": "projects.codegraph_runtime_bytes",
     "Class": "buffer",
     "Unit": "bytes",
     "Limit": 536870912,
@@ -8576,12 +8656,72 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.RuntimeBytesLimit"
+      "internal/adapters/codegraph.RuntimeBytesLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_text",
+    "Name": "projects.codegraph_service_idle_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 600,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.ServiceIdleSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_service_roots",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.ServiceRootsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_store_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 536870912,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.StoreBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_text",
     "Class": "buffer",
     "Unit": "characters",
     "Limit": 120,
@@ -8596,12 +8736,32 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/graphify.ViewTextLimit"
+      "internal/adapters/codegraph.ViewTextLimit"
     ]
   },
   {
     "Register": "daemon",
-    "Name": "projects.graphify_zoom",
+    "Name": "projects.codegraph_view_poll_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 5000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.ViewPollMillisecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.codegraph_zoom",
     "Class": "buffer",
     "Unit": "rows",
     "Limit": 4,
@@ -8616,6 +8776,26 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.folder_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxProjectFolderRows"
+    ]
   },
   {
     "Register": "daemon",

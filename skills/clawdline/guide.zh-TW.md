@@ -174,6 +174,10 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 `clawdline doctor --json` 透過 `GET /v1/doctor` 讀取正在執行的服務程式所產生的安全 Doctor 報告（API 等級 32；Cloud 指令字 `doctor`）。只執行固定的 CLI 版本檢查並讀取既有額度證據，不查詢供應商、不讀登入憑證，也不自動上傳。可從「設定 → 狀態 → Doctor」預覽、下載或明確提交私人回報。`doctor_busy` 表示另一個檢查正在執行；`doctor_report_too_large` 表示報告超過匯出上限。缺少證據仍為未知。
 
 
+**本機程式碼導覽（API level 41）。** 機器開啟 CodeGraph 時，`clawdline codegraph query "問題或符號名稱"` 會查詢指令目前確切工作目錄的受管索引。僅使用本機 orchestrator 路由 `POST /v1/orchestrator/codegraph/query`，JSON 為 `{ "directory": "/absolute/worktree", "query": "問題" }`，不接受網址欄位；完整內容上限 16 KiB，問題上限 4 KiB。Cloud 與裝置憑證不能使用。缺少、外部、無法核對、忙碌、過期或逾時的索引會遭拒絕，請改用目前原始碼搜尋，不要盲目重試。結果包含 `text` 與 `generation`，查詢前後的來源與版本均須相符；圖連線仍是需要核對原始碼的不可信導覽提示。
+
+此指令不會安裝或建立索引。請先開啟機器設定，再於 Project 或 Session 專案圖明確點選「建立索引」。既有受管索引使用已快取的服務，運行期間監看檔案並定期核對內容。關閉開關會停止所管理的服務；重新啟動時補上離線變更。`clawdline codegraph check .` 只是唯讀的本機新鮮度檢查，不能證明連線正確。每個 worktree 使用獨立索引。已退役的 Graphify 指令、設定與 Cloud 操作不會轉接，歷史授權也不會啟用 CodeGraph。
+
 ### 配對一個 Cloud 瀏覽器
 
 配對會改變誰能讀這台機器。配對過的瀏覽器立刻就能讀；Cloud 的 `commands` 開啟時，它還能操作這台

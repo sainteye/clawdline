@@ -38,7 +38,7 @@ func (s *Server) fillWorkflowInfo(ctx context.Context, item session.Session, inf
 	if !found {
 		return
 	}
-	value := &contract.SessionWorkflow{State: "recorded", ProfileID: snap.ProfileID, Version: snap.Version, Source: snap.Source, Digest: snap.Digest, GraphifyEnabled: &snap.GraphifyEnabled, Stages: []contract.WorkflowStage{}}
+	value := &contract.SessionWorkflow{State: "recorded", ProfileID: snap.ProfileID, Version: snap.Version, Source: snap.Source, Digest: snap.Digest, CodegraphEnabled: &snap.CodeGraphEnabled, Stages: []contract.WorkflowStage{}}
 	for _, stage := range snap.Stages {
 		value.Stages = append(value.Stages, contract.WorkflowStage{ID: stage.ID, Title: stage.Title, Output: stage.Output, Acceptance: stage.Acceptance})
 	}

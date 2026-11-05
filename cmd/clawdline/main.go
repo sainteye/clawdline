@@ -108,8 +108,8 @@ func main() {
 			fail(err)
 		}
 		serve()
-	case "graphify":
-		graphifyCommand(os.Args[2:])
+	case "codegraph":
+		codegraphCommand(os.Args[2:])
 	case "doctor":
 		if len(os.Args) > 2 && os.Args[2] == "capacity" {
 			capacityCommand(os.Args[3:])
@@ -306,14 +306,14 @@ func serve() {
 	defer stopCloud()
 	stopAPIPerformance := srv.StartAPIPerformance(cloudCtx)
 	defer stopAPIPerformance()
-	stopGraphify := func() {
+	stopCodeGraph := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), connectionHealthStopTimeout)
 		defer cancel()
-		if err := srv.StopGraphify(ctx); err != nil {
-			log.Print("graphify: shutdown cleanup did not finish")
+		if err := srv.StopCodeGraph(ctx); err != nil {
+			log.Print("codegraph: shutdown cleanup did not finish")
 		}
 	}
-	defer stopGraphify()
+	defer stopCodeGraph()
 	defer srv.StopGitHub()
 	stopIssueSync := srv.StartIssueSync(cloudCtx)
 	defer stopIssueSync()
@@ -360,7 +360,7 @@ func serve() {
 	defer stopAntigravityAll()
 	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), func() {
 		stopCloud()
-		stopGraphify()
+		stopCodeGraph()
 		stopAntigravityAll()
 	})
 	srv.StartScheduler(context.Background())
@@ -390,7 +390,7 @@ func serve() {
 	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
 		stopCloud()
-		stopGraphify()
+		stopCodeGraph()
 		stopAntigravityAll()
 		refuseToServe(1, err.Error())
 	}
