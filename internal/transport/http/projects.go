@@ -340,6 +340,10 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.antigravityProjectConsentRoute(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "devstack" {
+		s.projectDevStackRoute(w, r, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "unify" {
 		s.projectUnifyRoute(w, r, parts[0])
 		return

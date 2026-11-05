@@ -15,7 +15,9 @@ import { BEFORE_PAGE_CHANGE } from "../../overlays/index.js"
 import { ProjectFiles } from "./ProjectFiles.js"
 import { AntigravityConsent } from "./AntigravityConsent.js"
 import { ProjectUnify } from "./ProjectUnify.js"
+import { ProjectDevStack } from "./ProjectDevStack.js"
 import { ProjectExplorer } from "./ProjectExplorer.js"
+import { nextWord } from "../../next-strings.js"
 import {
   projectSetupCapabilities,
   projectSetupInstructions,
@@ -32,8 +34,8 @@ const toneWords: Record<SetupTone, string> = localizedLiteralMap({
   unknown: "944f88e4f77b",
 })
 
-function ProjectReadiness({ place, select, openUnify }: {
-  place: ProjectPlace; select(place: ProjectPlace): void; openUnify(place: ProjectPlace): void
+function ProjectReadiness({ place, select, openUnify, openDevStack }: {
+  place: ProjectPlace; select(place: ProjectPlace): void; openUnify(place: ProjectPlace): void; openDevStack(place: ProjectPlace): void
 }) {
   const capabilities = projectSetupCapabilities(place)
   const progress = projectSetupProgress(place)
@@ -64,6 +66,9 @@ function ProjectReadiness({ place, select, openUnify }: {
         {row.action === "unify" && <button className="project-readiness-row-action" type="button"
           aria-label={catalogFormat("projects", "setupViewSharingFor", [place.label])}
           onClick={() => openUnify(place)}>{catalogWord("projects", "setupViewSharing")}</button>}
+        {row.action === "servers" && <button className="project-readiness-row-action" type="button"
+          aria-label={nextWord("setupViewServers")}
+          onClick={() => openDevStack(place)}>{nextWord("setupViewServers")}</button>}
       </li>)}
     </ul>
     <button className="project-readiness-action" type="button" onClick={() => select(place)}>{action}</button>
@@ -89,7 +94,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const pendingSelection = useRef<ProjectPlace | null>(null)
   const scopedTrigger = useRef<HTMLButtonElement | null>(null)
   const [projectPath, setProjectPath] = useState<string | null>(null)
-  const [view, setView] = useState<"settings" | "files">("settings")
+  const [view, setView] = useState<"settings" | "devstack" | "files">("settings")
   // A readiness row's sharing press: which Project's unify preview to open,
   // and a count so a second press on the same one opens it again.
   const [unifyRequest, setUnifyRequest] = useState({ place: "", count: 0 })
@@ -166,6 +171,13 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
     setUnifyRequest(previous => ({ place: place.id, count: previous.count + 1 }))
   }
 
+  const openDevStack = (place: ProjectPlace) => {
+    if (!mayLeave()) return
+    filesState.current = { dirty: false, busy: false }
+    setProjectPath(place.path)
+    setView("devstack")
+  }
+
   const select = (place: ProjectPlace) => {
     if (!mayLeave()) return
     pendingSelection.current = place
@@ -228,7 +240,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       <div className="project-setup-dialog-heading">
         <div>
           <p className="project-setup-eyebrow">{catalogWord("inline", "c6325b98fd0c")}</p>
-          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || catalogWord("literal", "faec0867e1cc")} · ${view === "files" ? catalogWord("literal", "f207dc293b4f") : catalogWord("literal", "91c1ae775198")}` : catalogWord("literal", "6a6633400d3e")}</h2>
+          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || catalogWord("literal", "faec0867e1cc")} · ${view === "files" ? catalogWord("literal", "f207dc293b4f") : view === "devstack" ? nextWord("devStackTab") : catalogWord("literal", "91c1ae775198")}` : catalogWord("literal", "6a6633400d3e")}</h2>
         </div>
         <button className="project-setup-close" type="button" aria-label={catalogWord("inline", "dfc889eaa026")} onClick={requestClose}>{catalogWord("inline", "c7fdddf79eaa")}</button>
       </div>
@@ -237,6 +249,11 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
         {projectPath && <div className="project-setup-views" aria-label={catalogWord("inline", "a2d62aa7e4df")}>
           {visiblePlaces[0] && <GraphifyButton shown={shown && !!projectPath} target={{kind:"project",id:visiblePlaces[0].id,label:visiblePlaces[0].label}} />}
           <button type="button" aria-pressed={view === "settings"} onClick={() => setView("settings")}>{catalogWord("inline", "c57e45ecd648")}</button>
+          <button type="button" aria-pressed={view === "devstack"} onClick={() => {
+            if (!mayLeave()) return
+            filesState.current = { dirty: false, busy: false }
+            setView("devstack")
+          }}>{nextWord("devStackTab")}</button>
           <button type="button" aria-pressed={view === "files"} onClick={() => {
             if (!mayLeave()) return
             filesState.current = { dirty: false, busy: false }
@@ -249,6 +266,17 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
           {!loading && !error && !visiblePlaces[0] && <p role="status">{catalogWord("inline", "0b2d6de09d19")}</p>}
           {!loading && !error && visiblePlaces[0] && <ProjectExplorer key={visiblePlaces[0].id} place={visiblePlaces[0]} />}
         </>}
+        {view === "devstack" && projectPath && visiblePlaces[0] && (
+          <ProjectDevStack
+            key={`devstack:${visiblePlaces[0].id}`}
+            place={visiblePlaces[0]}
+            onAsk={instructions => {
+              const p = visiblePlaces[0]
+              dialog.current?.close()
+              void Command.reviewProjectSetup(p.id, instructions)
+            }}
+          />
+        )}
         {view === "settings" && <>
         <div className="project-setup-heading">
           <p>{catalogWord("inline", "9efc27432575")}</p>
@@ -256,7 +284,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
         </div>
         {loading && (places.length === 0 ? <LoadingSkeleton id="SK-14" kind="cards" label={catalogWord("inline", "db8653492c3a")} /> : <p className="project-setup-loading" role="status">{catalogWord("inline", "db8653492c3a")}</p>)}
         {!loading && !error && visiblePlaces.length > 0 && <ol className="project-readiness-list">
-          {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} openUnify={openUnify} />)}
+          {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} openUnify={openUnify} openDevStack={openDevStack} />)}
         </ol>}
         {projectPath && visiblePlaces[0] && <ProjectUnify key={`unify:${visiblePlaces[0].id}`} place={visiblePlaces[0]}
           openRequest={unifyRequest.place === visiblePlaces[0].id ? unifyRequest.count : 0} />}

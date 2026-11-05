@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10614,
-  "riskKeys": 4670,
-  "nonRiskCount": 5944,
+  "englishContentKeys": 10631,
+  "riskKeys": 4675,
+  "nonRiskCount": 5956,
   "groups": [
     {
       "name": "acp / other",
@@ -3724,7 +3724,7 @@
     },
     {
       "name": "next / other",
-      "count": 636,
+      "count": 645,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3763,6 +3763,14 @@
         "next.commandNoPlanner",
         "next.compressedReadTooLarge",
         "next.compressedReadUnsupported",
+        "next.devStackConfigTitle",
+        "next.devStackEditButton",
+        "next.devStackLinksTitle",
+        "next.devStackRefresh",
+        "next.devStackSectionDesc",
+        "next.devStackSectionTitle",
+        "next.devStackStatusReady",
+        "next.devStackTab",
         "next.devicesLedeAccount",
         "next.devicesRosterLoading",
         "next.devicesRosterReady",
@@ -4129,6 +4137,7 @@
         "next.setupSkip",
         "next.setupStart",
         "next.setupStayLocal",
+        "next.setupViewServers",
         "next.setupWelcomeEyebrow",
         "next.setupWelcomePhone",
         "next.setupWelcomeReply",
@@ -6875,12 +6884,15 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 12,
+      "count": 15,
       "sources": [
         null
       ],
       "keys": [
         "workflowSettings.explain",
+        "workflowSettings.gemini_step_explanationsOff",
+        "workflowSettings.gemini_step_explanationsScope",
+        "workflowSettings.gemini_step_explanationsTitle",
         "workflowSettings.intro",
         "workflowSettings.introWithITerm",
         "workflowSettings.iterm_integrationTitle",

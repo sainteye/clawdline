@@ -118,3 +118,16 @@ test("the readiness card's unify row opens the scoped Project view and its unify
   assert.match(source, /openUnify\(place\)/)
   assert.match(source, /<ProjectUnify [^>]*openRequest=/)
 })
+
+test("the readiness card's servers row opens the devstack view", () => {
+  const place = { id: "shop", label: "Shop", path: "/work/shop", setup: base }
+  const row = projectSetupCapabilities(place).find(capability => capability.key === "servers")
+  assert.equal(row?.action, "servers")
+
+  const source = readFileSync(new URL("./ProjectSetup.tsx", import.meta.url), "utf8")
+  assert.match(source, /openDevStack\(place\)/)
+  assert.match(source, /<ProjectDevStack\b/)
+})
+
+
+

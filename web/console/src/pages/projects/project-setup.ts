@@ -4,9 +4,9 @@ import type { ProjectSetup, ProjectUnifyStatus } from "@clawdline/contract"
 import type { ProjectPlace, ProjectSetupEvidence } from "../work/api.js"
 
 export type SetupTone = "ready" | "missing" | "attention" | "not-applicable" | "unknown"
-/** `action: "unify"` is a row whose button opens that Project's unify preview. */
+/** `action: "unify" | "servers"` is a row whose button opens that Project's preview/management view. */
 export interface SetupCapability {
-  key: string; label: string; detail: string; tone: SetupTone; complete: boolean; applicable: boolean; action?: "unify"
+  key: string; label: string; detail: string; tone: SetupTone; complete: boolean; applicable: boolean; action?: "unify" | "servers"
 }
 
 /** The places answer's setup with the unify fields the machine adds (api/v1 ProjectSetup). */
@@ -71,7 +71,7 @@ export function projectSetupCapabilities(place: ProjectPlace): SetupCapability[]
   return [
     { key: "icon", label: catalogWord("literal", "aa3249e29a5d"), detail: iconWords[setup.icon], tone: setup.icon === "generated" ? "missing" : "ready", complete: setup.icon !== "generated", applicable: true },
     { key: "deploy", label: catalogWord("literal", "6ae06f64f8fa"), detail: deployDetail, tone: deployTone, complete: setup.deploy === "ready", applicable: setup.deploy !== "not_applicable" },
-    { key: "servers", label: catalogWord("literal", "7d6a2964df09"), detail: serverDetail, tone: setup.servers === "ready" ? "ready" : setup.servers === "attention" ? "attention" : "missing", complete: setup.servers === "ready", applicable: true },
+    { key: "servers", label: catalogWord("literal", "7d6a2964df09"), detail: serverDetail, tone: setup.servers === "ready" ? "ready" : setup.servers === "attention" ? "attention" : "missing", complete: setup.servers === "ready", applicable: true, action: "servers" },
     { key: "sync", label: catalogWord("literal", "f3e136131a7e"), detail: setup.sync === "ready" ? catalogWord("literal", "9391584df834") : catalogWord("literal", "d14c93fd8dbe"), tone: setup.sync, complete: setup.sync === "ready", applicable: true },
     unifyCapability(setup),
   ]
