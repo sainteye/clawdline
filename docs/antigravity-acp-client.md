@@ -47,6 +47,41 @@ model change, auth fallback or prompt replay. Successful setup calls return thei
 raw result for the owner's capability/model codecs. Different model config and
 runtime model identifiers are retained without interpreting them as failure.
 
+## Owned Session inactivity watchdog
+
+The Session host has a separate inactivity watchdog. Its default is 15 minutes,
+not a total prompt deadline. `Options.InactivityTimeout` overrides it; when that
+option is unset, a positive `CLAWDLINE_ACP_INACTIVITY_TIMEOUT` duration overrides
+the default. Active permission offers and native tools in `pending` or
+`in_progress` pause cancellation. Tool completion or failure refreshes activity,
+so silence after the last tool ends is bounded again. A tool that never reports
+a terminal state can keep the turn open; the person can still interrupt it.
+
+The host retains exact active tool IDs independently of transcript eviction and
+uses the same tracker for memory and durable Sessions. It clears that tracker
+when the turn finishes. `MaxActiveToolBytes` bounds the retained IDs at 1 MiB per
+turn; overflow returns the existing typed `view_too_large` refusal instead of
+silently losing tool state. The capacity reading reports the largest live
+tracker. A turn with no open tool or permission is still cancelled after its
+inactivity window, with `antigravity_turn_inactivity_timeout` in the transcript.
+The process client's control/write deadline and cancellation grace remain
+separate from this watchdog.
+
+The reference comparison was read from source on 2026-11-05:
+
+| Project and pinned revision | Prompt inactivity policy | Other deadlines |
+| --- | --- | --- |
+| [T3 Code `67eebaca`](https://github.com/pingdotgg/t3code/blob/67eebaca23f8f7bc46e8817434087fc9c5acf8e3/apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts#L276) | Antigravity uses 15 minutes. [The adapter](https://github.com/pingdotgg/t3code/blob/67eebaca23f8f7bc46e8817434087fc9c5acf8e3/packages/provider-acp/src/server/adapter.ts#L7780) pauses for open agent/runtime requests, pending/running/waiting tools and blocking subagents. It replaces the runtime after an inactive prompt. | Session load: 90 seconds; cancellation: 15 seconds in `AcpSessionRuntime.ts`. |
+| [Orca `a927cccb`](https://github.com/stablyai/orca/blob/a927cccb042e4f0a350eb3f5a127e52c82eb40e2/src/main/acp/acp-peer-limits.ts#L44) | ACP prompt requests have no fixed timeout: `acpStepBound` returns `null` for `session/prompt`, and the peer creates no timer for `null`. | Initialize: 60 seconds; new/load/resume/fork: 300 seconds. Option writes: 30 seconds; stop grace: 4 seconds in `acp-structured-session-adapter-deps.ts`. |
+
+This change adopts T3's longer inactivity window and explicit tool pause. It
+does not claim to reproduce T3's complete subagent/request model or Orca's
+unbounded prompt policy. The comparison is a source inspection, not a runtime
+benchmark of either external product. Local synthetic ACP tests cover a silent
+ten-minute tool, a silent hung turn, streaming, permissions, multiple tools,
+duplicate/partial terminal updates, memory eviction, durable history and tracker
+capacity. No provider prompt or paid API call is needed for those tests.
+
 ## Personal quota checks
 
 Before authentication and session creation, and again immediately before each

@@ -177,6 +177,15 @@ func TestOwnedPeer(t *testing.T) {
 		case "session/set_model":
 			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
+			if os.Getenv("CLW_WATCHDOG_TOOL_PEER") == "yes" {
+				interruptTurns++
+				if interruptTurns == 1 {
+					interruptedPrompt = append(json.RawMessage(nil), req.ID...)
+					notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "tool-one", "title": "First background wait", "status": "pending"})
+					notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "tool-two", "title": "Second background wait", "status": "in_progress"})
+					continue
+				}
+			}
 			if os.Getenv("CLW_INTERRUPT_PEER") == "yes" {
 				interruptTurns++
 				if interruptTurns == 1 {
@@ -255,6 +264,9 @@ func TestOwnedPeer(t *testing.T) {
 			}
 			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
 				notify(map[string]any{"sessionUpdate": "user_message_chunk", "content": map[string]string{"type": "text", "text": req.Params.Prompt[0].Text}})
+			}
+			if os.Getenv("CLW_SILENT_TOOL_PEER") == "yes" {
+				notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "read-1", "title": "Wait for synthetic background work", "kind": "execute", "status": "in_progress"})
 			}
 			for {
 				if _, err := os.Stat(filepath.Join(dir, "release")); err == nil {

@@ -38,11 +38,12 @@ type Options struct {
 	PromptAccepted func(context.Context, session.Session)
 	// InactivityTimeout sets how long a session can remain in StateWorking without receiving
 	// any session/update or permission offer before the watchdog cancels the turn and settles to idle.
-	// Defaults to DefaultInactivityTimeout (90s) if <= 0.
+	// Open tools and permission offers pause the watchdog.
+	// Defaults to DefaultInactivityTimeout (15m) if <= 0.
 	InactivityTimeout time.Duration
 }
 
-const DefaultInactivityTimeout = 90 * time.Second
+const DefaultInactivityTimeout = 15 * time.Minute
 
 type Host struct {
 	mu       sync.Mutex
@@ -73,6 +74,8 @@ type conversation struct {
 	writeGate         chan struct{}
 	lastActivity      atomic.Int64
 	timedOut          atomic.Bool
+	activeTools       map[string]struct{}
+	activeToolBytes   int
 	model             string
 	models            []contract.SessionModel
 	effort            string
@@ -355,6 +358,8 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	inject := c.launchContext.Text != "" && c.injected == nil
 	launch := c.launchContext
 	c.busy = true
+	c.activeTools = nil
+	c.activeToolBytes = 0
 	c.writeGate = make(chan struct{})
 	c.mu.Unlock()
 	h.jobs.Add(1)
@@ -362,6 +367,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	accepted := make(chan struct{})
 	done := make(chan struct{})
 	var outcome error
+	c.timedOut.Store(false)
 	go func() {
 		defer h.jobs.Done()
 		defer close(done)
@@ -369,6 +375,8 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		defer func() {
 			c.mu.Lock()
 			c.busy = false
+			c.activeTools = nil
+			c.activeToolBytes = 0
 			if c.writeGate != nil {
 				close(c.writeGate)
 				c.writeGate = nil
@@ -414,7 +422,6 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		}, func() {
 			stop()
 			c.touchActivity()
-			c.timedOut.Store(false)
 			inactivityTimeout := h.opts.InactivityTimeout
 			if inactivityTimeout <= 0 {
 				inactivityTimeout = DefaultInactivityTimeout
@@ -442,9 +449,10 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 						c.mu.Lock()
 						isWorking := c.row.State == session.StateWorking
 						hasPerm := c.permission != nil && c.permission.Active()
+						hasTool := len(c.activeTools) > 0
 						c.mu.Unlock()
 
-						if hasPerm {
+						if hasPerm || hasTool {
 							c.touchActivity()
 							continue
 						}
@@ -533,7 +541,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		if result.StopReason != "end_turn" && result.StopReason != "cancelled" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
-		if c.timedOut.Load() {
+		if result.StopReason != "end_turn" && c.timedOut.Load() {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
 			_ = c.saveState()
 		}
@@ -870,6 +878,11 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 	c.cleanReplayContext(&u)
 	if u.Ignored {
 		return nil
+	}
+	if c.row.State == session.StateWorking && !c.replaying && u.Tool != nil {
+		if err := c.trackActiveTool(u.Tool, u.Kind == "tool_call"); err != nil {
+			return err
+		}
 	}
 	if c.store != nil {
 		return c.project(u)

@@ -176,6 +176,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.active_tool_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxActiveToolBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.ancestry_rows",
     "Class": "buffer",
     "Unit": "rows",

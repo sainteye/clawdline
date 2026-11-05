@@ -767,6 +767,8 @@
   "capacityRow.antigravity.acp_view_bytes.full": "Older entries remain saved on disk and can be read on earlier pages.",
   "capacityRow.antigravity.history_connections.what": "The shared SQLite connection pool for saved conversation history. An open connection may be idle; occupancy alone does not indicate contention.",
   "capacityRow.antigravity.history_connections.full": "History reads wait for the shared connection within their request deadline; saved entries are kept.",
+  "capacityRow.antigravity.active_tool_bytes.what": "Bounds the exact tool identifiers retained for one active ACP turn, so long tools can pause the inactivity watchdog without unbounded memory.",
+  "capacityRow.antigravity.active_tool_bytes.full": "Additional tool tracking is refused with a typed error. Completed tools and finished turns release their identifiers.",
   "capacityRow.antigravity.acp_call_seconds.what": "Bounds native ACP control requests, pipe writes and update callbacks; model turns and permission decisions have no total deadline.",
   "capacityRow.antigravity.acp_call_seconds.full": "A stalled control operation fails with a typed error. Long model work and human decisions continue until completion or explicit cancellation.",
   "capacityRow.antigravity.hook_connections.full": "A full service refuses the connection with a busy error; existing work retains its deadline.",

@@ -130,6 +130,13 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		"antigravity.acp_frame_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-frame guard; no replay queue"}
 		},
+		"antigravity.active_tool_bytes": func() capacity.Reading {
+			var used int
+			if h := s.antigravitySessions.Load(); h != nil {
+				used = h.ActiveToolBytes()
+			}
+			return capacity.Reading{Known: true, Used: int64(used), Note: "largest live turn's exact active tool IDs"}
+		},
 		"antigravity.acp_call_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "control RPC/write/callback deadline; no model or human deadline"}
 		},

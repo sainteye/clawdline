@@ -2425,7 +2425,7 @@
         },
         {
           "path": "internal/adapters/antigravitysession/host.go",
-          "line": 133
+          "line": 136
         },
         {
           "path": "internal/adapters/antigravitysession/context.go",
@@ -2919,7 +2919,7 @@
     "internal/adapters/antigravityprocess/lifecycle.go": "768ce986d86e580eb8698acd0880c7a4a44129d69a868a2efb469eb4bf911a3e",
     "internal/adapters/antigravitysession/context.go": "42dbfd6dc6a872566bc2c49d72d69eccf72af7bcc9c33c78c2245041003b5914",
     "internal/adapters/antigravitysession/history.go": "31c53373c83afd60f6c68c85ea0e02326eedbc096ab5833b410872d8c2c6d0ab",
-    "internal/adapters/antigravitysession/host.go": "fd6e8efeb39d5c11ccb2a772f42cfb2cc74e4f4a7d619eb3d6f9bb05cd567de7",
+    "internal/adapters/antigravitysession/host.go": "7361e4858e5a60f5f6376b942b914499c0912d1fbb964ea7e7148c84fde78e7a",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/codegraph/bridge.cjs": "156029b9ad59aaa584435de914f6526eb6cf2756b2ad09be178e89f1a741d123",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",

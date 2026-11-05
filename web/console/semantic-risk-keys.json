@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10673,
+  "englishKeys": 10675,
   "counts": {
-    "negation": 2968,
-    "state": 1741,
+    "negation": 2969,
+    "state": 1742,
     "permission": 630,
     "deletion": 235,
     "uncertainty": 402
   },
-  "unionCount": 4693,
+  "unionCount": 4695,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -124,6 +124,7 @@
       "capacityRow.antigravity.acp_frame_bytes.full",
       "capacityRow.antigravity.acp_trace_connections.full",
       "capacityRow.antigravity.acp_trace_records.full",
+      "capacityRow.antigravity.active_tool_bytes.what",
       "capacityRow.antigravity.ancestry_rows.full",
       "capacityRow.antigravity.context_receipts.full",
       "capacityRow.antigravity.first_input_slots.what",
@@ -3037,6 +3038,7 @@
       "capacityRow.antigravity.acp_trace_seconds.full",
       "capacityRow.antigravity.acp_trace_seconds.what",
       "capacityRow.antigravity.acp_view_bytes.full",
+      "capacityRow.antigravity.active_tool_bytes.full",
       "capacityRow.antigravity.context_history.full",
       "capacityRow.antigravity.context_receipts.full",
       "capacityRow.antigravity.first_input_slots.full",
@@ -6202,6 +6204,8 @@
     "capacityRow.antigravity.acp_trace_seconds.full",
     "capacityRow.antigravity.acp_trace_seconds.what",
     "capacityRow.antigravity.acp_view_bytes.full",
+    "capacityRow.antigravity.active_tool_bytes.full",
+    "capacityRow.antigravity.active_tool_bytes.what",
     "capacityRow.antigravity.ancestry_rows.full",
     "capacityRow.antigravity.context_history.full",
     "capacityRow.antigravity.context_receipts.full",
