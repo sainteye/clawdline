@@ -421,6 +421,13 @@ func (s *Store) prepareLaunch(ctx context.Context, id string, req projects.Launc
 		if err != nil {
 			return Prepared{}, fail("request_invalid")
 		}
+		// A blank native-hook launch has no requested context to inject. The
+		// machine's explanation preference is captured explicitly by owned ACP
+		// launches; do not manufacture it here from a nil historical default.
+		if c.Prompt == "" && c.Memory == "" && c.Language == "" && c.WorkflowInstructions == "" {
+			off := false
+			c.ExplainSteps = &off
+		}
 	}
 	document, digest, err := c.Document()
 	if err != nil {
