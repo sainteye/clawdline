@@ -6,7 +6,7 @@ import { waitingForWords, runningShellCount } from "./waiting-for.ts"
 // @ts-expect-error -- a `.ts` path, for node; see order.test.ts.
 import { nextWord } from "../next-strings.ts"
 // @ts-expect-error -- a `.ts` path, for node; see order.test.ts.
-import { withCatalog } from "../catalog-testing.ts"
+import { withCatalog, inCatalog } from "../catalog-testing.ts"
 
 withCatalog("zh-Hant")
 
@@ -48,4 +48,32 @@ test("queued callbacks do not count as running shells; ordinary shells remain co
   assert.equal(runningShellCount({ shells: [queued] }), 0)
   assert.equal(runningShellCount({ shells: [queued, { id: "s", at: 1 }, { ...queued, id: "r", state: "running" }] }), 2)
   assert.equal(runningShellCount({ shells: [{ ...queued, state: "running" }] }), 1)
+})
+
+for (const language of ["en", "zh-Hant"] as const) {
+  test(`a live callback is named explicitly in ${language} even without waiting_for`, () => {
+    inCatalog(language, () => {
+      const shells = [{ id: "callback-ci", kind: "callback", state: "running", at: 1, what: "Wait for CI" }]
+      const said = waitingForWords({ shells }, nextWord)
+      assert.equal(said.text, language === "en" ? "Waiting for callback: Wait for CI" : "等待回呼：Wait for CI")
+      assert.equal(said.title, "Wait for CI")
+      assert.deepEqual(waitingForWords({ shells: [] }, nextWord), { text: "", title: "", covered: false })
+    })
+  })
+}
+
+test("callback sources are deduplicated and terminal callbacks and ordinary shells are excluded", () => {
+  const active = { id: "callback-ci", kind: "callback", state: "running", at: 1, what: "Wait for CI" }
+  const waiting_for = [{ task_id: "ci", kind: "callback", label: "Wait for CI" }]
+  assert.equal(waitingForWords({ waiting_for, shells: [active] }, nextWord).text, "等待回呼：Wait for CI")
+  for (const state of ["success", "failure", "timeout", "cancelled", undefined]) {
+    assert.equal(waitingForWords({ shells: [{ ...active, state }] }, nextWord).text, "")
+  }
+  assert.equal(waitingForWords({ shells: [{ ...active, kind: undefined }] }, nextWord).text, "")
+  assert.equal(waitingForWords({ heavy_work: { task_id: "ci", reason: "build" }, shells: [active] }, nextWord).text, "")
+})
+
+test("a queued callback names its phase without implying that its command has started", () => {
+  const said = waitingForWords({ shells: [{ id: "callback-q", kind: "callback", state: "queued", at: 1, command: "go build ./..." }] }, nextWord)
+  assert.equal(said.text, "等待回呼：go build ./...（排隊中）")
 })

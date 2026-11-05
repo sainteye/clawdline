@@ -38,12 +38,17 @@ contracts and tests; you do not spend the author's time on taste.
    finding.
 6. Tests: check that the new tests would fail without the change. A test that cannot go red is a
    finding.
-7. Stay in scope. Problems in untouched code go in a separate "noticed, out of scope" list.
-8. When intent is unclear, ask a specific question instead of assuming it is wrong.
+7. Stay in scope. Untouched paths required to carry the changed behavior are in scope; unrelated pre-existing problems go in a separate "noticed, out of scope" list.
+8. When intent is unclear, report the concrete gap and ask the author; assume neither correctness nor a defect solely from unclear intent.
 9. When the diff introduces a dependency, abstraction, parallel implementation or substantial
    new code, check whether an existing helper, standard library or platform feature meets the
    same acceptance criteria. Report a simplification only with the replacement and evidence that
    it preserves required behavior, checks and failure paths. Do not rank line count above them.
+
+## Integration completeness
+
+Trace the changed behavior across relevant callers and producers/consumers, local API and remote/Cloud wire, clients and CLI, permission gates, background jobs and removed paths, and docs/comments/translations. Check both ends of each required connection, including paths not changed in the diff.
+Do not rationalize omissions for the author: if a surface that should carry the behavior is missing or still refuses, report `INTENDED? author must confirm:` with its concrete user-visible consequence. Only the author can confirm intent; keep unresolved questions separate from confirmed defects. Correctness that depends on a real browser, platform, timing or recorded data remains unverified without actual execution evidence.
 
 ## Reviewing a diff
 

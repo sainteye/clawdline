@@ -170,9 +170,11 @@ function rows(): Row[] {
   if (readingScenario === "expired") return []
   if (readingScenario === "callback-owner") return [
     row(SAFE, "示範：Go 測試", safeCloseability(), Date.now() / 1000,
-      { shells: callbackDone ? [] : [{ id: "callback-heavy", kind: "callback", state: "queued", at: Math.floor(Date.now()/1000)-75, command: "go test ./...", what: "Verify the dev" }], background_reading: "complete", heavy_work: callbackDone ? undefined : { task_id: "callback-heavy", reason: callbackReason, started_at: Math.floor(Date.now() / 1000) - 72 } }),
-    row(BLOCKED, "Wait callback running", blockedCloseability(), 200),
-    row(UNKNOWN, "Heavy callback queued", unknownCloseability(), 100),
+      { shells: callbackDone ? [] : [{ id: "callback-heavy", kind: "callback", state: "queued", at: Math.floor(Date.now()/1000)-75, command: "go test ./...", what: "Verify the dev" }], background_reading: "complete", heavy_work: callbackDone ? undefined : { task_id: "heavy", reason: callbackReason, started_at: Math.floor(Date.now() / 1000) - 72 } }),
+    row(BLOCKED, "Wait callback running", blockedCloseability(), 200,
+      { state: "idle", work_state: "unknown", shells: callbackDone ? [] : [{ id: "callback-wait", kind: "callback", state: "running", at: 1, what: "Wait for CI" }] }),
+    row(UNKNOWN, "Heavy callback queued", unknownCloseability(), 100,
+      { state: "idle", work_state: "unknown", waiting_for: callbackDone ? [] : [{ task_id: "queued", kind: "heavy", phase: "queued", label: "Go build" }] }),
   ]
   if (readingScenario === "unstarted-codex") return [
     row(SAFE, SAFE, safeCloseability(), 300,
@@ -772,11 +774,11 @@ function daemon(): Server {
             root: { terminalId: SAFE, sessionId: "conversation-" + SAFE }, child: { terminalId: BLOCKED } }]
         : readingScenario === "callback-owner" && !callbackDone
         ? [
-            { id: "callback-heavy", kind: "callback", callback_intent: "heavy", state: "briefed", created: 1,
+            { id: "heavy", kind: "callback", callback_intent: "heavy", state: "briefed", created: 1,
               title: callbackReason, root: { terminalId: SAFE, sessionId: "conversation-" + SAFE } },
-            { id: "callback-wait", kind: "callback", callback_intent: "wait", state: "briefed", created: 1,
+            { id: "wait", kind: "callback", callback_intent: "wait", state: "briefed", created: 1,
               title: "Wait for CI", root: { terminalId: BLOCKED, sessionId: "conversation-" + BLOCKED } },
-            { id: "callback-queued", kind: "callback", callback_intent: "heavy", state: "briefed", created: 1,
+            { id: "queued", kind: "callback", callback_intent: "heavy", state: "briefed", created: 1,
               title: "Go build", root: { terminalId: UNKNOWN, sessionId: "conversation-" + UNKNOWN } },
           ]
         : readingScenario === "worst"
@@ -3979,4 +3981,39 @@ test("an unreadable close reopens a modal and only an explicit second press forc
     assert.equal(closes[1].force, true)
     assert.equal(closes[1].version, closes[0].version)
     assert.notEqual(closes[1].key, closes[0].key)
+  }))
+
+test("a phone names a pending callback and clears it when its result arrives", () =>
+  inTab(async (tab) => {
+    readingScenario = "callback-owner"
+    callbackDone = false
+    try {
+      await tab.go("/")
+      await tab.until("callback owner appears", (seen) => seen.callbackRows.join() === SAFE)
+      const read = () => tab.run(`(() => {
+        const state = document.querySelector('#rows > li.row[data-id="${BLOCKED}"] .state')
+        return { text: state?.textContent, wait: state?.querySelector('.coordination-wait')?.textContent,
+          idle: !!state?.querySelector('.session-work-copy'),
+          width: document.querySelector('#list-scroll')?.scrollWidth, viewport: window.innerWidth }
+      })()`)
+      const active = await read()
+      assert.ok(active.wait?.includes("⏳"), JSON.stringify(active))
+      assert.ok(active.wait?.includes("等待回呼：Wait for CI"), JSON.stringify(active))
+      assert.equal(active.idle, false, JSON.stringify(active))
+      assert.ok(active.width <= active.viewport, JSON.stringify(active))
+      await tab.shotArea("callback-wait-list-zh-Hant", `#rows > li.row[data-id="${BLOCKED}"]`)
+      callbackDone = true
+      pushSessions()
+      await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const text = document.querySelector('#rows > li.row[data-id="${BLOCKED}"] .state')?.textContent || ''
+          if (!text.includes('等待回呼') && !text.includes('Wait for CI')) return resolve(text)
+          if (Date.now() > deadline) return reject(new Error('callback wait did not clear'))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.equal((await read()).idle, true)
+    } finally { readingScenario = "normal"; callbackDone = false; pushSessions() }
   }))
