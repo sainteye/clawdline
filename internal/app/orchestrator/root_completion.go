@@ -102,32 +102,7 @@ func rootCleanupWithOccupancy(rd reading, a RootAssignment, occupied func(...str
 // assignments. The stored rows never contain this transient conclusion.
 func (b *Broker) ProjectRootCleanup(ctx context.Context, assignments []RootAssignment) {
 	rd := b.read(ctx)
-	var cwds []string
-	var cwdErr error
-	read := false
-	occupied := func(paths ...string) (string, error) {
-		targets := make([]string, 0, len(paths))
-		for _, path := range paths {
-			if path != "" {
-				targets = append(targets, foldPath(path))
-			}
-		}
-		if len(targets) == 0 {
-			return "", nil
-		}
-		if !read {
-			read = true
-			readCWDs := b.ProcessCWDs
-			if readCWDs == nil {
-				readCWDs = lsofCWDs
-			}
-			cwds, cwdErr = readCWDs(ctx)
-		}
-		if cwdErr != nil {
-			return "", cwdErr
-		}
-		return occupiedFromCWDs(cwds, targets...), nil
-	}
+	occupied := b.occupancySnapshot(ctx)
 	for i := range assignments {
 		assignments[i].Cleanup = rootCleanupWithOccupancy(rd, assignments[i], occupied)
 	}

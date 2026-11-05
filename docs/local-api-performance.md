@@ -294,3 +294,85 @@ belong to the integrating feature, not this producer.
 Apple M4 Pro, Go 1.27.1, task-isolated checkout, `go test ./internal/domain/apiperformance -run '^$' -bench . -benchtime=100ms -benchmem`: completion admission 378.7 ns/op, 64 B/op, one allocation; bounded aggregation 30.719 µs/op with zero allocation; worst-case seven-day read 4.767 ms/op and 443,229 B/op; bounded SQLite checkpoint 6.514 ms/op. These are local microbenchmarks, not production overhead or service-level guarantees.
 
 The integrating root also removed only the `MaxQueryBytes` registration source in this disposable checkout: `TestEveryBoundIsRegistered` failed specifically on `internal/domain/apiperformance.MaxQueryBytes`. The source was restored before the green gate. The original uncommitted child was recovered with a hashed 27-file archive after timeout; no running daemon was restarted during recovery.
+
+
+## Inventory latency investigation (2026-11-05)
+
+The owner-local one-hour snapshot identified dispatch and inventory as the main
+finite-latency contributors. A separate live inventory read took 22.462 seconds.
+This is handler wall time, not evidence that the daemon was CPU-bound. Successful
+HTTP status also does not establish that a dispatched assistant accepted its brief
+or that its eventual delivery reached the user.
+
+Inventory used to inspect refs, ancestry and commit counts for every historical
+worktree task, including settled tasks whose checkout had disappeared without a
+known-clean reclamation receipt. Such a task cannot offer disposal regardless of
+those Git answers. Inventory now reads checkout cleanliness first and stops there
+for settled rows whose cleanliness is dirty or unknown. Unresolved and pending
+landings retain all Git checks and advice; clean disposal candidates still verify
+branches, ancestry and owner absence. No inventory receipt, permission, dispatch
+idempotency or deletion check was removed.
+
+A list of disposal candidates also used to read the process table separately for
+each candidate. Inventory now shares one lazy process-directory snapshot within
+one read-only projection, using the same helper as Root cleanup projection. An
+error remains unknown for every row, and the next request reads again. Destructive
+reclamation still takes its own process evidence; this is not a persistent cache
+or authorization to delete anything.
+
+### Attempt ledger and verification
+
+| Change | Before | After | Decision |
+| --- | --- | --- | --- |
+| Skip irrelevant Git reads for settled rows | 32 archived tasks: 161 Git commands | 1 Git command, for repository resolution | Keep |
+| Same synthetic 128-task inventory, three reads | 2905.10 / 2792.76 / 2830.05 ms | 7.55 / 5.96 / 5.95 ms | Keep |
+| Same private 3648-record fixture, three reads | 12757.22 / 11013.62 / 11319.67 ms | 3517.30 / 1865.39 / 1850.08 ms | Keep; normalized public inventory payload identical |
+| Share process-directory read within one request | Three disposal candidates: 3 process reads | 1 read; fresh reads after success, failure and changed occupancy | Keep |
+
+The private fixture was copied into an isolated temporary database; no production
+business rows were modified. Its Git queries used the existing repository, so the
+numbers are local replay measurements with live refs, not a controlled production
+before/after rollout or a service-level guarantee. In particular, the first replay
+above suppresses disposal when owner presence is unknown; process-read coalescing
+is independently covered by the three-candidate test. The synthetic fixture and
+Git command budget are reproducible without private data:
+
+```sh
+go test ./internal/app/orchestrator -run '^TestArchivedInventory' -count=1 -v
+go test ./internal/app/orchestrator -run '^TestInventoryReadsProcessOccupancyOncePerRequest$' -count=1 -v
+```
+
+The Git command budget failed on the original code with 161 commands instead of
+1. The process budget failed before coalescing with 3 reads instead of 1. Tests
+also cover pending landings, legacy unresolved landings, clean-removal receipts,
+preserved changes, recreated dirty checkouts, unavailable Git, failed process
+reads, and fresh process evidence on the next request. Existing landing, reclaim
+and Root cleanup tests remain the correctness checks for the shared boundaries.
+
+The investigation followed `performance-optimization` from
+`addyosmani/agent-skills` at commit
+`8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e`, entry
+`skills/performance-optimization/SKILL.md` (SHA-256
+`82af71540457cf853893685211f64509cd1e781c0de09d0186f16960f2d6eeba`).
+A task-local full clone preserved its shared performance checklist, optimization
+patterns and MIT license. The instruction skill required no runtime dependencies
+or global agent registration; it was read and applied in this Session.
+
+### Interpretation and remaining scope
+
+- P95/P99 in this owner-local schema are histogram upper bounds. Four requests
+  with a 30308.93 ms maximum can legitimately show a 60000 ms percentile bucket.
+  With very few samples these percentiles are dominated by the slowest request;
+  always compare count, observed maximum and mean. This investigation does not
+  change histogram semantics or present the bucket edge as an exact measurement.
+- The route list is sorted by summed latency, not exclusively by single-request
+  slowness. Frequent fast reads may appear alongside genuinely slow handlers.
+- The seven-day reading had a substantial overflow aggregate. This preserves
+  totals but loses route attribution; grouped routes such as `:id/:id` also hide
+  the specific sub-operation. This fix does not expand route capacity or change
+  the privacy allowlist. Attribution improvements need separate evidence.
+- Session-info tail latency, foreground update checks and voice processing have
+  different dependencies. Their history alone does not establish a removable
+  wait, and they are not changed by this inventory optimization.
+- Production latency after installation remains to be measured. A successful
+  local replay does not establish that the running daemon contains this change.
