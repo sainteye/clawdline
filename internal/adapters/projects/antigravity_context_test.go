@@ -107,4 +107,20 @@ func TestAntigravityContextStepExplanationsToggle(t *testing.T) {
 	if strings.Contains(cOff.Instructions(), "explain your progress") || strings.Contains(cOff.Instructions(), "Always converse with the user") {
 		t.Fatalf("off instructions must not include step explanations: %s", cOff.Instructions())
 	}
+
+	cEmptyDefault, err := PrepareAntigravityContext("", "", "", "")
+	if err != nil || !cEmptyDefault.ShouldExplainSteps() {
+		t.Fatalf("empty default should explain steps: %+v %v", cEmptyDefault, err)
+	}
+	if !strings.Contains(cEmptyDefault.Instructions(), "Always converse with the user, describe your plan, and explain your progress step-by-step.") {
+		t.Fatalf("empty default instructions should include fallback step explanations: %s", cEmptyDefault.Instructions())
+	}
+
+	cEmptyOff, err := PrepareAntigravityContextWithExplanations("", "", "", "", &off)
+	if err != nil || cEmptyOff.ShouldExplainSteps() {
+		t.Fatalf("empty off should not explain steps: %+v %v", cEmptyOff, err)
+	}
+	if cEmptyOff.Instructions() != "" {
+		t.Fatalf("empty off instructions must be empty: %q", cEmptyOff.Instructions())
+	}
 }

@@ -8305,7 +8305,7 @@
   "workflowSettings.intro": "這些設定適用於這台機器，預設皆為開啟。點選 ⓘ 可查看開啟與關閉的影響。",
   "workflowSettings.gemini_step_explanationsOff": "Gemini 關閉額外說明，專注於工具執行與程式碼產出，維持原生極簡沉默模式。",
   "workflowSettings.gemini_step_explanationsOn": "Gemini 在執行工具與修改程式碼前會說明規劃，並以你設定的介面語言逐步回報進度與結果。",
-  "workflowSettings.gemini_step_explanationsScope": "適用於這台機器上開啟的所有 Gemini (Antigravity) 對話。開啟時會依目前設定語言注入解說與溝通指引；關閉時則不注入。",
+  "workflowSettings.gemini_step_explanationsScope": "適用於這台機器上開啟的 Gemini (Antigravity ACP) 託管對話。開啟時會依目前設定語言注入解說與溝通指引；關閉時則不注入。",
   "workflowSettings.gemini_step_explanationsTitle": "Gemini 逐步解說進度",
   "workflowSettings.introWithITerm": "這些設定套用到目前選取的機器。iTerm2 整合預設關閉，只有你主動啟用才會開啟。選擇 ⓘ 可查看每個開關的作用。",
   "workflowSettings.itermUpdateRequired": "請更新這台機器的 Clawdline，才能管理 iTerm2 整合；此處目前無法判定其存取狀態。",
