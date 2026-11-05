@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10675,
+  "englishKeys": 10680,
   "counts": {
-    "negation": 2969,
-    "state": 1742,
-    "permission": 630,
+    "negation": 2971,
+    "state": 1744,
+    "permission": 631,
     "deletion": 235,
-    "uncertainty": 402
+    "uncertainty": 403
   },
-  "unionCount": 4695,
+  "unionCount": 4697,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -717,6 +717,8 @@
       "codegraphView.noRelations",
       "codegraphView.noResults",
       "codegraphView.noSource",
+      "codegraphView.selectionFailed",
+      "codegraphView.sessionInstructions",
       "codegraphView.sourceMissing",
       "codegraphView.stale",
       "codegraphView.unverified",
@@ -3590,6 +3592,8 @@
       "codegraphView.buildStopped",
       "codegraphView.buildUnsafeSource",
       "codegraphView.saved",
+      "codegraphView.selectionFailed",
+      "codegraphView.sessionInstructions",
       "composerDraft.storageUnavailable",
       "count.pendingInterventions",
       "dispatchPolicy.saved",
@@ -4840,6 +4844,7 @@
       "capacityRow.work.issue_sync_token_file_bytes.full",
       "capacityRow.work.issue_sync_token_file_bytes.what",
       "codegraphView.disabled",
+      "codegraphView.sessionInstructions",
       "doctor.accountChanged",
       "doctor.gaps",
       "doctor.lead",
@@ -5722,6 +5727,7 @@
       "capacityRow.work.documents_per_item.what",
       "codegraphView.evidence",
       "codegraphView.rendererUnavailable",
+      "codegraphView.sessionInstructions",
       "doctor.gaps",
       "doctor.no_record",
       "doctor.not_found",
@@ -7124,6 +7130,8 @@
     "codegraphView.noSource",
     "codegraphView.rendererUnavailable",
     "codegraphView.saved",
+    "codegraphView.selectionFailed",
+    "codegraphView.sessionInstructions",
     "codegraphView.sourceMissing",
     "codegraphView.stale",
     "codegraphView.unverified",

@@ -1,4 +1,9 @@
 /* This daemon's Session Info additions. The legacy sheet remains byte-for-byte. */
+.info-sheet .codegraph-session-choice { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; color: var(--ink); font-size: 13px; line-height: 1.6; cursor: pointer; }
+.info-sheet .codegraph-session-choice input { flex: none; margin-top: 4px; }
+.info-sheet .codegraph-guidance { font-size: 12px; color: var(--dim); }
+.info-sheet .codegraph-guidance summary { cursor: pointer; }
+.info-sheet .codegraph-guidance pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; }
 .info-sheet .hero .title-smart {
   flex: 0 0 auto;
   display: flex;

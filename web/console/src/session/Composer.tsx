@@ -1,3 +1,5 @@
+import { codegraphGuidanceEnabled, messageWithCodegraphGuidance } from "../codegraph/session-guidance.js"
+import { graphWord } from "../codegraph/codegraph.js"
 import { decodeToolDraft, encodeToolDraft, toolMessage, type ToolAttachment, type ToolDraft } from "../tool-library/model.js"
 import { shortcutAria } from "../shortcuts.js"
 import type { AssistantFactsReading } from "./assistant-facts.js"
@@ -615,14 +617,15 @@ export function Composer({
       setFailure(nextWord("toolLibraryStale"))
       return
     }
-    const said = toolMessage(rawText().trim(), toolAttachment.current, toolIdentity)
+    const input = toolMessage(rawText().trim(), toolAttachment.current, toolIdentity)
     const pictures = Shots.urls().slice()
-    if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, said, protocolOwned)) {
+    if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, input, protocolOwned)) {
       setFailure(catalogWord("antigravity", "slashDraft"))
       return
     }
-    if ((!said && !pictures.length) || (!row && !remote) || !on ||
+    if ((!input && !pictures.length) || (!row && !remote) || !on ||
       (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
+    const said = messageWithCodegraphGuidance(input, graphWord("sessionInstructions"), !remote && codegraphGuidanceEnabled(row))
     promptSuggestion.dismiss()
     if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {

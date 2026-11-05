@@ -133,7 +133,7 @@ func TestTransparencyMatchesReviewedSourcesAndBothLanguages(t *testing.T) {
 		}
 		reviewed := map[string]string{}
 		for key, value := range words {
-			if strings.HasPrefix(key, "transparency.") {
+			if strings.HasPrefix(key, "transparency.") || key == "codegraphView.sessionInstructions" {
 				reviewed[key] = value
 			}
 		}
