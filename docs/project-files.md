@@ -10,6 +10,17 @@ The paired Cloud console carries three distinct words for the inventory read, co
 
 The editor guards its draft when a person closes the modal, changes page, selects another file, or reloads the inventory. On a phone the groups and content stack in one column. Closing the modal returns keyboard focus to the Project gear that opened it.
 
+## Project development services
+
+The Development services tab reads `GET /v1/projects/{place}/devstack` on the
+Project's owning machine. Its reply contains the declared service count, live
+port observations, Project Links, and the read-only `.devstack.json` text. The
+paired Cloud console carries this as `project-devstack`, resolving its Cloud
+Project ID to the machine's current catalog ID. The read works with remote writes
+disabled. It accepts no query fields or browser-supplied filesystem paths, and
+never runs the file's commands. Localhost links still refer to services on the
+owning machine; carrying their status does not proxy those services to the phone.
+
 ## Project file tree
 
 The same Project gear has a Files view beside Settings and instructions. It opens the selected
