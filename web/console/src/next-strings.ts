@@ -563,6 +563,7 @@ const words = {
     sessionWaitingOnSession: "Waiting for another Session",
     sessionWaitingOnNamedSession: "Waiting for Session: {session}",
     sessionWaitingOnWork: "Waiting for: {work}",
+    sessionWaitingOnCallback: "Waiting for callback: {work}",
     sessionWaitHeavyQueued: "{command} (queued)",
     sessionWaitHeavyRunning: "{command} (running)",
     proposalNeedsYourDecision:
@@ -2916,6 +2917,7 @@ const words = {
     sessionWaitingOnSession: "等待其他 Session",
     sessionWaitingOnNamedSession: "等待 Session：{session}",
     sessionWaitingOnWork: "等待：{work}",
+    sessionWaitingOnCallback: "等待回呼：{work}",
     sessionWaitHeavyQueued: "{command}（排隊中）",
     sessionWaitHeavyRunning: "{command}（執行中）",
     sessionStateUnrecognizedDetail: "Clawdline 已讀到畫面，但無法辨認狀態。決定下一步前，請查看下方對話。",

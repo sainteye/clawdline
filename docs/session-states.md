@@ -94,9 +94,14 @@ is the failure this field exists to prevent.
   A working, waiting-for-you or unknown terminal still carries its outstanding work. The same pass collects the work and decides the state: a dispatched child by its Session
   name, a heavy callback by its command and whether it holds the compile slot or is queued,
   anything else by its title. At most eight; `waiting_for_omitted` counts the rest. Every list
-  draws the ⏳ line from this field alone (`session/waiting-for.ts`), never from a task
-  collection of its own. `work_note` stays the session's own words and is never filled with
-  child names.
+  draws the ⏳ line from this field (`session/waiting-for.ts`), with live daemon-owned
+  callback shells as a fallback for older projections, never from a task collection of its own.
+  Callback-only waits say "Waiting for callback" and name the work; queued commands say
+  "queued". Duplicate callback entries and the command already named by 🏗️ are omitted.
+  An idle callback owner shows its wait instead of idle or unreported-turn copy.
+  Completion removes the wait on the next snapshot. Callback wait changes also invalidate
+  the Cloud list presentation without publishing private work names on content-free status
+  channels. `work_note` stays the session's own words and is never filled with child names.
 - `work_since` — when the leading evidence was recorded. Self claims and debts carry clocks;
   live terminal observations honestly do not.
 - `work_moved_by` / `work_person_needed` — who or what will move this, and whether that mover is

@@ -632,3 +632,34 @@ func TestAScanTurnedOffStillPublishesTheStatusSet(t *testing.T) {
 		t.Fatal("a source that failed to answer was counted as the whole set because another was turned off")
 	}
 }
+
+// Callback waits live in the pinned presentation, never in content-free ss/.
+// A changed wait must still tell an already open fleet list to read it again.
+func TestCallbackWaitChangesRefreshOnlyTheListPresentation(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	row := map[string]any{"id": "%19", "state": "idle", "work_state": "waiting_session"}
+	reading := sessionReading{sessions: []map[string]any{row}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	previous := c.payload(t, "ss/mac_a/"+InventorySessionID)
+	for _, wait := range []any{
+		[]any{map[string]any{"task_id": "ci", "kind": "callback", "label": "private CI"}},
+		[]any{map[string]any{"task_id": "deploy", "kind": "callback", "label": "private deploy"}},
+		nil,
+	} {
+		row["waiting_for"] = wait
+		before := len(c.channels())
+		p.publishStatuses(context.Background(), reading, []string{"%19"})
+		next := c.payload(t, "ss/mac_a/"+InventorySessionID)
+		if len(c.channels()) != before+1 || next["presentation_generation"] == previous["presentation_generation"] || next["snapshot_generation"] != previous["snapshot_generation"] {
+			t.Fatalf("changed callback wait did not refresh only the presentation: %v -> %v, channels %v", previous, next, c.channels())
+		}
+		previous = next
+	}
+	for _, channel := range c.channels() {
+		encoded, _ := json.Marshal(c.payload(t, channel))
+		if strings.Contains(string(encoded), "private") || strings.Contains(string(encoded), "waiting_for") {
+			t.Fatalf("status channel leaked callback content: %s", encoded)
+		}
+	}
+}
