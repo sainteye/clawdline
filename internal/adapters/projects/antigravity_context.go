@@ -99,7 +99,7 @@ func RestoreAntigravityContext(document []byte, digest string) (AntigravityConte
 
 // Instructions joins the immutable role, language and shared Project memory.
 func (c AntigravityContext) Instructions() string {
-	if c.Prompt == "" && c.Language == "" && c.Memory == "" {
+	if !c.ShouldExplainSteps() && c.Prompt == "" && c.Language == "" && c.Memory == "" {
 		return ""
 	}
 	var parts []string

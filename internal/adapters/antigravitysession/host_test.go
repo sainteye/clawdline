@@ -212,6 +212,14 @@ func TestOwnedPeer(t *testing.T) {
 				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]string{"stopReason": "end_turn"}})
 				continue
 			}
+			if os.Getenv("CLW_STREAMING_WATCHDOG_PEER") == "yes" {
+				for i := 0; i < 4; i++ {
+					time.Sleep(50 * time.Millisecond)
+					notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "streaming"}})
+				}
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]string{"stopReason": "end_turn"}})
+				continue
+			}
 			if len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage" {
 				f, _ := os.OpenFile(filepath.Join(dir, "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 				f.WriteString("usage\n")
@@ -511,6 +519,9 @@ func TestOwnedQuotaFailureStaysUnknownWithoutProviderDiagnostic(t *testing.T) {
 	}
 }
 func fixture(t *testing.T) (*Host, session.Session, string) {
+	return fixtureWithTimeout(t, 0)
+}
+func fixtureWithTimeout(t *testing.T, timeout time.Duration) (*Host, session.Session, string) {
 	t.Helper()
 	t.Setenv("CLW_SESSION_PEER", "yes")
 	dir := t.TempDir()
@@ -524,7 +535,7 @@ func fixture(t *testing.T) (*Host, session.Session, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := New(context.Background(), Options{Executable: exe, Args: []string{"-test.run=^TestOwnedPeer$"}, AccountDir: dir})
+	h, err := New(context.Background(), Options{Executable: exe, Args: []string{"-test.run=^TestOwnedPeer$"}, AccountDir: dir, InactivityTimeout: timeout})
 	if err != nil {
 		t.Fatal(err)
 	}

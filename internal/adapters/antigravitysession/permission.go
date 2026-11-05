@@ -9,6 +9,7 @@ import (
 )
 
 func (c *conversation) requestPermission(ctx context.Context, p *antigravityprocess.PermissionRequest) error {
+	c.touchActivity()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if ctx.Err() != nil || c.hidden || c.staging || c.row.ConversationID != p.Offer.Fence().SessionID {
@@ -38,6 +39,7 @@ func (h *Host) SelectProtocol(ctx context.Context, s session.Session, digit int,
 	if err != nil {
 		return err
 	}
+	c.touchActivity()
 	c.mu.Lock()
 	p := c.permission
 	if c.hidden || p == nil || !p.Active() || expect == "" || session.MenuFingerprint(*permissionMenu(p)) != expect {
