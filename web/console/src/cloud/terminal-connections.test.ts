@@ -13,6 +13,9 @@ test("a full terminal rail can list and disconnect through authenticated metadat
     _send: (request: Record<string, unknown>) => {
       sent.push(request)
       assert.equal(request.type, "terminal_connections")
+      assert.deepEqual(Object.keys(request).sort(), (request.action === "disconnect"
+        ? ["type", "request_id", "action", "machine", "connection"] : ["type", "request_id", "action"]).sort(),
+        "the closed relay schema accepts identity fields, never a row's display metadata")
       if (request.action === "disconnect") rows = []
       queueMicrotask(() => {
         for (const listener of listeners) {

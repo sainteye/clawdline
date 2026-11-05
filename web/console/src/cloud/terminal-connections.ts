@@ -36,7 +36,7 @@ export function manageTerminalConnections(client: Pick<TerminalCloudClient, "rea
       }
       finish(undefined, { limit: event.limit!, connections: rows })
     })
-    try { client._send({ type: "terminal_connections", request_id, action, ...(target ?? {}) }) }
+    try { client._send({ type: "terminal_connections", request_id, action, ...(target ? { machine: target.machine, connection: target.connection } : {}) }) }
     catch (error) { finish(error instanceof Error ? error : fail("terminal_send_failed")) }
   })
 }
