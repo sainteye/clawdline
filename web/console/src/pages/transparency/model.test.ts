@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
 // @ts-expect-error Node's strip-types test runner needs the source extension.
-import { filterHash, filtersFromHash, matches, toggleFilter } from "./model.ts"
+import { facets, filterHash, filtersFromHash, matches, toggleFilter } from "./model.ts"
 const cards = JSON.parse(readFileSync(new URL("./catalog.json", import.meta.url), "utf8")).cards
 const empty = () => filtersFromHash("")
 const visible = (hash: string) => cards.filter((entry: Parameters<typeof matches>[0]) => matches(entry, filtersFromHash(hash))).map((entry: { id: string }) => entry.id)
@@ -39,4 +39,12 @@ test("native context has its own conditional provider filter", () => {
   const f = filtersFromHash("#agents=antigravity&scenes=memory")
   assert.deepEqual(f.agents, ["antigravity"])
   assert.deepEqual(filtersFromHash(filterHash(f)), f)
+})
+
+test("every inventory classification is selectable and CodeGraph remains visible during work", () => {
+  for (const card of cards) for (const [facet, choices] of Object.entries(facets)) {
+    const values = facet === "scope" ? [card.scope] : card[facet]
+    for (const value of values) assert(choices.includes(value), `${card.id}: unsupported ${facet}=${value}`)
+  }
+  assert(visible("#stages=turn&scenes=machine").includes("machine-codegraph"))
 })
