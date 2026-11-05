@@ -66,7 +66,12 @@ func (s Starter) OwnedContextFromPublished(ctx context.Context, place projects.P
 	if s.Language != nil {
 		language = s.Language(projects.AssistantAntigravity)
 	}
-	bound, err := projects.PrepareAntigravityContext(files.PromptPath, prompt, memory, language)
+	var explainSteps *bool
+	if s.GeminiStepExplanations != nil {
+		on := s.GeminiStepExplanations()
+		explainSteps = &on
+	}
+	bound, err := projects.PrepareAntigravityContextWithExplanations(files.PromptPath, prompt, memory, language, explainSteps)
 	if err != nil {
 		return OwnedContext{}, err
 	}

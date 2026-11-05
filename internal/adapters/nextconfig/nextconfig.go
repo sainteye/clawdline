@@ -79,6 +79,12 @@ func (v Values) SessionAutoDiscovery() bool {
 	return !set || on
 }
 
+// GeminiStepExplanations injects step-by-step and language guidelines for Gemini unless explicitly disabled.
+func (v Values) GeminiStepExplanations() bool {
+	on, set := v.Bool("gemini_step_explanations")
+	return !set || on
+}
+
 // DispatchPermission follows the existing machine preference; absent means full.
 func (v Values) DispatchPermission() string {
 	mode, _ := v.String("orchestrator_permission")
@@ -495,6 +501,7 @@ var Settables = []Settable{
 	// session is busy (docs/updates.md). Off unless set.
 	{Name: "update_auto_apply", Kind: "bool"},
 	{Name: "follow_target", Kind: "bool"},
+	{Name: "gemini_step_explanations", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
 	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"session", "claude", "codex", "antigravity", "auto"},
 		Refusal: "invalid_assistant", Because: "session, claude, codex, antigravity or auto"},

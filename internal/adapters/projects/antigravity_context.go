@@ -17,12 +17,13 @@ var ErrSquadContextUnavailable = errors.New("squad_context_unavailable")
 // Squad snapshot and Project memory, never from hook JSON or browser input.
 // Store this exact document with the launch; resume reloads it, not the catalog.
 type AntigravityContext struct {
-	PromptPath string `json:"prompt_path,omitempty"`
-	PromptHash string `json:"prompt_hash,omitempty"`
-	Prompt     string `json:"prompt,omitempty"`
-	Memory     string `json:"memory,omitempty"`
-	MemoryHash string `json:"memory_hash"`
-	Language   string `json:"language,omitempty"`
+	PromptPath   string `json:"prompt_path,omitempty"`
+	PromptHash   string `json:"prompt_hash,omitempty"`
+	Prompt       string `json:"prompt,omitempty"`
+	Memory       string `json:"memory,omitempty"`
+	MemoryHash   string `json:"memory_hash"`
+	Language     string `json:"language,omitempty"`
+	ExplainSteps *bool  `json:"explain_steps,omitempty"`
 }
 
 func contextHash(text string) string {
@@ -30,11 +31,23 @@ func contextHash(text string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func (c AntigravityContext) ShouldExplainSteps() bool {
+	if c.ExplainSteps == nil {
+		return true
+	}
+	return *c.ExplainSteps
+}
+
 // PrepareAntigravityContext takes only already selected private snapshot bytes.
 // It performs no filesystem reads and never replaces the provider base prompt.
 func PrepareAntigravityContext(promptPath, prompt, memory, language string) (AntigravityContext, error) {
+	return PrepareAntigravityContextWithExplanations(promptPath, prompt, memory, language, nil)
+}
+
+// PrepareAntigravityContextWithExplanations preserves the caller's explicit step explanation switch.
+func PrepareAntigravityContextWithExplanations(promptPath, prompt, memory, language string, explainSteps *bool) (AntigravityContext, error) {
 	c := AntigravityContext{PromptPath: promptPath, Prompt: prompt, Memory: memory, Language: language,
-		MemoryHash: contextHash(memory)}
+		MemoryHash: contextHash(memory), ExplainSteps: explainSteps}
 	if prompt != "" {
 		c.PromptHash = contextHash(prompt)
 	}
@@ -92,6 +105,13 @@ func (c AntigravityContext) Instructions() string {
 	}
 	if c.Language != "" {
 		parts = append(parts, fmt.Sprintf("Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag %q.", c.Language))
+	}
+	if c.ShouldExplainSteps() {
+		if c.Language != "" {
+			parts = append(parts, fmt.Sprintf("Always converse with the user, describe your plan, and explain your progress in the language identified by BCP 47 tag %q. Before executing tools or modifying code, explain what you are about to do. After executing actions, report your progress step-by-step instead of silently editing files.", c.Language))
+		} else {
+			parts = append(parts, "Always converse with the user, describe your plan, and explain your progress step-by-step. Before executing tools or modifying code, explain what you are about to do. After executing actions, report your progress step-by-step instead of silently editing files.")
+		}
 	}
 	if c.Memory != "" {
 		parts = append(parts, c.Memory)

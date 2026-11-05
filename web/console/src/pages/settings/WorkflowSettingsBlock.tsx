@@ -42,7 +42,7 @@ export function WorkflowSettingsBlock({ shown }: { shown: boolean }) {
   return <div className="block settings-workflow" aria-busy={busy}>
     <b>{word("tab")}</b>
     <p className="say">{word("introWithITerm")}</p>
-    {(["dispatch_full_permission", "session_auto_discovery", "iterm_integration"] as const).map(key => {
+    {(["dispatch_full_permission", "session_auto_discovery", "iterm_integration", "gemini_step_explanations"] as const).map(key => {
       const id = "workflow-" + key
       const title = word(key + "Title")
       const expanded = open === key

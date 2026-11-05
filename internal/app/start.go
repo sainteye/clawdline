@@ -52,6 +52,9 @@ type Starter struct {
 	// Language is the launch-time language instruction for assistant, or "" to
 	// leave it as the assistant starts. Nil is "", which only a test wants.
 	Language func(assistant string) string
+	// GeminiStepExplanations determines whether Gemini (Antigravity) step-by-step
+	// explanation prompt is injected. Nil means enabled (true).
+	GeminiStepExplanations func() bool
 	// DefaultModel is the machine setting for a new session of assistant.
 	// It is consulted only when a new launch did not name a model; resumes and
 	// explicit per-session choices keep their own model. Nil is provider default.

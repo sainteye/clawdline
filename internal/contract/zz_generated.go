@@ -7034,8 +7034,9 @@ type SettingsSnapshot struct {
 	Exists bool `json:"exists"`
 
 	// Whether the terminal selects the tab the bar points at.
-	FollowTarget    *bool `json:"follow_target"`
-	GraphifyEnabled *bool `json:"graphify_enabled"`
+	FollowTarget           *bool `json:"follow_target"`
+	GeminiStepExplanations *bool `json:"gemini_step_explanations"`
+	GraphifyEnabled        *bool `json:"graphify_enabled"`
 
 	// The file's `hotkey`, or null when the file does not carry one as a string. Null
 	// means the default, option+space, which the Swift app used to own and no longer
@@ -10191,6 +10192,10 @@ var WorkStateValues = []WorkState{WorkStateReady, WorkStateWorking, WorkStateHol
 type WorkflowSettingsRequest struct {
 	DispatchFullPermission *bool `json:"dispatch_full_permission"`
 
+	// Whether Gemini (Antigravity) explains its plan and progress step-by-step in the
+	// user's language.
+	GeminiStepExplanations *bool `json:"gemini_step_explanations"`
+
 	// Explicit opt-in to iTerm2 access. False by default; older daemons omit this
 	// field.
 	ItermIntegration     *bool `json:"iterm_integration"`
@@ -10199,6 +10204,10 @@ type WorkflowSettingsRequest struct {
 
 type WorkflowSettingsSnapshot struct {
 	DispatchFullPermission bool `json:"dispatch_full_permission"`
+
+	// Whether Gemini (Antigravity) explains its plan and progress step-by-step in the
+	// user's language. True by default.
+	GeminiStepExplanations bool `json:"gemini_step_explanations"`
 
 	// Explicit opt-in to iTerm2 access. False by default; older daemons omit this
 	// field.

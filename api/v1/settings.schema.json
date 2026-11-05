@@ -16,6 +16,7 @@
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "graphify_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
+        "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "exists": {
           "description": "False before anything has been written. Every key then has the shell's default.",
           "type": "boolean"
@@ -608,11 +609,17 @@
         "session_auto_discovery": {
           "type": "boolean",
           "default": true
+        },
+        "gemini_step_explanations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether Gemini (Antigravity) explains its plan and progress step-by-step in the user's language. True by default."
         }
       },
       "required": [
         "dispatch_full_permission",
-        "session_auto_discovery"
+        "session_auto_discovery",
+        "gemini_step_explanations"
       ]
     },
     "WorkflowSettingsRequest": {
@@ -627,6 +634,11 @@
         "session_auto_discovery": {
           "type": "boolean",
           "nullable": true
+        },
+        "gemini_step_explanations": {
+          "type": "boolean",
+          "nullable": true,
+          "description": "Whether Gemini (Antigravity) explains its plan and progress step-by-step in the user's language."
         }
       }
     }

@@ -80,3 +80,31 @@ func TestAntigravityContextRejectsUnsafeOrUnmatchedSources(t *testing.T) {
 		t.Fatal("null observer")
 	}
 }
+
+func TestAntigravityContextStepExplanationsToggle(t *testing.T) {
+	on := true
+	off := false
+	cDefault, err := PrepareAntigravityContext("", "", "memory", "zh-Hant-TW")
+	if err != nil || !cDefault.ShouldExplainSteps() {
+		t.Fatalf("default should explain steps: %+v %v", cDefault, err)
+	}
+	if !strings.Contains(cDefault.Instructions(), "Always converse with the user, describe your plan, and explain your progress") {
+		t.Fatalf("default instructions should include step explanations: %s", cDefault.Instructions())
+	}
+
+	cOn, err := PrepareAntigravityContextWithExplanations("", "", "memory", "zh-Hant-TW", &on)
+	if err != nil || !cOn.ShouldExplainSteps() {
+		t.Fatalf("on should explain steps: %+v %v", cOn, err)
+	}
+	if !strings.Contains(cOn.Instructions(), "Always converse with the user, describe your plan, and explain your progress") {
+		t.Fatalf("on instructions should include step explanations: %s", cOn.Instructions())
+	}
+
+	cOff, err := PrepareAntigravityContextWithExplanations("", "", "memory", "zh-Hant-TW", &off)
+	if err != nil || cOff.ShouldExplainSteps() {
+		t.Fatalf("off should not explain steps: %+v %v", cOff, err)
+	}
+	if strings.Contains(cOff.Instructions(), "explain your progress") || strings.Contains(cOff.Instructions(), "Always converse with the user") {
+		t.Fatalf("off instructions must not include step explanations: %s", cOff.Instructions())
+	}
+}

@@ -294,6 +294,13 @@ func (s *Server) starter(reading startReading) app.Starter {
 			}
 			return s.broker.SessionLanguage(assistant)
 		},
+		GeminiStepExplanations: func() bool {
+			values, err := nextconfig.Open(s.cfg.Dir).Read()
+			if err != nil {
+				return true
+			}
+			return values.GeminiStepExplanations()
+		},
 		DefaultReasoningEffort: func(assistant string) string {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {

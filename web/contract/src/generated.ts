@@ -8484,6 +8484,7 @@ export interface SettingsSnapshot {
    * Whether the terminal selects the tab the bar points at.
    */
   follow_target: boolean | null
+  gemini_step_explanations: boolean | null
   graphify_enabled: boolean | null
 
   /**
@@ -12209,6 +12210,12 @@ export interface WorkflowSettingsRequest {
   dispatch_full_permission: boolean | null
 
   /**
+   * Whether Gemini (Antigravity) explains its plan and progress step-by-step in the
+   * user's language.
+   */
+  gemini_step_explanations: boolean | null
+
+  /**
    * Explicit opt-in to iTerm2 access. False by default; older daemons omit this
    * field.
    */
@@ -12218,6 +12225,12 @@ export interface WorkflowSettingsRequest {
 
 export interface WorkflowSettingsSnapshot {
   dispatch_full_permission: boolean
+
+  /**
+   * Whether Gemini (Antigravity) explains its plan and progress step-by-step in the
+   * user's language. True by default.
+   */
+  gemini_step_explanations: boolean
 
   /**
    * Explicit opt-in to iTerm2 access. False by default; older daemons omit this

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/app"
@@ -226,6 +227,12 @@ func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.R
 			return ""
 		}
 		return s.broker.SessionLanguage(assistant)
+	}, GeminiStepExplanations: func() bool {
+		values, err := nextconfig.Open(s.cfg.Dir).Read()
+		if err != nil {
+			return true
+		}
+		return values.GeminiStepExplanations()
 	}}
 	place := projects.Place{Path: cwd, Label: r.Title}
 	prepared, err := starter.OwnedContextFromPublished(ctx, place, r.Persona, launchID, files)

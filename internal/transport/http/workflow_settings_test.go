@@ -33,7 +33,7 @@ func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) 
 		return got
 	}
 	got := call("GET", "")
-	if !got.DispatchFullPermission || !got.SessionAutoDiscovery {
+	if !got.DispatchFullPermission || !got.SessionAutoDiscovery || !got.GeminiStepExplanations {
 		t.Fatalf("defaults: %+v", got)
 	}
 	if got.ItermIntegration == nil || *got.ItermIntegration {
@@ -41,12 +41,23 @@ func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) 
 	}
 	for _, on := range []bool{true, false} {
 		got = call("POST", fmt.Sprintf(`{"iterm_integration":%t}`, on))
-		if got.ItermIntegration == nil || *got.ItermIntegration != on || terminal.ITermIntegration() != on || !got.DispatchFullPermission || !got.SessionAutoDiscovery {
+		if got.ItermIntegration == nil || *got.ItermIntegration != on || terminal.ITermIntegration() != on || !got.DispatchFullPermission || !got.SessionAutoDiscovery || !got.GeminiStepExplanations {
 			t.Fatalf("workflow consent did not take effect independently: %+v", got)
 		}
 		if got = call("GET", ""); got.ItermIntegration == nil || *got.ItermIntegration != on {
 			t.Fatalf("consent not persisted: %+v", got)
 		}
+	}
+	got = call("POST", `{"gemini_step_explanations":false}`)
+	if got.GeminiStepExplanations {
+		t.Fatalf("gemini_step_explanations false failed: %+v", got)
+	}
+	if got = call("GET", ""); got.GeminiStepExplanations {
+		t.Fatalf("gemini_step_explanations false not persisted: %+v", got)
+	}
+	got = call("POST", `{"gemini_step_explanations":true}`)
+	if !got.GeminiStepExplanations {
+		t.Fatalf("gemini_step_explanations true failed: %+v", got)
 	}
 	got = call("POST", `{"dispatch_full_permission":false}`)
 	if got.DispatchFullPermission || !got.SessionAutoDiscovery {
