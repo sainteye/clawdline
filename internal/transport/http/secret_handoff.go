@@ -28,6 +28,7 @@ func (s *Server) secretHandoffNote(ctx context.Context, id string) (bool, bool, 
 // The person-facing response contains only a receipt. In particular the
 // Note, work receipts, audit stream and Cloud response never hold the value.
 func (s *Server) personSubmitSecretHandoff(w http.ResponseWriter, r *http.Request, conversation, id, actor string) {
+	w.Header().Set("Cache-Control", "no-store")
 	note, err := s.store.HumanIntervention(r.Context(), id)
 	if err != nil || note.Kind != "secret" || note.TargetConversation != conversation {
 		writeRefusal(w, http.StatusNotFound, "secret_handoff_unavailable", "This Secret Handoff is no longer available.")
@@ -36,7 +37,7 @@ func (s *Server) personSubmitSecretHandoff(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Value string `json:"value"`
 	}
-	raw, ok := readWorkV2Body(w, r, &body)
+	_, ok := readWorkV2Body(w, r, &body)
 	if !ok {
 		return
 	}
@@ -48,7 +49,12 @@ func (s *Server) personSubmitSecretHandoff(w http.ResponseWriter, r *http.Reques
 		writeRefusal(w, http.StatusRequestEntityTooLarge, "secret_too_large", "This value is too large for Secret Handoff.")
 		return
 	}
-	k, ok := s.beginWorkV2Write(w, r, actor, raw)
+	// A digest of even a short secret is an offline guessing oracle. Bind the
+	// receipt to this operation's method, Note path, actor and key, never to
+	// the value or its length. Retrying that operation acknowledges its first
+	// submission; it cannot compare or replace the secret. The version marker
+	// also makes legacy, body-derived receipts fail closed on retry.
+	k, ok := s.beginWorkV2Write(w, r, actor, []byte("secret-handoff-operation-v2"))
 	if !ok {
 		return
 	}
@@ -78,7 +84,6 @@ func (s *Server) personSubmitSecretHandoff(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
 }
