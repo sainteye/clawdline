@@ -62,6 +62,20 @@ func (b *Broker) spawnOwnedChild(ctx context.Context, r Record, cwd, secret stri
 	if r.ReasoningEffort != "" && !projects.KnownAntigravityEffort(r.ReasoningEffort) {
 		return fail(errors.New("invalid owned child reasoning effort"))
 	}
+	parent := ""
+	if r.Root != nil {
+		parent = r.Root.SessionID
+	}
+	workflow, err := b.prepareWorkflow(ctx, cwd, parent)
+	if err != nil {
+		return fail(err)
+	}
+	workflowBound := false
+	defer func() {
+		if !workflowBound {
+			workflow.Fail(ctx)
+		}
+	}()
 	prepared, err := b.prepareSquadLaunch(ctx, r.Persona, cwd, r.Claims)
 	if err != nil {
 		return fail(err)
@@ -71,7 +85,7 @@ func (b *Broker) spawnOwnedChild(ctx context.Context, r Record, cwd, secret stri
 	}
 	launchCtx, launchCancel := effectContext(ctx)
 	defer launchCancel()
-	owned, openErr := b.OpenOwnedChild(launchCtx, r, cwd, prepared.launch.ID, prepared.files)
+	owned, openErr := b.OpenOwnedChild(launchCtx, r, cwd, prepared.launch.ID, prepared.files, workflow)
 	opened()
 	if owned.Row.ID == "" {
 		if prepared.launch.ID != "" {
@@ -141,6 +155,10 @@ func (b *Broker) spawnOwnedChild(ctx context.Context, r Record, cwd, secret stri
 	if b.Type == nil {
 		return fail(errors.New("owned_child_sender_unavailable"))
 	}
+	if err := workflow.Bind(rec, r.ChildTerminalID, r.ChildConversationID); err != nil {
+		return fail(err)
+	}
+	workflowBound = true
 	if err := b.typeLine(launchCtx, r.ChildTerminalID, FirstLine(r, secret, b.Language)); err != nil {
 		r.SpawnError = err.Error()
 		r.Unbriefed = nothingTyped(err)

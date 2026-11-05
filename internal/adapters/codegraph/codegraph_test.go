@@ -77,6 +77,69 @@ func fixtureRoot(t *testing.T) string {
 	}
 	return root
 }
+
+func TestViewKeepsNodeIdentityAcrossDegreeChanges(t *testing.T) {
+	root := fixtureRoot(t)
+	b := testBuilder(t, nil, fixtureEngine(t))
+	if _, err := b.Start(root, "identity"); err != nil {
+		t.Fatal(err)
+	}
+	if s := awaitBuild(t, b, root); s.State != "succeeded" {
+		t.Fatal(s)
+	}
+	before, err := View(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(root, ".codegraph", "codegraph.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO edges VALUES('rank1','untrusted','two','calls','heuristic'),('rank2','untrusted','two','calls','heuristic')`); err != nil {
+		t.Fatal(err)
+	}
+	after, err := View(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, old := range before.Nodes {
+		for _, current := range after.Nodes {
+			if old.Label == current.Label && old.ID != current.ID {
+				t.Fatalf("%s changed identity %s -> %s after ranking changed", old.Label, old.ID, current.ID)
+			}
+		}
+	}
+}
+
+func TestInventoryCoversPinnedFormatsAndCustomMappings(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"main.pyw", "types.hxx", "mapper.xml", "main.xsjs", "main.cbl", "app.app.src", "app.routes", "custom.own", "custom.sp ace", "ignored.sp", "ignored.bad"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("source"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(root, "conf"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "conf", "routes"), []byte("GET / controllers.Home.index"), 0600)
+	os.WriteFile(filepath.Join(root, "codegraph.json"), []byte(`{"extensions":{" OWN ":"python",".sp ace":"python","bad":"unknown",".d.ts":"typescript","../../escape":"go"}}`), 0600)
+	sources, _, err := scan(t.Context(), root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"main.pyw", "types.hxx", "mapper.xml", "main.xsjs", "main.cbl", "app.app.src", "app.routes", "conf/routes", "custom.own", "custom.sp ace", "codegraph.json"} {
+		if _, ok := sources[name]; !ok {
+			t.Errorf("missing supported input %s", name)
+		}
+	}
+	if _, ok := sources["ignored.sp"]; ok {
+		t.Fatal("extension token admitted an unrelated shorter suffix")
+	}
+	if _, ok := sources["ignored.bad"]; ok {
+		t.Fatal("invalid language mapping admitted")
+	}
+}
 func TestBuildPublishesSeparateNativeStoreAndBoundedInertView(t *testing.T) {
 	root := fixtureRoot(t)
 	b := testBuilder(t, nil, func(ctx context.Context, input, output string, phase func(string)) error {

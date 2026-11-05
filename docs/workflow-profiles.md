@@ -29,3 +29,5 @@ For a controlled comparison, keep the task, starting tree, model, tools, resourc
 See [the earlier skill pilot](workflow-skill-pilot.md) and [CodeGraph's lookup boundaries](codegraph-integration.md).
 
 Historical schema-1 receipts keep their original Graphify field and digest. They do not enable CodeGraph or inherit replacement consent. See the local integration compatibility boundary.
+
+Gemini uses the same explicit machine CodeGraph choice and immutable workflow snapshot. Owned ACP launches bind the native conversation before their first input, retain the launch ID with private saved context for observer recovery, and send the frozen text only with the first real user message. Owned children inherit their root snapshot even after machine settings change. Native terminal launches wrap the existing command for the same receipt; their original context document includes workflow text. Resume never replaces historical context or infers new consent. Native-hook Project consent and provider tool permissions remain separate.

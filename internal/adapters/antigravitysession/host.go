@@ -231,7 +231,7 @@ func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch 
 	}
 	now := time.Now()
 	c.mu.Lock()
-	c.row = session.Session{ID: ownedID, Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
+	c.row = session.Session{ID: ownedID, Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, WorkflowLaunchID: launch.WorkflowLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	if err := c.saveState(); err != nil {
 		c.mu.Unlock()
 		return session.Session{}, err

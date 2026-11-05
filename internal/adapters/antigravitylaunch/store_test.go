@@ -43,7 +43,7 @@ func setup(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	req := projects.LaunchRequest{Assistant: projects.AssistantAntigravity, ProjectRoot: base, SquadPromptPath: prompt, Persona: "backend", Memory: "Synthetic original MEMORY_FIR", Language: "zh-Hant-TW", Executable: filepath.Join(base, "agy"), PermissionMode: "plan"}
+	req := projects.LaunchRequest{Assistant: projects.AssistantAntigravity, ProjectRoot: base, SquadPromptPath: prompt, Persona: "backend", Memory: "Synthetic original MEMORY_FIR", Language: "zh-Hant-TW", Executable: filepath.Join(base, "agy"), PermissionMode: "plan", IntegrationInstructions: "Synthetic frozen WORKFLOW_PINE clawdline codegraph query"}
 	return fixture{config: config, store: s, request: req, prompt: prompt}
 }
 func put(t *testing.T, path string, b []byte) {
@@ -97,6 +97,9 @@ func TestPrepareRoleAndRoleless(t *testing.T) {
 			p := prep(t, f)
 			if !p.Record.Prepared || p.Request.AntigravityContext == nil {
 				t.Fatal("missing durable context")
+			}
+			if !strings.Contains(p.Request.AntigravityContext.Instructions(), "WORKFLOW_PINE") {
+				t.Fatal("native immutable context omitted workflow")
 			}
 			cap, err := os.ReadFile(p.Record.CapabilityPath)
 			if err != nil || !validHash(string(cap)) || len(cap) != 64 || hash(cap) != p.Record.CapabilityDigest {
@@ -514,16 +517,21 @@ func TestLaunchCapabilityAuthenticationDoesNotPinOrChangePreparedState(t *testin
 }
 
 func TestPrepareKeepsExplicitStepExplanationChoice(t *testing.T) {
-	f := setup(t)
-	off := false
-	original, err := projects.PrepareAntigravityContextWithExplanations("", "", "", "", &off)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.request.Persona, f.request.SquadPromptPath, f.request.Memory, f.request.Language = "", "", "", ""
-	f.request.AntigravityContext = &original
-	prepared := prep(t, f)
-	if prepared.Request.AntigravityContext.ShouldExplainSteps() || prepared.Request.AntigravityContext.Instructions() != "" {
-		t.Fatal("launch discarded the explicit off choice")
+	for name, chosen := range map[string]bool{"off": false, "on": true} {
+		t.Run(name, func(t *testing.T) {
+			f := setup(t)
+			original, err := projects.PrepareAntigravityContextWithExplanations("", "", "", "", &chosen)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.request.Persona, f.request.SquadPromptPath, f.request.Memory, f.request.Language = "", "", "", ""
+			f.request.IntegrationInstructions = ""
+			f.request.AntigravityContext = &original
+			prepared := prep(t, f)
+			if prepared.Request.AntigravityContext.ShouldExplainSteps() != chosen ||
+				!chosen && prepared.Request.AntigravityContext.Instructions() != "" {
+				t.Fatal("launch discarded the explicit explanation choice")
+			}
+		})
 	}
 }

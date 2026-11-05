@@ -22,6 +22,7 @@ const extensions = new Set(L.extensions.trim().split(/\s+/));
 let cg, watcher, handler, timer;
 let busy = false;
 let closed = false;
+let ready = false;
 let fault = '';
 let configuration = '';
 let lastIndexed = 0;
@@ -29,9 +30,9 @@ const ownerPath = path.join(root, '.codegraph', 'clawdline.json');
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 const fail = code => {const error = new Error(code); error.code = code; return error;};
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
-function sourceName(name) {
+function sourceName(name, activeExtensions) {
  const base = path.basename(name);
- return ['.gitignore', '.codegraphignore', 'Gemfile', 'Cargo.lock'].includes(base) || extensions.has(path.extname(name).toLowerCase());
+ return ['.gitignore', '.codegraphignore', 'Gemfile', 'Cargo.lock'].includes(base) || name==='conf/routes' || name.endsWith('/conf/routes') || name.endsWith('.routes') || /\.app(?:\.src)?$/i.test(name) || activeExtensions.has(path.extname(name).toLowerCase());
 }
 function safeFile(relative) {
  if (path.isAbsolute(relative) || relative.split(/[\\/]/).includes('..')) throw fail('unsafe_source');
@@ -66,6 +67,20 @@ function boundedContent(absolute) {
  }finally{fs.closeSync(fd)}
 }
 function inventory() {
+ // Re-read custom mappings even for same-mtime configuration changes.
+ clearProjectConfigCache(root);
+ const activeExtensions=new Set(extensions);
+ if(fs.existsSync(path.join(root,'codegraph.json'))){
+  const {absolute}=safeFile('codegraph.json');
+  const content=boundedContent(absolute).toString('utf8');
+  let config;try{config=JSON.parse(content);}catch{}
+  if(config?.extensions && typeof config.extensions==='object' && !Array.isArray(config.extensions)){
+   for(const [key,language] of Object.entries(config.extensions)){
+    const body=key.trim().toLowerCase().replace(/^\./,'');
+    if(body && !/[.\/\\]/.test(body) && (L.languages || []).includes(language))activeExtensions.add('.'+body);
+   }
+  }
+ }
  const sources = {};
  let entries = 0, bytes = 0;
  function walk(dir) {
@@ -74,7 +89,7 @@ function inventory() {
    const name = dir ? dir + '/' + entry.name : entry.name;
    if (entry.isDirectory()) {
     if (!excluded.has(entry.name) && !entry.name.startsWith('.clawdline-codegraph-')) walk(name);
-   } else if (sourceName(name)) {
+   } else if (sourceName(name,activeExtensions)) {
     const {absolute,st} = safeFile(name);
     const data=boundedContent(absolute);
     bytes += data.length;
@@ -204,13 +219,18 @@ async function main() {
  watcher.start();
  await watcher.waitUntilReady();
  timer=setInterval(()=>{if(!busy)reconcile().catch(()=>{});},L.reconcileSeconds*1000);
+ ready=true;
  send({event:'ready'});
+}
+ // Start the sole reader before main's first await, including build mode.
  const lines=readline.createInterface({input:process.stdin});
+ lines.on('close',stop);
  lines.on('line',async line=>{
   let id;
   try {
    if(Buffer.byteLength(line)>L.replyBytes)throw fail('source_limit');
    const request=JSON.parse(line);id=request.id;
+   if(!ready)throw fail('busy');
    if(request.method==='status'){send({id,result:status()});return;}
    if(request.method==='sync'){await reconcile();send({id,result:status()});return;}
    if(request.method!=='query' || typeof request.query!=='string' || Buffer.byteLength(request.query)>L.queryBytes)throw fail('bad_request');
@@ -227,5 +247,4 @@ async function main() {
    send({id,result:{text,generation:after.generation}});
   }catch(e){send({id,error:e.code || 'parser_failed'});}
  });
-}
 main().catch(e=>{console.error(e.stack || String(e));send({event:'failed',error:e.code || 'parser_failed'});process.exit(1);});

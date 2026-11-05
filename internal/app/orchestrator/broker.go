@@ -99,7 +99,7 @@ type Broker struct {
 	// one owned protocol row without sending input; Close stops and joins only
 	// the exact owned/native/CWD binding, idempotently when already stopped.
 	OwnedChildAvailable func(context.Context) bool
-	OpenOwnedChild      func(context.Context, Record, string, string, squadfiles.Files) (OwnedChild, error)
+	OpenOwnedChild      func(context.Context, Record, string, string, squadfiles.Files, workflowlaunch.Prepared) (OwnedChild, error)
 	CloseOwnedChild     func(context.Context, string, string, string) error
 	// TrustClaudeProject records a project folder as one Claude Code may work
 	// in, before a session the person asked for is opened there, so its first

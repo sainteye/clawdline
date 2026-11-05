@@ -421,8 +421,16 @@ func (s *Store) prepareLaunch(ctx context.Context, id string, req projects.Launc
 			explainSteps = req.AntigravityContext.ExplainSteps
 		}
 		c, err = projects.PrepareAntigravityContextWithExplanations(req.SquadPromptPath, string(prompt), req.Memory, req.Language, explainSteps)
+		c.WorkflowInstructions = req.IntegrationInstructions
 		if err != nil {
 			return Prepared{}, fail("request_invalid")
+		}
+		// A blank native-hook launch has no requested context to inject. The
+		// machine's explanation preference is captured explicitly by owned ACP
+		// launches; do not manufacture it here from a nil historical default.
+		if explainSteps == nil && c.Prompt == "" && c.Memory == "" && c.Language == "" && c.WorkflowInstructions == "" {
+			off := false
+			c.ExplainSteps = &off
 		}
 	}
 	document, digest, err := c.Document()

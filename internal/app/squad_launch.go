@@ -11,6 +11,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
 )
 
@@ -77,7 +78,7 @@ func (s Starter) prepareSquadLaunch(ctx context.Context, projectPath, personaID,
 // startAntigravity prepares immutable context before any process is opened.
 // The root supplies executable validation, hook installation and launch
 // commitment; this app layer never reads vendor settings or account files.
-func (s Starter) startAntigravity(ctx context.Context, place projects.Place, request projects.LaunchRequest) (Started, error) {
+func (s Starter) startAntigravity(ctx context.Context, place projects.Place, request projects.LaunchRequest, preparedWorkflow workflowlaunch.Prepared) (Started, error) {
 	if !placeIsDirectory(place.Path) {
 		return Started{}, notFound("No place named that")
 	}
@@ -143,6 +144,7 @@ func (s Starter) startAntigravity(ctx context.Context, place projects.Place, req
 		admitted.Persona != request.Persona || admitted.Model != request.Model ||
 		admitted.ReasoningEffort != request.ReasoningEffort || admitted.Language != request.Language ||
 		admitted.Memory != request.Memory || admitted.SquadPromptPath != request.SquadPromptPath ||
+		admitted.IntegrationInstructions != request.IntegrationInstructions ||
 		(request.Resume != "" && (admitted.AntigravityContext == nil || *admitted.AntigravityContext != original))) {
 		err = projects.ErrSquadContextUnavailable
 	}
@@ -158,7 +160,7 @@ func (s Starter) startAntigravity(ctx context.Context, place projects.Place, req
 	if prepared.launch.ID != "" {
 		env = append(env, prepared.files.PrivateEnv())
 	}
-	command := launch.ShellCommandWithEnv(env)
+	command := preparedWorkflow.Wrap(launch.ShellCommandWithEnv(env))
 	var result Started
 	if prepared.launch.ID != "" {
 		result, err = s.openSquadTerminal(ctx, place, request.Model, plan, prepared, command)

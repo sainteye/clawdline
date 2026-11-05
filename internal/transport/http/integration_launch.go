@@ -9,7 +9,7 @@ import (
 	"github.com/sainteye/clawdline/skills"
 )
 
-// integrationLaunchText is consulted once before a new Claude/Codex execution.
+// integrationLaunchText is consulted once before a new assistant execution.
 // It never edits global assistant configuration or the selected repository.
 func (s *Server) integrationLaunchText(ctx context.Context, root string) (string, error) {
 	if err := ctx.Err(); err != nil {

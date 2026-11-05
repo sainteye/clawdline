@@ -94,6 +94,18 @@ func (p Prepared) Record(ctx context.Context, terminal string) error {
 	}
 	return p.store.RecordWorkflowTerminal(ctx, p.ID, terminal)
 }
+
+// Bind records a daemon-owned provider's exact native conversation before its first input.
+// The same persisted launch ID is retained in its private context for recovery.
+func (p Prepared) Bind(ctx context.Context, terminal, conversation string) error {
+	if p.ID == "" {
+		return nil
+	}
+	if err := p.Record(ctx, terminal); err != nil {
+		return err
+	}
+	return p.store.BindWorkflowConversation(ctx, p.ID, terminal, conversation)
+}
 func (p Prepared) Fail(ctx context.Context) {
 	if p.ID != "" {
 		_ = p.store.FailWorkflowLaunch(ctx, p.ID)

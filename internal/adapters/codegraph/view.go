@@ -2,13 +2,14 @@ package codegraph
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -241,7 +242,9 @@ func View(ctx context.Context, root string) (ViewData, error) {
 			rows.Close()
 			return out, err
 		}
-		mapped := strconv.Itoa(len(out.Nodes))
+		// Rank determines the bounded subset, never a symbol's identity.
+		digest := sha256.Sum256([]byte(id))
+		mapped := hex.EncodeToString(digest[:])
 		ids[id] = mapped
 		nativeIDs = append(nativeIDs, id)
 		location, community := "", ""

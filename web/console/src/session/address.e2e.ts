@@ -3692,6 +3692,26 @@ test("CodeGraph project viewer respects the toggle and renders safe graphs in bo
   }
  })
 
+test("CodeGraph retains the selected symbol after a generation reorders nodes", async () => {
+ const originalNodes=codegraphFixture.nodes,originalGeneration=codegraphFixture.generation
+ integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true};codegraphScenario="matched"
+ try {for(const size of [DESK,PHONE])await inTab(size,async tab=>{
+  const wait=async(expression:string)=>{const end=Date.now()+8000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+  await tab.go('/'+FRAGMENT[TMUX]);await tab.until('ready',s=>s.open===TMUX)
+  await tab.run("document.getElementById('detail-info').click()");await wait("!!document.querySelector('[data-codegraph-open]')")
+  await tab.run("document.querySelector('[data-codegraph-open]').click()");await wait("document.querySelector('.codegraph-stage')?.dataset.rendererState==='ready'")
+  await tab.run("document.querySelector('.codegraph-node-list summary').click();[...document.querySelectorAll('.codegraph-node-list button')].find(b=>b.textContent.includes('Worker')).click()")
+  await wait("document.querySelector('.codegraph-node-detail h3')?.textContent==='Worker'")
+  const reads=codegraphReads
+  codegraphFixture.nodes=[...codegraphFixture.nodes].reverse().map(n=>n.id==='a'?{...n,label:'Entry refreshed '+size.width}:n);codegraphFixture.generation+='-next'
+  const until=Date.now()+8000
+  while(codegraphReads===reads){if(Date.now()>until)assert.fail('no generation poll');await new Promise(r=>setTimeout(r,30))}
+  await wait("document.querySelector('.codegraph-node-list').textContent.includes("+JSON.stringify("Entry refreshed "+size.width)+")")
+  assert.equal(await tab.run("document.querySelector('.codegraph-node-detail h3')?.textContent"),'Worker')
+  assert.ok(await tab.run("document.querySelector('.codegraph-node-detail').textContent.includes('src/worker.ts')"))
+ })}finally{codegraphFixture.nodes=originalNodes;codegraphFixture.generation=originalGeneration}
+})
+
 test("Sigma graph supports real picking, camera controls and phone pinch without rebuilding the index", async () => {
  for(const size of [DESK,PHONE]) {
   integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true};codegraphScenario="matched";codegraphBuilds=0
