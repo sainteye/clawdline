@@ -910,6 +910,15 @@ export class RelayReader {
       if (method !== "GET") {
         return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
+      const devStackProject = projectUnifyRoute(path, "devstack")
+      if (devStackProject) {
+        this.only(url, path)
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(devStackProject)
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path, "project-devstack", { project: place.id })
+      }
       const graphProject = projectUnifyRoute(path, "codegraph")
       if (graphProject) {
         this.only(url, path)
