@@ -133,6 +133,92 @@
       "decode": {"reply": "machine", "route": {"path": "/v1/capacity"}}
     },
     {
+      "op": "codegraph-guidance",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/sessions/{id}/codegraph-guidance",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST"
+      },
+      "special": [
+        "session_receipt"
+      ],
+      "example": {
+        "request": "req-guidance",
+        "session": "%19",
+        "conversation": "conversation-1",
+        "revision": 0,
+        "enabled": true,
+        "again": false,
+        "language": "en"
+      },
+      "shapes": [
+        {
+          "body": [
+            "again",
+            "conversation",
+            "enabled",
+            "language",
+            "request",
+            "revision",
+            "session"
+          ],
+          "path": "/v1/sessions/{session}/codegraph-guidance",
+          "local_body": [
+            "again",
+            "conversation",
+            "enabled",
+            "language",
+            "revision"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "session_action",
+        "fields": {
+          "conversation": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "bool"
+          },
+          "again": {
+            "type": "bool"
+          },
+          "language": {
+            "type": "string"
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/codegraph-guidance",
+          "body": {
+            "fields": {
+              "conversation": {
+                "from": "conversation"
+              },
+              "revision": {
+                "from": "revision"
+              },
+              "enabled": {
+                "from": "enabled"
+              },
+              "again": {
+                "from": "again"
+              },
+              "language": {
+                "from": "language"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "coordination.leases",
       "kind": "read",
       "write_gate": false,
@@ -2072,14 +2158,108 @@
       "console": "carried",
       "console_route": "POST /v1/sessions/{id}/send",
       "console_seam": "writer",
-      "local": {"method": "POST"},
-      "special": ["session_receipt"],
-      "example": {"images": [], "request": "req-send", "session": "%19", "text": "hello"},
-      "shapes": [
-        {"body": ["images", "session", "text"], "path": "/v1/sessions/{session}/send", "local_body": ["images", "text"]},
-        {"body": ["images", "request", "session", "text"], "path": "/v1/sessions/{session}/send", "local_body": ["images", "text"]}
+      "local": {
+        "method": "POST"
+      },
+      "special": [
+        "session_receipt"
       ],
-      "decode": {"reply": "session_action", "fields": {"text": {"type": "string"}, "images": {"type": "list", "items": {"type": "string"}}}, "route": {"path": "/v1/sessions/{session}/send", "body": {"fields": {"text": {"from": "text"}, "images": {"from": "images"}}}}}
+      "example": {
+        "conversation": "conversation-1",
+        "images": [],
+        "request": "req-send",
+        "session": "%19",
+        "text": "hello"
+      },
+      "shapes": [
+        {
+          "body": [
+            "images",
+            "session",
+            "text"
+          ],
+          "path": "/v1/sessions/{session}/send",
+          "local_body": [
+            "images",
+            "text"
+          ]
+        },
+        {
+          "body": [
+            "images",
+            "request",
+            "session",
+            "text"
+          ],
+          "path": "/v1/sessions/{session}/send",
+          "local_body": [
+            "images",
+            "text"
+          ]
+        },
+        {
+          "body": [
+            "conversation",
+            "images",
+            "session",
+            "text"
+          ],
+          "path": "/v1/sessions/{session}/send",
+          "local_body": [
+            "conversation",
+            "images",
+            "text"
+          ]
+        },
+        {
+          "body": [
+            "conversation",
+            "images",
+            "request",
+            "session",
+            "text"
+          ],
+          "path": "/v1/sessions/{session}/send",
+          "local_body": [
+            "conversation",
+            "images",
+            "text"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "session_action",
+        "fields": {
+          "text": {
+            "type": "string"
+          },
+          "images": {
+            "type": "list",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conversation": {
+            "type": "string"
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/send",
+          "body": {
+            "fields": {
+              "text": {
+                "from": "text"
+              },
+              "images": {
+                "from": "images"
+              },
+              "conversation": {
+                "from": "conversation"
+              }
+            }
+          }
+        }
+      }
     },
     {
       "op": "session-codegraph",

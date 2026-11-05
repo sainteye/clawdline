@@ -264,6 +264,15 @@ const usagePickerOptions = [
 ]
 let usagePickerQueries: URLSearchParams[] = []
 const draftSendBodies: Record<string, unknown>[] = []
+const guidanceRecords:Record<string,{conversation:string;enabled:boolean;revision:number;state:string;version:string;source:string;language?:string}>={}
+const guidanceTyped:string[]=[]
+const guidanceText=JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)),"../../../../internal/domain/codegraphguidance/instructions.json"),"utf8"))
+function guidanceFor(id:string) {
+ const row=ROWS.find(row=>row.id===id)
+ const conversation=row?.sessionId??""
+ const launch=(workflowRecords[id] as {codegraph_enabled?:boolean}|undefined)?.codegraph_enabled===true
+ return guidanceRecords[conversation]??{conversation,enabled:launch,revision:0,state:launch?"launch":"off",version:"1",source:"session"}
+}
 
 function daemon(): Server {
   return createServer((req, res) => {
@@ -376,6 +385,15 @@ function daemon(): Server {
       if (codegraphScenario === "failure") return json(res,503,{error:{code:"codegraph_unavailable",message:"Graph unavailable."}})
       return json(res,200,codegraphScenario === "missing" ? {...codegraphFixture,build:codegraphBuild,can_build:codegraphBuild.state!=="running",state:"missing",nodes:[],links:[],total_nodes:0,total_links:0} : {...codegraphFixture,build:codegraphBuild,can_build:false,state:codegraphScenario === "stale" ? "stale" : "source_matched",truncated:codegraphScenario === "large",total_nodes:codegraphScenario === "large" ? 1000 : 3})
     }
+    const guidance=/^\/v1\/sessions\/([^/]+)\/codegraph-guidance$/.exec(path)
+    if(guidance&&req.method==="POST") {
+      void requestJSON(req).then(body=>{
+        const current=guidanceFor(decodeURIComponent(guidance[1]))
+        if(body.conversation!==current.conversation || body.revision!==current.revision)return json(res,409,{error:"codegraph_guidance_changed"})
+        const next={...current,enabled:body.enabled===true,revision:current.revision+1,state:"pending",language:String(body.language)}
+        guidanceRecords[current.conversation]=next;json(res,200,next)
+      });return
+    }
     const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
     if (info && req.method === "GET") {
       const id = decodeURIComponent(info[1])
@@ -385,6 +403,7 @@ function daemon(): Server {
         info: {
           protocol: id === ACP ? acpProtocolState : undefined,
           workflow: workflowRecords[id],
+          codegraph_guidance: guidanceFor(id),
           session: {
             id: session.id,
             title: session.label,
@@ -630,7 +649,11 @@ function daemon(): Server {
     if (req.method === "POST" && /^\/v1\/sessions\/[^/]+\/send$/.test(path)) {
       void requestJSON(req).then(body => {
         draftSendBodies.push(body)
-        json(res, 200, { ok: true })
+        const id=decodeURIComponent(path.split("/")[3]),g=guidanceFor(id)
+        const suffix=g.state==="pending"&&!String(body.text??"").trimStart().startsWith("/") ? guidanceText[g.language??"en"][g.enabled?"enabled":"disabled"] : ""
+        if(suffix)g.state="provided"
+        guidanceTyped.push(String(body.text??"")+(suffix?"\n\n"+suffix:""))
+        json(res, 200, { ok: true,...(suffix?{codegraph_suffix:suffix}:{}) })
       })
       return
     }
@@ -752,8 +775,8 @@ class Tab {
     this.origin = origin
   }
 
-  static async open(b: Browser, origin: string, size: { width: number; height: number; mobile: boolean }): Promise<Tab> {
-    const { targetId } = await b.send("Target.createTarget", { url: "about:blank" })
+  static async open(b: Browser, origin: string, size: { width: number; height: number; mobile: boolean }, context?: string): Promise<Tab> {
+    const { targetId } = await b.send("Target.createTarget", { url: "about:blank",...(context?{browserContextId:context}:{}) })
     const { sessionId } = await b.send("Target.attachToTarget", { targetId, flatten: true })
     await b.send("Page.enable", {}, sessionId)
     await b.send("Runtime.enable", {}, sessionId)
@@ -3577,6 +3600,7 @@ test("a late workflow read cannot relabel the next Session", async () => {
 
 test("SessionInfo selects automatic CodeGraph guidance without changing the editor", async () => {
  for (const size of [DESK,PHONE]) for (const tag of ['en','zh-Hant']) {
+  for(const key of Object.keys(guidanceRecords))delete guidanceRecords[key]
   integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true};codegraphScenario='matched'
   await inTab(size,async tab=>{
    const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
@@ -3588,7 +3612,7 @@ test("SessionInfo selects automatic CodeGraph guidance without changing the edit
    const sends=draftSendBodies.length,builds=codegraphBuilds,reads=codegraphReads
    assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),false)
    await tab.run(`document.querySelector('[data-codegraph-use]').click()`)
-   assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),true)
+   await wait(`document.querySelector('[data-codegraph-use]').checked && !document.querySelector('[data-codegraph-use]').disabled`)
    assert.equal(await tab.run(`document.getElementById('msg').textContent`),'My original message')
    assert.equal(draftSendBodies.length,sends);assert.equal(codegraphBuilds,builds);assert.equal(codegraphReads,reads)
    await tab.run(`document.querySelector('.codegraph-guidance summary').click()`)
@@ -3599,13 +3623,13 @@ test("SessionInfo selects automatic CodeGraph guidance without changing the edit
    await tab.reload();await tab.until('selected Session',s=>s.open===TMUX);await wait(`document.getElementById('msg')?.isContentEditable`)
    assert.equal(await tab.run(`document.getElementById('msg').textContent`),'My original message')
    await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
-   assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),true)
+   await wait(`document.querySelector('[data-codegraph-use]').checked && !document.querySelector('[data-codegraph-use]').disabled`)
    await tab.run(`document.getElementById('info-close').click();document.getElementById('send').click()`)
    const end=Date.now()+7000;while(draftSendBodies.length===sends){if(Date.now()>end)assert.fail('the message was not sent');await new Promise(r=>setTimeout(r,30))}
    const body=draftSendBodies.at(-1)!
-   assert.match(String(body.text),/^My original message\n\n/)
-   assert.match(String(body.text),/clawdline codegraph query/)
-   assert.match(String(body.text),tag==='en'?/untrusted data/:/不可信資料/)
+   assert.equal(body.text,'My original message','the browser sends the original message; the daemon supplies guidance once')
+   assert.match(guidanceTyped.at(-1)!,/clawdline codegraph query/)
+   assert.match(guidanceTyped.at(-1)!,tag==='en'?/untrusted data/:/不可信資料/)
    assert.equal(codegraphBuilds,builds)
    await wait(`document.getElementById('msg').textContent===''`)
    await tab.run(`document.getElementById('composer').requestSubmit()`)
@@ -3617,7 +3641,9 @@ test("SessionInfo selects automatic CodeGraph guidance without changing the edit
    assert.equal(draftSendBodies.at(-1)!.text,'/unknown-command argument','checked guidance must preserve a provider command')
    await wait(`document.getElementById('msg').textContent===''`)
    await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
-   await tab.run(`document.querySelector('[data-codegraph-use]').click();document.getElementById('info-close').click()`)
+   await tab.run(`document.querySelector('[data-codegraph-use]').click()`)
+   await wait(`!document.querySelector('[data-codegraph-use]').checked && !document.querySelector('[data-codegraph-use]').disabled`)
+   await tab.run(`document.getElementById('info-close').click()`)
    await wait(`document.getElementById('msg')?.isContentEditable`)
    await tab.run(`document.getElementById('msg').textContent='Next message';document.getElementById('msg').dispatchEvent(new InputEvent('input',{bubbles:true}))`)
    await wait(`!document.getElementById('send').disabled`);await tab.run(`document.getElementById('send').click()`)
@@ -3628,12 +3654,15 @@ test("SessionInfo selects automatic CodeGraph guidance without changing the edit
 })
 
 test("SessionInfo CodeGraph selection does not carry to another conversation", async () => {
+ for(const key of Object.keys(guidanceRecords))delete guidanceRecords[key]
  integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true}
  await inTab(PHONE,async tab=>{
   const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
   await tab.go('/'+FRAGMENT[TMUX]);await tab.until('selected Session',s=>s.open===TMUX)
   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
-  await tab.run(`document.querySelector('[data-codegraph-use]').click();document.getElementById('info-close').click();document.getElementById('back').click();[...document.querySelectorAll('#rows [role="option"]')].find(row=>row.textContent.includes('Bravo')).click()`)
+  await tab.run(`document.querySelector('[data-codegraph-use]').click()`)
+  await wait(`document.querySelector('[data-codegraph-use]').checked && !document.querySelector('[data-codegraph-use]').disabled`)
+  await tab.run(`document.getElementById('info-close').click();document.getElementById('back').click();[...document.querySelectorAll('#rows [role="option"]')].find(row=>row.textContent.includes('Bravo')).click()`)
   await tab.until('other Session',s=>s.open===TTY)
   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
   assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),false)
@@ -3648,6 +3677,40 @@ test("SessionInfo CodeGraph selection does not carry to another conversation", a
   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
   assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),true)
   await tab.run(`document.querySelector('[data-codegraph-use]').click();document.getElementById('info-close').click()`)
+ })
+})
+
+test("SessionInfo CodeGraph guidance is once across isolated browser storage and can be explicitly provided again",async()=>{
+ for(const key of Object.keys(guidanceRecords))delete guidanceRecords[key]
+ integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true}
+ const wait=async(tab:Tab,expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+ const send=async(tab:Tab,text:string)=>{
+  const before=draftSendBodies.length
+  await tab.run(`document.getElementById('msg').textContent=${JSON.stringify(text)};document.getElementById('msg').dispatchEvent(new InputEvent('input',{bubbles:true}))`)
+  await wait(tab,`!document.getElementById('send').disabled`);await tab.run(`document.getElementById('send').click()`)
+  const end=Date.now()+7000;while(draftSendBodies.length===before){if(Date.now()>end)assert.fail('message not sent');await new Promise(r=>setTimeout(r,30))}
+ }
+ await inTab(DESK,async first=>{
+  await first.go('/'+FRAGMENT[TMUX]);await first.until('selected Session',s=>s.open===TMUX)
+  await first.run(`document.getElementById('detail-info').click()`);await wait(first,`!!document.querySelector('[data-codegraph-use]')`)
+  await first.run(`document.querySelector('[data-codegraph-use]').click()`);await wait(first,`document.querySelector('[data-codegraph-use]').checked && !document.querySelector('[data-codegraph-use]').disabled`)
+  await first.run(`document.getElementById('info-close').click()`);await send(first,'First guided input')
+  assert.match(guidanceTyped.at(-1)!,/clawdline codegraph query/)
+  const {browserContextId}=await browser.send('Target.createBrowserContext')
+  const second=await Tab.open(browser,origin,PHONE,browserContextId)
+  try {
+   await second.go('/'+FRAGMENT[TMUX]);await second.until('selected Session',s=>s.open===TMUX)
+   await second.run(`document.getElementById('detail-info').click()`);await wait(second,`!!document.querySelector('[data-codegraph-use]')`)
+   assert.equal(await second.run(`document.querySelector('[data-codegraph-use]').checked`),true,'a browser with separate storage reads the daemon preference')
+   await wait(second,`!!document.querySelector('[data-codegraph-again]')`)
+   await second.run(`document.getElementById('info-close').click()`);await send(second,'Second ordinary input')
+   assert.equal(guidanceTyped.at(-1),'Second ordinary input','an enabled preference does not repeat the guide')
+   await second.run(`document.getElementById('detail-info').click()`);await wait(second,`!!document.querySelector('[data-codegraph-again]')`)
+   await second.run(`document.querySelector('[data-codegraph-again]').click()`);await wait(second,`!document.querySelector('[data-codegraph-use]').disabled && !document.querySelector('[data-codegraph-again]')`)
+   await second.run(`document.getElementById('info-close').click()`);await send(second,'After clearing provider context')
+   assert.match(guidanceTyped.at(-1)!,/clawdline codegraph query/)
+   await send(second,'Another ordinary input');assert.equal(guidanceTyped.at(-1),'Another ordinary input')
+  } finally {await second.close();await browser.send('Target.disposeBrowserContext',{browserContextId})}
  })
 })
 

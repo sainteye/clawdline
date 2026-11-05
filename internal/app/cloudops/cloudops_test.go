@@ -1328,6 +1328,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 			"request": "req-events", "batch": map[string]any{"rows": []any{}}},
 		session: machine, name: "action:req-events", code: "unknown_command", status: 400,
 	}, {
+		word:    "codegraph-guidance",
+		body:    map[string]any{"type": "codegraph-guidance", "session": pane, "request": "req-guidance", "conversation": "native-one", "revision": 0, "enabled": true, "again": false, "language": "en"},
+		session: pane, name: "action:req-guidance", method: "POST", path: "/v1/sessions/%2519/codegraph-guidance",
+		body2: `{"again":false,"conversation":"native-one","enabled":true,"language":"en","revision":0}`,
+	}, {
 		word:    "direct-local-network-enable",
 		body:    map[string]any{"type": "direct-local-network-enable", "session": machine, "request": "req-local"},
 		session: machine, name: "action:req-local", method: "POST", path: "/v1/cloud/direct/local-network",

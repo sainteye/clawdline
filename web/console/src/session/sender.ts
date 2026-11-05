@@ -66,8 +66,11 @@ const POST_WAIT_MS = 75_000
  * and the body together, and a key reused with other bytes is refused.
  */
 export async function postCard(doFetch: typeof fetch, url: (path: string) => string, card: PendingSend): Promise<Posted> {
-  const body: { text?: string; images?: string[] } = {}
-  if (card.text) body.text = card.text
+  const body: { text?: string; images?: string[]; conversation?:string } = {}
+  const original=card.requestText ?? card.text
+  card.requestText=original
+  if (original) body.text = original
+  if (card.conversation) body.conversation=card.conversation
   if (card.pictures.length) body.images = [...card.pictures]
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), POST_WAIT_MS)
@@ -85,6 +88,13 @@ export async function postCard(doFetch: typeof fetch, url: (path: string) => str
   } finally {
     clearTimeout(timer)
   }
+  try {
+    const parsed=await res.clone().json() as Record<string,unknown>
+    const nested=parsed.error && typeof parsed.error==="object"?parsed.error as Record<string,unknown>:null
+    const suffix=parsed.codegraph_suffix ?? nested?.codegraph_suffix
+    card.text=original
+    if(typeof suffix==="string" && suffix) card.text=original+(original?"\n\n":"")+suffix
+  } catch { /* Missing metadata leaves reconciliation to the exact known suffixes. */ }
   if (res.ok) return { ok: true }
   return { ok: false, ...(await refusalOf(res)) }
 }

@@ -35,7 +35,9 @@ export const DETAIL_FIELDS = Object.freeze({
     transcript_busy: ["retry_after"],
     no_whisper: ["reason"],
     terminal_closed: ["app"],
-    would_lose_work: ["lost"]
+    would_lose_work: ["lost"],
+    send_unsubmitted: ["codegraph_suffix"],
+    send_failed: ["codegraph_suffix"]
 });
 /** Any code that arrived in a relay `publish_error` may carry the field it objected to. */
 const PUBLISH_ERROR_FIELDS = ["field"];

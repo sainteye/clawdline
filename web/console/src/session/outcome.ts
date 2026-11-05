@@ -51,7 +51,7 @@ const NOT_DONE: ReadonlySet<string> = new Set([
   // Session was left open (`app.CloseReleaseFailed`).
   "close_release_failed",
   // The request's receipt, refused before it was carried out.
-  "idempotency_key_reused", "receipts_full", "store_busy", "store_unavailable",
+  "conversation_moved", "codegraph_guidance_changed", "idempotency_key_reused", "receipts_full", "store_busy", "store_unavailable",
 ])
 
 /** One failed write, as the page has it. `status` is null when nothing answered. */

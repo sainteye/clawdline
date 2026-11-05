@@ -28,6 +28,7 @@ export const CARRIED = {
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",
+  "codegraph-guidance": "POST /v1/sessions/{id}/codegraph-guidance",
   "coordination.leases": "GET /v1/orchestrator/leases",
   "coordination.pauses": "GET /v1/orchestrator/pauses",
   "coordination.waits": "GET /v1/orchestrator/waits",

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10705,
-  "riskKeys": 4711,
-  "nonRiskCount": 5994,
+  "englishContentKeys": 10726,
+  "riskKeys": 4724,
+  "nonRiskCount": 6002,
   "groups": [
     {
       "name": "acp / other",
@@ -844,14 +844,13 @@
     },
     {
       "name": "codegraphView / other",
-      "count": 59,
+      "count": 62,
       "sources": [
         "src/codegraph/CodeGraphViewer.tsx"
       ],
       "keys": [
         "codegraphView.aboutGraph",
         "codegraphView.all",
-        "codegraphView.automaticScope",
         "codegraphView.build",
         "codegraphView.buildContinues",
         "codegraphView.buildCounts",
@@ -878,6 +877,7 @@
         "codegraphView.fit",
         "codegraphView.focusNode",
         "codegraphView.gestures",
+        "codegraphView.guidanceOff",
         "codegraphView.hint",
         "codegraphView.indexBuilding",
         "codegraphView.inspector",
@@ -887,7 +887,10 @@
         "codegraphView.nodeList",
         "codegraphView.open",
         "codegraphView.overview",
+        "codegraphView.pendingOff",
+        "codegraphView.pendingOnce",
         "codegraphView.periodic",
+        "codegraphView.provideAgain",
         "codegraphView.readInstructions",
         "codegraphView.refresh",
         "codegraphView.relations",
@@ -2047,7 +2050,7 @@
     },
     {
       "name": "http / other",
-      "count": 581,
+      "count": 587,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -2238,6 +2241,7 @@
         "http.53e1fc99120146d0",
         "http.5499d5b4cc0a0f23",
         "http.550198d828c13bba",
+        "http.5552d7bbb4934052",
         "http.55ab487109c23e72",
         "http.55bc841565b8661c",
         "http.55f88a60075a19c3",
@@ -2258,6 +2262,7 @@
         "http.5f769fecba00ba32",
         "http.5ff8eb152713bf70",
         "http.60c4222f4d4bc358",
+        "http.60ca019c64bcf989",
         "http.60e524298482bcaa",
         "http.61215ccec119bfad",
         "http.6287f45ffc8d0621",
@@ -2271,6 +2276,7 @@
         "http.657cb0415a2de3e1",
         "http.65ce6f37efdf65fc",
         "http.67046123dcbdb9ff",
+        "http.6751661745311bf4",
         "http.675e49967fd51f55",
         "http.67987ab2bfdaddbd",
         "http.6886b682f501ab9a",
@@ -2347,6 +2353,7 @@
         "http.859ca9439f67856c",
         "http.861f5f391bb04651",
         "http.868c80cf8a652f75",
+        "http.86d041a628b4ec75",
         "http.86ec13dfc02c8bdf",
         "http.87481698fc6c4904",
         "http.8768e57310a116fd",
@@ -2454,6 +2461,7 @@
         "http.b1ceb0bb0f74b5cb",
         "http.b3e9295369e80a66",
         "http.b3fa6fd90e94068a",
+        "http.b40407cacaac134f",
         "http.b503622ebdfbbe50",
         "http.b504d5730afb2919",
         "http.b546a536f0b348ad",
@@ -2591,6 +2599,7 @@
         "http.edd26b9627d67212",
         "http.ee304d4a0909385b",
         "http.eea4ebbd429f9780",
+        "http.f0e2fb15cf7348da",
         "http.f13cb7ba59727a54",
         "http.f1d63181531ee026",
         "http.f1da11cbd8001116",
@@ -6174,7 +6183,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 144,
+      "count": 143,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6250,7 +6259,6 @@
         "transparency.card.investigation.condition",
         "transparency.card.investigation.title",
         "transparency.card.machine-codegraph.condition",
-        "transparency.card.machine-codegraph.how",
         "transparency.card.machine-codegraph.title",
         "transparency.card.machine-workflow-skills.condition",
         "transparency.card.machine-workflow-skills.title",

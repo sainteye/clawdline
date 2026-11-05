@@ -21,6 +21,10 @@ package contract
 type ActionResult struct {
 	Action string `json:"action"`
 
+	// The exact guidance suffix added by this send; absent when none was added. Does
+	// not prove model consumption.
+	CodegraphSuffix string `json:"codegraph_suffix,omitempty"`
+
 	// Present on a close that went ahead over open obligations.
 	Forced bool   `json:"forced,omitempty"`
 	ID     string `json:"id"`
@@ -2413,6 +2417,23 @@ type CodeGraphView struct {
 	Truncated         bool                 `json:"truncated"`
 	UnverifiedSources int64                `json:"unverified_sources"`
 	Watching          bool                 `json:"watching"`
+}
+
+type CodegraphGuidance struct {
+	Conversation string `json:"conversation"`
+	Enabled      bool   `json:"enabled"`
+	Revision     int64  `json:"revision"`
+	Source       string `json:"source"`
+	State        string `json:"state"`
+	Version      string `json:"version"`
+}
+
+type CodegraphGuidanceRequest struct {
+	Again        bool   `json:"again"`
+	Conversation string `json:"conversation"`
+	Enabled      bool   `json:"enabled"`
+	Language     string `json:"language"`
+	Revision     int64  `json:"revision"`
 }
 
 // GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the
@@ -5150,7 +5171,8 @@ var RecordedLandingSourceValues = []RecordedLandingSource{RecordedLandingSourceT
 // Every refusal on this daemon has this shape. A caller reads `error` as the
 // code and never parses `detail`.
 type Refusal struct {
-	Detail string `json:"detail"`
+	CodegraphSuffix string `json:"codegraph_suffix,omitempty"`
+	Detail          string `json:"detail"`
 
 	// Optional stable catalog key for this exact fixed English detail. Dynamic details
 	// have no key.
@@ -5848,8 +5870,11 @@ type ScreenEvent struct {
 // cannot be decoded are left out, and a send none of whose pictures can be is
 // refused.
 type SendRequest struct {
-	Images []string `json:"images,omitempty"`
-	Text   string   `json:"text,omitempty"`
+	// Optional expected native conversation. Refused before typing if the terminal has
+	// been reused.
+	Conversation string   `json:"conversation,omitempty"`
+	Images       []string `json:"images,omitempty"`
+	Text         string   `json:"text,omitempty"`
 }
 
 // Whether a Session that reported its turn (`disposition.scope` `session`) has
@@ -6015,7 +6040,8 @@ type SessionHeavyWork struct {
 // reading, the plan windows and the project's addresses; the working tree,
 // permission and fast mode are not read here and their keys are absent.
 type SessionInfo struct {
-	Context *SessionInfoContext `json:"context,omitempty"`
+	CodegraphGuidance *CodegraphGuidance  `json:"codegraph_guidance,omitempty"`
+	Context           *SessionInfoContext `json:"context,omitempty"`
 
 	// The `links` rows whose kind is `deploy`, `ci` or `run`, unchanged, so a state
 	// means there what it means there. It is the smaller field the Swift app kept for

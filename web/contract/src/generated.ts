@@ -19,6 +19,12 @@ export interface ActionResult {
   action: string
 
   /**
+   * The exact guidance suffix added by this send; absent when none was added. Does
+   * not prove model consumption.
+   */
+  codegraph_suffix?: string
+
+  /**
    * Present on a close that went ahead over open obligations.
    */
   forced?: boolean
@@ -2812,6 +2818,23 @@ export interface CodeGraphView {
   truncated: boolean
   unverified_sources: number
   watching: boolean
+}
+
+export interface CodegraphGuidance {
+  conversation: string
+  enabled: boolean
+  revision: number
+  source: string
+  state: string
+  version: string
+}
+
+export interface CodegraphGuidanceRequest {
+  again: boolean
+  conversation: string
+  enabled: boolean
+  language: string
+  revision: number
 }
 
 /**
@@ -6023,6 +6046,7 @@ export const RecordedLandingSourceValues: readonly RecordedLandingSource[] = ["t
  * and never parses `detail`.
  */
 export interface Refusal {
+  codegraph_suffix?: string
   detail: string
 
   /**
@@ -6889,6 +6913,11 @@ export interface ScreenEvent {
  * refused.
  */
 export interface SendRequest {
+  /**
+   * Optional expected native conversation. Refused before typing if the terminal
+   * has been reused.
+   */
+  conversation?: string
   images?: string[]
   text?: string
 }
@@ -7083,6 +7112,7 @@ export interface SessionHeavyWork {
  * mode are not read here and their keys are absent.
  */
 export interface SessionInfo {
+  codegraph_guidance?: CodegraphGuidance
   context?: SessionInfoContext
 
   /**

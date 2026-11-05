@@ -2775,6 +2775,38 @@
         {
           "path": "web/console/src/codegraph/session-guidance.ts",
           "line": 1
+        },
+        {
+          "path": "internal/domain/codegraphguidance/instructions.json",
+          "line": 1
+        },
+        {
+          "path": "internal/domain/codegraphguidance/guidance.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/store/codegraph_guidance.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/codegraph_guidance.go",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/session/sender.ts",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/session/pending.ts",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/session/persist.ts",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/cloud/relay-writer.ts",
+          "line": 1
         }
       ],
       "original": [
@@ -2960,6 +2992,7 @@
     "internal/adapters/projects/launch.go": "c9594b3473b0020f4a141e9ce4d48d193685c4531af60b8f32c9f21270e18134",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
     "internal/adapters/squadfiles/launch.go": "8f3e51f35df23fc2c34537eab07a58857f81eaac0cf1c3236c6c2d9253ac4e6a",
+    "internal/adapters/store/codegraph_guidance.go": "ca2ad2408f73d9e34d857af6f7bf8607ae197395cdaac5729a04ba030a41ea00",
     "internal/adapters/store/workflow.go": "beff07175a0f854e298c7434185f4c5435e0c4e020cbd9251a9e72116d4f89fb",
     "internal/adapters/taskdir/broker.go": "c69b1984763af3106a7482e71984321f6e75351d4371a2567ea5060b9c879328",
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
@@ -2984,6 +3017,8 @@
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
     "internal/app/work_v2_todos.go": "2cd59124ffeb0adeae7d91e90484dd168930f406d5c7e3d5fc2a672d1e55060d",
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
+    "internal/domain/codegraphguidance/guidance.go": "74bf68bbbef40bf934c4b21a520207905f4c7c04e4998e6f0694ff0ea8e3fb41",
+    "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "daff9b750e5f6f22aa61ff6147564739aa46be4d4ba66d8d143b687d7cc856d4",
@@ -3001,6 +3036,7 @@
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
     "internal/transport/http/codegraph.go": "c2f88e6495724bd5e48254669f62274e72d613e2c4757c32e0fbae909c65954c",
+    "internal/transport/http/codegraph_guidance.go": "3930ce9a7e35315b21e765e93b784c36963c70a30358488ce0352c3b68217464",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/integration_launch.go": "dfdd5804bd4f7731979fdac2919c6c5457fd22493e77fa793ed7dce7097ae632",
     "internal/transport/http/integration_settings.go": "63430d306885ec7756e2357b9df56f6bdd4ea3b6272af932357813f4962a3c8c",
@@ -3023,14 +3059,18 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
-    "web/console/src/codegraph/session-guidance.ts": "0d1d9aa6c636ef8921a50a794f8c24771eeaeea653d7c9660a5cd707c8cadae7",
-    "web/console/src/overlays/info.ts": "08b343e3d565ddef200120958511cb1155d70dd0b7ddbbbcf0cb26f5327ff9af",
-    "web/console/src/session/Composer.tsx": "5d2a01866964660cfda1f0e4b8d71dc8935409eb51d0fe96d9171a1ebb5bd448",
+    "web/console/src/cloud/relay-writer.ts": "e3b02d3150ee6b29f95f504356b3040d6eeeb2b1ef2fb1ebcd308c2b186c9732",
+    "web/console/src/codegraph/session-guidance.ts": "7f27c67d6f27b3854cecfe490ccb166b0812199ba7b47bfbe568f6f4376ace93",
+    "web/console/src/overlays/info.ts": "daca7514157303b9dca9a6e0ce4dd4d4c4d2ea3a790f4317ae918e7340413a15",
+    "web/console/src/session/Composer.tsx": "63306658674a2eb84026d5e6042e5231e4975e6256d2604bdfc293a5a889543e",
     "web/console/src/session/Start.tsx": "b2b576e077cb9de4fa43fe8bd54a0f9295cfa5bdf964a6937440bc3d6f60ab0a",
+    "web/console/src/session/pending.ts": "764578f38ef7e6f697934b77c20b69a5862630544d98827be497b0f839f3d798",
+    "web/console/src/session/persist.ts": "1885793298d4b4d833dd42c312f6f15f88c258f7a65cc4d4d3c0bcc25f65c961",
+    "web/console/src/session/sender.ts": "1ef942cde6ca2726d4a1a0dda4c4f39ac2b33d193af44112d8cace5e7f7b63fe",
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "8132132e841e413eeb2cd1d1ea35bc589d8c034627d935c928956929e4bb4be6",
-    "zh-Hant": "46123541776e301e7f06f2e8114704263206c7d02b46f780ce2b664238d378bd"
+    "en": "763e16a030c0443c8ebac92884b569d9539c683491a22d0f502057a84fbd8eb3",
+    "zh-Hant": "cd141780fd407edac2c438a3dafbce95a848526e573a0e5a2dc599f3344ae12c"
   }
 }

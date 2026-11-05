@@ -252,11 +252,4 @@ instructions from measured application and retain the experiment limits. The
 public website snapshot must follow this reviewed product commit.
 
 
-SessionInfo offers a conversation-scoped browser preference to include CodeGraph
-navigation guidance automatically when an ordinary message is submitted. Review
-of both English and Taiwan Traditional Chinese copy confirms that selecting it
-leaves the editor unchanged and does not send input, enable integration or build
-an index. The submitted text captures the selection for queueing and retries;
-unchecking affects later submissions. Slash commands stay unchanged, and neither
-the launch snapshot nor workflow-use receipts are rewritten. The reviewed copy
-digest includes the localized instruction body as well as the explanations.
+SessionInfo now uses a daemon-owned conversation preference rather than appending guidance to every message. Both language explanations describe one provision with the next ordinary human send, launch-context deduplication, unchanged slash commands, unknown outcomes and explicit re-provision after clearing context. Selecting it leaves the composer unchanged and sends no terminal input. Disabling sends one preference update; it cannot retract context or revoke tool permissions. The shared bilingual instruction document and ledger are included in the reviewed sources. Local HTTP and carried Cloud writes preserve the same conversation and revision checks. Original request bytes remain stable across retries even when the daemon adds a suffix. Neither provision receipts nor frozen workflow snapshots establish model use. The public website snapshot must follow this product commit.

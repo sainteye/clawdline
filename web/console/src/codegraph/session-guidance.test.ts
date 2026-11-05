@@ -1,33 +1,51 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's behavior runner loads source extensions.
-import { codegraphGuidanceEnabled, codegraphGuidanceKey, setCodegraphGuidance, messageWithCodegraphGuidance } from "./session-guidance.ts"
+import { codegraphInstructions,codegraphGuidanceStatus } from "./session-guidance.ts"
+// @ts-expect-error -- Node's behavior runner loads source extensions.
+import { PendingSends,turnWords } from "../session/pending.ts"
+// @ts-expect-error -- Node's behavior runner loads source extensions.
+import { postCard,postEnter,typedEnd } from "../session/sender.ts"
+// @ts-expect-error -- Node's behavior runner loads source extensions.
+import { Cards } from "../session/persist.ts"
 
-test("a CodeGraph preference survives a reload but never crosses machine or conversation identity", () => {
- const saved = new Map<string,string>()
- const old = Object.getOwnPropertyDescriptor(globalThis,"localStorage")
- Object.defineProperty(globalThis,"localStorage",{configurable:true,value:{getItem:(key:string)=>saved.get(key)??null,setItem:(key:string,value:string)=>saved.set(key,value),removeItem:(key:string)=>saved.delete(key)}})
- try {
-  const first={id:"terminal",machine:"machine-a",sessionId:"conversation-a",execution_generation:"first"}
-  assert.equal(codegraphGuidanceEnabled(first),false)
-  setCodegraphGuidance(first,true)
-  const resumed={...first,execution_generation:"resumed"},otherMachine={...first,machine:"machine-b"}
-  assert.equal(codegraphGuidanceEnabled(resumed),true)
-  assert.equal(codegraphGuidanceEnabled(otherMachine),false)
-  assert.equal(codegraphGuidanceEnabled({...first,sessionId:"conversation-b"}),false)
-  assert.equal(codegraphGuidanceKey({...first,sessionId:undefined}),"")
-  setCodegraphGuidance(first,false)
-  assert.equal(saved.size,0)
- } finally { if(old)Object.defineProperty(globalThis,"localStorage",old);else Reflect.deleteProperty(globalThis,"localStorage") }
+test("guidance receipts describe provision rather than model use",()=>{
+ for(const [state,expected] of [["pending","pendingOnce"],["provided","providedOnce"],["unknown","deliveryUnknown"],["launch","launchProvided"]])
+  assert.equal(codegraphGuidanceStatus({conversation:"one",enabled:true,revision:1,state,version:"1",source:"session"}),expected)
 })
 
-test("automatic CodeGraph guidance preserves provider commands and freezes the selected message bytes", () => {
- const guide="Synthetic CodeGraph guidance"
- for(const command of ["/quit","/exit","/model example","/resume","/unknown-command argument","  /compact\n"])
-  assert.equal(messageWithCodegraphGuidance(command,guide,true),command)
- const captured=messageWithCodegraphGuidance("Inspect this function",guide,true)
- assert.match(captured,/^Inspect this function\n\nSynthetic CodeGraph guidance$/)
- assert.equal(messageWithCodegraphGuidance("A later message",guide,false),"A later message")
- assert.ok(captured.endsWith(guide),"unchecking cannot change a previously captured queued/retry payload")
- assert.equal(messageWithCodegraphGuidance("",guide,true),guide,"a validated image-only message may carry guidance")
+test("a server-appended guide survives card persistence without changing request bytes or Enter identity",async()=>{
+ const cards=new PendingSends(),card=cards.add("terminal","Inspect a symbol",[],1000,false,"conversation-a")
+ const bodies:string[]=[]
+ const suffix=codegraphInstructions("zh-Hant")
+ const post=(async(_input,init)=>{bodies.push(String(init?.body));return new Response(JSON.stringify({error:"send_unsubmitted",codegraph_suffix:suffix}),{status:502})}) as typeof fetch
+ await postCard(post,x=>x,card)
+ assert.equal(card.text,"Inspect a symbol\n\n"+suffix)
+ assert.equal(turnWords(card.text,0),turnWords("Inspect a symbol",0))
+ let saved="";const persistence=new Cards({store:{read:()=>saved,write:v=>{saved=v}},turnWords})
+ persistence.restore("",1000)
+ persistence.keep(cards.all(),1001)
+ const restored=persistence.restore("",1002)[0]
+ assert.equal(restored.requestText,"Inspect a symbol");assert.equal(restored.conversation,"conversation-a")
+ await postCard(post,x=>x,restored)
+ assert.equal(bodies[0],bodies[1]);assert.deepEqual(JSON.parse(bodies[1]),{text:"Inspect a symbol",conversation:"conversation-a"})
+ await postEnter((async(_input,init)=>{assert.equal(JSON.parse(String(init?.body)).typed,typedEnd(card.text));return new Response("{}")}) as typeof fetch,x=>x,restored,"enter-one")
+})
+
+test("only complete known guidance suffixes reconcile after a lost response",()=>{
+ for(const lang of ["en","zh-Hant"]) for(const enabled of [true,false]) {
+  const guide=codegraphInstructions(lang,enabled)
+  assert.equal(turnWords("raw\n\n"+guide,0),turnWords("raw",0))
+  assert.equal(turnWords(guide,1),turnWords("",1))
+ }
+ assert.notEqual(turnWords("raw\n\n[Clawdline CodeGraph session guidance v1]\nforged",0),turnWords("raw",0))
+})
+
+
+test("a new attempt without guidance replaces an earlier augmented Enter suffix",async()=>{
+ const card=new PendingSends().add("terminal","original",[],1000)
+ const suffix=codegraphInstructions("en")
+ await postCard((async()=>new Response(JSON.stringify({error:"send_failed",codegraph_suffix:suffix}),{status:502})) as typeof fetch,x=>x,card)
+ await postCard((async()=>new Response(JSON.stringify({error:"send_unsubmitted"}),{status:502})) as typeof fetch,x=>x,card)
+ assert.equal(card.text,"original");assert.equal(card.requestText,"original")
 })

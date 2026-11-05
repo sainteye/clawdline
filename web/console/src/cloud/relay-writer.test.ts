@@ -28,7 +28,7 @@ const FINGERPRINT = "8eca80fffc9359d5f0fca31f3e36b741bd50218b658fc086f05931747bd
 /** The words the Go daemon's descriptor lists (`cloudops.Implemented`), the ones these tests use. */
 // A durable exact-execution action needs the machine to declare its own word as well as
 // `session-receipt` (20f03679); the daemon lists the two naming commands (cloudops ops_local_commands.go).
-const GO_DAEMON = { machine: { commands: ["send", "answer", "key", "end", "archive-session", "interrupt", "focus", "smart-title", "title", "session-receipt"] } }
+const GO_DAEMON = { machine: { commands: ["send", "answer", "key", "end", "archive-session", "interrupt", "focus", "smart-title", "title", "codegraph-guidance", "session-receipt"] } }
 const EXECUTION = "0123456789abcdef0123456789abcdef"
 /** The envelope a failure was sent under: sealed, written, and so possibly run. */
 const REF = { sender: "web_abcdef123456", seq: 12, request: null }
@@ -2962,4 +2962,30 @@ test("tool library carries preparation to the chosen machine without sending the
     assert.equal((await reader.fetch(path,post(changes))).status,400)
     assert.equal(client.calls.length,count)
   }
+})
+
+
+test("CodeGraph preferences and send suffixes cross Cloud with the pinned target and original request",async()=>{
+ const client=new FakeClient(),{reader}=seam(client,{t:1000},true)
+ const body={conversation:"native-one",revision:0,enabled:true,again:false,language:"en"}
+ let res=await reader.fetch("/v1/sessions/s1/codegraph-guidance",post(body,{"Idempotency-Key":"pref-one"}))
+ assert.equal(res.status,200)
+ assert.deepEqual(client.calls[0]?.slice(0,5),["_read",{machine:"mac-a",session:"s1"},"codegraph-guidance",{...body,request:"pref-one",execution_generation:EXECUTION},"action:pref-one"])
+ client.fail._read=failureFromMac({code:"send_unsubmitted",message:"typed but not submitted",layer:"mac_route",seq:12,codegraph_suffix:"Synthetic public guidance",private_extra:"must not cross"},502,REF)
+ res=await reader.fetch("/v1/sessions/s1/send",post({text:"original",conversation:"native-one"},{"Idempotency-Key":"send-one"}))
+ assert.equal(res.status,502)
+ const failure=await json(res)
+ assert.equal(failure.codegraph_suffix,"Synthetic public guidance")
+ assert.equal(failure.private_extra,undefined)
+ assert.deepEqual(client.calls.at(-1)?.[3],{request:"send-one",execution_generation:EXECUTION,text:"original",images:[],conversation:"native-one"})
+})
+
+
+test("an older Cloud daemon still accepts ordinary messages from the new composer",async()=>{
+ const client=new FakeClient()
+ client.descriptors.set("mac-a",{machine:{commands:GO_DAEMON.machine.commands.filter(word=>word!=="codegraph-guidance")}})
+ const {reader}=seam(client,{t:1000},true)
+ const res=await reader.fetch("/v1/sessions/s1/send",post({text:"original",conversation:"native-one"},{"Idempotency-Key":"older-send"}))
+ assert.equal(res.status,200)
+ assert.deepEqual(client.calls.at(-1)?.[3],{request:"older-send",execution_generation:EXECUTION,text:"original",images:[]})
 })

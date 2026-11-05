@@ -20,8 +20,8 @@
  * - **Nothing on the answer names the request**, so a card is settled the way
  *   the Swift app settles one by its words: a user turn with the same words,
  *   written no earlier than a little before the send, that was not already in
- *   the transcript when the send began, one turn per card. `ActionResult` is
- *   `ok` and nothing else.
+ *   the transcript when the send began, one turn per card. A send can name its fixed
+ *   guidance suffix, but it still does not identify a transcript turn.
  *
  * **A card outlives the page.** The words and, more to the point, the card's
  * current `request` are kept in this browser's store and put back by `restore`
@@ -31,9 +31,11 @@
  * card that was still sending is `unknown`, and the transcript, read as it
  * always is, either shows the turn and takes the card with it or does not.
  *
- * Nothing here is imported at run time, so `node --test` loads it as it is;
- * the part that talks to the daemon is `send.ts`.
+ * The only runtime import is the fixed public guidance document. The part
+ * that talks to the daemon is `send.ts`; no provider or index is queried here.
  */
+
+import guidance from "../../../../internal/domain/codegraphguidance/instructions.json" with { type: "json" }
 
 /**
  * Where a card has got to. `failed` is a refusal that proves nothing was typed;
@@ -49,7 +51,10 @@ export type PendingState = "queued" | "sending" | "accepted" | "failed" | "unkno
 export interface PendingSend {
   readonly token: string
   readonly session: string
-  readonly text: string
+  text: string
+  /** Original request bytes, frozen before optional daemon guidance. */
+  requestText?: string
+  conversation?: string
   /** The pictures as `data:` URLs, kept so that sending again sends them too. */
   readonly pictures: readonly string[]
   /**
@@ -161,7 +166,13 @@ export function turnWords(text: string, imageCount: number): string {
     words = words.slice(0, dropsMatch.index ?? 0)
     if (count <= 0) count = 1
   }
-  const flat = words.replace(/\s+/g, " ").trim().replace(/^! /, "!")
+  let flat = words.replace(/\s+/g, " ").trim()
+  for(const language of [guidance.en,guidance["zh-Hant"]]) for(const suffix of [language.enabled,language.disabled]) {
+    const tail=suffix.replace(/\s+/g," ").trim()
+    if(flat===tail)flat=""
+    else if(flat.endsWith(" "+tail))flat=flat.slice(0,-tail.length).trimEnd()
+  }
+  flat=flat.replace(/^! /,"!")
   return flat + (count > 0 ? "\u0001pictures" : "")
 }
 
@@ -209,12 +220,13 @@ export class PendingSends {
   }
 
   /** A card for words that are about to be sent. */
-  add(session: string, text: string, pictures: readonly string[], now: number, queued = false): PendingSend {
+  add(session: string, text: string, pictures: readonly string[], now: number, queued = false, conversation?: string): PendingSend {
     this.count += 1
     const card: PendingSend = {
       token: `p${this.count}-${now}-${pageMark}`,
       session,
       text,
+      ...(conversation ? {conversation}:{}),
       pictures: [...pictures],
       request: newRequestID(),
       state: queued ? "queued" : "sending",

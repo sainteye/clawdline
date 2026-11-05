@@ -21,6 +21,7 @@ import { client } from "../client.js"
 import { outcomeOf } from "./outcome.js"
 import { newRequestID, PendingSends, turnWords, type PendingSend } from "./pending.js"
 import { Cards, type CardStore } from "./persist.js"
+import { SessionFacts } from "../overlays/facts.js"
 import { postCard, postEnter, readTranscript, Sender } from "./sender.js"
 import { captureMachineFetch, retryCloudConnection } from "../cloud/install.js"
 import { readWorkflowSettings, writeWorkflowSettings } from "../pages/settings/api.js"
@@ -98,6 +99,7 @@ const sender = new Sender({
     const target = captureMachineFetch()
     const iterm = byId(card.session)?.backend === "iterm"
     const posted = await postCard(target.fetch, url, card)
+    SessionFacts.drop(card.session)
     if (!posted.ok && iterm) void itermConsent.offer(posted.code, {
       current: target.current,
       read: () => readWorkflowSettings(target.fetch),

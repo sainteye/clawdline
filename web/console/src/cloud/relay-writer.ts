@@ -74,6 +74,7 @@ interface CloudFailureLike {
   app?: unknown
   reason?: unknown
   lost?: unknown
+  codegraph_suffix?: unknown
 }
 
 /** The machine's descriptor as `CloudClient.machineDescriptor` returns it. */
@@ -282,6 +283,7 @@ export type WriteRoute =
   | { op: "focus"; word: Carried<"focus">; session: string }
   | { op: "smart-title"; word: Carried<"smart-title">; session: string }
   | { op: "title"; word: Carried<"title">; session: string }
+  | { op: "codegraph-guidance"; word: Carried<"codegraph-guidance">; session: string }
   | { op: "interrupt"; word: Carried<"interrupt">; session: string }
   // `persona` is "" for none: the route did not end `/as/<persona>`.
   | { op: "start"; word: Carried<"start">; place: string; assistant: string; model: string; persona: string }
@@ -871,6 +873,8 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
         return { op: "smart-title", word: "smart-title", session: a }
       case "title":
         return { op: "title", word: "title", session: a }
+      case "codegraph-guidance":
+        return {op:"codegraph-guidance",word:"codegraph-guidance",session:a}
       case "interrupt":
         return { op: "interrupt", word: "interrupt", session: a }
     }
@@ -942,6 +946,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "native-terminal-screen":
     case "native-terminal-input":
     case "send":
+    case "codegraph-guidance":
     case "answer":
     case "end":
     case "archive":
@@ -1226,7 +1231,7 @@ export class RelayWriter {
         // is made here with the card's.
         const request = headerOf(init, "idempotency-key")
         if (!request.trim()) throw failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400)
-        return current._read!(identity, "send", { request, execution_generation: generation, text, images }, "action:" + request)
+        return current._read!(identity, "send", { request, execution_generation: generation, text, images, ...(declaredCommands(current,identity.machine)?.includes("codegraph-guidance") && typeof body.conversation==="string"?{conversation:body.conversation}:{}) }, "action:" + request)
       }
       case "answer": {
         const body = await bodyOf(init)
@@ -1295,6 +1300,13 @@ export class RelayWriter {
           { request, ...(target ? { execution_generation: target.generation } : {}) },
           "action:" + request,
         )
+      }
+      case "codegraph-guidance": {
+        const body=await bodyOf(init)
+        const request=headerOf(init,"idempotency-key")
+        if(!request)throw failure("idempotency_key_required","This action needs an Idempotency-Key.",400)
+        const target=await this.mutationTarget(client,route.session,route.word)
+        return target.client._read!(target.identity,route.word,{...body,request,execution_generation:target.generation},"action:"+request)
       }
       case "title": {
         const body = await bodyOf(init)
@@ -2468,7 +2480,7 @@ export class RelayWriter {
     }
     // The fields each reader acts on, where the machine sent them: a blocked
     // close's `reasons`, a closed terminal's `app`, a missing Whisper's `reason`.
-    for (const key of ["reasons", "app", "reason", "lost"] as const) {
+    for (const key of ["reasons", "app", "reason", "lost", "codegraph_suffix"] as const) {
       const value = error?.[key] ?? error?.detail?.[key]
       if (value !== undefined) fields[key] = value
     }
@@ -2491,6 +2503,7 @@ function sessionOf(route: WriteRoute): string | null {
   switch (route.op) {
     case "native-terminal-input":
     case "send":
+    case "codegraph-guidance":
     case "answer":
     case "end":
     case "archive":

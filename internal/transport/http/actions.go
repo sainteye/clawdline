@@ -104,6 +104,8 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	switch verb {
+	case "codegraph-guidance":
+		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string { return "bad_request" }, func(w http.ResponseWriter, raw []byte) { s.configureCodegraphGuidance(ctx, w, r, id, raw) })
 	case "native-terminal":
 		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string { return "bad_request" }, func(w http.ResponseWriter, raw []byte) { s.nativeTerminalInput(ctx, w, id, raw) })
 	case "send":
@@ -129,9 +131,22 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 				ctx, more = context.WithTimeout(requestContext, 45*time.Second)
 				defer more()
 			}
-			sent, err := s.actions().SendWithPictures(app.WithRemoteControlUserSubmission(ctx), id, body.Text, body.Images)
+			suffix, finish, err := s.prepareCodegraphSend(ctx, id, body.Conversation, body.Text)
 			if err != nil {
 				writeActionRefusal(w, err)
+				return
+			}
+			typed := body.Text
+			if suffix != "" {
+				if typed != "" {
+					typed += "\n\n"
+				}
+				typed += suffix
+			}
+			sent, err := s.actions().SendWithPictures(app.WithRemoteControlUserSubmission(ctx), id, typed, body.Images)
+			finish(err)
+			if err != nil {
+				writeGuidanceSendRefusal(w, err, suffix)
 				return
 			}
 			// A person wrote to this session: the one reading that says they
@@ -143,7 +158,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			if sent.Backend == session.BackendClaudeRemote {
 				action = "accepted"
 			}
-			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: action})
+			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: action, CodegraphSuffix: suffix})
 		})
 	case "interrupt":
 		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string {
@@ -694,7 +709,7 @@ func actionStatus(code string) int {
 	case "busy":
 		// The Swift app's answer when its terminal queue is full.
 		return http.StatusTooManyRequests
-	case "menu_moved", "menu_unreadable":
+	case "conversation_moved", "menu_moved", "menu_unreadable":
 		// The question answered is not the one on the screen, or the screen
 		// could not be read to say: nothing was typed, and asking again
 		// against a fresh reading is the remedy.

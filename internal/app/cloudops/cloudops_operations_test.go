@@ -2156,3 +2156,12 @@ func TestTranscriptThumbnailCarriesItsVariantAndKeepsTheOriginalRead(t *testing.
 		t.Fatalf("unknown variant was read: %+v", answer)
 	}
 }
+
+func TestCodegraphGuidanceRefusalPreservesOnlyPublicSuffixAcrossCloud(t *testing.T) {
+	r := &router{status: 502, body: `{"error":"send_unsubmitted","detail":"not submitted","codegraph_suffix":"Synthetic public guidance","private_extra":"must not cross"}`}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "send", "session": pane, "request": "guided-send", "text": "hello", "images": []any{}}))
+	failure := errorOf(t, answer)
+	if answer.Status != 502 || failure["codegraph_suffix"] != "Synthetic public guidance" || failure["private_extra"] != nil {
+		t.Fatalf("incorrect Cloud refusal: %#v", failure)
+	}
+}

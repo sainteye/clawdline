@@ -1,4 +1,6 @@
-import { codegraphGuidanceEnabled, codegraphGuidanceKey, setCodegraphGuidance } from "../codegraph/session-guidance.js"
+import { codegraphGuidanceStatus, codegraphInstructions, legacyCodegraphEnabled, legacyCodegraphKey } from "../codegraph/session-guidance.js"
+import { captureMachineFetch } from "../cloud/install.js"
+import { newRequestID } from "../session/pending.js"
 import { readIntegrationSettings } from "../pages/settings/api.js"
 import { CODEGRAPH_SETTING, graphWord, openCodeGraph } from "../codegraph/codegraph.js"
 import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
@@ -94,7 +96,7 @@ function loadCodeGraphSetting(id: string): void {
   codegraphEnabled = false
   const version = ++codegraphSettingRead
   void readIntegrationSettings().then(settings => {
-    if (version === codegraphSettingRead && forId === id && !hidden()) {codegraphEnabled = settings.codegraph_enabled === true; draw()}
+    if (version === codegraphSettingRead && forId === id && !hidden()) {codegraphEnabled = settings.codegraph_enabled === true; draw(); migrateGraphPreference(id)}
   }, () => { if (version === codegraphSettingRead && forId === id) {codegraphEnabled = false; draw()} })
 }
 
@@ -589,11 +591,14 @@ function html(d: Facts): string {
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
   if (codegraphEnabled && s.cwd) {
     const row = forId ? byId(forId) : null
-    const mayChoose = host.writable() && !legacyState.agent && !!codegraphGuidanceKey(row)
+    const g=d.codegraph_guidance
+    const mayChoose = host.writable() && !legacyState.agent && !!g && g.conversation===row?.sessionId && g.state!=="unavailable"
     const choice = mayChoose ? '<label class="codegraph-session-choice"><input type="checkbox" data-codegraph-use' +
-      (codegraphGuidanceEnabled(row) ? ' checked' : '') + '><span>' + esc(graphWord("useInSession")) + '</span></label>' +
-      note(graphWord("automaticScope")) + '<details class="codegraph-guidance"><summary>' + esc(graphWord("readInstructions")) +
-      '</summary><pre>' + esc(graphWord("sessionInstructions")) + '</pre></details>' : ""
+      (g.enabled ? ' checked' : '') + (guidanceBusy?' disabled':'') + '><span>' + esc(graphWord("useInSession")) + '</span></label>' +
+      note(graphWord(codegraphGuidanceStatus(g))) + note(graphWord("automaticScope")) +
+      (g.enabled && g.state!=="pending" ? '<button type="button" class="chip" data-codegraph-again'+(guidanceBusy?' disabled':'')+'>'+esc(graphWord("provideAgain"))+'</button>' : '') +
+      '<details class="codegraph-guidance"><summary>' + esc(graphWord("readInstructions")) +
+      '</summary><pre>' + esc(codegraphInstructions(document.documentElement.lang)) + '</pre></details>' : ""
     out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-codegraph-open>' +
       esc(graphWord("open")) + '</button>' + choice)
   }
@@ -623,6 +628,29 @@ function html(d: Facts): string {
     out += sec(++i, T.webLinks, when, linksHTML(d.links || [], d))
   }
   return out
+}
+
+function migrateGraphPreference(id:string):void {
+ if(codegraphEnabled && data?.codegraph_guidance?.revision===0 && data.codegraph_guidance.state==="off" && legacyCodegraphEnabled(byId(id))) void saveGraphPreference(true,false)
+}
+let guidanceBusy=false
+async function saveGraphPreference(enabled:boolean,again:boolean):Promise<void> {
+ const id=forId,g=data?.codegraph_guidance,row=id?byId(id):null
+ if(!id||!g||g.conversation!==row?.sessionId||guidanceBusy||!host.writable()||legacyState.agent)return
+ const target=captureMachineFetch()
+ guidanceBusy=true;draw()
+ try {
+  const response=await target.fetch(client.url("/v1/sessions/"+encodeURIComponent(id)+"/codegraph-guidance"),{
+   method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":newRequestID()},
+   body:JSON.stringify({conversation:g.conversation,revision:g.revision,enabled,again,language:document.documentElement.lang==="zh-Hant"?"zh-Hant":"en"})})
+  if(!response.ok)throw Error("preference_not_saved")
+  const updated=await response.json()
+  try {localStorage.removeItem(legacyCodegraphKey(row))}catch{/* old browser storage is optional */}
+  if(target.current()&&forId===id&&data?.session.sessionId===g.conversation){
+   data={...data,codegraph_guidance:updated};SessionFacts.receiveFull(id,data);said("")
+  }
+ }catch{if(target.current()&&forId===id){said(graphWord("selectionFailed"));SessionFacts.drop(id)}}
+ finally{guidanceBusy=false;if(forId===id)draw()}
 }
 
 function draw(): void {
@@ -681,6 +709,7 @@ function load(id: string, force: boolean): void {
       loading = false
       SessionFacts.receiveFull(id, facts)
       draw()
+      migrateGraphPreference(id)
     },
     (e) => {
       if (mine !== ticket) return
@@ -1047,13 +1076,10 @@ export function bindInfo(): () => void {
     const graphChoice = t.closest<HTMLInputElement>("input[data-codegraph-use]")
     if (graphChoice) {
       if (forId !== host.openId() || !codegraphEnabled || !host.writable() || legacyState.agent) return
-      try {
-        setCodegraphGuidance(forId ? byId(forId) : null, graphChoice.checked)
-        said("")
-      } catch { said(graphWord("selectionFailed")) }
-      draw()
+      void saveGraphPreference(graphChoice.checked,false)
       return
     }
+    if(t.closest("button[data-codegraph-again]")) {void saveGraphPreference(true,true);return}
     if (t.closest("button[data-codegraph-open]") && codegraphEnabled && forId) {
       const target = { kind: "session" as const, id: forId, label: data?.session.title }
       Info.close(); openCodeGraph(target); return

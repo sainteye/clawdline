@@ -1,5 +1,3 @@
-import { codegraphGuidanceEnabled, messageWithCodegraphGuidance } from "../codegraph/session-guidance.js"
-import { graphWord } from "../codegraph/codegraph.js"
 import { decodeToolDraft, encodeToolDraft, toolMessage, type ToolAttachment, type ToolDraft } from "../tool-library/model.js"
 import { shortcutAria } from "../shortcuts.js"
 import type { AssistantFactsReading } from "./assistant-facts.js"
@@ -625,11 +623,11 @@ export function Composer({
     }
     if ((!input && !pictures.length) || (!row && !remote) || !on ||
       (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
-    const said = messageWithCodegraphGuidance(input, graphWord("sessionInstructions"), !remote && codegraphGuidanceEnabled(row))
+    const said = input
     promptSuggestion.dismiss()
     if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {
-      if (!nextMessages.add(row.id, said, pictures, Date.now())) {
+      if (!nextMessages.add(row.id, said, pictures, Date.now(),typeof row.sessionId==="string"?row.sessionId:undefined)) {
         setFailure(nextWord("sendQueueFull"))
         return
       }
@@ -676,7 +674,7 @@ export function Composer({
       // read them. The card says the first; the turn appearing in the
       // transcript, which takes the card's place, is the second — and is
       // enough on its own to free the box when the first never arrives.
-      const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now()))
+      const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now(),false,typeof row.sessionId==="string"?row.sessionId:undefined))
       if (writeIsOff(code)) setBlocked({ machine, code })
       if (!code) {
         if (/^\/[^\s/]+(?:\s|$)/.test(said) && !pictures.length && (row.assistant === "codex" || row.assistant === "claude"))

@@ -84,6 +84,8 @@ interface Kept {
   t: string
   s: string
   x: string
+  original?: string
+  conversation?: string
   /** The pictures. A card kept without them has `""` in each one's place, which keeps the count right; see `partial`. */
   p: string[]
   r: string
@@ -131,6 +133,8 @@ function keptOf(card: PendingSend, want: string, daemon: string): Kept {
     t: card.token,
     s: card.session,
     x: card.text,
+    ...(card.requestText!==undefined?{original:card.requestText}:{}),
+    ...(card.conversation?{conversation:card.conversation}:{}),
     p: card.partial ? card.pictures.map(() => "") : [...card.pictures],
     r: card.request,
     st: card.state,
@@ -168,6 +172,8 @@ function cardOf(kept: Kept): PendingSend | null {
     token: kept.t,
     session: kept.s,
     text: kept.x,
+    ...(typeof kept.original==="string"?{requestText:kept.original}:{}),
+    ...(typeof kept.conversation==="string"?{conversation:kept.conversation}:{}),
     pictures: kept.p,
     request: kept.r,
     state: state as PendingSend["state"],

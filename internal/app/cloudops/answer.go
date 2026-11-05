@@ -44,6 +44,8 @@ type Refusal struct {
 // Anything else is dropped here rather than at the reader, because the reader
 // is on somebody's phone and this is the last place that is us.
 var detailWhitelist = map[string]map[string]bool{
+	"send_unsubmitted":        {"codegraph_suffix": true},
+	"send_failed":             {"codegraph_suffix": true},
 	"command_clock_uncertain": {"reason": true, "clears_in_ms": true},
 	"key_id_mismatch":         {"key_id": true, "expected_key_id": true},
 	"replay":                  {"highest_seq": true},

@@ -8,10 +8,10 @@ export class NextMessages {
   private cards: PendingSends
   constructor(cards: PendingSends) { this.cards = cards }
 
-  add(session: string, text: string, pictures: readonly string[], now: number): PendingSend | null {
+  add(session: string, text: string, pictures: readonly string[], now: number, conversation?: string): PendingSend | null {
     // Share the existing card budget; never evict a queued input to add another.
     if (this.cards.all().length >= KEPT_CARDS) return null
-    return this.cards.add(session, text, pictures, now, true)
+    return this.cards.add(session, text, pictures, now, true, conversation)
   }
 
   take(session: string, idle: boolean, observation: string, write: boolean, now: number): PendingSend | null {

@@ -12,6 +12,7 @@ var generatedDecoders = map[string]genDecoder{
 	"board":                              genDecodeBoard,
 	"board-command":                      genDecodeBoardCommand,
 	"capacity":                           genDecodeCapacity,
+	"codegraph-guidance":                 genDecodeCodegraphGuidance,
 	"coordination.leases":                genDecodeCoordinationLeases,
 	"coordination.pauses":                genDecodeCoordinationPauses,
 	"coordination.waits":                 genDecodeCoordinationWaits,
@@ -423,6 +424,38 @@ func genDecodeCapacity(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/capacity"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeCodegraphGuidance is the `codegraph-guidance` row's decode.
+func genDecodeCodegraphGuidance(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "again", "conversation", "enabled", "language", "request", "revision", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("again", genRule{kind: "bool"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("enabled", genRule{kind: "bool"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("language", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "integer"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, true)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/codegraph-guidance"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Body = b.genFields(map[string]genValue{"again": genValue{from: "again"}, "conversation": genValue{from: "conversation"}, "enabled": genValue{from: "enabled"}, "language": genValue{from: "language"}, "revision": genValue{from: "revision"}})
 	return p, req, true
 }
 
@@ -2383,7 +2416,12 @@ func genDecodeSend(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "images", "session", "text"},
 		[]string{"type", "images", "request", "session", "text"},
+		[]string{"type", "conversation", "images", "session", "text"},
+		[]string{"type", "conversation", "images", "request", "session", "text"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string"}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("images", genRule{kind: "list", items: &genRule{kind: "string"}}) {
@@ -2398,7 +2436,7 @@ func genDecodeSend(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/sessions/" + segment(genText(b["session"])) + "/send"
 	req := LocalRequest{Method: "POST", Path: path}
-	req.Body = b.genFields(map[string]genValue{"images": genValue{from: "images"}, "text": genValue{from: "text"}})
+	req.Body = b.genFields(map[string]genValue{"conversation": genValue{from: "conversation"}, "images": genValue{from: "images"}, "text": genValue{from: "text"}})
 	return p, req, true
 }
 
