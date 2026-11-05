@@ -95,13 +95,13 @@ function protocolRow() {
  return { ...row(ACP, "Gemini fixture", "owned", "native-fixture"), assistant: "antigravity", identity: "protocol", isClaude: false,
   evidence: "structured", state: protocolMenuScenario?.waiting ? "waiting" : "idle", menu: protocolMenuScenario?.waiting ? protocolMenu : null }
 }
-const graphifyRealView=process.env.CLAWDLINE_GRAPHIFY_SMOKE_VIEW?JSON.parse(readFileSync(process.env.CLAWDLINE_GRAPHIFY_SMOKE_VIEW,"utf8")):null
-let graphifyScenario = "matched"
-let graphifyReads = 0
-let graphifyBuilds=0
-let graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""}
-let graphifyBuildResult=""
-const graphifyFixture = {state:"source_matched",reason:"graphify_sources_match",checked_at:1793300000,total_nodes:3,total_links:2,truncated:false,
+const codegraphRealView=process.env.CLAWDLINE_CODEGRAPH_SMOKE_VIEW?JSON.parse(readFileSync(process.env.CLAWDLINE_CODEGRAPH_SMOKE_VIEW,"utf8")):null
+let codegraphScenario = "matched"
+let codegraphReads = 0
+let codegraphBuilds=0
+let codegraphBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""}
+let codegraphBuildResult=""
+const codegraphFixture = {generation:"fixture-v1",watching:true,last_synced_at:1793300000,state:"source_matched",reason:"codegraph_sources_match",checked_at:1793300000,total_nodes:3,total_links:2,truncated:false,
  nodes:[{id:"a",label:"Entry",file:"src/entry.ts",location:"L1",community:"0"},
  {id:"b",label:"Worker",file:"src/worker.ts",location:"L12",community:"1"},
  {id:"c",label:'<img src=x onerror="globalThis.graphExecuted=true">',file:"src/inert.ts",location:"L4",community:"1"}],
@@ -146,7 +146,7 @@ let machineSettings: Record<string, unknown> = {
 }
 let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
-let integrationSettings: { workflow_profile?: string; workflow_skills_enabled: boolean; graphify_enabled: boolean } = { workflow_skills_enabled: false, graphify_enabled: false }
+let integrationSettings: { workflow_profile?: string; workflow_skills_enabled: boolean; codegraph_enabled: boolean } = { workflow_skills_enabled: false, codegraph_enabled: false }
 let integrationWrites: Record<string, unknown>[] = []
 let workflowRecords: Record<string, unknown> = {}
 let heldWorkflowInfo: { id: string; replies: (() => void)[] } | null = null
@@ -357,24 +357,24 @@ function daemon(): Server {
       })
       return
     }
-    if (/^\/v1\/(sessions|projects)\/[^/]+\/graphify$/.test(path)) {
+    if (/^\/v1\/(sessions|projects)\/[^/]+\/codegraph$/.test(path)) {
       if(req.method==="POST"){
        void requestJSON(req).then(body=>{
-        if(!integrationSettings.graphify_enabled)return json(res,403,{error:"graphify_disabled"})
+        if(!integrationSettings.codegraph_enabled)return json(res,403,{error:"codegraph_disabled"})
         assert.deepEqual(body,{});assert.ok(req.headers["idempotency-key"])
-        graphifyBuilds++;graphifyBuild={state:"running",phase:"preparing",files:2,bytes:1024,started_at:1793300000,updated_at:1793300000,error:""}
-        json(res,202,graphifyBuild)
+        codegraphBuilds++;codegraphBuild={state:"running",phase:"preparing",files:2,bytes:1024,started_at:1793300000,updated_at:1793300000,error:""}
+        json(res,202,codegraphBuild)
        });return
       }
-      graphifyReads++
-      if(graphifyBuild.state==="running" && graphifyBuildResult){
-       if(graphifyBuildResult==="success"){graphifyScenario="matched";graphifyBuild={...graphifyBuild,state:"succeeded",phase:"complete"}}
-       else graphifyBuild={...graphifyBuild,state:"failed",phase:"failed",error:graphifyBuildResult}
+      codegraphReads++
+      if(codegraphBuild.state==="running" && codegraphBuildResult){
+       if(codegraphBuildResult==="success"){codegraphScenario="matched";codegraphBuild={...codegraphBuild,state:"succeeded",phase:"complete"}}
+       else codegraphBuild={...codegraphBuild,state:"failed",phase:"failed",error:codegraphBuildResult}
       }
-      if (!integrationSettings.graphify_enabled) return json(res,403,{error:{code:"graphify_disabled",message:"Graphify is off."}})
-      if(graphifyScenario==="real" && graphifyRealView)return json(res,200,graphifyRealView)
-      if (graphifyScenario === "failure") return json(res,503,{error:{code:"graphify_unavailable",message:"Graph unavailable."}})
-      return json(res,200,graphifyScenario === "missing" ? {...graphifyFixture,build:graphifyBuild,can_build:graphifyBuild.state!=="running",state:"missing",nodes:[],links:[],total_nodes:0,total_links:0} : {...graphifyFixture,build:graphifyBuild,can_build:false,state:graphifyScenario === "stale" ? "stale" : "source_matched",truncated:graphifyScenario === "large",total_nodes:graphifyScenario === "large" ? 1000 : 3})
+      if (!integrationSettings.codegraph_enabled) return json(res,403,{error:{code:"codegraph_disabled",message:"CodeGraph is off."}})
+      if(codegraphScenario==="real" && codegraphRealView)return json(res,200,codegraphRealView)
+      if (codegraphScenario === "failure") return json(res,503,{error:{code:"codegraph_unavailable",message:"Graph unavailable."}})
+      return json(res,200,codegraphScenario === "missing" ? {...codegraphFixture,build:codegraphBuild,can_build:codegraphBuild.state!=="running",state:"missing",nodes:[],links:[],total_nodes:0,total_links:0} : {...codegraphFixture,build:codegraphBuild,can_build:false,state:codegraphScenario === "stale" ? "stale" : "source_matched",truncated:codegraphScenario === "large",total_nodes:codegraphScenario === "large" ? 1000 : 3})
     }
     const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
     if (info && req.method === "GET") {
@@ -3368,7 +3368,7 @@ for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px keeps t
 test("integration switches persist machine opt-ins and recover failures in both languages and sizes", async () => {
   for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
     for (const tag of ["en", "zh-Hant"]) {
-      integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+      integrationSettings = { workflow_skills_enabled: false, codegraph_enabled: false }
       refuseIntegrationRead = true
       await inTab(size, async tab => {
         const waitFor = async (expression: string) => {
@@ -3392,12 +3392,12 @@ test("integration switches persist machine opt-ins and recover failures in both 
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
         await tab.run(`document.querySelector('.settings-integrations .workflow-info').click()`)
         assert.ok(await tab.run(`document.querySelector('.settings-integrations .workflow-setting-help').textContent.includes(${JSON.stringify(tag === "en" ? "new Claude/Codex" : "新 Claude／Codex")})`))
-        for (const [index, key] of [[0, "workflow_skills_enabled"], [1, "graphify_enabled"]] as const) {
+        for (const [index, key] of [[0, "workflow_skills_enabled"], [1, "codegraph_enabled"]] as const) {
           await tab.run(`document.querySelectorAll('${switches}')[${index}].click()`)
           await waitFor(`document.querySelectorAll('${switches}')[${index}].getAttribute('aria-checked') === 'true' && !document.querySelector('${switches}').disabled`)
           assert.equal(integrationSettings[key], true)
         }
-        assert.deepEqual(integrationSettings, { workflow_skills_enabled: true, graphify_enabled: true })
+        assert.deepEqual(integrationSettings, { workflow_skills_enabled: true, codegraph_enabled: true })
         const bounds = await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth})`)
         assert.ok(bounds.page <= bounds.width + 1, `${tag} ${sizeName} integration overflow: ${JSON.stringify(bounds)}`)
         await tab.run(`document.querySelector('.settings-integrations .workflow-info').click(); document.querySelectorAll('.settings-integrations .workflow-info')[1].click(); document.querySelector('.settings-integrations').scrollIntoView({block:'start'})`)
@@ -3413,17 +3413,17 @@ test("integration switches persist machine opt-ins and recover failures in both 
         assert.equal(await tab.run(`document.querySelector('${switches}').getAttribute('aria-checked')`), "true")
         await tab.run(`document.querySelector('${switches}').click()`)
         await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
-        assert.deepEqual(integrationSettings, { workflow_skills_enabled: false, graphify_enabled: true })
+        assert.deepEqual(integrationSettings, { workflow_skills_enabled: false, codegraph_enabled: true })
       })
     }
   }
 })
 
 
-test("workflow profile picker saves only the selected profile and preserves Graphify", async () => {
+test("workflow profile picker saves only the selected profile and preserves CodeGraph", async () => {
   for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
     for (const tag of ["en", "zh-Hant"]) {
-      integrationSettings = { workflow_profile: "clawdline", workflow_skills_enabled: false, graphify_enabled: true }
+      integrationSettings = { workflow_profile: "clawdline", workflow_skills_enabled: false, codegraph_enabled: true }
       integrationWrites = []
       await inTab(size, async tab => {
         const waitFor = async (expression: string) => {
@@ -3450,7 +3450,7 @@ test("workflow profile picker saves only the selected profile and preserves Grap
         await choose("poteto")
         assert.equal(integrationSettings.workflow_profile, "poteto")
         assert.deepEqual(integrationWrites, [{ workflow_profile: "superpowers" }, { workflow_profile: "poteto" }])
-        assert.equal(integrationSettings.graphify_enabled, true)
+        assert.equal(integrationSettings.codegraph_enabled, true)
         assert.equal(integrationSettings.workflow_skills_enabled, false)
         refuseIntegrationWrite = true
         await choose("clawdline")
@@ -3472,11 +3472,11 @@ test("workflow profile picker saves only the selected profile and preserves Grap
       })
     }
   }
-  integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+  integrationSettings = { workflow_skills_enabled: false, codegraph_enabled: false }
 })
 
 test("Station shows confirmed optional workflows and keeps absent or uncertain records out of the header", async () => {
-  const record = { state: "recorded", profile_id: "poteto", source: "pstack 0.15.36", version: "1", digest: "a".repeat(64), graphify_enabled: true,
+  const record = { state: "recorded", profile_id: "poteto", source: "pstack 0.15.36", version: "1", digest: "a".repeat(64), codegraph_enabled: true,
     stages: [{id: "verify", title: "Verify", output: "Evidence", acceptance: "Passing checks"}] }
   workflowRecords = { [TMUX]: record, [TTY]: { state: "legacy_unsnapshotted" } }
   for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
@@ -3575,164 +3575,170 @@ test("a late workflow read cannot relabel the next Session", async () => {
   }
 })
 
-test("Graphify project viewer respects the toggle and renders safe graphs in both entry points and sizes", async () => {
+test("CodeGraph project viewer respects the toggle and renders safe graphs in both entry points and sizes", async () => {
  for(const size of [DESK,PHONE]) for(const tag of ["en","zh-Hant"]) {
-  integrationSettings={workflow_skills_enabled:false,graphify_enabled:false};graphifyScenario="matched";graphifyReads=0
+  integrationSettings={workflow_skills_enabled:false,codegraph_enabled:false};codegraphScenario="matched";codegraphReads=0
   await inTab(size,async tab => {
    const wait=async(expression:string) => {const end=Date.now()+6000;while(!await tab.run(expression)) {if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
    await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
    await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!document.getElementById("info").hidden && !!document.querySelector("#info .sec")`)
-   await new Promise(r=>setTimeout(r,100));assert.equal(await tab.run(`!!document.querySelector("[data-graphify-open]")`),false);assert.equal(graphifyReads,0)
-   integrationSettings.graphify_enabled=true
-   await tab.run(`document.getElementById("info-refresh").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
-   await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-dialog[open] .graphify-stage[data-renderer-state="ready"]')`)
-   assert.equal(await tab.run(`document.querySelectorAll(".graphify-node-list button").length`),3)
-   assert.equal(await tab.run(`/\\{(?:arg)?[0-3]\\}/.test(document.querySelector(".graphify-body").textContent)`),false)
-   assert.ok(await tab.run(`document.querySelectorAll(".graphify-canvas canvas").length > 0`))
-   await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelector('.graphify-node-list button').focus()`); await tab.press('Enter')
-   await wait(`!!document.querySelector(".graphify-node-detail")`)
-   assert.ok(await tab.run(`document.querySelector(".graphify-node-detail").textContent.includes("Worker")`))
-   const dims=await tab.run(`({viewport:innerWidth,page:document.documentElement.scrollWidth,dialog:document.querySelector('.graphify-dialog').getBoundingClientRect().width,executed:globalThis.graphExecuted===true,active:document.querySelectorAll('.graphify-dialog img,.graphify-dialog script').length})`)
+   await new Promise(r=>setTimeout(r,100));assert.equal(await tab.run(`!!document.querySelector("[data-codegraph-open]")`),false);assert.equal(codegraphReads,0)
+   integrationSettings.codegraph_enabled=true
+   await tab.run(`document.getElementById("info-refresh").click()`);await wait(`!!document.querySelector("[data-codegraph-open]")`)
+   await tab.run(`document.querySelector("[data-codegraph-open]").click()`);await wait(`!!document.querySelector('.codegraph-dialog[open] .codegraph-stage[data-renderer-state="ready"]')`)
+   assert.equal(await tab.run(`document.querySelectorAll(".codegraph-node-list button").length`),3)
+   assert.equal(await tab.run(`/\\{(?:arg)?[0-3]\\}/.test(document.querySelector(".codegraph-body").textContent)`),false)
+   assert.ok(await tab.run(`document.querySelectorAll(".codegraph-canvas canvas").length > 0`))
+   await tab.run(`document.querySelector('.codegraph-node-list summary').click(); document.querySelector('.codegraph-node-list button').focus()`); await tab.press('Enter')
+   await wait(`!!document.querySelector(".codegraph-node-detail")`)
+   assert.ok(await tab.run(`document.querySelector(".codegraph-node-detail").textContent.includes("Worker")`))
+   const dims=await tab.run(`({viewport:innerWidth,page:document.documentElement.scrollWidth,dialog:document.querySelector('.codegraph-dialog').getBoundingClientRect().width,executed:globalThis.graphExecuted===true,active:document.querySelectorAll('.codegraph-dialog img,.codegraph-dialog script').length})`)
    assert.ok(dims.page<=dims.viewport+1);assert.ok(dims.dialog<=dims.viewport);assert.equal(dims.executed,false);assert.equal(dims.active,0)
-   await tab.run(`(()=>{const input=document.querySelector('.graphify-controls input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'worker');input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
-   await wait(`document.querySelectorAll('.graphify-node-list button').length===1`)
-   assert.ok(await tab.run(`document.querySelector('.graphify-map-heading').textContent.includes(${JSON.stringify(tag==='en'?'0 connections':'0 條連線')})`))
-   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
-   await tab.go("/?graphify-project=1#page=projects");await wait(`!!document.querySelector('button.project-row[data-place-id]')`)
-   await tab.run(`document.querySelector('button.project-row[data-place-id]').click()`);await wait(`!!document.querySelector('.project-setup-dialog[open] .graphify-open')`)
-   await tab.run(`document.querySelector('.project-setup-dialog .graphify-open').click()`);await wait(`document.querySelectorAll('.graphify-dialog[open] .graphify-node-list button').length===3`)
-   if(shots) {mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify`)}
+   await tab.run(`(()=>{const input=document.querySelector('.codegraph-controls input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'worker');input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+   await wait(`document.querySelectorAll('.codegraph-node-list button').length===1`)
+   assert.ok(await tab.run(`document.querySelector('.codegraph-map-heading').textContent.includes(${JSON.stringify(tag==='en'?'0 connections':'0 條連線')})`))
+   await tab.run(`document.querySelector('.codegraph-dialog header button').click()`)
+   await tab.go("/?codegraph-project=1#page=projects");await wait(`!!document.querySelector('button.project-row[data-place-id]')`)
+   await tab.run(`document.querySelector('button.project-row[data-place-id]').click()`);await wait(`!!document.querySelector('.project-setup-dialog[open] .codegraph-open')`)
+   await tab.run(`document.querySelector('.project-setup-dialog .codegraph-open').click()`);await wait(`document.querySelectorAll('.codegraph-dialog[open] .codegraph-node-list button').length===3`)
+   if(shots) {mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-codegraph`)}
    for(const state of ["stale","large","missing","failure","matched"]) {
-    graphifyScenario=state
-    await tab.run(`document.querySelector('.graphify-dialog footer button').click()`)
-    if(state==="failure")await wait(`!!document.querySelector('.graphify-dialog [role="alert"]')`)
-    else await wait(`!!document.querySelector('.graphify-dialog .graphify-status') && !document.querySelector('.graphify-body').matches('[aria-busy="true"]')`)
-    if(state==="stale")assert.ok(await tab.run(`!!document.querySelector('.graphify-status.is-stale')`))
-    if(state==="large")assert.ok(await tab.run(`!!document.querySelector('.graphify-notice')`))
-    if(state==="missing")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),0)
-    if(state==="matched")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),3)
+    codegraphScenario=state
+    await tab.run(`document.querySelector('.codegraph-dialog footer button').click()`)
+    if(state==="failure")await wait(`!!document.querySelector('.codegraph-dialog [role="alert"]')`)
+    else await wait(`!!document.querySelector('.codegraph-dialog .codegraph-status') && !document.querySelector('.codegraph-body').matches('[aria-busy="true"]')`)
+    if(state==="stale")assert.ok(await tab.run(`!!document.querySelector('.codegraph-status.is-stale')`))
+    if(state==="large")assert.ok(await tab.run(`!!document.querySelector('.codegraph-notice')`))
+    if(state==="missing")assert.equal(await tab.run(`document.querySelectorAll('.codegraph-node-list button').length`),0)
+    if(state==="matched")assert.equal(await tab.run(`document.querySelectorAll('.codegraph-node-list button').length`),3)
    }
-   await tab.run(`window.dispatchEvent(new CustomEvent('clawdline:graphify-setting',{detail:false}))`)
-   assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),0)
-   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
-   assert.equal(await tab.run(`!!document.querySelector('.project-setup-dialog .graphify-open')`),false)
+   await tab.run(`window.dispatchEvent(new CustomEvent('clawdline:codegraph-setting',{detail:false}))`)
+   assert.equal(await tab.run(`document.querySelectorAll('.codegraph-node-list button').length`),0)
+   await tab.run(`document.querySelector('.codegraph-dialog header button').click()`)
+   assert.equal(await tab.run(`!!document.querySelector('.project-setup-dialog .codegraph-open')`),false)
   })
  }
 })
 
- test("Graphify local index build survives closing, explains failure and loads the completed graph",async()=>{
+ test("CodeGraph local index build survives closing, explains failure and loads the completed graph",async()=>{
   for(const size of [DESK,PHONE])for(const tag of ["en","zh-Hant"]){
-   graphifyScenario="missing";graphifyBuilds=0;graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""};graphifyBuildResult=""
-   integrationSettings={workflow_skills_enabled:false,graphify_enabled:true}
+   codegraphScenario="missing";codegraphBuilds=0;codegraphBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""};codegraphBuildResult=""
+   integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true}
    await inTab(size,async tab=>{
     const wait=async(expression:string)=>{const end=Date.now()+6000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
     await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
     await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
-    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
-    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector(".graphify-build button")`)
-    assert.equal(graphifyBuilds,0)
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-codegraph-open]")`)
+    await tab.run(`document.querySelector("[data-codegraph-open]").click()`);await wait(`!!document.querySelector(".codegraph-build button")`)
+    assert.equal(codegraphBuilds,0)
     assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
-    assert.ok(await tab.run(`document.querySelector('.graphify-build').textContent.includes(${JSON.stringify(tag==="en"?"no model or paid API":"不使用模型或付費 API")})`))
-    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify-build-missing`)}
-    await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`document.querySelector('.graphify-build')?.textContent.includes(${JSON.stringify(tag==="en"?"Preparing":"準備")}) && !document.querySelector('.graphify-build button')`)
-    assert.equal(graphifyBuilds,1)
+    assert.ok(await tab.run(`document.querySelector('.codegraph-build').textContent.includes(${JSON.stringify(tag==="en"?"no model or paid API":"不使用模型或付費 API")})`))
+    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-codegraph-build-missing`)}
+    await tab.run(`document.querySelector('.codegraph-build button').click()`);await wait(`document.querySelector('.codegraph-build')?.textContent.includes(${JSON.stringify(tag==="en"?"Preparing":"準備")}) && !document.querySelector('.codegraph-build button')`)
+    assert.equal(codegraphBuilds,1)
     assert.ok(await tab.run(`document.querySelector('.working-indicator [role="status"]').textContent.includes(${JSON.stringify(tag==="en"?"Clawdline is working":"Clawdline 正在努力工作")})`))
     assert.equal(await tab.run(`document.querySelector('.working-indicator-art').getAttribute('aria-hidden')`),"true")
     assert.notEqual(await tab.run(`getComputedStyle(document.querySelector('.working-indicator-body')).animationName`),"none")
     await tab.reducedMotion(true)
     assert.equal(await tab.run(`getComputedStyle(document.querySelector('.working-indicator-body')).animationName`),"none")
     assert.ok(await tab.run(`document.querySelector('.working-indicator-detail').textContent.length>0`))
-    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-reduced-motion`)
+    if(shots)await tab.shot(`${tag}-${size.width}-codegraph-build-reduced-motion`)
     await tab.reducedMotion(false)
-    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-running`)
-    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
-    const reads=graphifyReads;await new Promise(r=>setTimeout(r,1200));assert.equal(graphifyReads,reads)
-    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!document.getElementById("info").hidden && !!document.querySelector("[data-graphify-open]")`)
-    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-build')`)
-    assert.equal(graphifyBuilds,1)
-    graphifyBuildResult="prerequisite_missing"
-    await wait(`!!document.querySelector('.graphify-dialog [role="alert"]') && !!document.querySelector('.graphify-build button')`)
-    assert.ok(await tab.run(`document.querySelector('.graphify-dialog [role="alert"]').textContent.includes('Python 3.12')`))
+    if(shots)await tab.shot(`${tag}-${size.width}-codegraph-build-running`)
+    await tab.run(`document.querySelector('.codegraph-dialog header button').click()`)
+    const reads=codegraphReads;await new Promise(r=>setTimeout(r,1200));assert.equal(codegraphReads,reads)
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!document.getElementById("info").hidden && !!document.querySelector("[data-codegraph-open]")`)
+    await tab.run(`document.querySelector("[data-codegraph-open]").click()`);await wait(`!!document.querySelector('.codegraph-build')`)
+    assert.equal(codegraphBuilds,1)
+    codegraphBuildResult="unsupported_platform"
+    await wait(`!!document.querySelector('.codegraph-dialog [role="alert"]') && !!document.querySelector('.codegraph-build button')`)
+    assert.ok(await tab.run(`document.querySelector('.codegraph-dialog [role="alert"]').textContent.includes(${JSON.stringify(tag==="en"?"supported pinned CodeGraph runtime":"受支援的固定版本 CodeGraph")})`))
     assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
-    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-failed`)
-    graphifyBuildResult=""
-    await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`!document.querySelector('.graphify-build button')`)
-    assert.equal(graphifyBuilds,2);graphifyBuildResult="success"
-    await wait(`document.querySelectorAll('.graphify-node-list button').length===3`)
+    if(shots)await tab.shot(`${tag}-${size.width}-codegraph-build-failed`)
+    codegraphBuildResult=""
+    await tab.run(`document.querySelector('.codegraph-build button').click()`);await wait(`!document.querySelector('.codegraph-build button')`)
+    assert.equal(codegraphBuilds,2);codegraphBuildResult="success"
+    await wait(`document.querySelectorAll('.codegraph-node-list button').length===3`)
     assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
-    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-complete`)
-    assert.equal(graphifyBuilds,2)
+    if(shots)await tab.shot(`${tag}-${size.width}-codegraph-build-complete`)
+    assert.equal(codegraphBuilds,2)
     assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
-    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+    await tab.run(`document.querySelector('.codegraph-dialog header button').click()`)
    })
   }
  })
 
- test("Graphify renders the real locally built project overview on desktop and phone",{skip:!graphifyRealView},async()=>{
+ test("CodeGraph renders the real locally built project overview on desktop and phone",{skip:!codegraphRealView},async()=>{
   for(const size of [DESK,PHONE])for(const tag of ["en","zh-Hant"]){
-   graphifyScenario="real";graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""};graphifyBuildResult=""
-   integrationSettings={workflow_skills_enabled:false,graphify_enabled:true}
+   codegraphScenario="real";codegraphBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""};codegraphBuildResult=""
+   integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true}
    await inTab(size,async tab=>{
     const wait=async(expression:string)=>{const end=Date.now()+6000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
     await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
     await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
-    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
-    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-status.is-source_matched') && document.querySelector('.graphify-stage')?.dataset.rendererState==='ready'`)
-    assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),graphifyRealView.nodes.length)
-    assert.ok(graphifyRealView.total_nodes>graphifyRealView.nodes.length)
-    assert.ok(await tab.run(`!!document.querySelector('.graphify-notice')`))
-    const copy=await tab.run(`document.querySelector('.graphify-body').textContent`)
-    assert.ok(copy.includes(String(graphifyRealView.total_nodes)))
-    assert.ok(copy.includes(String(graphifyRealView.total_links)))
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-codegraph-open]")`)
+    await tab.run(`document.querySelector("[data-codegraph-open]").click()`);await wait(`!!document.querySelector('.codegraph-status.is-source_matched') && document.querySelector('.codegraph-stage')?.dataset.rendererState==='ready'`)
+    assert.equal(await tab.run(`document.querySelectorAll('.codegraph-node-list button').length`),codegraphRealView.nodes.length)
+    assert.ok(codegraphRealView.total_nodes>codegraphRealView.nodes.length)
+    assert.ok(await tab.run(`!!document.querySelector('.codegraph-notice')`))
+    const copy=await tab.run(`document.querySelector('.codegraph-body').textContent`)
+    assert.ok(copy.includes(String(codegraphRealView.total_nodes)))
+    assert.ok(copy.includes(String(codegraphRealView.total_links)))
     assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
-    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify-real-project`)}
-    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-codegraph-real-project`)}
+    await tab.run(`document.querySelector('.codegraph-dialog header button').click()`)
    })
   }
  })
 
 test("Sigma graph supports real picking, camera controls and phone pinch without rebuilding the index", async () => {
  for(const size of [DESK,PHONE]) {
-  integrationSettings={workflow_skills_enabled:false,graphify_enabled:true};graphifyScenario="matched";graphifyBuilds=0
+  integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true};codegraphScenario="matched";codegraphBuilds=0
   await inTab(size,async tab=>{
    const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
    await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
-   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-graphify-open]')`)
-   await tab.run(`document.querySelector('[data-graphify-open]').click()`);await wait(`document.querySelector('.graphify-stage')?.dataset.rendererState==='ready'`)
-   await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelectorAll('.graphify-node-list button')[1].click()`)
-   await wait(`document.querySelector('.graphify-node-detail h3')?.textContent==='Worker'`)
-   await tab.run(`document.querySelector('.graphify-focus').click();document.querySelector('.graphify-inspector-heading button').click()`)
-   await wait(`!document.querySelector('.graphify-node-detail')`)
-   const center=await tab.run(`(()=>{const r=document.querySelector('.graphify-canvas').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
+   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-open]')`)
+   await tab.run(`document.querySelector('[data-codegraph-open]').click()`);await wait(`document.querySelector('.codegraph-stage')?.dataset.rendererState==='ready'`)
+   await tab.run(`document.querySelector('.codegraph-node-list summary').click(); document.querySelectorAll('.codegraph-node-list button')[1].click()`)
+   await wait(`document.querySelector('.codegraph-node-detail h3')?.textContent==='Worker'`)
+   await tab.run(`document.querySelector('.codegraph-focus').click();document.querySelector('.codegraph-inspector-heading button').click()`)
+   await wait(`!document.querySelector('.codegraph-node-detail')`)
+   const center=await tab.run(`(()=>{const r=document.querySelector('.codegraph-canvas').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
    if(size.mobile)await tab.touch(center.x,center.y);else await tab.clickPoint(center.x,center.y)
-   await wait(`document.querySelector('.graphify-node-detail h3')?.textContent==='Worker'`)
-   await tab.run(`document.querySelector('.graphify-zoom button:last-child').click()`)
-   await wait(`parseInt(document.querySelector('.graphify-zoom button:nth-child(2)').textContent)>100`)
-   await tab.run(`document.querySelector('.graphify-zoom button:nth-child(2)').click()`)
-   await wait(`document.querySelector('.graphify-zoom button:nth-child(2)').textContent==='100%'`)
-   if(size.mobile){await tab.pinch(center.x,center.y);await wait(`parseInt(document.querySelector('.graphify-zoom button:nth-child(2)').textContent)>100`)}
-   await tab.run(`document.querySelector('.graphify-canvas').focus()`);await tab.press('0');await wait(`document.querySelector('.graphify-zoom button:nth-child(2)').textContent==='100%'`)
-   assert.equal(graphifyBuilds,0)
+   await wait(`document.querySelector('.codegraph-node-detail h3')?.textContent==='Worker'`)
+   await tab.run(`document.querySelector('.codegraph-zoom button:last-child').click()`)
+   await wait(`parseInt(document.querySelector('.codegraph-zoom button:nth-child(2)').textContent)>100`)
+   const zoomBeforePoll=await tab.run(`document.querySelector('.codegraph-zoom button:nth-child(2)').textContent`)
+   const readsBeforePoll=codegraphReads
+   await new Promise(r=>setTimeout(r,5200))
+   assert.ok(codegraphReads>readsBeforePoll)
+   assert.equal(await tab.run(`document.querySelector('.codegraph-zoom button:nth-child(2)').textContent`),zoomBeforePoll)
+   assert.equal(await tab.run(`document.querySelector('.codegraph-node-detail h3')?.textContent`),'Worker')
+   await tab.run(`document.querySelector('.codegraph-zoom button:nth-child(2)').click()`)
+   await wait(`document.querySelector('.codegraph-zoom button:nth-child(2)').textContent==='100%'`)
+   if(size.mobile){await tab.pinch(center.x,center.y);await wait(`parseInt(document.querySelector('.codegraph-zoom button:nth-child(2)').textContent)>100`)}
+   await tab.run(`document.querySelector('.codegraph-canvas').focus()`);await tab.press('0');await wait(`document.querySelector('.codegraph-zoom button:nth-child(2)').textContent==='100%'`)
+   assert.equal(codegraphBuilds,0)
    assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`sigma-${size.width}-selected`)}
-   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
-   await wait(`!document.querySelector('.graphify-dialog').open && document.querySelectorAll('.graphify-canvas canvas').length===0`)
+   await tab.run(`document.querySelector('.codegraph-dialog header button').click()`)
+   await wait(`!document.querySelector('.codegraph-dialog').open && document.querySelectorAll('.codegraph-canvas canvas').length===0`)
   })
  }
 })
 
 test("Sigma rendering failure keeps the keyboard node list and source inspector usable",async()=>{
- integrationSettings={workflow_skills_enabled:false,graphify_enabled:true};graphifyScenario="matched"
+ integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true};codegraphScenario="matched"
  await inTab(PHONE,async tab=>{
   await tab.withoutWebGL();await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
   const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
-  await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-graphify-open]')`)
-  await tab.run(`document.querySelector('[data-graphify-open]').click()`);await wait(`document.querySelector('.graphify-stage')?.dataset.rendererState==='unavailable'`)
-  assert.ok(await tab.run(`document.querySelector('.graphify-render-message').textContent.length>0`))
-  await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelector('.graphify-node-list button').focus()`);await tab.press('Enter')
-  await wait(`!!document.querySelector('.graphify-node-detail')`)
-  assert.ok(await tab.run(`document.querySelector('.graphify-node-detail').textContent.includes('src/entry.ts')`))
+  await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-open]')`)
+  await tab.run(`document.querySelector('[data-codegraph-open]').click()`);await wait(`document.querySelector('.codegraph-stage')?.dataset.rendererState==='unavailable'`)
+  assert.ok(await tab.run(`document.querySelector('.codegraph-render-message').textContent.length>0`))
+  await tab.run(`document.querySelector('.codegraph-node-list summary').click(); document.querySelector('.codegraph-node-list button').focus()`);await tab.press('Enter')
+  await wait(`!!document.querySelector('.codegraph-node-detail')`)
+  assert.ok(await tab.run(`document.querySelector('.codegraph-node-detail').textContent.includes('src/entry.ts')`))
   assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
   if(shots){mkdirSync(shots,{recursive:true});await tab.shot('sigma-phone-unavailable')}
  })

@@ -42,35 +42,35 @@ func TestIntegrationLaunchReadsCurrentMachineOptInAcrossProjects(t *testing.T) {
 	}
 }
 
-func TestGraphifyLaunchGuidanceIsIndependentAndDoesNotReadAnIndexWhenOff(t *testing.T) {
+func TestCodeGraphLaunchGuidanceIsIndependentAndDoesNotReadAnIndexWhenOff(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
 	root := t.TempDir()
 	missing := filepath.Join(root, "missing")
 	if text, err := s.integrationLaunchText(context.Background(), missing); err != nil || text != "" {
 		t.Fatalf("disabled adapter inspected project: %q %v", text, err)
 	}
-	if _, err := s.settingsFile().Set(map[string]any{"graphify_enabled": true}); err != nil {
+	if _, err := s.settingsFile().Set(map[string]any{"codegraph_enabled": true}); err != nil {
 		t.Fatal(err)
 	}
 	text, err := s.integrationLaunchText(context.Background(), root)
 	if err != nil || !strings.Contains(text, "ordinary source search") || strings.Contains(text, skills.WorkflowInstructions()) {
-		t.Fatalf("graphify-only missing graph: %q %v", text, err)
+		t.Fatalf("codegraph-only missing graph: %q %v", text, err)
 	}
-	if err := os.Mkdir(filepath.Join(root, "graphify-out"), 0700); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "codegraph-out"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.settingsFile().Set(map[string]any{"workflow_skills_enabled": true}); err != nil {
 		t.Fatal(err)
 	}
 	text, err = s.integrationLaunchText(context.Background(), root)
-	if err != nil || !strings.Contains(text, "clawdline graphify check .") || !strings.Contains(text, skills.WorkflowInstructions()) {
+	if err != nil || !strings.Contains(text, "clawdline codegraph query") || !strings.Contains(text, skills.WorkflowInstructions()) {
 		t.Fatalf("combined opt-in lost guidance: %q %v", text, err)
 	}
-	if _, err := s.settingsFile().Set(map[string]any{"graphify_enabled": false}); err != nil {
+	if _, err := s.settingsFile().Set(map[string]any{"codegraph_enabled": false}); err != nil {
 		t.Fatal(err)
 	}
 	text, err = s.integrationLaunchText(context.Background(), root)
 	if err != nil || text != skills.WorkflowInstructions() {
-		t.Fatalf("graphify off retained its guidance: %q %v", text, err)
+		t.Fatalf("codegraph off retained its guidance: %q %v", text, err)
 	}
 }

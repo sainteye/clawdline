@@ -13,7 +13,7 @@ import (
 func TestWorkflowSelectionMigratesWithoutChangingOtherIntegrations(t *testing.T) {
 	dir := t.TempDir()
 	s := &Server{cfg: config.Config{Dir: dir}}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"workflow_skills_enabled":true,"graphify_enabled":true,"remote":true}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"workflow_skills_enabled":true,"codegraph_enabled":true,"remote":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	read := func(method, body string) map[string]any {
@@ -39,8 +39,8 @@ func TestWorkflowSelectionMigratesWithoutChangingOtherIntegrations(t *testing.T)
 	}
 	for _, profile := range []string{"poteto", "clawdline", "superpowers"} {
 		got = read("POST", `{"workflow_profile":"`+profile+`"}`)
-		if got["workflow_profile"] != profile || got["graphify_enabled"] != true {
-			t.Fatalf("selection affected Graphify: %v", got)
+		if got["workflow_profile"] != profile || got["codegraph_enabled"] != true {
+			t.Fatalf("selection affected CodeGraph: %v", got)
 		}
 	}
 	got = read("POST", `{"workflow_skills_enabled":false}`)

@@ -62,13 +62,13 @@ var generatedDecoders = map[string]genDecoder{
 	"project-add":                        genDecodeProjectAdd,
 	"project-antigravity-consent-change": genDecodeProjectAntigravityConsentChange,
 	"project-antigravity-consent-status": genDecodeProjectAntigravityConsentStatus,
+	"project-codegraph":                  genDecodeProjectCodegraph,
+	"project-codegraph-build":            genDecodeProjectCodegraphBuild,
 	"project-entry":                      genDecodeProjectEntry,
 	"project-file-list":                  genDecodeProjectFileList,
 	"project-file-read":                  genDecodeProjectFileRead,
 	"project-file-save":                  genDecodeProjectFileSave,
 	"project-folders":                    genDecodeProjectFolders,
-	"project-graphify":                   genDecodeProjectGraphify,
-	"project-graphify-build":             genDecodeProjectGraphifyBuild,
 	"project-hide":                       genDecodeProjectHide,
 	"project-manifest":                   genDecodeProjectManifest,
 	"project-mirror":                     genDecodeProjectMirror,
@@ -104,8 +104,8 @@ var generatedDecoders = map[string]genDecoder{
 	"schedules":                          genDecodeSchedules,
 	"screen":                             genDecodeScreen,
 	"send":                               genDecodeSend,
-	"session-graphify":                   genDecodeSessionGraphify,
-	"session-graphify-build":             genDecodeSessionGraphifyBuild,
+	"session-codegraph":                  genDecodeSessionCodegraph,
+	"session-codegraph-build":            genDecodeSessionCodegraphBuild,
 	"session-receipt":                    genDecodeSessionReceipt,
 	"session-snippets":                   genDecodeSessionSnippets,
 	"sessions.list":                      genDecodeSessionsList,
@@ -888,7 +888,7 @@ func genDecodeIntegrationSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"graphify_enabled": genRule{kind: "bool"}, "workflow_profile": genRule{kind: "string", enum: []string{"clawdline", "superpowers", "poteto"}}, "workflow_skills_enabled": genRule{kind: "bool"}}, closed: true, maxKeys: 3}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"codegraph_enabled": genRule{kind: "bool"}, "workflow_profile": genRule{kind: "string", enum: []string{"clawdline", "superpowers", "poteto"}}, "workflow_skills_enabled": genRule{kind: "bool"}}, closed: true, maxKeys: 3}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -1501,6 +1501,46 @@ func genDecodeProjectAntigravityConsentStatus(b body) (plan, LocalRequest, bool)
 	return p, req, true
 }
 
+// genDecodeProjectCodegraph is the `project-codegraph` row's decode.
+func genDecodeProjectCodegraph(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/codegraph"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProjectCodegraphBuild is the `project-codegraph-build` row's decode.
+func genDecodeProjectCodegraphBuild(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/codegraph"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
 // genDecodeProjectEntry is the `project-entry` row's decode.
 func genDecodeProjectEntry(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -1607,46 +1647,6 @@ func genDecodeProjectFolders(b body) (plan, LocalRequest, bool) {
 	path := "/v1/project-folders"
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"path": genValue{from: "path", fallback: ""}})
-	return p, req, true
-}
-
-// genDecodeProjectGraphify is the `project-graphify` row's decode.
-func genDecodeProjectGraphify(b body) (plan, LocalRequest, bool) {
-	if !b.hasOneOf(
-		[]string{"type", "project", "request", "session"},
-	) {
-		return plan{}, LocalRequest{}, false
-	}
-	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
-		return plan{}, LocalRequest{}, false
-	}
-	p, ok := machinePlan(b)
-	if !ok {
-		return plan{}, LocalRequest{}, false
-	}
-	path := "/v1/projects/" + segment(genText(b["project"])) + "/graphify"
-	req := LocalRequest{Method: "GET", Path: path}
-	return p, req, true
-}
-
-// genDecodeProjectGraphifyBuild is the `project-graphify-build` row's decode.
-func genDecodeProjectGraphifyBuild(b body) (plan, LocalRequest, bool) {
-	if !b.hasOneOf(
-		[]string{"type", "project", "request", "session"},
-	) {
-		return plan{}, LocalRequest{}, false
-	}
-	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
-		return plan{}, LocalRequest{}, false
-	}
-	p, ok := actionPlan(b, false)
-	if !ok {
-		return plan{}, LocalRequest{}, false
-	}
-	path := "/v1/projects/" + segment(genText(b["project"])) + "/graphify"
-	req := LocalRequest{Method: "POST", Path: path}
-	req.Header = asDevice()
-	req.Body = []byte("{}")
 	return p, req, true
 }
 
@@ -2382,8 +2382,8 @@ func genDecodeSend(b body) (plan, LocalRequest, bool) {
 	return p, req, true
 }
 
-// genDecodeSessionGraphify is the `session-graphify` row's decode.
-func genDecodeSessionGraphify(b body) (plan, LocalRequest, bool) {
+// genDecodeSessionCodegraph is the `session-codegraph` row's decode.
+func genDecodeSessionCodegraph(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "session"},
 		[]string{"type", "expected_generation", "session"},
@@ -2393,20 +2393,20 @@ func genDecodeSessionGraphify(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("expected_generation", genRule{kind: "string", checks: []func(string) bool{executionGenerationValid}}) {
 		return plan{}, LocalRequest{}, false
 	}
-	p, ok := sessionPlan(b, "session-graphify")
+	p, ok := sessionPlan(b, "session-codegraph")
 	if !ok {
 		return plan{}, LocalRequest{}, false
 	}
 	if v, named := b["expected_generation"]; named {
 		p.executionGeneration = genText(v)
 	}
-	path := "/v1/sessions/" + segment(genText(b["session"])) + "/graphify"
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/codegraph"
 	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
 
-// genDecodeSessionGraphifyBuild is the `session-graphify-build` row's decode.
-func genDecodeSessionGraphifyBuild(b body) (plan, LocalRequest, bool) {
+// genDecodeSessionCodegraphBuild is the `session-codegraph-build` row's decode.
+func genDecodeSessionCodegraphBuild(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "execution_generation", "request", "session"},
 	) {
@@ -2422,7 +2422,7 @@ func genDecodeSessionGraphifyBuild(b body) (plan, LocalRequest, bool) {
 	if v, named := b["execution_generation"]; named {
 		p.executionGeneration = genText(v)
 	}
-	path := "/v1/sessions/" + segment(genText(b["session"])) + "/graphify"
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/codegraph"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = []byte("{}")

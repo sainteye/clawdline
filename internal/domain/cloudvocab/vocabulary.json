@@ -578,7 +578,7 @@
       "example": {
         "changes": {
           "workflow_skills_enabled": false,
-          "graphify_enabled": false
+          "codegraph_enabled": false
         },
         "request": "req-write",
         "session": "__clawdline_machine__"
@@ -592,7 +592,7 @@
           ],
           "path": "/v1/settings/integrations",
           "local_body": [
-            "graphify_enabled",
+            "codegraph_enabled",
             "workflow_skills_enabled"
           ]
         }
@@ -610,7 +610,7 @@
               "workflow_skills_enabled": {
                 "type": "bool"
               },
-              "graphify_enabled": {
+              "codegraph_enabled": {
                 "type": "bool"
               }
             },
@@ -1323,6 +1323,89 @@
       }
     },
     {
+      "op": "project-codegraph",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/codegraph",
+      "console_seam": "reader",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "project": "p1",
+        "request": "req-codegraph",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/codegraph"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/codegraph"
+        }
+      }
+    },
+    {
+      "op": "project-codegraph-build",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/codegraph",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "project": "p1",
+        "request": "build-1",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/codegraph",
+          "local_body": []
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/codegraph",
+          "body": {
+            "empty": true
+          }
+        }
+      }
+    },
+    {
       "op": "project-entry",
       "kind": "read",
       "write_gate": false,
@@ -1392,89 +1475,6 @@
         {"body": ["path", "request", "session"], "path": "/v1/project-folders", "query": ["path"]}
       ],
       "decode": {"reply": "machine", "fields": {"path": {"type": "string", "max_bytes": 4096}}, "route": {"path": "/v1/project-folders", "query": {"path": {"from": "path", "default": ""}}}}
-    },
-    {
-      "op": "project-graphify",
-      "kind": "read",
-      "write_gate": false,
-      "console": "carried",
-      "console_route": "GET /v1/projects/{project}/graphify",
-      "console_seam": "reader",
-      "local": {
-        "method": "GET"
-      },
-      "example": {
-        "project": "p1",
-        "request": "req-graphify",
-        "session": "__clawdline_machine__"
-      },
-      "shapes": [
-        {
-          "body": [
-            "project",
-            "request",
-            "session"
-          ],
-          "path": "/v1/projects/{project}/graphify"
-        }
-      ],
-      "decode": {
-        "reply": "machine",
-        "fields": {
-          "project": {
-            "type": "string",
-            "non_empty": true,
-            "max_bytes": 200
-          }
-        },
-        "route": {
-          "path": "/v1/projects/{project}/graphify"
-        }
-      }
-    },
-    {
-      "op": "project-graphify-build",
-      "kind": "command",
-      "write_gate": true,
-      "console": "carried",
-      "console_route": "POST /v1/projects/{project}/graphify",
-      "console_seam": "writer",
-      "local": {
-        "method": "POST",
-        "device": true
-      },
-      "example": {
-        "project": "p1",
-        "request": "build-1",
-        "session": "__clawdline_machine__"
-      },
-      "shapes": [
-        {
-          "body": [
-            "project",
-            "request",
-            "session"
-          ],
-          "path": "/v1/projects/{project}/graphify",
-          "local_body": []
-        }
-      ],
-      "decode": {
-        "reply": "action",
-        "fields": {
-          "project": {
-            "type": "string",
-            "non_empty": true,
-            "max_bytes": 200
-          }
-        },
-        "route": {
-          "path": "/v1/projects/{project}/graphify",
-          "body": {
-            "empty": true
-          }
-        }
-      }
     },
     {
       "op": "project-hide",
@@ -2043,11 +2043,11 @@
       "decode": {"reply": "session_action", "fields": {"text": {"type": "string"}, "images": {"type": "list", "items": {"type": "string"}}}, "route": {"path": "/v1/sessions/{session}/send", "body": {"fields": {"text": {"from": "text"}, "images": {"from": "images"}}}}}
     },
     {
-      "op": "session-graphify",
+      "op": "session-codegraph",
       "kind": "read",
       "write_gate": false,
       "console": "carried",
-      "console_route": "GET /v1/sessions/{id}/graphify",
+      "console_route": "GET /v1/sessions/{id}/codegraph",
       "console_seam": "reader",
       "local": {
         "method": "GET"
@@ -2062,19 +2062,19 @@
           "body": [
             "session"
           ],
-          "path": "/v1/sessions/{session}/graphify"
+          "path": "/v1/sessions/{session}/codegraph"
         },
         {
           "body": [
             "expected_generation",
             "session"
           ],
-          "path": "/v1/sessions/{session}/graphify"
+          "path": "/v1/sessions/{session}/codegraph"
         }
       ],
       "decode": {
         "reply": "session",
-        "name": "session-graphify",
+        "name": "session-codegraph",
         "fields": {
           "expected_generation": {
             "type": "string",
@@ -2085,16 +2085,16 @@
           }
         },
         "route": {
-          "path": "/v1/sessions/{session}/graphify"
+          "path": "/v1/sessions/{session}/codegraph"
         }
       }
     },
     {
-      "op": "session-graphify-build",
+      "op": "session-codegraph-build",
       "kind": "command",
       "write_gate": true,
       "console": "carried",
-      "console_route": "POST /v1/sessions/{id}/graphify",
+      "console_route": "POST /v1/sessions/{id}/codegraph",
       "console_seam": "writer",
       "local": {
         "method": "POST",
@@ -2112,7 +2112,7 @@
             "request",
             "session"
           ],
-          "path": "/v1/sessions/{session}/graphify",
+          "path": "/v1/sessions/{session}/codegraph",
           "local_body": []
         }
       ],
@@ -2128,7 +2128,7 @@
           }
         },
         "route": {
-          "path": "/v1/sessions/{session}/graphify",
+          "path": "/v1/sessions/{session}/codegraph",
           "body": {
             "empty": true
           }

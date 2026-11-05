@@ -3130,34 +3130,6 @@
       ]
     },
     {
-      "repo_url": "https://github.com/Graphify-Labs/graphify",
-      "name": {
-        "en": "Graphify",
-        "zh-Hant": "Graphify 程式知識圖譜"
-      },
-      "source_commit": "a0946f962af31b19bff941b453f6dae9a7077c7a",
-      "reason": {
-        "en": "The pinned tree contains no SKILL.md entry. Treat as an optional runtime integration; this machine already exposes a guarded Graphify workflow.",
-        "zh-Hant": "固定版本樹中沒有 SKILL.md 入口；列為選用執行期整合，本機已有受控的 Graphify 流程。"
-      },
-      "status": "research_reference",
-      "evidence": [
-        {
-          "url": "https://trend.ondo.sh/github/r/en.html",
-          "kind": "github_trending_archive",
-          "observed_at": "2026-10-31",
-          "snapshot_at": "2026-10-30",
-          "period": "last_30_days",
-          "scope": "appearance",
-          "rank": null,
-          "note": {
-            "en": "Recorded by the recent GitHub Trending archive; kept outside the first import catalog.",
-            "zh-Hant": "近期 GitHub Trending 歷史整理有收錄；保留於首輪匯入目錄之外。"
-          }
-        }
-      ]
-    },
-    {
       "repo_url": "https://github.com/mksglu/context-mode",
       "name": {
         "en": "Context Mode",

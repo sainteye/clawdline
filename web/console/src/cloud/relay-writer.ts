@@ -253,8 +253,8 @@ export type WriteRoute =
  | {op: "tool-library-write"; word: Carried<"tools.save" | "tools.prepare">}
  | {op:"native-terminal-screen";word:Carried<"native-terminal-screen">;session:string}
  | {op:"native-terminal-input";word:Carried<"native-terminal-input">;session:string}
- | {op:"project-graphify-build";word:Carried<"project-graphify-build">;project:string}
- | {op:"session-graphify-build";word:Carried<"session-graphify-build">;session:string}
+ | {op:"project-codegraph-build";word:Carried<"project-codegraph-build">;project:string}
+ | {op:"session-codegraph-build";word:Carried<"session-codegraph-build">;session:string}
  | { op: "squad-write"; word: Carried<"squad.settings.update" | "squad.motion.update" | "squad.catalog.update" | "squad.role-draft"> }
   | { op: "squad-package"; word: Carried<"squad.packages.preview" | "squad.packages.adopt" | "squad.packages.export"> }
   | { op: "project-hide"; word: Carried<"project-hide"> }
@@ -705,8 +705,8 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "projects" && a && b === "antigravity-consent" && segments.length === 3 && method === "POST") {
     return { op: "project-antigravity-consent-change", word: "project-antigravity-consent-change", project: a }
   }
-  if (head === "projects" && a && b === "graphify" && segments.length === 3 && method === "POST") return {op:"project-graphify-build",word:"project-graphify-build",project:a}
-  if (head === "sessions" && a && b === "graphify" && segments.length === 3 && method === "POST") return {op:"session-graphify-build",word:"session-graphify-build",session:a}
+  if (head === "projects" && a && b === "codegraph" && segments.length === 3 && method === "POST") return {op:"project-codegraph-build",word:"project-codegraph-build",project:a}
+  if (head === "sessions" && a && b === "codegraph" && segments.length === 3 && method === "POST") return {op:"session-codegraph-build",word:"session-codegraph-build",session:a}
   if (head === "projects" && a && b === "unify" && segments.length === 3 && method === "POST") {
     return { op: "project-unify-apply", word: "project-unify-apply", project: a }
   }
@@ -1012,8 +1012,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "project-add":
     case "project-file-save":
     case "project-ops-write":
-    case "project-graphify-build":
-    case "session-graphify-build":
+    case "project-codegraph-build":
+    case "session-codegraph-build":
     case "project-antigravity-consent-change":
     case "project-unify-apply":
     case "project-mirror-apply":
@@ -2031,7 +2031,7 @@ export class RelayWriter {
           : { project: place.id, entry: route.id, item: await bodyOf(init) }
         return client._machineRequestAs(request, place.machine, route.word, fields, "action")
       }
-      case "project-graphify-build": {
+      case "project-codegraph-build": {
         if(client.allowWrites!==true)throw failure("send_disabled","Building an index needs send access to this machine.",403)
         if ([...url.searchParams].length || Object.keys(await bodyOf(init)).length) throw failure("bad_request","An index build accepts only an empty JSON object.",400)
         if (typeof client._place!=="function" || typeof client._machineRequestAs!=="function") throw failure("cloud_not_carried",route.word,501)
@@ -2041,7 +2041,7 @@ export class RelayWriter {
         if (!request) throw failure("idempotency_key_required","An index build needs an Idempotency-Key.",400)
         return client._machineRequestAs(request,place.machine,route.word,{project:place.id},"action")
       }
-      case "session-graphify-build": {
+      case "session-codegraph-build": {
         if(client.allowWrites!==true)throw failure("send_disabled","Building an index needs send access to this machine.",403)
         if ([...url.searchParams].length || Object.keys(await bodyOf(init)).length) throw failure("bad_request","An index build accepts only an empty JSON object.",400)
         const request=headerOf(init,"idempotency-key")

@@ -31,12 +31,12 @@ func TestFreshResumeAndChildrenKeepTheirFrozenWorkflow(t *testing.T) {
 	if err := st.BindWorkflowConversation(ctx, first.ID, "%1", "original"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "graphify_enabled": true}); err != nil {
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "codegraph_enabled": true}); err != nil {
 		t.Fatal(err)
 	}
 	fresh, err := service.Prepare(ctx, root, "", "")
 	if err != nil || !strings.Contains(fresh.Text, "Poteto workflow") || !strings.Contains(fresh.Text, "ordinary source search") {
-		t.Fatalf("poteto/graphify not usable: %+v %v", fresh, err)
+		t.Fatalf("poteto/codegraph not usable: %+v %v", fresh, err)
 	}
 	child, err := service.Prepare(ctx, root, "", "original")
 	if err != nil || child.Text != "" {
@@ -48,7 +48,7 @@ func TestFreshResumeAndChildrenKeepTheirFrozenWorkflow(t *testing.T) {
 	}
 	for _, p := range []Prepared{child, resumed} {
 		l, found, err := st.WorkflowLaunchByID(ctx, p.ID)
-		if err != nil || !found || l.Snapshot.ProfileID != "clawdline" || l.Snapshot.GraphifyEnabled {
+		if err != nil || !found || l.Snapshot.ProfileID != "clawdline" || l.Snapshot.CodeGraphEnabled {
 			t.Fatalf("snapshot changed: %+v %v", l, err)
 		}
 	}

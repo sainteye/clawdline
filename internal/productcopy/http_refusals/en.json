@@ -1297,5 +1297,14 @@
   "http.d06ba0fa3093ad93": "An index build needs a visible ASCII Idempotency-Key of at most 128 bytes.",
   "http.503b58d15178edc2": "An index build accepts only an empty JSON object.",
   "http.7cdded1263a7d681": "A Graphify read takes no body.",
-  "http.679604233947a571": "The local index build was not started. Read its status before retrying."
+  "http.679604233947a571": "The local index build was not started. Read its status before retrying.",
+  "http.040015b30ef68190": "A CodeGraph view takes no query or body.",
+  "http.9ce06c0ccac477ea": "Enable CodeGraph in this machine's integration settings to view a graph.",
+  "http.2eceeecbcf03bf75": "CodeGraph is disabled or its setting is unavailable.",
+  "http.8844188e7775e5bf": "CodeGraph takes no query fields.",
+  "http.4fb2d57df7a352dd": "A CodeGraph read takes no body.",
+  "http.c1056e558fc51491": "Only this machine may query a local code index.",
+  "http.a4476b1d6ab7e033": "A local code query takes no URL query fields.",
+  "http.a5b1eff7be7f1430": "A local code query needs an absolute directory and a bounded question.",
+  "http.20353ce3f005ad53": "The local code query was refused. Use current source search or refresh the index."
 }

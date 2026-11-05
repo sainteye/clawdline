@@ -730,6 +730,11 @@
       "method": "*",
       "pattern": "/v1/ops/",
       "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/codegraph/query",
+      "guide": "connect"
     }
   ]
 }

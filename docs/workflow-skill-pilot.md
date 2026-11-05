@@ -1,5 +1,6 @@
 # Machine workflow skill pilot
 
+Historical pilot record. The active integration is now [local CodeGraph](codegraph-integration.md); the Graphify settings below describe the retired implementation.
 Current machine selection, frozen launch records and Poteto adaptation are described in [machine workflow profiles](workflow-profiles.md). The pilot below records the original two-switch implementation and its separate evaluation checkpoint.
 
 Status: local pilot, 2026-10-30. Behavioral effectiveness is **not evaluated**.
@@ -34,7 +35,7 @@ The setting does not uninstall a person's existing Superpowers or role skills.
 Graphify adds optional lookup instructions for an existing tool/index and a
 read-only pre-query freshness check. It does not install Graphify, build/delete
 an index or intercept direct Graphify calls. See
-[Graphify integration](graphify-integration.md) for its precise limits and the
+[Graphify integration](codegraph-integration.md) for its precise limits and the
 preserved local pilot reports. The two switches do not depend on each other.
 
 The narrow `GET/POST /v1/settings/integrations` route stores the boolean keys

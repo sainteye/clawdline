@@ -28,7 +28,7 @@ func TestWorkflowReconciliationContinuesAfterAnUnrelatedConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	snap, err := workflow.Seal(workflow.Snapshot{Schema: 1, ProfileID: "clawdline", Version: "1", Source: "test"})
+	snap, err := workflow.Seal(workflow.Snapshot{Schema: 2, ProfileID: "clawdline", Version: "1", Source: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,11 +64,11 @@ func TestWorkflowReconciliationContinuesAfterACorruptSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	badSnap, err := workflow.Seal(workflow.Snapshot{Schema: 1, ProfileID: "clawdline", Version: "1", Source: "bad"})
+	badSnap, err := workflow.Seal(workflow.Snapshot{Schema: 2, ProfileID: "clawdline", Version: "1", Source: "bad"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	goodSnap, err := workflow.Seal(workflow.Snapshot{Schema: 1, ProfileID: "clawdline", Version: "1", Source: "good"})
+	goodSnap, err := workflow.Seal(workflow.Snapshot{Schema: 2, ProfileID: "clawdline", Version: "1", Source: "good"})
 	if err != nil {
 		t.Fatal(err)
 	}

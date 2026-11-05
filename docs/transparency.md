@@ -127,7 +127,7 @@ Poteto adds a bundled local pstack adaptation with task routing, verifiable unit
 and evidence mapping. Neither option grants additional authorization. Fresh roots
 seal a source/version/body/stage/tool-choice snapshot; owned children inherit it,
 and resume keeps its original context. Existing unsnapshotted conversations are
-not relabeled from current settings. Graphify remains separate, with its launch
+not relabeled from current settings. CodeGraph remains separate, with its launch
 choice frozen in the same context. Launch records do not prove model application
 or benefit. The reviewed source inventory and both language explanations include
 the resolver, storage, local source bodies and launch producers. The public website
@@ -143,7 +143,7 @@ metadata command with no launch instructions, role snapshot or model generation.
 The ACP excerpt and reviewed source receipts follow the changed implementation.
 
 
-The Graphify lookup launch instruction is unchanged by explicit local index
+The CodeGraph lookup launch instruction is unchanged by explicit local index
 creation. The graph viewer now has a separate, user-triggered Build index action:
 it prepares a hash-pinned private parser and runs code-only extraction without a
 model API. The machine switch alone still installs or builds nothing. Review of
@@ -218,3 +218,16 @@ access; it is not an independent execution audit. No new root defaults, remote
 credentials or generic provider-instruction mechanism are introduced. Missing
 or mismatched evidence keeps manual comparison. The public website snapshot
 must follow this reviewed product revision when published.
+
+
+CodeGraph replaces the retired Graphify integration. Review of both languages
+covers the independent default-off setting, schema-2 consent, preserved historical
+schema-1 receipts, the bounded local query wrapper, cached service startup,
+watching and periodic reconciliation, explicit first-build downloads and separate
+SQLite visualization. The source excerpt contains the actual new launch guidance;
+source matches do not certify inferred relationships. No Gemini launch path gains
+CodeGraph instructions. The earlier Gemini host/HTTP source changes were also
+reviewed: terminal identity/screen/keystroke forwarding and PromptAccepted naming
+callbacks do not change the saved ACP resource composition or provider permissions.
+The public website snapshot must follow this reviewed product revision when it
+is published; a source receipt alone is not website deployment acceptance.

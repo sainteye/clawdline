@@ -193,6 +193,10 @@ Use `curl --fail-with-body`; every POST with a JSON body also needs
 `clawdline doctor --json` reads the running daemon’s sanitized Doctor report from `GET /v1/doctor` (API level 32; Cloud word `doctor`). It checks only fixed CLI version commands and existing quota evidence, without provider requests, credential reads or automatic uploads. Preview/download or explicitly submit a private report from Settings → Status → Doctor. `doctor_busy` means another check is running; `doctor_report_too_large` refuses an oversized export. Missing evidence remains unknown.
 
 
+**Local code navigation (API level 41).** When CodeGraph is enabled on this machine, `clawdline codegraph query "question or symbol names"` queries the managed index of the command's exact current working directory. It uses only the local orchestrator route `POST /v1/orchestrator/codegraph/query`, with JSON `{ "directory": "/absolute/worktree", "query": "question" }`, no URL fields, and a 16 KiB body / 4 KiB question limit. Cloud and device credentials cannot use it. Missing, foreign, unchecked, busy, stale or timed-out indexes are refused; use ordinary current source search rather than retrying blindly. A result includes `text` and `generation`; both source checks and the generation must match before and after the query. Graph edges remain untrusted navigation hints to verify in source.
+
+The command never installs or builds. Enable the machine setting and explicitly use **Build index** in the Project or Session graph viewer first. Existing owned indexes use cached services, native watching and periodic reconciliation while active. Turning the setting off stops managed services; restarting catches up offline edits. `clawdline codegraph check .` is a read-only local freshness probe, not proof of edge correctness. Each worktree owns its own index. Retired Graphify commands, settings and Cloud operations are not aliases, and historical consent does not enable CodeGraph.
+
 ### Pair a Cloud browser
 
 Pairing changes who may read this machine. A paired browser may read it immediately and, when

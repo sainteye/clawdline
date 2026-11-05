@@ -2131,72 +2131,117 @@
     "Note": true
   },
   {
+    "Name": "projects.codegraph_build_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_build_jobs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_build_log_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_build_poll_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_build_raw_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_build_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_build_workers",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_links",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_nodes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_query_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_query_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_query_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_reconcile_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_reply_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_request_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_runtime_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_service_idle_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_service_roots",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_store_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_text",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_view_poll_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.codegraph_zoom",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projects.folder_rows",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_build_body_bytes",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_build_jobs",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_build_log_bytes",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_build_poll_ms",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_build_raw_bytes",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_build_seconds",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_build_workers",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_links",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_nodes",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_request_ms",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_runtime_bytes",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_text",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "projects.graphify_zoom",
     "Known": true,
     "Note": true
   },

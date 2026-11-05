@@ -25,9 +25,9 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/clauderemote"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/codegraph"
 	"github.com/sainteye/clawdline/internal/adapters/doctor"
 	"github.com/sainteye/clawdline/internal/adapters/githubissues"
-	"github.com/sainteye/clawdline/internal/adapters/graphify"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
 	"github.com/sainteye/clawdline/internal/adapters/jiraissues"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
@@ -60,13 +60,13 @@ import (
 )
 
 type Server struct {
-	graphifyMu      sync.Mutex
-	graphifyBuilder *graphify.Builder
-	githubMu        sync.Mutex
-	githubConn      *githubissues.Connection
-	jiraHTTP        *jiraissues.Client
-	issueSync       *issueSyncWorker
-	claudeRemote    interface {
+	codegraphMu      sync.Mutex
+	codegraphBuilder *codegraph.Builder
+	githubMu         sync.Mutex
+	githubConn       *githubissues.Connection
+	jiraHTTP         *jiraissues.Client
+	issueSync        *issueSyncWorker
+	claudeRemote     interface {
 		SendRemote(context.Context, session.Session, string, func() error) error
 		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
 	}
@@ -570,8 +570,8 @@ func (s *Server) routeTable() []route {
 				s.sessionOutputs(w, r, id, file)
 				return
 			}
-			if id, ok := sessionSubresourcePath(r, "graphify"); ok {
-				s.sessionGraphifyRoute(w, r, id)
+			if id, ok := sessionSubresourcePath(r, "codegraph"); ok {
+				s.sessionCodeGraphRoute(w, r, id)
 				return
 			}
 			if id, ok := infoPath(r); ok {
@@ -671,6 +671,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/orchestrator/inflight"}, s.brokerInflight},
 		{Route{"*", "/v1/orchestrator/messages"}, s.brokerMessages},
 		{Route{"*", "/v1/orchestrator/whoami"}, s.brokerWhoAmI},
+		{Route{"*", "/v1/orchestrator/codegraph/query"}, s.codegraphQueryRoute},
 		// What a run was: the message a person sent a session, which a relay of
 		// their words names (runs.go).
 		// The address book a wait, a relay or a handoff names sessions from, and

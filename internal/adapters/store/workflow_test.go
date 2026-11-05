@@ -108,7 +108,7 @@ func TestWorkflowFailedLaunchAndInvalidSnapshotCannotBind(t *testing.T) {
 	defer s.Close()
 	snap := sealedWorkflow(t, "")
 	bad := snap
-	bad.GraphifyEnabled = true
+	bad.CodeGraphEnabled = true
 	if _, err := s.PrepareWorkflowLaunch(ctx, bad); err == nil {
 		t.Fatal("accepted bad digest")
 	}

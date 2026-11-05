@@ -4,7 +4,7 @@ package workflowlaunch
 import (
 	"context"
 	"errors"
-	"github.com/sainteye/clawdline/internal/adapters/graphify"
+	"github.com/sainteye/clawdline/internal/adapters/codegraph"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -45,7 +45,7 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 		if readErr != nil {
 			return Prepared{}, readErr
 		}
-		graph, _ := values.Bool("graphify_enabled")
+		graph, _ := values.Bool("codegraph_enabled")
 		profile, profileErr := nextconfig.WorkflowProfile(values)
 		if profileErr != nil {
 			return Prepared{}, profileErr
@@ -64,8 +64,8 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 		if snap.Instructions != "" {
 			parts = append(parts, snap.Instructions)
 		}
-		if snap.GraphifyEnabled {
-			graph, err := graphify.LaunchInstructions(ctx, root)
+		if snap.CodeGraphEnabled {
+			graph, err := codegraph.LaunchInstructions(ctx, root)
 			if err != nil {
 				return Prepared{}, err
 			}

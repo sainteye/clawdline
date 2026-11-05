@@ -10,8 +10,8 @@ import (
 var profileFiles embed.FS
 
 // ResolveWorkflow returns local, versioned content. It never installs or fetches dependencies.
-func ResolveWorkflow(id string, graphify bool) (workflow.Snapshot, error) {
-	s := workflow.Snapshot{Schema: 1, ProfileID: id, Version: "1", Source: "Clawdline", GraphifyEnabled: graphify, Stages: []workflow.Stage{}}
+func ResolveWorkflow(id string, codegraph bool) (workflow.Snapshot, error) {
+	s := workflow.Snapshot{Schema: 2, ProfileID: id, Version: "1", Source: "Clawdline", CodeGraphEnabled: codegraph, Stages: []workflow.Stage{}}
 	switch id {
 	case "clawdline":
 		// Compatibility mode adds no workflow instruction or compulsory stages.

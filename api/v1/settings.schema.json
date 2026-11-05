@@ -14,7 +14,7 @@
       "properties": {
         "workflow_profile": { "type": "string", "nullable": true },
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
-        "graphify_enabled": { "type": "boolean", "nullable": true },
+        "codegraph_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "exists": {
@@ -286,7 +286,7 @@
       "properties": {
         "workflow_profile": { "type": "string", "nullable": true },
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
-        "graphify_enabled": { "type": "boolean", "nullable": true },
+        "codegraph_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "hotkey": {
           "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.",
@@ -570,7 +570,7 @@
       "additionalProperties": false,
       "required": [
         "workflow_skills_enabled",
-        "graphify_enabled"
+        "codegraph_enabled"
       ],
       "properties": {
         "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
@@ -578,7 +578,7 @@
           "type": "boolean",
           "description": "Machine-wide explicit opt-in; absent settings remain disabled."
         },
-        "graphify_enabled": {
+        "codegraph_enabled": {
           "type": "boolean",
           "description": "Machine-wide explicit opt-in; absent settings remain disabled."
         }
@@ -592,7 +592,7 @@
         "workflow_skills_enabled": {
           "type": "boolean"
         },
-        "graphify_enabled": {
+        "codegraph_enabled": {
           "type": "boolean"
         }
       }

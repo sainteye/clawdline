@@ -303,8 +303,8 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.opsRoute(w, r, parts[0], parts[2:])
 		return
 	}
-	if len(parts) == 2 && parts[0] != "" && parts[1] == "graphify" {
-		s.projectGraphifyRoute(w, r, parts[0])
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "codegraph" {
+		s.projectCodeGraphRoute(w, r, parts[0])
 		return
 	}
 	if len(parts) >= 2 && parts[0] != "" && parts[1] == "files" && len(parts) <= 3 {

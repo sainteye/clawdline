@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codegraph.schema.json",
+  "title": "CodeGraph project view",
+  "description": "Machine opt-in local CodeGraph. Explicit POST {} installs the pinned integrity-checked runtime and builds or reconciles this worktree. GET starts a cached managed service only for an existing owned index. Native watching plus periodic content reconciliation keeps it current. Foreign indexes are never overwritten.",
+  "$defs": {
+    "CodeGraphNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "file",
+        "location",
+        "community"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "community": {
+          "type": "string"
+        }
+      }
+    },
+    "CodeGraphLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "target",
+        "relation",
+        "confidence"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string"
+        }
+      }
+    },
+    "CodeGraphView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reason",
+        "checked_at",
+        "total_nodes",
+        "total_links",
+        "truncated",
+        "nodes",
+        "links",
+        "build",
+        "can_build",
+        "unverified_sources",
+        "watching",
+        "last_synced_at",
+        "generation"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "checked_at": {
+          "type": "integer"
+        },
+        "total_nodes": {
+          "type": "integer"
+        },
+        "total_links": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CodeGraphNode"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CodeGraphLink"
+          }
+        },
+        "build": {
+          "$ref": "#/$defs/CodeGraphBuildStatus"
+        },
+        "can_build": {
+          "type": "boolean"
+        },
+        "unverified_sources": {
+          "type": "integer"
+        },
+        "watching": {
+          "type": "boolean"
+        },
+        "last_synced_at": {
+          "type": "integer"
+        },
+        "generation": {
+          "type": "string"
+        }
+      }
+    },
+    "CodeGraphBuildStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "phase",
+        "files",
+        "bytes",
+        "started_at",
+        "updated_at",
+        "error"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "bytes": {
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "integer"
+        },
+        "updated_at": {
+          "type": "integer"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

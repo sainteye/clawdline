@@ -167,9 +167,9 @@ func TestEveryLocalWordThatNeedsThisMachineSaysSo(t *testing.T) {
 			continue
 		}
 		// Exercise the credential boundary with the optional feature enabled.
-		// Its default-off refusal is tested separately by graphify_test.go.
-		if o.Op == "project-graphify" || o.Op == "session-graphify" {
-			if _, err := s.server.settingsFile().Set(map[string]any{"graphify_enabled": true}); err != nil {
+		// Its default-off refusal is tested separately by codegraph_test.go.
+		if o.Op == "project-codegraph" || o.Op == "session-codegraph" {
+			if _, err := s.server.settingsFile().Set(map[string]any{"codegraph_enabled": true}); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -1,4 +1,4 @@
-import { GRAPHIFY_SETTING, graphWord } from "../../graphify/graphify.js"
+import { CODEGRAPH_SETTING, graphWord } from "../../codegraph/codegraph.js"
 import { useEffect, useRef, useState } from "react"
 import { catalogFormat, catalogWord } from "../../catalog.js"
 import * as L from "../../legacy/bridge.js"
@@ -7,7 +7,7 @@ import { WORKFLOW_PROFILES, workflowName, workflowWord } from "../../session/wor
 import { Switch } from "./Switch.js"
 import "./workflow-settings.css"
 
-const keys = ["graphify_enabled"] as const
+const keys = ["codegraph_enabled"] as const
 type Key = typeof keys[number] | "workflow_skills_enabled"
 const word = (key: string) => catalogWord("integrationSettings", key)
 
@@ -37,8 +37,8 @@ export function IntegrationSettingsBlock({ shown }: { shown: boolean }) {
     setBusy(true); setSaid("")
     try {
       const saved = await writeIntegrationSettings(change)
-      if ("graphify_enabled" in change) window.dispatchEvent(new CustomEvent(GRAPHIFY_SETTING, {detail: saved.graphify_enabled === true}))
-      if (started === generation.current) { setSnapshot(saved); setSaid("graphify_enabled" in change ? graphWord("saved") : word("saved")) }
+      if ("codegraph_enabled" in change) window.dispatchEvent(new CustomEvent(CODEGRAPH_SETTING, {detail: saved.codegraph_enabled === true}))
+      if (started === generation.current) { setSnapshot(saved); setSaid("codegraph_enabled" in change ? graphWord("saved") : word("saved")) }
     }
     catch (error) { if (started === generation.current) setSaid(L.failureSentence(error, word("saveFailed"))) }
     finally { if (started === generation.current) setBusy(false) }
@@ -96,7 +96,7 @@ export function IntegrationSettingsBlock({ shown }: { shown: boolean }) {
         </div>
         <div id={id + "-help"} className="workflow-setting-help" hidden={!expanded}>
           <p>{word(key + "Description")}</p>
-          <p>{key === "graphify_enabled" ? graphWord("scope") : word("scope")}</p>
+          <p>{key === "codegraph_enabled" ? graphWord("scope") : word("scope")}</p>
         </div>
       </div>
     })}

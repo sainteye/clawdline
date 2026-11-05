@@ -55,7 +55,7 @@ func TestChildInheritsTheParentsWorkflowInsteadOfTheMachineChoice(t *testing.T) 
 		if err := b.Store.BindWorkflowConversation(ctx, parent.ID, "%1", rootConversation); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "graphify_enabled": true}); err != nil {
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "codegraph_enabled": true}); err != nil {
 			t.Fatal(err)
 		}
 		service := workflowlaunch.Service{Store: b.Store, Dir: dir, Resolve: skills.ResolveWorkflow}
@@ -94,7 +94,7 @@ func TestChildInheritsBeforeTheInventoryObserverBindsItsParent(t *testing.T) {
 		if err := b.Store.RecordWorkflowTerminal(ctx, parent.ID, "%1"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "graphify_enabled": true}); err != nil {
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "codegraph_enabled": true}); err != nil {
 			t.Fatal(err)
 		}
 		service := workflowlaunch.Service{Store: b.Store, Dir: dir, Resolve: skills.ResolveWorkflow}

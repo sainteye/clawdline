@@ -2772,6 +2772,48 @@ export type CloudViewerScope =
 
 export const CloudViewerScopeValues: readonly CloudViewerScope[] = ["readonly", "operate"] as const
 
+export interface CodeGraphBuildStatus {
+  bytes: number
+  error: string
+  files: number
+  phase: string
+  started_at: number
+  state: string
+  updated_at: number
+}
+
+export interface CodeGraphLink {
+  confidence: string
+  relation: string
+  source: string
+  target: string
+}
+
+export interface CodeGraphNode {
+  community: string
+  file: string
+  id: string
+  label: string
+  location: string
+}
+
+export interface CodeGraphView {
+  build: CodeGraphBuildStatus
+  can_build: boolean
+  checked_at: number
+  generation: string
+  last_synced_at: number
+  links: CodeGraphLink[]
+  nodes: CodeGraphNode[]
+  reason: string
+  state: string
+  total_links: number
+  total_nodes: number
+  truncated: boolean
+  unverified_sources: number
+  watching: boolean
+}
+
 /**
  * GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the default)
  * is every envelope not yet acknowledged, dead letters included; `pending=false`
@@ -3520,45 +3562,6 @@ export interface GitSnapshot {
   head: string
 }
 
-export interface GraphifyBuildStatus {
-  bytes: number
-  error: string
-  files: number
-  phase: string
-  started_at: number
-  state: string
-  updated_at: number
-}
-
-export interface GraphifyLink {
-  confidence: string
-  relation: string
-  source: string
-  target: string
-}
-
-export interface GraphifyNode {
-  community: string
-  file: string
-  id: string
-  label: string
-  location: string
-}
-
-export interface GraphifyView {
-  build: GraphifyBuildStatus
-  can_build: boolean
-  checked_at: number
-  links: GraphifyLink[]
-  nodes: GraphifyNode[]
-  reason: string
-  state: string
-  total_links: number
-  total_nodes: number
-  truncated: boolean
-  unverified_sources: number
-}
-
 /**
  * GET /v1/health, open without a token: that this daemon is alive, which
  * implementation it is, and the two answers a page needs before it can be let in
@@ -3782,7 +3785,7 @@ export interface ImageStoreResult {
 }
 
 export interface IntegrationSettingsRequest {
-  graphify_enabled?: boolean
+  codegraph_enabled?: boolean
 
   /**
    * Machine-wide main workflow; omitted by older daemons.
@@ -3795,7 +3798,7 @@ export interface IntegrationSettingsSnapshot {
   /**
    * Machine-wide explicit opt-in; absent settings remain disabled.
    */
-  graphify_enabled: boolean
+  codegraph_enabled: boolean
 
   /**
    * Machine-wide main workflow; omitted by older daemons.
@@ -8024,8 +8027,8 @@ export interface SessionWaitTarget {
 }
 
 export interface SessionWorkflow {
+  codegraph_enabled: boolean | null
   digest?: string
-  graphify_enabled: boolean | null
   profile_id?: string
   source?: string
   stages?: WorkflowStage[]
@@ -8101,6 +8104,7 @@ export interface SettingsRequest {
    * `retired_setting`.
    */
   cloudflare_tunnel_retired: boolean | null
+  codegraph_enabled: boolean | null
 
   /**
    * Whether a new session is named by an assistant.
@@ -8121,7 +8125,6 @@ export interface SettingsRequest {
    * Whether the terminal selects the tab the bar points at.
    */
   follow_target: boolean | null
-  graphify_enabled: boolean | null
 
   /**
    * A combination the shell can register (`cmd+shift+k`), or empty for none.
@@ -8456,6 +8459,7 @@ export interface SettingsSnapshot {
    * writing `cloudflare_tunnel_retired: false` takes them out of the file.
    */
   cloudflare_tunnel_retired?: boolean
+  codegraph_enabled: boolean | null
 
   /**
    * Whether a new session is named by an assistant. The Swift app's spelling, kept
@@ -8485,7 +8489,6 @@ export interface SettingsSnapshot {
    */
   follow_target: boolean | null
   gemini_step_explanations: boolean | null
-  graphify_enabled: boolean | null
 
   /**
    * The file's `hotkey`, or null when the file does not carry one as a string. Null

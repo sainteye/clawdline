@@ -917,26 +917,26 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-workflow-write", method: "POST", path: "/v1/settings/workflow",
 		body2: `{"dispatch_full_permission":false,"session_auto_discovery":false}`,
 	}, {
-		word: "project-graphify-build", body: map[string]any{"type": "project-graphify-build", "project": "p1", "request": "build-1", "session": machine},
-		session: machine, name: "action:build-1", method: "POST", path: "/v1/projects/p1/graphify", body2: `{}`,
+		word: "project-codegraph-build", body: map[string]any{"type": "project-codegraph-build", "project": "p1", "request": "build-1", "session": machine},
+		session: machine, name: "action:build-1", method: "POST", path: "/v1/projects/p1/codegraph", body2: `{}`,
 	}, {
-		word: "session-graphify-build", body: map[string]any{"type": "session-graphify-build", "session": pane, "request": "build-1", "execution_generation": pinnedGeneration},
-		session: pane, name: "action:build-1", method: "POST", path: "/v1/sessions/" + segment(pane) + "/graphify", body2: `{}`,
+		word: "session-codegraph-build", body: map[string]any{"type": "session-codegraph-build", "session": pane, "request": "build-1", "execution_generation": pinnedGeneration},
+		session: pane, name: "action:build-1", method: "POST", path: "/v1/sessions/" + segment(pane) + "/codegraph", body2: `{}`,
 	}, {
-		word: "project-graphify", body: map[string]any{"type": "project-graphify", "project": "p1", "request": "req-graphify", "session": machine},
-		session: machine, name: "read:req-graphify", method: "GET", path: "/v1/projects/p1/graphify",
+		word: "project-codegraph", body: map[string]any{"type": "project-codegraph", "project": "p1", "request": "req-codegraph", "session": machine},
+		session: machine, name: "read:req-codegraph", method: "GET", path: "/v1/projects/p1/codegraph",
 	}, {
-		word: "session-graphify", body: map[string]any{"type": "session-graphify", "session": pane},
-		session: pane, name: "session-graphify", method: "GET", path: "/v1/sessions/" + segment(pane) + "/graphify",
+		word: "session-codegraph", body: map[string]any{"type": "session-codegraph", "session": pane},
+		session: pane, name: "session-codegraph", method: "GET", path: "/v1/sessions/" + segment(pane) + "/codegraph",
 	}, {
 		word:    "integration-settings",
 		body:    map[string]any{"type": "integration-settings", "session": machine, "request": "req-integrations"},
 		session: machine, name: "read:req-integrations", method: "GET", path: "/v1/settings/integrations",
 	}, {
 		word:    "integration-settings-update",
-		body:    map[string]any{"type": "integration-settings-update", "session": machine, "request": "req-integrations-write", "changes": map[string]any{"workflow_skills_enabled": true, "graphify_enabled": false}},
+		body:    map[string]any{"type": "integration-settings-update", "session": machine, "request": "req-integrations-write", "changes": map[string]any{"workflow_skills_enabled": true, "codegraph_enabled": false}},
 		session: machine, name: "action:req-integrations-write", method: "POST", path: "/v1/settings/integrations",
-		body2: `{"graphify_enabled":false,"workflow_skills_enabled":true}`,
+		body2: `{"codegraph_enabled":false,"workflow_skills_enabled":true}`,
 	}, {
 		word:    "github-connection",
 		body:    map[string]any{"type": "github-connection", "session": machine, "request": "req-gh"},

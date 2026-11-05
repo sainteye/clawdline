@@ -40,27 +40,27 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 		return got
 	}
 	got := read(s, "GET", "")
-	if len(got) != 2 || got["workflow_skills_enabled"] || got["graphify_enabled"] {
+	if len(got) != 2 || got["workflow_skills_enabled"] || got["codegraph_enabled"] {
 		t.Fatalf("new machine must opt in: %v", got)
 	}
 	got = read(s, "POST", `{"workflow_skills_enabled":true}`)
-	if !got["workflow_skills_enabled"] || got["graphify_enabled"] {
-		t.Fatalf("skills toggle affected graphify: %v", got)
+	if !got["workflow_skills_enabled"] || got["codegraph_enabled"] {
+		t.Fatalf("skills toggle affected codegraph: %v", got)
 	}
-	got = read(s, "POST", `{"graphify_enabled":true}`)
-	if !got["workflow_skills_enabled"] || !got["graphify_enabled"] {
-		t.Fatalf("graphify toggle lost skills opt-in: %v", got)
+	got = read(s, "POST", `{"codegraph_enabled":true}`)
+	if !got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
+		t.Fatalf("codegraph toggle lost skills opt-in: %v", got)
 	}
 	got = read(s, "POST", `{"workflow_skills_enabled":false}`)
-	if got["workflow_skills_enabled"] || !got["graphify_enabled"] {
-		t.Fatalf("disabling skills changed graphify: %v", got)
+	if got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
+		t.Fatalf("disabling skills changed codegraph: %v", got)
 	}
 	got = read(&Server{cfg: config.Config{Dir: dir}}, "GET", "")
-	if got["workflow_skills_enabled"] || !got["graphify_enabled"] {
+	if got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
 		t.Fatalf("restart did not retain machine settings: %v", got)
 	}
 	got = read(&Server{cfg: config.Config{Dir: t.TempDir()}}, "GET", "")
-	if got["workflow_skills_enabled"] || got["graphify_enabled"] {
+	if got["workflow_skills_enabled"] || got["codegraph_enabled"] {
 		t.Fatalf("another machine inherited opt-in: %v", got)
 	}
 }
@@ -68,10 +68,10 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 func TestIntegrationSettingsRejectMalformedChangesAtomically(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
 	for _, body := range []string{
-		`{"workflow_skills_enabled":null}`, `{"graphify_enabled":"on"}`,
+		`{"graphify_enabled":true}`, `{"workflow_skills_enabled":null}`, `{"codegraph_enabled":"on"}`,
 		`{"workflow_skills_enabled":true,"remote":true}`, `{"project":"/somewhere"}`,
 		`{"workflow_skills_enabled":true} {}`, `[]`, `null`,
-		`{"workflow_profile":"unknown","graphify_enabled":true}`, `{"workflow_profile":null}`,
+		`{"workflow_profile":"unknown","codegraph_enabled":true}`, `{"workflow_profile":null}`,
 		`{"workflow_profile":"poteto","workflow_skills_enabled":true}`,
 	} {
 		r := httptest.NewRequest("POST", "/v1/settings/integrations", strings.NewReader(body))
