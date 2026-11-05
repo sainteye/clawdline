@@ -381,7 +381,7 @@ func (r *WorkUnitRecorder) resolveStep(ctx context.Context, e *WorkUnitEvent) er
 	}
 	sort.SliceStable(steps, func(i, j int) bool { return steps[i].Position < steps[j].Position })
 	for _, s := range steps {
-		if !s.Done {
+		if s.Open() {
 			e.ID = s.ID
 			return nil
 		}
@@ -515,10 +515,13 @@ func activePhase(p work.Phase) bool {
 func (r *WorkUnitRecorder) ObserveBoard(changes []store.WorkV2Change) {
 	for _, c := range changes {
 		if c.Step {
-			if !c.PrevStep.Done && c.NextStep.Done {
-				at := c.NextStep.CompletedAt
+			if c.PrevStep.Open() && !c.NextStep.Open() {
+				at, outcome := c.NextStep.CompletedAt, "step-done"
+				if !c.NextStep.CancelledAt.IsZero() {
+					at, outcome = c.NextStep.CancelledAt, "step-cancelled"
+				}
 				r.Post(WorkUnitEvent{Kind: WorkUnitStep, ID: c.NextStep.ID, Item: c.NextStep.WorkID,
-					Edge: store.WorkCursorEnd, Outcome: "step-done", At: at})
+					Edge: store.WorkCursorEnd, Outcome: outcome, At: at})
 				r.Post(WorkUnitEvent{Kind: WorkUnitStep, Item: c.NextStep.WorkID, Edge: store.WorkCursorStart, At: at})
 			}
 			continue

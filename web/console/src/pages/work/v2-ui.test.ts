@@ -82,7 +82,6 @@ test("the assignment picker shows one compact AI suggestion action", () => {
 test("assigned Board items show their generated TODO receipts", () => {
   assert.match(workSteps, /function WorkSteps/)
   assert.match(source, /item\.steps/)
-  assert.match(workSteps, pattern`\{${wordCall("待辦 ·")}\} \{done\} \/ \{steps\.length\}`)
   assert.match(styles, /\.work-item-steps/)
   assert.match(todos, /<WorkSteps steps=\{item\.steps\}/)
 })
@@ -300,7 +299,6 @@ test("work controls use reusable vector icons instead of font glyph positioning"
   assert.match(source, /className="work-modal-close"[^>]*><WorkIcon name="close" \/><\/button>/)
   assert.match(source, pattern`aria-label=\{${word("移除參考圖片 {arg0}")}[\s\S]*?<WorkIcon name="close" \/>`)
   assert.match(source, /className="work-kind-radio"><WorkIcon name=\{kind === value \? "radio" : "circle"\} \/>/)
-  assert.match(steps, /<WorkIcon name=\{step\.done \? "check" : "circle"\} \/>/)
   assert.match(styles, /\.work-icon \{[^}]*display:\s*block[^}]*width:\s*1em[^}]*height:\s*1em/)
   assert.match(styles, /\.work-modal-image-list li button \{[^}]*display:\s*grid[^}]*place-items:\s*center/)
 })

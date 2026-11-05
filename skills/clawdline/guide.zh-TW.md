@@ -571,7 +571,10 @@ clawdline item doc <item id> --role completion_report --title "Completion report
 
 寫給提出問題的人讀，用 Markdown，不放私密資料。
 
-**7. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉。自行完成的
+**7. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉。
+與使用者討論後，若確定某步驟已不再需要，用
+`clawdline item step-cancel --reason "<why>" <item id> <step id>` 記錄取消；取消與完成不同，
+但不再阻擋結案。不可用取消繞過尚未完成的工作或缺少核准。自行完成的
 工作從一次性 worktree 提交並推送；有 child 時則 merge 它的 branch。落地後可用一個指令到 `done`。
 child 的 landing 可提供 commit、target、remote；自行落地則明確指定：
 
@@ -1630,8 +1633,21 @@ steps（曾經是 Plan 的項目不會），用 `clawdline item add` 建立的�
 `clawdline item step-done <item id> <step id>` 勾掉；它送出
 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` 與 `{"session_id"}`。Agent 路由上的
 `expected_version` 可省略：省略時寫入作用在當下的版本；有帶（`--expected-version`）就會比對，過期的版本回 `version_conflict`。
-只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
+只要還有任何 step 未完成也未取消，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
 step 勾成完成。
+與使用者討論後，若確定某個步驟已不再需要，用
+`clawdline item step-cancel --reason "<why it is no longer needed>" <item id> <step id>`。
+它送出 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/cancel` 與
+`{"session_id", "reason"}`。原因必填，最多 8 KiB。取消會保留原標題、執行者、時間與原因，
+完成資訊維持空白，也不再阻擋 `done`。看板和 Session 會標示「已取消」，數量與完成分開。
+之後又需要做時，用 `clawdline item step-reopen <item id> <step id>`（對同一步驟的 `/reopen`
+送出 `POST` 與 `{"session_id"}`）恢復待辦，它會再次阻擋 `done`。
+這些路由沿用完成步驟的目前負責人、可選版本及冪等保護。已完成的步驟不能取消；已取消的步驟
+必須先恢復才能標記完成。兩個指令都不能修改已結案項目。取消和恢復都會留在項目歷史中。
+不可為了結案而取消尚未做完的工作，也不可把缺少核准解讀為取消。
+拒絕碼：`reason_required`、`reason_too_large`、`step_completed`、`step_cancelled`、
+`step_not_found`、`not_item_owner`、`version_conflict`。處理負責人或狀態衝突前先讀取目前項目，
+不要自行改成完成或取消。
 
 **自己把項目拆成 steps。** 你負責的項目還沒有 steps、而工作要分階段做——好幾個要各自驗證的改動，或
 動到系統裡不只一個部分——就在動手實作之前，自己把它拆成有順序的 steps：兩到八個具體、各自能驗證的

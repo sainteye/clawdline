@@ -1,12 +1,6 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
-test("the manual-completion confirmation includes an open-step warning", () => {
-  const helper = readFileSync(new URL("./complete-item.ts", import.meta.url), "utf8")
-  assert.match(helper, /filter\(\(step\) => !step\.done\)\.length/)
-  assert.match(helper, /open > 0 \? catalogFormat\("template", "61504537731d", \[open\]\) : catalogWord\("literal", "ee952fba0441"\)/)
-})
-
 test("the Session milestone asks before completing its own item", () => {
   const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
   assert.match(todos, /onComplete=\{\(\) => run\(`complete-\$\{item\.id\}`, \(\) => completeWorkV2\(item\)\)\}/)

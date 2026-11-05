@@ -167,8 +167,8 @@ first. A 33rd counted document is refused with `documents_full`.
 Item-local steps are a lightweight Agent aid:
 
 - ordered title;
-- `todo` or `done`;
-- creator and completion facts;
+- `todo`, `done` or `cancelled`;
+- creator, completion facts, or cancellation time, actor and reason;
 - version.
 
 On a successful assignment, an executable item with no existing steps treats two or more
@@ -181,9 +181,19 @@ item's history marks it, since every conversion has a Plan on one side. The desc
 label is shortened only for the bounded TODO presentation.
 
 Steps do not create Board items, do not assign Sessions, and do not automatically advance the
-item's lifecycle. The owning Agent must explicitly complete every step before `done` is accepted;
+item's lifecycle. The owning Agent must explicitly complete or cancel every step before `done` is accepted;
 other phase transitions do not silently complete them. A completed item retains its steps as
-history.
+history. Cancellation is not completion: it leaves `done=false` and completion facts empty.
+After discussion establishes a step is no longer needed, the active owner uses
+`clawdline item step-cancel --reason "<why>" <item-id> <step-id>`.
+The reason is required and uses the existing 8 KiB completion-reason budget.
+`clawdline item step-reopen <item-id> <step-id>` restores a cancelled step while the item
+is still active; it blocks closure again. Completed steps cannot be cancelled, and a cancelled
+step must be restored before completion. Both operations retain the same owner, item-version,
+idempotency and terminal-item protections as step completion. Cancellation and restoration
+have distinct history events. Board and Session views retain the title, visibly label cancellation,
+and report completed, cancelled and pending counts separately. No cancellation is inferred
+from a completed item or from missing approval.
 
 ### 5.4 Reference images
 
@@ -266,7 +276,7 @@ Session assignment normally moves from `created` to `assigned` in one transactio
 | `verifying` | owning Agent | when captured verification is on, a clean committed same-Project candidate is frozen and a checker round is queued |
 | `merging` | owning Agent | when captured verification is on, a live PASS or reasoned exact-candidate override; otherwise ordinary verification evidence |
 | `deploying` | owning Agent | broker landing, or a direct-Session receipt whose exact commit is contained by both the Project's local target and its remote-tracking target |
-| `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required; every item step is complete |
+| `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required; every item step is complete or cancelled |
 | `cancelled` | person | cancellation reason; assignment released |
 
 The `done` transition records the completing owner, releases the active assignment, and removes

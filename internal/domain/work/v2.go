@@ -294,16 +294,32 @@ type ImageV2 struct {
 }
 
 type StepV2 struct {
-	ID          string
-	WorkID      string
-	Title       string
-	Done        bool
-	Position    int64
-	CreatedBy   string
-	CompletedBy string
-	CreatedAt   time.Time
-	CompletedAt time.Time
-	Version     int64
+	ID           string
+	WorkID       string
+	Title        string
+	Done         bool
+	Position     int64
+	CreatedBy    string
+	CompletedBy  string
+	CreatedAt    time.Time
+	CompletedAt  time.Time
+	CancelledAt  time.Time
+	CancelledBy  string
+	CancelReason string
+	Version      int64
+}
+
+// Open distinguishes outstanding work from both completion and cancellation.
+func (s StepV2) Open() bool { return !s.Done && s.CancelledAt.IsZero() }
+
+func (s StepV2) Status() string {
+	if !s.CancelledAt.IsZero() {
+		return "cancelled"
+	}
+	if s.Done {
+		return "done"
+	}
+	return "todo"
 }
 
 type EventV2 struct {

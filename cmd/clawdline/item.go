@@ -151,7 +151,7 @@ func itemCommand(args []string) {
 	stepsFile := fs.String("steps-file", "", cliCopy("item", "flag.steps_file", "a file holding the steps, one per non-empty line"))
 	deploy := fs.String("deploy", "", cliCopy("item", "flag.deploy", "required, not_required or agent_decides (default agent_decides)"))
 	run := fs.String("run", "", cliCopy("item", "flag.run", "the run of the person's message (default: this conversation's latest run)"))
-	reason := fs.String("reason", "", cliCopy("item", "flag.reason", "why the person asked to remove this Board item"))
+	reason := fs.String("reason", "", cliCopy("item", "flag.reason", "why this Board item or step is no longer needed"))
 	expectedVersion := fs.Int64("expected-version", 0, cliCopy("item", "flag.expected_version", "the item's version the write expects; refused as version_conflict when it moved on (required for acceptance-revise)"))
 	docID := fs.String("doc", "", cliCopy("item", "flag.doc", "for show: print only this document's body, raw"))
 	output := fs.String("output", "", cliCopy("item", "flag.output", "for image: save the full reference image to this new file"))
@@ -294,7 +294,7 @@ func itemCommand(args []string) {
 		}
 		rest = positional
 		f.phase = ev
-	case "step-done", "phase":
+	case "step-done", "step-cancel", "step-reopen", "phase":
 		if len(positional) != 2 {
 			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.two", "clawdline item %s: takes an item id and one more argument, got %d arguments\n"), op, len(positional))
 			itemUsage()
@@ -384,6 +384,8 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.steps", "       clawdline item steps [--port n] <item id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_add", "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_done", "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_cancel", "       clawdline item step-cancel --reason <reason> <item id> <step id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_reopen", "       clawdline item step-reopen <item id> <step id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.acceptance", "       clawdline item acceptance [--body-file f | stdin] [--conversation id] [--key k] [--port n] <item id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.acceptance_revise", "       clawdline item acceptance-revise --run id --expected-version n [--body-file f | stdin]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.acceptance_revise_options", "                            [--conversation id] [--key k] [--port n] <item id>"))
@@ -465,10 +467,12 @@ type itemWire struct {
 	ReviewRequired     bool    `json:"review_required"`
 	ParentID           string  `json:"parent_id"`
 	Steps              []struct {
-		ID       string `json:"id"`
-		Title    string `json:"title"`
-		Done     bool   `json:"done"`
-		Position int64  `json:"position"`
+		ID           string `json:"id"`
+		Title        string `json:"title"`
+		Done         bool   `json:"done"`
+		Status       string `json:"status"`
+		CancelReason string `json:"cancel_reason"`
+		Position     int64  `json:"position"`
 	} `json:"steps"`
 	Documents []itemDocWire    `json:"documents"`
 	Images    *[]itemImageWire `json:"images"`
@@ -527,7 +531,13 @@ func printItem(w io.Writer, it itemWire) {
 		if s.Done {
 			mark = "x"
 		}
+		if s.Status == "cancelled" {
+			mark = "-"
+		}
 		fmt.Fprintf(w, "  [%s] %s  %s\n", mark, s.ID, s.Title)
+		if s.Status == "cancelled" {
+			fmt.Fprintf(w, cliCopy("item", "list.step_cancelled", "      Cancelled: %s\n"), s.CancelReason)
+		}
 	}
 	for _, d := range it.Documents {
 		fmt.Fprintf(w, cliCopy("item", "list.doc", "  doc %s  %s  %s  v%d\n"), d.ID, d.Role, d.Title, d.Version)
@@ -737,10 +747,18 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		body = map[string]any{"session_id": conversation, "via": map[string]string{"run": run},
 			"reason": f.reason, "expected_version": version}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/cancel"
-	case "step-done":
+	case "step-done", "step-cancel", "step-reopen":
 		itemID, stepID := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
 		body = map[string]any{"session_id": conversation}
-		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/steps/" + url.PathEscape(stepID) + "/complete"
+		action := map[string]string{"step-done": "complete", "step-cancel": "cancel", "step-reopen": "reopen"}[op]
+		if op == "step-cancel" {
+			if strings.TrimSpace(f.reason) == "" {
+				fmt.Fprintf(stderr, cliCopy("item", "error.cancel_reason", "clawdline %s: --reason is required. Nothing was cancelled.\n"), name)
+				return 2
+			}
+			body["reason"] = f.reason
+		}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/steps/" + url.PathEscape(stepID) + "/" + action
 	case "phase":
 		itemID, next := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
 		ev := f.phase
@@ -1100,6 +1118,12 @@ func itemWrote(stdout io.Writer, op string, args []string, it itemWire) {
 		"acceptance": cliCopy("item", "receipt.acceptance", "the acceptance criteria"), "acceptance-revise": cliCopy("item", "receipt.acceptance_revision", "the acceptance revision")}[op]
 	if op == "step-done" && len(args) > 1 {
 		what = cliCopy("item", "receipt.step_prefix", "step ") + strings.TrimSpace(args[1]) + cliCopy("item", "receipt.step_suffix", " done")
+	} else if (op == "step-cancel" || op == "step-reopen") && len(args) > 1 {
+		state := cliCopy("item", "receipt.step_cancelled", " cancelled")
+		if op == "step-reopen" {
+			state = cliCopy("item", "receipt.step_reopened", " restored to pending")
+		}
+		what = cliCopy("item", "receipt.step_prefix", "step ") + strings.TrimSpace(args[1]) + state
 	} else if op == "phase" && len(args) > 1 {
 		what = cliCopy("item", "receipt.phase_prefix", "phase ") + strings.TrimSpace(args[1])
 	}

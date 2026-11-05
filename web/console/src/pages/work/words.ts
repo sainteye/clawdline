@@ -22,6 +22,9 @@ const englishBacklog = "Backlog"
 const words = {
   en: {
     nav: "Board",
+    stepSummary: "To-dos: {done} completed \u00b7 {cancelled} cancelled \u00b7 {open} pending",
+    stepCancelled: "Cancelled",
+
     tabBoard: "Board",
     tabBacklog: englishBacklog,
     boardEyebrow: "BOARD · HAPPENING NOW",
@@ -241,6 +244,8 @@ const words = {
     assignSessionsIncomplete: "The Session list is not complete yet, so a Session in this Project may be missing from it.",
   },
   "zh-Hant": {
+    stepSummary: "待辦：{done} 已完成 · {cancelled} 已取消 · {open} 未處理",
+    stepCancelled: "已取消",
     nav: "看板",
     tabBoard: "看板",
     tabBacklog: "後續工作",

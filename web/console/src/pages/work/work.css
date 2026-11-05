@@ -241,6 +241,11 @@
 .work-item-steps li > .work-icon { width: 12px; height: 12px; margin-top: 2px; color: var(--faint); }
 .work-item-steps li[data-state="done"] { color: var(--faint); }
 .work-item-steps li[data-state="done"] > .work-icon { color: var(--ok); }
+.work-item-steps li[data-state="cancelled"] { color: var(--faint); }
+.work-step-content { min-width: 0; overflow-wrap: anywhere; }
+.work-item-steps li[data-state="cancelled"] .work-step-title { text-decoration: line-through; }
+.work-step-cancelled { display: inline-block; margin-inline-start: 6px; font-size: 10px; }
+.work-step-reason { display: block; margin-top: 2px; color: var(--dim); font-size: 10px; }
 /* Actions wrap below the Project name when the card narrows. */
 .work-card-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; min-width: 0; }
 .work-card-controls { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; min-width: 0; margin-left: auto; }

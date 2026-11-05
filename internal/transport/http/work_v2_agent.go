@@ -298,10 +298,11 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		return
 	}
 	if len(parts) == 5 && parts[0] == "items" && workID(parts[1]) && parts[2] == "steps" &&
-		parts[4] == "complete" && r.Method == http.MethodPost {
+		(parts[4] == "complete" || parts[4] == "cancel" || parts[4] == "reopen") && r.Method == http.MethodPost {
 		var body struct {
 			ExpectedVersion int64  `json:"expected_version"`
 			SessionID       string `json:"session_id"`
+			Reason          string `json:"reason"`
 		}
 		raw, ok := readWorkV2Body(w, r, &body)
 		if !ok {
@@ -313,7 +314,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		itemOf := s.workV2ItemProjector(r.Context())
 		var answer []byte
-		_, err := s.workV2().CompleteStep(r.Context(), parts[1], parts[3], body.SessionID, app.AgentExpectedVersion(body.ExpectedVersion),
+		_, err := s.workV2().ChangeStep(r.Context(), parts[1], parts[3], body.SessionID, app.AgentExpectedVersion(body.ExpectedVersion), parts[4], body.Reason,
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(itemOf(v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true

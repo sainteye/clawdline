@@ -1696,12 +1696,12 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 		}
 		incomplete := 0
 		for _, step := range steps {
-			if !step.Done {
+			if step.Open() {
 				incomplete++
 			}
 		}
 		if incomplete > 0 {
-			return work.ItemV2{}, nil, work.RefuseV2Raw("steps_incomplete", fmt.Sprintf("Complete all item TODOs before closing this work; %d remain.", incomplete))
+			return work.ItemV2{}, nil, work.RefuseV2Raw("steps_incomplete", fmt.Sprintf("Complete or cancel all item TODOs before closing this work; %d remain.", incomplete))
 		}
 	}
 	now := w.now()
@@ -2028,7 +2028,7 @@ func (w *WorkSystemV2) Complete(ctx context.Context, id string, expected int64, 
 		}
 		open := 0
 		for _, step := range steps {
-			if !step.Done {
+			if step.Open() {
 				open++
 			}
 		}
@@ -2240,6 +2240,24 @@ func (w *WorkSystemV2) AddStep(ctx context.Context, id string, c AddStepV2, file
 }
 
 func (w *WorkSystemV2) CompleteStep(ctx context.Context, id, stepID, session string, expected int64, file WorkV2Filer) (WorkV2View, error) {
+	return w.ChangeStep(ctx, id, stepID, session, expected, "complete", "", file)
+}
+
+// ChangeStep cancels only outstanding work and restores only cancellations.
+// Neither operation turns a cancellation into a completion receipt.
+func (w *WorkSystemV2) ChangeStep(ctx context.Context, id, stepID, session string, expected int64, action, reason string, file WorkV2Filer) (WorkV2View, error) {
+	reason = strings.TrimSpace(reason)
+	if action != "complete" && action != "cancel" && action != "reopen" {
+		return WorkV2View{}, work.RefuseV2("invalid_step_action", "Choose complete, cancel or reopen for this subtask.")
+	}
+	if action == "cancel" {
+		if reason == "" {
+			return WorkV2View{}, work.RefuseV2("reason_required", "Cancellation needs a reason.")
+		}
+		if len(reason) > workV2CompletionReasonLimit {
+			return WorkV2View{}, work.RefuseV2("reason_too_large", "A cancellation reason is at most 8 KiB.")
+		}
+	}
 	var out WorkV2View
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		prev, err := tx.Item(id)
@@ -2250,15 +2268,37 @@ func (w *WorkSystemV2) CompleteStep(ctx context.Context, id, stepID, session str
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != session || prev.Phase.Terminal() {
-			return notItemOwner("complete steps of", id)
+			return notItemOwner("change steps of", id)
 		}
 		step, err := tx.Step(stepID)
 		if err != nil || step.WorkID != id {
 			return work.RefuseV2("step_not_found", "No such subtask belongs to this item.")
 		}
-		if !step.Done {
-			stepNext := step
+		stepVersion := step.Version
+		stepNext := step
+		kind := "step.completed"
+		switch action {
+		case "complete":
+			if !step.CancelledAt.IsZero() {
+				return work.RefuseV2("step_cancelled", "Restore this cancelled subtask before completing it.")
+			}
 			stepNext.Done, stepNext.CompletedAt, stepNext.CompletedBy = true, w.now(), session
+		case "cancel":
+			if step.Done {
+				return work.RefuseV2("step_completed", "A completed subtask cannot be cancelled.")
+			}
+			kind = "step.cancelled"
+			if step.CancelledAt.IsZero() {
+				stepNext.CancelledAt, stepNext.CancelledBy, stepNext.CancelReason = w.now(), session, reason
+			}
+		case "reopen":
+			if step.Done {
+				return work.RefuseV2("step_completed", "Only a cancelled subtask can be restored.")
+			}
+			kind = "step.reopened"
+			stepNext.CancelledAt, stepNext.CancelledBy, stepNext.CancelReason = time.Time{}, "", ""
+		}
+		if (action == "complete" && !step.Done) || (action == "cancel" && step.CancelledAt.IsZero()) || (action == "reopen" && !step.CancelledAt.IsZero()) {
 			if err := tx.PutStep(step, stepNext); err != nil {
 				return err
 			}
@@ -2266,11 +2306,13 @@ func (w *WorkSystemV2) CompleteStep(ctx context.Context, id, stepID, session str
 			step = stepNext
 		}
 		next := prev
-		next.UpdatedAt = w.now()
-		if err := tx.PutItem(prev, next, "step.completed", session, payload(map[string]string{"step_id": step.ID})); err != nil {
-			return err
+		if step.Version != stepVersion {
+			next.UpdatedAt = w.now()
+			if err := tx.PutItem(prev, next, kind, session, payload(map[string]string{"step_id": step.ID, "reason": reason})); err != nil {
+				return err
+			}
+			next.Version++
 		}
-		next.Version++
 		out = WorkV2View{Item: next, Steps: []work.StepV2{step}}
 		if file != nil {
 			if k, a, ok := file(out); ok {

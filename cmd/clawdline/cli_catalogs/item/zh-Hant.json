@@ -68,7 +68,7 @@
   "flag.port": "常駐程式的連接埠（預設為 CLAWDLINE_NEXT_PORT，否則為 7727）",
   "flag.project": "目錄中的 Project ID",
   "flag.reference": "用於 doc：Project 中的路徑、URL，或對 plan_review 指定審查任務 ID",
-  "flag.reason": "當事人要求移除這個看板項目的原因",
+  "flag.reason": "為什麼這個看板項目或步驟已不需要",
   "flag.remote": "用於 deploying：其追蹤目標也包含該 commit 的遠端",
   "flag.role": "用於 doc：spec、design、test、deploy、completion_report、plan、plan_review 或 other",
   "flag.run": "當事人訊息所屬的執行記錄（預設為此對話最新的執行記錄）",
@@ -199,5 +199,10 @@
   "usage.show": "       clawdline item show [--doc <文件 ID>] [--port n] <項目 ID>",
   "usage.step_add": "       clawdline item step-add [--conversation id] [--key k] [--port n] <項目 ID> <標題> [<標題>]… | stdin",
   "usage.step_done": "       clawdline item step-done [--conversation id] [--key k] [--port n] <項目 ID> <步驟 ID>",
-  "usage.steps": "       clawdline item steps [--port n] <項目 ID>"
+  "usage.steps": "       clawdline item steps [--port n] <項目 ID>",
+  "list.step_cancelled": "      已取消：%s\n",
+  "receipt.step_cancelled": " 已取消",
+  "receipt.step_reopened": " 已恢復為待辦",
+  "usage.step_cancel": "       clawdline item step-cancel --reason <原因> <項目 id> <步驟 id>",
+  "usage.step_reopen": "       clawdline item step-reopen <項目 id> <步驟 id>"
 }
