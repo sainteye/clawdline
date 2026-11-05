@@ -42,7 +42,7 @@ catalog.sourceChecks = Object.fromEntries([...sources].sort().map(file => [file,
 catalog.copyChecks = {}
 for (const lang of ["en", "zh-Hant"]) {
   const words = JSON.parse(fs.readFileSync(path.join(root, `web/console/public/catalogs/${lang}.json`), "utf8"))
-  const reviewed = Object.fromEntries(Object.keys(words).filter(key => key.startsWith("transparency.")).sort().map(key => [key, words[key]]))
+  const reviewed = Object.fromEntries(Object.keys(words).filter(key => (key.startsWith("transparency.") || key === "codegraphView.sessionInstructions")).sort().map(key => [key, words[key]]))
   // Go encoding/json's HTML escaping, used by the repository guard.
   const encoded = JSON.stringify(reviewed).replace(/[<>&\u2028\u2029]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"))
   catalog.copyChecks[lang] = hash(encoded)

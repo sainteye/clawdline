@@ -79,6 +79,7 @@ func init() {
 		op{name: "project-add"},
 		op{name: "project-hide"},
 		op{name: "projects", read: true},
+		op{name: "project-devstack", read: true},
 		op{name: "project-file-list", read: true},
 		op{name: "project-file-read", read: true},
 		op{name: "project-tree-list", read: true},

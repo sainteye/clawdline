@@ -100,6 +100,7 @@ export const CARRIED = {
   "project-antigravity-consent-status": "GET /v1/projects/{project}/antigravity-consent",
   "project-codegraph": "GET /v1/projects/{project}/codegraph",
   "project-codegraph-build": "POST /v1/projects/{project}/codegraph",
+  "project-devstack": "GET /v1/projects/{project}/devstack",
   "project-entry": "GET /v1/project-sync/entry?repo=",
   "project-file-list": "GET /v1/projects/{project}/files",
   "project-file-read": "GET /v1/projects/{project}/files/{file}",

@@ -1,3 +1,4 @@
+import { codegraphGuidanceEnabled, codegraphGuidanceKey, setCodegraphGuidance } from "../codegraph/session-guidance.js"
 import { readIntegrationSettings } from "../pages/settings/api.js"
 import { CODEGRAPH_SETTING, graphWord, openCodeGraph } from "../codegraph/codegraph.js"
 import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
@@ -586,7 +587,16 @@ function html(d: Facts): string {
   if (d.protocol) out += sec(++i, catalogWord("acp", "title"), "", protocolStateHTML(d.protocol, key => catalogWord("acp", key), esc, L.clock))
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
-  if (codegraphEnabled && s.cwd) out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-codegraph-open>' + esc(graphWord("open")) + "</button>")
+  if (codegraphEnabled && s.cwd) {
+    const row = forId ? byId(forId) : null
+    const mayChoose = host.writable() && !legacyState.agent && !!codegraphGuidanceKey(row)
+    const choice = mayChoose ? '<label class="codegraph-session-choice"><input type="checkbox" data-codegraph-use' +
+      (codegraphGuidanceEnabled(row) ? ' checked' : '') + '><span>' + esc(graphWord("useInSession")) + '</span></label>' +
+      note(graphWord("automaticScope")) + '<details class="codegraph-guidance"><summary>' + esc(graphWord("readInstructions")) +
+      '</summary><pre>' + esc(graphWord("sessionInstructions")) + '</pre></details>' : ""
+    out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-codegraph-open>' +
+      esc(graphWord("open")) + '</button>' + choice)
+  }
   // Read-only pairings get no buttons rather than dead ones.
   if (host.writable() && (models.length || s.assistant === "codex")) {
     out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
@@ -1034,6 +1044,16 @@ export function bindInfo(): () => void {
   const onBody = (ev: MouseEvent) => {
     const t = ev.target as Element | null
     if (!t || !t.closest) return
+    const graphChoice = t.closest<HTMLInputElement>("input[data-codegraph-use]")
+    if (graphChoice) {
+      if (forId !== host.openId() || !codegraphEnabled || !host.writable() || legacyState.agent) return
+      try {
+        setCodegraphGuidance(forId ? byId(forId) : null, graphChoice.checked)
+        said("")
+      } catch { said(graphWord("selectionFailed")) }
+      draw()
+      return
+    }
     if (t.closest("button[data-codegraph-open]") && codegraphEnabled && forId) {
       const target = { kind: "session" as const, id: forId, label: data?.session.title }
       Info.close(); openCodeGraph(target); return

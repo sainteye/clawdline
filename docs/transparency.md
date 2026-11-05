@@ -250,3 +250,13 @@ in the immutable verify_gate checker brief. It preserves one checker, the closed
 verdict and bounded evidence protocol. Both language explanations distinguish
 instructions from measured application and retain the experiment limits. The
 public website snapshot must follow this reviewed product commit.
+
+
+SessionInfo offers a conversation-scoped browser preference to include CodeGraph
+navigation guidance automatically when an ordinary message is submitted. Review
+of both English and Taiwan Traditional Chinese copy confirms that selecting it
+leaves the editor unchanged and does not send input, enable integration or build
+an index. The submitted text captures the selection for queueing and retries;
+unchecking affects later submissions. Slash commands stay unchanged, and neither
+the launch snapshot nor workflow-use receipts are rewritten. The reviewed copy
+digest includes the localized instruction body as well as the explanations.

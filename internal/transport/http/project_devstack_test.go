@@ -118,3 +118,44 @@ func TestProjectDevStackRoute(t *testing.T) {
 		t.Errorf("expected 404, got %d", unknown.Code)
 	}
 }
+
+// The hosted console asks the bridge by Project ID, including on read-only
+// pairings. Exercise the real HTTP route rather than a canned bridge reply.
+func TestProjectDevStackCloudRead(t *testing.T) {
+	s := projectCloudStandIn(t)
+	s.bridge.AllowCommands = func() bool { return false }
+	project, ok := s.server.workV2Project(t.Context(), s.place)
+	if !ok {
+		t.Fatal("fixture place")
+	}
+	spec := `{"version":1,"name":"fixture-app","processes":[{"name":"web","port":4173}],"up":"touch must-not-run"}`
+	if err := os.WriteFile(filepath.Join(project.Path, ".devstack.json"), []byte(spec), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := map[string]any{"type": "project-devstack", "project": s.place, "request": "devstack-1", "session": "__clawdline_machine__"}
+	answer, payload := s.ask(t, 1, input)
+	if answer.Status != 200 {
+		t.Fatalf("Cloud devstack: %+v %v", answer, payload)
+	}
+	body := bodyOf(t, payload)
+	if body["devStack"] != "ready" || body["serverCount"] != float64(1) || body["raw"] != spec || body["root"] != project.Path {
+		t.Fatalf("devstack reply: %v", body)
+	}
+	if stack, ok := body["stack"].(map[string]any); !ok || stack["name"] != "fixture-app" {
+		t.Fatalf("missing stack: %v", body)
+	}
+	if links, ok := body["links"].([]any); !ok || len(links) == 0 {
+		t.Fatalf("missing links: %v", body)
+	}
+	if _, err := os.Stat(filepath.Join(project.Path, "must-not-run")); !os.IsNotExist(err) {
+		t.Fatalf("read executed the up command: %v", err)
+	}
+	input["project"] = "not-a-real-place"
+	if answer, _ := s.ask(t, 2, input); answer.Status != 404 || answer.Code != "project_not_found" {
+		t.Fatalf("unknown Project: %+v", answer)
+	}
+	input["path"] = "/outside"
+	if answer, _ := s.ask(t, 3, input); answer.Code != "malformed_read" {
+		t.Fatalf("browser-supplied path: %+v", answer)
+	}
+}

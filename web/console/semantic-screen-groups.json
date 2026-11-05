@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10675,
-  "riskKeys": 4695,
-  "nonRiskCount": 5980,
+  "englishContentKeys": 10680,
+  "riskKeys": 4697,
+  "nonRiskCount": 5983,
   "groups": [
     {
       "name": "acp / other",
@@ -844,13 +844,14 @@
     },
     {
       "name": "codegraphView / other",
-      "count": 56,
+      "count": 59,
       "sources": [
         "src/codegraph/CodeGraphViewer.tsx"
       ],
       "keys": [
         "codegraphView.aboutGraph",
         "codegraphView.all",
+        "codegraphView.automaticScope",
         "codegraphView.build",
         "codegraphView.buildContinues",
         "codegraphView.buildCounts",
@@ -887,6 +888,7 @@
         "codegraphView.open",
         "codegraphView.overview",
         "codegraphView.periodic",
+        "codegraphView.readInstructions",
         "codegraphView.refresh",
         "codegraphView.relations",
         "codegraphView.scope",
@@ -901,6 +903,7 @@
         "codegraphView.title",
         "codegraphView.truncated",
         "codegraphView.ungrouped",
+        "codegraphView.useInSession",
         "codegraphView.visibleCounts",
         "codegraphView.watching",
         "codegraphView.zoomIn",

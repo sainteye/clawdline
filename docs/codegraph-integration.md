@@ -26,6 +26,12 @@ At most four canonical roots have active services. Each accepts one request at a
 
 The source scope deliberately excludes dependency/build/cache trees and refuses source symlinks and nonregular files. Its conservative inventory can mark a graph stale for a file the upstream parser ignores. That safe refusal is preferable to claiming a source match. The reviewed source-types.json receipt includes every pinned SDK extension, special Play routes and Erlang application filenames, plus conservative configuration inputs. Valid codegraph.json extension mappings augment this inventory for build, offline check and active reconciliation; malformed mappings follow the pinned SDK fallback. Same-mtime configuration changes are reread and removed mappings are pruned. Changes outside that supported-extension/configuration inventory are not covered; this does not establish correctness of inferred edges.
 
+## SessionInfo guidance
+
+The existing SessionInfo project-graph section has a CodeGraph guidance checkbox when machine integration is enabled. The browser saves this preference for the exact machine, Session and conversation, like composer drafts; another browser must select it separately. Turning it on never changes editor text, sends input, enables integration or builds an index. The fixed localized guidance can be inspected in the same section.
+
+At Send, each ordinary message captures the current selection and includes that guidance in its submitted text. Images and the person's original text are preserved. Empty submissions still do nothing; slash commands stay byte-for-byte unchanged after normal composer processing. Queued messages and retries retain the exact captured text even if the selection changes later. Unchecking affects later submissions, not already submitted content. A reused terminal or a different machine/conversation does not inherit the preference. The visible submitted message is the receipt; this does not rewrite the frozen launch snapshot, grant tool permissions or prove agent use. New Sessions keep their existing launch guidance. No new Snippet, Playbook, toolbox item or launch selector is added.
+
 ## Query and view boundaries
 
 New launch guidance uses:

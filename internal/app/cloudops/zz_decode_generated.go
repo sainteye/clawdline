@@ -64,6 +64,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-antigravity-consent-status": genDecodeProjectAntigravityConsentStatus,
 	"project-codegraph":                  genDecodeProjectCodegraph,
 	"project-codegraph-build":            genDecodeProjectCodegraphBuild,
+	"project-devstack":                   genDecodeProjectDevstack,
 	"project-entry":                      genDecodeProjectEntry,
 	"project-file-list":                  genDecodeProjectFileList,
 	"project-file-read":                  genDecodeProjectFileRead,
@@ -1538,6 +1539,25 @@ func genDecodeProjectCodegraphBuild(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeProjectDevstack is the `project-devstack` row's decode.
+func genDecodeProjectDevstack(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/devstack"
+	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
 

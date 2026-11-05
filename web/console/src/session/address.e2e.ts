@@ -3575,6 +3575,82 @@ test("a late workflow read cannot relabel the next Session", async () => {
   }
 })
 
+test("SessionInfo selects automatic CodeGraph guidance without changing the editor", async () => {
+ for (const size of [DESK,PHONE]) for (const tag of ['en','zh-Hant']) {
+  integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true};codegraphScenario='matched'
+  await inTab(size,async tab=>{
+   const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+   await tab.go('/'+FRAGMENT[TMUX]);await tab.until('selected Session',s=>s.open===TMUX)
+   await tab.run(`localStorage.setItem('ui_language',${JSON.stringify(tag)})`);await tab.reload();await tab.until('selected Session',s=>s.open===TMUX)
+   await wait(`document.getElementById('msg')?.isContentEditable`)
+   await tab.run(`document.getElementById('msg').textContent='My original message';document.getElementById('msg').dispatchEvent(new InputEvent('input',{bubbles:true}));document.getElementById('detail-info').click()`)
+   await wait(`!!document.querySelector('[data-codegraph-use]')`)
+   const sends=draftSendBodies.length,builds=codegraphBuilds,reads=codegraphReads
+   assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),false)
+   await tab.run(`document.querySelector('[data-codegraph-use]').click()`)
+   assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),true)
+   assert.equal(await tab.run(`document.getElementById('msg').textContent`),'My original message')
+   assert.equal(draftSendBodies.length,sends);assert.equal(codegraphBuilds,builds);assert.equal(codegraphReads,reads)
+   await tab.run(`document.querySelector('.codegraph-guidance summary').click()`)
+   assert.match(await tab.run(`document.querySelector('.codegraph-guidance').textContent`),/clawdline codegraph query/)
+   assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+   if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-codegraph-session-checkbox`)}
+   await tab.run(`document.getElementById('info-close').click()`)
+   await tab.reload();await tab.until('selected Session',s=>s.open===TMUX);await wait(`document.getElementById('msg')?.isContentEditable`)
+   assert.equal(await tab.run(`document.getElementById('msg').textContent`),'My original message')
+   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
+   assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),true)
+   await tab.run(`document.getElementById('info-close').click();document.getElementById('send').click()`)
+   const end=Date.now()+7000;while(draftSendBodies.length===sends){if(Date.now()>end)assert.fail('the message was not sent');await new Promise(r=>setTimeout(r,30))}
+   const body=draftSendBodies.at(-1)!
+   assert.match(String(body.text),/^My original message\n\n/)
+   assert.match(String(body.text),/clawdline codegraph query/)
+   assert.match(String(body.text),tag==='en'?/untrusted data/:/不可信資料/)
+   assert.equal(codegraphBuilds,builds)
+   await wait(`document.getElementById('msg').textContent===''`)
+   await tab.run(`document.getElementById('composer').requestSubmit()`)
+   await new Promise(r=>setTimeout(r,50))
+   assert.equal(draftSendBodies.length,sends+1,'an empty submission must not send guidance alone')
+   await tab.run(`document.getElementById('msg').textContent='/unknown-command argument';document.getElementById('msg').dispatchEvent(new InputEvent('input',{bubbles:true}))`)
+   await wait(`!document.getElementById('send').disabled`);await tab.run(`document.getElementById('send').click()`)
+   const commandEnd=Date.now()+7000;while(draftSendBodies.length===sends+1){if(Date.now()>commandEnd)assert.fail('the command was not sent');await new Promise(r=>setTimeout(r,30))}
+   assert.equal(draftSendBodies.at(-1)!.text,'/unknown-command argument','checked guidance must preserve a provider command')
+   await wait(`document.getElementById('msg').textContent===''`)
+   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
+   await tab.run(`document.querySelector('[data-codegraph-use]').click();document.getElementById('info-close').click()`)
+   await wait(`document.getElementById('msg')?.isContentEditable`)
+   await tab.run(`document.getElementById('msg').textContent='Next message';document.getElementById('msg').dispatchEvent(new InputEvent('input',{bubbles:true}))`)
+   await wait(`!document.getElementById('send').disabled`);await tab.run(`document.getElementById('send').click()`)
+   const nextEnd=Date.now()+7000;while(draftSendBodies.length===sends+2){if(Date.now()>nextEnd)assert.fail('next message was not sent');await new Promise(r=>setTimeout(r,30))}
+   assert.equal(draftSendBodies.at(-1)!.text,'Next message')
+  })
+ }
+})
+
+test("SessionInfo CodeGraph selection does not carry to another conversation", async () => {
+ integrationSettings={workflow_skills_enabled:false,codegraph_enabled:true}
+ await inTab(PHONE,async tab=>{
+  const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+  await tab.go('/'+FRAGMENT[TMUX]);await tab.until('selected Session',s=>s.open===TMUX)
+  await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
+  await tab.run(`document.querySelector('[data-codegraph-use]').click();document.getElementById('info-close').click();document.getElementById('back').click();[...document.querySelectorAll('#rows [role="option"]')].find(row=>row.textContent.includes('Bravo')).click()`)
+  await tab.until('other Session',s=>s.open===TTY)
+  await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
+  assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),false)
+  await tab.run(`document.getElementById('info-close').click()`);await wait(`document.getElementById('msg')?.isContentEditable`)
+  const sends=draftSendBodies.length
+  await tab.run(`document.getElementById('msg').textContent='Other conversation';document.getElementById('msg').dispatchEvent(new InputEvent('input',{bubbles:true}))`)
+  await wait(`!document.getElementById('send').disabled`);await tab.run(`document.getElementById('send').click()`)
+  const end=Date.now()+7000;while(draftSendBodies.length===sends){if(Date.now()>end)assert.fail('other message was not sent');await new Promise(r=>setTimeout(r,30))}
+  assert.equal(draftSendBodies.at(-1)!.text,'Other conversation')
+  await tab.run(`document.getElementById('back').click();[...document.querySelectorAll('#rows [role="option"]')].find(row=>row.textContent.includes('Alpha')).click()`)
+  await tab.until('original Session',s=>s.open===TMUX)
+  await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-codegraph-use]')`)
+  assert.equal(await tab.run(`document.querySelector('[data-codegraph-use]').checked`),true)
+  await tab.run(`document.querySelector('[data-codegraph-use]').click();document.getElementById('info-close').click()`)
+ })
+})
+
 test("CodeGraph project viewer respects the toggle and renders safe graphs in both entry points and sizes", async () => {
  for(const size of [DESK,PHONE]) for(const tag of ["en","zh-Hant"]) {
   integrationSettings={workflow_skills_enabled:false,codegraph_enabled:false};codegraphScenario="matched";codegraphReads=0

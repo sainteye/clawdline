@@ -761,6 +761,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-projects",
 		method: "GET", path: "/v1/projects",
 	}, {
+		word:    "project-devstack",
+		body:    map[string]any{"type": "project-devstack", "session": machine, "request": "req-devstack", "project": "p1"},
+		session: machine, name: "read:req-devstack", method: "GET", path: "/v1/projects/p1/devstack",
+	}, {
 		word:    "project-file-list",
 		body:    map[string]any{"type": "project-file-list", "session": machine, "request": "req-file-list", "project": "p1"},
 		session: machine, name: "read:req-file-list", method: "GET", path: "/v1/projects/p1/files",

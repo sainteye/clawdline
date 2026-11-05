@@ -178,6 +178,7 @@ test("Session header trail distinguishes started, observed, canceled, unavailabl
 
 class FakeClient implements CloudReadClient {
   ready = true
+  allowWrites = true
   viewerEvents?: { record(event: string, data: Record<string, unknown>, key?: string): void | { n: number } }
   statusSnapshots?: ReadonlyMap<string, unknown>
   sessionInventoryByMachine = new Map<string, unknown>()
@@ -1939,6 +1940,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/projects", "projects", {}],
   ["/v1/projects/cloud-p1/files", "project-file-list", { project: "p1" }],
   ["/v1/projects/cloud-p1/codegraph", "project-codegraph", { project: "p1" }],
+  ["/v1/projects/cloud-p1/devstack", "project-devstack", { project: "p1" }],
   ["/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-read", { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
   ["/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-status", { project: "p1" }],
   ["/v1/projects/cloud-p1/unify", "project-unify-plan", { project: "p1" }],
@@ -2445,4 +2447,26 @@ test("Cloud restores native prompt text only from the current authorized executi
     held.set("mac-a\u0000s1", rich({ prompt_suggestion: { ...suggestion, id: undefined, text: undefined, state: "none", observed_at: 2 } }))
     assert.equal((await drawn()).prompt_suggestion?.state, "none")
   }
+})
+
+
+test("Project dev stacks preserve the machine reply with writes off and reject foreign machines and query fields", async () => {
+  const client = new FakeClient()
+  client.allowWrites = false
+  const payload = { devStack: "ready", serverCount: 1, links: [{ label: "web", url: "http://127.0.0.1:4173" }], observedAt: 1000, raw: '{"processes":[{"name":"web","port":4173}]}', root: "/repo", stack: { name: "fixture-app" } }
+  client.readAnswer = async () => payload
+  const r = reader(client, { t: 1000 })
+  const result = await r.fetch("/v1/projects/cloud-p1/devstack")
+  assert.equal(result.status, 200)
+  assert.deepEqual(await result.json(), payload)
+  assert.deepEqual(client.reads, [{ machine: "mac-a", word: "project-devstack", body: { project: "p1" } }])
+  client.reads.length = 0
+  const query = await r.fetch("/v1/projects/cloud-p1/devstack?path=/outside")
+  assert.equal(query.status, 501)
+  assert.equal((await query.json()).error, "cloud_not_carried")
+  client._place = () => ({ machine: "mac-b", id: "p1", path: "/repo" })
+  const foreign = await r.fetch("/v1/projects/cloud-p1/devstack")
+  assert.equal(foreign.status, 409)
+  assert.equal((await foreign.json()).error, "cloud_project_machine_mismatch")
+  assert.equal(client.reads.length, 0)
 })
