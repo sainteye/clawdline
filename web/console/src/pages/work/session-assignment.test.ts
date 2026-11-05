@@ -320,3 +320,11 @@ test("the Board's Session read asks for the held list and waits for the reader's
   assert.ok(answerMs > 0, "the list the reader hands over at the deadline is taken, not dropped")
   assert.ok(timeoutMs > 0)
 })
+
+test("cancelled Board steps no longer inflate a Session's unfinished count", () => {
+  const page = {
+    assigned_items: [{ id: "board", steps: [{ done: false, status: "cancelled" }, { done: true }, { done: false }] }],
+    direct_todos: [], recent_items: [],
+  } as unknown as SessionWorkV2
+  assert.deepEqual(sessionWorkCounts(page), { board: 1, todos: 1, unfinished: 2 })
+})

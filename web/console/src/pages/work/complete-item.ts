@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node tests load source TypeScript.
+import { stepIsOpen } from "./step-state.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { catalogFormat } from "../../catalog.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
@@ -6,7 +8,7 @@ import type { WorkV2Item } from "./api.js"
 
 /** The item's steps nobody has ticked, which a manual completion leaves open. */
 export function openSteps(item: Pick<WorkV2Item, "steps">): number {
-  return (item.steps ?? []).filter((step) => !step.done).length
+  return (item.steps ?? []).filter(stepIsOpen).length
 }
 
 /**

@@ -1155,3 +1155,56 @@ func TestFirstTodoReservationAndBindingSurviveStoreReopen(t *testing.T) {
 		t.Fatalf("pending after bind/delete: %v %v", pending, err)
 	}
 }
+
+func TestOlderStepsGainCancellationWithoutChangingCompletionFacts(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE work_v2_steps (
+ id TEXT PRIMARY KEY, work_id TEXT NOT NULL, title TEXT NOT NULL,
+ done INTEGER NOT NULL DEFAULT 0 CHECK(done IN(0,1)), position INTEGER NOT NULL,
+ created_by TEXT NOT NULL, completed_by TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1);
+ INSERT INTO work_v2_steps(id,work_id,title,done,position,created_by,created_at,completed_by,completed_at)
+ VALUES('pending','item','必要處理',0,0,'agent',1,'',NULL),('done','item','已完成的處理',1,1,'agent',1,'agent',2);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.WorkV2Steps(context.Background(), "item")
+	if err != nil || len(rows) != 2 || !rows[0].Open() || rows[1].Status() != "done" || rows[1].CompletedAt.Unix() != 2 {
+		t.Fatalf("migration: %+v %v", rows, err)
+	}
+	err = st.WriteWorkV2(context.Background(), func(tx *WorkV2Tx) error {
+		prev, err := tx.Step("pending")
+		if err != nil {
+			return err
+		}
+		next := prev
+		next.CancelledAt, next.CancelledBy, next.CancelReason = time.Unix(3, 0), "agent", "已與使用者確認不再需要"
+		return tx.PutStep(prev, next)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	rows, err = st.WorkV2Steps(context.Background(), "item")
+	if err != nil || rows[0].Status() != "cancelled" || rows[0].Done || rows[0].CancelReason == "" || rows[0].CancelledBy != "agent" || rows[0].CancelledAt.Unix() != 3 || rows[0].Version != 2 || rows[1].Status() != "done" {
+		t.Fatalf("reopened: %+v %v", rows, err)
+	}
+}

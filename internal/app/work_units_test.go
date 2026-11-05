@@ -420,3 +420,36 @@ func TestAWorkCursorHoldsNoTranscriptText(t *testing.T) {
 		t.Fatal("the report holds transcript text")
 	}
 }
+
+func TestCancelledStepUsageEndsAsCancelledAndStartsTheNextOpenStep(t *testing.T) {
+	h, rec := newWorkHarness(t)
+	w := NewWorkSystemV2(h.store)
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) { return WorkV2GateSettings{}, nil }
+	v := implementingWorkV2Test(t, w)
+	ctx := context.Background()
+	for _, title := range []string{"取消不再需要的處理", "繼續必要的驗證"} {
+		var err error
+		v, err = w.AddStep(ctx, v.Item.ID, AddStepV2{ExpectedVersion: AnyVersion, SessionID: "session-a", Title: title}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	full, err := w.Item(ctx, v.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.store.ObserveWorkV2(rec.ObserveBoard)
+	if _, err = w.ChangeStep(ctx, v.Item.ID, full.Steps[0].ID, "session-a", AnyVersion, "cancel", "已與使用者確認不再需要", nil); err != nil {
+		t.Fatal(err)
+	}
+	rec.Drain(ctx)
+	report := h.units()
+	cancelled := unitOf(t, report, WorkUnitStep, full.Steps[0].ID)
+	if cancelled.Outcome != "step-cancelled" {
+		t.Fatalf("cancelled step usage = %+v", cancelled)
+	}
+	next := h.cursors(WorkUnitStep, full.Steps[1].ID, "1")
+	if len(next) == 0 || next[0].Edge != store.WorkCursorStart {
+		t.Fatalf("next open step never started: %+v", next)
+	}
+}

@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "englishContentKeys": 10697,
-  "riskKeys": 4703,
+  "englishContentKeys": 10705,
+  "riskKeys": 4711,
   "nonRiskCount": 5994,
   "groups": [
     {
@@ -2047,7 +2047,7 @@
     },
     {
       "name": "http / other",
-      "count": 580,
+      "count": 581,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -2338,6 +2338,7 @@
         "http.80a17d5846be239a",
         "http.814e12625f9c8808",
         "http.823e659ae2cca245",
+        "http.828a27f5a84eef14",
         "http.847843bf2f20c35c",
         "http.84d8001798484861",
         "http.84ebf2ca42f50313",
@@ -6173,7 +6174,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 145,
+      "count": 144,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6186,7 +6187,6 @@
         "transparency.card.board.condition",
         "transparency.card.board.effect",
         "transparency.card.board.how",
-        "transparency.card.board.summary",
         "transparency.card.board.title",
         "transparency.card.child.effect",
         "transparency.card.child.how",

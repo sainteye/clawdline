@@ -1201,3 +1201,41 @@ func TestItemWriteSendsAGivenExpectedVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestItemStepCancellationAndRestorationUseExplicitActions(t *testing.T) {
+	for _, tc := range []struct{ op, action, reason string }{{"step-cancel", "cancel", "已與使用者確認不再需要"}, {"step-reopen", "reopen", ""}} {
+		t.Run(tc.op, func(t *testing.T) {
+			server, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+			var out, errs bytes.Buffer
+			code := sessionItem(&out, &errs, b, tc.op, itemFlags{reason: tc.reason, expectedVersion: 9}, []string{"item-1", "s2"}, "", "", envOf(map[string]string{"CODEX_THREAD_ID": thinConversation}))
+			if code != 0 {
+				t.Fatalf("exit %d: %s", code, errs.String())
+			}
+			seen := server.requests()
+			if len(seen) != 1 || seen[0].Method != "POST" || seen[0].Key == "" || seen[0].EscapedPath != "/v1/work/v2/agent/items/item-1/steps/s2/"+tc.action {
+				t.Fatalf("requests: %+v", seen)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(seen[0].Body, &body); err != nil || body["session_id"] != thinConversation || body["expected_version"] != float64(9) {
+				t.Fatalf("body: %s", seen[0].Body)
+			}
+			if tc.reason != "" && body["reason"] != tc.reason {
+				t.Fatalf("missing reason: %s", seen[0].Body)
+			}
+		})
+	}
+	server, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "step-cancel", itemFlags{}, []string{"item-1", "s2"}, "", "", envOf(map[string]string{"CODEX_THREAD_ID": thinConversation})); code != 2 || len(server.requests()) != 0 {
+		t.Fatalf("missing reason: %d requests %+v", code, server.requests())
+	}
+	var item itemWire
+	if err := json.Unmarshal([]byte(`{"steps":[{"id":"s1","title":"取消不再需要的處理","done":false,"status":"cancelled","cancel_reason":"已與使用者確認不再需要"}]}`), &item); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	printItem(&out, item)
+	if !strings.Contains(out.String(), "[-] s1") || !strings.Contains(out.String(), "已與使用者確認不再需要") {
+		t.Fatalf("cancelled listing: %s", out.String())
+	}
+}

@@ -1090,7 +1090,10 @@
         "Write it for the person who reported the problem, in Markdown, with no private data.\n",
         "\n",
         "**7. Finish the item.** Complete each step once it is verified with\n",
-        "`clawdline item step-done <item id> <step id>`. Commit and push direct work from a disposable\n",
+        "`clawdline item step-done <item id> <step id>`. If discussion establishes a step is no\n",
+        "longer needed, record it with `clawdline item step-cancel --reason \"<why>\" <item id> <step id>`;\n",
+        "cancellation is distinct from completion and no longer blocks closing. Do not use it to skip\n",
+        "unfinished work or missing approval. Commit and push direct work from a disposable\n",
         "worktree; merge a child's branch when one was used. Once landed, one command takes the item to\n",
         "`done`. A child's recorded landing supplies commit, target and remote; direct work names them:\n",
         "\n",
@@ -1141,7 +1144,9 @@
         "done item, waiting on the person, gates and every phase refusal; `clawdline guide epic` — plans,\n",
         "plan review, an Epic's child items, personas; `clawdline guide landing` — landing by hand,\n",
         "handoffs (a long Root's milestone handoff too), Root assignments; `clawdline guide running` — stalled children, leftovers, respawn.\n",
-        "\n"
+        "\n",
+        "\n",
+        "If this item has no steps and the work is multi-stage — several changes verified separately, or more than one part of the system — first break it into its ordered steps with `clawdline item step-add {id} \"…\" \"…\"` and complete each with `clawdline item step-done` once it is verified; a single straightforward change takes no steps. After discussing a step with the person, if it is no longer needed, use `clawdline item step-cancel --reason \"<why it is no longer needed>\" {id} <step-id>`; this records cancellation rather than completion and no longer blocks closing. Use `clawdline item step-reopen {id} <step-id>` if it becomes needed again. Never cancel a step merely to bypass unfinished work or missing approval.\n"
       ],
       "locations": [
         "<state>/root-assignments/<id>/ASSIGNMENT.md"
@@ -2985,8 +2990,8 @@
     "internal/domain/toollibrary/library.go": "5fa9cd8bcd54553fce879eca8ca1314fd77d4fee4fbed6e586449df7dcebecb9",
     "internal/domain/workflow/snapshot.go": "a49571493c2549bf6dd65d39cf98786ca8e3aae9c8ce60afc59a4454b5563737",
     "internal/productcopy/board.go": "710c175d79d8f607a2081dd6c444f3c7d64609535336cbc580f681174970527d",
-    "internal/productcopy/board/en.json": "2a42aa5da3ebd5ac172e99d2d649de8a8c8908212b7166280134717d06316d1e",
-    "internal/productcopy/board/zh-Hant.json": "df2de5da7232299462dc9688a972d3b559512ad21bc0bc96c81293f3af06671a",
+    "internal/productcopy/board/en.json": "f4967f52facd28c4d6424ed5b0c9697b9ae0d974e7d7dcef55216495f5ff210d",
+    "internal/productcopy/board/zh-Hant.json": "197520abf323850bec3a75605ca7bf973333f2dd678bea6d92862cee409083b5",
     "internal/transport/http/agent_session_close.go": "4cfb1d376e50119026dc079346a7253e826472305263e66ade6982b8e8b958f3",
     "internal/transport/http/antigravity_history.go": "b6a8dd8a7f132ba70d76bcb759044d14c8c83a9f3244d766c8da0fedb1ddebf1",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
@@ -3003,13 +3008,13 @@
     "internal/transport/http/session_auto_title.go": "822c692eb3b08e8b87063b598897508c21870aea57e627e5b069536972dbb211",
     "internal/transport/http/session_naming_context.go": "ed4b6662204915e5f26ce1a4a66940e97e82a085aaf5eac28070264eed09b1f1",
     "internal/transport/http/start.go": "41bc4c3e7ee49473dc29d019d3f7d2ef7658ae7e30f70905e9dcc86f9042107f",
-    "internal/transport/http/work_v2.go": "d54d9734228687871875d18570fa72283d74d3b13b154ea27fe9471681d97d36",
-    "internal/transport/http/work_v2_brief.go": "212fde2dc04a2694060c3a40de8dccd98889dd40d43d85589a54f1b09ca7aa39",
+    "internal/transport/http/work_v2.go": "5079c579754cbff670805434c83ebfeae5e25c35f4e1e49ac43743aae86bf367",
+    "internal/transport/http/work_v2_brief.go": "44ff50bb8f55e1fba32605cb10f887be4860aebfad5856e58b4222e562e9a3e3",
     "internal/transport/http/workflow_launch.go": "56f3e18bba4f2f657f0342239b3e621696e22d4e31eae5dfebb9458ca54a6dd7",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "183b9bdf039ab028fb9f9b958c5461608e1a864442f667252a8fd6d63d43dfaf",
-    "skills/clawdline/guide.md": "12d32dacc8d19a633506247144f193babd3fe09f0b8caf721be74cdb54fc6a60",
-    "skills/clawdline/guide.zh-TW.md": "6a45a3adf0e54779d5cb292bc80590da5d5c2dd847bdb40d470d33be0a254a5e",
+    "skills/clawdline/guide.md": "0a69f43faa4fc5d61d6692095ea85c34ef95ac1b16f2b12d5b5788056c1b1553",
+    "skills/clawdline/guide.zh-TW.md": "055a2eaecc3a21534c21c147d97afc55ab63b208bf77fb146764d3e2ba0e0c84",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
@@ -3025,7 +3030,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "198842f8f0b5812ceccfa978a3388aecc1f665d94e9a34232fbdf5c81db2f4c2",
-    "zh-Hant": "7db57dca440f3bf8c4ed538361e1e0e30c74f69ab4a1a8d0bc4e7b0867a97a0a"
+    "en": "8132132e841e413eeb2cd1d1ea35bc589d8c034627d935c928956929e4bb4be6",
+    "zh-Hant": "46123541776e301e7f06f2e8114704263206c7d02b46f780ce2b664238d378bd"
   }
 }

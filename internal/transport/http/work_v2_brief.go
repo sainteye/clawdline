@@ -159,7 +159,7 @@ func (s *Server) workV2HandoffInput(ctx context.Context, item app.WorkV2View, pr
 	in := &orchestrator.HandoffInput{ItemID: item.Item.ID, Title: item.Item.Title, Phase: string(item.Item.Phase),
 		PreviousSession: previous.SessionID}
 	for _, step := range item.Steps {
-		if !step.Done {
+		if step.Open() {
 			in.OpenSteps = append(in.OpenSteps, step.Title)
 		}
 	}

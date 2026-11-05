@@ -219,6 +219,23 @@ func openWorkV2(db *sql.DB) error {
 	if _, err := db.Exec(workV2Schema); err != nil {
 		return err
 	}
+	// Additive migration keeps existing open/completed rows unchanged and is
+	// safe to resume after a partially applied migration.
+	for _, column := range []struct{ name, definition string }{
+		{"cancelled_at", "INTEGER"},
+		{"cancelled_by", "TEXT NOT NULL DEFAULT ''"},
+		{"cancel_reason", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		has, err := hasColumn(db, "work_v2_steps", column.name)
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := db.Exec("ALTER TABLE work_v2_steps ADD COLUMN " + column.name + " " + column.definition); err != nil {
+				return err
+			}
+		}
+	}
 	if err := openWorkV2Gates(db); err != nil {
 		return err
 	}
@@ -1345,24 +1362,16 @@ func (s *Store) workV2Relations(ctx context.Context, workIDs []string, details b
 			return out, err
 		}
 
-		steps, err := s.rd.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
+		steps, err := s.rd.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version,cancelled_at,cancelled_by,cancel_reason
     FROM work_v2_steps WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
 		if err != nil {
 			return out, err
 		}
 		for steps.Next() {
-			var st work.StepV2
-			var done bool
-			var created int64
-			var completed sql.NullInt64
-			if err := steps.Scan(&st.ID, &st.WorkID, &st.Title, &done, &st.Position, &st.CreatedBy,
-				&st.CompletedBy, &created, &completed, &st.Version); err != nil {
+			st, err := scanWorkV2Step(steps)
+			if err != nil {
 				steps.Close()
 				return out, err
-			}
-			st.Done, st.CreatedAt = done, time.Unix(created, 0)
-			if completed.Valid {
-				st.CompletedAt = time.Unix(completed.Int64, 0)
 			}
 			out.Steps[st.WorkID] = append(out.Steps[st.WorkID], st)
 		}
@@ -1840,9 +1849,9 @@ func (t *WorkV2Tx) AddStep(s work.StepV2) error {
 		return ErrWorkV2StepsFull
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_steps
-    (id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`, s.ID, s.WorkID, s.Title, s.Done, s.Position, s.CreatedBy, s.CompletedBy,
-		s.CreatedAt.Unix(), zeroOrUnix(s.CompletedAt), s.Version)
+    (id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version,cancelled_at,cancelled_by,cancel_reason)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.ID, s.WorkID, s.Title, s.Done, s.Position, s.CreatedBy, s.CompletedBy,
+		s.CreatedAt.Unix(), zeroOrUnix(s.CompletedAt), s.Version, zeroOrUnix(s.CancelledAt), s.CancelledBy, s.CancelReason)
 	if err == nil {
 		t.wrote++
 	}
@@ -1850,19 +1859,26 @@ func (t *WorkV2Tx) AddStep(s work.StepV2) error {
 }
 
 func (t *WorkV2Tx) Step(id string) (work.StepV2, error) {
+	return scanWorkV2Step(t.tx.QueryRowContext(t.ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version,cancelled_at,cancelled_by,cancel_reason
+    FROM work_v2_steps WHERE id=?`, id))
+}
+
+func scanWorkV2Step(row scanner) (work.StepV2, error) {
 	var st work.StepV2
-	var done bool
 	var created int64
-	var completed sql.NullInt64
-	err := t.tx.QueryRowContext(t.ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
-    FROM work_v2_steps WHERE id=?`, id).Scan(&st.ID, &st.WorkID, &st.Title, &done, &st.Position,
-		&st.CreatedBy, &st.CompletedBy, &created, &completed, &st.Version)
+	var completed, cancelled sql.NullInt64
+	err := row.Scan(&st.ID, &st.WorkID, &st.Title, &st.Done, &st.Position,
+		&st.CreatedBy, &st.CompletedBy, &created, &completed, &st.Version,
+		&cancelled, &st.CancelledBy, &st.CancelReason)
 	if err != nil {
 		return st, err
 	}
-	st.Done, st.CreatedAt = done, time.Unix(created, 0)
+	st.CreatedAt = time.Unix(created, 0)
 	if completed.Valid {
 		st.CompletedAt = time.Unix(completed.Int64, 0)
+	}
+	if cancelled.Valid {
+		st.CancelledAt = time.Unix(cancelled.Int64, 0)
 	}
 	return st, nil
 }
@@ -1872,8 +1888,8 @@ func (t *WorkV2Tx) Steps(workID string) ([]work.StepV2, error) {
 }
 
 func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
-	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_steps SET title=?,done=?,position=?,completed_by=?,completed_at=?,version=version+1
-    WHERE id=? AND version=?`, next.Title, next.Done, next.Position, next.CompletedBy, zeroOrUnix(next.CompletedAt), prev.ID, prev.Version)
+	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_steps SET title=?,done=?,position=?,completed_by=?,completed_at=?,cancelled_at=?,cancelled_by=?,cancel_reason=?,version=version+1
+    WHERE id=? AND version=?`, next.Title, next.Done, next.Position, next.CompletedBy, zeroOrUnix(next.CompletedAt), zeroOrUnix(next.CancelledAt), next.CancelledBy, next.CancelReason, prev.ID, prev.Version)
 	if err != nil {
 		return err
 	}
@@ -1894,7 +1910,7 @@ func (s *Store) WorkV2Steps(ctx context.Context, workID string) ([]work.StepV2, 
 func queryWorkV2Steps(ctx context.Context, q interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, workID string) ([]work.StepV2, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
+	rows, err := q.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version,cancelled_at,cancelled_by,cancel_reason
     FROM work_v2_steps WHERE work_id=? ORDER BY position,id`, workID)
 	if err != nil {
 		return nil, err
@@ -1902,17 +1918,9 @@ func queryWorkV2Steps(ctx context.Context, q interface {
 	defer rows.Close()
 	out := []work.StepV2{}
 	for rows.Next() {
-		var st work.StepV2
-		var done bool
-		var created int64
-		var completed sql.NullInt64
-		if err := rows.Scan(&st.ID, &st.WorkID, &st.Title, &done, &st.Position, &st.CreatedBy,
-			&st.CompletedBy, &created, &completed, &st.Version); err != nil {
+		st, err := scanWorkV2Step(rows)
+		if err != nil {
 			return nil, err
-		}
-		st.Done, st.CreatedAt = done, time.Unix(created, 0)
-		if completed.Valid {
-			st.CompletedAt = time.Unix(completed.Int64, 0)
 		}
 		out = append(out, st)
 	}

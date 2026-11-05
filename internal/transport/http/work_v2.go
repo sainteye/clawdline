@@ -192,14 +192,18 @@ type workV2DocumentWire struct {
 }
 
 type workV2StepWire struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	CreatedBy   string `json:"created_by"`
-	CompletedBy string `json:"completed_by"`
-	Done        bool   `json:"done"`
-	Position    int64  `json:"position"`
-	Version     int64  `json:"version"`
-	CompletedAt *int64 `json:"completed_at"`
+	Status       string `json:"status"`
+	CancelledAt  *int64 `json:"cancelled_at"`
+	CancelledBy  string `json:"cancelled_by"`
+	CancelReason string `json:"cancel_reason"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	CreatedBy    string `json:"created_by"`
+	CompletedBy  string `json:"completed_by"`
+	Done         bool   `json:"done"`
+	Position     int64  `json:"position"`
+	Version      int64  `json:"version"`
+	CompletedAt  *int64 `json:"completed_at"`
 }
 
 type workV2EventWire struct {
@@ -442,7 +446,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 			CreatedBy: image.CreatedBy, CreatedAt: image.CreatedAt.Unix()})
 	}
 	for _, st := range v.Steps {
-		out.Steps = append(out.Steps, workV2StepWire{ID: st.ID, Title: st.Title, Done: st.Done, Position: st.Position,
+		out.Steps = append(out.Steps, workV2StepWire{ID: st.ID, Title: st.Title, Done: st.Done, Status: st.Status(), CancelledAt: optionalUnix(st.CancelledAt), CancelledBy: st.CancelledBy, CancelReason: st.CancelReason, Position: st.Position,
 			CreatedBy: st.CreatedBy, CompletedBy: st.CompletedBy, CompletedAt: optionalUnix(st.CompletedAt), Version: st.Version})
 	}
 	for _, e := range v.Events {

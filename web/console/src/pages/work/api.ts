@@ -267,6 +267,11 @@ export interface WorkV2Document {
 }
 
 export interface WorkV2Step {
+  /** Older daemons omit these fields; done remains the compatibility flag. */
+  status?: "todo" | "done" | "cancelled"
+  cancelled_at?: number | null
+  cancelled_by?: string
+  cancel_reason?: string
   id: string
   title: string
   done: boolean

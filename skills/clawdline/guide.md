@@ -647,7 +647,10 @@ clawdline item doc <item id> --role completion_report --title "Completion report
 Write it for the person who reported the problem, in Markdown, with no private data.
 
 **7. Finish the item.** Complete each step once it is verified with
-`clawdline item step-done <item id> <step id>`. Commit and push direct work from a disposable
+`clawdline item step-done <item id> <step id>`. If discussion establishes a step is no
+longer needed, record it with `clawdline item step-cancel --reason "<why>" <item id> <step id>`;
+cancellation is distinct from completion and no longer blocks closing. Do not use it to skip
+unfinished work or missing approval. Commit and push direct work from a disposable
 worktree; merge a child's branch when one was used. Once landed, one command takes the item to
 `done`. A child's recorded landing supplies commit, target and remote; direct work names them:
 
@@ -1893,6 +1896,21 @@ Complete a verified step with `clawdline item step-done <item id> <step id>`; it
 Agent routes `expected_version` is optional: omitted, the write acts on the current version; named
 (`--expected-version`), it is compared and a stale one answers `version_conflict`. A transition to `done` is refused with `steps_incomplete` while any step remains
 open; Clawdline never checks one merely because the parent phase advanced.
+When discussion with the person establishes that a step is no longer needed, use
+`clawdline item step-cancel --reason "<why it is no longer needed>" <item id> <step id>`.
+It sends `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/cancel` with
+`{"session_id", "reason"}`. The reason is required, at most 8 KiB. Cancellation retains
+its title, actor, time and reason, leaves completion facts empty, and no longer blocks `done`.
+The Board and Session views label it Cancelled and count it separately from completed work.
+Use `clawdline item step-reopen <item id> <step id>` (`POST` to the same step's `/reopen`
+with `{"session_id"}`) if it becomes needed again; the step blocks `done` again.
+These routes use the same active-owner, optional-version and idempotency protections as
+completion. A completed step cannot be cancelled; restore a cancelled step before completing it.
+Neither command changes a closed item. Cancellation and restoration remain in item history.
+Do not cancel unfinished work just to close an item, or interpret missing approval as cancellation.
+Refusals: `reason_required`, `reason_too_large`, `step_completed`, `step_cancelled`,
+`step_not_found`, `not_item_owner`, `version_conflict`. Read the current item before resolving
+an ownership or state conflict; do not silently complete or cancel it.
 
 **Breaking your own item into steps.** When an item you own has no steps and the work is
 multi-stage — several changes that are verified separately, or more than one part of the system —

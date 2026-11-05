@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node tests load source TypeScript.
+import { stepIsOpen } from "./step-state.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { catalogFormat } from "../../catalog.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
@@ -59,7 +61,7 @@ export function awaitsAcceptance(phase: string): boolean {
 export function sessionWorkCounts(page: SessionWorkV2): SessionWorkCounts {
   const board = page.assigned_items.length
   const todos = page.direct_todos.length + page.assigned_items.reduce(
-    (count, item) => count + (item.steps?.filter((step) => !step.done).length ?? 0), 0,
+    (count, item) => count + (item.steps?.filter(stepIsOpen).length ?? 0), 0,
   )
   return { board, todos, unfinished: board + todos }
 }

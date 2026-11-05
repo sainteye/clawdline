@@ -68,7 +68,7 @@
   "flag.port": "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)",
   "flag.project": "the Project id from the catalog",
   "flag.reference": "for doc: a path in the Project, a URL, or for plan_review the review task's id",
-  "flag.reason": "why the person asked to remove this Board item",
+  "flag.reason": "why this Board item or step is no longer needed",
   "flag.remote": "for deploying: the remote whose tracking target also holds it",
   "flag.role": "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other",
   "flag.run": "the run of the person's message (default: this conversation's latest run)",
@@ -199,5 +199,10 @@
   "usage.show": "       clawdline item show [--doc <doc id>] [--port n] <item id>",
   "usage.step_add": "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin",
   "usage.step_done": "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>",
-  "usage.steps": "       clawdline item steps [--port n] <item id>"
+  "usage.steps": "       clawdline item steps [--port n] <item id>",
+  "list.step_cancelled": "      Cancelled: %s\n",
+  "receipt.step_cancelled": " cancelled",
+  "receipt.step_reopened": " restored to pending",
+  "usage.step_cancel": "       clawdline item step-cancel --reason <reason> <item id> <step id>",
+  "usage.step_reopen": "       clawdline item step-reopen <item id> <step id>"
 }

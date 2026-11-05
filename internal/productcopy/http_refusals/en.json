@@ -1306,5 +1306,11 @@
   "http.c1056e558fc51491": "Only this machine may query a local code index.",
   "http.a4476b1d6ab7e033": "A local code query takes no URL query fields.",
   "http.a5b1eff7be7f1430": "A local code query needs an absolute directory and a bounded question.",
-  "http.20353ce3f005ad53": "The local code query was refused. Use current source search or refresh the index."
+  "http.20353ce3f005ad53": "The local code query was refused. Use current source search or refresh the index.",
+  "http.2d4fd4c82b8364ed": "Restore this cancelled subtask before completing it.",
+  "http.56b83cd7541bf119": "Only a cancelled subtask can be restored.",
+  "http.7262c17f2b0bf00a": "A completed subtask cannot be cancelled.",
+  "http.828a27f5a84eef14": "A cancellation reason is at most 8 KiB.",
+  "http.8332e8459d42f758": "Complete or cancel all item TODOs before closing this work; %d remain.",
+  "http.ea918c7c6a3b76f7": "Choose complete, cancel or reopen for this subtask."
 }
