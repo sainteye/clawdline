@@ -487,7 +487,7 @@ func claudeEntries(line []byte, sidechains bool) []Entry {
 			return nil
 		}
 		raw = unpasted(raw)
-		if e, ok := sessionMessage(raw, at); ok {
+		if e, ok := SessionMessage(raw, at); ok {
 			return []Entry{e}
 		}
 		if e, ok := crossSessionMessage(raw, at); ok {
@@ -524,7 +524,7 @@ func claudeEntries(line []byte, sidechains bool) []Entry {
 		if kind, _ := blocks[0].str("type"); kind == "text" {
 			if raw, ok := blocks[0].str("text"); ok {
 				raw = unpasted(raw)
-				if e, ok := sessionMessage(raw, at); ok {
+				if e, ok := SessionMessage(raw, at); ok {
 					return []Entry{e}
 				}
 				if e, ok := agentMessage(raw, at); ok {
@@ -1278,7 +1278,7 @@ func codexItemEntries(item object, at int64) []Entry {
 	switch itemType {
 	case "UserMessage":
 		if raw, ok := exactText(item["content"]); ok {
-			if e, ok := sessionMessage(raw, at); ok {
+			if e, ok := SessionMessage(raw, at); ok {
 				return []Entry{e}
 			}
 			if n, ok := decodeNotice(raw); ok {
@@ -1877,11 +1877,11 @@ func (p *planParser) skipSpace() {
 
 // ---------- Clawdline's own envelopes ----------
 
-// sessionMessage decodes a message one session sent another through
+// SessionMessage decodes a message one session sent another through
 // Clawdline: `<clawdline-message>{…}</clawdline-message>` on one line, with a
 // closed key set. Version 2 adds image artifacts, which this daemon does not
 // resolve yet; the message itself is still recognised.
-func sessionMessage(raw string, at int64) (Entry, bool) {
+func SessionMessage(raw string, at int64) (Entry, bool) {
 	const opening, closing = "<clawdline-message>", "</clawdline-message>"
 	obj, ok := envelope(raw, opening, closing)
 	if !ok {

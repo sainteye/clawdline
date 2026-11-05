@@ -34,6 +34,11 @@ Open the existing Session to read its saved conversation. Scroll upward and use
 **Load earlier messages** when available to read older messages and tool results.
 Repeated identical messages remain separate turns.
 
+Messages received through Clawdline use the same message card as Claude Code
+and Codex, showing the sending Session, assistant, formatted body and any image
+attachments. This also applies to saved messages and earlier history pages;
+the original stored input remains unchanged.
+
 To return to a past native conversation, select **Pick up an earlier one** in
 the start chooser and choose the exact conversation under its original Project.
 Resuming keeps that conversation's identity; it does not create a replacement or
