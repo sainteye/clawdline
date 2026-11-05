@@ -416,7 +416,11 @@ func (s *Store) prepareLaunch(ctx context.Context, id string, req projects.Launc
 		if req.Persona != "" && len(prompt) == 0 {
 			return Prepared{}, fail("prompt_unavailable")
 		}
-		c, err = projects.PrepareAntigravityContext(req.SquadPromptPath, string(prompt), req.Memory, req.Language)
+		var explainSteps *bool
+		if req.AntigravityContext != nil {
+			explainSteps = req.AntigravityContext.ExplainSteps
+		}
+		c, err = projects.PrepareAntigravityContextWithExplanations(req.SquadPromptPath, string(prompt), req.Memory, req.Language, explainSteps)
 		if err != nil {
 			return Prepared{}, fail("request_invalid")
 		}

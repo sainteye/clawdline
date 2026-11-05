@@ -231,3 +231,9 @@ reviewed: terminal identity/screen/keystroke forwarding and PromptAccepted namin
 callbacks do not change the saved ACP resource composition or provider permissions.
 The public website snapshot must follow this reviewed product revision when it
 is published; a source receipt alone is not website deployment acceptance.
+
+The Antigravity launch store preserves the explicit step-explanation switch when
+it freezes the context. Empty-context hook checks explicitly disable that switch;
+a default launch still carries the step-explanation guidance. Both language
+explanations retain the distinction between original launch choices and current
+settings on resume.

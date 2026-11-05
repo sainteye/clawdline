@@ -512,3 +512,18 @@ func TestLaunchCapabilityAuthenticationDoesNotPinOrChangePreparedState(t *testin
 		t.Fatal("valid capability admitted changed original context")
 	}
 }
+
+func TestPrepareKeepsExplicitStepExplanationChoice(t *testing.T) {
+	f := setup(t)
+	off := false
+	original, err := projects.PrepareAntigravityContextWithExplanations("", "", "", "", &off)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.request.Persona, f.request.SquadPromptPath, f.request.Memory, f.request.Language = "", "", "", ""
+	f.request.AntigravityContext = &original
+	prepared := prep(t, f)
+	if prepared.Request.AntigravityContext.ShouldExplainSteps() || prepared.Request.AntigravityContext.Instructions() != "" {
+		t.Fatal("launch discarded the explicit off choice")
+	}
+}
