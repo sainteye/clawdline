@@ -381,3 +381,78 @@ func TestActiveToolTrackingIsBoundedAndReleased(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStaleTimedOutFlagDoesNotMaskWriteFailure(t *testing.T) {
+	t.Setenv("CLW_INTERRUPT_PEER", "yes")
+	h, row, dir := fixtureWithTimeout(t, 100*time.Millisecond)
+	ctx := context.Background()
+
+	// 1. First turn times out
+	if err := h.Send(ctx, row, "hung input"); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+
+	// Verify it settled to idle
+	inv, _ := h.Inventory(ctx)
+	if inv.Sessions[0].State != session.StateIdle {
+		t.Fatalf("expected idle, got %s", inv.Sessions[0].State)
+	}
+
+	// 2. Second turn fails on before() check (simulating write failure before write/acceptance)
+	expectedErr := errors.New("simulated before write failure")
+	err := h.SendProtocol(ctx, row, "failing input", func() error {
+		return expectedErr
+	})
+	if err == nil || !strings.Contains(err.Error(), "simulated before write failure") {
+		t.Fatalf("expected simulated before write failure, got: %v", err)
+	}
+
+	// 3. Transcript must not have duplicate or falsely attributed inactivity timeout for second turn
+	page, err := h.Transcript(row, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeoutCount := 0
+	for _, e := range page.Entries {
+		if e.Role == "error" && e.Text == "antigravity_turn_inactivity_timeout" {
+			timeoutCount++
+		}
+	}
+	if timeoutCount != 1 {
+		t.Fatalf("expected exactly 1 timeout error from turn 1, got %d", timeoutCount)
+	}
+	_ = dir
+}
+
+func TestWatchdogRaceWithEndTurnDoesNotEmitTimeoutError(t *testing.T) {
+	// If stopReason is "end_turn", even if timedOut flag was set at the very last moment,
+	// the completed turn must not append an inactivity timeout error.
+	h, row, dir := fixtureWithTimeout(t, 0)
+	ctx := context.Background()
+
+	c, err := h.lookup(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Manually set timedOut before sending a prompt that succeeds normally
+	c.timedOut.Store(true)
+
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(ctx, row, "prompt with stale timedOut"); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+
+	page, err := h.Transcript(row, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range page.Entries {
+		if e.Role == "error" && e.Text == "antigravity_turn_inactivity_timeout" {
+			t.Fatalf("successful end_turn must not have inactivity timeout error: %+v", page.Entries)
+		}
+	}
+}

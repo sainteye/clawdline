@@ -367,6 +367,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	accepted := make(chan struct{})
 	done := make(chan struct{})
 	var outcome error
+	c.timedOut.Store(false)
 	go func() {
 		defer h.jobs.Done()
 		defer close(done)
@@ -421,7 +422,6 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		}, func() {
 			stop()
 			c.touchActivity()
-			c.timedOut.Store(false)
 			inactivityTimeout := h.opts.InactivityTimeout
 			if inactivityTimeout <= 0 {
 				inactivityTimeout = DefaultInactivityTimeout
@@ -541,7 +541,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		if result.StopReason != "end_turn" && result.StopReason != "cancelled" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
-		if c.timedOut.Load() {
+		if result.StopReason != "end_turn" && c.timedOut.Load() {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
 			_ = c.saveState()
 		}
