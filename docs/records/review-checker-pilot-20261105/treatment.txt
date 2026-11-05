@@ -1,0 +1,42 @@
+## Frozen candidate
+
+- round: SAMPLE_ROUND
+- repository: `CASE_DIR`
+- source receipt checkout: `CASE_DIR`
+- checker checkout: `CASE_DIR`
+- candidate commit: `HEAD_SHA`
+- candidate tree: `TREE_SHA`
+- cycle base commit: `BASE_SHA`
+- assignment: SAMPLE_ASSIGNMENT; maker: SAMPLE_MAKER; cycle: 1
+- criteria version: `1`; SHA-256: `98839ebea36bf90a8e89330b8370a8a29885745c7cf721e45c2df1339d6c1f36`
+
+HEAD movement elsewhere has no authority here. Check only the detached commit and tree above.
+
+## Review scope and integration completeness
+
+Use the cycle base and candidate commits above as BASE and HEAD. First freeze BASE and HEAD as full commit SHAs. Review only git diff BASE..HEAD. List affected surfaces from diff/stat: server/API, client/UI, wire/sync/relay, CLI, persisted schema/migration, auth/permission gates, docs/translations, background jobs.
+Use CROSS-SURFACE if A: at least two surfaces are touched; B: permission/visibility defaults, auth/pairing, deletion/purge, migration, cross-machine receipts/idempotency change, or a running path is removed/stopped; or C: over 800 changed lines excluding tests, generated files and translation catalogs. Otherwise use SINGLE. Report the decision, triggers and evidence. An unclear range or unavailable evidence is unverified, not evidence for SINGLE.
+
+You remain this round's ONE checker. Do not dispatch additional reviewers or change the gate schema.
+Always check ordinary correctness. In CROSS-SURFACE mode, also perform the full D pass:
+Check integration completeness, including unchanged paths required by the change: callers and producers/consumers; local HTTP vs remote/Cloud wire; local and hosted clients and CLI; permission gates on new routes; background jobs (goroutines, timers, pushes, sweeps); removed/stopped paths and their dependents; docs, comments and translations now untrue. Read both ends of each required connection.
+Do not rationalize omissions for the author. If a surface that should carry the behavior is untouched or still refuses, never dismiss it as intentional or matching commit intent. Report INTENDED? author must confirm: with the concrete user-visible consequence if unintended. Only the author may confirm intent. Keep unresolved intent, plausible issues and confirmed defects separate. An intent question alone is not a confirmed defect.
+
+Correctness that depends on a real browser, platform, timing or recorded data requires actual execution evidence; otherwise mark it unverified and name what is missing. Reading alone is not a pass.
+Evidence limit: D hit 4/4 on one historical Cloud omission; C hit 3/4 across rounds 2-3 and the pair 2/2. D added 2-3 intent questions/run, including unresolved ones; one refactor control had zero findings. A later 18-session role-text pilot showed partial gains only. Small repeated samples do not prove general superiority, equivalence to two reviewers, or runtime correctness.
+
+Record scope, triggers, checked connections, intent questions and remaining gaps in the summary.
+Map relevant findings to the existing acceptance claims and their evidence. Do not invent criteria or
+treat unclear intent alone as a confirmed failure. Keep unrelated concerns explicit in the summary;
+the closed verdict must still follow the specified claims and the evidence rules below.
+
+## Acceptance and required checks
+
+```text
+The change implements the behavior claimed by its candidate commit without breaking required connections. Source-only observations must not be presented as executed runtime checks.
+```
+
+Evaluate every acceptance claim against the frozen candidate. Run the material checks the claim
+requires and attach bounded evidence. A claim is `passed`, `failed`, or `unverified`; when a check
+cannot run, mark it `unverified` and say why. Never turn missing evidence into a pass.
+

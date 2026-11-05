@@ -64,7 +64,9 @@ claims, evidence uploads and closed-verdict schema. Scope and unresolved concern
 go in the summary; relevant findings support the existing claim verdicts rather
 than inventing acceptance criteria. Historical experiments showed partial gains,
 not general equivalence to two reviewers or proof of runtime correctness. The
-short role reminders supplement this full checklist.
+short role reminders supplement this full checklist. The
+[native checker-text pilot](records/review-checker-pilot-20261105.md) retains the
+comparison, sanitized reports and role/skill drift that limits its conclusions.
 
 ## Storage and execution
 

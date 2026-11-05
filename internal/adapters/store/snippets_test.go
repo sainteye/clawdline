@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -462,6 +463,70 @@ func TestCrossReviewSeedPreservesAnExistingAuthoredPlaybook(t *testing.T) {
 			rows, err = st.Snippets(context.Background())
 			if err != nil || len(rows) != 1 || rows[0].ID != snippet.DefaultZeroReviewID {
 				t.Fatalf("deduplicated review came back: %+v %v", rows, err)
+			}
+		})
+	}
+}
+
+func TestCrossReviewSeedWaitsForCapacityAndThenStaysDeleted(t *testing.T) {
+	for _, scope := range []snippet.Scope{snippet.Global, snippet.Playbook} {
+		t.Run(string(scope), func(t *testing.T) {
+			dir := t.TempDir()
+			st, err := Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { st.Close() }()
+			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id=?`, snippet.DefaultCrossReviewID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.db.Exec(`DELETE FROM snippet_seeds WHERE seed=?`, snippet.DefaultCrossReviewID); err != nil {
+				t.Fatal(err)
+			}
+			count := SnippetTotalLimit - 1
+			if scope == snippet.Playbook {
+				count = SnippetScopeLimit - 1
+			}
+			for i := 0; i < count; i++ {
+				if _, err := st.db.Exec(`INSERT INTO snippets VALUES (?,?,'authored',?,'',?,1,1)`, "authored-"+strconv.Itoa(i), "Authored "+strconv.Itoa(i), scope, (i+2)*100); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reopen := func() {
+				t.Helper()
+				if err := st.Close(); err != nil {
+					t.Fatal(err)
+				}
+				st, err = Open(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			seeded := func() int {
+				t.Helper()
+				var n int
+				if err := st.db.QueryRow(`SELECT COUNT(*) FROM snippets WHERE id=?`, snippet.DefaultCrossReviewID).Scan(&n); err != nil {
+					t.Fatal(err)
+				}
+				return n
+			}
+			reopen()
+			if seeded() != 0 {
+				t.Fatal("starter exceeded capacity")
+			}
+			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id='authored-0'`); err != nil {
+				t.Fatal(err)
+			}
+			reopen()
+			if seeded() != 1 {
+				t.Fatal("available capacity did not admit deferred starter")
+			}
+			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id=?`, snippet.DefaultCrossReviewID); err != nil {
+				t.Fatal(err)
+			}
+			reopen()
+			if seeded() != 0 {
+				t.Fatal("deleted starter returned")
 			}
 		})
 	}

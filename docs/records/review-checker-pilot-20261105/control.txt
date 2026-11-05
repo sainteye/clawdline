@@ -1,0 +1,24 @@
+## Frozen candidate
+
+- round: SAMPLE_ROUND
+- repository: `CASE_DIR`
+- source receipt checkout: `CASE_DIR`
+- checker checkout: `CASE_DIR`
+- candidate commit: `HEAD_SHA`
+- candidate tree: `TREE_SHA`
+- cycle base commit: `BASE_SHA`
+- assignment: SAMPLE_ASSIGNMENT; maker: SAMPLE_MAKER; cycle: 1
+- criteria version: `1`; SHA-256: `98839ebea36bf90a8e89330b8370a8a29885745c7cf721e45c2df1339d6c1f36`
+
+HEAD movement elsewhere has no authority here. Check only the detached commit and tree above.
+
+## Acceptance and required checks
+
+```text
+The change implements the behavior claimed by its candidate commit without breaking required connections. Source-only observations must not be presented as executed runtime checks.
+```
+
+Evaluate every acceptance claim against the frozen candidate. Run the material checks the claim
+requires and attach bounded evidence. A claim is `passed`, `failed`, or `unverified`; when a check
+cannot run, mark it `unverified` and say why. Never turn missing evidence into a pass.
+
