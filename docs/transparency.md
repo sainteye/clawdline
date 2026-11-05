@@ -232,6 +232,12 @@ callbacks do not change the saved ACP resource composition or provider permissio
 The public website snapshot must follow this reviewed product revision when it
 is published; a source receipt alone is not website deployment acceptance.
 
+The Antigravity launch store preserves the explicit step-explanation switch when
+it freezes the context. Empty-context hook checks explicitly disable that switch;
+a blank native-hook launch also stays empty when no choice was supplied. Both language
+explanations retain the distinction between original launch choices and current
+settings on resume.
+
 CodeGraph and the managed workflow now also apply to Gemini through the same explicit machine opt-in and frozen parent snapshot. Owned ACP context includes that original workflow text, records its native conversation before first input, and retains the workflow launch ID for recovery. Native terminal context preserves the original workflow bytes. Neither receipt establishes model use; native Project/hook consent and tool permissions remain independent. The reviewed bilingual entries register both providers and transports. The source scope now includes every pinned SDK extension, its special filenames, and validated project custom mappings; offline checks and live reconciliation use the same scope.
 
 

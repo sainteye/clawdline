@@ -377,6 +377,12 @@ func (s *Server) squadDefinitionRead(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, d)
 			return
 		}
+		if d.DefinitionID == resolved {
+			if historical, ok := squad.HistoricalBuiltinRoleDefinition(d, version); ok {
+				writeJSON(w, historical)
+				return
+			}
+		}
 		if d.DefinitionID == resolved && version != "" && d.Builtin && len(d.Skills) > 0 {
 			if historical, ok := squad.HistoricalBuiltinDefinition(d); ok && version == historical.Version {
 				writeJSON(w, historical)

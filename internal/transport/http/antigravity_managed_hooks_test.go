@@ -56,6 +56,14 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				Executable: executable, PermissionMode: "plan", Memory: "ORIGINAL_SYNTHETIC_MEMORY", Language: "zh-Hant-TW"}
 			if strings.HasPrefix(name, "empty_") {
 				request.Memory, request.Language = "", ""
+				// Default launches now carry step-explanation guidance. These
+				// cases exercise a genuinely empty, explicitly opted-out launch.
+				off := false
+				original, err := projects.PrepareAntigravityContextWithExplanations("", "", "", "", &off)
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.AntigravityContext = &original
 			}
 			prepared, err := owner.Prepare(ctx, request)
 			if err != nil {

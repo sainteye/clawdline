@@ -2292,7 +2292,7 @@
         },
         {
           "path": "internal/adapters/antigravitylaunch/store.go",
-          "line": 689
+          "line": 693
         },
         {
           "path": "internal/adapters/antigravity/hook_service.go",
@@ -2914,7 +2914,7 @@
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
-    "internal/adapters/antigravitylaunch/store.go": "53f36a13724637df714b0c5b45f9bdc9f07783ee63aec36dd8f6658f71a4e28f",
+    "internal/adapters/antigravitylaunch/store.go": "8824ced0905afb195c556273b4c500e338a32ac57d0ed3707fc14420bc5cb772",
     "internal/adapters/antigravityprocess/client.go": "4e176891ed7a33f5798d0ecdc21fa8354d266c5841e71e59aaa4cd8c72da2174",
     "internal/adapters/antigravityprocess/lifecycle.go": "768ce986d86e580eb8698acd0880c7a4a44129d69a868a2efb469eb4bf911a3e",
     "internal/adapters/antigravitysession/context.go": "42dbfd6dc6a872566bc2c49d72d69eccf72af7bcc9c33c78c2245041003b5914",
@@ -3006,7 +3006,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "5172b6780c0bac3c631af20a5815154b4ba74f1c4c04aecce9bdf1fdbe62deba",
-    "zh-Hant": "61992817679fda03e53456e650dc79e4c0f009db33ef7c93d1958cecd9f6ff3c"
+    "en": "abd7efc6effbf0b0a27da502a657e3020b72dafdc173a1adc85587801b924e23",
+    "zh-Hant": "0e0f9a1e9504dde0cda0f25c26d11ad3e3b26304ca271f55f716ddfc21105469"
   }
 }

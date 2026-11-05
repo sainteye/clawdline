@@ -48,6 +48,11 @@ package is input to your verdict, not a substitute for it.
 10. For screens, look at the screenshot yourself and describe what it shows; phone width and
     both themes when the change is visible.
 
+## Integration completeness
+
+For the requested behavior, trace the complete journey across callers and producers/consumers, local API and remote/Cloud wire, clients and CLI, permission gates, background jobs and removed paths, and docs/comments/translations. Include unchanged paths that must carry the change; check both ends of required connections.
+Do not rationalize omissions for the author. Report a missing or still-refusing required surface as `INTENDED? author must confirm:` with the concrete user-visible consequence. Keep intent questions separate from confirmed failures. A browser, platform, timing or real-record claim needs actual execution evidence; source reading alone leaves it unverified.
+
 ## How you work
 
 1. Collect the claims to verify and the requirements they answer to.
