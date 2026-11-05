@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10665,
+  "englishKeys": 10666,
   "counts": {
     "negation": 2965,
-    "state": 1737,
+    "state": 1738,
     "permission": 628,
     "deletion": 234,
     "uncertainty": 400
   },
-  "unionCount": 4688,
+  "unionCount": 4689,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -4397,6 +4397,7 @@
       "next.sessionStateFilterWorkingHint",
       "next.sessionStopSent",
       "next.sessionWaitHeavyRunning",
+      "next.sessionWaitingOnCallback",
       "next.sessionWaitingOnNamedSession",
       "next.sessionWaitingOnSession",
       "next.sessionWaitingOnWork",
@@ -9813,6 +9814,7 @@
     "next.sessionStateUnrecognizedList",
     "next.sessionStopSent",
     "next.sessionWaitHeavyRunning",
+    "next.sessionWaitingOnCallback",
     "next.sessionWaitingOnNamedSession",
     "next.sessionWaitingOnSession",
     "next.sessionWaitingOnWork",

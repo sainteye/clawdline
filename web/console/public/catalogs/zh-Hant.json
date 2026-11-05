@@ -142,6 +142,7 @@
   "next.devStackRefresh": "重新整理",
   "next.devStackStatusReady": ".devstack.json 已就緒 · 已宣告 {count} 個服務",
   "next.setupViewServers": "管理服務",
+  "next.sessionWaitingOnCallback": "等待回呼：{work}",
   "capacityRow.session.tool_preview_bytes.what": "工具卡片先傳送有大小上限的 UTF-8 預覽。",
   "capacityRow.session.tool_preview_bytes.full": "較長文字保留於 Session 紀錄，展開時才讀取。",
   "capacityRow.cloud.read_plaintext_bytes.what": "協商壓縮的回覆限制解壓後大小。",
