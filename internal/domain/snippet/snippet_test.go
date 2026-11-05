@@ -363,3 +363,29 @@ func TestANewMemberGoesAfterTheLastAndNeverPastTheCeiling(t *testing.T) {
 		t.Errorf("ceiling: %d", got)
 	}
 }
+
+func TestDefaultPlaybooksFitTheStoreAndStopLocalizingEdits(t *testing.T) {
+	seen := map[string]bool{}
+	for _, d := range DefaultPlaybooks() {
+		if seen[d.ID] || d.ID == "" || d.Key == "" || len(d.Body) > MaxBodyBytes || len(d.Title) > MaxTitleBytes {
+			t.Fatalf("invalid default Playbook: %+v", d)
+		}
+		seen[d.ID] = true
+		r := Record{ID: d.ID, Title: d.Title, Body: d.Body, Scope: Playbook}
+		if BuiltinPlaybook(r) != d.Key {
+			t.Fatal("fresh default lost its localized identity")
+		}
+		r.Body += "\nMy additional check."
+		if BuiltinPlaybook(r) != "" {
+			t.Fatal("edited text is still overridden")
+		}
+		r.Body = d.Body
+		r.Source = &SourceRef{Kind: "skill"}
+		if BuiltinPlaybook(r) != "" {
+			t.Fatal("linked source is still overridden")
+		}
+	}
+	if !seen[DefaultCrossReviewID] || !seen[DefaultZeroReviewID] {
+		t.Fatal("missing shipped review")
+	}
+}

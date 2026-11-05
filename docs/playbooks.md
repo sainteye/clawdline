@@ -33,6 +33,39 @@ in a subdirectory or worktree can see its canonical Project Playbook. If that
 read is unavailable on an older machine, the Snippet tab still works and the
 Playbook tab names the update requirement.
 
+## Built-in review Playbooks
+
+A fresh machine receives two editable global starters: **Zero-Based Review**
+(`zero_review`) and **Cross-Surface Code Review** (`cross_surface_review`). The
+latter is shown as **跨面向 Code Review** in Taiwan Traditional Chinese. Unedited
+starters use the reader's English or Traditional Chinese message; edited or linked
+rows keep the person's saved words. Each launch still freezes the displayed title
+and complete message in its Session to-do.
+
+Each starter has its own seed-ledger entry. Deleting one does not bring it back
+on restart. An existing global definition with its English or Traditional Chinese
+title is retained without being overwritten, reidentified or duplicated; it keeps
+its authored text. Capacity refusal defers an absent seed until space is available.
+
+Cross-surface review first freezes the candidate and assesses affected surfaces:
+A means at least two surfaces; B covers permission/visibility defaults, auth,
+pairing, deletion, migration, cross-machine receipts/idempotency, or stopping a
+running path; C means over 800 changed lines after excluding tests, generated
+files and translation catalogs. Either mode defaults to one read-only reviewer.
+Cross-surface mode adds the complete integration checklist and requires omitted
+connections to be reported with their consequence and `INTENDED? author must
+confirm:`. It does not automatically add reviewers or authorize more spending.
+Runtime-dependent claims need execution evidence, and intent questions remain
+separate from confirmed defects.
+
+The verification gate uses the same assessment, integration checklist and evidence
+limits in its one checker's frozen briefing. It retains the existing acceptance
+claims, evidence uploads and closed-verdict schema. Scope and unresolved concerns
+go in the summary; relevant findings support the existing claim verdicts rather
+than inventing acceptance criteria. Historical experiments showed partial gains,
+not general equivalence to two reviewers or proof of runtime correctness. The
+short role reminders supplement this full checklist.
+
 ## Storage and execution
 
 Playbooks use the reusable-text store's `playbook` scope, with the same title,

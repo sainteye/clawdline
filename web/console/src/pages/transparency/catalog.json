@@ -2219,11 +2219,8 @@
         }
       ],
       "original": [
-        "Run a zero-based review of this Project. Create an Epic to track it, then assign independent reviews from the relevant roles: product, UX, architecture, code quality, efficiency, documentation, and evidence.\n",
-        "Require evidence for every finding. Compare the current design with mature expert practice, and distinguish deliberate trade-offs from accumulated complexity.\n",
-        "Find confusing behavior, redundant steps or reads and writes, and missing capabilities.\n",
-        "Synthesize a report and a target process. Turn improvements into role-owned child items, and list decisions that need my input separately.\n",
-        "Collect shared facts once and include them in each review brief so reviewers do not repeat the same reading."
+        "Run a zero-based review of this Project. Create an Epic to track it, then assign independent reviews from the relevant roles: product, UX, architecture, code quality, efficiency, documentation, and evidence.\nRequire evidence for every finding. Compare the current design with mature expert practice, and distinguish deliberate trade-offs from accumulated complexity.\nFind confusing behavior, redundant steps or reads and writes, and missing capabilities.\nSynthesize a report and a target process. Turn improvements into role-owned child items, and list decisions that need my input separately.\nCollect shared facts once and include them in each review brief so reviewers do not repeat the same reading.\n\n",
+        "Review a committed change. If BASE/HEAD is unclear or uncommitted, ask and stop. Assess scope before dispatch. A cross-surface review uses a broader lens, not automatically more reviewers.\n\nFirst freeze BASE and HEAD as full commit SHAs. Review only git diff BASE..HEAD. List affected surfaces from diff/stat: server/API, client/UI, wire/sync/relay, CLI, persisted schema/migration, auth/permission gates, docs/translations, background jobs.\nUse CROSS-SURFACE if A: at least two surfaces are touched; B: permission/visibility defaults, auth/pairing, deletion/purge, migration, cross-machine receipts/idempotency change, or a running path is removed/stopped; or C: over 800 changed lines excluding tests, generated files and translation catalogs. Otherwise use SINGLE. Report the decision, triggers and evidence. An unclear range or unavailable evidence is unverified, not evidence for SINGLE.\n\nDispatch ONE read-only Clawdline reviewer by default. SINGLE uses general review; CROSS-SURFACE adds the integration pass and omission rule below (arm D). Do not automatically add reviewers for A/B/C. An extra reviewer needs a concrete independent question, justification and authorization under current rules; this Playbook grants no spending permission.\nLoad the clawdline skill and read clawdline guide dispatch. Use clawdline dispatch --kind review --claims \"\" --persona code-reviewer --permission-mode ask --task-id LOWERCASE_UUID --title \"REVIEW_TITLE\". Brief the repository, BASE, HEAD and these rules; reuse the ID for retries. If unavailable/refused, report and stop; do not substitute provider-native agents.\n\nEvery reviewer: read-only; at most 8 substantive findings, severity first. Each needs severity, file:line, defect, concrete failure scenario and confidence (confirmed-by-reading, plausible or unverified). List completed checks; no padding.\n\nCheck integration completeness, including unchanged paths required by the change: callers and producers/consumers; local HTTP vs remote/Cloud wire; local and hosted clients and CLI; permission gates on new routes; background jobs (goroutines, timers, pushes, sweeps); removed/stopped paths and their dependents; docs, comments and translations now untrue. Read both ends of each required connection.\nDo not rationalize omissions for the author. If a surface that should carry the behavior is untouched or still refuses, never dismiss it as intentional or matching commit intent. Report INTENDED? author must confirm: with the concrete user-visible consequence if unintended. Only the author may confirm intent. Keep unresolved intent, plausible issues and confirmed defects separate. An intent question alone is not a confirmed defect.\n\nCorrectness that depends on a real browser, platform, timing or recorded data requires actual execution evidence; otherwise mark it unverified and name what is missing. Reading alone is not a pass.\nEvidence limit: D hit 4/4 on one historical Cloud omission; C hit 3/4 across rounds 2-3 and the pair 2/2. D added 2-3 intent questions/run, including unresolved ones; one refactor control had zero findings. A later 18-session role-text pilot showed partial gains only. Small repeated samples do not prove general superiority, equivalence to two reviewers, or runtime correctness.\n\nSynthesize by reading each cited location yourself, merging duplicates and labeling confirmed, plausible, unresolved intent, or rejected with reasons. Do not edit code. Report the scope decision/evidence, task IDs, reviewer count, ranked findings, intent questions and unverified claims. Ask which findings to fix."
       ],
       "locations": []
     },
@@ -2875,6 +2872,39 @@
         "Session → Actions → Tool library → Prepare and use",
         "Editable composer attachment; sent only after the person sends the message"
       ]
+    },
+    {
+      "id": "gate-review",
+      "scope": "conditional",
+      "agents": [
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "task",
+        "board"
+      ],
+      "sources": [
+        {
+          "path": "internal/app/orchestrator/brief.go",
+          "line": 311
+        },
+        {
+          "path": "internal/domain/snippet/default_playbook.go",
+          "line": 26
+        }
+      ],
+      "original": [
+        "\tw(\"## Review scope and integration completeness\")\n\tw(\"\")\n\tw(\"Use the cycle base and candidate commits above as BASE and HEAD. %s\", snippet.ReviewAssessment)\n\tw(\"\")\n\tw(\"You remain this round's ONE checker. Do not dispatch additional reviewers or change the gate schema.\")\n\tw(\"Always check ordinary correctness. In CROSS-SURFACE mode, also perform the full D pass:\")\n\tw(\"%s\", snippet.IntegrationReviewInstructions)\n\tw(\"\")\n\tw(\"%s\", snippet.ReviewEvidenceLimits)\n\tw(\"\")\n\tw(\"Record scope, triggers, checked connections, intent questions and remaining gaps in the summary.\")\n\tw(\"Map relevant findings to the existing acceptance claims and their evidence. Do not invent criteria or\")\n\tw(\"treat unclear intent alone as a confirmed failure. Keep unrelated concerns explicit in the summary;\")\n\tw(\"the closed verdict must still follow the specified claims and the evidence rules below.\")\n\tw(\"\")\n",
+        "First freeze BASE and HEAD as full commit SHAs. Review only git diff BASE..HEAD. List affected surfaces from diff/stat: server/API, client/UI, wire/sync/relay, CLI, persisted schema/migration, auth/permission gates, docs/translations, background jobs.\nUse CROSS-SURFACE if A: at least two surfaces are touched; B: permission/visibility defaults, auth/pairing, deletion/purge, migration, cross-machine receipts/idempotency change, or a running path is removed/stopped; or C: over 800 changed lines excluding tests, generated files and translation catalogs. Otherwise use SINGLE. Report the decision, triggers and evidence. An unclear range or unavailable evidence is unverified, not evidence for SINGLE.\n\n",
+        "Check integration completeness, including unchanged paths required by the change: callers and producers/consumers; local HTTP vs remote/Cloud wire; local and hosted clients and CLI; permission gates on new routes; background jobs (goroutines, timers, pushes, sweeps); removed/stopped paths and their dependents; docs, comments and translations now untrue. Read both ends of each required connection.\nDo not rationalize omissions for the author. If a surface that should carry the behavior is untouched or still refuses, never dismiss it as intentional or matching commit intent. Report INTENDED? author must confirm: with the concrete user-visible consequence if unintended. Only the author may confirm intent. Keep unresolved intent, plausible issues and confirmed defects separate. An intent question alone is not a confirmed defect.\n\n",
+        "Correctness that depends on a real browser, platform, timing or recorded data requires actual execution evidence; otherwise mark it unverified and name what is missing. Reading alone is not a pass.\nEvidence limit: D hit 4/4 on one historical Cloud omission; C hit 3/4 across rounds 2-3 and the pair 2/2. D added 2-3 intent questions/run, including unresolved ones; one refactor control had zero findings. A later 18-session role-text pilot showed partial gains only. Small repeated samples do not prove general superiority, equivalence to two reviewers, or runtime correctness."
+      ],
+      "locations": [
+        "verify_gate checker CHILD.md"
+      ]
     }
   ],
   "sourceChecks": {
@@ -2912,7 +2942,7 @@
     "internal/adapters/taskdir/broker.go": "c69b1984763af3106a7482e71984321f6e75351d4371a2567ea5060b9c879328",
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "082bdb02e062d861219c8032bc7ff14995b777d6289f329fb9b93bd7cd67cc24",
-    "internal/app/orchestrator/brief.go": "bffb5769b7b2dd66a738d593f8c1c9b9191018e57155267009d6d73ebbf74931",
+    "internal/app/orchestrator/brief.go": "4b777f33e9accfaec666cdc7ef838d400b3113b484ab64a28ff63c878b70411f",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "baad265baa7f4f3c2a4a49f033e087b0f813fb0aa24aff035e13d839d7508e20",
@@ -2934,7 +2964,7 @@
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
-    "internal/domain/snippet/default_playbook.go": "a72c51ba8318f25d1070276a3dd45c118bc08c5e2ac79c673af5dad01898b37a",
+    "internal/domain/snippet/default_playbook.go": "daff9b750e5f6f22aa61ff6147564739aa46be4d4ba66d8d143b687d7cc856d4",
     "internal/domain/toollibrary/library.go": "5fa9cd8bcd54553fce879eca8ca1314fd77d4fee4fbed6e586449df7dcebecb9",
     "internal/domain/workflow/snapshot.go": "a49571493c2549bf6dd65d39cf98786ca8e3aae9c8ce60afc59a4454b5563737",
     "internal/productcopy/board.go": "710c175d79d8f607a2081dd6c444f3c7d64609535336cbc580f681174970527d",
@@ -2976,7 +3006,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "240eb0a18cf72a2fad041358a9a1ac4ce2cb56349c6b18d2f2f2300c033a9612",
-    "zh-Hant": "7b8da2f814a293bfb957e4959aaae210a10756568479ce949847c68265435fa5"
+    "en": "5172b6780c0bac3c631af20a5815154b4ba74f1c4c04aecce9bdf1fdbe62deba",
+    "zh-Hant": "61992817679fda03e53456e650dc79e4c0f009db33ef7c93d1958cecd9f6ff3c"
   }
 }

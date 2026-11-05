@@ -104,7 +104,7 @@ func snippetRefusalOf(t *testing.T, rec *httptest.ResponseRecorder) snippetRefus
 func TestAFreshMachineAnswersTheDefaultGlobalPlaybook(t *testing.T) {
 	h := newSnippetHarness(t)
 	got := h.list("/v1/snippets")
-	if len(got.Snippets) != 1 || got.Project != nil ||
+	if len(got.Snippets) != 2 || got.Project != nil ||
 		got.Snippets[0].ID != snippet.DefaultZeroReviewID || got.Snippets[0].Builtin != "zero_review" ||
 		got.Snippets[0].Scope != "playbook" || got.Snippets[0].Project != "" {
 		t.Fatalf("%+v", got)
@@ -131,8 +131,8 @@ func TestGlobalPlaybookIsListedForEverySessionProject(t *testing.T) {
 	}
 	for _, id := range []string{"%1", "%2"} {
 		got := h.list("/v1/snippets?session=" + url.QueryEscape(id))
-		if len(got.Snippets) != 2 || got.Snippets[0].ID != snippet.DefaultZeroReviewID ||
-			got.Snippets[1].Title != "Daily release" || got.Snippets[1].Project != "" {
+		if len(got.Snippets) != 3 || got.Snippets[0].ID != snippet.DefaultZeroReviewID ||
+			got.Snippets[1].ID != snippet.DefaultCrossReviewID || got.Snippets[2].Title != "Daily release" || got.Snippets[2].Project != "" {
 			t.Fatalf("session %s: %+v", id, got.Snippets)
 		}
 	}
@@ -163,7 +163,7 @@ func TestASnippetIsMadeSavedAndTakenAway(t *testing.T) {
 		t.Errorf("a global snippet's wire mentions project: %s", rec.Body.String())
 	}
 
-	if got := h.list("/v1/snippets"); len(got.Snippets) != 2 || got.Snippets[1].ID != made.ID {
+	if got := h.list("/v1/snippets"); len(got.Snippets) != 3 || got.Snippets[1].ID != made.ID {
 		t.Fatalf("%+v", got)
 	}
 
@@ -186,7 +186,7 @@ func TestASnippetIsMadeSavedAndTakenAway(t *testing.T) {
 	if !gone.OK || gone.Deleted != made.ID {
 		t.Fatalf("%+v", gone)
 	}
-	if got := h.list("/v1/snippets"); len(got.Snippets) != 1 || got.Snippets[0].ID != snippet.DefaultZeroReviewID {
+	if got := h.list("/v1/snippets"); len(got.Snippets) != 2 || got.Snippets[0].ID != snippet.DefaultZeroReviewID {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -222,7 +222,7 @@ func TestAReadOnlyDeviceIsRefusedEveryWrite(t *testing.T) {
 			t.Errorf("%s %s: %+v", c.method, c.target, got)
 		}
 	}
-	if rows, _ := h.store.Snippets(context.Background()); len(rows) != 1 || rows[0].ID != snippet.DefaultZeroReviewID {
+	if rows, _ := h.store.Snippets(context.Background()); len(rows) != 2 || rows[0].ID != snippet.DefaultZeroReviewID {
 		t.Fatalf("a refused device changed the seeded rows: %+v", rows)
 	}
 }
@@ -252,7 +252,7 @@ func TestAWriteNeedsAKeyAndARetryUnderItIsAnsweredOnce(t *testing.T) {
 		t.Errorf("the retry was not marked a replay: %v", again.Header())
 	}
 	rows, _ := h.store.Snippets(context.Background())
-	if len(rows) != 2 {
+	if len(rows) != 3 {
 		t.Fatalf("%d snippet(s) from one decision sent twice", len(rows))
 	}
 }
@@ -327,7 +327,7 @@ func TestTheOrderRouteIsFoundBesideOneSnippetsId(t *testing.T) {
 		t.Fatalf("%+v", out)
 	}
 	got := h.list("/v1/snippets")
-	if len(got.Snippets) != 4 || got.Snippets[1].ID != ids[2] {
+	if len(got.Snippets) != 5 || got.Snippets[1].ID != ids[2] {
 		t.Fatalf("read back as %+v", got.Snippets)
 	}
 }
@@ -418,7 +418,7 @@ func TestASessionInAWorktreeIsInTheProjectItWasCutFrom(t *testing.T) {
 		if got.Project == nil || got.Project.Key != resolved {
 			t.Fatalf("%s: %+v", id, got.Project)
 		}
-		if len(got.Snippets) != 3 || got.Snippets[0].Title != "mine" ||
+		if len(got.Snippets) != 4 || got.Snippets[0].Title != "mine" ||
 			got.Snippets[1].ID != snippet.DefaultZeroReviewID {
 			t.Fatalf("%s: %+v", id, got.Snippets)
 		}

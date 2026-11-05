@@ -233,3 +233,14 @@ The public website snapshot must follow this reviewed product revision when it
 is published; a source receipt alone is not website deployment acceptance.
 
 CodeGraph and the managed workflow now also apply to Gemini through the same explicit machine opt-in and frozen parent snapshot. Owned ACP context includes that original workflow text, records its native conversation before first input, and retains the workflow launch ID for recovery. Native terminal context preserves the original workflow bytes. Neither receipt establishes model use; native Project/hook consent and tool permissions remain independent. The reviewed bilingual entries register both providers and transports. The source scope now includes every pinned SDK extension, its special filenames, and validated project custom mappings; offline checks and live reconciliation use the same scope.
+
+
+The editable starter Playbook inventory now includes Cross-Surface Code Review
+in English and Taiwan Traditional Chinese. Selection sends its localized text;
+merely seeding or displaying it injects nothing. Existing authored and edited
+definitions retain their exact text. A separate conditional gate-review entry
+describes the shared assessment, full D integration checklist and omission rule
+in the immutable verify_gate checker brief. It preserves one checker, the closed
+verdict and bounded evidence protocol. Both language explanations distinguish
+instructions from measured application and retain the experiment limits. The
+public website snapshot must follow this reviewed product commit.

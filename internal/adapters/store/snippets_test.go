@@ -17,7 +17,7 @@ func openSnippetStore(t *testing.T) (*Store, context.Context) {
 	}
 	// Most store tests exercise an otherwise empty collection. The new-install
 	// starter is covered separately below; removing it here spends no write quota.
-	if _, err := st.db.Exec(`DELETE FROM snippets WHERE id = ?`, snippet.DefaultZeroReviewID); err != nil {
+	if _, err := st.db.Exec(`DELETE FROM snippets WHERE id IN (?, ?)`, snippet.DefaultZeroReviewID, snippet.DefaultCrossReviewID); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
@@ -32,7 +32,7 @@ func TestFreshMachineGetsEditableGlobalPlaybookAndDeletedSeedStaysDeleted(t *tes
 	}
 	ctx := context.Background()
 	rows, err := st.Snippets(ctx)
-	if err != nil || len(rows) != 1 || !snippet.IsDefaultZeroReview(rows[0]) {
+	if err != nil || len(rows) != 2 || !snippet.IsDefaultZeroReview(rows[0]) || snippet.BuiltinPlaybook(rows[1]) != "cross_surface_review" {
 		t.Fatalf("new machine starter: %#v, %v", rows, err)
 	}
 	if rows[0].Project != "" || rows[0].Scope != snippet.Playbook {
@@ -50,7 +50,7 @@ func TestFreshMachineGetsEditableGlobalPlaybookAndDeletedSeedStaysDeleted(t *tes
 	}
 	defer st.Close()
 	rows, err = st.Snippets(ctx)
-	if err != nil || len(rows) != 0 {
+	if err != nil || len(rows) != 1 || rows[0].ID != snippet.DefaultCrossReviewID {
 		t.Fatalf("deleted starter came back: %#v, %v", rows, err)
 	}
 }
@@ -417,5 +417,52 @@ func TestTheCountsNameTheFullestGroup(t *testing.T) {
 	}
 	if total != 3 || fullest != 2 || name != "project /p" {
 		t.Fatalf("%d %d %q", total, fullest, name)
+	}
+}
+
+func TestCrossReviewSeedPreservesAnExistingAuthoredPlaybook(t *testing.T) {
+	for _, title := range []string{snippet.DefaultCrossReviewTitle, "跨面向 Code Review"} {
+		t.Run(title, func(t *testing.T) {
+			dir := t.TempDir()
+			st, err := Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id=?`, snippet.DefaultCrossReviewID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.db.Exec(`DELETE FROM snippet_seeds WHERE seed=?`, snippet.DefaultCrossReviewID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.db.Exec(`INSERT INTO snippets VALUES ('authored',?,'Keep my review','playbook','',900,1,2)`, title); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			st, err = Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, err := st.Snippets(context.Background())
+			if err != nil || len(rows) != 2 || rows[1].ID != "authored" || rows[1].Body != "Keep my review" || rows[1].Position != 900 {
+				t.Fatalf("authored review changed: %+v %v", rows, err)
+			}
+			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id='authored'`); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			st, err = Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			rows, err = st.Snippets(context.Background())
+			if err != nil || len(rows) != 1 || rows[0].ID != snippet.DefaultZeroReviewID {
+				t.Fatalf("deduplicated review came back: %+v %v", rows, err)
+			}
+		})
 	}
 }

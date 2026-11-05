@@ -2609,6 +2609,56 @@ test("a phone starts the shipped global Playbook in its interface language", () 
     assert.match(String((playbookTodo as Row | null)?.text), /每項結論都要附上證據/)
   }))
 
+test("a phone starts the cross-surface Playbook with the full localized message", () =>
+  inTab(async (tab) => {
+    playbookTodo = null; playbookSends = 0
+    playbookRecords = [{ id: "00000000-0000-4000-8000-000000000102", title: "Cross-Surface Code Review",
+      body: "Review a committed change.", scope: "playbook", builtin: "cross_surface_review",
+      position: 100, created_at: 1, updated_at: 1 }]
+    await tab.go("/#session=" + encodeURIComponent(SAFE))
+    await tab.run(`document.documentElement.lang = "zh-Hant-TW"`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const look = () => {
+        const button = document.querySelector('#detail-snippets')
+        if (button && button.getClientRects().length) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Session detail did not appear'))
+        setTimeout(look, 25)
+      }; look()
+    })`)
+    await tab.press("#detail-snippets")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const look = () => {
+        if (document.querySelector('#snippets-sheet .snippets-tabs')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Playbook sheet did not open'))
+        setTimeout(look, 25)
+      }; look()
+    })`)
+    await tab.press(".snippets-tabs button:last-child")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const look = () => {
+        if (document.querySelector('.playbook-picker-row')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('default Playbook did not appear'))
+        setTimeout(look, 25)
+      }; look()
+    })`)
+    assert.match(await tab.run(`document.querySelector('.playbook-picker-row')?.textContent`), /跨面向 Code Review/)
+    assert.equal(await tab.run(`document.querySelector('.playbook-picker-toolbar, .playbook-reload')`), null)
+    await tab.press(".playbook-picker-row")
+    await tab.press(".playbook-start")
+    await new Promise<void>((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const look = () => {
+        if (playbookTodo && playbookSends === 1) return resolve()
+        if (Date.now() > deadline) return reject(new Error('default Playbook was not sent'))
+        setTimeout(look, 25)
+      }; look()
+    })
+    assert.match(String((playbookTodo as Row | null)?.text), /INTENDED\? author must confirm:/)
+  }))
+
 test("Clawdfather stays first above a waiting Session on phone and desktop", () =>
   inTab(async (tab) => {
     try {

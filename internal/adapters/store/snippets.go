@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/snippet"
@@ -16,7 +17,7 @@ import (
 // snippet under its own state root and is still running beside this daemon on
 // some machines; two writers on one directory, each with its own idea of what
 // a valid file is, is the shape this rewrite exists to stop. User rows start
-// empty, alongside one editable global starter Playbook. The old files are
+// empty, alongside editable global starter Playbooks. The old files are
 // left exactly where they are, and docs say how to carry them over on purpose.
 //
 // Everything a write decides — the position a new snippet lands at, whether one
@@ -76,45 +77,51 @@ func seedDefaultPlaybook(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
-	var seen int
-	err = tx.QueryRow(`SELECT 1 FROM snippet_seeds WHERE seed = ?`, snippet.DefaultZeroReviewID).Scan(&seen)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	var total, global, existing int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets`).Scan(&total); err != nil {
-		return err
-	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets WHERE scope = ? AND project = ''`, snippet.Playbook).Scan(&global); err != nil {
-		return err
-	}
-	if total >= SnippetTotalLimit || global >= SnippetScopeLimit {
-		return nil
-	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets WHERE scope = ? AND project = '' AND title IN (?, ?)`,
-		snippet.Playbook, snippet.DefaultZeroReviewTitle, "歸零審查").Scan(&existing); err != nil {
-		return err
-	}
-	now := time.Now().Unix()
-	if existing == 0 {
-		var highest int64
-		if err := tx.QueryRow(`SELECT COALESCE(MAX(position), 0) FROM snippets WHERE scope = ? AND project = ''`,
-			snippet.Playbook).Scan(&highest); err != nil {
+	for _, d := range snippet.DefaultPlaybooks() {
+		var seen int
+		err := tx.QueryRow(`SELECT 1 FROM snippet_seeds WHERE seed = ?`, d.ID).Scan(&seen)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO snippets (id, title, body, scope, project, position, created_at, updated_at)
-			VALUES (?, ?, ?, ?, '', ?, ?, ?)`, snippet.DefaultZeroReviewID,
-			snippet.DefaultZeroReviewTitle, snippet.DefaultZeroReviewBody, snippet.Playbook,
-			snippet.NextPosition(highest), now, now); err != nil {
+		// Existing authored definitions, including localized titles, remain
+		// untouched. Remember the decision even when the collection is full.
+		args := []any{d.ID, snippet.Playbook}
+		for _, title := range d.Titles {
+			args = append(args, title)
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(d.Titles)), ",")
+		var existing int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets WHERE id = ? OR
+			(scope = ? AND project = '' AND title IN (`+placeholders+`))`, args...).Scan(&existing); err != nil {
 			return err
 		}
-	}
-	if _, err := tx.Exec(`INSERT INTO snippet_seeds (seed, seeded_at) VALUES (?, ?)`,
-		snippet.DefaultZeroReviewID, now); err != nil {
-		return err
+		now := time.Now().Unix()
+		if existing == 0 {
+			var total, global int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets`).Scan(&total); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets WHERE scope = ? AND project = ''`, snippet.Playbook).Scan(&global); err != nil {
+				return err
+			}
+			if total >= SnippetTotalLimit || global >= SnippetScopeLimit {
+				continue
+			}
+			var highest int64
+			if err := tx.QueryRow(`SELECT COALESCE(MAX(position), 0) FROM snippets WHERE scope = ? AND project = ''`, snippet.Playbook).Scan(&highest); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO snippets (id,title,body,scope,project,position,created_at,updated_at)
+				VALUES (?,?,?,?, '',?,?,?)`, d.ID, d.Title, d.Body, snippet.Playbook, snippet.NextPosition(highest), now, now); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(`INSERT INTO snippet_seeds (seed,seeded_at) VALUES (?,?)`, d.ID, now); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/snippet"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -306,6 +307,21 @@ func (b *Broker) writeGateCheckerBrief(w func(string, ...any), r Record, cwd, di
 	w("- criteria version: `%d`; SHA-256: `%s`", g.Acceptance.Version, g.Acceptance.Digest)
 	w("")
 	w("HEAD movement elsewhere has no authority here. Check only the detached commit and tree above.")
+	w("")
+	w("## Review scope and integration completeness")
+	w("")
+	w("Use the cycle base and candidate commits above as BASE and HEAD. %s", snippet.ReviewAssessment)
+	w("")
+	w("You remain this round's ONE checker. Do not dispatch additional reviewers or change the gate schema.")
+	w("Always check ordinary correctness. In CROSS-SURFACE mode, also perform the full D pass:")
+	w("%s", snippet.IntegrationReviewInstructions)
+	w("")
+	w("%s", snippet.ReviewEvidenceLimits)
+	w("")
+	w("Record scope, triggers, checked connections, intent questions and remaining gaps in the summary.")
+	w("Map relevant findings to the existing acceptance claims and their evidence. Do not invent criteria or")
+	w("treat unclear intent alone as a confirmed failure. Keep unrelated concerns explicit in the summary;")
+	w("the closed verdict must still follow the specified claims and the evidence rules below.")
 	w("")
 	w("## Acceptance and required checks")
 	w("")

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10665,
-  "riskKeys": 4688,
-  "nonRiskCount": 5977,
+  "englishContentKeys": 10672,
+  "riskKeys": 4692,
+  "nonRiskCount": 5980,
   "groups": [
     {
       "name": "acp / other",
@@ -4885,7 +4885,7 @@
     },
     {
       "name": "playbook / other",
-      "count": 60,
+      "count": 61,
       "sources": [
         "src/playbook-words.ts"
       ],
@@ -4900,6 +4900,7 @@
         "playbook.claudeCommand",
         "playbook.commandPreviewTitle",
         "playbook.commandPrompt",
+        "playbook.crossReviewTitle",
         "playbook.edit",
         "playbook.editAction",
         "playbook.emptyDetail",
@@ -6158,7 +6159,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 143,
+      "count": 145,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6216,6 +6217,8 @@
         "transparency.card.core.title",
         "transparency.card.direct-todo.how",
         "transparency.card.direct-todo.title",
+        "transparency.card.gate-review.condition",
+        "transparency.card.gate-review.title",
         "transparency.card.gemini-acp-context.condition",
         "transparency.card.gemini-acp-context.summary",
         "transparency.card.gemini-acp-context.title",

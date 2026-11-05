@@ -233,7 +233,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   const projectKey = model.project ? model.project.key : ""
   const playbooks = (error ? [] : answer?.snippets ?? []).filter((item) => item.scope === "playbook" &&
     (!item.project || (!projectUnresolved && item.project === projectKey)) &&
-    (!projectUnresolved || item.builtin !== "zero_review"))
+    (!projectUnresolved || !item.builtin))
   const customs = (error ? [] : answer?.snippets ?? []).filter((item) => item.scope === "clawdfather")
     .sort((a, b) => a.position - b.position || a.created_at - b.created_at)
   const currentPlaybook = playbooks.find((item) => item.id === selectedPlaybook?.id) ?? null
@@ -259,7 +259,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   }, [currentPlaybook])
 
   const startPlaybook = async () => {
-    if (error || !currentPlaybook || (projectUnresolved && (!!currentPlaybook.project || currentPlaybook.builtin === "zero_review")) || launching.current) return
+    if (error || !currentPlaybook || (projectUnresolved && (!!currentPlaybook.project || !!currentPlaybook.builtin)) || launching.current) return
     launching.current = true
     setStartingPlaybook(true); setPlaybookError("")
     let launchBody = currentPlaybook.body

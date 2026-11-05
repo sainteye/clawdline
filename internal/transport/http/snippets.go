@@ -112,9 +112,7 @@ func snippetOf(r snippet.Record) snippetWire {
 		Source:    r.Source,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
-	if snippet.IsDefaultZeroReview(r) {
-		w.Builtin = "zero_review"
-	}
+	w.Builtin = snippet.BuiltinPlaybook(r)
 	return w
 }
 

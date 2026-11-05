@@ -42,8 +42,12 @@ func TestACloudViewerReadsAndWritesTheSnippetsOnThisMac(t *testing.T) {
 	if !answer.OK() {
 		t.Fatalf("the list was refused: %d/%q %s", answer.Status, answer.Code, answer.Payload)
 	}
-	if rows, ok := bodyOf(t, payload)["snippets"].([]any); !ok || len(rows) != 1 {
+	if rows, ok := bodyOf(t, payload)["snippets"].([]any); !ok || len(rows) != 2 {
 		t.Fatalf("a fresh machine did not answer its default Playbook: %v", payload)
+	}
+	seededRows := bodyOf(t, payload)["snippets"].([]any)
+	if seededRows[1].(map[string]any)["builtin"] != "cross_surface_review" {
+		t.Fatal("Cloud lost the cross-surface Playbook identity")
 	}
 
 	made, payload := s.ask(t, 2, map[string]any{"type": "snippet-create",

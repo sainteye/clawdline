@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/snippet"
 )
 
 func gateFixture(t *testing.T, repo string) (*GateOrigin, string, string) {
@@ -97,6 +98,16 @@ func TestGateAdmissionPinsTheCandidateAndReadOnlyLaunch(t *testing.T) {
 		if strings.Contains(line, forbidden) {
 			t.Errorf("read-only launch contains %q: %s", forbidden, line)
 		}
+	}
+
+	brief := b.ChildBrief(r, w.Path)
+	for _, instructions := range []string{snippet.ReviewAssessment, snippet.IntegrationReviewInstructions, snippet.ReviewEvidenceLimits, "You remain this round's ONE checker"} {
+		if !strings.Contains(brief, instructions) {
+			t.Fatalf("immutable checker omitted its scope or D instructions: %q", instructions)
+		}
+	}
+	if !strings.Contains(brief, commit) || !strings.Contains(brief, "## Submit one closed verdict") {
+		t.Fatal("review guidance lost frozen identity or closed verdict")
 	}
 
 	badID := "a7444444-4444-4444-8444-444444444444"

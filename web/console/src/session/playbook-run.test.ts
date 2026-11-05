@@ -46,3 +46,23 @@ test("the shipped global Playbook follows the UI language until edited", () => {
       { ...row, builtin: undefined, title: "My review" })
   } finally { resetCatalogForTest(); globalThis.document = prior }
 })
+
+test("cross-surface review localizes the full launch message and keeps authored edits", () => {
+  const row: Snippet = { id: "00000000-0000-4000-8000-000000000102", title: "Cross-Surface Code Review",
+    body: "Source message", scope: "playbook", builtin: "cross_surface_review", position: 200, created_at: 1, updated_at: 1 }
+  const prior = globalThis.document
+  try {
+    for (const [lang, catalog, title] of [["en", english, "Cross-Surface Code Review"], ["zh-Hant", traditionalChinese, "跨面向 Code Review"]] as const) {
+      globalThis.document = { documentElement: { lang } } as Document
+      activateCatalog(catalog, lang)
+      const localized = localizedPlaybook(row)
+      assert.equal(localized.title, title)
+      assert.match(localized.body, /INTENDED\? author must confirm:/)
+      assert.ok(new TextEncoder().encode(localized.body).length <= 4000)
+      const sent = playbookTodoText(row.id, localized.title, localized.body)
+      assert.equal(playbookRunOf(sent)?.message, localized.body)
+      const edited = { ...row, builtin: undefined, title: "My checklist", body: "Keep my words" }
+      assert.equal(localizedPlaybook(edited), edited)
+    }
+  } finally { resetCatalogForTest(); globalThis.document = prior }
+})
