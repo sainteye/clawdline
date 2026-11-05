@@ -90,6 +90,8 @@ type Options struct {
 	PeerTaskEventAck     func([]byte)
 	// OnDisconnect invalidates terminal connection registrations tied to this socket.
 	OnDisconnect func()
+	// TerminalConnectionGone reconciles relay-side subscription cleanup. It never closes a shell.
+	TerminalConnectionGone func(viewer, connection string)
 	// OnSettled receives the correlated relay outcome after the spool settles it.
 	OnSettled func(channel string, seq uint64, kind SettleKind)
 	// OnAck and OnPublishRefusal expose the exact relay receipt to a viewer
@@ -534,6 +536,17 @@ func (t *Transport) handleFrame(conn *Conn, data []byte, h connectionhealth.Hand
 	case FramePing:
 		return conn.WriteText([]byte(`{"type":"pong"}`), t.opts.Now().Add(KeepaliveInterval))
 	case FramePong, FrameSubscriptions:
+		return nil
+	case "terminal_connection_gone":
+		var gone struct {
+			Machine    string `json:"machine"`
+			Viewer     string `json:"viewer"`
+			Connection string `json:"connection"`
+		}
+		if json.Unmarshal(data, &gone) == nil && gone.Machine == t.opts.Identity.MachineID &&
+			gone.Viewer != "" && gone.Connection != "" && t.opts.TerminalConnectionGone != nil {
+			t.opts.TerminalConnectionGone(gone.Viewer, gone.Connection)
+		}
 		return nil
 	case FrameTerminalConnectionRegistered, FrameTerminalConnectionRetired, FrameTerminalConnectionRefused:
 		t.handleTerminalConnection(data)

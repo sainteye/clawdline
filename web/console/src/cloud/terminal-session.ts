@@ -53,7 +53,7 @@ type QueuedInput = ({ operation: "input"; data: Uint8Array } | { operation: "pas
 type EarlyFrame = { value: Frame; envelope: TerminalEnvelope }
 /** No verified frame has arrived for this long, by this browser's own clock: the screen is stale. */
 const STALE_MS = 6_000
-const RECEIPT_MS = 10_000
+export const RECEIPT_MS = 10_000
 const RENEW_MS = 10_000
 /** CloudTerminalRenewRetrySecondsLimit: a renewal that went unanswered or was refused for load is asked again this soon. */
 export const RENEW_RETRY_MS = 2_000
@@ -70,7 +70,7 @@ export const RENEW_URGENT_MS = 15_000
 /** CloudTerminalRotationRetrySecondsLimit: a key rotation that failed is tried again this soon while the old key lasts. */
 export const ROTATION_RETRY_MS = 5_000
 /** Refusals that say the machine or relay was briefly too busy, not that the lease is gone. */
-const TRANSIENT = new Set(["terminal_busy", "rate_limited", "over_capacity", "terminal_direct_closed", "cloud_reconnecting"])
+const TRANSIENT = new Set(["terminal_connections_full", "terminal_busy", "rate_limited", "over_capacity", "terminal_direct_closed", "cloud_reconnecting"])
 /** CloudTerminalTypeAheadSecondsLimit: how long a key typed during a brief pause waits for typing to resume. */
 export const TYPE_AHEAD_MS = 8_000
 const KEY_MS = 10 * 60_000
@@ -127,6 +127,7 @@ export class CloudTerminalSession {
   private directReceipts = false
   private readonly directRetryAt = new Map<string, number>()
   private inputQueue: QueuedInput[] = []
+  private disconnected = false
   private drainingInput = false
   private inFlightInput: Promise<void>[] = []
   private queuedBytes = 0
@@ -188,6 +189,7 @@ export class CloudTerminalSession {
     if (options.carrier === "direct" && (!rekey || !this.direct?.open)) throw fail("terminal_direct_unavailable")
     const direct = rekey && !!this.direct?.open && (options.carrier === "direct" || this.carrier === "direct")
     this.openingNew = true
+    this.disconnected = false
     const fresh = freshTerminalConnection()
     const previousCarrier = this.carrier
     const prior = this.s
@@ -264,8 +266,8 @@ export class CloudTerminalSession {
       this.carrier = previousCarrier
       // A direct connection whose rotation failed falls back to the relay rather than expire.
       if (direct && !options.carrier && previousCarrier === "direct") this.fallbackWanted = true
-      this.active = this.s.state !== "revoked" && previousActive && Date.now() < previousExpiry
-      if (this.s.state !== "revoked") {
+      this.active = !this.disconnected && this.s.state !== "revoked" && previousActive && Date.now() < previousExpiry
+      if (!this.disconnected && this.s.state !== "revoked") {
         this.set({ ...prior, state: previous && Date.now() < previousExpiry ? prior.state : "unknown", reason: (error as Error).message })
       }
       throw error
@@ -371,6 +373,7 @@ export class CloudTerminalSession {
     offer?.close()
   }
   private async fallback(): Promise<void> {
+    if (this.disconnected) return
     if (this.carrier !== "direct" || !this.connection || this.s.state === "revoked" || this.s.state === "closed") return
     if (this.openingNew) { this.fallbackWanted = true; return }
     this.closeDirect()
@@ -707,6 +710,20 @@ export class CloudTerminalSession {
   private event(event: TerminalChannelEvent): void {
     if ("error" in event) {
       if (this.s.state === "revoked") return
+      if (event.error === "terminal_connection_disconnected") {
+        if (event.connection && event.connection !== this.connection) return
+        this.disconnected = true
+        this.active = false
+        this.inputUnknown = true
+        this.closeDirect()
+        if (this.tick) { clearInterval(this.tick); this.tick = null }
+        this.epoch = null
+        for (const item of this.inputQueue.splice(0)) item.settle(fail(event.error))
+        for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(fail(event.error)) }
+        this.pending.clear()
+        this.set({ state: "unknown", control: null, reason: event.error })
+        return
+      }
       if (event.requestID) {
         const pending = this.pending.get(event.requestID)
         if (pending) {
@@ -821,7 +838,7 @@ export class CloudTerminalSession {
     try {
       if (!base || baseSeq === 0) throw fail("terminal_delta_mismatch")
       const frame = await reconstructTerminalDelta(base, baseSeq, value, connection, terminal)
-      if (connection !== this.connection || terminal !== this.terminal || baseSeq !== this.frameSeq) return
+      if (this.disconnected || connection !== this.connection || terminal !== this.terminal || baseSeq !== this.frameSeq) return
       this.frameSeq = value.frame_seq
       this.frameSeenAt = Date.now()
       this.set({ frame, state: frame.dead ? "closed" : "live", reason: "" })
@@ -847,19 +864,20 @@ export class CloudTerminalSession {
    * screen and no key ever crossed it again.
    */
   private async reopen(terminal: string): Promise<void> {
+    if (this.disconnected) return
     try {
       // Releasing this connection first makes the machine refuse a key already accepted by the
       // relay as terminal_forbidden, which the page would mistake for revoked device pairing.
       await Promise.allSettled([...this.inFlightInput])
-      if ((this.s.state as CloudTerminalState) === "revoked") return
-      // The machine counts two connections per viewer: the discarded one is given back first, or
-      // the new one is refused as busy while it lingers (2026-10-06, 20:41:04). Receipts of keys
+      if (this.disconnected || (this.s.state as CloudTerminalState) === "revoked") return
+      // The discarded connection is given back first so it cannot occupy a viewer slot
+      // until its key expires, even if the replacement is refused. Receipts of keys
       // sent before it still arrive ahead of this one, on the connection still subscribed.
       await this.request("release_connection").catch(() => undefined)
       await this.start({ abandon: true })
       if (terminal && terminal === this.terminal) await this.attach(terminal, false)
     } catch (error) {
-      if ((this.s.state as CloudTerminalState) === "revoked") return
+      if (this.disconnected || (this.s.state as CloudTerminalState) === "revoked") return
       // The discarded connection is not one to rekey from: the next start opens a new one, and the
       // person reconnects from a stale screen, then takes control again.
       if (!this.openingNew && this.connection) { this.transport.unsubscribeTerminal(this.connection); this.connection = "" }
@@ -906,6 +924,7 @@ export class CloudTerminalSession {
       .finally(() => { this.activating = false })
   }
   private checkFreshness(): void {
+    if (this.disconnected) return
     if (this.s.state === "revoked") return
     const leaseLeft = this.leaseConfirmedAt + LEASE_MS - Date.now()
     const due = this.renewing === 0 ? Date.now() - this.lastRenew >= RENEW_MS

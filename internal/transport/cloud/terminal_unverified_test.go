@@ -366,7 +366,7 @@ func TestABusyRefusalSaysWhyInTheLog(t *testing.T) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		for _, line := range f.logs {
-			if strings.Contains(line, "refused terminal_busy") && strings.Contains(line, want) {
+			if strings.Contains(line, "cloud terminal: refused ") && strings.Contains(line, want) {
 				return
 			}
 		}
@@ -393,7 +393,7 @@ func TestABusyRefusalSaysWhyInTheLog(t *testing.T) {
 		Sender: "viewer", Plaintext: []byte(`{"v":1,"type":"terminal_request","request_id":"` + testRequestID +
 			`","connection":"` + testConnection + `","operation":"open_connection","key_id":"` + testKeyID +
 			`","key":"` + base64.StdEncoding.EncodeToString(g.key.Bytes()) + `"}`)})
-	if got := g.published(); len(got) != 1 || got[0]["error"] != string(terminal.CodeBusy) {
+	if got := g.published(); len(got) != 1 || got[0]["error"] != "terminal_connections_full" {
 		t.Fatalf("a third connection for one viewer: %v", got)
 	}
 	busyLine(g, fmt.Sprintf("op=open_connection viewer=viewer why=connections full: %d of %d for this viewer",

@@ -1390,3 +1390,28 @@ test("a terminal whose direct path failed twice in a row stays on the relay for 
   } finally { session.dispose() }
 })
 
+
+test("an explicit display disconnect stops renewal and typing without closing the shell or replaying input", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] })
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const connection = wire.latest()
+    wire.frame(connection, 1, "running shell")
+    assert.equal(session.snapshot.canType, true)
+    const before = wire.requests.length
+    wire.channels.get(connection)!({ error: "terminal_connection_disconnected", connection: "another-connection" })
+    assert.equal(session.snapshot.canType, true, "another connection's cleanup cannot pause this one")
+    wire.channels.get(connection)!({ error: "terminal_connection_disconnected", connection })
+    assert.equal(session.snapshot.canType, false)
+    assert.equal(session.snapshot.reason, "terminal_connection_disconnected")
+    assert.equal(session.snapshot.frame?.rev, "running shell")
+    assert.equal(session.reusable, false)
+    t.mock.timers.tick(60_000)
+    // A recovery continuation queued before the disconnect must not reopen it afterward.
+    await (session as unknown as { reopen(id: string): Promise<void> }).reopen(terminalID)
+    await assert.rejects(session.input(new TextEncoder().encode("k")))
+    assert.equal(wire.requests.length, before, "disconnect neither closes a host nor reopens its connection")
+  } finally { t.mock.timers.reset(); session.dispose() }
+})

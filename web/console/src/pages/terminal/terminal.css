@@ -320,3 +320,16 @@
 .cloud-skel-gap { flex: none; height: 9px; }
 .cloud-skel-round { flex: none; width: 44px; height: 44px; border-radius: 22px; }
 .cloud-skel-chip { flex: none; width: 56px; height: 44px; border-radius: 22px; }
+
+.terminal-connections-dialog { width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 3rem); overflow: auto; padding: 1.25rem; color: var(--text); background: var(--panel, #161619); border: 1px solid var(--border, #303038); border-radius: 12px; }
+.terminal-connections-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+.terminal-connections-heading { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
+.terminal-connections-heading h2 { margin: 0; font-size: 1.15rem; }
+.terminal-connections-list { list-style: none; margin: 1rem 0; padding: 0; }
+.terminal-connections-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 0; border-bottom: 1px solid var(--border, #303038); }
+.terminal-connections-list li > div { display: grid; gap: .25rem; min-width: 0; overflow-wrap: anywhere; }
+.terminal-connections-list time, .terminal-connections-list span { font-size: .85rem; color: var(--muted); }
+.terminal-connections-list button { flex-shrink: 0; min-height: 44px; }
+.terminal-connection-confirm { width: 100%; padding: .75rem 0; }
+.terminal-connection-confirm button + button { margin-inline-start: .5rem; }
+.terminal-connections-open { margin-block: .5rem; }

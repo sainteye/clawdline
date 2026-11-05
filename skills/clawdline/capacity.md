@@ -202,7 +202,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.spool_receipts` | 4096 | `rows` | `expire` | `diagnostics, log` | — |
 | `cloud.spool_refusals` | 64 | `rows` | `refuse` | `diagnostics, log` | — |
 | `cloud.task_list_reread_seconds` | 240 | `seconds` | `expire` | `diagnostics` | — |
-| `cloud.terminal_connections` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `cloud.terminal_connections` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_ack_seconds` | 3 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_candidates` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_chunk_seconds` | 2 | `seconds` | `disconnect` | `diagnostics, sender` | — |
@@ -237,7 +237,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.terminal_sweep_seconds` | 1 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_unconfirmed_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_unverified_retire_seconds` | 10 | `seconds` | `expire` | `diagnostics, sender` | — |
-| `cloud.terminal_viewer_connections` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `cloud.terminal_viewer_connections` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.viewer_events_batch_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.viewer_events_line_bytes` | 1024 | `bytes` | `coalesce` | `diagnostics, log` | — |
 | `cloud.viewer_events_logged_rows` | 128 | `rows` | `coalesce` | `diagnostics, log` | — |

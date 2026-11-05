@@ -11,7 +11,7 @@ export interface TerminalEnvelope {
   v: number; ch: string; seq: number; ts: number; class: string; key_id: string
   nonce: string; ct: string; sender: string; sig: string
 }
-type RelayEvent = { type: string; channels?: string[]; code?: string; error?: { code?: string; subscriptionChannels?: string[] }; status?: string; ch?: string; seq?: number }
+export type RelayEvent = { type: string; machine?: string; viewer?: string; connection?: string; request_id?: string; action?: string; limit?: number; connections?: unknown; channels?: string[]; code?: string; error?: { code?: string; subscriptionChannels?: string[] }; status?: string; ch?: string; seq?: number }
 export interface TerminalCloudClient {
   deviceID: string | null
   devicePrivateKey: CryptoKey | null
@@ -61,7 +61,7 @@ export interface TerminalDirectOffer {
   /** The channel was already open and is being borrowed: there is nothing to offer the machine. */
   borrowed?: boolean
 }
-export type TerminalChannelEvent = { envelope: TerminalEnvelope; plaintext: unknown; realign: boolean } | { error: string; requestID?: string }
+export type TerminalChannelEvent = { envelope: TerminalEnvelope; plaintext: unknown; realign: boolean } | { error: string; requestID?: string; connection?: string }
 const enc = new TextEncoder()
 const dec = new TextDecoder("utf-8", { fatal: true })
 const names = ["v", "ch", "seq", "ts", "class", "key_id", "nonce", "ct", "sender", "sig"]
@@ -565,6 +565,10 @@ export class TerminalChannelTransport {
     }
   }
   private relay(event: RelayEvent): void {
+    if (event.type === "terminal_connection_gone" && event.machine === this.machine && event.viewer === this.viewer && event.connection) {
+      this.listeners.get(event.connection)?.({ error: "terminal_connection_disconnected", connection: event.connection })
+      return
+    }
     const code = event.code ?? event.error?.code ?? "relay_error"
     const refused = event.error?.subscriptionChannels ?? []
     const socketFailed = code === "socket_error" || code === "cloud_reconnecting"

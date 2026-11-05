@@ -846,6 +846,10 @@ export class CloudClient {
             this._emit(frame);
             return;
         }
+        if (frame.type === "terminal_connections_result" || frame.type === "terminal_connection_gone") {
+            this._emit(frame);
+            return;
+        }
         if (frame.type === "pong") {
             this._emit(frame);
             return;

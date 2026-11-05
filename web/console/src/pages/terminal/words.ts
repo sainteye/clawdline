@@ -8,6 +8,9 @@ export { TERMINAL_REFUSAL_WORDS }
 export function terminalRefusalWords(code: string): string {
   const key = (TERMINAL_REFUSAL_WORDS as Record<string, NextWord | undefined>)[code]
   if (key) return nextWord(key)
+  if (code === "terminal_connections_full") return nextWord("terminalConnectionsFull")
+  if (code === "terminal_connection_disconnect_unknown") return nextWord("terminalConnectionDisconnectUnknown")
+  if (code === "terminal_connection_disconnected") return nextWord("terminalConnectionDisconnected")
   if (code === "network") return nextWord("terminalNetwork")
   return code
 }

@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	CloudTerminalConnectionsLimit       = 16
-	CloudTerminalViewerConnectionsLimit = 2
+	CloudTerminalConnectionsLimit       = 64
+	CloudTerminalViewerConnectionsLimit = 16
 	CloudTerminalRequestBytesLimit      = 6<<20 + 4<<10
 	// CloudTerminalReceiptsLimit receipts are kept per connection, each for
 	// CloudTerminalReceiptSecondsLimit, so that a request id sent again gets
@@ -1020,10 +1020,15 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 	if len(l.terminalConnections) >= CloudTerminalConnectionsLimit || viewerConnections >= CloudTerminalViewerConnectionsLimit {
 		total := len(l.terminalConnections)
 		l.terminalMu.Unlock()
-		l.logTerminalBusy(p.Device, req.Operation, fmt.Sprintf("connections full: %d of %d for this viewer, %d of %d on this machine",
-			viewerConnections, CloudTerminalViewerConnectionsLimit, total, CloudTerminalConnectionsLimit))
-		l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
-			Connection: req.Connection, Operation: req.Operation, Status: "refused", Error: string(terminal.CodeBusy)})
+		l.logf("cloud terminal: refused terminal_connections_full op=%s viewer=%s why=connections full: %d of %d for this viewer, %d of %d on this machine",
+			terminalStageWord(req.Operation), p.Device, viewerConnections, CloudTerminalViewerConnectionsLimit, total, CloudTerminalConnectionsLimit)
+		// The relay reserved this subscription, but refuses every receipt until the machine
+		// registers it. Use the existing short refusal lifetime without admitting a host connection.
+		c.expires = l.opts.Now().Add(CloudTerminalUnconfirmedSecondsLimit * time.Second)
+		if l.terminalMetadataAction(ctx, "register", c) == nil {
+			l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+				Connection: req.Connection, Operation: req.Operation, Status: "refused", Error: "terminal_connections_full"})
+		}
 		return
 	}
 	l.terminalConnections[id] = c
@@ -1111,7 +1116,22 @@ func (l *Link) getTerminalConnection(viewer, connection string) *terminalConnect
 	return c
 }
 
+// terminalConnectionGone drops only this relay registration, including a list-only connection
+// whose browser disappeared. The terminal service and its host process remain untouched.
+func (l *Link) terminalConnectionGone(viewer, connection string) {
+	l.terminalMu.Lock()
+	c := l.terminalConnections[terminalConnectionID(viewer, connection)]
+	l.terminalMu.Unlock()
+	if c != nil {
+		l.dropTerminalConnection(c, false)
+	}
+}
+
 func (l *Link) closeTerminalConnection(c *terminalConnection) {
+	l.dropTerminalConnection(c, true)
+}
+
+func (l *Link) dropTerminalConnection(c *terminalConnection, retireRelay bool) {
 	l.terminalMu.Lock()
 	removed := false
 	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c {
@@ -1130,7 +1150,9 @@ func (l *Link) closeTerminalConnection(c *terminalConnection) {
 	}
 	l.terminalMu.Unlock()
 	if removed {
-		l.retireTerminalConnection(c)
+		if retireRelay {
+			l.retireTerminalConnection(c)
+		}
 		l.directOwnerRetired(c)
 	}
 }

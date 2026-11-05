@@ -4,6 +4,7 @@ import { readProjectPlaces, type ProjectPlace } from "../pages/work/api.js"
 import { terminalHost, watchTerminalHost, type TerminalHost } from "../cloud/terminal-host.js"
 import { scheduleFleet, onScheduleFleet, type ScheduleFleet } from "../cloud/schedule-machines.js"
 import { acquireTerminalConnection } from "../cloud/terminal-connection-owner.js"
+import { TerminalConnectionsDialog } from "../pages/terminal/TerminalConnectionsDialog.js"
 import { TerminalObservation } from "../cloud/terminal-observation.js"
 import { openTerminalPage } from "../pages/terminal/navigate.js"
 import { TAB } from "../pages/terminal/tab.js"
@@ -41,6 +42,8 @@ export function CloudAllTerminalList({ shown, filter, reloadRef }: {
   const places = useRef<ProjectPlace[]>([])
   const [rows, setRows] = useState<CloudTerminalRow[]>([])
   const [errors, setErrors] = useState<CloudTerminalError[]>([])
+  const connectionsButton = useRef<HTMLButtonElement>(null)
+  const [connectionsOpen, setConnectionsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [projectError, setProjectError] = useState("")
   const [routeError, setRouteError] = useState("")
@@ -55,6 +58,9 @@ export function CloudAllTerminalList({ shown, filter, reloadRef }: {
   currentRows.current = rows
 
   useEffect(() => watchTerminalHost(setHost), [])
+  useEffect(() => {
+    if (shown && errors.some((error) => error.code === "terminal_connections_full")) setConnectionsOpen(true)
+  }, [shown, errors])
   useEffect(() => onScheduleFleet(() => setFleet(scheduleFleet())), [])
   const machineName = fleet?.machines.find((machine) => machine.id === host?.machine)?.name ?? ""
   const reload = useCallback(async () => {
@@ -116,6 +122,8 @@ export function CloudAllTerminalList({ shown, filter, reloadRef }: {
     <p className="sr-only" role="status">{nextWord("terminalCloudLineReconnecting")}</p><TerminalRowsSkeleton />
   </div>
   return <div className="session-terminal-list" aria-busy={loading ? "true" : undefined}>
+    {connectionsOpen && <TerminalConnectionsDialog host={host} machine={host.machine} focusTarget={connectionsButton.current} close={() => setConnectionsOpen(false)} />}
+    <button ref={connectionsButton} className="board-button terminal-connections-open" type="button" onClick={() => setConnectionsOpen(true)}>{nextWord("terminalConnectionsTitle")}</button>
     <h2 className="terminal-sr">{nextWord("terminalListMode")}</h2>
     {routeError && <p className="terminal-list-message" role="alert">{routeError}</p>}
     {latestClose && <p className="terminal-list-message" role="status">

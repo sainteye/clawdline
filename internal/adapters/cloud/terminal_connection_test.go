@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/domain/connectionhealth"
 )
 
 func TestTerminalConnectionAckBindsEveryIdentityField(t *testing.T) {
@@ -36,5 +38,23 @@ func TestTerminalConnectionAckBindsEveryIdentityField(t *testing.T) {
 	case <-answer:
 	default:
 		t.Fatal("matching metadata answer was lost")
+	}
+}
+
+func TestTerminalDepartureAcceptsOnlyThisMachinesRelayMetadata(t *testing.T) {
+	var got []string
+	transport := &Transport{opts: Options{Identity: Identity{MachineID: "machine"},
+		TerminalConnectionGone: func(viewer, connection string) { got = append(got, viewer+"/"+connection) }}}
+	for _, input := range []string{
+		`{"type":"terminal_connection_gone","machine":"other","viewer":"viewer","connection":"c"}`,
+		`{"type":"terminal_connection_gone","machine":"machine","connection":"c"}`,
+		`{"type":"terminal_connection_gone","machine":"machine","viewer":"viewer","connection":"c"}`,
+	} {
+		if err := transport.handleFrame(nil, []byte(input), connectionhealth.Handle{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(got) != 1 || got[0] != "viewer/c" {
+		t.Fatalf("departures: %v", got)
 	}
 }

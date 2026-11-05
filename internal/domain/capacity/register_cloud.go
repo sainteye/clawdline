@@ -387,13 +387,13 @@ func cloudBounds() []Entry {
 		},
 		{
 			Name: CloudTerminalConnections, Class: Buffer, Unit: Rows,
-			Limit: 16, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalConnectionsLimit"},
 		},
 		{
 			Name: CloudTerminalViewerConnections, Class: Buffer, Unit: Rows,
-			Limit: 2, AtLimit: Refuse,
+			Limit: 16, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalViewerConnectionsLimit"},
 		},

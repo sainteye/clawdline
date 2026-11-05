@@ -13,6 +13,7 @@ import { frameBytes, frameDeltaBytes } from "./frame-writer.js"
 import { TAB } from "./tab.js"
 import { closeTerminalPane, openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
+import { TerminalConnectionsDialog } from "./TerminalConnectionsDialog.js"
 import { TerminalBackButton } from "./TerminalBackButton.js"
 import { CloudTerminalSkeleton, TerminalSkeletonKeys, TerminalSkeletonLines } from "./TerminalSkeleton.js"
 import { COMBO_KEYS, PANEL_KEYS, QUICK_KEYS, bindTerminalKeyboard, isRegionKey, readClipboardPaste, withCtrl } from "./keys.js"
@@ -105,6 +106,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const [endedAt, setEndedAt] = useState<Date | null>(null)
   const [diagnosticsText, setDiagnosticsText] = useState<string | null>(null)
   const [dockNote, setDockNote] = useState("")
+  const [connectionsOpen, setConnectionsOpen] = useState(false)
   const [closeConfirm, setCloseConfirm] = useState(false)
   const closeDialog = useRef<HTMLDialogElement>(null)
   const closeOpener = useRef<HTMLButtonElement>(null)
@@ -124,6 +126,9 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const showInputLine = () => requestAnimationFrame(() => centerCursorLine(scroller.current, terminal.current))
   const unfollow = useRef(() => {})
   useEffect(() => watchTerminalHost(setHost), [])
+  useEffect(() => {
+    if (shown && (error === "terminal_connections_full" || snapshot.reason === "terminal_connections_full")) setConnectionsOpen(true)
+  }, [shown, error, snapshot.reason])
   useEffect(() => {
     const dialog = closeDialog.current
     if (!dialog) return
@@ -430,6 +435,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         else historyFocus.current?.focus()
       } else terminal.current?.focus()
     } }}>
+    {connectionsOpen && host && <TerminalConnectionsDialog host={host} machine={machine} focusTarget={actionMenu.current?.querySelector("summary") ?? back.current} close={() => setConnectionsOpen(false)} />}
     <header className="terminal-head">
       <div className="terminal-head-row"><TerminalBackButton buttonRef={back} onClick={goBack} compact />
         <div className="cloud-title">
@@ -443,6 +449,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
           <button className="board-button" type="button" disabled={!!busy || phase === "ended"} onClick={() => { actionMenu.current?.removeAttribute("open"); void run("history", async () => setHistory(history ? null : await session!.history())) }}>{history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}</button>
           <button className="board-button terminal-reader" type="button" aria-pressed={reader} onClick={() => { actionMenu.current?.removeAttribute("open"); setReader((value) => !value) }}><span>{nextWord("terminalReaderMode")}</span><small>{nextWord("terminalReaderModeHelp")}</small></button>
           <button className="board-button" type="button" onClick={() => { actionMenu.current?.removeAttribute("open"); copyDiagnostics() }}>{nextWord("terminalDiagnosticsCopy")}</button>
+          <button className="board-button" type="button" onClick={() => { actionMenu.current?.removeAttribute("open"); setConnectionsOpen(true) }}>{nextWord("terminalConnectionsTitle")}</button>
           <button className="board-button terminal-danger" type="button" ref={closeOpener}
             disabled={!snapshot.canType || !!busy || closeRecord?.status === "pending" || closeRecord?.status === "unknown" || closeRecord?.status === "ok" || closeRecord?.status === "ended"}
             onClick={() => { actionMenu.current?.removeAttribute("open"); setCloseConfirm(true) }}>{nextWord("terminalTerminateHost")}</button>

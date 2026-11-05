@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10680,
-  "riskKeys": 4697,
-  "nonRiskCount": 5983,
+  "englishContentKeys": 10697,
+  "riskKeys": 4703,
+  "nonRiskCount": 5994,
   "groups": [
     {
       "name": "acp / other",
@@ -4552,7 +4552,7 @@
     },
     {
       "name": "next / terminal",
-      "count": 130,
+      "count": 141,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4585,6 +4585,17 @@
         "next.terminalCloudStaleHelp",
         "next.terminalCloudState",
         "next.terminalConnecting",
+        "next.terminalConnectionActive",
+        "next.terminalConnectionDisconnect",
+        "next.terminalConnectionPending",
+        "next.terminalConnectionReleased",
+        "next.terminalConnectionsCount",
+        "next.terminalConnectionsFull",
+        "next.terminalConnectionsLoading",
+        "next.terminalConnectionsRefresh",
+        "next.terminalConnectionsThisMachine",
+        "next.terminalConnectionsThisTab",
+        "next.terminalConnectionsTitle",
         "next.terminalControlLabel",
         "next.terminalControlNobody",
         "next.terminalControlOtherDevice",

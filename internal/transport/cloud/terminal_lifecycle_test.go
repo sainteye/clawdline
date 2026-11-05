@@ -439,3 +439,33 @@ func TestActivationRetiresOldConnectionOnlyAfterDeliveredReceipt(t *testing.T) {
 		})
 	}
 }
+
+func TestRelayDepartureDropsOnlyItsConnectionWithoutClosingTheHost(t *testing.T) {
+	l, _, c, svc, retired := terminalLifecycleFixture(t)
+	cancelled := make(chan struct{})
+	c.watchCancel = func() { close(cancelled) }
+	c.frameBase = &terminal.Frame{Rev: "base"}
+	l.terminalConnectionGone("other-viewer", c.id)
+	if l.getTerminalConnection(c.viewer, c.id) != c {
+		t.Fatal("another viewer's departure removed this connection")
+	}
+	l.terminalConnectionGone(c.viewer, c.id)
+	if l.getTerminalConnection(c.viewer, c.id) != nil {
+		t.Fatal("departed viewer still occupies a connection slot")
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("departed viewer's frame watch kept running")
+	}
+	select {
+	case <-retired:
+		t.Fatal("echoed retirement back to the relay")
+	default:
+	}
+	// The fixture's host has no Close implementation: closing its shell would panic.
+	if svc == nil || c.frameBase != nil {
+		t.Fatal("connection cleanup did not release its frame state")
+	}
+	l.terminalConnectionGone(c.viewer, c.id) // Repeated notification is harmless.
+}
