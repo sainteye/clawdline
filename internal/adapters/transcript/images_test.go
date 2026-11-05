@@ -84,12 +84,12 @@ func TestSessionMessageVersionTwo(t *testing.T) {
 	envelope := func(artifacts string) string {
 		return `<clawdline-message>{"artifacts":[` + artifacts + `],"body":"look","kind":"session_message","protocol":"clawdline.message","source":{"assistant":"claude","id":"%1","label":"Root"},"version":2}</clawdline-message>`
 	}
-	e, ok := sessionMessage(envelope(ref), 1)
+	e, ok := SessionMessage(envelope(ref), 1)
 	if !ok || len(e.Artifacts) != 1 || e.Artifacts[0].Width != 1192 || e.Artifacts[0].ID != idA {
 		t.Fatalf("%v %+v", ok, e)
 	}
 	// A photograph is stored as a JPEG, and a message may carry one.
-	if e, ok := sessionMessage(envelope(strings.Replace(ref, `"image/png"`, `"image/jpeg"`, 1)), 1); !ok || e.Artifacts[0].MediaType != "image/jpeg" {
+	if e, ok := SessionMessage(envelope(strings.Replace(ref, `"image/png"`, `"image/jpeg"`, 1)), 1); !ok || e.Artifacts[0].MediaType != "image/jpeg" {
 		t.Fatalf("a JPEG reference: %v %+v", ok, e)
 	}
 	for _, bad := range []string{
@@ -101,7 +101,7 @@ func TestSessionMessageVersionTwo(t *testing.T) {
 		strings.Replace(ref, idA, strings.ToUpper(idA), 1),
 		strings.Repeat(ref+",", 6) + ref,
 	} {
-		if _, ok := sessionMessage(envelope(bad), 1); ok {
+		if _, ok := SessionMessage(envelope(bad), 1); ok {
 			t.Fatalf("taken: %s", bad)
 		}
 	}

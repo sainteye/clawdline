@@ -224,7 +224,22 @@ func (s *Server) transcriptPageBeforeProjection(id string, item session.Session,
 				held = revision[0]
 			}
 			if snapshot, err := h.TranscriptPage(context.Background(), item, limit, before, held, lazy); err == nil {
-				s.showOwnedPictures(context.Background(), h, item, snapshot.Entries, time.Now())
+				now := time.Now()
+				// ACP retains the exact submitted input. Project both live and saved
+				// user rows through the same decoder as Claude and Codex, without
+				// changing the stored text, ordinal, or generation.
+				for i, row := range snapshot.Entries {
+					if row.Role != transcript.KindUser {
+						continue
+					}
+					if message, ok := transcript.SessionMessage(row.Text, row.At); ok {
+						projected := transcriptEntry(message)
+						projected.ID = row.ID
+						projected.Artifacts = s.pictures.wireArtifacts(message, now)
+						snapshot.Entries[i] = projected
+					}
+				}
+				s.showOwnedPictures(context.Background(), h, item, snapshot.Entries, now)
 				return snapshot
 			} else {
 				var typed *antigravitysession.Error

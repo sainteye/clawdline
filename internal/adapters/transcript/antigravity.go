@@ -237,7 +237,7 @@ func (r antigravityRecord) entries() []Entry {
 			e.Notice = n
 			return []Entry{e}
 		}
-		if e, ok := sessionMessage(text, at); ok {
+		if e, ok := SessionMessage(text, at); ok {
 			e.Before = r.before
 			return []Entry{e}
 		}
