@@ -106,6 +106,7 @@ export const CARRIED = {
   "project-file-list": "GET /v1/projects/{project}/files",
   "project-file-read": "GET /v1/projects/{project}/files/{file}",
   "project-file-save": "PUT /v1/projects/{project}/files/{file}",
+  "project-folder-create": "POST /v1/project-folders?machine=",
   "project-folders": "GET /v1/project-folders?path=&machine=",
   "project-hide": "DELETE /v1/places",
   // Project settings sync (docs/project-sync.md). The two source reads are also

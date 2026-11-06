@@ -427,7 +427,7 @@
       "guide": "project"
     },
     {
-      "method": "GET",
+      "method": "*",
       "pattern": "/v1/project-folders",
       "guide": "project"
     },

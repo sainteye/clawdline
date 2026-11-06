@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10728,
-  "riskKeys": 4726,
-  "nonRiskCount": 6002,
+  "englishContentKeys": 10740,
+  "riskKeys": 4728,
+  "nonRiskCount": 6012,
   "groups": [
     {
       "name": "acp / other",
@@ -5028,7 +5028,7 @@
     },
     {
       "name": "projects / other",
-      "count": 24,
+      "count": 34,
       "sources": [
         "src/pages/projects/project-list.ts"
       ],
@@ -5040,9 +5040,19 @@
         "projects.boardLede",
         "projects.editList",
         "projects.folderAdd",
+        "projects.folderBack",
         "projects.folderCancel",
+        "projects.folderCreate",
+        "projects.folderCreateConfirm",
+        "projects.folderCreateHint",
+        "projects.folderCreateLocation",
+        "projects.folderCreated",
+        "projects.folderCreating",
+        "projects.folderFullPath",
         "projects.folderHint",
         "projects.folderList",
+        "projects.folderName",
+        "projects.folderNameExample",
         "projects.folderParent",
         "projects.folderPath",
         "projects.folderTitle",

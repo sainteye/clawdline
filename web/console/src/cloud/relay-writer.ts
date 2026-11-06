@@ -260,6 +260,7 @@ export type WriteRoute =
   | { op: "squad-package"; word: Carried<"squad.packages.preview" | "squad.packages.adopt" | "squad.packages.export"> }
   | { op: "project-hide"; word: Carried<"project-hide"> }
   | { op: "project-add"; word: Carried<"project-add"> }
+  | { op: "project-folder-create"; word: Carried<"project-folder-create"> }
   | { op: "project-file-save"; word: Carried<"project-file-save">; project: string; file: string }
   | { op: "project-ops-write"; word: Carried<"project-ops-create" | "project-ops-update" | "project-ops-delete" | "project-ops-resolve-request">; project: string; id: string }
   | { op: "project-antigravity-consent-change"; word: Carried<"project-antigravity-consent-change">; project: string }
@@ -694,6 +695,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "issue-tracker-write", word: a === "github" ? "github-disconnect" : "jira-disconnect" }
   }
   if (head === "places" && segments.length === 1 && method === "DELETE") return { op: "project-hide", word: "project-hide" }
+  if (head === "project-folders" && segments.length === 1 && method === "POST") return { op: "project-folder-create", word: "project-folder-create" }
   if (head === "places" && segments.length === 1 && method === "POST") return { op: "project-add", word: "project-add" }
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
     return { op: "project-file-save", word: "project-file-save", project: a, file: c }
@@ -1015,6 +1017,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "board-command":
     case "project-hide":
     case "project-add":
+    case "project-folder-create":
     case "project-file-save":
     case "project-ops-write":
     case "project-codegraph-build":
@@ -2008,6 +2011,17 @@ export class RelayWriter {
         const request = headerOf(init, "idempotency-key")
         if (!request) throw failure("idempotency_key_required", "Removing a Project needs an Idempotency-Key.", 400)
         return this.machineWorkV2(client, route.word, { path: place.path }, request, place.machine)
+      }
+      case "project-folder-create": {
+        for (const [key] of url.searchParams) if (key !== "machine") throw failure("bad_request", "Only machine is accepted.", 400)
+        const body = await bodyOf(init)
+        if (Object.keys(body).some(key => key !== "parent" && key !== "name") ||
+            typeof body.parent !== "string" || !body.parent || typeof body.name !== "string" || !body.name) {
+          throw failure("bad_request", "Supply the parent directory and one folder name.", 400)
+        }
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("idempotency_key_required", "Creating a folder needs an Idempotency-Key.", 400)
+        return this.machineWorkV2(client, route.word, { parent: body.parent, name: body.name }, request, url.searchParams.get("machine") || this.host.machine)
       }
       case "project-add": {
         for (const [key] of url.searchParams) if (key !== "machine") throw failure("bad_request", "Only machine is accepted.", 400)

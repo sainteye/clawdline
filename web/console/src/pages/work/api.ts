@@ -101,6 +101,11 @@ export interface ProjectFolderPage {
 }
 export const readProjectFolders = (path?: string, machine?: string) =>
   call<ProjectFolderPage>("/v1/project-folders" + query({ path, machine }))
+export const createProjectFolder = (parent: string, name: string, key: string, machine?: string) =>
+  call<{ path: string; name: string }>("/v1/project-folders" + query({ machine }), {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify({ parent, name }),
+  })
 export const addProjectPlace = (path: string, machine?: string) =>
   mutate<{ registered: boolean }>("/v1/places" + query({ machine }), { paths: [path] })
 export const removeProjectPlace = (place: ProjectPlace) =>
@@ -124,7 +129,7 @@ export const detachProjectMirror = (repo: string) =>
  * context, and a paired phone on this Mac's own network reaches the page over
  * plain http; `getRandomValues` is there in both.
  */
-function mintKey(): string {
+export function mintKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return "web-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
 }

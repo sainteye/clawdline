@@ -732,6 +732,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "project-folders", "session": machine, "request": "req-folders", "path": "/projects"},
 		session: machine, name: "read:req-folders", method: "GET", path: "/v1/project-folders", query: map[string]string{"path": "/projects"},
 	}, {
+		word:    "project-folder-create",
+		body:    map[string]any{"type": "project-folder-create", "session": machine, "request": "req-create-folder", "parent": "/projects", "name": "example"},
+		session: machine, name: "action:req-create-folder", method: "POST", path: "/v1/project-folders", body2: `{"name":"example","parent":"/projects"}`,
+	}, {
 		word:    "project-add",
 		body:    map[string]any{"type": "project-add", "session": machine, "request": "req-add", "path": "/projects/example"},
 		session: machine, name: "action:req-add", method: "POST", path: "/v1/places", body2: `{"paths":["/projects/example"]}`,

@@ -76,6 +76,7 @@ func init() {
 		// The Projects page's catalog and worktree lifecycle. `places` above is
 		// carried separately.
 		op{name: "project-folders", read: true},
+		op{name: "project-folder-create"},
 		op{name: "project-add"},
 		op{name: "project-hide"},
 		op{name: "projects", read: true},

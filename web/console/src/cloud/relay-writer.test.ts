@@ -1732,6 +1732,27 @@ test("adding a Project on the selected machine carries its folder", async () => 
   assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "add-1", "linux-b", "project-add", { path: "/projects/example" }, "action"])
 })
 
+test("creating a folder keeps its name, parent, machine and retry key", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const init = post({ parent: "/projects", name: "sample" }, { "Idempotency-Key": "create-folder-1" })
+  const response = await reader.fetch("/v1/project-folders?machine=linux-b", init)
+  assert.equal(response.status, 200, await response.text())
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "create-folder-1", "linux-b", "project-folder-create", { parent: "/projects", name: "sample" }, "action"])
+  const retry = await reader.fetch("/v1/project-folders?machine=linux-b", init)
+  assert.equal(retry.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "create-folder-1", "linux-b", "project-folder-create", { parent: "/projects", name: "sample" }, "action"])
+  for (const [path, body, headers] of [
+    ["/v1/project-folders?machine=linux-b", { parent: "/projects", name: "sample" }, {}],
+    ["/v1/project-folders?other=1", { parent: "/projects", name: "sample" }, { "Idempotency-Key": "x" }],
+    ["/v1/project-folders", { parent: "/projects", name: "sample", extra: true }, { "Idempotency-Key": "x" }],
+  ] as const) {
+    const refused = await reader.fetch(path, post(body, headers))
+    assert.equal(refused.status, 400)
+  }
+  assert.deepEqual(client.calls, [])
+})
+
 test("removing a Project uses its selected machine and rejects a changed path", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)

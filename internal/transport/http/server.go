@@ -730,7 +730,7 @@ func (s *Server) routeTable() []route {
 		// The person's Retry on a failed issue sync (issue_sync.go).
 		{Route{"*", "/v1/issue-sync/"}, s.issueSyncRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},
-		{Route{"GET", "/v1/project-folders"}, s.projectFoldersRoute},
+		{Route{"*", "/v1/project-folders"}, s.projectFoldersRoute},
 		// The input bar's server list (devstacks.go): what the projects' own
 		// `.devstack.json` files declare, and which declared ports answer.
 		{Route{"*", "/v1/devstacks"}, s.devStacksRoute},

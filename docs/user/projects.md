@@ -24,6 +24,13 @@ exist. `clawdline project add .`, `clawdline project add ../my-app`, and an abso
 In the console, press **+ Add Project** on the Projects page or in the new Session
 sheet, browse folders on the selected machine, then add the current folder.
 You can enter an absolute path on that machine when a folder is not listed.
+To create a folder, choose **New folder**, enter its name, and check the full path
+preview. **Confirm creation** creates one child in the displayed directory and
+automatically opens it; **Add this project** remains a separate action. Existing
+files, folders and links are never overwritten. Creation requires permission to
+send commands to the selected machine and to write in that directory. Cancel
+returns without creating anything. A lost reply can be retried under the same
+request key without creating the folder twice.
 The new Session sheet also has **Edit projects** to remove entries from its list.
 
 **Check:** refresh **Projects** on the same machine in the local console, or select that machine in

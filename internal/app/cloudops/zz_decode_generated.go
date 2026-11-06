@@ -70,6 +70,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-file-list":                  genDecodeProjectFileList,
 	"project-file-read":                  genDecodeProjectFileRead,
 	"project-file-save":                  genDecodeProjectFileSave,
+	"project-folder-create":              genDecodeProjectFolderCreate,
 	"project-folders":                    genDecodeProjectFolders,
 	"project-hide":                       genDecodeProjectHide,
 	"project-manifest":                   genDecodeProjectManifest,
@@ -1679,6 +1680,30 @@ func genDecodeProjectFileSave(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "PUT", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeProjectFolderCreate is the `project-folder-create` row's decode.
+func genDecodeProjectFolderCreate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "name", "parent", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("name", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("parent", genRule{kind: "string", nonEmpty: true, maxBytes: 4096, checks: []func(string) bool{printable, genAbsolutePath}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-folders"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genFields(map[string]genValue{"name": genValue{from: "name"}, "parent": genValue{from: "parent"}})
 	return p, req, true
 }
 

@@ -1,4 +1,4 @@
-.project-folder-picker { box-sizing: border-box; width: min(540px, calc(100vw - 24px)); max-height: min(740px, calc(100vh - 24px)); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); }
+.project-folder-picker { box-sizing: border-box; width: min(540px, calc(100vw - 24px)); max-height: min(740px, calc(var(--vvh, 100dvh) - 24px)); bottom: max(0px, calc(100dvh - var(--vvh, 100dvh))); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); }
 .project-folder-picker::backdrop { background: rgba(0, 0, 0, .7); }
 .project-folder-picker h2 { margin: 0 0 8px; }
 .project-folder-picker p { color: var(--dim); }
@@ -14,3 +14,14 @@
 .project-folder-list button { min-width: 0; max-width: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; }
 .project-folder-list p { padding: 4px 8px; }
 .project-folder-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.project-folder-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.project-folder-toolbar .project-folder-current { flex: 1 1 140px; min-width: 0; margin: 0; }
+.project-folder-toolbar button { flex-shrink: 0; font-size: 13px; }
+.project-folder-picker .project-folder-back { padding: 0; min-height: 28px; margin-bottom: 14px; border: 0; background: none; color: var(--dim); }
+.project-folder-location span { display: block; margin-top: 4px; color: var(--ink); overflow-wrap: anywhere; }
+.project-folder-name { display: block; width: 100%; font-size: 16px; }
+.project-folder-preview { margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; color: var(--dim); }
+.project-folder-preview output { display: block; margin-top: 6px; color: var(--ink); font-family: var(--mono); overflow-wrap: anywhere; }
+.project-folder-picker .project-folder-create-hint { font-size: 12px; }
+.project-folder-picker .project-folder-confirm { background: var(--accent); border-color: var(--accent); color: #18120f; font-weight: 600; }
+.project-folder-picker .project-folder-created { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }

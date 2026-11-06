@@ -110,3 +110,120 @@ func TestCloudProjectFolderChoiceAndAddUseTheSelectedMachine(t *testing.T) {
 		t.Fatalf("registered = %#v, %v", rows, err)
 	}
 }
+
+func TestProjectFolderCreationConfirmsOneChildAndReplaysReceipt(t *testing.T) {
+	s := projectCloudStandIn(t)
+	parent := filepath.Dir(s.server.cfg.Dir)
+	create := func(key, name string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]string{"parent": parent, "name": name})
+		req := httptest.NewRequest(http.MethodPost, "/v1/project-folders", strings.NewReader(string(body)))
+		req.Header.Set("Idempotency-Key", key)
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{verdict: auth.Verdict{Allowed: true, Device: "sender", Caps: auth.NewCaps(auth.Read, auth.Send)}}))
+		out := httptest.NewRecorder()
+		s.server.projectFolderCreateRoute(out, req)
+		return out
+	}
+	first := create("create-one", "new project")
+	if first.Code != 200 {
+		t.Fatalf("create: %d %s", first.Code, first.Body)
+	}
+	var folder projectFolder
+	if err := json.Unmarshal(first.Body.Bytes(), &folder); err != nil || folder.Path != filepath.Join(parent, "new project") {
+		t.Fatalf("created folder = %#v, %v", folder, err)
+	}
+	if info, err := os.Stat(folder.Path); err != nil || !info.IsDir() {
+		t.Fatalf("created directory: %v", err)
+	}
+	replay := create("create-one", "new project")
+	if replay.Code != 200 || replay.Body.String() != first.Body.String() {
+		t.Fatalf("replayed receipt = %d %s", replay.Code, replay.Body)
+	}
+	if duplicate := create("create-two", "new project"); duplicate.Code != 409 || !strings.Contains(duplicate.Body.String(), "project_folder_exists") {
+		t.Fatalf("same name = %d %s", duplicate.Code, duplicate.Body)
+	}
+	if changed := create("create-one", "another"); changed.Code != 409 {
+		t.Fatalf("key reused for another name = %d %s", changed.Code, changed.Body)
+	}
+	if _, err := os.Stat(filepath.Join(parent, "another")); !os.IsNotExist(err) {
+		t.Fatal("reused key created another folder")
+	}
+	rows, err := s.server.projectReaders().registry.List()
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("creation registered a Project: %v %v", rows, err)
+	}
+}
+
+func TestProjectFolderCreationRejectsEscapesAndExistingFiles(t *testing.T) {
+	s := projectCloudStandIn(t)
+	parent := filepath.Dir(s.server.cfg.Dir)
+	create := func(body string, sender bool, key string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/project-folders", strings.NewReader(body))
+		if sender {
+			req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{verdict: auth.Verdict{Allowed: true, Caps: auth.NewCaps(auth.Read, auth.Send)}}))
+		}
+		req.Header.Set("Idempotency-Key", key)
+		out := httptest.NewRecorder()
+		s.server.projectFolderCreateRoute(out, req)
+		return out
+	}
+	body := func(parent, name string) string {
+		data, _ := json.Marshal(map[string]string{"parent": parent, "name": name})
+		return string(data)
+	}
+	if out := create(body(parent, "unpaired"), false, "no-send"); out.Code != 403 {
+		t.Fatalf("read only = %d", out.Code)
+	}
+	if out := create(body(parent, "no-key"), true, ""); out.Code != 400 {
+		t.Fatalf("missing key = %d", out.Code)
+	}
+	for _, name := range []string{"", "  ", ".", "..", "../outside", "a/b", `a\b`, "bad\x00name", "bad\nname"} {
+		if out := create(body(parent, name), true, "bad-name"); out.Code != 400 {
+			t.Errorf("name %q = %d %s", name, out.Code, out.Body)
+		}
+	}
+	for _, data := range []string{body("relative", "sample"), body(filepath.Join(parent, "missing"), "sample"), `{"parent":"/tmp","name":"sample","extra":true}`, body(parent, "sample") + ` {}`} {
+		if out := create(data, true, "bad-body"); out.Code < 400 {
+			t.Errorf("invalid request succeeded: %s", data)
+		}
+	}
+	file := filepath.Join(parent, "existing-file")
+	if err := os.WriteFile(file, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := create(body(parent, "existing-file"), true, "file-exists")
+	if out.Code != 409 {
+		t.Fatalf("existing file = %d %s", out.Code, out.Body)
+	}
+	if data, err := os.ReadFile(file); err != nil || string(data) != "keep" {
+		t.Fatal("existing file changed")
+	}
+	if _, err := os.Stat(filepath.Join(parent, "unpaired")); !os.IsNotExist(err) {
+		t.Fatal("read-only device created a folder")
+	}
+}
+
+func TestCloudProjectFolderCreationUsesCommandGateAndReceipt(t *testing.T) {
+	s := projectCloudStandIn(t)
+	parent := filepath.Dir(s.server.cfg.Dir)
+	request := map[string]any{"type": "project-folder-create", "session": cloudops.MachineReplySession, "request": "folder-create", "parent": parent, "name": "cloud-project"}
+	s.bridge.AllowCommands = func() bool { return false }
+	if result, _ := s.ask(t, 1, request); result.OK() {
+		t.Fatal("folder creation passed disabled commands")
+	}
+	if _, err := os.Stat(filepath.Join(parent, "cloud-project")); !os.IsNotExist(err) {
+		t.Fatal("disabled command wrote to disk")
+	}
+	s.bridge.AllowCommands = func() bool { return true }
+	first, _ := s.ask(t, 2, request)
+	if !first.OK() || !strings.Contains(string(first.Payload), "cloud-project") {
+		t.Fatalf("create = %d %s", first.Status, first.Payload)
+	}
+	replay, _ := s.ask(t, 3, request)
+	if !replay.OK() || string(replay.Payload) != string(first.Payload) {
+		t.Fatalf("replay = %d %s", replay.Status, replay.Payload)
+	}
+	read, _ := s.ask(t, 4, map[string]any{"type": "project-folders", "session": cloudops.MachineReplySession, "request": "read-created", "path": filepath.Join(parent, "cloud-project")})
+	if !read.OK() {
+		t.Fatalf("read created = %d %s", read.Status, read.Payload)
+	}
+}
