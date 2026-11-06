@@ -83,7 +83,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		return openedSession{}, errors.New("this daemon cannot open a terminal")
 	}
 	effort := ""
-	if (assistant == projects.AssistantCodex || assistant == projects.AssistantAntigravity) && b.DefaultReasoningEffort != nil {
+	if assistant == projects.AssistantCodex && b.DefaultReasoningEffort != nil {
 		effort = b.DefaultReasoningEffort(assistant)
 	}
 	preflightPersona := persona

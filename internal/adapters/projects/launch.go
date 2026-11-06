@@ -9,6 +9,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The rules for starting an assistant in a place, from StartPoints.swift and
@@ -24,14 +25,14 @@ import (
 
 // Assistants a place can be started with, by the path segment that names them.
 const (
-	AssistantClaude      = "claude"
-	AssistantCodex       = "codex"
-	AssistantAntigravity = "antigravity"
+	AssistantClaude      = string(session.AssistantClaude)
+	AssistantCodex       = string(session.AssistantCodex)
+	AssistantAntigravity = string(session.AssistantAntigravity)
 )
 
 // KnownAssistant admits exact public provider ids, never executable aliases.
 func KnownAssistant(name string) bool {
-	return name == AssistantClaude || name == AssistantCodex || name == AssistantAntigravity
+	return session.KnownAssistant(name)
 }
 
 // ModelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never
