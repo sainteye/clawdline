@@ -286,7 +286,7 @@ type Session struct {
 	Observation Observation `json:"-"`
 }
 
-// IsAssistant separates a Claude or Codex session from an ordinary shell.
+// IsAssistant separates a known assistant session (Claude, Codex, or Antigravity) from an ordinary shell.
 func (s Session) IsAssistant() bool { return s.Assistant != "" }
 
 // Inventory is one reading of the machine. Incompleteness is carried in the

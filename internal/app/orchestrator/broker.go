@@ -100,6 +100,7 @@ type Broker struct {
 	// the exact owned/native/CWD binding, idempotently when already stopped.
 	OwnedChildAvailable func(context.Context) bool
 	OpenOwnedChild      func(context.Context, Record, string, string, squadfiles.Files, workflowlaunch.Prepared) (OwnedChild, error)
+	OpenOwnedSession    func(ctx context.Context, cwd, name, model string) (session.Session, error)
 	CloseOwnedChild     func(context.Context, string, string, string) error
 	// TrustClaudeProject records a project folder as one Claude Code may work
 	// in, before a session the person asked for is opened there, so its first

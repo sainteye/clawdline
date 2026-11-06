@@ -83,6 +83,11 @@ func newBroker(s *Server) *orchestrator.Broker {
 		},
 		OwnedChildAvailable: func(context.Context) bool { return s.antigravitySessions.Load() != nil },
 		OpenOwnedChild:      s.openOwnedAntigravityChild,
+		OpenOwnedSession: func(ctx context.Context, cwd, name, model string) (session.Session, error) {
+			place := projects.Place{Path: cwd, Label: name}
+			starter := s.starter(s.readForStart(ctx))
+			return s.openOwnedAntigravity(ctx, starter, place, "", model)
+		},
 		CloseOwnedChild:     s.stopOwnedAntigravityChild,
 		Tasks:               taskdir.New(s.cfg.Dir),
 		Git:                 git.New(),

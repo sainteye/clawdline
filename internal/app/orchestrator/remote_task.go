@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/agenthandoff"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // OpenRemoteTask opens the target machine's own Agent in a locally resolved
@@ -18,7 +19,7 @@ import (
 func (b *Broker) OpenRemoteTask(ctx context.Context, taskID, projectDir string,
 	body agenthandoff.TaskBody) (terminalID string, err error) {
 	if !IsTaskID(taskID) || b.Dir == "" || !filepath.IsAbs(projectDir) ||
-		(body.Assistant != "claude" && body.Assistant != "codex") ||
+		!session.KnownAssistant(body.Assistant) ||
 		strings.TrimSpace(body.Title) == "" || strings.TrimSpace(body.Instructions) == "" {
 		return "", errors.New("remote_task_invalid")
 	}

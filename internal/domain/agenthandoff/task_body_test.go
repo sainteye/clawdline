@@ -6,6 +6,7 @@ func TestTaskBodyClosesItsWireShapeBeforeAClaim(t *testing.T) {
 	for _, raw := range []string{
 		`{"assistant":"claude","title":"Disk inventory","instructions":"Inspect disk"}`,
 		`{"assistant":"codex","title":"Disk inventory","instructions":"Inspect disk"}`,
+		`{"assistant":"antigravity","title":"Disk inventory","instructions":"Inspect disk"}`,
 	} {
 		if _, err := ParseTaskBody([]byte(raw)); err != nil {
 			t.Fatalf("valid task body %s: %v", raw, err)

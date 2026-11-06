@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // TaskBody is the encrypted instruction given to a target Agent. The target
@@ -23,7 +25,7 @@ func ParseTaskBody(raw []byte) (TaskBody, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF ||
-		(body.Assistant != "claude" && body.Assistant != "codex") ||
+		!session.KnownAssistant(body.Assistant) ||
 		strings.TrimSpace(body.Title) == "" || strings.TrimSpace(body.Instructions) == "" ||
 		strings.ContainsAny(body.Title, "\r\n\x00") {
 		return TaskBody{}, InvalidRequest

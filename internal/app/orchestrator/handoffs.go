@@ -66,6 +66,16 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if err := outside(); err != nil {
 		return openedSession{}, err
 	}
+	if assistant == projects.AssistantAntigravity {
+		if b.OpenOwnedSession == nil {
+			return openedSession{}, errors.New("antigravity session host unavailable")
+		}
+		s, err := b.OpenOwnedSession(ctx, cwd, name, model)
+		if err != nil {
+			return openedSession{}, err
+		}
+		return openedSession{TerminalID: s.ID, Backend: string(s.Backend)}, nil
+	}
 	if b.Launcher == nil {
 		return openedSession{}, errors.New("this daemon cannot open a terminal")
 	}
@@ -814,7 +824,7 @@ func validateAssignment(req RootAssignmentRequest) error {
 	if !uuidShape.MatchString(req.RequestID) {
 		return badAssignment("request_id must be a lowercase UUID.")
 	}
-	if req.Assistant != "claude" && req.Assistant != "codex" && req.Assistant != "antigravity" {
+	if !session.KnownAssistant(req.Assistant) {
 		return badAssignment("assistant must be claude, codex or antigravity.")
 	}
 	if req.Model != "" && req.Model != "default" && !modelName(req.Model) {

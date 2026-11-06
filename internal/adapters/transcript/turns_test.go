@@ -414,6 +414,23 @@ func TestSessionMessageAntigravity(t *testing.T) {
 	}
 }
 
+func TestHandoffReceiptAntigravity(t *testing.T) {
+	notice := `<clawdline-notice>{"protocol":"clawdline.notice","version":2,"kind":"handoff_receipt","audience":"source","handoff_id":"h1","assistant":"antigravity","project_dir":"/tmp","state":"picked_up","body":"Antigravity handoff ready"}</clawdline-notice>`
+	path := writeRecord(t, claudeRow("user", notice))
+	page, err := ReadClaude(path, 10)
+	if err != nil {
+		t.Fatalf("read claude failed: %v", err)
+	}
+	if len(page.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %+v", page.Entries)
+	}
+	n := page.Entries[0]
+	if n.Kind != KindNotice || n.Notice == nil || n.Notice.Kind != "handoff_receipt" || n.Notice.Assistant != "antigravity" {
+		t.Fatalf("unexpected notice entry: %+v, notice: %+v", n, n.Notice)
+	}
+}
+
+
 
 // The notice a root receives when a child finished with something left
 // undone, in the shape the broker writes it. Its `leftovers` was once

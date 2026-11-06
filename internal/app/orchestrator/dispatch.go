@@ -1316,6 +1316,18 @@ func nothingTyped(err error) bool {
 // dispatch on this machine ended with while its composer sat on screen,
 // naming neither what was there nor what was looked for.
 func (b *Broker) composerReady(ctx context.Context, terminalID, assistant string) (bool, error) {
+	if s, ok := b.sessionByTerminal(ctx, terminalID); ok && s.Backend == session.BackendOwned {
+		switch s.State {
+		case session.StateIdle:
+			return true, nil
+		case session.StateWaiting:
+			return false, errShowingDialog
+		case session.StateWorking:
+			return false, errors.New("the owned session is busy working")
+		default:
+			return false, fmt.Errorf("the owned session is not ready (state: %s)", s.State)
+		}
+	}
 	if b.Screen == nil {
 		if assistant == projects.AssistantAntigravity {
 			return false, errors.New("provider_state_unknown")
