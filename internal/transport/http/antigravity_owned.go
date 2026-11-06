@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
@@ -43,7 +44,7 @@ func (p ownedAntigravityTerminal) Open(ctx context.Context, r ports.OpenRequest)
 
 // Prepare role files and shared memory through the same Starter as the other
 // providers. No model input is sent while opening the blank conversation.
-func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, place projects.Place, persona, model string) (session.Session, error) {
+func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, place projects.Place, persona, model string, addDirs []string) (session.Session, error) {
 	prepared, err := starter.PrepareOwnedContext(ctx, place, persona)
 	if err != nil {
 		return session.Session{}, err
@@ -56,7 +57,16 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 		}
 		return session.Session{}, ownedAntigravityUnavailable()
 	}
-	row, err := h.OpenWithModel(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, ownedAntigravityContext(place, prepared), model)
+	launchCtx := ownedAntigravityContext(place, prepared)
+	if len(addDirs) > 0 {
+		var extra strings.Builder
+		extra.WriteString("\n\nAdditional accessible directories:\n")
+		for _, d := range addDirs {
+			extra.WriteString("- " + d + "\n")
+		}
+		launchCtx.Text += extra.String()
+	}
+	row, err := h.OpenWithModel(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, launchCtx, model)
 	if err != nil {
 		prepared.Workflow.Fail(ctx)
 		if prepared.LaunchID != "" {

@@ -434,7 +434,7 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 		return
 	}
 	if assistant == projects.AssistantAntigravity {
-		made, err := s.openOwnedAntigravity(ctx, starter, place, persona, model)
+		made, err := s.openOwnedAntigravity(ctx, starter, place, persona, model, nil)
 		if err != nil {
 			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Gemini")
 			return

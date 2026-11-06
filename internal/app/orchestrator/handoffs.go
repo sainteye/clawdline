@@ -66,21 +66,21 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if err := outside(); err != nil {
 		return openedSession{}, err
 	}
+	if model == "" && b.DefaultModel != nil {
+		model = b.DefaultModel(assistant)
+	}
 	if assistant == projects.AssistantAntigravity {
 		if b.OpenOwnedSession == nil {
 			return openedSession{}, errors.New("antigravity session host unavailable")
 		}
-		s, err := b.OpenOwnedSession(ctx, cwd, name, model)
+		s, err := b.OpenOwnedSession(ctx, cwd, name, model, persona, addDirs)
 		if err != nil {
 			return openedSession{}, err
 		}
-		return openedSession{TerminalID: s.ID, Backend: string(s.Backend)}, nil
+		return openedSession{TerminalID: s.ID, Backend: string(s.Backend), OpenedAt: b.now().Unix()}, nil
 	}
 	if b.Launcher == nil {
 		return openedSession{}, errors.New("this daemon cannot open a terminal")
-	}
-	if model == "" && b.DefaultModel != nil {
-		model = b.DefaultModel(assistant)
 	}
 	effort := ""
 	if (assistant == projects.AssistantCodex || assistant == projects.AssistantAntigravity) && b.DefaultReasoningEffort != nil {

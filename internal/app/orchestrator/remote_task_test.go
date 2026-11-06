@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/agenthandoff"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -26,12 +27,14 @@ func TestOpenRemoteTaskAntigravity(t *testing.T) {
 		CWD:       projectDir,
 	}
 
+	var passedAddDirs []string
 	b := &Broker{
 		Dir: brokerDir,
-		OpenOwnedSession: func(ctx context.Context, cwd, name, model string) (session.Session, error) {
+		OpenOwnedSession: func(ctx context.Context, cwd, name, model, persona string, addDirs []string) (session.Session, error) {
 			if cwd != projectDir {
 				t.Fatalf("unexpected cwd: %s", cwd)
 			}
+			passedAddDirs = addDirs
 			return targetSession, nil
 		},
 		Live: func(ctx context.Context) []session.Session {
@@ -78,6 +81,60 @@ func TestOpenRemoteTaskAntigravity(t *testing.T) {
 	if !strings.Contains(string(content), "Implement Remote Protocol") ||
 		!strings.Contains(string(content), "Verify remote handoff works with Antigravity agent.") {
 		t.Fatalf("TASK.md does not contain expected body: %s", string(content))
+	}
+
+	if len(passedAddDirs) != 1 || !strings.Contains(passedAddDirs[0], entries[0].Name()) {
+		t.Fatalf("expected addDirs to contain task brief dir, got: %v", passedAddDirs)
+	}
+}
+
+func TestOpenSessionAntigravityDefaultsAndOpenedAt(t *testing.T) {
+	ctx := context.Background()
+	var capturedModel, capturedPersona string
+	var capturedAddDirs []string
+
+	targetSession := session.Session{
+		ID:        "owned:acp:test-defaults",
+		Backend:   session.BackendOwned,
+		Assistant: session.AssistantAntigravity,
+		State:     session.StateIdle,
+	}
+
+	now := time.Unix(1793957000, 0)
+	b := &Broker{
+		Clock: func() time.Time { return now },
+		DefaultModel: func(assistant string) string {
+			if assistant == "antigravity" {
+				return "gemini-3.8-flash"
+			}
+			return ""
+		},
+		OpenOwnedSession: func(ctx context.Context, cwd, name, model, persona string, addDirs []string) (session.Session, error) {
+			capturedModel = model
+			capturedPersona = persona
+			capturedAddDirs = addDirs
+			return targetSession, nil
+		},
+	}
+
+	opened, err := b.openSession(ctx, t.TempDir(), "test-name", "antigravity", "", "frontend", []string{"/extra/dir"})
+	if err != nil {
+		t.Fatalf("openSession failed: %v", err)
+	}
+	if opened.TerminalID != targetSession.ID || opened.Backend != "owned" {
+		t.Fatalf("unexpected opened session: %+v", opened)
+	}
+	if opened.OpenedAt != now.Unix() {
+		t.Fatalf("expected OpenedAt %d, got %d", now.Unix(), opened.OpenedAt)
+	}
+	if capturedModel != "gemini-3.8-flash" {
+		t.Fatalf("expected DefaultModel fallback gemini-3.8-flash, got: %q", capturedModel)
+	}
+	if capturedPersona != "frontend" {
+		t.Fatalf("expected persona frontend, got: %q", capturedPersona)
+	}
+	if len(capturedAddDirs) != 1 || capturedAddDirs[0] != "/extra/dir" {
+		t.Fatalf("expected addDirs [/extra/dir], got: %v", capturedAddDirs)
 	}
 }
 
