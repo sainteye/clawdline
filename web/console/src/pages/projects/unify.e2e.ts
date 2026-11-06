@@ -758,3 +758,24 @@ test("Antigravity old machine, known empty and loading remain distinct", async (
   await tab.shot(`antigravity-${mode}-390`)
  })
 })
+
+for (const lang of ["en", "zh-Hant"]) for (const [name, size] of [["phone", PHONE], ["desk", DESK]] as const) {
+ test(`default Project icon ${lang} ${name}: identity stays incomplete`, () => inTab(size, async tab => {
+  reset()
+  fixtureLocale = lang
+  await openGear(tab)
+  await tab.until("the icon row loads", `!!document.querySelector('.project-readiness-capability[data-capability=icon] strong')`)
+  const row = await tab.run(`(() => { const r = document.querySelector('.project-readiness-capability[data-capability=icon]'); return {
+   text: r.querySelector('strong + span').textContent,
+   state: r.querySelector('.project-readiness-state').textContent,
+   missing: r.classList.contains('is-missing'),
+   score: document.querySelector('.project-readiness-score').textContent,
+  } })()`)
+  assert.equal(row.text, lang === "en" ? "Using a default icon; Project identity is not configured" : "使用預設圖示，尚未設定專案識別")
+  assert.equal(row.state, lang === "en" ? "Incomplete" : "待補")
+  assert.equal(row.missing, true)
+  assert.equal(row.score, "2/5")
+  await tab.shot(`project-icon-default-${lang}-${name}`)
+  assert.deepEqual(await tab.run(SIDEWAYS), { page: false, body: false })
+ }))
+}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -182,5 +183,40 @@ func TestAHomeRowNamesOnlyTheHomeDirectory(t *testing.T) {
 	r.home = link
 	if path, _, ok := r.MatchSpelled(filepath.Join(link, "projects", "dualjs"), spell); ok {
 		t.Errorf("a directory under a linked home matched the row %q", path)
+	}
+}
+
+func TestDefaultCreatureRecognitionPreservesCustomArtwork(t *testing.T) {
+	for hue := range hues {
+		for tone := range tones {
+			for shape := 0; shape < 98; shape++ {
+				grid := creature(hue, tone, shape)
+				grid.Accent = "#000000"
+				for _, row := range grid.Cells {
+					for _, cell := range row {
+						if cell != nil {
+							*cell = strings.ToLower(*cell)
+						}
+					}
+				}
+				if !IsDefaultCreature(grid) {
+					t.Fatalf("default not recognized: hue=%d tone=%d shape=%d", hue, tone, shape)
+				}
+			}
+		}
+	}
+	custom := creature(3, 1, 8)
+	color := "#123456"
+	custom.Cells[1][0] = &color
+	if IsDefaultCreature(custom) {
+		t.Fatal("custom pixel artwork classified as a default")
+	}
+	for _, grid := range []Grid{
+		{}, {Cells: [][]*string{{&color}}},
+		{Accent: color, SVG: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 4"><rect width="5" height="4" fill="#123456"/></svg>`},
+	} {
+		if IsDefaultCreature(grid) {
+			t.Fatal("custom or empty icon classified as a default")
+		}
 	}
 }

@@ -7188,6 +7188,8 @@
   "projects.folderReadFailed": "無法讀取這個資料夾。",
   "projects.folderTitle": "新增專案",
   "projects.folderTruncated": "這裡還有其他資料夾；可輸入路徑開啟未列出的資料夾。",
+  "projects.setupIconDefault": "使用預設圖示，尚未設定專案識別",
+  "projects.setupIdentityInstructions": "1. 確認 Project 已登記，並有清楚的名稱與代表專案的圖示。優先沿用專案既有 Logo；找不到時請使用者指定。自動產生的預設角色不算完成專案識別設定。",
   "projects.setupProjectRoot": "Project 根目錄：{arg0}",
   "projects.setupUnifyDrift": "有落差",
   "projects.setupUnifyDriftCount": "有落差（{arg0} 項）",

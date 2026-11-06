@@ -38,6 +38,7 @@
 .project-readiness-capability strong, .project-readiness-capability > span:nth-child(2) > span { display: block; }
 .project-readiness-capability strong { font-size: 13px; }
 .project-readiness-capability > span:nth-child(2) > span { overflow: hidden; margin-top: 2px; color: var(--dim); font-size: 12px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.project-readiness-capability[data-capability="icon"] > span:nth-child(2) > span { white-space: normal; overflow-wrap: anywhere; }
 .project-readiness-state { padding: 3px 6px; border-radius: 999px; color: var(--dim); background: var(--line); font-size: 11px; white-space: nowrap; }
 .project-readiness-capability.is-ready .project-readiness-dot { background: var(--ok); }
 .project-readiness-capability.is-ready .project-readiness-state { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }

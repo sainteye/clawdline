@@ -33,11 +33,10 @@ function unifyCapability(setup: SetupWithUnify): SetupCapability {
   }
 }
 
-const iconWords: Record<ProjectSetupEvidence["icon"], string> = localizedLiteralMap({
+const iconWords: Record<Exclude<ProjectSetupEvidence["icon"], "generated">, string> = localizedLiteralMap({
   mirrored: "cc665d77a525",
   override: "cd7f6327d0b3",
   registry: "8140c66c9bf8",
-  generated: "7c8592c509f9",
 })
 
 const activityWords: Record<ProjectSetupEvidence["deploy_activity"], string> = localizedLiteralMap({
@@ -69,7 +68,7 @@ export function projectSetupCapabilities(place: ProjectPlace): SetupCapability[]
       : setup.servers === "empty" ? catalogWord("literal", "f1c62f33216d")
         : catalogWord("literal", "c1a43ec0edc2")
   return [
-    { key: "icon", label: catalogWord("literal", "aa3249e29a5d"), detail: iconWords[setup.icon], tone: setup.icon === "generated" ? "missing" : "ready", complete: setup.icon !== "generated", applicable: true },
+    { key: "icon", label: catalogWord("literal", "aa3249e29a5d"), detail: setup.icon === "generated" ? catalogWord("projects", "setupIconDefault") : iconWords[setup.icon], tone: setup.icon === "generated" ? "missing" : "ready", complete: setup.icon !== "generated", applicable: true },
     { key: "deploy", label: catalogWord("literal", "6ae06f64f8fa"), detail: deployDetail, tone: deployTone, complete: setup.deploy === "ready", applicable: setup.deploy !== "not_applicable" },
     { key: "servers", label: catalogWord("literal", "7d6a2964df09"), detail: serverDetail, tone: setup.servers === "ready" ? "ready" : setup.servers === "attention" ? "attention" : "missing", complete: setup.servers === "ready", applicable: true, action: "servers" },
     { key: "sync", label: catalogWord("literal", "f3e136131a7e"), detail: setup.sync === "ready" ? catalogWord("literal", "9391584df834") : catalogWord("literal", "d14c93fd8dbe"), tone: setup.sync, complete: setup.sync === "ready", applicable: true },
@@ -101,7 +100,7 @@ export function projectSetupInstructions(place: Pick<ProjectPlace, "label" | "pa
     catalogWord("literal", "0272dbb4a00f"),
     "",
     catalogWord("literal", "81dffa7e36c1"),
-    catalogWord("literal", "c08033e523fa"),
+    catalogWord("projects", "setupIdentityInstructions"),
     catalogWord("literal", "7aa3b940bfe1"),
     catalogWord("literal", "3ec8c6e1bcd0"),
     catalogWord("literal", "97b97136df1d"),

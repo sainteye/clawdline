@@ -7188,6 +7188,8 @@
   "projects.folderReadFailed": "Could not read this folder.",
   "projects.folderTitle": "Add Project",
   "projects.folderTruncated": "More folders exist here. Enter a path to open one that is not listed.",
+  "projects.setupIconDefault": "Using a default icon; Project identity is not configured",
+  "projects.setupIdentityInstructions": "1. Confirm the Project is registered and has a meaningful name and a project-specific icon. Reuse its existing logo when available; otherwise ask the person to choose. Default generated creatures do not count as configured identity.",
   "projects.setupProjectRoot": "Project root: {arg0}",
   "projects.setupUnifyDrift": "Differences found",
   "projects.setupUnifyDriftCount": "Differences found ({arg0})",

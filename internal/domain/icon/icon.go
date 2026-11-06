@@ -114,6 +114,58 @@ func creatureFromSeed(seed int64) Grid {
 	return creature(int(seed%int64(len(hues))), int((seed/16)%int64(len(tones))), int((seed/512)%98))
 }
 
+// IsDefaultCreature recognizes the built-in artwork even after it has been
+// registered, copied as pixel art or mirrored from another path. The accent
+// is independent of the drawing and cannot turn a default into a Project logo.
+// Custom pixel art and SVG remain valid Project identities.
+func IsDefaultCreature(g Grid) bool {
+	if g.SVG != "" || len(g.Cells) != 4 {
+		return false
+	}
+	for _, row := range g.Cells {
+		if len(row) != 5 {
+			return false
+		}
+	}
+	if g.Cells[1][0] == nil {
+		return false
+	}
+	for _, hue := range hues {
+		for _, tone := range tones {
+			body := hsl(hue, tone[0], tone[1])
+			if !strings.EqualFold(*g.Cells[1][0], body) {
+				continue
+			}
+			limb := hsl(hue, tone[2], tone[3])
+			for shape := 0; shape < 98; shape++ {
+				matches := true
+				for y, row := range creatureCells(shape) {
+					for x, value := range row {
+						cell := g.Cells[y][x]
+						if value == 0 {
+							if cell != nil {
+								matches = false
+							}
+						} else {
+							color := body
+							if value == 2 {
+								color = limb
+							}
+							if cell == nil || !strings.EqualFold(*cell, color) {
+								matches = false
+							}
+						}
+					}
+				}
+				if matches {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // hsl converts to an sRGB hex string. `#RRGGBB` is a promise about sRGB, which
 // is why the conversion is spelled out rather than left to a colour object.
 func hsl(hDegrees, s, l float64) string {

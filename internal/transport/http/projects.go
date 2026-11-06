@@ -191,6 +191,11 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 	for _, p := range list {
 		grid, source := s.icons.Resolve(p.Path)
 		icons[p.Path] = grid
+		// Setup measures Project identity, not whether a fallback was saved.
+		// Normalize before the cache key so replacing artwork takes effect now.
+		if icon.IsDefaultCreature(grid) {
+			source = icon.SourceGenerated
+		}
 		sources[p.Path] = source
 		if projects.MayInspectInBackground(p.Path) {
 			keys = append(keys, setupLookupKey{path: p.Path, repo: repos[p.Path], icon: source})

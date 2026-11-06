@@ -62,6 +62,20 @@ second; the earlier drafts above are retained for comparison.
 3. A deterministic creature generated from the working directory's FNV-1a
    hash.
 
+The Project health check measures whether a project-specific identity is set.
+Built-in generated creatures remain incomplete even when a legacy registry
+entry selects their hue, tone and shape, or their pixels have been copied or
+mirrored from another path. The displayed mark and stored data stay intact.
+`setup.icon` reports `generated` for this artwork; other values identify the
+source of a project-specific mark. Resolve still returns the actual storage
+source. Custom pixel art and SVG logos count as configured identity. The check
+recognizes the built-in colour grids, not visually similar artwork encoded as
+SVG, and does not judge the quality or recognisability of a custom logo.
+
+The setup assistant should first reuse an existing Project logo. If none is
+available, it asks the person to specify an icon rather than registering another
+default creature to complete the checklist.
+
 The daemon rereads the override file when resolving a Project or Session icon.
 Creation, edits, atomic replacement and removal take effect on the next read;
 the legacy registry is also reread and compared by content. A malformed or

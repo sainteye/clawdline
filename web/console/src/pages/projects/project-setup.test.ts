@@ -12,7 +12,10 @@ test("a Project setup Session receives the portable guide, all visible layers an
   assert.match(words, /clawdline guide zh-TW project/)
   assert.match(words, /Project name: "Sample"/)
   assert.match(words, /Project root: "\/work\/sample"/)
-  assert.match(words, /name and pixel icon/)
+  assert.match(words, /name and a project-specific icon/)
+  assert.match(words, /Reuse its existing logo/)
+  assert.match(words, /otherwise ask the person to choose/)
+  assert.match(words, /Default generated creatures do not count/)
   assert.match(words, /deploy\/CI/)
   assert.match(words, /\.devstack\.json/)
   assert.match(words, /do not start, stop, restart, or deploy/)
@@ -131,3 +134,17 @@ test("the readiness card's servers row opens the devstack view", () => {
 
 
 
+
+test("default icons stay incomplete while project-specific artwork counts", () => {
+  const place = { id: "shop", label: "Shop", path: "/work/shop", setup: { ...base, icon: "generated" as const } }
+  const row = projectSetupCapabilities(place).find(row => row.key === "icon")
+  assert.equal(row?.tone, "missing")
+  assert.equal(row?.complete, false)
+  assert.equal(row?.detail, "Using a default icon; Project identity is not configured")
+  assert.deepEqual(projectSetupProgress(place), { complete: 2, total: 3 })
+  for (const icon of ["registry", "override", "mirrored"] as const) {
+    const configured = { ...place, setup: { ...base, icon } }
+    assert.equal(projectSetupCapabilities(configured).find(row => row.key === "icon")?.complete, true)
+    assert.deepEqual(projectSetupProgress(configured), { complete: 3, total: 3 })
+  }
+})

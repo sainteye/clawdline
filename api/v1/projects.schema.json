@@ -48,7 +48,7 @@
       }
     },
     "ProjectIconSetup": {
-      "description": "Where this Project's icon comes from. `generated` is the stable path-derived fallback, not a configured identity.",
+      "description": "Project icon identity readiness. `generated` includes built-in default creatures even when registered, copied or mirrored; other values name the source of project-specific artwork.",
       "type": "string",
       "enum": ["mirrored", "override", "registry", "generated"]
     },

@@ -177,3 +177,96 @@ func TestSVGProjectAndSessionIconWire(t *testing.T) {
 		t.Fatalf("session wire lost SVG or empty cells: %+v", row.Icon)
 	}
 }
+
+// Saving or mirroring a generated creature must not turn it into a configured
+// Project identity. The same Server also exercises setup-cache transitions.
+func TestProjectSetupDoesNotCompleteStoredDefaultIcons(t *testing.T) {
+	home := placesHome(t)
+	state := filepath.Join(home, ".config", "clawdline-next")
+	path := filepath.Join(home, "projects", "shop")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := projects.OpenPlaceRegistry(state).Add([]string{path}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	registry := filepath.Join(home, ".claude", "project-icons.json")
+	if err := os.MkdirAll(filepath.Dir(registry), 0755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(map[string]any{"projects": map[string]any{path: map[string]any{"label": "Shop", "hue": 3, "tone": 1, "shape": 8}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registry, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	icons, err := icon.NewRegistryWithOverrides(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{cfg: config.Config{Dir: state}, broker: &orchestrator.Broker{Dir: state}, icons: icons}
+	read := func(t *testing.T, want string, grid icon.Grid) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.placesRoute(rec, httptest.NewRequest("GET", "/v1/places", nil))
+		if rec.Code != 200 {
+			t.Fatalf("places returned %d: %s", rec.Code, rec.Body.String())
+		}
+		var answer struct {
+			Places []struct {
+				Path  string    `json:"path"`
+				Icon  icon.Grid `json:"icon"`
+				Setup *struct {
+					Icon string `json:"icon"`
+				} `json:"setup"`
+			} `json:"places"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range answer.Places {
+			if p.Path != path {
+				continue
+			}
+			got, _ := json.Marshal(p.Icon)
+			expected, _ := json.Marshal(grid)
+			if string(got) != string(expected) {
+				t.Fatal("the displayed icon changed with its setup classification")
+			}
+			if p.Setup == nil || p.Setup.Icon != want {
+				t.Fatalf("setup = %+v, want icon %q", p.Setup, want)
+			}
+			return
+		}
+		t.Fatal("project absent")
+	}
+	registered := icons.For(path)
+	t.Run("registered creature", func(t *testing.T) { read(t, "generated", registered) })
+	// This is a creature from a different path: comparing only with this Project's
+	// fallback would miss copied and synced defaults.
+	copied := icon.Generated("/work/another-project")
+	write := func(grid icon.Grid) {
+		t.Helper()
+		data, err := json.Marshal(map[string]icon.Grid{path: grid})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(state, "project-icon-overrides.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(copied)
+	t.Run("copied creature", func(t *testing.T) { read(t, "generated", copied) })
+	color := "#123456"
+	custom := icon.Grid{Accent: color, Cells: [][]*string{{&color}}}
+	write(custom)
+	t.Run("custom pixels", func(t *testing.T) { read(t, "override", custom) })
+	write(copied)
+	t.Run("custom replaced by default", func(t *testing.T) { read(t, "generated", copied) })
+	mirrored := copied
+	icons.SetMirror(func(cwd string) (icon.Grid, string, bool) { return mirrored, "Shop", cwd == path })
+	t.Run("mirrored creature", func(t *testing.T) { read(t, "generated", mirrored) })
+	mirrored = icon.Grid{Accent: color, Cells: [][]*string{}, SVG: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#123456"/></svg>`}
+	t.Run("mirrored logo", func(t *testing.T) { read(t, "mirrored", mirrored) })
+}

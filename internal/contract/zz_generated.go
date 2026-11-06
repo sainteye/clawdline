@@ -4487,8 +4487,9 @@ const (
 // ProjectGitFailureValues is every value the contract allows, in contract order.
 var ProjectGitFailureValues = []ProjectGitFailure{ProjectGitFailureGitMissing, ProjectGitFailureGitTimeout, ProjectGitFailureGitFailed, ProjectGitFailureGitAnswerTooLarge}
 
-// Where this Project's icon comes from. `generated` is the stable path-derived
-// fallback, not a configured identity.
+// Project icon identity readiness. `generated` includes built-in default
+// creatures even when registered, copied or mirrored; other values name the
+// source of project-specific artwork.
 type ProjectIconSetup string
 
 const (

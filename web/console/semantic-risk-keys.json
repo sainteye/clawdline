@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10726,
+  "englishKeys": 10728,
   "counts": {
-    "negation": 2985,
+    "negation": 2987,
     "state": 1760,
     "permission": 632,
     "deletion": 238,
     "uncertainty": 409
   },
-  "unionCount": 4724,
+  "unionCount": 4726,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2722,6 +2722,8 @@
       "projects.folderEmpty",
       "projects.folderReadFailed",
       "projects.folderTruncated",
+      "projects.setupIconDefault",
+      "projects.setupIdentityInstructions",
       "projects.setupUnifyUnreadable",
       "projects.setupUnifyUnsupported",
       "projects.statusBoardUnavailable",
@@ -10283,6 +10285,8 @@
     "projects.folderGo",
     "projects.folderReadFailed",
     "projects.folderTruncated",
+    "projects.setupIconDefault",
+    "projects.setupIdentityInstructions",
     "projects.setupUnifyUnreadable",
     "projects.setupUnifyUnsupported",
     "projects.statusBoardUnavailable",

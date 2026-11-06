@@ -56,7 +56,7 @@ function ProjectReadiness({ place, select, openUnify, openDevStack }: {
       </span>
     </div>
     <ul className="project-readiness-capabilities">
-      {capabilities.map(row => <li key={row.key} className={`project-readiness-capability is-${row.tone}${row.action ? " has-action" : ""}`}>
+      {capabilities.map(row => <li key={row.key} data-capability={row.key} className={`project-readiness-capability is-${row.tone}${row.action ? " has-action" : ""}`}>
         <span className="project-readiness-dot" aria-hidden="true" />
         <span>
           <strong>{row.label}</strong>
