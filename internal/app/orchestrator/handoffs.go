@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
@@ -421,8 +422,8 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	if assistant == "" {
 		assistant = "claude"
 	}
-	if assistant != "claude" && assistant != "codex" {
-		return Handoff{}, false, badHandoff("assistant must be claude or codex.")
+	if !session.KnownAssistant(assistant) {
+		return Handoff{}, false, badHandoff("assistant must be claude, codex or antigravity.")
 	}
 	model := strings.TrimSpace(req.Model)
 	if model != "" && !modelName(model) {

@@ -397,6 +397,24 @@ func TestNoticeAndSessionMessage(t *testing.T) {
 	}
 }
 
+func TestSessionMessageAntigravity(t *testing.T) {
+	message := `<clawdline-message>{"body":"Ready for main release","kind":"session_message","protocol":"clawdline.message","source":{"assistant":"antigravity","id":"owned:acp:D6F6LWKS4QDTV3WUHMGZIFP67E","label":"fantease"},"version":1}</clawdline-message>`
+	path := writeRecord(t, claudeRow("user", message))
+	page, err := ReadClaude(path, 10)
+	if err != nil {
+		t.Fatalf("read claude failed: %v", err)
+	}
+	if len(page.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %+v", page.Entries)
+	}
+	msg := page.Entries[0]
+	if msg.Kind != KindMessage || msg.Text != "Ready for main release" || msg.Source != "fantease" ||
+		msg.SourceMode != "clawdline" || msg.SourceAssistant != "antigravity" {
+		t.Fatalf("unexpected message entry: %+v", msg)
+	}
+}
+
+
 // The notice a root receives when a child finished with something left
 // undone, in the shape the broker writes it. Its `leftovers` was once
 // outside the closed key set, and the whole envelope showed as raw text.

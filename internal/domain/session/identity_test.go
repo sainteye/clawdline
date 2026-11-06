@@ -49,3 +49,17 @@ func TestGeminiCoordinateKeepsTheProviderIdentity(t *testing.T) {
 		t.Fatalf("display name = %q", got)
 	}
 }
+
+func TestKnownAssistant(t *testing.T) {
+	for _, a := range AllAssistants() {
+		if !KnownAssistant(string(a)) {
+			t.Fatalf("expected KnownAssistant(%q) to be true", a)
+		}
+	}
+	for _, invalid := range []string{"", "unknown", "gemini-cli", "chatgpt"} {
+		if KnownAssistant(invalid) {
+			t.Fatalf("expected KnownAssistant(%q) to be false", invalid)
+		}
+	}
+}
+

@@ -22,6 +22,30 @@ const (
 	AssistantAntigravity Assistant = "antigravity"
 )
 
+// assistants is every assistant kind known to this daemon.
+var assistants = []Assistant{
+	AssistantClaude,
+	AssistantCodex,
+	AssistantAntigravity,
+}
+
+// AllAssistants returns a copy of every assistant kind known to this daemon.
+func AllAssistants() []Assistant {
+	out := make([]Assistant, len(assistants))
+	copy(out, assistants)
+	return out
+}
+
+// KnownAssistant reports whether name identifies a known assistant.
+func KnownAssistant(name string) bool {
+	for _, a := range assistants {
+		if string(a) == name {
+			return true
+		}
+	}
+	return false
+}
+
 // State is what the session appears to be doing. `unknown` is a real answer and
 // is deliberately not flattened into `idle`: a terminal that did not answer has
 // told us nothing, which is different from a terminal that answered "nothing".

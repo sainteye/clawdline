@@ -19,6 +19,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The kinds of entry a conversation is read into. They are the Swift app's
@@ -1899,7 +1900,7 @@ func SessionMessage(raw string, at int64) (Entry, bool) {
 	id, _ := source.str("id")
 	label, _ := source.str("label")
 	assistant, _ := source.str("assistant")
-	if id == "" || label == "" || (assistant != "claude" && assistant != "codex") {
+	if id == "" || label == "" || !session.KnownAssistant(assistant) {
 		return Entry{}, false
 	}
 	var refs []ImageRef
@@ -2266,7 +2267,7 @@ func decodeNotice(raw string) (*Notice, bool) {
 		projectDir, ok2 := nonempty("project_dir")
 		state, _ := obj.str("state")
 		if version != 2 || audience != "source" || !ok1 || !ok2 ||
-			(assistant != "claude" && assistant != "codex") ||
+			!session.KnownAssistant(assistant) ||
 			(state != "picked_up" && state != "first_line_failed") ||
 			!keysBetween(obj, []string{"protocol", "version", "kind", "audience", "handoff_id", "assistant",
 				"project_dir", "state", "body"}, []string{"title"}) ||
