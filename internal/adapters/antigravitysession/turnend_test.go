@@ -132,3 +132,66 @@ func TestTheTurnEndMarkerIsRemovedFromTheReply(t *testing.T) {
 		}
 	}
 }
+
+// A conversation that predates the marker wrote its whole reply, the runtime
+// never answered, and the watchdog's ending showed "this turn did not end
+// normally" under a finished reply (2026-11-07). Text closed by a
+// usage_update with nothing running is now a finished turn; a turn last seen
+// in a tool or a thought still reports the timeout.
+func TestASilentTurnEndsAsFinishedOnlyAfterAClosedReply(t *testing.T) {
+	cases := []struct {
+		name     string
+		updates  []map[string]any
+		finished bool
+	}{
+		{"reply then usage", []map[string]any{say("All done."), {"sessionUpdate": "usage_update", "used": 10, "size": 100}}, true},
+		{"reply then tool", []map[string]any{say("Checking."), {"sessionUpdate": "usage_update", "used": 10, "size": 100},
+			{"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Read", "kind": "read", "status": "completed"}}, false},
+		{"thought", []map[string]any{say("Thinking."), {"sessionUpdate": "agent_thought_chunk", "content": map[string]string{"type": "text", "text": "hmm"}}}, false},
+		{"reply without usage", []map[string]any{say("Half a sen")}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLW_INTERRUPT_PEER", "yes")
+			h, row, _ := fixtureWithTimeout(t, 200*time.Millisecond)
+			finished := make(chan struct{}, 1)
+			h.opts.TurnComplete = func(context.Context, session.Session) { finished <- struct{}{} }
+			if err := h.Send(context.Background(), row, "work"); err != nil {
+				t.Fatal(err)
+			}
+			c, err := h.lookup(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, func() bool {
+				c.mu.Lock()
+				defer c.mu.Unlock()
+				return c.row.State == session.StateWorking && c.writeGate == nil
+			})
+			for _, u := range tc.updates {
+				emitUpdate(t, c, row, u)
+			}
+			idleHost(t, h, row)
+			page, err := h.Transcript(row, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			timeout := false
+			for _, e := range page.Entries {
+				if e.Role == "error" && e.Text == "antigravity_turn_inactivity_timeout" {
+					timeout = true
+				}
+			}
+			if timeout == tc.finished {
+				t.Fatalf("timeout error shown=%v, want %v: %+v", timeout, !tc.finished, page.Entries)
+			}
+			if tc.finished {
+				select {
+				case <-finished:
+				case <-time.After(3 * time.Second):
+					t.Fatal("a finished reply did not report the turn complete")
+				}
+			}
+		})
+	}
+}

@@ -85,10 +85,14 @@ type conversation struct {
 	writeGate    chan struct{}
 	lastActivity atomic.Int64
 	timedOut     atomic.Bool
-	// endMarked says the model ended its latest message with TurnEndMarker;
-	// endedByMarker says the watchdog ended the turn because of it.
+	// endMarked says the model ended its latest message with TurnEndMarker.
+	// replyEnded says the latest live step was assistant text closed by a
+	// usage_update, with nothing after it. endedFinished says the watchdog
+	// ended the turn for either reason, as a finished reply, not an error.
 	endMarked         bool
-	endedByMarker     atomic.Bool
+	replyEnded        bool
+	lastKind          string
+	endedFinished     atomic.Bool
 	activeTools       map[string]string // active tool ID -> native kind
 	activeToolBytes   int
 	model             string
@@ -404,6 +408,8 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 	c.activeTools = nil
 	c.activeToolBytes = 0
 	c.endMarked = false
+	c.replyEnded = false
+	c.lastKind = ""
 	c.writeGate = make(chan struct{})
 	c.mu.Unlock()
 	h.jobs.Add(1)
@@ -412,7 +418,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 	done := make(chan struct{})
 	var outcome error
 	c.timedOut.Store(false)
-	c.endedByMarker.Store(false)
+	c.endedFinished.Store(false)
 	go func() {
 		defer h.jobs.Done()
 		defer close(done)
@@ -510,6 +516,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 						hasPerm := c.permission != nil && c.permission.Active()
 						hasTool := len(c.activeTools) > 0
 						marked := c.endMarked
+						replied := c.replyEnded
 						c.mu.Unlock()
 
 						if hasPerm || hasTool {
@@ -522,12 +529,15 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 						last := c.lastActivity.Load()
 						if marked && time.Since(time.Unix(0, last)) >= turnEndGrace {
 							// The model said it finished and nothing has arrived since.
-							c.endedByMarker.Store(true)
+							c.endedFinished.Store(true)
 							c.timedOut.Store(true)
 							_ = cl.Interrupt(context.Background(), nil)
 							return
 						}
 						if time.Since(time.Unix(0, last)) >= inactivityTimeout {
+							// A reply that ended in text with nothing running is a
+							// finished turn the runtime did not report, not a failure.
+							c.endedFinished.Store(replied)
 							c.timedOut.Store(true)
 							_ = cl.Interrupt(context.Background(), nil)
 							return
@@ -579,7 +589,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 					c.client = nil
 					c.row.PID = 0
 				}
-				if c.endedByMarker.Load() {
+				if c.endedFinished.Load() {
 					notify = c.storeErr == nil
 				} else {
 					c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
@@ -609,7 +619,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			outcome, c.storeErr = saveErr, saveErr
 			c.row.State, c.uncertain = session.StateUnknown, true
 		}
-		marked := c.endedByMarker.Load()
+		marked := c.endedFinished.Load()
 		if result.StopReason != "end_turn" && result.StopReason != "cancelled" && !marked {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
@@ -969,6 +979,9 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 	}
 	if u.Tool != nil || u.Kind == "agent_thought_chunk" {
 		c.endMarked = false
+	}
+	if c.row.State == session.StateWorking && !c.replaying {
+		c.noteReplyEnd(u.Kind)
 	}
 	if c.store != nil {
 		return c.project(u)
