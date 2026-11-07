@@ -15,6 +15,7 @@
         "workflow_profile": { "type": "string", "nullable": true },
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "codegraph_enabled": { "type": "boolean", "nullable": true },
+        "space_saving_images": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "exists": {
@@ -287,6 +288,7 @@
         "workflow_profile": { "type": "string", "nullable": true },
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "codegraph_enabled": { "type": "boolean", "nullable": true },
+        "space_saving_images": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "hotkey": {
           "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.",

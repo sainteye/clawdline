@@ -8378,6 +8378,7 @@ export interface SettingsRequest {
    * Have a model write the sentence a notification carries.
    */
   smart_notifications: boolean | null
+  space_saving_images: boolean | null
 
   /**
    * A full Tailscale name ending in `.ts.net`, or empty.
@@ -8761,6 +8762,7 @@ export interface SettingsSnapshot {
    * Have a model write the sentence a notification carries.
    */
   smart_notifications: boolean | null
+  space_saving_images: boolean | null
 
   /**
    * This machine's full Tailscale name (`<machine>.<tailnet>.ts.net`) that
