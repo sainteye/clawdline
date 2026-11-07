@@ -34,6 +34,19 @@ func projectCommand(args []string) {
 	case "unify":
 		projectUnifyCommand(args[1:])
 		return
+	case "devstack":
+		fs := flag.NewFlagSet("project devstack", flag.ExitOnError)
+		asJSON := fs.Bool("json", false, "print the matching stacks as JSON")
+		_ = fs.Parse(args[1:])
+		dir := "."
+		if fs.NArg() > 0 {
+			dir = fs.Arg(0)
+		}
+		b, err := openBroker(0)
+		if err != nil {
+			fail(err)
+		}
+		os.Exit(projectDevStack(os.Stdout, os.Stderr, b, dir, *asJSON))
 	case "refresh":
 		if err := runProjectRefresh(args[1:], os.Stdout); err != nil {
 			if errors.Is(err, errProjectNotListed) {
@@ -134,12 +147,14 @@ func projectUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.clawdline_project_import_clone_repl.fcdc6204", "       clawdline project import [--clone] [--replace-source] <file>"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.clawdline_project_unify_apply_check.4c4400ff", "       clawdline project unify [--apply | --check] [--json] [directory]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.refresh_usage", "       clawdline project refresh [directory]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.devstack_usage", "       clawdline project devstack [--json] [directory]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.add_directory_keep_existing_directo.69166d26", "  add [directory…]      add directories; with none, add the current directory"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.remove_directory_forget_directories.79c5aae6", "  remove <directory…>   hide directories from Project lists without deleting them"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.list_show_explicitly_registered_dir.233ccc16", "  list                  show explicitly registered directories"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.export_this_machine_s_project_setti.62f59b09", "  export                this machine's project settings (icons, names, untracked skills), as a file"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.import_file_mirror_another_machine.f1f762b0", "  import <file>         mirror another machine's project settings here; it owns them from then on"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.unify_directory_show_how_claude_and.9b3b6da2", "  unify [directory]     show how Claude and Codex can share this Project's rules and skills; --apply does it"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.devstack_description", "  devstack [directory]  the servers Clawdline reads from this Project's .devstack.json, each port's state and its Link address"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.refresh_description", "  refresh [directory]   reread this Project's icon and display status"))
 }
 

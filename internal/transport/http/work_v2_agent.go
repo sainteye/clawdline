@@ -560,7 +560,7 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 	refuse := s.relayRefuser(w, r, k)
 	run, sess, err := s.relaySession(r.Context(), body.Via.Run, body.SessionID,
 		"A Session creates a Board item only on a person's message sent through Clawdline; name its run as "+
-			"{\"via\":{\"run\":\"…\"}}. Without one, file a proposal (POST /v1/work/v2/agent/proposals) for the person to accept.",
+			"{\"via\":{\"run\":\"…\"}}. Without one, file a proposal with `clawdline item propose` (POST /v1/work/v2/agent/proposals) for the person to accept.",
 		"nothing was created")
 	if err != nil {
 		refuse(err)

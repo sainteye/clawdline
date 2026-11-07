@@ -208,5 +208,11 @@
   "error.add_kind_title_required": "clawdline %s：--kind 與 --title 都是必填。未建立任何項目。\n",
   "flag.project_or_directory": "Project：`clawdline project list` 顯示的 id，或它的目錄（預設為這個 Session 所在的 Project）",
   "label.project_candidates": "這台機器上的 Project（傳入 id 或目錄皆可）：",
-  "usage.add_project_optional": "用法： clawdline item add [--project <id|目錄>] --kind <feature|issue|epic|refactor|plan> --title <t>"
+  "usage.add_project_optional": "用法： clawdline item add [--project <id|目錄>] --kind <feature|issue|epic|refactor|plan> --title <t>",
+  "usage.propose": "       clawdline item propose [--project <id|目錄>] --kind <feature|issue|epic|refactor|plan> --title <t> --reason 原因 --acceptance-file f (--source-todo id | --source-item id) [--description-file f | stdin]",
+  "error.no_run_propose": "未建立任何項目。沒有透過 Clawdline 送來的訊息時，請改用 ",
+  "error.no_run_propose_next": "`clawdline item propose`（同樣的 --kind、--title 與描述）提交提案，並請當事人在 Board 的 Agent proposals 中接受。",
+  "receipt.proposal_filed": "已提交提案 %s  %s\n當事人會在 Board 的 Agent proposals 中接受或拒絕；在那之前它還不是 Board 項目。\n",
+  "flag.source_todo": "propose 用：提案來源，這個 Session 自己的待辦",
+  "flag.source_item": "propose 用：提案來源，這個 Session 負責的 Board 項目"
 }

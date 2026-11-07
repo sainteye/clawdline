@@ -275,5 +275,10 @@
   "webhook_create.uncertain": "尚未確認建立結果。請以相同 key 重試；不要另建第二個 webhook。",
   "output.usage": "用法：clawdline output add [--target terminal] [--from conversation] [--port n] [--kind created|modified|published] <file>",
   "output.identity_missing": "目前無法確認 Session 的終端身分。",
-  "image.output_index_failed": "圖片已存好，但原始路徑無法收錄到產出紀錄。之後可使用 clawdline output add 補登錄。"
+  "image.output_index_failed": "圖片已存好，但原始路徑無法收錄到產出紀錄。之後可使用 clawdline output add 補登錄。",
+  "project.devstack_unreadable": "clawdline project devstack：讀不到 daemon 的伺服器清單；請更新執行中的 daemon",
+  "project.devstack_none": "clawdline project devstack：Clawdline 沒有為 %s 讀到任何 .devstack.json。它會在有圖示設定的 Project 與存活 Session 的目錄中尋找，並往上找到家目錄為止。\n",
+  "project.devstack_truncated": "伺服器清單被截斷，所以這不能證明它不存在。",
+  "project.devstack_description": "  devstack [directory]  Clawdline 從這個 Project 的 .devstack.json 讀到的伺服器、各 port 的狀態與 Link 網址",
+  "project.devstack_usage": "       clawdline project devstack [--json] [directory]"
 }

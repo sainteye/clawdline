@@ -392,9 +392,29 @@ Work through these four checks, skipping a check only when it genuinely does not
    A process with no stable port or URL should not be guessed into the file. Do not probe or
    restart production while verifying a development declaration.
 
+   **This file is the Project's Links.** When the person asks for "Project Links", "links", or for
+   the Project to be reachable at an address, they mean the Links sheet and status-line chip. Its
+   server rows come only from these `processes`: a row opens `url` when it is set, otherwise
+   `http://127.0.0.1:<port>`, and shows ok or down from whether `port` answers. Its other rows are
+   the deploy and run receipts in item 3. For a public address served through a tunnel, declare the
+   tunnel as a process whose `port` is the tunnel's own local metrics or health port and whose
+   `url` is the public address, so the row reads ok exactly while the tunnel runs:
+
+   ```json
+   {"version":1,"name":"myapp","processes":[
+     {"name":"api","port":8002},
+     {"name":"web","port":3001},
+     {"name":"tunnel","port":20241,"url":"https://myapp.example.com"}]}
+   ```
+
+   Creating the tunnel itself (its configuration, DNS and credentials) belongs to the Project's
+   own scripts; copy how a sibling Project does it, and never edit or run another Project's tunnel
+   configuration. Clawdline only reads the file.
+
 Verify each changed layer separately: `clawdline project list` names the checkout; every JSON file
-parses; the repository's own tests for changed scripts pass; `GET /v1/devstacks` shows declared
-servers as running, stopped or unknown rather than silently omitting them; and a Session in the
+parses; the repository's own tests for changed scripts pass; `clawdline project devstack` (in the
+Project) shows each declared server as running, stopped or unknown with the address its Link
+opens, rather than silently omitting it; and a Session in the
 Project shows a fresh progress/deploy receipt. If a read is unavailable, malformed or stale, say
 which one and leave it unknown — never report absence as success. Finish by listing what was
 configured, what was intentionally not applicable, and any user-owned file changed outside git.
@@ -1528,9 +1548,9 @@ echo "Clean up the release notes before the next release." | \
   (an ordinary Session requested the machine-only combined assignment to another Session),
   `invalid_assignment` (a malformed `assign`, or Clawdfather asking for `self`), `too_many_steps`
   (more than 128), `run_items_exhausted` (one message backs at most five items).
-- **No run** — the person typed straight into the terminal, so `item add` answers `no_run` or
-  `run_unknown`: fall back to a proposal (below) and tell the person to accept it in the Board's
-  Agent proposals.
+- **No run** — the person typed straight into the terminal, or this Session was opened by an
+  assignment rather than a message, so `item add` answers `no_run` or `run_unknown`: fall back to
+  `clawdline item propose` (below) and tell the person to accept it in the Board's Agent proposals.
 
 Never create a Board item on your own initiative, and never several to plan speculative work.
 
@@ -1610,7 +1630,16 @@ model turn. The active new-Session owner alone may do it. Sending the same name 
 different name is refused, and the person can still set a manual Session title. A Board item given
 to an existing Session leaves that Session's name alone.
 
-**Propose a Board item.** The Board's **Agent proposals** queue is fed by one route:
+**Propose a Board item.** The Board's **Agent proposals** queue is fed by one route. Use the
+command, which fills in this Session and the Project:
+
+```
+clawdline item propose --kind issue --title "…" --reason "…" --acceptance-file accept.md \
+  --source-todo <your to-do id> [--project <id|directory>] < description.md
+```
+
+`--source-item <item id>` replaces `--source-todo` for a Board item you own. Without `--project`,
+the command's own directory is the Project. The route underneath:
 
 ```
 POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
@@ -1620,7 +1649,7 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
  "source_work_id": "<uuid>" or "source_todo_id": "<uuid>"}
 ```
 
-- `project_id` is the `id` of a row from `GET /v1/places`.
+- `project_id` is the `id` `clawdline project list` prints, or the Project's directory.
 - One source is required, and it must be yours: a Board item this Session owns, or one of this
   Session's own to-dos (`proposal_source_required`, `proposal_source_invalid`). A proposal that
   came from something the person asked for cites the to-do it came from — so the path is: the

@@ -355,9 +355,25 @@ curl --fail-with-body -sS -H @<(auth) "http://127.0.0.1:$PORT/v1/orchestrator/in
 
    沒有固定 port 或 URL 的 process 不要猜進去。驗證開發環境宣告時，不要探測或重啟 production。
 
+   **這個檔案就是 Project 的 Links。** 使用者說「Project Link」、「連結」，或要讓 Project 能從某個網址
+   開啟時，指的是 Links 清單與狀態列的小標籤。其中的伺服器列只來自這些 `processes`：有 `url` 就開
+   `url`，否則開 `http://127.0.0.1:<port>`，並依 `port` 有沒有回應顯示 ok 或 down。其他列是第 3 項
+   的 deploy 與 run 收據。要宣告透過 tunnel 提供的公開網址時，把 tunnel 當成一個 process：`port`
+   填 tunnel 自己的本機 metrics 或 health port，`url` 填公開網址，這樣 tunnel 在跑時那一列才顯示 ok：
+
+   ```json
+   {"version":1,"name":"myapp","processes":[
+     {"name":"api","port":8002},
+     {"name":"web","port":3001},
+     {"name":"tunnel","port":20241,"url":"https://myapp.example.com"}]}
+   ```
+
+   建立 tunnel 本身（設定、DNS、憑證）屬於 Project 自己的 script；參考同類 Project 的做法，絕不修改
+   或執行別的 Project 的 tunnel 設定。Clawdline 只讀這個檔案。
+
 每一層分開驗證：`clawdline project list` 要列出 checkout；每個 JSON 都能 parse；改過的 script 要通過
-repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示成 running、stopped 或 unknown，而
-不是靜默省略；Project 裡的 Session 要能看到新鮮的 progress/deploy 收據。讀不到、格式錯誤或過期時，說清楚
+repository 自己的 tests；在 Project 裡執行 `clawdline project devstack`，要看到每個宣告的 server 顯示成 running、stopped 或
+unknown，並附上它的 Link 網址，而不是靜默省略；Project 裡的 Session 要能看到新鮮的 progress/deploy 收據。讀不到、格式錯誤或過期時，說清楚
 是哪一項並保留 unknown，絕不能把「沒有答案」回報成成功。最後列出完成的設定、刻意判定不適用的項目，
 以及 git 以外被修改的使用者檔案。
 
@@ -1334,8 +1350,9 @@ echo "Clean up the release notes before the next release." | \
   `run_other_session`（那是傳給別的 Session 的訊息）、`session_not_found`、`child_session`（child 用
   `result.json` 回報）、`project_not_found`、`project_mismatch`（一般可執行項目必須在你工作的 Project
   裡）、`too_many_steps`（超過 128）、`run_items_exhausted`（一則訊息最多撐五個項目）。
-- **沒有 run**——使用者是直接在 terminal 打字，所以 `item add` 回 `no_run` 或 `run_unknown`：改走
-  提案（見下文），並告訴使用者到看板的 Agent 提案裡接受它。
+- **沒有 run**——使用者是直接在 terminal 打字，或這個 Session 是由指派開出、不是由訊息開出，所以
+  `item add` 回 `no_run` 或 `run_unknown`：改用 `clawdline item propose`（見下文），並告訴使用者到
+  看板的 Agent 提案裡接受它。
 
 絕對不要主動建立看板項目，也不要一次建好幾個來規劃推測性的工作。
 
@@ -1396,7 +1413,16 @@ clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--
 `POST /v1/work/v2/items/<id>/assign`，那條會拒絕 Session（`session_cannot_create_item`）。Epic 的負責
 Session 也用 `clawdline item assign` 指派那個 Epic 自己的子項目（`clawdline guide epic`）。
 
-**提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去：
+**提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去。請用指令，它會自動帶入這個
+Session 與 Project：
+
+```
+clawdline item propose --kind issue --title "…" --reason "…" --acceptance-file accept.md \
+  --source-todo <your to-do id> [--project <id|directory>] < description.md
+```
+
+來源是你負責的看板項目時，用 `--source-item <項目 id>` 取代 `--source-todo`。沒給 `--project` 時，
+以指令所在目錄為 Project。底層路由是：
 
 ```
 POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
@@ -1406,7 +1432,7 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
  "source_work_id": "<uuid>" or "source_todo_id": "<uuid>"}
 ```
 
-- `project_id` 是 `GET /v1/places` 某一列的 `id`。
+- `project_id` 是 `clawdline project list` 印出的 `id`，或 Project 的目錄。
 - 一定要有一個來源，而且必須是你自己的：這個 Session 負責的看板項目，或這個 Session 自己的待辦
   （`proposal_source_required`、`proposal_source_invalid`）。從使用者要求而來的提案，要引用它來自
   的那筆待辦——所以路徑是：使用者提出要求、你用 `clawdline todo add` 記下來（見下文）、再以那筆待辦

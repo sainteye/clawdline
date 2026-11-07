@@ -418,6 +418,12 @@ func machineScoped(p string) bool {
 	switch p {
 	case "/v1/doctor", "/v1/board", "/v1/next/coordinator", "/v1/places":
 		return true
+	case "/v1/devstacks":
+		// `clawdline project devstack` verifies a Project's .devstack.json
+		// (devstacks.go). The route only reads, answers GET alone and runs
+		// none of a project's commands; the guide told agents to check it
+		// while only a paired device could (2026-11-07).
+		return true
 	case "/v1/artifacts/images":
 		// Storing a session's pictures is the orchestrator's (images.go); the
 		// handler refuses a device, as the Swift app does.

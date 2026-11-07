@@ -51,12 +51,14 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 // itemFlags is what `item add` was told.
 type itemFlags struct {
 	project, kind, title, description, acceptance, deploy, run, reason string
-	expectedVersion                                                    int64
-	docID, output                                                      string
-	steps                                                              []string
-	phase                                                              phaseEvidence
-	doc                                                                docFlags
-	assign                                                             assignFlags
+	// sourceTodo and sourceItem are the proposal's own source (propose only).
+	sourceTodo, sourceItem string
+	expectedVersion        int64
+	docID, output          string
+	steps                  []string
+	phase                  phaseEvidence
+	doc                    docFlags
+	assign                 assignFlags
 }
 
 // assignFlags is who `item add`, `item child` or `item assign` hands the item
@@ -151,6 +153,8 @@ func itemCommand(args []string) {
 	stepsFile := fs.String("steps-file", "", cliCopy("item", "flag.steps_file", "a file holding the steps, one per non-empty line"))
 	deploy := fs.String("deploy", "", cliCopy("item", "flag.deploy", "required, not_required or agent_decides (default agent_decides)"))
 	run := fs.String("run", "", cliCopy("item", "flag.run", "the run of the person's message (default: this conversation's latest run)"))
+	sourceTodo := fs.String("source-todo", "", cliCopy("item", "flag.source_todo", "for propose: this Session's own to-do the proposal comes from"))
+	sourceItem := fs.String("source-item", "", cliCopy("item", "flag.source_item", "for propose: a Board item this Session owns that the proposal comes from"))
 	reason := fs.String("reason", "", cliCopy("item", "flag.reason", "why this Board item or step is no longer needed"))
 	expectedVersion := fs.Int64("expected-version", 0, cliCopy("item", "flag.expected_version", "the item's version the write expects; refused as version_conflict when it moved on (required for acceptance-revise)"))
 	docID := fs.String("doc", "", cliCopy("item", "flag.doc", "for show: print only this document's body, raw"))
@@ -186,8 +190,8 @@ func itemCommand(args []string) {
 	var f itemFlags
 	var rest []string
 	switch op {
-	case "add", "child":
-		if op == "add" && len(positional) != 0 {
+	case "add", "child", "propose":
+		if op != "child" && len(positional) != 0 {
 			itemUsage()
 		}
 		if op == "child" {
@@ -198,6 +202,9 @@ func itemCommand(args []string) {
 			rest = positional
 		}
 		f = itemFlags{project: *project, kind: *kind, title: *title, deploy: *deploy, run: *run, steps: steps, assign: assign}
+		if op == "propose" {
+			f.reason, f.sourceTodo, f.sourceItem = *reason, *sourceTodo, *sourceItem
+		}
 		// A terminal on stdin is nobody piping a description: it is not read,
 		// so the command never waits on a keyboard, and the daemon's
 		// description_required says what is missing.
@@ -370,6 +377,7 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func itemUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_project_optional", "usage: clawdline item add [--project <id|directory>] --kind <feature|issue|epic|refactor|plan> --title <t>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.propose", "       clawdline item propose [--project <id|directory>] --kind <feature|issue|epic|refactor|plan> --title <t> --reason r --acceptance-file f (--source-todo id | --source-item id) [--description-file f | stdin]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_steps", "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_assign", "                          [--assign-self | --assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_options", "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]"))
@@ -625,8 +633,8 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			return 2
 		}
 		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
-			cliCopy("item", "error.no_run_create", "Nothing was created. Without a message sent through Clawdline, file a proposal ")+
-				cliCopy("item", "error.no_run_create_next", "(POST /v1/work/v2/agent/proposals) and tell the person to accept it in the Board's Agent proposals."))
+			cliCopy("item", "error.no_run_propose", "Nothing was created. Without a message sent through Clawdline, file a proposal with ")+
+				cliCopy("item", "error.no_run_propose_next", "`clawdline item propose` (same --kind, --title and description) and tell the person to accept it in the Board's Agent proposals."))
 		if code != 0 {
 			return code
 		}
@@ -649,6 +657,28 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			body["assign"] = a
 		}
 		path = "/v1/work/v2/agent/items"
+	case "propose":
+		if strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
+			fmt.Fprintf(stderr, cliCopy("item", "error.add_kind_title_required", "clawdline %s: --kind and --title are both required. Nothing was created.\n"), name)
+			return 2
+		}
+		project := strings.TrimSpace(f.project)
+		if project == "" {
+			// The proposal route has no Session directory to fall back on;
+			// this command's own directory is the Project it is about.
+			if wd, err := os.Getwd(); err == nil {
+				project = wd
+			}
+		}
+		body = map[string]any{"session_id": conversation, "project_id": project, "kind": f.kind, "title": f.title,
+			"description": f.description, "reason": f.reason, "suggested_acceptance": f.acceptance}
+		if f.sourceTodo != "" {
+			body["source_todo_id"] = f.sourceTodo
+		}
+		if f.sourceItem != "" {
+			body["source_work_id"] = f.sourceItem
+		}
+		path = "/v1/work/v2/agent/proposals"
 	case "child":
 		epicID := strings.TrimSpace(args[0])
 		if strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
@@ -911,6 +941,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
 		fmt.Fprintf(stderr, cliCopy("item", "error.retry", "To retry the same write: clawdline %s --key %s …\n"), name, key)
 		return 1
+	}
+	if op == "propose" {
+		return proposalFiled(stdout, stderr, b, name, a)
 	}
 	it, ok := itemOf(a)
 	if !a.ok() || !ok {
@@ -1288,5 +1321,26 @@ func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversatio
 	fmt.Fprintf(stdout, cliCopy("item", "result.steps_written", "wrote %d step(s); item %s is at version %d\n"), len(titles), it.ID, it.Version)
 	printItemWriteHead(stdout, it)
 	fmt.Fprintf(stdout, cliCopy("item", "next.show", "  steps and documents: clawdline item show %s\n"), it.ID)
+	return 0
+}
+
+// proposalFiled prints a filed proposal, or the refusal and, for an unknown
+// Project, the Projects this machine lists.
+func proposalFiled(stdout, stderr io.Writer, b *broker, name string, a answer) int {
+	var got struct {
+		Proposal struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"proposal"`
+	}
+	if !a.ok() || json.Unmarshal(a.Body, &got) != nil || got.Proposal.ID == "" {
+		code := report(stdout, stderr, name, a)
+		if refused, _ := a.refusal(); refused == "project_not_found" {
+			printProjectCandidates(stderr, b)
+		}
+		return code
+	}
+	fmt.Fprintf(stdout, cliCopy("item", "receipt.proposal_filed", "filed proposal %s  %s\nThe person accepts or declines it in the Board's Agent proposals; it is not a Board item until then.\n"),
+		got.Proposal.ID, got.Proposal.Title)
 	return 0
 }

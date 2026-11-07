@@ -439,6 +439,10 @@ func TestGateReadsAPathOneWay(t *testing.T) {
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
 		{"the place list a schedule names, the orchestrator's token", "/v1/places",
 			map[string]string{machineHeader: f.machine}, 200},
+		// The guide sends an agent to verify a .devstack.json through
+		// `clawdline project devstack`; a Gemini Session was refused here.
+		{"the server list, the orchestrator's token", "/v1/devstacks",
+			map[string]string{machineHeader: f.machine}, 200},
 		{"documents, a token", "/v1/sessions/%2579/documents/project/notes.md",
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
 		{"the open page", "/v1/health", nil, 200},
