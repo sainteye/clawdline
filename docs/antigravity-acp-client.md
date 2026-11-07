@@ -527,6 +527,24 @@ never automatically retried; a queued input that was never sent remains queued.
 A closed or suspended page cannot dispatch; another device does not inherit its
 queue. Unknown native state and revoked write access do not drain the queue.
 
+On 2026-11-07 the person asked for Gemini to take mid-turn input the way Claude
+Code and Codex do. The machine now queues it: a message sent while an owned
+turn is `working` or `waiting` is checked against write access, saved with the
+conversation row (`queued_prompts`) and answered accepted. When the turn ends
+idle, including after Stop, the oldest message is sent as its own
+`session/prompt`; it leaves the saved queue in the same save that marks the
+prompt uncertain, so a crash never sends it twice. A later message waits behind
+a non-empty queue. A turn ending in unknown state appends each queued message to
+the transcript as `antigravity_queued_prompt_not_sent: <words>` instead of
+holding it where nothing will send it. A daemon shutdown keeps the queue; the
+next start sends it after the restart continuation. The queue is bounded by
+`antigravity.queued_prompts` and `antigravity.queued_prompt_bytes` and refuses
+before acceptance at either limit. Opening, model or mode changes and quota
+reads still answer busy. The machine advertises `capabilities.queue`; the
+console sends directly only when it is present and keeps the browser queue
+above for older machines. The user turn appears in the transcript when the
+queued prompt is written, so another device sees it only then.
+
 A zero-model diagnostic on 2026-10-26 found that both the installed ACP 1.4.1
 runtime and the official registry's ACP 1.4.3 runtime offer only `default`,
 `auto_edit` and `yolo`. ACP 1.4.1 rejects a `mode=auto` selection with JSON-RPC

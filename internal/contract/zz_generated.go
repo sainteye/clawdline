@@ -7669,7 +7669,12 @@ var StartAvailabilityValues = []StartAvailability{StartAvailabilityOK, StartAvai
 // Operations admitted by this daemon's verified integration. CLI syntax alone
 // never makes an operation available.
 type StartCapabilities struct {
-	Menus  bool `json:"menus"`
+	Menus bool `json:"menus"`
+
+	// This daemon accepts a message sent while an owned conversation's turn runs and
+	// sends it after that turn. Omission keeps the next message in the sending
+	// browser.
+	Queue  bool `json:"queue,omitempty"`
 	Resume bool `json:"resume"`
 
 	// This daemon can launch immutable roles through its current integration. Omission

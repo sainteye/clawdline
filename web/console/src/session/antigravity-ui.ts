@@ -58,6 +58,11 @@ export function assistantComposeAdmits(assistant: string | undefined, facts: Ass
   return facts?.id === assistant && assistantAdmits(facts, "send") && state === "idle" && !hasMenu
 }
 
+/** The machine accepts a message while an owned turn runs and sends it after that turn. */
+export function assistantQueuesInput(facts: AssistantFacts | null | undefined): boolean {
+  return facts?.capabilities?.queue === true
+}
+
 /** Owned offers use native revisions; terminal menus also require a current screen identity. */
 export function assistantMenuAdmits(row: SessionRow | null, facts?: AssistantFacts): boolean {
   if (row?.assistant !== "antigravity") return true

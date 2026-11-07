@@ -33,6 +33,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `antigravity.native_tty_entries` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.observation_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.process_read_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.queued_prompt_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.queued_prompts` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `antigravity.saved_launches` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.state_age_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |

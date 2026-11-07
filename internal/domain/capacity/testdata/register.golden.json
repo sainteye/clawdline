@@ -576,6 +576,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.queued_prompt_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxQueuedPromptBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.queued_prompts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxQueuedPrompts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.retention_seconds",
     "Class": "cache",
     "Unit": "seconds",

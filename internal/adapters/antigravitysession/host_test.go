@@ -596,9 +596,6 @@ func TestOwnedSessionAcceptsOnceAndKeepsReadingAfterHTTPReturns(t *testing.T) {
 	if len(p.Entries) != 1 || p.Entries[0].Role != "user" {
 		t.Fatalf("acceptance is not completion: %+v", p)
 	}
-	if err := h.Send(context.Background(), row, "must not queue"); err == nil {
-		t.Fatal("busy turn queued a duplicate")
-	}
 	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}

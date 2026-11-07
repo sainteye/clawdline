@@ -2905,7 +2905,7 @@
         },
         {
           "path": "internal/adapters/antigravitysession/host.go",
-          "line": 752
+          "line": 788
         }
       ],
       "original": [
@@ -3001,9 +3001,9 @@
     "internal/adapters/antigravityprocess/client.go": "4e176891ed7a33f5798d0ecdc21fa8354d266c5841e71e59aaa4cd8c72da2174",
     "internal/adapters/antigravityprocess/lifecycle.go": "768ce986d86e580eb8698acd0880c7a4a44129d69a868a2efb469eb4bf911a3e",
     "internal/adapters/antigravitysession/context.go": "42dbfd6dc6a872566bc2c49d72d69eccf72af7bcc9c33c78c2245041003b5914",
-    "internal/adapters/antigravitysession/continue.go": "3f443a0fbd814c110ad98334e9181cc37702199b90f215c817b08d23b9e6b11d",
-    "internal/adapters/antigravitysession/history.go": "c3794b2db0d2366b2ff05b42ee3b9fce25f463d5bab18daa86312043564aab7a",
-    "internal/adapters/antigravitysession/host.go": "457cc729da7091cfc154514ae7a0f2b283e1b8755309854e18d5a521af5c6f96",
+    "internal/adapters/antigravitysession/continue.go": "eac15d888cab9085556c68776c46ff66abce3baa8fdb85456c13e0c4bc271850",
+    "internal/adapters/antigravitysession/history.go": "c59fdddba4c37be31c83295ab337592d7fe9bc881b9e2b98b55ed3833aa73104",
+    "internal/adapters/antigravitysession/host.go": "8c448479653a748e8b38f59b918b818037def70b1f23e1442bc1ec1067910521",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/codegraph/bridge.cjs": "156029b9ad59aaa584435de914f6526eb6cf2756b2ad09be178e89f1a741d123",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",
@@ -3061,7 +3061,7 @@
     "internal/transport/http/antigravity_history.go": "b6a8dd8a7f132ba70d76bcb759044d14c8c83a9f3244d766c8da0fedb1ddebf1",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
-    "internal/transport/http/antigravity_owned.go": "09e3ed4bed6dd94c527f77d6f5345da7f1528b2563245fc7aaaa438beb7ca195",
+    "internal/transport/http/antigravity_owned.go": "68df4b314cea2098bc6e9c11abdcf7d611fa01784ab5b19ac4967e527cbb17c3",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
@@ -3092,7 +3092,7 @@
     "web/console/src/cloud/relay-writer.ts": "be9a80e1acac27bb42236516af046b568f9a6849257f896e15b5e453c0872e8c",
     "web/console/src/codegraph/session-guidance.ts": "7f27c67d6f27b3854cecfe490ccb166b0812199ba7b47bfbe568f6f4376ace93",
     "web/console/src/overlays/info.ts": "daca7514157303b9dca9a6e0ce4dd4d4c4d2ea3a790f4317ae918e7340413a15",
-    "web/console/src/session/Composer.tsx": "63306658674a2eb84026d5e6042e5231e4975e6256d2604bdfc293a5a889543e",
+    "web/console/src/session/Composer.tsx": "aa9ee0430cb616ebda2e6c7673408be294ae1aa148cbab063758542153b8a513",
     "web/console/src/session/Start.tsx": "b2b576e077cb9de4fa43fe8bd54a0f9295cfa5bdf964a6937440bc3d6f60ab0a",
     "web/console/src/session/pending.ts": "764578f38ef7e6f697934b77c20b69a5862630544d98827be497b0f839f3d798",
     "web/console/src/session/persist.ts": "1885793298d4b4d833dd42c312f6f15f88c258f7a65cc4d4d3c0bcc25f65c961",

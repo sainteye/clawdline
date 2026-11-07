@@ -229,7 +229,7 @@ func (s *Server) availableAssistants() []contract.StartAssistant {
 			if count > 0 {
 				rows[n].AuthState = contract.StartAuthStateReady
 			}
-			rows[n].Capabilities = &contract.StartCapabilities{Roles: true, Start: true, Resume: true, Send: count > 0, Menus: count > 0, Transcript: count > 0}
+			rows[n].Capabilities = &contract.StartCapabilities{Roles: true, Queue: true, Start: true, Resume: true, Send: count > 0, Menus: count > 0, Transcript: count > 0}
 		}
 	}
 	return rows

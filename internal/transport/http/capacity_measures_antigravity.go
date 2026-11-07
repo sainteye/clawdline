@@ -130,6 +130,20 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		"antigravity.acp_frame_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-frame guard; no replay queue"}
 		},
+		"antigravity.queued_prompts": func() capacity.Reading {
+			var rows int
+			if h := s.antigravitySessions.Load(); h != nil {
+				rows, _ = h.QueueUse()
+			}
+			return capacity.Reading{Known: true, Used: int64(rows), Note: "largest conversation's messages held for after its turn"}
+		},
+		"antigravity.queued_prompt_bytes": func() capacity.Reading {
+			var bytes int
+			if h := s.antigravitySessions.Load(); h != nil {
+				_, bytes = h.QueueUse()
+			}
+			return capacity.Reading{Known: true, Used: int64(bytes), Note: "largest conversation's queued message text"}
+		},
 		"antigravity.active_tool_bytes": func() capacity.Reading {
 			var used int
 			if h := s.antigravitySessions.Load(); h != nil {

@@ -133,6 +133,16 @@
     "Note": true
   },
   {
+    "Name": "antigravity.queued_prompt_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.queued_prompts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "antigravity.retention_seconds",
     "Known": true,
     "Note": true

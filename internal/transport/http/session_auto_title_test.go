@@ -118,8 +118,16 @@ func sendAutomaticFixture(t *testing.T, s *Server, row session.Session, text str
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for {
-		err := s.antigravitySessions.Load().Send(t.Context(), row, text)
+		h := s.antigravitySessions.Load()
+		err := h.Send(t.Context(), row, text)
 		if err == nil {
+			// A message sent during a turn is queued; wait until it is written.
+			for rows, _ := h.QueueUse(); rows > 0; rows, _ = h.QueueUse() {
+				if time.Now().After(deadline) {
+					t.Fatal("queued message was not sent")
+				}
+				time.Sleep(time.Millisecond)
+			}
 			return
 		}
 		if err.Error() != "antigravity_session_busy" || time.Now().After(deadline) {
