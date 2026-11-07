@@ -264,3 +264,6 @@ and original-size detail crops, with direct original viewing on explicit request
 It also suggests saving long tool output to files. This changes no provider tool
 permissions and never edits stored conversations. The dedicated inventory entry
 and both language explanations distinguish guidance from measured savings.
+
+The [image-review setting and local sample](image-review.md) document its scope,
+compatibility checks and measured limitations.
