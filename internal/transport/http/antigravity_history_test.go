@@ -155,6 +155,10 @@ func TestGeminiHistoryAndResumeUseExistingProjectRoutesAfterRestart(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A restart during that turn wakes the conversation once with the
+	// continuation; let it settle before the next open, which shares the
+	// host's single opening slot.
+	waitGeminiSettled(t, s, started.ID)
 	importedResponse := httptest.NewRecorder()
 	s.resumePlace(importedResponse, httptest.NewRequest(http.MethodPost, "/v1/places/fixture/resume/antigravity/previous", nil), places[0].ID, "antigravity", "synthetic-old-native", "")
 	var imported contract.PlaceResumed
@@ -171,4 +175,27 @@ func TestGeminiHistoryAndResumeUseExistingProjectRoutesAfterRestart(t *testing.T
 		}
 	}
 	t.Fatal("imported native conversation did not enter the normal inventory")
+}
+
+// waitGeminiSettled waits until no Gemini turn is running for id: either the
+// restart found the previous turn finished, or the continuation it sent has
+// been answered.
+func waitGeminiSettled(t *testing.T, s *Server, id string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		h := s.antigravitySessions.Load()
+		settled := h != nil && !h.Continuing()
+		for _, row := range s.inventory.Read(context.Background()).Sessions {
+			if row.ID == id && row.State == session.StateWorking {
+				settled = false
+			}
+		}
+		if settled {
+			time.Sleep(20 * time.Millisecond)
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the Gemini conversation was still working after the restart")
 }

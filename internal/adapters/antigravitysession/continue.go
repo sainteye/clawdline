@@ -2,6 +2,7 @@ package antigravitysession
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -38,21 +39,35 @@ func (h *Host) ContinueInterrupted(ctx context.Context) int {
 		}
 		c.mu.Unlock()
 	}
-	h.jobs.Add(len(rows))
+	if len(rows) == 0 {
+		h.mu.Unlock()
+		return 0
+	}
+	h.jobs.Add(1)
+	h.continuing.Store(true)
 	h.mu.Unlock()
-	for _, row := range rows {
-		go func(row session.Session) {
-			defer h.jobs.Done()
+	// One after another: resuming holds the host's single opening slot, so
+	// resuming every conversation at once would refuse all but one of them,
+	// and any open the person makes in the same moment.
+	go func() {
+		defer h.jobs.Done()
+		defer h.continuing.Store(false)
+		for _, row := range rows {
 			if err := h.SendProtocol(ctx, row, ContinueText, nil); err != nil {
 				log.Printf("antigravity: continue_after_restart_failed %s", errorCode(err))
 			}
-		}(row)
-	}
+		}
+	}()
 	return len(rows)
 }
 
+// Continuing reports whether the continuations ContinueInterrupted started
+// are still being sent.
+func (h *Host) Continuing() bool { return h.continuing.Load() }
+
 func errorCode(err error) string {
-	if e, ok := err.(*Error); ok {
+	var e *Error
+	if errors.As(err, &e) {
 		return e.Code
 	}
 	return "unknown"

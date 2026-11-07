@@ -57,6 +57,8 @@ type Host struct {
 	store    *historyStore
 	trace    *wireRecorder
 	traceErr string
+	// continuing is set while ContinueInterrupted's sends are running.
+	continuing atomic.Bool
 }
 
 type conversation struct {
