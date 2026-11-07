@@ -2916,6 +2916,35 @@
       ]
     },
     {
+      "id": "gemini-turn-end",
+      "scope": "automatic",
+      "agents": [
+        "antigravity"
+      ],
+      "stages": [
+        "start"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/antigravitysession/turnend.go",
+          "line": 19
+        },
+        {
+          "path": "internal/transport/http/antigravity_owned.go",
+          "line": 97
+        }
+      ],
+      "original": [
+        "Clawdline shows this conversation as working until the runtime reports that your turn has ended, and the runtime does not always report it. When you have finished the turn, meaning you will not call another tool or write anything more until the person replies, end your final message with this exact line: [[clawdline:turn-end]]\nNever write it before a tool call, while a command you started is still running, or anywhere else. Clawdline removes the line from what the person sees."
+      ],
+      "locations": [
+        "<state>/antigravity-sessions/conversations.sqlite"
+      ]
+    },
+    {
       "id": "tool-library",
       "scope": "conditional",
       "agents": [
@@ -3047,8 +3076,9 @@
     "internal/adapters/antigravitysession/context.go": "42dbfd6dc6a872566bc2c49d72d69eccf72af7bcc9c33c78c2245041003b5914",
     "internal/adapters/antigravitysession/continue.go": "eac15d888cab9085556c68776c46ff66abce3baa8fdb85456c13e0c4bc271850",
     "internal/adapters/antigravitysession/history.go": "c59fdddba4c37be31c83295ab337592d7fe9bc881b9e2b98b55ed3833aa73104",
-    "internal/adapters/antigravitysession/host.go": "93e42256c43822096b2b35849dc2c79a0a3c30235045567ecbe7cf2c674a6e5c",
+    "internal/adapters/antigravitysession/host.go": "641cb9d76124af1576c612eaacc2012664e916f71cb52b11422904e491cd0c32",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
+    "internal/adapters/antigravitysession/turnend.go": "17927946f9320ecbda141379561642d3a934d13cafc8ee26eab09a66365d8081",
     "internal/adapters/codegraph/bridge.cjs": "156029b9ad59aaa584435de914f6526eb6cf2756b2ad09be178e89f1a741d123",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",
     "internal/adapters/codegraph/codegraph.go": "c1899a8bd2689c798cddae878393a44836f5f077adcf2c760629bd3035eabab3",
@@ -3106,7 +3136,7 @@
     "internal/transport/http/antigravity_history.go": "b6a8dd8a7f132ba70d76bcb759044d14c8c83a9f3244d766c8da0fedb1ddebf1",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
-    "internal/transport/http/antigravity_owned.go": "68df4b314cea2098bc6e9c11abdcf7d611fa01784ab5b19ac4967e527cbb17c3",
+    "internal/transport/http/antigravity_owned.go": "f410c38dc1b676507119a3ce455fa1f8f91b90f373c8b301467f2428ac1b99ca",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
@@ -3145,7 +3175,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "a7b2ecb1feb225e4e8f9aff469de5d2d2f14e56bfea104d68db746c8b45f9132",
-    "zh-Hant": "8cd574ed93d614228e33a02194ed54d73b1eb1f1f4450f93a4930c50fcc7c819"
+    "en": "b95570938ee13b6d68c3d62a46fb3008fc8f54110a3eb7085156753e89519ce2",
+    "zh-Hant": "bc71e12377bd7013c6b6429b6f6bd4b111c71ea2a728bb2f56057aa236dafd7c"
   }
 }

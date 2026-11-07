@@ -378,6 +378,11 @@ func (c *conversation) project(u antigravityacp.SessionUpdate) (err error) {
 		ordinal = c.ordinal
 	}
 	e.Text += u.Text
+	if role == "assistant" {
+		var found bool
+		e.Text, found = stripTurnEnd(e.Text)
+		c.noteTurnEnd(found, u.Text)
+	}
 	// A long streamed message spans stable adjacent ordinals so every byte is
 	// still pageable. The page budget never becomes a disk-retention policy.
 	for {

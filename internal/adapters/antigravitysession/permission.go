@@ -16,6 +16,7 @@ func (c *conversation) requestPermission(ctx context.Context, p *antigravityproc
 		return refusal("invalid_permission_owner")
 	}
 	c.permission = p
+	c.endMarked = false
 	return nil
 }
 

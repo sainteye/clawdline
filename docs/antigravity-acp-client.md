@@ -75,6 +75,20 @@ An unanswered turn with an orphaned `execute` tool can still keep the turn open;
 the person can still interrupt it. A turn the watchdog ends sends the
 conversation's queued messages like any other idle ending.
 
+Every new owned conversation's launch context ends with `TurnEndInstruction`,
+which asks the model to end its final message with the line
+`[[clawdline:turn-end]]` (transparency card `gemini-turn-end`). The host removes
+the marker from the reply in memory and in saved history. When the latest live
+assistant text ends with it and, with no tool or permission offer active,
+nothing has arrived for `DefaultTurnEndGrace` (15 seconds), the watchdog
+cancels the prompt as a normal ending: no error entry, the turn-complete
+notification fires and queued messages are sent. Any later tool update,
+thought or non-blank text clears the mark, so a model that wrote it and went on
+keeps working. A conversation that predates the instruction, or a model that
+omits the marker, falls back to the three-minute window. A turn the runtime
+does answer is answered within milliseconds of its last `usage_update`, so the
+grace only applies to an unanswered one.
+
 The host retains exact active tool IDs independently of transcript eviction and
 uses the same tracker for memory and durable Sessions. It clears that tracker
 when the turn finishes. `MaxActiveToolBytes` bounds the retained IDs at 1 MiB per
