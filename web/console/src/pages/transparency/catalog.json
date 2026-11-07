@@ -2887,6 +2887,35 @@
       ]
     },
     {
+      "id": "gemini-restart-continue",
+      "scope": "conditional",
+      "agents": [
+        "antigravity"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/antigravitysession/continue.go",
+          "line": 18
+        },
+        {
+          "path": "internal/adapters/antigravitysession/host.go",
+          "line": 752
+        }
+      ],
+      "original": [
+        "[Clawdline] The Clawdline daemon restarted while your previous turn was still running, so that turn stopped before it finished. Continue the work from where you stopped. Re-check the state of anything you started or were waiting on before repeating a command."
+      ],
+      "locations": [
+        "<state>/antigravity-sessions/conversations.sqlite"
+      ]
+    },
+    {
       "id": "tool-library",
       "scope": "conditional",
       "agents": [
@@ -2972,8 +3001,9 @@
     "internal/adapters/antigravityprocess/client.go": "4e176891ed7a33f5798d0ecdc21fa8354d266c5841e71e59aaa4cd8c72da2174",
     "internal/adapters/antigravityprocess/lifecycle.go": "768ce986d86e580eb8698acd0880c7a4a44129d69a868a2efb469eb4bf911a3e",
     "internal/adapters/antigravitysession/context.go": "42dbfd6dc6a872566bc2c49d72d69eccf72af7bcc9c33c78c2245041003b5914",
-    "internal/adapters/antigravitysession/history.go": "31c53373c83afd60f6c68c85ea0e02326eedbc096ab5833b410872d8c2c6d0ab",
-    "internal/adapters/antigravitysession/host.go": "7361e4858e5a60f5f6376b942b914499c0912d1fbb964ea7e7148c84fde78e7a",
+    "internal/adapters/antigravitysession/continue.go": "2d89f1744f3050f341a80ba16a0f023041865a53afb3d96180d88c285dffd626",
+    "internal/adapters/antigravitysession/history.go": "c3794b2db0d2366b2ff05b42ee3b9fce25f463d5bab18daa86312043564aab7a",
+    "internal/adapters/antigravitysession/host.go": "2eaf3a4dea62a818f81d7c6f17e749bb939ddc6d63c4460c3b21d8a24a87e1a8",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/codegraph/bridge.cjs": "156029b9ad59aaa584435de914f6526eb6cf2756b2ad09be178e89f1a741d123",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",
@@ -3031,7 +3061,7 @@
     "internal/transport/http/antigravity_history.go": "b6a8dd8a7f132ba70d76bcb759044d14c8c83a9f3244d766c8da0fedb1ddebf1",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
-    "internal/transport/http/antigravity_owned.go": "94e416e4222eb48dcc570c42cbcaab4fb55b274459bf80a274b8e4ee93f8aa46",
+    "internal/transport/http/antigravity_owned.go": "09e3ed4bed6dd94c527f77d6f5345da7f1528b2563245fc7aaaa438beb7ca195",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
@@ -3070,7 +3100,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "763e16a030c0443c8ebac92884b569d9539c683491a22d0f502057a84fbd8eb3",
-    "zh-Hant": "cd141780fd407edac2c438a3dafbce95a848526e573a0e5a2dc599f3344ae12c"
+    "en": "b491c20599d9bde362a29117d3294200af6516af5dcd23a7f93be0c694b56388",
+    "zh-Hant": "9b3bd30d4aa9e863cb5ba299d04b3de82a07be9d8d930087c414f25c1f5eb540"
   }
 }

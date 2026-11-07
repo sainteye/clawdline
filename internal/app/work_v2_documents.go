@@ -98,7 +98,7 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 			}
 		}
 		if !work.DocumentRoleValid(c.Role) {
-			return work.RefuseV2("invalid_document_role", "That document role is not supported.")
+			return work.RefuseV2("invalid_document_role", "That document role is not supported. Use spec, design, test, deploy, completion_report, plan, plan_review or other.")
 		}
 		if err := work.DocumentRoleApplies(prev, c.Role); err != nil {
 			return err

@@ -200,6 +200,9 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 		_ = h.Shutdown()
 		return nil, ownedAntigravityUnavailable()
 	}
+	if n := h.ContinueInterrupted(ctx); n > 0 {
+		log.Printf("antigravity: continuing %d conversation(s) a restart interrupted", n)
+	}
 	var once sync.Once
 	return func() {
 		once.Do(func() {

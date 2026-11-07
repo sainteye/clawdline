@@ -30,6 +30,7 @@ type savedConversation struct {
 	Injected          *injectedTurn    `json:"injected_turn,omitempty"`
 	AutoNameAttempted bool             `json:"auto_name_attempted,omitempty"`
 	AutomaticTitle    string           `json:"automatic_title,omitempty"`
+	Interrupted       bool             `json:"interrupted_by_shutdown,omitempty"`
 }
 
 func openHistory(dir string) (*historyStore, error) {
@@ -106,6 +107,7 @@ func (s *historyStore) restore(profile string) (map[string]*conversation, error)
 			c.launchContext = saved.LaunchContext
 			c.injected = saved.Injected
 			c.autoNameAttempted = saved.AutoNameAttempted
+			c.interrupted = saved.Interrupted
 			c.row.Rungs.Thread = saved.AutomaticTitle
 			c.row.Persona = c.launchContext.Persona
 			c.row.SquadLaunchID = c.launchContext.SquadLaunchID
@@ -136,7 +138,7 @@ func (c *conversation) saveRow(w historyWriter) error {
 	if c.staging {
 		return nil
 	}
-	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity, LaunchContext: c.launchContext, Injected: c.injected, AutoNameAttempted: c.autoNameAttempted, AutomaticTitle: c.row.Rungs.Thread})
+	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity, LaunchContext: c.launchContext, Injected: c.injected, AutoNameAttempted: c.autoNameAttempted, AutomaticTitle: c.row.Rungs.Thread, Interrupted: c.interrupted})
 	if err == nil {
 		_, err = w.Exec(`INSERT INTO conversations(id,native_id,cwd,profile,row_json,generation,revision,ordinal,uncertain,hidden)
 		 VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET row_json=excluded.row_json,generation=excluded.generation,

@@ -101,6 +101,9 @@ type conversation struct {
 	replaySawUser     bool
 	noticeReads       map[string]bool
 	autoNameAttempted bool
+	// interrupted says the daemon stopped while this conversation's turn was
+	// still running. ContinueInterrupted wakes it once after the next start.
+	interrupted bool
 }
 
 func (c *conversation) touchActivity() {
@@ -753,6 +756,12 @@ func (h *Host) Shutdown() error {
 	var clients []*antigravityprocess.Client
 	for _, c := range h.rows {
 		c.mu.Lock()
+		if c.busy && !c.hidden && !c.interrupted {
+			// Recorded before the process is closed, so the turn's own
+			// failure path cannot save a row without it.
+			c.interrupted = true
+			err = errors.Join(err, c.saveState())
+		}
 		if c.client != nil {
 			if c.client.Err() != nil && !c.uncertain {
 				c.uncertain = true

@@ -952,6 +952,7 @@
   "http.b1f92da58a80ce4a": "There is no result.json to collect. It is the completion signal: validate it and rename it into place first; this route only asks for it to be collected now rather than on the next beat.",
   "http.b1fe6110ffeeb171": "A change is sent as application/json.",
   "http.b2cf94c7bf811f4a": "A machine Session cannot be started until the existing role and Sessions are fully accounted for.",
+  "http.b33343a98339a5a5": "That document role is not supported. Use spec, design, test, deploy, completion_report, plan, plan_review or other.",
   "http.b3a4a9ba9fa9e200": "That task has sent its five notifications.",
   "http.b3d09d17a331bce2": "note is required when state is incorporated; it records the semantic judgement Git cannot make.",
   "http.b3e9295369e80a66": "reason is at most 500 characters.",

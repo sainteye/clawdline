@@ -301,6 +301,9 @@ func itemCommand(args []string) {
 		}
 		rest = positional
 		f.phase = ev
+		// step-cancel's reason was parsed and never kept, so every call was
+		// refused for a missing --reason (found by a Gemini probe, 2026-11-07).
+		f.reason = *reason
 	case "doc":
 		if len(positional) != 1 {
 			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.doc", "clawdline item doc: takes one item id, got %d arguments\n"), len(positional))
