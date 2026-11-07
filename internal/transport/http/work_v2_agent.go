@@ -68,7 +68,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		project, ok := s.workV2Project(r.Context(), body.ProjectID)
 		if !ok {
-			writeRefusal(w, http.StatusUnprocessableEntity, "project_not_found", "Choose a Project from the current Project catalog.")
+			project, ok = s.workV2Projects(r.Context()).resolve(body.ProjectID, "")
+		}
+		if !ok {
+			writeRefusal(w, http.StatusUnprocessableEntity, "project_not_found", workV2ProjectNotFound)
 			return
 		}
 		k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
@@ -605,10 +608,10 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	catalog := s.workV2Projects(r.Context())
-	project, ok := catalog[body.ProjectID]
+	project, ok := catalog.resolve(body.ProjectID, sess.CWD)
 	if !ok {
 		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "project_not_found",
-			Message: "Choose a Project from the current Project catalog."})
+			Message: workV2ProjectNotFound})
 		return
 	}
 	sessionProject, _ := projects.CanonicalProjectKey(sess.CWD)

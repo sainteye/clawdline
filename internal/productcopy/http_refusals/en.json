@@ -145,6 +145,7 @@
   "http.1d669e498049c178": "The item changed; reread it before writing.",
   "http.1d78c74dc2a123e0": "Evidence needs a bounded media_type.",
   "http.1d8aa25687f68cbd": "The closed ACK schema requires only notice_id.",
+  "http.1d8b4256499a8a36": "No Project this machine lists matches that value. Pass the id `clawdline project list` shows, the Project's directory, or nothing to use the Project this Session is working in.",
   "http.1da839ef85c9cdfb": "the session could not be taken off its unstarted Board items, so it was not closed",
   "http.1db27562f4ac9522": "Antigravity Session identity and interactive readiness have not been verified on this machine.",
   "http.1dc18143b4b6fffc": "the Session is not positively observed idle",

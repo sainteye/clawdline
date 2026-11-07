@@ -204,5 +204,9 @@
   "receipt.step_cancelled": " cancelled",
   "receipt.step_reopened": " restored to pending",
   "usage.step_cancel": "       clawdline item step-cancel --reason <reason> <item id> <step id>",
-  "usage.step_reopen": "       clawdline item step-reopen <item id> <step id>"
+  "usage.step_reopen": "       clawdline item step-reopen <item id> <step id>",
+  "error.add_kind_title_required": "clawdline %s: --kind and --title are both required. Nothing was created.\n",
+  "flag.project_or_directory": "the Project: its id from `clawdline project list`, or its directory (default: the Project this Session works in)",
+  "label.project_candidates": "Projects on this machine (pass the id or the directory):",
+  "usage.add_project_optional": "usage: clawdline item add [--project <id|directory>] --kind <feature|issue|epic|refactor|plan> --title <t>"
 }

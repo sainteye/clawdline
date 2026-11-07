@@ -143,7 +143,7 @@ func itemCommand(args []string) {
 	conversation := fs.String("conversation", "", cliCopy("item", "flag.conversation", "this assistant's conversation id (default: from the environment)"))
 	key := fs.String("key", "", cliCopy("item", "flag.key", "the Idempotency-Key; reuse the one printed by a failed attempt to retry it"))
 	port := fs.Int("port", 0, cliCopy("item", "flag.port", "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)"))
-	project := fs.String("project", "", cliCopy("item", "flag.project", "the Project id from the catalog"))
+	project := fs.String("project", "", cliCopy("item", "flag.project_or_directory", "the Project: its id from `clawdline project list`, or its directory (default: the Project this Session works in)"))
 	kind := fs.String("kind", "", cliCopy("item", "flag.kind", "feature, issue, epic, refactor or plan"))
 	title := fs.String("title", "", cliCopy("item", "flag.title", "the item's title"))
 	descriptionFile := fs.String("description-file", "", cliCopy("item", "flag.description_file", "a file holding the description; - or absent reads stdin"))
@@ -366,7 +366,7 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 }
 
 func itemUsage() {
-	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add", "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_project_optional", "usage: clawdline item add [--project <id|directory>] --kind <feature|issue|epic|refactor|plan> --title <t>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_steps", "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_assign", "                          [--assign-self | --assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_options", "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]"))
@@ -609,8 +609,8 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	var docBefore int64
 	switch op {
 	case "add":
-		if strings.TrimSpace(f.project) == "" || strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
-			fmt.Fprintf(stderr, cliCopy("item", "error.add_required", "clawdline %s: --project, --kind and --title are all required. Nothing was created.\n"), name)
+		if strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
+			fmt.Fprintf(stderr, cliCopy("item", "error.add_kind_title_required", "clawdline %s: --kind and --title are both required. Nothing was created.\n"), name)
 			return 2
 		}
 		if f.assign.choices() > 1 {
@@ -911,7 +911,11 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	}
 	it, ok := itemOf(a)
 	if !a.ok() || !ok {
-		return report(stdout, stderr, name, a)
+		code := report(stdout, stderr, name, a)
+		if refused, _ := a.refusal(); op == "add" && refused == "project_not_found" {
+			printProjectCandidates(stderr, b)
+		}
+		return code
 	}
 	itemWrote(stdout, op, args, it)
 	if op == "doc" {

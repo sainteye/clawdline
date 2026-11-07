@@ -145,6 +145,7 @@
   "http.1d669e498049c178": "項目已變更；寫入前請重新讀取。",
   "http.1d78c74dc2a123e0": "證據需要有長度上限的 media_type。",
   "http.1d8aa25687f68cbd": "closed ACK 結構只允許 notice_id。",
+  "http.1d8b4256499a8a36": "這台機器列出的 Project 都不符合這個值。請傳入 `clawdline project list` 顯示的 id、Project 的目錄，或不傳，改用這個 Session 目前所在的 Project。",
   "http.1da839ef85c9cdfb": "無法將該 Session 從其尚未開始的 Board 項目移除，因此未關閉 Session",
   "http.1db27562f4ac9522": "這台機器尚未驗證 Antigravity Session 的身分與互動就緒狀態。",
   "http.1dc18143b4b6fffc": "尚未明確觀察到該 Session 處於閒置狀態",

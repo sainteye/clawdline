@@ -1290,16 +1290,21 @@ Issue 項目並指派給其他 Session（`clawdline guide epic`）。
 才由你自己建立：
 
 ```
-clawdline item add --project <place id> --kind feature|issue|epic|refactor|plan --title "…" \
+clawdline item add --kind feature|issue|epic|refactor|plan --title "…" \
   --step "first step" --step "second step" …   [--description-file f | description on stdin] [--assign-self]
 ```
+
+項目屬於這個 Session 所在的 Project 時，省略 `--project`：daemon 會用這個 Session 的目錄。
+要建到別的 Project，傳入它的目錄，或 `clawdline project list` 列在旁邊的 id。描述是必填，
+從 stdin 或 `--description-file` 提供。不要去讀 daemon 的資料庫找 id；回 `project_not_found`
+時，指令會列出它接受的 Project。
 
 範例。使用者寫：「開一個看板項目整理 release notes，TODO：起草、檢查連結、發佈。」這就是一條指令，
 別的都不做：
 
 ```
 echo "Clean up the release notes before the next release." | \
-  clawdline item add --project <place id> --kind feature --title "Clean up the release notes" \
+  clawdline item add --kind feature --title "Clean up the release notes" \
   --step "Draft the notes" --step "Check the links" --step "Publish"
 ```
 

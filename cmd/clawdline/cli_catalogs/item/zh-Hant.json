@@ -204,5 +204,9 @@
   "receipt.step_cancelled": " 已取消",
   "receipt.step_reopened": " 已恢復為待辦",
   "usage.step_cancel": "       clawdline item step-cancel --reason <原因> <項目 id> <步驟 id>",
-  "usage.step_reopen": "       clawdline item step-reopen <項目 id> <步驟 id>"
+  "usage.step_reopen": "       clawdline item step-reopen <項目 id> <步驟 id>",
+  "error.add_kind_title_required": "clawdline %s：--kind 與 --title 都是必填。未建立任何項目。\n",
+  "flag.project_or_directory": "Project：`clawdline project list` 顯示的 id，或它的目錄（預設為這個 Session 所在的 Project）",
+  "label.project_candidates": "這台機器上的 Project（傳入 id 或目錄皆可）：",
+  "usage.add_project_optional": "用法： clawdline item add [--project <id|目錄>] --kind <feature|issue|epic|refactor|plan> --title <t>"
 }

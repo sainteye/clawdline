@@ -1466,16 +1466,22 @@ only for a list the person asks you to track as this Session's own to-dos with n
 Clawdline, so it has a run — explicitly asks for one, create it yourself:
 
 ```
-clawdline item add --project <place id> --kind feature|issue|epic|refactor|plan --title "…" \
+clawdline item add --kind feature|issue|epic|refactor|plan --title "…" \
   --step "first step" --step "second step" …   [--description-file f | description on stdin] [--assign-self]
 ```
+
+Leave out `--project` when the item belongs to the Project this Session works in: the daemon uses
+this Session's directory. For another Project, pass its directory or the id
+`clawdline project list` prints beside it. A description is required, on stdin or from
+`--description-file`. Never read the daemon's database to find an id; if `project_not_found`
+answers, the command prints the Projects it accepts.
 
 Worked example. The person writes: *"Make a Board item to clean up the release notes, TODO: draft
 them, check the links, publish."* That is one command and nothing else:
 
 ```
 echo "Clean up the release notes before the next release." | \
-  clawdline item add --project <place id> --kind feature --title "Clean up the release notes" \
+  clawdline item add --kind feature --title "Clean up the release notes" \
   --step "Draft the notes" --step "Check the links" --step "Publish"
 ```
 

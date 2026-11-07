@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -150,13 +151,46 @@ func printProjectRegistry(rows []projects.RegisteredPlace, asJSON bool) {
 		return rows[i].AddedAt > rows[j].AddedAt
 	})
 	if asJSON {
-		body, _ := json.MarshalIndent(map[string]any{"places": rows}, "", "  ")
+		listed := make([]projectListRow, 0, len(rows))
+		for _, row := range rows {
+			listed = append(listed, projectListRow{ID: projects.PlaceID(row.Path), RegisteredPlace: row})
+		}
+		body, _ := json.MarshalIndent(map[string]any{"places": listed}, "", "  ")
 		fmt.Println(string(body))
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	for _, row := range rows {
-		fmt.Fprintf(w, "%s\t%s\n", time.Unix(row.AddedAt, 0).Format(time.RFC3339), row.Path)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", time.Unix(row.AddedAt, 0).Format(time.RFC3339), projects.PlaceID(row.Path), row.Path)
+	}
+	_ = w.Flush()
+}
+
+// projectListRow is one registered place with the id Board routes accept for
+// it. Without the id, `project_key` read as the value to pass, and a Session
+// that passed it was refused three times before it found the id in SQLite.
+type projectListRow struct {
+	ID string `json:"id"`
+	projects.RegisteredPlace
+}
+
+// printProjectCandidates follows a refused `item add`: the Projects this
+// machine lists, each with the id and directory either of which is accepted.
+func printProjectCandidates(stderr io.Writer, b *broker) {
+	a, err := b.request(http.MethodGet, "/v1/places?registered=1", nil, nil, "")
+	if err != nil || !a.ok() {
+		return
+	}
+	var result struct {
+		Places []projects.RegisteredPlace `json:"places"`
+	}
+	if json.Unmarshal(a.Body, &result) != nil || len(result.Places) == 0 {
+		return
+	}
+	fmt.Fprintln(stderr, cliCopy("item", "label.project_candidates", "Projects on this machine (pass the id or the directory):"))
+	w := tabwriter.NewWriter(stderr, 0, 4, 2, ' ', 0)
+	for _, row := range result.Places {
+		fmt.Fprintf(w, "  %s\t%s\n", projects.PlaceID(row.Path), row.Path)
 	}
 	_ = w.Flush()
 }

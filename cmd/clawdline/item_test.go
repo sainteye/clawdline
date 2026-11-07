@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 )
 
 const itemRun = "0f0f0f0f-0000-4000-8000-000000000001"
@@ -1237,5 +1239,32 @@ func TestItemStepCancellationAndRestorationUseExplicitActions(t *testing.T) {
 	printItem(&out, item)
 	if !strings.Contains(out.String(), "[-] s1") || !strings.Contains(out.String(), "已與使用者確認不再需要") {
 		t.Fatalf("cancelled listing: %s", out.String())
+	}
+}
+
+// Without --project the item is still asked for, and the daemon decides from
+// the Session's directory. When it refuses project_not_found, the Projects
+// this machine lists are printed with the ids and directories it accepts, so
+// nobody reads the daemon's database to find one (2026-11-07).
+func TestItemAddWithoutProjectAsksAndARefusalListsTheProjects(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodGet {
+			return 200, `{"registered":true,"places":[{"path":"/code/notes","added_at":1}]}`
+		}
+		return 422, `{"error":"project_not_found","detail":"No Project this machine lists matches that value."}`
+	})
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "add", itemFlags{kind: "issue", title: "x", description: "d", run: itemRun},
+		nil, thinConversation, "item-no-project", envOf(nil))
+	if code != 1 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[0].EscapedPath != "/v1/work/v2/agent/items" || !strings.Contains(string(seen[0].Body), `"project_id":""`) ||
+		seen[1].EscapedPath != "/v1/places" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	if want := projects.PlaceID("/code/notes") + "  /code/notes"; !strings.Contains(errs.String(), want) {
+		t.Fatalf("stderr lacks %q:\n%s", want, errs.String())
 	}
 }
