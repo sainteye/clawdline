@@ -25,7 +25,7 @@ func TestSnapshotSealsCanonicalCopyAndDetectsEveryFieldChange(t *testing.T) {
 	if err != nil || again.Digest != sealed.Digest {
 		t.Fatal("seal was not stable")
 	}
-	changes := []func(*Snapshot){func(s *Snapshot) { s.ProfileID = "other" }, func(s *Snapshot) { s.Version = "2" }, func(s *Snapshot) { s.Source = "remote" }, func(s *Snapshot) { s.Instructions = "changed" }, func(s *Snapshot) { s.CodeGraphEnabled = true }, func(s *Snapshot) { s.Stages[0].Acceptance = "changed" }, func(s *Snapshot) { s.Stages[0].ID = "changed" }, func(s *Snapshot) { s.Stages[0].Title = "changed" }, func(s *Snapshot) { s.Stages[0].Output = "changed" }, func(s *Snapshot) { s.Schema = 3 }}
+	changes := []func(*Snapshot){func(s *Snapshot) { s.ProfileID = "other" }, func(s *Snapshot) { s.Version = "2" }, func(s *Snapshot) { s.Source = "remote" }, func(s *Snapshot) { s.Instructions = "changed" }, func(s *Snapshot) { s.CodeGraphEnabled = true }, func(s *Snapshot) { s.SpaceSavingImages = true }, func(s *Snapshot) { s.Stages[0].Acceptance = "changed" }, func(s *Snapshot) { s.Stages[0].ID = "changed" }, func(s *Snapshot) { s.Stages[0].Title = "changed" }, func(s *Snapshot) { s.Stages[0].Output = "changed" }, func(s *Snapshot) { s.Schema = 3 }}
 	for i, change := range changes {
 		s := sealed
 		s.Stages = append([]Stage(nil), sealed.Stages...)
@@ -78,5 +78,17 @@ func TestHistoricalGraphifySnapshotsRetainDigestWithoutCodeGraphConsent(t *testi
 	var s Snapshot
 	if json.Unmarshal([]byte(`{"schema":1,"codegraph_enabled":true}`), &s) == nil {
 		t.Fatal("accepted ambiguous schema")
+	}
+}
+
+func TestDisabledImageReviewRetainsPreFeatureSnapshotBytes(t *testing.T) {
+	const historical = `{"schema":2,"profile_id":"clawdline","version":"1","source":"Clawdline","digest":"510531da3839eb0d6ba870b484730fb4546514f6b2d97e50773b21524fb3aa32","instructions":"","stages":[],"codegraph_enabled":false}`
+	var s Snapshot
+	if err := json.Unmarshal([]byte(historical), &s); err != nil || s.Validate() != nil {
+		t.Fatalf("historical snapshot no longer validates: %v", err)
+	}
+	got, err := json.Marshal(s)
+	if err != nil || string(got) != historical {
+		t.Fatalf("disabled snapshot bytes changed: %s %v", got, err)
 	}
 }

@@ -2988,6 +2988,50 @@
       "locations": [
         "verify_gate checker CHILD.md"
       ]
+    },
+    {
+      "id": "space-saving-images",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex",
+        "antigravity"
+      ],
+      "stages": [
+        "start"
+      ],
+      "scenes": [
+        "machine"
+      ],
+      "sources": [
+        {
+          "path": "internal/domain/workflow/image_review.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/workflowlaunch/launch.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/integration_launch.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/integration_settings.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "# Space-saving image review\n\n",
+        "By default, inspect thumbnails for layout, broken images and colors. Combine multiple images into one overview labeled with each image's name when practical.\n",
+        "When judging alignment, small text, edges or anything suspicious, crop the relevant area and inspect it at original size. If the person explicitly asks you to examine an image carefully, inspect the original directly. Full-size viewing remains available whenever needed; do not sacrifice verification to save space.\n",
+        "Write long tool output to a file and put only a summary and its path in the conversation. Use existing local image tools where available; this guidance does not authorize installing tools, paid API calls or changing original images."
+      ],
+      "locations": [
+        "Codex developer_instructions",
+        "Claude --append-system-prompt",
+        "Gemini first-input context"
+      ]
     }
   ],
   "sourceChecks": {
@@ -3014,7 +3058,7 @@
     "internal/adapters/codegraph/source-types.json": "287697b047382abca0e03a1dfa07ae8c0848e8efc8c991a7eec0cf10a0367731",
     "internal/adapters/codegraph/view.go": "06e470cce95ba9f95553d4f618e53df5157479832f5ec50dfa2617ebe55c9289",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
-    "internal/adapters/nextconfig/nextconfig.go": "752317db08263ed3c798c2fb580120e414f466252fd652a0ff88f1b2edf16ab9",
+    "internal/adapters/nextconfig/nextconfig.go": "dd30381acc96a14c20bfa640abae5ae3210bc4a5b9e187544e78453348e7b31b",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/projects/antigravity_context.go": "19c5395961fc715ddac5265b6ccae80338577a6551246ee4ddd5b939de919d04",
@@ -3026,7 +3070,7 @@
     "internal/adapters/store/workflow.go": "beff07175a0f854e298c7434185f4c5435e0c4e020cbd9251a9e72116d4f89fb",
     "internal/adapters/taskdir/broker.go": "c69b1984763af3106a7482e71984321f6e75351d4371a2567ea5060b9c879328",
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
-    "internal/adapters/workflowlaunch/launch.go": "082bdb02e062d861219c8032bc7ff14995b777d6289f329fb9b93bd7cd67cc24",
+    "internal/adapters/workflowlaunch/launch.go": "f2d85edde6c96522fe47ffe67708354679811c0e8b38ede3bac75bf9c10481cf",
     "internal/app/orchestrator/brief.go": "4b777f33e9accfaec666cdc7ef838d400b3113b484ab64a28ff63c878b70411f",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
@@ -3053,7 +3097,8 @@
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "daff9b750e5f6f22aa61ff6147564739aa46be4d4ba66d8d143b687d7cc856d4",
     "internal/domain/toollibrary/library.go": "5fa9cd8bcd54553fce879eca8ca1314fd77d4fee4fbed6e586449df7dcebecb9",
-    "internal/domain/workflow/snapshot.go": "a49571493c2549bf6dd65d39cf98786ca8e3aae9c8ce60afc59a4454b5563737",
+    "internal/domain/workflow/image_review.go": "3dcf0e33dd7616f432923692871f2730b9d959b47fd83842de7ba1d0771deeac",
+    "internal/domain/workflow/snapshot.go": "7bd91fb502002dcef2880788cf89fae8d1e0b7ddfb8de89da0f6b0106eecd291",
     "internal/productcopy/board.go": "710c175d79d8f607a2081dd6c444f3c7d64609535336cbc580f681174970527d",
     "internal/productcopy/board/en.json": "f4967f52facd28c4d6424ed5b0c9697b9ae0d974e7d7dcef55216495f5ff210d",
     "internal/productcopy/board/zh-Hant.json": "197520abf323850bec3a75605ca7bf973333f2dd678bea6d92862cee409083b5",
@@ -3068,8 +3113,8 @@
     "internal/transport/http/codegraph.go": "c2f88e6495724bd5e48254669f62274e72d613e2c4757c32e0fbae909c65954c",
     "internal/transport/http/codegraph_guidance.go": "3930ce9a7e35315b21e765e93b784c36963c70a30358488ce0352c3b68217464",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
-    "internal/transport/http/integration_launch.go": "dfdd5804bd4f7731979fdac2919c6c5457fd22493e77fa793ed7dce7097ae632",
-    "internal/transport/http/integration_settings.go": "63430d306885ec7756e2357b9df56f6bdd4ea3b6272af932357813f4962a3c8c",
+    "internal/transport/http/integration_launch.go": "b3c637185ee7d4a40fbd9820734d439d11c2ae87460c646ef54a7e4afc60a6b2",
+    "internal/transport/http/integration_settings.go": "bd8e1338d9d1383e6a4096f7cac005e0a5109ea926aa0d574d1c9cffa7b11962",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "822c692eb3b08e8b87063b598897508c21870aea57e627e5b069536972dbb211",
     "internal/transport/http/session_naming_context.go": "ed4b6662204915e5f26ce1a4a66940e97e82a085aaf5eac28070264eed09b1f1",
@@ -3100,7 +3145,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "b1a21d4de7d6ae94557ac16f2e7264545a6a766f56b3ee3959e41a4b746ad5f7",
-    "zh-Hant": "21d49f6e4106ae67fe3b74d4a201938ae2f233c7308f6acddff916c83a19c2ff"
+    "en": "a7b2ecb1feb225e4e8f9aff469de5d2d2f14e56bfea104d68db746c8b45f9132",
+    "zh-Hant": "8cd574ed93d614228e33a02194ed54d73b1eb1f1f4450f93a4930c50fcc7c819"
   }
 }

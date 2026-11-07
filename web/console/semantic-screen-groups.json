@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10753,
-  "riskKeys": 4738,
-  "nonRiskCount": 6015,
+  "englishContentKeys": 10761,
+  "riskKeys": 4739,
+  "nonRiskCount": 6022,
   "groups": [
     {
       "name": "acp / other",
@@ -2646,7 +2646,7 @@
     },
     {
       "name": "integrationSettings / other",
-      "count": 10,
+      "count": 13,
       "sources": [
         null
       ],
@@ -2658,6 +2658,9 @@
         "integrationSettings.off",
         "integrationSettings.on",
         "integrationSettings.retry",
+        "integrationSettings.space_saving_imagesDescription",
+        "integrationSettings.space_saving_imagesScope",
+        "integrationSettings.space_saving_imagesTitle",
         "integrationSettings.title",
         "integrationSettings.unavailable",
         "integrationSettings.workflow_skills_enabledTitle"
@@ -6193,7 +6196,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 144,
+      "count": 148,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6302,6 +6305,10 @@
         "transparency.card.role-skills.title",
         "transparency.card.runtime.condition",
         "transparency.card.runtime.effect",
+        "transparency.card.space-saving-images.condition",
+        "transparency.card.space-saving-images.how",
+        "transparency.card.space-saving-images.summary",
+        "transparency.card.space-saving-images.title",
         "transparency.card.tool-library.condition",
         "transparency.card.tool-library.how",
         "transparency.card.tool-library.title",

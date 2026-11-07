@@ -3811,6 +3811,11 @@ export interface IntegrationSettingsRequest {
   codegraph_enabled?: boolean
 
   /**
+   * Machine-wide image review opt-in; omitted by older daemons and off by default.
+   */
+  space_saving_images?: boolean
+
+  /**
    * Machine-wide main workflow; omitted by older daemons.
    */
   workflow_profile?: string
@@ -3822,6 +3827,11 @@ export interface IntegrationSettingsSnapshot {
    * Machine-wide explicit opt-in; absent settings remain disabled.
    */
   codegraph_enabled: boolean
+
+  /**
+   * Machine-wide image review opt-in; omitted by older daemons and off by default.
+   */
+  space_saving_images?: boolean
 
   /**
    * Machine-wide main workflow; omitted by older daemons.

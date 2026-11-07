@@ -22,14 +22,21 @@ type Prepared struct {
 	store    *store.Store
 }
 
-// Prepare never consults current settings for a resume or an owned child.
-// A legacy parent has no provable profile and cannot acquire today's choice.
+// Prepare preserves workflow inheritance. Image-review consent is sampled for
+// each new execution, including children, and never sampled for a resume.
 func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prepared, error) {
 	if s.Store == nil {
 		return Prepared{}, errors.New("workflow_store_unavailable")
 	}
 	var snap workflow.Snapshot
 	var err error
+	var values nextconfig.Values
+	if resume == "" {
+		values, err = nextconfig.Open(s.Dir).Read()
+		if err != nil {
+			return Prepared{}, err
+		}
+	}
 	inherited := resume
 	if inherited == "" {
 		inherited = parent
@@ -38,13 +45,11 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 		var found bool
 		snap, found, err = s.Store.WorkflowSnapshotForConversation(ctx, inherited)
 		if err != nil || !found {
-			return Prepared{}, err
+			if err != nil || resume != "" {
+				return Prepared{}, err
+			}
 		}
 	} else {
-		values, readErr := nextconfig.Open(s.Dir).Read()
-		if readErr != nil {
-			return Prepared{}, readErr
-		}
 		graph, _ := values.Bool("codegraph_enabled")
 		profile, profileErr := nextconfig.WorkflowProfile(values)
 		if profileErr != nil {
@@ -56,6 +61,28 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 		snap, err = s.Resolve(profile, graph)
 		if err != nil {
 			return Prepared{}, err
+		}
+	}
+	if resume == "" {
+		on, _ := values.Bool("space_saving_images")
+		if snap.ProfileID == "" {
+			// Legacy parents still cannot acquire today's workflow choice.
+			if !on {
+				return Prepared{}, nil
+			}
+			snap, err = workflow.Seal(workflow.Snapshot{ProfileID: "clawdline", Version: "1", Source: "Clawdline"})
+			if err != nil {
+				return Prepared{}, err
+			}
+		}
+		if snap.SpaceSavingImages != on {
+			snap.SpaceSavingImages = on
+			// Historical schema 1 cannot encode new opt-ins.
+			snap.Schema = 2
+			snap, err = workflow.Seal(snap)
+			if err != nil {
+				return Prepared{}, err
+			}
 		}
 	}
 	text := ""
@@ -70,6 +97,9 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 				return Prepared{}, err
 			}
 			parts = append(parts, graph)
+		}
+		if snap.SpaceSavingImages {
+			parts = append(parts, workflow.SpaceSavingImageInstructions())
 		}
 		text = strings.Join(parts, "\n\n")
 	}

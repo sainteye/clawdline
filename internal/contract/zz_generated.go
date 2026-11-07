@@ -3294,6 +3294,9 @@ type ImageStoreResult struct {
 type IntegrationSettingsRequest struct {
 	CodegraphEnabled bool `json:"codegraph_enabled,omitempty"`
 
+	// Machine-wide image review opt-in; omitted by older daemons and off by default.
+	SpaceSavingImages bool `json:"space_saving_images,omitempty"`
+
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile       string `json:"workflow_profile,omitempty"`
 	WorkflowSkillsEnabled bool   `json:"workflow_skills_enabled,omitempty"`
@@ -3302,6 +3305,9 @@ type IntegrationSettingsRequest struct {
 type IntegrationSettingsSnapshot struct {
 	// Machine-wide explicit opt-in; absent settings remain disabled.
 	CodegraphEnabled bool `json:"codegraph_enabled"`
+
+	// Machine-wide image review opt-in; omitted by older daemons and off by default.
+	SpaceSavingImages bool `json:"space_saving_images,omitempty"`
 
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile string `json:"workflow_profile,omitempty"`

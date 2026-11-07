@@ -924,7 +924,7 @@ func genDecodeIntegrationSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"codegraph_enabled": genRule{kind: "bool"}, "workflow_profile": genRule{kind: "string", enum: []string{"clawdline", "superpowers", "poteto"}}, "workflow_skills_enabled": genRule{kind: "bool"}}, closed: true, maxKeys: 3}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"codegraph_enabled": genRule{kind: "bool"}, "space_saving_images": genRule{kind: "bool"}, "workflow_profile": genRule{kind: "string", enum: []string{"clawdline", "superpowers", "poteto"}}, "workflow_skills_enabled": genRule{kind: "bool"}}, closed: true, maxKeys: 4}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

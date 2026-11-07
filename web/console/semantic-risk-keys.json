@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10753,
+  "englishKeys": 10761,
   "counts": {
-    "negation": 2993,
+    "negation": 2994,
     "state": 1768,
     "permission": 632,
-    "deletion": 238,
+    "deletion": 239,
     "uncertainty": 409
   },
-  "unionCount": 4738,
+  "unionCount": 4739,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2911,6 +2911,7 @@
       "transparency.card.report.summary",
       "transparency.card.runtime.summary",
       "transparency.card.runtime.title",
+      "transparency.card.space-saving-images.effect",
       "transparency.card.tool-library.effect",
       "transparency.card.tool-library.summary",
       "transparency.card.turn-todos.summary",
@@ -5642,6 +5643,7 @@
       "template.ddd756350b15",
       "template.f7068e40108f",
       "transparency.card.machine-codegraph.effect",
+      "transparency.card.space-saving-images.effect",
       "verify.remove",
       "verify.removeAsk",
       "verify.removeAskOpen",
@@ -10636,6 +10638,7 @@
     "transparency.card.runtime.how",
     "transparency.card.runtime.summary",
     "transparency.card.runtime.title",
+    "transparency.card.space-saving-images.effect",
     "transparency.card.tool-library.effect",
     "transparency.card.tool-library.summary",
     "transparency.card.turn-todos.condition",

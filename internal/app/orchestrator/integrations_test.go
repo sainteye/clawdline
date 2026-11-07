@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
 	"github.com/sainteye/clawdline/skills"
@@ -114,6 +115,24 @@ func TestChildInheritsBeforeTheInventoryObserverBindsItsParent(t *testing.T) {
 		launch, found, err := b.Store.WorkflowLaunchByID(ctx, matches[1])
 		if err != nil || !found || launch.SnapshotID != snap.Digest || launch.TerminalID != record.ChildTerminalID {
 			t.Fatalf("child snapshot/terminal receipt mismatch: %+v %v", launch, err)
+		}
+	}
+}
+
+func TestChildrenReceiveImageReviewOnlyWhenTheirNewLaunchOptsIn(t *testing.T) {
+	for _, assistant := range []string{"claude", "codex"} {
+		b, _ := newTestBroker(t)
+		dir := t.TempDir()
+		b.PrepareWorkflow = (workflowlaunch.Service{Store: b.Store, Dir: dir, Resolve: skills.ResolveWorkflow}).Prepare
+		for i, on := range []bool{false, true, false} {
+			if _, err := nextconfig.Open(dir).Set(map[string]any{"space_saving_images": on}); err != nil {
+				t.Fatal(err)
+			}
+			id := fmt.Sprintf("c280003%d-0000-4000-8000-000000000030", i)
+			record, line := dispatchWith(t, b, id, assistant, nil)
+			if record.State == StateSpawnFailed || strings.Contains(line, "# Space-saving image review") != on {
+				t.Fatalf("%s enabled=%v: %+v %s", assistant, on, record, line)
+			}
 		}
 	}
 }
