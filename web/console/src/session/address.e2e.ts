@@ -197,6 +197,7 @@ const PROJECT_ICON = {
   accent: "#D97757",
   cells: [["#D97757", "#D97757"], ["#D97757", "#141416"]],
 }
+let rotationScenario: { bytes: number; state: string; sent: Record<string, unknown>[]; stage: number } | null = null
 function snapshot() {
   generation++
   return {
@@ -209,7 +210,13 @@ function snapshot() {
       generation,
       provenance: "fixture",
     },
-    sessions: protocolMenuScenario ? [protocolRow()] : ROWS.map((row) => !modelMenuScenario || row.id !== TMUX ? row : {
+    sessions: rotationScenario ? [
+      { ...ROWS[0], label: "長對話換手示範（測試資料）", assistant: "codex", isClaude: false,
+        state: rotationScenario.state, work_state: "milestone_complete",
+        activity: { known: true, at: Math.floor(Date.now()/1000) - 90000 },
+        disposition: { scope: "session", title: "已完成目前階段", evidence: "fixture", receiptAt: Math.floor(Date.now()/1000)-90000 } },
+      ...(rotationScenario.stage >= 2 ? [{...ROWS[1], label: "接手的新 Session（測試資料）", assistant: "codex", isClaude: false}] : []),
+    ] : protocolMenuScenario ? [protocolRow()] : ROWS.map((row) => !modelMenuScenario || row.id !== TMUX ? row : {
       ...row, assistant: "codex", isClaude: false,
       state: modelMenuScenario.stage === "gap" ? "idle" : "waiting",
       menu: modelMenuScenario.stage === "models" ? picker("Select Model and Effort", ["Model Alpha", "Model Beta"]) :
@@ -401,17 +408,19 @@ function daemon(): Server {
       if (!session) return json(res, 404, { error: { code: "not_found", message: id } })
       const reply = () => json(res, 200, {
         info: {
+          record: rotationScenario ? {bytes: id === TMUX ? rotationScenario.bytes : 2048} : undefined,
+          rotation: rotationScenario && rotationScenario.stage < 2 ? {recordBytesLimit:50*1024*1024,idleSecondsLimit:86400} : undefined,
           protocol: id === ACP ? acpProtocolState : undefined,
           workflow: workflowRecords[id],
           codegraph_guidance: guidanceFor(id),
           session: {
             id: session.id,
             title: session.label,
-            assistant: id === ACP ? "antigravity" : "claude",
+            assistant: id === ACP ? "antigravity" : rotationScenario ? "codex" : "claude",
             namingAssistant,
             sessionId: session.sessionId,
             cwd: session.cwd,
-            model: session.id === TMUX ? currentClaudeModel : "",
+            model: rotationScenario ? "gpt-6-sol" : session.id === TMUX ? currentClaudeModel : "",
           },
           models: session.id === TMUX ? [
             { id: "claude-opus-5-5", name: "Opus 5.5", command: "opus" },
@@ -635,7 +644,18 @@ function daemon(): Server {
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
       return // held open, as the daemon's stream is
     }
+    if (rotationScenario && path.startsWith("/v1/work/v2/session-todos/")) return json(res,200,{ok:true,done:0,active:0,waiting:0,assigned_items:[],recent_items:[],direct_todos:[],open_decisions:[],truncated:false})
+    if (rotationScenario && path.startsWith("/v1/work/v2/human-interventions/")) return json(res,200,{ok:true,rows:[],pruned_resolved:0})
     if (path === "/v1/transcript") {
+      if (rotationScenario) {
+        const receiver = url.searchParams.get("session") === TTY
+        const text = receiver
+          ? "已讀取換手摘要與 obligations.md。\n\n已接續原目標、已確認決策、驗證結果、工作分支與待辦責任；下一步從交接包記錄的位置繼續。這是測試資料示範。"
+          : rotationScenario.stage === 0 ? "目前階段已交付。後續工作與證據已整理，等待下一個任務。這是測試資料示範。"
+          : rotationScenario.stage === 1 ? "正在整理換手摘要：目標、已確認決策、阻礙、證據與下一步。舊 Session 與對話檔保留。這是測試資料示範。"
+          : "換手請求已送達新的 Session，接手者已綁定對話並讀取狀態。\n\n原 Session 的保留責任已處理，安全關閉檢查結果為 safe。你可以檢查後從選單關閉舊 Session；對話檔會保留。這是測試資料示範。"
+        return json(res,200,{entries:[...(!receiver&&rotationScenario.stage>0?[{role:"user",text:String(rotationScenario.sent[0]?.text??""),at:Math.floor(Date.now()/1000)-1}]:[]),{role:"assistant",text,at:Math.floor(Date.now()/1000)}],evidence:"transcript",id:url.searchParams.get("session"),signature:"rotation-"+rotationScenario.stage})
+      }
       return json(res, 200, { entries: untrustedContent ? [{ role: "assistant", text: untrustedContent, at: 1 }] : [], evidence: "process", id: url.searchParams.get("session"), signature: "fixture" })
     }
     if (path === "/v1/sessions/" + encodeURIComponent(TMUX) + "/documents/project/report.html") {
@@ -649,6 +669,7 @@ function daemon(): Server {
     if (req.method === "POST" && /^\/v1\/sessions\/[^/]+\/send$/.test(path)) {
       void requestJSON(req).then(body => {
         draftSendBodies.push(body)
+        if(rotationScenario){rotationScenario.sent.push(body);rotationScenario.stage=1}
         const id=decodeURIComponent(path.split("/")[3]),g=guidanceFor(id)
         const suffix=g.state==="pending"&&!String(body.text??"").trimStart().startsWith("/") ? guidanceText[g.language??"en"][g.enabled?"enabled":"disabled"] : ""
         if(suffix)g.state="provided"
@@ -3933,4 +3954,45 @@ test("ACP lifecycle evidence renders in English and Traditional Chinese on phone
       })
     }
   } finally {protocolMenuScenario=null;acpProtocolState=undefined}
+})
+
+
+test("rotation reminder shows the full handoff presentation with synthetic provider states", async () => {
+  rotationScenario = { bytes: 64*1024*1024, state: "idle", sent: [], stage: 0 }
+  try {
+    await inTab(DESK, async tab => {
+      await tab.go("/" + FRAGMENT[TMUX])
+      await tab.until("the rotation source opens", s => s.open === TMUX)
+      await tab.run(`(async()=>{for(let i=0;i<100&&!document.querySelector('.session-rotation');i++)await new Promise(r=>setTimeout(r,50));if(!document.querySelector('.session-rotation'))throw Error('missing rotation reminder')})()`)
+      assert.equal(rotationScenario!.sent.length,0,"rendering must not send")
+      assert.match(await tab.run(`document.querySelector('.session-rotation').textContent`),/64.0 MiB/)
+      await tab.shot("rotation-01-desktop-reminder")
+      await tab.view(PHONE,"dark")
+      assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth`),"phone overflow")
+      await tab.shot("rotation-02-phone-reminder")
+      await tab.run(`document.querySelector('.session-rotation button').click();document.querySelector('.session-rotation button').click()`)
+      const deadline=Date.now()+5000
+      while(!rotationScenario!.sent.length&&Date.now()<deadline)await new Promise(r=>setTimeout(r,50))
+      assert.equal(rotationScenario!.sent.length,1)
+      assert.equal(rotationScenario!.sent[0].conversation,ROWS[0].sessionId)
+      await tab.shot("rotation-03-requested")
+      if(process.env.CLAWDLINE_ROTATION_BACKEND){
+        const response=await fetch(process.env.CLAWDLINE_ROTATION_BACKEND,{method:"POST",body:JSON.stringify(rotationScenario!.sent[0]),signal:AbortSignal.timeout(15000)})
+        const receipt=await response.json()
+        assert.equal(response.status,200,JSON.stringify(receipt))
+        assert.equal(receipt.package_read,true);assert.equal(receipt.board_transferred,true)
+        assert.equal(receipt.source_closeability,"safe");assert.equal(receipt.source_kept,true)
+        assert.equal(receipt.receiver,ROWS[1].sessionId)
+      }
+      rotationScenario!.stage=2
+      await tab.reload()
+      await tab.until("handoff source remains",s=>s.open===TMUX)
+      await tab.run(`(async()=>{for(let i=0;i<100&&!document.body.textContent.includes('安全關閉檢查結果為 safe');i++)await new Promise(r=>setTimeout(r,50))})()`)
+      await tab.shot("rotation-04-old-session-safe")
+      await tab.go("/?rotation-receiver=1"+FRAGMENT[TTY])
+      await tab.until("receiver opens",s=>s.open===TTY)
+      await tab.run(`(async()=>{for(let i=0;i<100&&!document.body.textContent.includes('已讀取換手摘要');i++)await new Promise(r=>setTimeout(r,50));if(!document.body.textContent.includes('已讀取換手摘要'))throw Error('missing receiver')})()`)
+      await tab.shot("rotation-05-receiver")
+    })
+  } finally { rotationScenario=null }
 })

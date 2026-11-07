@@ -7165,6 +7165,12 @@ export interface SessionInfo {
   linksObservedAt?: number
   models: SessionModel[]
   protocol?: SessionProtocol
+
+  /**
+   * Provider conversation file size. Absent when unavailable; known empty files
+   * carry zero bytes.
+   */
+  record?: SessionRecord
   remotePermission?: SessionMenu
 
   /**
@@ -7186,6 +7192,11 @@ export interface SessionInfo {
    */
   repository?: ProjectRepository
   repositoryUnreadable?: ProjectGitFailure
+
+  /**
+   * Reminder-only thresholds. Never starts or closes a Session automatically.
+   */
+  rotation?: SessionRotation
   session: SessionInfoSession
   usage?: SessionInfoUsage
   workflow?: SessionWorkflow
@@ -7585,6 +7596,19 @@ export interface SessionProtocol {
   trace_enabled: boolean
   trace_error?: string
   unrecognized: number
+}
+
+export interface SessionRecord {
+  /**
+   * Observed byte size of the entire Codex rollout or Claude Code transcript,
+   * including compacted snapshots. No provider file is modified.
+   */
+  bytes: number
+}
+
+export interface SessionRotation {
+  idleSecondsLimit: number
+  recordBytesLimit: number
 }
 
 /**

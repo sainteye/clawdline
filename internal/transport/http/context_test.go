@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -136,5 +137,45 @@ func TestASessionWithNothingToMeasureDrawsNoContextAtAll(t *testing.T) {
 	// A Codex rollout that named no window is the same answer.
 	if got := wireSessionContext(transcript.Facts{}, session.AssistantCodex, transcript.ClaudeStatusLine{}); got != nil {
 		t.Fatalf("context = %+v, want none", got)
+	}
+}
+
+func TestSessionInfoReportsTheWholeProviderFileSize(t *testing.T) {
+	for _, assistant := range []session.Assistant{session.AssistantCodex, session.AssistantClaude} {
+		t.Run(string(assistant), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+			conversation := "10000000-0000-4000-8000-000000000001"
+			p := &pane{s: session.Session{ID: "%19", Backend: session.BackendTmux,
+				Assistant: assistant, ConversationID: conversation, CWD: home, State: session.StateIdle}}
+			s := paneServer(t, p)
+			s.facts = transcript.NewRecordFacts()
+			path := transcript.ClaudePath(home, home, conversation)
+			if assistant == session.AssistantCodex {
+				path = filepath.Join(home, ".codex", "sessions", "rollout-"+conversation+".jsonl")
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			data := []byte("{}\n")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, parts := range []string{"summary", "all"} {
+				rec := httptest.NewRecorder()
+				s.sessionInfoRoute(rec, httptest.NewRequest("GET", "/v1/sessions/%2519/info?parts="+parts, nil), "%19")
+				var reply contract.SessionInfoReply
+				if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+					t.Fatal(err)
+				}
+				if rec.Code != 200 || reply.Info.Record == nil || reply.Info.Record.Bytes != int64(len(data)) || reply.Info.Rotation == nil || reply.Info.Rotation.RecordBytesLimit != RotationRecordBytesLimit {
+					t.Fatalf("%s: %d %s", parts, rec.Code, rec.Body.String())
+				}
+			}
+			if got, err := os.ReadFile(path); err != nil || string(got) != string(data) {
+				t.Fatalf("provider file changed: %v", err)
+			}
+		})
 	}
 }

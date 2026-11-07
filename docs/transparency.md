@@ -253,3 +253,14 @@ public website snapshot must follow this reviewed product commit.
 
 
 SessionInfo now uses a daemon-owned conversation preference rather than appending guidance to every message. Both language explanations describe one provision with the next ordinary human send, launch-context deduplication, unchanged slash commands, unknown outcomes and explicit re-provision after clearing context. Selecting it leaves the composer unchanged and sends no terminal input. Disabling sends one preference update; it cannot retract context or revoke tool permissions. The shared bilingual instruction document and ledger are included in the reviewed sources. Local HTTP and carried Cloud writes preserve the same conversation and revision checks. Original request bytes remain stable across retries even when the daemon adds a suffix. Neither provision receipts nor frozen workflow snapshots establish model use. The public website snapshot must follow this product commit.
+
+## Long conversation reminders
+
+The conditional `session-rotation` card records the new person-triggered user
+message. The reminder reads file size or current delivery/activity evidence;
+rendering it sends nothing. Its localized request preserves state and asks for a
+milestone handoff, receiver/Board verification and a dry-run close check. It never
+force-closes the source or deletes provider history. Both English and Taiwan
+Traditional Chinese explain that the old Session stays open for the person's
+inspection. Session info also displays the observed conversation file size; its
+existing CodeGraph instruction provision behavior is unchanged by that display.

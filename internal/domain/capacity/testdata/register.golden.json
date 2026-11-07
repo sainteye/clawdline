@@ -10236,6 +10236,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "session.rotation_bytes",
+    "Class": "narrative",
+    "Unit": "bytes",
+    "Limit": 52428800,
+    "WarnAt": 0,
+    "AtLimit": "none",
+    "Deviation": "Reminder only; the person chooses a milestone handoff and provider files remain untouched.",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.RotationRecordBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.rotation_idle_seconds",
+    "Class": "narrative",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "none",
+    "Deviation": "Reminder only after delivery and known inactivity; no automatic launch or close.",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.RotationIdleSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "session.secret_handoff_bytes",
     "Class": "buffer",
     "Unit": "bytes",

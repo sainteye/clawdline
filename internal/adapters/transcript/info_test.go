@@ -241,3 +241,43 @@ func jsonLine(v any) (string, bool) {
 	line, ok := encodeJSON(v)
 	return line + "\n", ok
 }
+
+func TestRecordSizeIncludesHistoryOutsideTheInfoTail(t *testing.T) {
+	for _, assistant := range []string{"codex", "claude"} {
+		t.Run(assistant, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "record.jsonl")
+			f, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A sparse file proves the size is independent of the bounded tail.
+			size := int64(recordReadLimit * 2)
+			if err := f.Truncate(size); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reader := NewRecordFacts()
+			for _, want := range []int64{size, size + 1} {
+				facts, err := reader.Read(path, assistant)
+				if err != nil || facts.RecordBytes == nil || *facts.RecordBytes != want {
+					t.Fatalf("size = %v, error = %v, want %d", facts.RecordBytes, err, want)
+				}
+				st, err := os.Stat(path)
+				if err != nil || st.Size() != want {
+					t.Fatalf("read changed record: %v", err)
+				}
+				if err := os.Truncate(path, want+1); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if facts, err := reader.Read(path, assistant); err == nil || facts.RecordBytes != nil {
+				t.Fatalf("missing record became zero: %+v, %v", facts, err)
+			}
+		})
+	}
+}

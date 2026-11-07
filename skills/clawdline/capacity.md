@@ -534,6 +534,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.patch_detail_lines` | 18 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.report_open_todo_characters` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `session.report_open_todo_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `session.rotation_bytes` | 52428800 | `bytes` | `none` | `diagnostics, sender` | Reminder only; the person chooses a milestone handoff and provider files remain untouched. |
+| `session.rotation_idle_seconds` | 86400 | `seconds` | `none` | `diagnostics, sender` | Reminder only after delivery and known inactivity; no automatic launch or close. |
 | `session.secret_handoff_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.secret_handoff_delivery_seconds` | 5 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `session.secret_handoff_pending` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |

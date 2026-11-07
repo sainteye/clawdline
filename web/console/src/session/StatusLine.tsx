@@ -8,6 +8,7 @@ import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
 import { conversationNotStarted } from "./readiness.js"
 import { readGit } from "../legacy/git-bridge.js"
+import { RotationNotice } from "./RotationNotice.js"
 import "./status-line-deploy.css"
 
 /**
@@ -127,6 +128,8 @@ export function StatusLine({
   }
 
   return (
+    <>
+    <RotationNotice row={row} info={info} />
     <footer className="status-line" id="status-line" data-deploy={deploy ? deploy.kind || "deploy" : undefined}>
       {open}
       <button
@@ -149,6 +152,7 @@ export function StatusLine({
         ))}
       </div>
     </footer>
+    </>
   )
 }
 

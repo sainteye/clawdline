@@ -291,8 +291,10 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 	// one is a decision to write down here, not a string to add to a row.
 	// CloudTerminalReceipts evicts its oldest receipt instead of refusing a
 	// held key (2026-10-07, the row's Deviation).
+	// Rotation thresholds only remind; the person decides when to hand off,
+	// and the daemon never evicts provider-owned narrative.
 	sort.Strings(deviating)
-	if want := []string{CloudTerminalReceipts, StoreDB}; strings.Join(deviating, ",") != strings.Join(want, ",") {
+	if want := []string{CloudTerminalReceipts, "session.rotation_bytes", "session.rotation_idle_seconds", StoreDB}; strings.Join(deviating, ",") != strings.Join(want, ",") {
 		t.Errorf("rows deviating from their class: %v, want %v", deviating, want)
 	}
 }

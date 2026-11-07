@@ -586,6 +586,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		},
 		Models: []contract.SessionModel{},
 	}
+	info.Rotation = s.rotationInfo(ctx, item)
 	s.fillWorkflowInfo(ctx, item, &info)
 	s.fillCodegraphGuidance(ctx, item, &info)
 	if item.Backend == session.BackendClaudeRemote {
@@ -647,6 +648,9 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		// nothing, and it is not 0% full.
 		if path := s.recordPath(item); path != "" {
 			if facts, err := s.facts.Read(path, string(item.Assistant)); err == nil {
+				if facts.RecordBytes != nil {
+					info.Record = &contract.SessionRecord{Bytes: *facts.RecordBytes}
+				}
 				info.Session.Model = facts.Model
 				info.Session.Effort = facts.Effort
 				info.Usage = wireSessionUsage(facts.Usage, item, status)

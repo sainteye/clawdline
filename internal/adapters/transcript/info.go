@@ -36,6 +36,10 @@ type Summary struct {
 
 // Facts is what an info read learns from the record itself.
 type Facts struct {
+	// RecordBytes is the observed file size, independent of the bounded tail read.
+	// Absent for providers whose native record is not a JSONL conversation.
+	RecordBytes *int64
+
 	// Effort is the reasoning effort explicitly named by the newest parent turn.
 	Effort string
 	// Usage is absent when there is no honest total: a Claude transcript
@@ -120,6 +124,11 @@ func (r *RecordFacts) Read(path, assistant string) (Facts, error) {
 		} else {
 			facts = claudeFacts(data, complete)
 		}
+	}
+
+	if assistant == "codex" || assistant == "claude" {
+		size := st.Size()
+		facts.RecordBytes = &size
 	}
 
 	r.mu.Lock()

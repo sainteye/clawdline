@@ -2988,6 +2988,58 @@
       "locations": [
         "verify_gate checker CHILD.md"
       ]
+    },
+    {
+      "id": "session-rotation",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn",
+        "finish"
+      ],
+      "scenes": [
+        "handoff"
+      ],
+      "sources": [
+        {
+          "path": "web/console/src/session/RotationNotice.tsx",
+          "line": 12
+        },
+        {
+          "path": "web/console/src/session/rotation.ts",
+          "line": 4
+        },
+        {
+          "path": "web/console/src/next-strings.ts",
+          "line": 17
+        },
+        {
+          "path": "internal/transport/http/session_rotation.go",
+          "line": 3
+        }
+      ],
+      "original": [
+        "export function rotationReason(row: SessionRow | null, info: SessionInfo | null, now: number): \"size\" | \"idle\" | null {\n",
+        "  if (!row?.sessionId || info?.session.sessionId !== row.sessionId || !info.rotation ||\n",
+        "    ![\"codex\", \"claude\"].includes(row.assistant ?? \"\") || row.parent_session_id || row.coordinator || row.machine_scope) return null\n",
+        "  if (typeof info.record?.bytes === \"number\" && Number.isFinite(info.record?.bytes) && info.record.bytes >= info.rotation.recordBytesLimit) return \"size\"\n",
+        "  const delivered = row.disposition?.scope === \"session\" &&\n",
+        "    (row.work_state === \"milestone_complete\" || row.work_state === \"work_complete\")\n",
+        "  const receipt = row.disposition?.receiptAt\n",
+        "  const activity = row.activity?.known ? row.activity.at : undefined\n",
+        "  if (row.state !== \"idle\" || !delivered || !receipt || !activity || receipt > now || activity > now) return null\n",
+        "  return now - Math.max(receipt, activity) >= info.rotation.idleSecondsLimit ? \"idle\" : null\n",
+        "}\n",
+        "\n"
+      ],
+      "locations": [
+        "Console open conversation → Prepare handoff",
+        "<state>/handoffs/<id>/handoff.md",
+        "<state>/handoffs/<id>/obligations.md"
+      ]
     }
   ],
   "sourceChecks": {
@@ -3073,6 +3125,7 @@
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "822c692eb3b08e8b87063b598897508c21870aea57e627e5b069536972dbb211",
     "internal/transport/http/session_naming_context.go": "ed4b6662204915e5f26ce1a4a66940e97e82a085aaf5eac28070264eed09b1f1",
+    "internal/transport/http/session_rotation.go": "f2bf1a2bf22ab8dfcccf89e39112d519fe8bb3f8c864e070ae7db6bf495dfa4c",
     "internal/transport/http/start.go": "ecd9572c31d1734e9ef0293952993f0558f1f46b85f6ce167a885c840f709a76",
     "internal/transport/http/work_v2.go": "5079c579754cbff670805434c83ebfeae5e25c35f4e1e49ac43743aae86bf367",
     "internal/transport/http/work_v2_brief.go": "44ff50bb8f55e1fba32605cb10f887be4860aebfad5856e58b4222e562e9a3e3",
@@ -3091,16 +3144,19 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "be9a80e1acac27bb42236516af046b568f9a6849257f896e15b5e453c0872e8c",
     "web/console/src/codegraph/session-guidance.ts": "7f27c67d6f27b3854cecfe490ccb166b0812199ba7b47bfbe568f6f4376ace93",
-    "web/console/src/overlays/info.ts": "daca7514157303b9dca9a6e0ce4dd4d4c4d2ea3a790f4317ae918e7340413a15",
+    "web/console/src/next-strings.ts": "48de1506ba09e0a07a784a69c58766e11e3e8157fa073fe6cc0cd3449420045b",
+    "web/console/src/overlays/info.ts": "fa2ea43c7f599c66a7d0e7ff96956a98491d0cd70ee19c15870dd38be0225c8d",
     "web/console/src/session/Composer.tsx": "aa9ee0430cb616ebda2e6c7673408be294ae1aa148cbab063758542153b8a513",
+    "web/console/src/session/RotationNotice.tsx": "fdf94ddab844291dc4ebb763bb842b6e4487200877f341549ad00a6f7257fd39",
     "web/console/src/session/Start.tsx": "b2b576e077cb9de4fa43fe8bd54a0f9295cfa5bdf964a6937440bc3d6f60ab0a",
     "web/console/src/session/pending.ts": "764578f38ef7e6f697934b77c20b69a5862630544d98827be497b0f839f3d798",
     "web/console/src/session/persist.ts": "1885793298d4b4d833dd42c312f6f15f88c258f7a65cc4d4d3c0bcc25f65c961",
+    "web/console/src/session/rotation.ts": "fa1741712be47b0873fcc96a20db123b890e5f203ee8912867a7cde090758859",
     "web/console/src/session/sender.ts": "1ef942cde6ca2726d4a1a0dda4c4f39ac2b33d193af44112d8cace5e7f7b63fe",
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "b1a21d4de7d6ae94557ac16f2e7264545a6a766f56b3ee3959e41a4b746ad5f7",
-    "zh-Hant": "21d49f6e4106ae67fe3b74d4a201938ae2f233c7308f6acddff916c83a19c2ff"
+    "en": "c382155e89e20f473ff467d870a5d29e20591bf0b48f35e437d2b6ff1db780fa",
+    "zh-Hant": "bfeb93ad952c20e243f6e8db6922cb9ad0a78f0e22a8b89060ec70bfaae957af"
   }
 }

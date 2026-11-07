@@ -6078,10 +6078,14 @@ type SessionInfo struct {
 	// When the walk behind `links` was taken, in seconds since 1970. A held reading is
 	// served however old it is, so a card that wants to say how old it is has the
 	// number.
-	LinksObservedAt  float64          `json:"linksObservedAt,omitempty"`
-	Models           []SessionModel   `json:"models"`
-	Protocol         *SessionProtocol `json:"protocol,omitempty"`
-	RemotePermission *SessionMenu     `json:"remotePermission,omitempty"`
+	LinksObservedAt float64          `json:"linksObservedAt,omitempty"`
+	Models          []SessionModel   `json:"models"`
+	Protocol        *SessionProtocol `json:"protocol,omitempty"`
+
+	// Provider conversation file size. Absent when unavailable; known empty files
+	// carry zero bytes.
+	Record           *SessionRecord `json:"record,omitempty"`
+	RemotePermission *SessionMenu   `json:"remotePermission,omitempty"`
 
 	// Fingerprint of the exact RC tool permission, including request ID, complete tool
 	// input, bridge and kernel generation.
@@ -6094,11 +6098,14 @@ type SessionInfo struct {
 	// What the one git read behind `links` found. Present whenever the session has a
 	// working directory, including when it produced no row: `could not read` and
 	// `there is none` are different sentences.
-	Repository           ProjectRepository  `json:"repository,omitempty"`
-	RepositoryUnreadable ProjectGitFailure  `json:"repositoryUnreadable,omitempty"`
-	Session              SessionInfoSession `json:"session"`
-	Usage                *SessionInfoUsage  `json:"usage,omitempty"`
-	Workflow             *SessionWorkflow   `json:"workflow,omitempty"`
+	Repository           ProjectRepository `json:"repository,omitempty"`
+	RepositoryUnreadable ProjectGitFailure `json:"repositoryUnreadable,omitempty"`
+
+	// Reminder-only thresholds. Never starts or closes a Session automatically.
+	Rotation *SessionRotation   `json:"rotation,omitempty"`
+	Session  SessionInfoSession `json:"session"`
+	Usage    *SessionInfoUsage  `json:"usage,omitempty"`
+	Workflow *SessionWorkflow   `json:"workflow,omitempty"`
 }
 
 // How full this conversation's context window is. The used side is counted —
@@ -6408,6 +6415,17 @@ type SessionProtocol struct {
 	TraceEnabled      bool   `json:"trace_enabled"`
 	TraceError        string `json:"trace_error,omitempty"`
 	Unrecognized      int64  `json:"unrecognized"`
+}
+
+type SessionRecord struct {
+	// Observed byte size of the entire Codex rollout or Claude Code transcript,
+	// including compacted snapshots. No provider file is modified.
+	Bytes int64 `json:"bytes"`
+}
+
+type SessionRotation struct {
+	IdleSecondsLimit int64 `json:"idleSecondsLimit"`
+	RecordBytesLimit int64 `json:"recordBytesLimit"`
 }
 
 // One assistant session. Fields that cannot be supported are absent rather than

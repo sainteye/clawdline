@@ -517,6 +517,29 @@
         }
       }
     },
+    "SessionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes"
+      ],
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Observed byte size of the entire Codex rollout or Claude Code transcript, including compacted snapshots. No provider file is modified."
+        }
+      }
+    },
+    "SessionRotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recordBytesLimit", "idleSecondsLimit"],
+      "properties": {
+        "recordBytesLimit": { "type": "integer", "minimum": 1 },
+        "idleSecondsLimit": { "type": "integer", "minimum": 1 }
+      }
+    },
     "SessionInfo": {
       "description": "The facts behind the status line under an open session. This daemon serves the transcript-derived part the Swift app calls the summary, the context reading, the plan windows and the project's addresses; the working tree, permission and fast mode are not read here and their keys are absent.",
       "type": "object",
@@ -526,6 +549,8 @@
         "session"
       ],
       "properties": {
+        "rotation": { "$ref": "#/$defs/SessionRotation", "description": "Reminder-only thresholds. Never starts or closes a Session automatically." },
+        "record": { "$ref": "#/$defs/SessionRecord", "description": "Provider conversation file size. Absent when unavailable; known empty files carry zero bytes." },
         "protocol": {
           "$ref": "#/$defs/SessionProtocol"
         },

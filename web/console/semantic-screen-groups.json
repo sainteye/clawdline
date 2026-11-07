@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10753,
-  "riskKeys": 4738,
-  "nonRiskCount": 6015,
+  "englishContentKeys": 10771,
+  "riskKeys": 4745,
+  "nonRiskCount": 6026,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 421,
+      "count": 423,
       "sources": [
         null
       ],
@@ -762,6 +762,8 @@
         "capacityRow.session.patch_detail_lines.what",
         "capacityRow.session.report_open_todo_characters.full",
         "capacityRow.session.report_open_todo_characters.what",
+        "capacityRow.session.rotation_bytes.what",
+        "capacityRow.session.rotation_idle_seconds.what",
         "capacityRow.session.title_characters.what",
         "capacityRow.session.title_request_bytes.what",
         "capacityRow.session.title_rows.full",
@@ -3757,7 +3759,7 @@
     },
     {
       "name": "next / other",
-      "count": 645,
+      "count": 651,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4107,6 +4109,12 @@
         "next.roleIconSave",
         "next.roleIconTitle",
         "next.roleIconVariant",
+        "next.rotationPrepare",
+        "next.rotationRecordSize",
+        "next.rotationRequested",
+        "next.rotationSize",
+        "next.rotationTitle",
+        "next.rotationWait",
         "next.schedulesHeading",
         "next.schedulesListLabel",
         "next.schedulesLoading",
@@ -6193,7 +6201,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 144,
+      "count": 147,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6302,6 +6310,9 @@
         "transparency.card.role-skills.title",
         "transparency.card.runtime.condition",
         "transparency.card.runtime.effect",
+        "transparency.card.session-rotation.condition",
+        "transparency.card.session-rotation.how",
+        "transparency.card.session-rotation.title",
         "transparency.card.tool-library.condition",
         "transparency.card.tool-library.how",
         "transparency.card.tool-library.title",

@@ -2607,6 +2607,16 @@
     "Note": true
   },
   {
+    "Name": "session.rotation_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.rotation_idle_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "session.secret_handoff_bytes",
     "Known": true,
     "Note": true

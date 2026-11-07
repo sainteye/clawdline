@@ -613,6 +613,7 @@ function html(d: Facts): string {
   }
   out += sec(++i, nextWord("infoContext"), "", contextHTML(d.context))
   out += sec(++i, T.webInfoUsage, "", usageHTML(u))
+  if (typeof d.record?.bytes === "number") out += sec(++i, nextWord("rotationRecordSize"), "", '<p>' + esc((d.record.bytes / 1048576).toFixed(1) + ' MiB') + '</p>')
   if (d.limits) {
     const when = d.limits.at ? esc(fill(T.webInfoAsOf, { when: L.clock(d.limits.at) })) : ""
     out += sec(++i, T.webInfoLimits, when, limitsHTML(d.limits))

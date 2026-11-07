@@ -3,6 +3,9 @@
 
 # Handing a line of work to the next session
 
+For the current Go Console’s reminder-only file-size and delivered-idle policy, see
+[long conversation reminders](session-rotation.md).
+
 A conversation ends before its work does. The context window fills, the phase changes from planning
 to building, the model runs out of allowance, the day ends, or the next hour of this would be better
 done in Codex than here. What happens next is nearly always the same bad thing: somebody re-describes

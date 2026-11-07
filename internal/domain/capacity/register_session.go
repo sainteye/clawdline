@@ -4,6 +4,14 @@ package capacity
 // and snippets.*.
 func sessionBounds() []Entry {
 	return []Entry{
+		{Name: "session.rotation_bytes", Class: Narrative, Unit: Bytes, Limit: 50 << 20,
+			AtLimit: Nothing, Deviation: "Reminder only; the person chooses a milestone handoff and provider files remain untouched.",
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/transport/http.RotationRecordBytesLimit"}},
+		{Name: "session.rotation_idle_seconds", Class: Narrative, Unit: Seconds, Limit: 86400,
+			AtLimit: Nothing, Deviation: "Reminder only after delivery and known inactivity; no automatic launch or close.",
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/transport/http.RotationIdleSecondsLimit"}},
 		{Name: "session.transcript_delta_rows", Class: Observation, Unit: Rows, Limit: 1000, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaRowsLimit"}},
 		{Name: "session.inline_tool_bytes", Class: Observation, Unit: Bytes, Limit: 1200, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptInlineToolBytesLimit"}},
 		{Name: "session.tool_preview_runes", Class: Observation, Unit: Characters, Limit: 240, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptToolPreviewRunesLimit"}},

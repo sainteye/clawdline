@@ -13,6 +13,16 @@ import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
+    rotationRequest: "Please prepare a fresh Session to continue this work. Read clawdline guide landing and use the milestone handoff flow. Preserve the goal, settled decisions and constraints, verified progress, worktree and uncommitted work ownership, blockers, evidence, outstanding responsibilities and next step. Confirm that the receiver has read the state and that Board ownership has transferred. Settle responsibilities retained here, then run clawdline session close --dry-run and report the actual result. Keep this Session open for me to inspect and close. If anything is refused or unknown, keep it open and explain the blocker. Preserve all provider conversation files.",
+    rotationRecordSize: "Conversation file",
+    rotationTitle: "Consider a fresh Session",
+    rotationSize: "This conversation file is {size} MiB (reminder at 50 MiB).",
+    rotationIdle: "This delivered Session has been idle for at least 24 hours.",
+    rotationSafety: "Prepare a state summary before handoff. The old Session stays open until its safety check passes and you close it. Conversation files are kept.",
+    rotationPrepare: "Prepare handoff",
+    rotationWait: "Available when idle",
+    rotationRequested: "Request status is in the conversation",
+
     dropNamesOnly: "This browser exposes only file names. Drop in the app to insert full paths.",
     toolLibraryTitle: "Tool library",
     toolLibraryDescription: "Save useful projects. Prepare and use their tools in this Session.",
@@ -2389,6 +2399,16 @@ const words = {
     setupPhoneAndroidOpen: "In Chrome, open {site}, then choose ⋮ → Add to Home screen",
   },
   "zh-Hant": {
+    rotationRequest: "請準備以新 Session 接手目前工作。先讀 clawdline guide landing，依里程碑換手流程整理目標、已確認決策與限制、已驗證進度、工作樹與未提交改動的歸屬、阻礙、證據、未完責任及下一步。確認接手者已讀取狀態、看板責任已移交。處理仍留在這裡的責任後，執行 clawdline session close --dry-run 並回報實際結果。保留舊 Session，等我檢查後關閉；若換手失敗或狀態不明，保持開啟並說明阻礙。保留所有供應商對話檔。",
+    rotationRecordSize: "對話檔大小",
+    rotationTitle: "建議以新 Session 接手",
+    rotationSize: "對話檔已達 {size} MiB（50 MiB 起提醒）。",
+    rotationIdle: "這個已交付的 Session 已閒置滿 24 小時。",
+    rotationSafety: "先整理完整狀態再換手。舊 Session 保持開啟，通過安全檢查後由你關閉；對話檔會保留。",
+    rotationPrepare: "準備換手",
+    rotationWait: "閒置後可準備換手",
+    rotationRequested: "請求狀態請看對話",
+
     dropNamesOnly: "此瀏覽器只提供檔名；拖放到 App 可插入完整路徑。",
     toolLibraryTitle: "工具庫",
     toolLibraryDescription: "收藏值得留著的專案，交給目前 Session 準備並使用。",

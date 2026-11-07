@@ -11,6 +11,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) sessionCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"session.rotation_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-conversation reminder threshold; provider files are never changed"}
+		},
+		"session.rotation_idle_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-delivery inactivity reminder; no retained timer or automatic handoff"}
+		},
 		"session.transcript_delta_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-baseline comparison ceiling; larger provider expansions return a full page"}
 		},
