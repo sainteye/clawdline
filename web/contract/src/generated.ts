@@ -9259,6 +9259,13 @@ export const StartAvailabilityValues: readonly StartAvailability[] = ["ok", "low
  */
 export interface StartCapabilities {
   menus: boolean
+
+  /**
+   * This daemon accepts a message sent while an owned conversation's turn runs and
+   * sends it after that turn. Omission keeps the next message in the sending
+   * browser.
+   */
+  queue?: boolean
   resume: boolean
 
   /**

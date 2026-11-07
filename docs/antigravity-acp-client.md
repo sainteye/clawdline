@@ -54,8 +54,15 @@ not a total prompt deadline. `Options.InactivityTimeout` overrides it; when that
 option is unset, a positive `CLAWDLINE_ACP_INACTIVITY_TIMEOUT` duration overrides
 the default. Active permission offers and native tools in `pending` or
 `in_progress` pause cancellation. Tool completion or failure refreshes activity,
-so silence after the last tool ends is bounded again. A tool that never reports
-a terminal state can keep the turn open; the person can still interrupt it.
+so silence after the last tool ends is bounded again. Model output
+(`agent_message_chunk` or `agent_thought_chunk`) releases every tool still
+marked active, because the model writes its next reply only after it has the
+results of the tools it called. On 2026-11-07 the installed runtime left three
+`view_file` calls `in_progress` after their results arrived; the model wrote on
+for a minute, then sent nothing more and never answered the prompt, and those
+tools held the watchdog off with the native process idle. A tool that never
+reports a terminal state and is followed by no model output can still keep the
+turn open; the person can still interrupt it.
 
 The host retains exact active tool IDs independently of transcript eviction and
 uses the same tracker for memory and durable Sessions. It clears that tracker
@@ -526,6 +533,24 @@ card budget. A refreshed card that was already being sent stays unknown and is
 never automatically retried; a queued input that was never sent remains queued.
 A closed or suspended page cannot dispatch; another device does not inherit its
 queue. Unknown native state and revoked write access do not drain the queue.
+
+On 2026-11-07 the person asked for Gemini to take mid-turn input the way Claude
+Code and Codex do. The machine now queues it: a message sent while an owned
+turn is `working` or `waiting` is checked against write access, saved with the
+conversation row (`queued_prompts`) and answered accepted. When the turn ends
+idle, including after Stop, the oldest message is sent as its own
+`session/prompt`; it leaves the saved queue in the same save that marks the
+prompt uncertain, so a crash never sends it twice. A later message waits behind
+a non-empty queue. A turn ending in unknown state appends each queued message to
+the transcript as `antigravity_queued_prompt_not_sent: <words>` instead of
+holding it where nothing will send it. A daemon shutdown keeps the queue; the
+next start sends it after the restart continuation. The queue is bounded by
+`antigravity.queued_prompts` and `antigravity.queued_prompt_bytes` and refuses
+before acceptance at either limit. Opening, model or mode changes and quota
+reads still answer busy. The machine advertises `capabilities.queue`; the
+console sends directly only when it is present and keeps the browser queue
+above for older machines. The user turn appears in the transcript when the
+queued prompt is written, so another device sees it only then.
 
 A zero-model diagnostic on 2026-10-26 found that both the installed ACP 1.4.1
 runtime and the official registry's ACP 1.4.3 runtime offer only `default`,

@@ -34,6 +34,20 @@ func (c *conversation) trackActiveTool(d *antigravityacp.ToolCallDelta, initial 
 	return nil
 }
 
+// modelMovedOn releases every tool still marked active when the model writes
+// again. The model generates its next reply only after it has the results of
+// the tools it called, so a tool it never reported complete is no longer
+// running for this turn. On 2026-11-07 three view_file calls stayed
+// in_progress after their replies arrived, the model wrote on and fell silent,
+// and the tools held the inactivity watchdog off with nothing running.
+func (c *conversation) modelMovedOn() {
+	if len(c.activeTools) == 0 {
+		return
+	}
+	c.activeTools = nil
+	c.activeToolBytes = 0
+}
+
 // ActiveToolBytes reports the largest per-turn tracker, matching its per-turn
 // capacity rather than charging unrelated Sessions to one Session's budget.
 func (h *Host) ActiveToolBytes() int {

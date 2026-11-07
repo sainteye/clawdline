@@ -456,3 +456,33 @@ func TestWatchdogRaceWithEndTurnDoesNotEmitTimeoutError(t *testing.T) {
 		}
 	}
 }
+
+// A tool the native runtime never reported complete held the watchdog off
+// after the model had written on and gone silent (2026-11-07). Model output
+// after the tools started releases them, so the silence is noticed again.
+func TestModelOutputReleasesToolsTheRuntimeNeverCompleted(t *testing.T) {
+	t.Setenv("CLW_WATCHDOG_TOOL_PEER", "yes")
+	h, row, dir := fixtureWithTimeout(t, 100*time.Millisecond)
+	if err := h.Send(context.Background(), row, "tools that never complete"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := h.lookup(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { c.mu.Lock(); defer c.mu.Unlock(); return len(c.activeTools) == 2 })
+	frame, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": row.ConversationID,
+		"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Both files read."}}}})
+	if err := c.update(context.Background(), frame); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.ActiveToolBytes(); got != 0 {
+		t.Fatalf("model output left %d tool bytes active", got)
+	}
+	c.lastActivity.Store(time.Now().Add(-time.Hour).UnixNano())
+	idleHost(t, h, row)
+	raw, err := os.ReadFile(filepath.Join(dir, "cancelled"))
+	if err != nil || string(raw) != row.ConversationID {
+		t.Fatalf("the silent turn was not cancelled: %q, %v", raw, err)
+	}
+}

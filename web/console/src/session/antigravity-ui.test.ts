@@ -18,7 +18,7 @@ import { STATUS_FRESH_MS, statusProjection } from "../cloud/status-projection.ts
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { pinnedQuestion } from "../cloud/status-source.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
-import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantRolesAdmit, sessionActionVisibility, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
+import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantRolesAdmit, assistantQueuesInput, sessionActionVisibility, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
 
 const active: AssistantFacts = { id: "antigravity", installed: true, authState: "ready", integrationState: "active",
   capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
@@ -243,4 +243,10 @@ test("the read-only screen mirror stays only where the interactive Terminal is u
   assert.equal(sessionActionVisibility({ id: "%3", backend: "tmux", assistant: "shell" } as any).screen, true)
   for (const assistant of ["claude", "codex", "antigravity", "shell"]) for (const backend of ["tmux", "iterm", "pty"])
     assert.equal(sessionActionVisibility({ id: "%4", backend, assistant } as any).screen, !nativeTerminalAvailable(assistant, backend), assistant + "/" + backend)
+})
+
+test("only a machine that advertises queueing takes a Gemini message mid-turn", () => {
+  assert.equal(assistantQueuesInput({ id: "antigravity", capabilities: { start: true, resume: true, transcript: true, send: true, menus: true, queue: true } }), true)
+  assert.equal(assistantQueuesInput({ id: "antigravity", capabilities: { start: true, resume: true, transcript: true, send: true, menus: true } }), false)
+  assert.equal(assistantQueuesInput(undefined), false)
 })

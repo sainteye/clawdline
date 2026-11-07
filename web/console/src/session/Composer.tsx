@@ -4,7 +4,7 @@ import type { AssistantFactsReading } from "./assistant-facts.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
 import type { AssistantSkill, SessionRow } from "@clawdline/contract"
-import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantQueuesInput, assistantProtocolOwned, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
 import { currentCatalogTag, catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
@@ -625,7 +625,11 @@ export function Composer({
       (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
     const said = input
     promptSuggestion.dismiss()
-    if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
+    // A machine that queues a running conversation's input itself takes the
+    // message now, as Claude Code and Codex do; an older one leaves it in
+    // this browser until the turn ends.
+    if (protocolOwned && row && !assistantQueuesInput(assistantFacts) &&
+      ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {
       if (!nextMessages.add(row.id, said, pictures, Date.now(),typeof row.sessionId==="string"?row.sessionId:undefined)) {
         setFailure(nextWord("sendQueueFull"))

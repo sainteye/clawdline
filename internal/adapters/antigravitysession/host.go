@@ -106,6 +106,10 @@ type conversation struct {
 	// interrupted says the daemon stopped while this conversation's turn was
 	// still running. ContinueInterrupted wakes it once after the next start.
 	interrupted bool
+	// queued holds messages sent while a turn ran, oldest first, saved with
+	// the row. draining is set while one of them is being sent.
+	queued   []string
+	draining bool
 }
 
 func (c *conversation) touchActivity() {
@@ -320,13 +324,34 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 // SendProtocol keeps the normal operation check immediately before the single
 // pipe write. Its receipt says accepted; the owned job separately completes the
 // model turn. Cancellation after acceptance never replays the prompt.
+//
+// A message sent while a turn runs is accepted into the conversation's saved
+// queue instead of being refused, the way Claude Code and Codex take input
+// mid-turn, and is sent as its own prompt after the turn ends (queue.go).
 func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string, before func() error) error {
+	return h.sendProtocol(ctx, s, text, before, false)
+}
+
+// sendProtocol with direct set never queues: the queue's own sends and the
+// restart continuation go straight to the native prompt.
+func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string, before func() error, direct bool) error {
 	if text == "" {
 		return refusal("empty_text")
 	}
 	c, err := h.lookup(s)
 	if err != nil {
 		return err
+	}
+	if !direct && !configCommand(text) {
+		c.mu.Lock()
+		// Only a running turn ends and sends the queue. Opening, a model or
+		// mode change and a quota read are short and still answer busy.
+		queue := c.draining || len(c.queued) > 0 ||
+			c.busy && (c.row.State == session.StateWorking || c.row.State == session.StateWaiting)
+		c.mu.Unlock()
+		if queue {
+			return h.enqueue(c, text, before)
+		}
 	}
 	if _, err = h.Resume(ctx, s.CWD, s.ConversationID); err != nil {
 		return err
@@ -387,7 +412,17 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 				c.writeGate = nil
 			}
 			row := c.row
+			next := c.afterTurn(h.ctx.Err() != nil)
 			c.mu.Unlock()
+			if next {
+				// The person is told when the queue is empty, not between its turns.
+				h.jobs.Add(1)
+				go func() {
+					defer h.jobs.Done()
+					h.drainNext(c)
+				}()
+				return
+			}
 			if notify && h.ctx.Err() == nil && h.opts.TurnComplete != nil {
 				h.opts.TurnComplete(h.ctx, row)
 			}
@@ -896,6 +931,9 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 		if err := c.trackActiveTool(u.Tool, u.Kind == "tool_call"); err != nil {
 			return err
 		}
+	}
+	if c.row.State == session.StateWorking && !c.replaying && (u.Kind == "agent_message_chunk" || u.Kind == "agent_thought_chunk") {
+		c.modelMovedOn()
 	}
 	if c.store != nil {
 		return c.project(u)

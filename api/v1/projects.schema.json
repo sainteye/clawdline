@@ -44,7 +44,8 @@
         "transcript": { "type": "boolean" },
         "send": { "type": "boolean" },
         "menus": { "type": "boolean" },
-        "roles": { "type": "boolean", "description": "This daemon can launch immutable roles through its current integration. Omission does not advertise Gemini role support." }
+        "roles": { "type": "boolean", "description": "This daemon can launch immutable roles through its current integration. Omission does not advertise Gemini role support." },
+        "queue": { "type": "boolean", "description": "This daemon accepts a message sent while an owned conversation's turn runs and sends it after that turn. Omission keeps the next message in the sending browser." }
       }
     },
     "ProjectIconSetup": {

@@ -11,4 +11,9 @@ const (
 	// MaxCallTime bounds control RPCs and pipe writes, not model turns or human decisions.
 	MaxCallTime           = 45 * time.Second
 	MaxHistoryConnections = 1
+	// MaxQueuedPrompts and MaxQueuedPromptBytes bound the messages a running
+	// owned turn holds for after it ends. They are saved in the conversation
+	// row, which every streamed update rewrites, so the bytes stay small.
+	MaxQueuedPrompts     = 8
+	MaxQueuedPromptBytes = 256 << 10
 )

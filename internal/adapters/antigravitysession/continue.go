@@ -29,6 +29,7 @@ func (h *Host) ContinueInterrupted(ctx context.Context) int {
 		return 0
 	}
 	var rows []session.Session
+	var queued []*conversation
 	for _, c := range h.rows {
 		c.mu.Lock()
 		if c.interrupted {
@@ -36,10 +37,15 @@ func (h *Host) ContinueInterrupted(ctx context.Context) int {
 			if c.saveState() == nil && !c.hidden {
 				rows = append(rows, c.row)
 			}
+		} else if len(c.queued) > 0 && !c.hidden {
+			// Messages accepted before the restart, with no turn left to end
+			// and send them. An interrupted conversation sends its own after
+			// the continuation's turn.
+			queued = append(queued, c)
 		}
 		c.mu.Unlock()
 	}
-	if len(rows) == 0 {
+	if len(rows) == 0 && len(queued) == 0 {
 		h.mu.Unlock()
 		return 0
 	}
@@ -53,9 +59,12 @@ func (h *Host) ContinueInterrupted(ctx context.Context) int {
 		defer h.jobs.Done()
 		defer h.continuing.Store(false)
 		for _, row := range rows {
-			if err := h.SendProtocol(ctx, row, ContinueText, nil); err != nil {
+			if err := h.sendProtocol(ctx, row, ContinueText, nil, true); err != nil {
 				log.Printf("antigravity: continue_after_restart_failed %s", errorCode(err))
 			}
+		}
+		for _, c := range queued {
+			h.drainNext(c)
 		}
 	}()
 	return len(rows)
