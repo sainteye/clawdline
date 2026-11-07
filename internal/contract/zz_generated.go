@@ -6971,6 +6971,7 @@ type SettingsRequest struct {
 
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
+	SpaceSavingImages  *bool `json:"space_saving_images"`
 
 	// A full Tailscale name ending in `.ts.net`, or empty.
 	TailscaleHostname *string `json:"tailscale_hostname"`
@@ -7219,6 +7220,7 @@ type SettingsSnapshot struct {
 
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
+	SpaceSavingImages  *bool `json:"space_saving_images"`
 
 	// This machine's full Tailscale name (`<machine>.<tailnet>.ts.net`) that Tailscale
 	// Serve answers on; accepted only while `remote` is on.
