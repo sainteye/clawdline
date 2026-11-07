@@ -1052,6 +1052,21 @@ func AnswerDecision(d Decision, option, actor string, now time.Time) (Decision, 
 	return d, nil
 }
 
+// DismissDecision is a person setting an open decision aside without
+// choosing an option. It ends as withdrawn — nobody waits on it any more —
+// with AnsweredBy naming the person, so it is never mistaken for an answer.
+func DismissDecision(d Decision, actor string, now time.Time) (Decision, error) {
+	if d.State == DecisionWithdrawn {
+		return Decision{}, refuse(409, "decision_withdrawn",
+			"This decision was already withdrawn; nobody is waiting on it.")
+	}
+	if d.State != DecisionOpen {
+		return Decision{}, refuse(409, "decision_closed", "This decision is closed (%s: %s).", d.State, d.Answer)
+	}
+	next, _ := WithdrawDecision(d, actor, now)
+	return next, nil
+}
+
 // DefaultDecision is the default standing when nobody answered by the due.
 func DefaultDecision(d Decision, now time.Time) (Decision, bool) {
 	if d.State != DecisionOpen || now.Before(d.DueAt) {
@@ -1090,6 +1105,9 @@ func DecisionChange(d Decision, it Item, now time.Time) Change {
 	trigger := "decision_answered"
 	if d.State == DecisionDefaulted {
 		trigger = "decision_defaulted"
+	}
+	if d.State == DecisionWithdrawn {
+		trigger = "decision_dismissed"
 	}
 	return Change{From: it.Place, To: it.Place, State: it.State, Trigger: trigger, Actor: d.AnsweredBy,
 		EvidenceAt: now, Evidence: map[string]any{"decision": d.ID, "answer": d.Answer}}

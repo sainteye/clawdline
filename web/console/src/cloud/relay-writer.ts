@@ -361,6 +361,7 @@ export type WriteRoute =
   | { op: "worktree-remove"; word: Carried<"project-worktree-remove">; project: string; worktree: string }
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
   | { op: "work-decision-answer"; word: Carried<"work.decision-answer">; id: string }
+  | { op: "work-decision-dismiss"; word: Carried<"work.decision-dismiss">; id: string }
   | { op: "work-v2-edit"; word: Carried<"work.v2.edit">; id: string }
   | { op: "work-v2-gate-decision"; word: Carried<"work.v2.gate-decision">; id: string }
   | { op: "work-v2-gate-purge"; word: Carried<"work.v2.gate-purge">; id: string }
@@ -782,6 +783,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "work" && a === "decisions" && b && segments.length === 3 &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(b)) {
     return { op: "work-decision-answer", word: "work.decision-answer", id: b }
+  }
+  if (head === "work" && a === "decisions" && b && c === "dismiss" && segments.length === 4 &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(b)) {
+    return { op: "work-decision-dismiss", word: "work.decision-dismiss", id: b }
   }
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
@@ -2107,6 +2112,11 @@ export class RelayWriter {
           throw failure("invalid_command", "A decision answer is required.", 400)
         }
         return this.machineWorkV2(client, route.word, { id: route.id, answer: body.answer }, headerOf(init, "idempotency-key"))
+      }
+      case "work-decision-dismiss": {
+        const body = await bodyOf(init)
+        if (Object.keys(body).length !== 0) throw failure("invalid_command", "A dismissal carries no answer.", 400)
+        return this.machineWorkV2(client, route.word, { id: route.id }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-edit": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))

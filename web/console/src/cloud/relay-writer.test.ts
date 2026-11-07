@@ -1061,6 +1061,21 @@ test("a decision answer keeps its question and press id across Cloud", async () 
   assert.equal(((await json(failed)).error as { code: string }).code, "store_unavailable")
 })
 
+test("a decision dismissal crosses Cloud with only its id", async () => {
+  const id = "10000000-0000-4000-8000-000000000001"
+  const path = `/v1/work/decisions/${id}/dismiss`
+  assert.equal(writeRoute("POST", path)?.word, "work.decision-dismiss")
+  assert.equal(writeRoute("POST", `/v1/work/decisions/INVALID/dismiss`), null)
+  assert.equal(writeRoute("POST", `${path}/extra`), null)
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const response = await reader.fetch(path, post({}, { "Idempotency-Key": "dismiss-1" }))
+  assert.equal(response.status, 200)
+  assert.deepEqual(client.calls, [["_machineRequestAs", "dismiss-1", "mac-a", "work.decision-dismiss", { id }, "action"]])
+  const refused = await reader.fetch(path, post({ answer: "Proceed" }, { "Idempotency-Key": "dismiss-2" }))
+  assert.equal(refused.status, 400)
+})
+
 test("a refused Work v2 create settles as the route's flat refusal", async () => {
   const client = new FakeClient()
   client.fail._machineRequestAs = failureFromMac({

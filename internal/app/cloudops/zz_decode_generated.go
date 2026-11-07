@@ -168,6 +168,7 @@ var generatedDecoders = map[string]genDecoder{
 	"work-gate-settings-update":          genDecodeWorkGateSettingsUpdate,
 	"work.decision":                      genDecodeWorkDecision,
 	"work.decision-answer":               genDecodeWorkDecisionAnswer,
+	"work.decision-dismiss":              genDecodeWorkDecisionDismiss,
 	"work.decisions":                     genDecodeWorkDecisions,
 	"work.digests":                       genDecodeWorkDigests,
 	"work.proposals":                     genDecodeWorkProposals,
@@ -3813,6 +3814,26 @@ func genDecodeWorkDecisionAnswer(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genFields(map[string]genValue{"answer": genValue{from: "answer"}})
+	return p, req, true
+}
+
+// genDecodeWorkDecisionDismiss is the `work.decision-dismiss` row's decode.
+func genDecodeWorkDecisionDismiss(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", checks: []func(string) bool{isTaskID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/work/decisions/" + segment(genText(b["id"])) + "/dismiss"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
 	return p, req, true
 }
 

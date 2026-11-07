@@ -62,4 +62,3 @@ func TestKnownAssistant(t *testing.T) {
 		}
 	}
 }
-

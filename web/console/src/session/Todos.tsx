@@ -11,7 +11,7 @@ import { NeedsUpdate } from "../machine/NeedsUpdate.js"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, answerDecision, completeWorkV2, createDirectTodoV2, directTodoActionV2, editDirectTodoV2, readDecision, readSessionWorkV2, readSessionWorkSummaryV2, type Decision, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, answerDecision, completeWorkV2, dismissDecision, createDirectTodoV2, directTodoActionV2, editDirectTodoV2, readDecision, readSessionWorkV2, readSessionWorkSummaryV2, type Decision, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { CompleteWorkDialog } from "../pages/work/CompleteWorkDialog.js"
@@ -323,6 +323,26 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
   const [receipts, setReceipts] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [confirming, setConfirming] = useState(false)
+  const dismiss = async (decision: Decision) => {
+    if (submitting.current || receipts[decision.id]) return
+    submitting.current = true
+    setPending({ decision: decision.id, option: "", label: "" })
+    setErrors((current) => ({ ...current, [decision.id]: "" }))
+    try {
+      await dismissDecision(decision.id)
+      setReceipts((current) => ({ ...current, [decision.id]: workWord("decisionDismissed") }))
+      onAnswered?.()
+    } catch (error) {
+      if (error instanceof RefusalError && (error.code === "decision_withdrawn" || error.code === "decision_closed")) {
+        onAnswered?.()
+      } else {
+        setErrors((current) => ({ ...current, [decision.id]: failureWords(error) }))
+      }
+    } finally {
+      submitting.current = false
+      setPending(null)
+    }
+  }
   const answer = async (decision: Decision, option: { id: string; label: string }) => {
     if (submitting.current || receipts[decision.id]) return
     submitting.current = true
@@ -374,8 +394,13 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
           <button className="chip danger session-decision-answer" type="button" key={option.id} disabled={!!pending}
             aria-busy={pending?.decision === decision.id && pending.option === option.id}
             onClick={() => void answer(decision, option)}>
-            {pending?.decision === decision.id && pending.option === option.id ? catalogWord("literal", "84b95f498939") : option.label}</button>)}</div>}
-      {pending?.decision === decision.id && <p role="status" className="session-owned-decision-note">{catalogWord("inline", "56bf73fe1d04")}{pending.label}{closingMark(catalogWord("inline", "56bf73fe1d04"))}…</p>}
+            {pending?.decision === decision.id && pending.option === option.id ? catalogWord("literal", "84b95f498939") : option.label}</button>)}
+          <button className="chip session-decision-dismiss" type="button" disabled={!!pending}
+            aria-label={workWord("decisionDismissLabel")}
+            aria-busy={pending?.decision === decision.id && pending.option === ""}
+            onClick={() => void dismiss(decision)}>
+            {pending?.decision === decision.id && pending.option === "" ? workWord("decisionDismissing") : workWord("decisionDismiss")}</button></div>}
+      {pending?.decision === decision.id && pending.option !== "" && <p role="status" className="session-owned-decision-note">{catalogWord("inline", "56bf73fe1d04")}{pending.label}{closingMark(catalogWord("inline", "56bf73fe1d04"))}…</p>}
       {errors[decision.id] && <p role="alert" className="session-owned-decision-note">{errors[decision.id]}</p>}
     </section>)}
     {Object.entries(receipts).filter(([id]) => !decisions.some((decision) => decision.id === id)).map(([id, words]) =>

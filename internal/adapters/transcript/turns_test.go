@@ -430,8 +430,6 @@ func TestHandoffReceiptAntigravity(t *testing.T) {
 	}
 }
 
-
-
 // The notice a root receives when a child finished with something left
 // undone, in the shape the broker writes it. Its `leftovers` was once
 // outside the closed key set, and the whole envelope showed as raw text.

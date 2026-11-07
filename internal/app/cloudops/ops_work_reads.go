@@ -12,6 +12,7 @@ func init() {
 		op{name: "work.decisions", read: true},
 		op{name: "work.decision", read: true},
 		op{name: "work.decision-answer"},
+		op{name: "work.decision-dismiss"},
 
 		op{name: "work.digests", read: true},
 

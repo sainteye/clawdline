@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10740,
+  "englishKeys": 10744,
   "counts": {
-    "negation": 2989,
+    "negation": 2991,
     "state": 1760,
     "permission": 632,
     "deletion": 238,
     "uncertainty": 409
   },
-  "unionCount": 4728,
+  "unionCount": 4730,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2939,6 +2939,8 @@
       "work.assignSessionsIncomplete",
       "work.backlogLede",
       "work.boardLede",
+      "work.decisionDismissLabel",
+      "work.decisionDismissed",
       "work.desktopEmptyLane",
       "work.digestNone",
       "work.digestQuiet",
@@ -10665,6 +10667,8 @@
     "work.cardEpicParentLabel",
     "work.closureClock",
     "work.decisionBlocking",
+    "work.decisionDismissLabel",
+    "work.decisionDismissed",
     "work.desktopEmptyLane",
     "work.desktopShowDone",
     "work.digestAwaiting",

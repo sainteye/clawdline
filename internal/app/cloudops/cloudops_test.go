@@ -453,6 +453,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/work/decisions/10000000-0000-4000-8000-000000000001",
 		body2: `{"answer":"Proceed"}`,
 	}, {
+		word: "work.decision-dismiss",
+		body: map[string]any{"type": "work.decision-dismiss", "session": machine,
+			"request": "dismiss-decision-1", "id": "10000000-0000-4000-8000-000000000001"},
+		session: machine, name: "action:dismiss-decision-1",
+		method: "POST", path: "/v1/work/decisions/10000000-0000-4000-8000-000000000001/dismiss",
+	}, {
 		word: "work.digests",
 		body: map[string]any{"type": "work.digests", "session": machine,
 			"request": "req-work-digests", "kind": "daily"},

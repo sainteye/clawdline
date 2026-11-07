@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10740,
-  "riskKeys": 4728,
-  "nonRiskCount": 6012,
+  "englishContentKeys": 10744,
+  "riskKeys": 4730,
+  "nonRiskCount": 6014,
   "groups": [
     {
       "name": "acp / other",
@@ -6621,7 +6621,7 @@
     },
     {
       "name": "work / other",
-      "count": 75,
+      "count": 77,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -6651,6 +6651,8 @@
         "work.createdViaSession",
         "work.decideLede",
         "work.decisionDefault",
+        "work.decisionDismiss",
+        "work.decisionDismissing",
         "work.decisionFrom",
         "work.desktopAttention",
         "work.desktopColumns",

@@ -88,9 +88,9 @@ func newBroker(s *Server) *orchestrator.Broker {
 			starter := s.starter(s.readForStart(ctx))
 			return s.openOwnedAntigravity(ctx, starter, place, persona, model, addDirs)
 		},
-		CloseOwnedChild:     s.stopOwnedAntigravityChild,
-		Tasks:               taskdir.New(s.cfg.Dir),
-		Git:                 git.New(),
+		CloseOwnedChild: s.stopOwnedAntigravityChild,
+		Tasks:           taskdir.New(s.cfg.Dir),
+		Git:             git.New(),
 		AssistantQuotas: func(now time.Time) ([]orchestrator.AssistantQuotaSnapshot, error) {
 			rows := make([]orchestrator.AssistantQuotaSnapshot, 0, len(limits.Assistants))
 			for _, id := range limits.Assistants {

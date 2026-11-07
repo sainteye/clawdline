@@ -615,3 +615,7 @@ export const editDirectTodoV2 = (terminalID: string, todoID: string, text: strin
 
 export const answerDecision = (id: string, option: string) =>
   decide<unknown>(`/v1/work/decisions/${id}`, { answer: option })
+
+/** The person sets a decision aside without choosing any option. */
+export const dismissDecision = (id: string) =>
+  decide<unknown>(`/v1/work/decisions/${id}/dismiss`, {})

@@ -87,6 +87,11 @@ type DecisionClosure struct {
 func (c DecisionClosure) Notice() string {
 	d := c.Decision
 	label := d.OptionLabel(d.Answer)
+	if d.State == work.DecisionWithdrawn {
+		return fmt.Sprintf("The person dismissed decision %s on Board item %s: %s, without choosing an option. "+
+			"The item is no longer waiting_user; do not wait for this answer. Continue without it, or ask a new "+
+			"question if the choice is still needed.", d.ID, c.ItemID, c.Title)
+	}
 	how := fmt.Sprintf("The person answered decision %s", d.ID)
 	if d.State == work.DecisionDefaulted {
 		how = fmt.Sprintf("Nobody answered decision %s by its due, so its default stands", d.ID)
@@ -1117,6 +1122,56 @@ func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, p
 			}
 		}
 		next, err := work.AnswerDecision(prev, option, actor, now)
+		if err != nil {
+			return err
+		}
+		if err := tx.PutDecision(next, &prev, 0); err != nil {
+			return err
+		}
+		next.Version = prev.Version + 1
+		out = next
+		if closed, err = p.decisionMove(tx, next, principal, via, now); err != nil {
+			return err
+		}
+		if file != nil {
+			if k, a, ok := file(out); ok {
+				return tx.CompleteReceipt(k, a)
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		p.tellClosed(ctx, closed)
+	}
+	return out, participationRefusal(err)
+}
+
+// DismissDecision is a person setting a decision aside without choosing any
+// of its options: the question went stale, or no option fits. It withdraws
+// the decision, clears the waiting_user of the item it was about in the same
+// transaction, and tells the owning Session it was dismissed so the Session
+// does not keep waiting on an answer that will never come. via is as
+// AnswerDecision's.
+func (p *Participation) DismissDecision(ctx context.Context, id, actor, principal string,
+	via *work.Run, file DecisionFiler) (work.Decision, error) {
+	if err := checkRelay(actor, via); err != nil {
+		return work.Decision{}, err
+	}
+	now := p.now()
+	var out work.Decision
+	var closed *DecisionClosure
+	err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		closed = nil
+		prev, err := tx.Decision(id)
+		if err != nil {
+			return err
+		}
+		if via != nil {
+			if err := work.RelayTo(*via, prev.Session, prev.CreatedAt); err != nil {
+				return err
+			}
+		}
+		next, err := work.DismissDecision(prev, actor, now)
 		if err != nil {
 			return err
 		}

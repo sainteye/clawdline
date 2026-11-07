@@ -3347,6 +3347,21 @@
       "decode": {"reply": "action", "fields": {"id": {"type": "string", "checks": ["task_id"]}, "answer": {"type": "string", "max_bytes": 4096, "checks": ["not_blank", "printable"]}}, "route": {"path": "/v1/work/decisions/{id}", "body": {"fields": {"answer": {"from": "answer"}}}}}
     },
     {
+      "op": "work.decision-dismiss",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/work/decisions/{id}/dismiss",
+      "console_seam": "reader",
+      "console_note": "Board: the person sets a stale decision aside without choosing an option.",
+      "local": {"method": "POST", "device": true},
+      "example": {"id": "10000000-0000-4000-8000-000000000001", "request": "dismiss-1", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["id", "request", "session"], "path": "/v1/work/decisions/{id}/dismiss"}
+      ],
+      "decode": {"reply": "action", "fields": {"id": {"type": "string", "checks": ["task_id"]}}, "route": {"path": "/v1/work/decisions/{id}/dismiss"}}
+    },
+    {
       "op": "work.decisions",
       "kind": "read",
       "write_gate": false,

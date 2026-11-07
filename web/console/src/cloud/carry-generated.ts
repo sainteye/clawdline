@@ -251,6 +251,8 @@ export const CARRIED = {
   "work-gate-settings-update": "POST /v1/settings/work-gates",
   "work.decision": "GET /v1/work/decisions/{id}",
   "work.decision-answer": "POST /v1/work/decisions/{id}",
+  // Board: the person sets a stale decision aside without choosing an option.
+  "work.decision-dismiss": "POST /v1/work/decisions/{id}/dismiss",
   "work.decisions": "GET /v1/work/decisions",
   "work.digests": "GET /v1/work/digests?kind=",
   "work.proposals": "GET /v1/work/proposals[?project=]",

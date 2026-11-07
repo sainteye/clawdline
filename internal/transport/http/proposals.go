@@ -1,9 +1,11 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -786,8 +788,12 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, rest, ok := idAfter(p, "/v1/work/decisions/")
-	if !ok || rest != "" {
+	if !ok || (rest != "" && rest != "dismiss") {
 		writeNoSuchRoute(w, r)
+		return
+	}
+	if rest == "dismiss" {
+		s.decisionDismiss(w, r, id)
 		return
 	}
 	switch r.Method {
@@ -823,6 +829,55 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A decision is read with GET and answered with POST.")
 	}
+}
+
+// decisionDismiss is a person setting a decision aside without choosing an
+// option: POST /v1/work/decisions/{id}/dismiss with an empty object.
+func (s *Server) decisionDismiss(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A decision is dismissed with POST.")
+		return
+	}
+	// The Cloud bridge sends a dismissal with no body at all; it means the
+	// same as an empty object.
+	peek, err := io.ReadAll(io.LimitReader(r.Body, workBodyLimit+1))
+	if err != nil {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "The body could not be read.")
+		return
+	}
+	if strings.TrimSpace(string(peek)) == "" {
+		peek = []byte("{}")
+	}
+	r.Body = io.NopCloser(bytes.NewReader(peek))
+	var body answerWire
+	raw, ok := readWorkBody(w, r, &body)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(body.Answer) != "" {
+		writeRefusal(w, http.StatusBadRequest, "invalid_body", "A dismissal carries no answer.")
+		return
+	}
+	actor, principal, relay, ok := workActor(w, r, body.Via)
+	if !ok {
+		return
+	}
+	k, ok := workKey(w, r, principal)
+	if !ok {
+		return
+	}
+	k.Scope = participationScope
+	s.participationWrite(w, r, k, raw, func(file func(any) (store.ReceiptKey, store.ReceiptAnswer, bool)) error {
+		run, err := s.relayRun(r.Context(), relay)
+		if err != nil {
+			return err
+		}
+		_, err = s.participation().DismissDecision(r.Context(), id, actor, principal, run,
+			func(d work.Decision) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+				return file(decisionOneWire{OK: true, Decision: decisionOf(d)})
+			})
+		return err
+	})
 }
 
 func (s *Server) workDigestsRoute(w http.ResponseWriter, r *http.Request) {

@@ -75,6 +75,10 @@ const words = {
     decisionDefault: "If nobody answers by {when}: {option}",
     decisionBlocking: "Work is stopped until this is answered",
     decisionFrom: "Asked by {session}",
+    decisionDismiss: "Dismiss",
+    decisionDismissLabel: "Dismiss this question without choosing an option",
+    decisionDismissing: "Dismissing…",
+    decisionDismissed: "Dismissed. The Session is told not to wait for this answer.",
 
     digestTitle: "Daily digest",
     digestFor: "{date}",
@@ -294,6 +298,10 @@ const words = {
     decisionDefault: "到 {when} 還沒人回答，就照「{option}」",
     decisionBlocking: "回答之前，工作停著",
     decisionFrom: "{session} 問的",
+    decisionDismiss: "略過",
+    decisionDismissLabel: "不選任何選項，略過這個問題",
+    decisionDismissing: "略過中…",
+    decisionDismissed: "已略過，已通知 Session 不用再等這個答案。",
 
     digestTitle: "每日摘要",
     digestFor: "{date}",

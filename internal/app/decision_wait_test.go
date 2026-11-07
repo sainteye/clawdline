@@ -305,3 +305,47 @@ func TestAWithdrawnWaitTakesTheQuestionAway(t *testing.T) {
 		t.Fatalf("a withdrawal told the owner an answer: %+v", dw.closed)
 	}
 }
+
+// A person can set a stale question aside without choosing any option: the
+// decision is withdrawn by them, the item stops waiting, and the owning
+// Session is told it was dismissed rather than answered.
+func TestAPersonDismissingADecisionClearsTheWaitAndTellsTheSession(t *testing.T) {
+	dw := newDecisionWait(t)
+	ctx := context.Background()
+	w, d := dw.waiting()
+	got, err := dw.p.DismissDecision(ctx, d.ID, "user", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != work.DecisionWithdrawn || got.Answer != "" || got.AnsweredBy != "user" {
+		t.Fatalf("dismissed decision = %+v", got)
+	}
+	after := dw.item(w.Item.ID)
+	if after.Item.Condition != "" || after.Item.DecisionID != "" {
+		t.Fatalf("item still waits after a dismissal: %+v", after.Item)
+	}
+	if !eventWith(after, "decision.closed", `"state":"withdrawn"`, `"answered_by":"user"`) {
+		t.Fatalf("no dismissal on the item: %+v", after.Events)
+	}
+	if len(dw.closed) != 1 || dw.closed[0].Decision.ID != d.ID {
+		t.Fatalf("owner told = %+v", dw.closed)
+	}
+	notice := dw.closed[0].Notice()
+	if !strings.Contains(notice, "dismissed") || !strings.Contains(notice, "do not wait") || strings.Contains(notice, "Answer:") {
+		t.Fatalf("notice = %q", notice)
+	}
+	if _, err := dw.p.DismissDecision(ctx, d.ID, "user", "", nil, nil); codeOf(err) != "decision_withdrawn" {
+		t.Fatalf("second dismissal = %v", err)
+	}
+	if _, err := dw.p.AnswerDecision(ctx, d.ID, "done", "user", "", nil, nil); codeOf(err) != "decision_withdrawn" {
+		t.Fatalf("answer after dismissal = %v", err)
+	}
+	// An answered decision cannot be dismissed afterwards.
+	_, answered := dw.waiting()
+	if _, err := dw.p.AnswerDecision(ctx, answered.ID, "done", "user", "", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dw.p.DismissDecision(ctx, answered.ID, "user", "", nil, nil); codeOf(err) != "decision_closed" {
+		t.Fatalf("dismissing an answered decision = %v", err)
+	}
+}
