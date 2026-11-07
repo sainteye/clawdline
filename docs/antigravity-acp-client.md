@@ -85,7 +85,12 @@ cancels the prompt as a normal ending: no error entry, the turn-complete
 notification fires and queued messages are sent. Any later tool update,
 thought or non-blank text clears the mark, so a model that wrote it and went on
 keeps working. A conversation that predates the instruction, or a model that
-omits the marker, falls back to the three-minute window. A turn the runtime
+omits the marker, falls back to the three-minute window. When that window
+ends a turn whose latest live step was assistant text closed by a
+`usage_update`, with no tool active, the turn is recorded as finished like a
+marked one: all seven unanswered turns in the trace ended that way. A turn
+last seen in a tool update, a thought or unclosed text still records
+`antigravity_turn_inactivity_timeout`. A turn the runtime
 does answer is answered within milliseconds of its last `usage_update`, so the
 grace only applies to an unanswered one.
 

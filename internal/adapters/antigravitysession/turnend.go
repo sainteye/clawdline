@@ -57,3 +57,22 @@ func (c *conversation) noteTurnEnd(found bool, chunk string) {
 		c.endMarked = false
 	}
 }
+
+// noteReplyEnd follows the live update kinds of a running turn. Every one of
+// the seven turns the runtime never answered on 2026-11-07 ended with
+// assistant text then a usage_update; a step that ends in a tool call reports
+// the tool, and a usage_update after text is how a generation step closes.
+func (c *conversation) noteReplyEnd(kind string) {
+	switch kind {
+	case "usage_update":
+		if c.lastKind == "agent_message_chunk" {
+			c.replyEnded = true
+		}
+	case "agent_message_chunk":
+		c.replyEnded = false
+		c.lastKind = kind
+	default:
+		c.replyEnded = false
+		c.lastKind = kind
+	}
+}
