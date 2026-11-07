@@ -38,6 +38,8 @@ export function buildFailureWord(code:string):string{
  if(code==="disabled")return graphWord("disabled")
  if(code==="stopped" || code==="unavailable")return graphWord("buildStopped")
  if(code==="timeout")return graphWord("buildTimeout")
+ if(code==="entry_limit")return graphWord("buildEntryLimit")
+ if(code==="ignore_unavailable")return graphWord("buildIgnoreUnavailable")
  if(["source_limit","graph_limit","runtime_limit"].includes(code))return graphWord("buildLimit")
  if(code==="parser_failed")return graphWord("buildParserFailed")
  if(code==="unsafe_source")return graphWord("buildUnsafeSource")

@@ -1978,6 +1978,8 @@
   "codegraphView.buildContinues": "建立期間可以關閉此畫面；關閉 CodeGraph 開關則會停止建立。",
   "codegraphView.buildCounts": "已掃描 {arg0} 個原始檔 · {arg1} MiB",
   "codegraphView.buildCustomInputs": "此工作目錄有自訂 CodeGraph 設定。請另行建立索引，以保留這些規則。",
+  "codegraphView.buildEntryLimit": "排除 Git 忽略的檔案後，這個工作目錄仍有超過 20,000 個檔案與資料夾要掃描，尚未發布索引。請把大型產物、紀錄或發布副本資料夾加入 .gitignore 後再試。",
+  "codegraphView.buildIgnoreUnavailable": "Git 無法列出這個 repository 忽略的檔案，掃描已停止，不會用猜的。請確認 Git 在這個目錄可以正常執行後再試。",
   "codegraphView.buildFailed": "本機索引建立失敗。請重新讀取狀態後再試。",
   "codegraphView.buildHistoryFull": "這台機器保留的近期建立狀態已達上限。請在十分鐘保留期間結束後再試。",
   "codegraphView.buildIndexExists": "既有索引不是由 Clawdline 管理，原有檔案已保留。",

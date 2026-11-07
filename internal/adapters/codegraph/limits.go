@@ -6,6 +6,7 @@ const (
 	MaxFileBytes            = 16 << 20
 	MaxTotalBytes           = 256 << 20
 	MaxScanEntries          = 20000
+	MaxIgnoredListBytes     = 4 << 20
 	CheckSecondsLimit       = 5
 	ServiceRootsLimit       = 4
 	ServiceIdleSecondsLimit = 600

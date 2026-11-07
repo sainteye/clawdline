@@ -4721,6 +4721,26 @@
   },
   {
     "Register": "tool",
+    "Name": "codegraph.ignored_list_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4194304,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/codegraph.MaxIgnoredListBytes"
+    ]
+  },
+  {
+    "Register": "tool",
     "Name": "codegraph.metadata_bytes",
     "Class": "buffer",
     "Unit": "bytes",

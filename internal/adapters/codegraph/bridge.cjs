@@ -4,6 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const {spawnSync} = require('child_process');
 const readline = require('readline');
 const [bundle, mode, rootArg, limitsArg] = process.argv.slice(2);
 const L = JSON.parse(limitsArg);
@@ -66,6 +68,31 @@ function boundedContent(absolute) {
   return Buffer.concat(chunks,size);
  }finally{fs.closeSync(fd)}
 }
+// Same arguments and environment as the Go check (ignored.go), so both
+// compute one inventory: only the repository's own ignore files decide, and
+// settings that make Git run a program are emptied on the command line.
+function ignoredPaths() {
+ const out = {files:new Set(), dirs:new Set()};
+ // A build parses the private snapshot the Go scan already filtered; Git there
+ // could only answer for whatever repository happens to enclose the temp directory.
+ if (mode === 'build') return out;
+ const env = {GIT_CONFIG_NOSYSTEM:'1', GIT_CONFIG_GLOBAL:os.devNull, GIT_TERMINAL_PROMPT:'0', LC_ALL:'C'};
+ for (const name of ['PATH','HOME','USERPROFILE','SYSTEMROOT']) if (process.env[name] !== undefined) env[name] = process.env[name];
+ const result = spawnSync('git', ['-c','core.fsmonitor=','-c','core.excludesFile=','-c','core.hooksPath='+os.devNull,'ls-files','-z','--others','--ignored','--exclude-standard','--directory'],
+  {cwd:root, env, maxBuffer:L.ignoredBytes, encoding:'buffer', windowsHide:true});
+ if (result.error?.code === 'ENOENT') return out;
+ if (result.error?.code === 'ENOBUFS') throw fail('source_limit');
+ if (result.error) throw fail('ignore_unavailable');
+ if (result.status !== 0) {
+  if (String(result.stderr).includes('not a git repository')) return out;
+  throw fail('ignore_unavailable');
+ }
+ for (const name of result.stdout.toString('utf8').split('\0')) {
+  if (!name) continue;
+  if (name.endsWith('/')) out.dirs.add(name.slice(0,-1)); else out.files.add(name);
+ }
+ return out;
+}
 function inventory() {
  // Re-read custom mappings even for same-mtime configuration changes.
  clearProjectConfigCache(root);
@@ -81,15 +108,16 @@ function inventory() {
    }
   }
  }
+ const ignored = ignoredPaths();
  const sources = {};
  let entries = 0, bytes = 0;
  function walk(dir) {
   for (const entry of fs.readdirSync(path.join(root, dir), {withFileTypes: true})) {
-   if (++entries > L.entries) throw fail('source_limit');
+   if (++entries > L.entries) throw fail('entry_limit');
    const name = dir ? dir + '/' + entry.name : entry.name;
    if (entry.isDirectory()) {
-    if (!excluded.has(entry.name) && !entry.name.startsWith('.clawdline-codegraph-')) walk(name);
-   } else if (sourceName(name,activeExtensions)) {
+    if (!excluded.has(entry.name) && !entry.name.startsWith('.clawdline-codegraph-') && !ignored.dirs.has(name)) walk(name);
+   } else if (!ignored.files.has(name) && sourceName(name,activeExtensions)) {
     const {absolute,st} = safeFile(name);
     const data=boundedContent(absolute);
     bytes += data.length;
@@ -106,7 +134,7 @@ function inventory() {
 function nativeChanges() {
  // Full content checks avoid relying on Git's stat cache or an mtime equality.
  const files = scanDirectory(root);
- if (files.length > L.entries) throw fail('source_limit');
+ if (files.length > L.entries) throw fail('entry_limit');
  const tracked = new Map(cg.getFiles().map(file => [file.path, file]));
  const current = new Set();
  const changed = [];

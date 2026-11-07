@@ -1978,6 +1978,8 @@
   "codegraphView.buildContinues": "You can close this view while the build continues. Turning CodeGraph off stops the build.",
   "codegraphView.buildCounts": "Scanned {arg0} source files · {arg1} MiB",
   "codegraphView.buildCustomInputs": "This directory has custom CodeGraph configuration. Build its index separately so those rules are preserved.",
+  "codegraphView.buildEntryLimit": "This working directory has more than 20,000 files and folders to scan, even after skipping what Git ignores. No index was published. Add large generated, log or release folders to .gitignore, then try again.",
+  "codegraphView.buildIgnoreUnavailable": "Git could not list this repository’s ignored files, so the scan stopped instead of guessing. Check that Git works in this directory, then try again.",
   "codegraphView.buildFailed": "The local index build failed. Read its status again before retrying.",
   "codegraphView.buildHistoryFull": "The machine is holding the maximum number of recent build statuses. Try again after the ten-minute retention window.",
   "codegraphView.buildIndexExists": "An existing index is not managed by Clawdline. Its files were preserved.",

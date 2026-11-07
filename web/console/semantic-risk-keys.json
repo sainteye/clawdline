@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10787,
+  "englishKeys": 10789,
   "counts": {
-    "negation": 3001,
-    "state": 1777,
+    "negation": 3003,
+    "state": 1778,
     "permission": 632,
     "deletion": 240,
     "uncertainty": 410
   },
-  "unionCount": 4752,
+  "unionCount": 4754,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -701,6 +701,8 @@
       "capacityRow.work_gate_round_details_per_store.full",
       "codegraphView.automaticScope",
       "codegraphView.buildBusy",
+      "codegraphView.buildEntryLimit",
+      "codegraphView.buildIgnoreUnavailable",
       "codegraphView.buildIndexExists",
       "codegraphView.buildLimit",
       "codegraphView.buildNoSources",
@@ -3622,6 +3624,7 @@
       "capacityRow.workflow.snapshot_bytes.full",
       "capacityRow.workflow.snapshot_bytes.what",
       "codegraphView.buildFailed",
+      "codegraphView.buildIgnoreUnavailable",
       "codegraphView.buildPhase_publishing",
       "codegraphView.buildStopped",
       "codegraphView.buildUnsafeSource",
@@ -7188,7 +7191,9 @@
     "clawdfatherMenu.limitReached",
     "codegraphView.automaticScope",
     "codegraphView.buildBusy",
+    "codegraphView.buildEntryLimit",
     "codegraphView.buildFailed",
+    "codegraphView.buildIgnoreUnavailable",
     "codegraphView.buildIndexExists",
     "codegraphView.buildLimit",
     "codegraphView.buildNoSources",

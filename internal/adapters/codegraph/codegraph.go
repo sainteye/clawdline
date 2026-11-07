@@ -146,6 +146,10 @@ func scan(ctx context.Context, root string, copyTo string) (map[string]string, S
 	if err != nil {
 		return nil, out, err
 	}
+	ignored, err := gitIgnored(ctx, root)
+	if err != nil {
+		return nil, out, err
+	}
 	sources := map[string]string{}
 	err = fs.WalkDir(r.FS(), ".", func(name string, d fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
@@ -156,15 +160,15 @@ func scan(ctx context.Context, root string, copyTo string) (map[string]string, S
 		}
 		out.Entries++
 		if out.Entries > MaxScanEntries {
-			return BuildError("source_limit")
+			return BuildError("entry_limit")
 		}
 		if d.IsDir() {
-			if name != "." && excludedDirectory(d.Name()) {
+			if name != "." && (excludedDirectory(d.Name()) || ignored.dir(name)) {
 				return fs.SkipDir
 			}
 			return nil
 		}
-		if !sourceName(name, extensions) {
+		if ignored.file(name) || !sourceName(name, extensions) {
 			return nil
 		}
 		if d.Type()&os.ModeSymlink != 0 {
