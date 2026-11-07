@@ -932,6 +932,9 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 			return err
 		}
 	}
+	if c.row.State == session.StateWorking && !c.replaying && (u.Kind == "agent_message_chunk" || u.Kind == "agent_thought_chunk") {
+		c.modelMovedOn()
+	}
 	if c.store != nil {
 		return c.project(u)
 	}

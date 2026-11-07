@@ -54,8 +54,15 @@ not a total prompt deadline. `Options.InactivityTimeout` overrides it; when that
 option is unset, a positive `CLAWDLINE_ACP_INACTIVITY_TIMEOUT` duration overrides
 the default. Active permission offers and native tools in `pending` or
 `in_progress` pause cancellation. Tool completion or failure refreshes activity,
-so silence after the last tool ends is bounded again. A tool that never reports
-a terminal state can keep the turn open; the person can still interrupt it.
+so silence after the last tool ends is bounded again. Model output
+(`agent_message_chunk` or `agent_thought_chunk`) releases every tool still
+marked active, because the model writes its next reply only after it has the
+results of the tools it called. On 2026-11-07 the installed runtime left three
+`view_file` calls `in_progress` after their results arrived; the model wrote on
+for a minute, then sent nothing more and never answered the prompt, and those
+tools held the watchdog off with the native process idle. A tool that never
+reports a terminal state and is followed by no model output can still keep the
+turn open; the person can still interrupt it.
 
 The host retains exact active tool IDs independently of transcript eviction and
 uses the same tracker for memory and durable Sessions. It clears that tracker
