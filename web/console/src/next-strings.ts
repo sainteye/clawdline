@@ -20,6 +20,7 @@ const words = {
     rotationIdle: "This delivered Session has been idle for at least 24 hours.",
     rotationSafety: "Prepare a state summary before handoff. The old Session stays open until its safety check passes and you close it. Conversation files are kept.",
     rotationPrepare: "Prepare handoff",
+    rotationDismiss: "Dismiss",
     rotationWait: "Available when idle",
     rotationRequested: "Request status is in the conversation",
 
@@ -2406,6 +2407,7 @@ const words = {
     rotationIdle: "這個已交付的 Session 已閒置滿 24 小時。",
     rotationSafety: "先整理完整狀態再換手。舊 Session 保持開啟，通過安全檢查後由你關閉；對話檔會保留。",
     rotationPrepare: "準備換手",
+    rotationDismiss: "略過",
     rotationWait: "閒置後可準備換手",
     rotationRequested: "請求狀態請看對話",
 

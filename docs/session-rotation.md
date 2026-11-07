@@ -16,8 +16,16 @@ The quiet-time rule requires an idle terminal, a current session-scoped delivery
 (`milestone_complete` or `work_complete`), a delivery time, and known record
 activity. Its clock starts at the later of delivery and last activity. A later
 message invalidates the current delivery through the existing work projection;
-unknown activity never becomes an idle reminder. The suggestion appears beside
-the open conversation, with the file size also in Session info.
+unknown activity never becomes an idle reminder. The suggestion is a Note in
+the existing attention panel above the conversation. Its pending count and dot
+use the existing attention entry; it adds no footer or composer surface. The
+file size also appears in Session info.
+
+**Dismiss** hides the suggestion without sending a message or starting work.
+The browser remembers dismissal for the exact machine, route Session and
+conversation, including after reload. It is a local browser preference, not a
+cross-device Note resolution. A new conversation has its own suggestion. If
+browser storage is unavailable, dismissal still hides it in the current view.
 
 **Prepare handoff** is available while idle. It sends a conversation-bound request
 through the existing send receipt and pending-message controls. A recorded or
@@ -60,6 +68,7 @@ CLAWDLINE_ROTATION_BROWSER=1 go test ./internal/app/orchestrator -run '^TestRota
 It uses synthetic provider ports and an isolated real store. A Console press
 precedes the real broker's summary publication, receiver package read, durable
 receiver binding, Board item transfer and source closeability projection. It
-makes no model calls. `CLAWDLINE_SHOTS` retains five desktop/mobile screenshots;
+makes no model calls. `CLAWDLINE_SHOTS` retains desktop/mobile screenshots of the
+collapsed attention entry, Note, dismissal and handoff;
 their synthetic provider text is labelled on screen. This does not establish
 that a particular live model will write a complete summary on every attempt.

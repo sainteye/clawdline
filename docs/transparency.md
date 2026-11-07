@@ -256,7 +256,7 @@ SessionInfo now uses a daemon-owned conversation preference rather than appendin
 
 ## Long conversation reminders
 
-The conditional `session-rotation` card records the new person-triggered user
+The conditional `session-rotation` Note records the new person-triggered user
 message. The reminder reads file size or current delivery/activity evidence;
 rendering it sends nothing. Its localized request preserves state and asks for a
 milestone handoff, receiver/Board verification and a dry-run close check. It never
@@ -264,6 +264,10 @@ force-closes the source or deletes provider history. Both English and Taiwan
 Traditional Chinese explain that the old Session stays open for the person's
 inspection. Session info also displays the observed conversation file size; its
 existing CodeGraph instruction provision behavior is unchanged by that display.
+The suggestion lives in the existing attention panel; it does not add a footer
+or composer block. Dismiss sends nothing and is remembered by this browser for
+the exact machine, route Session and conversation, independently of ordinary
+Agent-authored Notes.
 
 
 Space-saving image review is a separate machine opt-in, disabled by default.

@@ -116,7 +116,9 @@ function read(id: string, tier: Tier, force: boolean): Promise<SessionInfo | nul
             state.summary = { generation, data, at: Date.now() }
           }
         }
-        return tier === "summary" && state.full ? state.full.data : data
+        const answer = tier === "summary" && state.full ? state.full.data : data
+        if (answer) for (const listen of listeners) listen(id, answer)
+        return answer
       },
       (error) => {
         if (state.generation === generation && state[key] === record) state[key] = null
@@ -155,7 +157,7 @@ export const SessionFacts = {
     for (const listen of listeners) listen(id, data)
     return data
   },
-  /** Told of every `receiveFull`. Returns the way to stop listening. */
+  /** Told of current summary/full answers. Returns the way to stop listening. */
   subscribe(listen: (id: string, data: SessionInfo) => void): () => void {
     listeners.add(listen)
     return () => {

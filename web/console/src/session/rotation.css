@@ -1,6 +1,0 @@
-.session-rotation { flex: none; display: flex; align-items: center; gap: 12px; margin: 6px 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card, #17171c); font-size: 12px; }
-.session-rotation div { flex: 1 1 240px; min-width: 0; }
-.session-rotation p { margin: 3px 0 0; color: var(--muted); line-height: 1.5; }
-.session-rotation button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card, #17171c); color: inherit; font: inherit; cursor: pointer; }
-.session-rotation button:disabled { opacity: .65; cursor: default; }
-@media (max-width: 600px) { .session-rotation { margin: 6px 10px; flex-wrap: wrap; } .session-rotation button { margin-left: auto; } }

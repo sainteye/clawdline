@@ -21,6 +21,7 @@ import { announceAttentionRead } from "./attention-changed.js"
 import { samePageTarget } from "../same-page-links.js"
 import { hasDocumentIntent } from "../legacy/documents-bridge.js"
 import { requestPage } from "../overlays/index.js"
+import { useRotationNote } from "./RotationNotice.js"
 import { catalogLabel, clauseSeparator, labelled } from "../punctuation.js"
 import "./interventions.css"
 
@@ -57,6 +58,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   const busyRef = useRef(false)
   const actionSerial = useRef(0)
   const [expanded, setExpanded] = useState(false)
+  const rotationNote = useRotationNote(row, onReplySent, () => setExpanded(false))
   const panel = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     if (expanded) return
@@ -177,7 +179,8 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   const recent = shown?.rows.filter((note) => !!note.resolved_at) ?? []
   // How many notes the head says are unresolved: the page this panel read, or
   // the row's own count off the stream, or null while nobody has said.
-  const unresolved = unresolvedNoteCount(shown ? active.length : null, counted ? attentionCount : null)
+  const noteCount = unresolvedNoteCount(shown ? active.length : null, counted ? attentionCount : null)
+  const unresolved = rotationNote ? (noteCount ?? 0) + 1 : noteCount
   const run = async (note: HumanInterventionV2, action: "resolve" | "reopen") => {
     if (busyRef.current || readError || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
     const serial = ++actionSerial.current
@@ -338,7 +341,8 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
       {actionError && <p className="human-interventions-error" role="alert">{actionError}</p>}
       {actionStatus && <p className="human-interventions-status" role="status">{actionStatus}</p>}
       {!shown && !readError && <p className="human-interventions-empty human-interventions-loading" role="status"><span className="human-interventions-spinner" aria-hidden="true" />{catalogWord("inline", "656c48dad32b")}</p>}
-      {shown && active.length === 0 && <p className="human-interventions-empty">{catalogWord("inline", "e43b3c54e4b6")}</p>}
+      {shown && active.length === 0 && !rotationNote && <p className="human-interventions-empty">{catalogWord("inline", "e43b3c54e4b6")}</p>}
+      {rotationNote}
       {/* Closing still unmounts secret fields immediately; only ordinary Note
           content remains mounted for the non-interactive exit picture. */}
       {active.filter((note) => expanded || note.kind !== "secret").map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} secretReceived={!!note.secret_received || secretReceipt?.id === note.id && secretReceipt.phase === "received"} onReplace={() => { if (receiptTimer.current) clearTimeout(receiptTimer.current); if (collapseTimer.current) clearTimeout(collapseTimer.current); receiptTimer.current = null; collapseTimer.current = null; setCollapsing(false) }} onAction={run} onReply={reply} onCompose={compose} onHandoff={handoff} />)}

@@ -3998,20 +3998,38 @@ test("ACP lifecycle evidence renders in English and Traditional Chinese on phone
 })
 
 
-test("rotation reminder shows the full handoff presentation with synthetic provider states", async () => {
+test("rotation reminder uses attention notes, dismisses without sending and hands off on one press", async () => {
   rotationScenario = { bytes: 64*1024*1024, state: "idle", sent: [], stage: 0 }
   try {
     await inTab(DESK, async tab => {
       await tab.go("/" + FRAGMENT[TMUX])
       await tab.until("the rotation source opens", s => s.open === TMUX)
-      await tab.run(`(async()=>{for(let i=0;i<100&&!document.querySelector('.session-rotation');i++)await new Promise(r=>setTimeout(r,50));if(!document.querySelector('.session-rotation'))throw Error('missing rotation reminder')})()`)
+      await tab.run(`(async()=>{for(let i=0;i<100&&!document.querySelector('.human-interventions-head .human-interventions-dot');i++)await new Promise(r=>setTimeout(r,50));if(!document.querySelector('.human-interventions-head .human-interventions-dot'))throw Error('missing rotation attention')})()`)
       assert.equal(rotationScenario!.sent.length,0,"rendering must not send")
-      assert.match(await tab.run(`document.querySelector('.session-rotation').textContent`),/64.0 MiB/)
+      assert.equal(await tab.run(`document.querySelector('.session-rotation')`),null,"no footer reminder")
+      assert.equal(await tab.run(`document.querySelector('.human-interventions').hidden`),true,"note stays in the existing collapsed panel")
+      await tab.shot("rotation-00-note-entry")
+      await tab.run(`document.querySelector('.human-interventions-head').click()`)
+      assert.match(await tab.run(`document.querySelector('.session-rotation-note').textContent`),/64.0 MiB/)
       await tab.shot("rotation-01-desktop-reminder")
       await tab.view(PHONE,"dark")
       assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth`),"phone overflow")
       await tab.shot("rotation-02-phone-reminder")
-      await tab.run(`document.querySelector('.session-rotation button').click();document.querySelector('.session-rotation button').click()`)
+      await tab.run(`document.querySelectorAll('.session-rotation-note button')[1].click()`)
+      assert.equal(rotationScenario!.sent.length,0,"dismissal sends nothing")
+      assert.equal(await tab.run(`document.querySelector('.session-rotation-note')`),null)
+      await tab.reload()
+      await tab.until("dismissed source reloads",s=>s.open===TMUX)
+      await tab.run(`(async()=>{for(let i=0;i<100&&!document.querySelector('#status-line .model')?.textContent?.includes('gpt-6-sol');i++)await new Promise(r=>setTimeout(r,50));if(!document.querySelector('#status-line .model')?.textContent?.includes('gpt-6-sol'))throw Error('missing reloaded facts')})()`)
+      assert.equal(await tab.run(`document.querySelector('.session-rotation-note')`),null,"dismissal survives reload")
+      await tab.shot("rotation-06-dismissed")
+      // This isolated browser clears only its fixture dismissal to exercise
+      // the other choice in the same real Console/broker flow.
+      await tab.run(`Object.keys(localStorage).filter(key=>key.startsWith('clawdline.rotation-dismissed:')).forEach(key=>localStorage.removeItem(key))`)
+      await tab.reload()
+      await tab.until("source reopens",s=>s.open===TMUX)
+      await tab.run(`(async()=>{for(let i=0;i<100&&!document.querySelector('.session-rotation-note');i++)await new Promise(r=>setTimeout(r,50));if(!document.querySelector('.session-rotation-note'))throw Error('missing rotation note')})()`)
+      await tab.run(`document.querySelector('.human-interventions-head').click();document.querySelector('.session-rotation-note button').click();document.querySelector('.session-rotation-note button').click()`)
       const deadline=Date.now()+5000
       while(!rotationScenario!.sent.length&&Date.now()<deadline)await new Promise(r=>setTimeout(r,50))
       assert.equal(rotationScenario!.sent.length,1)

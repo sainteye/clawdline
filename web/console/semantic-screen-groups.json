@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10784,
+  "englishContentKeys": 10785,
   "riskKeys": 4750,
-  "nonRiskCount": 6034,
+  "nonRiskCount": 6035,
   "groups": [
     {
       "name": "acp / other",
@@ -3762,7 +3762,7 @@
     },
     {
       "name": "next / other",
-      "count": 651,
+      "count": 652,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4112,6 +4112,7 @@
         "next.roleIconSave",
         "next.roleIconTitle",
         "next.roleIconVariant",
+        "next.rotationDismiss",
         "next.rotationPrepare",
         "next.rotationRecordSize",
         "next.rotationRequested",
