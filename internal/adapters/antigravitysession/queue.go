@@ -169,7 +169,10 @@ func (h *Host) drainNext(c *conversation) {
 }
 
 // QueueUse answers the largest queue any conversation holds, in messages and
-// in bytes of text.
+// in bytes of text. A message being sent leaves the saved queue just before
+// its pipe write but reaches the transcript only on acceptance; it is still
+// counted until then, so an empty queue means every accepted message is
+// visible (CI 42346882753 read five of six inputs in that gap).
 func (h *Host) QueueUse() (rows, bytes int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -179,7 +182,11 @@ func (h *Host) QueueUse() (rows, bytes int) {
 		for _, q := range c.queued {
 			n += len(q)
 		}
-		rows, bytes = max(rows, len(c.queued)), max(bytes, n)
+		held := len(c.queued)
+		if c.draining {
+			held++
+		}
+		rows, bytes = max(rows, held), max(bytes, n)
 		c.mu.Unlock()
 	}
 	return rows, bytes
