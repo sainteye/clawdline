@@ -4,6 +4,7 @@ import "github.com/sainteye/clawdline/internal/adapters/antigravityacp"
 
 // trackActiveTool is called under c.mu, before either durable or memory
 // projection. Transcript eviction must not turn a live tool into inactivity.
+// Each active ID keeps the native kind it was announced with.
 func (c *conversation) trackActiveTool(d *antigravityacp.ToolCallDelta, initial bool) error {
 	if d.Status == nil && !initial {
 		return nil
@@ -19,33 +20,47 @@ func (c *conversation) trackActiveTool(d *antigravityacp.ToolCallDelta, initial 
 			c.activeToolBytes -= len(d.ToolCallID)
 		}
 	case "pending", "in_progress":
-		if _, ok := c.activeTools[d.ToolCallID]; ok {
+		if kind, ok := c.activeTools[d.ToolCallID]; ok {
+			if kind == "" && d.Kind != nil {
+				c.activeTools[d.ToolCallID] = *d.Kind
+			}
 			return nil
 		}
 		if len(d.ToolCallID) > MaxActiveToolBytes-c.activeToolBytes {
 			return refusal("view_too_large")
 		}
 		if c.activeTools == nil {
-			c.activeTools = make(map[string]struct{})
+			c.activeTools = make(map[string]string)
 		}
-		c.activeTools[d.ToolCallID] = struct{}{}
+		kind := ""
+		if d.Kind != nil {
+			kind = *d.Kind
+		}
+		c.activeTools[d.ToolCallID] = kind
 		c.activeToolBytes += len(d.ToolCallID)
 	}
 	return nil
 }
 
-// modelMovedOn releases every tool still marked active when the model writes
-// again. The model generates its next reply only after it has the results of
-// the tools it called, so a tool it never reported complete is no longer
-// running for this turn. On 2026-11-07 three view_file calls stayed
-// in_progress after their replies arrived, the model wrote on and fell silent,
-// and the tools held the inactivity watchdog off with nothing running.
+// synchronousToolKinds are ACP tool kinds the runtime finishes before the
+// model writes again. Execute, fetch, other and unknown kinds can run in the
+// background while the model keeps writing: on 2026-11-07 a `task wait
+// --timeout 9m` command stayed in_progress for seven and a half minutes while
+// the model wrote that it was waiting, then completed normally.
+var synchronousToolKinds = map[string]bool{"read": true, "edit": true, "delete": true, "move": true, "search": true, "think": true}
+
+// modelMovedOn releases synchronous tools still marked active when the model
+// writes again: a result the model has already used is no longer running. On
+// 2026-11-07 three view_file (read) calls stayed in_progress after their
+// results arrived, the model wrote on and fell silent, and they held the
+// inactivity watchdog off with nothing running.
 func (c *conversation) modelMovedOn() {
-	if len(c.activeTools) == 0 {
-		return
+	for id, kind := range c.activeTools {
+		if synchronousToolKinds[kind] {
+			delete(c.activeTools, id)
+			c.activeToolBytes -= len(id)
+		}
 	}
-	c.activeTools = nil
-	c.activeToolBytes = 0
 }
 
 // ActiveToolBytes reports the largest per-turn tracker, matching its per-turn

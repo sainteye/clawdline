@@ -49,20 +49,31 @@ runtime model identifiers are retained without interpreting them as failure.
 
 ## Owned Session inactivity watchdog
 
-The Session host has a separate inactivity watchdog. Its default is 15 minutes,
+The Session host has a separate inactivity watchdog. Its default is 3 minutes,
 not a total prompt deadline. `Options.InactivityTimeout` overrides it; when that
 option is unset, a positive `CLAWDLINE_ACP_INACTIVITY_TIMEOUT` duration overrides
 the default. Active permission offers and native tools in `pending` or
 `in_progress` pause cancellation. Tool completion or failure refreshes activity,
-so silence after the last tool ends is bounded again. Model output
-(`agent_message_chunk` or `agent_thought_chunk`) releases every tool still
-marked active, because the model writes its next reply only after it has the
-results of the tools it called. On 2026-11-07 the installed runtime left three
-`view_file` calls `in_progress` after their results arrived; the model wrote on
-for a minute, then sent nothing more and never answered the prompt, and those
-tools held the watchdog off with the native process idle. A tool that never
-reports a terminal state and is followed by no model output can still keep the
-turn open; the person can still interrupt it.
+so silence after the last tool ends is bounded again.
+
+Model output (`agent_message_chunk` or `agent_thought_chunk`) releases active
+tools of the synchronous kinds `read`, `edit`, `delete`, `move`, `search` and
+`think`: a result the model is already writing from is no longer running.
+`execute`, `fetch`, `other` and unannounced kinds stay active, because this
+runtime keeps writing while a command runs in the background.
+
+The values come from this machine's ACP trace on 2026-11-07 (10:55 to 13:44,
+907 intervals during prompts). A turn that went on to continue was never silent
+for more than 23 seconds with no tool active. Seven turns ended with model text
+and a `usage_update`, after which the runtime sent nothing and never answered
+`session/prompt`; they sat silent for 8 to 45 minutes until the person pressed
+Stop or the daemon restarted. Four had no active tool, two had `read` tools
+(`view_file`) left `in_progress`, and one had an `execute` tool. A `task wait
+--timeout 9m` command stayed `in_progress` for seven and a half minutes while
+the model wrote that it was waiting, then completed and the turn continued.
+An unanswered turn with an orphaned `execute` tool can still keep the turn open;
+the person can still interrupt it. A turn the watchdog ends sends the
+conversation's queued messages like any other idle ending.
 
 The host retains exact active tool IDs independently of transcript eviction and
 uses the same tracker for memory and durable Sessions. It clears that tracker
@@ -81,7 +92,9 @@ The reference comparison was read from source on 2026-11-05:
 | [T3 Code `67eebaca`](https://github.com/pingdotgg/t3code/blob/67eebaca23f8f7bc46e8817434087fc9c5acf8e3/apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts#L276) | Antigravity uses 15 minutes. [The adapter](https://github.com/pingdotgg/t3code/blob/67eebaca23f8f7bc46e8817434087fc9c5acf8e3/packages/provider-acp/src/server/adapter.ts#L7780) pauses for open agent/runtime requests, pending/running/waiting tools and blocking subagents. It replaces the runtime after an inactive prompt. | Session load: 90 seconds; cancellation: 15 seconds in `AcpSessionRuntime.ts`. |
 | [Orca `a927cccb`](https://github.com/stablyai/orca/blob/a927cccb042e4f0a350eb3f5a127e52c82eb40e2/src/main/acp/acp-peer-limits.ts#L44) | ACP prompt requests have no fixed timeout: `acpStepBound` returns `null` for `session/prompt`, and the peer creates no timer for `null`. | Initialize: 60 seconds; new/load/resume/fork: 300 seconds. Option writes: 30 seconds; stop grace: 4 seconds in `acp-structured-session-adapter-deps.ts`. |
 
-This change adopts T3's longer inactivity window and explicit tool pause. It
+The 2026-11-05 change adopted T3's 15-minute window and explicit tool pause; on
+2026-11-07 the window was shortened to 3 minutes from the trace above, keeping
+the tool pause. It
 does not claim to reproduce T3's complete subagent/request model or Orca's
 unbounded prompt policy. The comparison is a source inspection, not a runtime
 benchmark of either external product. Local synthetic ACP tests cover a silent

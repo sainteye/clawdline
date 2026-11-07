@@ -39,11 +39,18 @@ type Options struct {
 	// InactivityTimeout sets how long a session can remain in StateWorking without receiving
 	// any session/update or permission offer before the watchdog cancels the turn and settles to idle.
 	// Open tools and permission offers pause the watchdog.
-	// Defaults to DefaultInactivityTimeout (15m) if <= 0.
+	// Defaults to DefaultInactivityTimeout if <= 0.
 	InactivityTimeout time.Duration
 }
 
-const DefaultInactivityTimeout = 15 * time.Minute
+// DefaultInactivityTimeout is how long a turn with no active tool and no
+// permission offer may stay silent. Across 907 intervals of this machine's
+// ACP trace on 2026-11-07, a turn that went on to continue was never silent
+// for more than 23 seconds with no tool running; seven turns that the runtime
+// never answered sat silent for 8 to 45 minutes until the person pressed Stop
+// or the daemon restarted. Running tools pause it, so long commands are not
+// bounded by it.
+const DefaultInactivityTimeout = 3 * time.Minute
 
 type Host struct {
 	mu       sync.Mutex
@@ -76,7 +83,7 @@ type conversation struct {
 	writeGate         chan struct{}
 	lastActivity      atomic.Int64
 	timedOut          atomic.Bool
-	activeTools       map[string]struct{}
+	activeTools       map[string]string // active tool ID -> native kind
 	activeToolBytes   int
 	model             string
 	models            []contract.SessionModel

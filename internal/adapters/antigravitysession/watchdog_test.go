@@ -457,10 +457,11 @@ func TestWatchdogRaceWithEndTurnDoesNotEmitTimeoutError(t *testing.T) {
 	}
 }
 
-// A tool the native runtime never reported complete held the watchdog off
+// A read the native runtime never reported complete held the watchdog off
 // after the model had written on and gone silent (2026-11-07). Model output
-// after the tools started releases them, so the silence is noticed again.
-func TestModelOutputReleasesToolsTheRuntimeNeverCompleted(t *testing.T) {
+// releases such synchronous tools; a command that may run in the background
+// keeps the watchdog paused until it completes.
+func TestModelOutputReleasesOnlySynchronousToolsTheRuntimeNeverCompleted(t *testing.T) {
 	t.Setenv("CLW_WATCHDOG_TOOL_PEER", "yes")
 	h, row, dir := fixtureWithTimeout(t, 100*time.Millisecond)
 	if err := h.Send(context.Background(), row, "tools that never complete"); err != nil {
@@ -471,18 +472,50 @@ func TestModelOutputReleasesToolsTheRuntimeNeverCompleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { c.mu.Lock(); defer c.mu.Unlock(); return len(c.activeTools) == 2 })
-	frame, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": row.ConversationID,
-		"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Both files read."}}}})
-	if err := c.update(context.Background(), frame); err != nil {
-		t.Fatal(err)
+	emit := func(update map[string]any) {
+		t.Helper()
+		frame, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": row.ConversationID, "update": update}})
+		if err := c.update(context.Background(), frame); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if got := h.ActiveToolBytes(); got != 0 {
-		t.Fatalf("model output left %d tool bytes active", got)
+	emit(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "tool-one", "kind": "read", "status": "in_progress"})
+	emit(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "tool-two", "kind": "execute", "status": "in_progress"})
+	emit(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Waiting for the command in the background."}})
+	if got := h.ActiveToolBytes(); got != len("tool-two") {
+		t.Fatalf("active tool bytes after model output = %d, want only the command", got)
 	}
+	c.lastActivity.Store(time.Now().Add(-time.Hour).UnixNano())
+	time.Sleep(250 * time.Millisecond)
+	if inv, err := h.Inventory(context.Background()); err != nil || inv.Sessions[0].State != session.StateWorking {
+		t.Fatalf("the watchdog cancelled a background command: %+v, %v", inv, err)
+	}
+	emit(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "tool-two", "status": "completed"})
 	c.lastActivity.Store(time.Now().Add(-time.Hour).UnixNano())
 	idleHost(t, h, row)
 	raw, err := os.ReadFile(filepath.Join(dir, "cancelled"))
 	if err != nil || string(raw) != row.ConversationID {
 		t.Fatalf("the silent turn was not cancelled: %q, %v", raw, err)
+	}
+}
+
+// Seven turns the runtime never answered sat silent for 8 to 45 minutes with
+// nothing running (2026-11-07). The default ends one after a few minutes.
+func TestTheDefaultWatchdogEndsAFourMinuteSilenceWithNothingRunning(t *testing.T) {
+	t.Setenv("CLW_INTERRUPT_PEER", "yes")
+	t.Setenv("CLAWDLINE_ACP_INACTIVITY_TIMEOUT", "")
+	h, row, dir := fixture(t)
+	if err := h.Send(context.Background(), row, "a reply the runtime never ends"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := h.lookup(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.lastActivity.Store(time.Now().Add(-4 * time.Minute).UnixNano())
+	idleHost(t, h, row)
+	raw, err := os.ReadFile(filepath.Join(dir, "cancelled"))
+	if err != nil || string(raw) != row.ConversationID {
+		t.Fatalf("a four-minute silence was not ended: %q, %v", raw, err)
 	}
 }
