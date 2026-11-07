@@ -209,6 +209,7 @@
         "handoff_id": { "type": "string" },
         "kind": { "type": "string" },
         "leftovers": { "description": "task_finished only: how many things the delivery said it left undone. Present only when above zero.", "type": "integer" },
+        "leftover_items": { "description": "task_finished only: what the delivery said it left undone, read from the task's stored result when the transcript is served (the typed notice carries only the count). Absent when the task, its result or a matching notice_id cannot be read.", "type": "array", "items": { "$ref": "#/$defs/TranscriptNoticeLeftover" } },
         "note": { "type": "string" },
         "notice_id": { "type": "string" },
         "outstanding": { "description": "task_finished only, where the decoder requires it, so absence there means 0.", "type": "integer" },
@@ -224,6 +225,15 @@
         "title": { "type": "string" },
         "wait_id": { "type": "string" },
         "waiter_session_id": { "type": "string" }
+      }
+    },
+    "TranscriptNoticeLeftover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string" },
+        "why": { "type": "string" }
       }
     },
     "TranscriptNoticeTask": {

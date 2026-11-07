@@ -10197,6 +10197,14 @@ export interface TranscriptNotice {
   kind: string
 
   /**
+   * task_finished only: what the delivery said it left undone, read from the task's
+   * stored result when the transcript is served (the typed notice carries only the
+   * count). Absent when the task, its result or a matching notice_id cannot be
+   * read.
+   */
+  leftover_items?: TranscriptNoticeLeftover[]
+
+  /**
    * task_finished only: how many things the delivery said it left undone. Present
    * only when above zero.
    */
@@ -10220,6 +10228,11 @@ export interface TranscriptNotice {
   title?: string
   wait_id?: string
   waiter_session_id?: string
+}
+
+export interface TranscriptNoticeLeftover {
+  title: string
+  why?: string
 }
 
 export interface TranscriptNoticeOverlap {

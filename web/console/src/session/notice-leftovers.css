@@ -1,0 +1,35 @@
+/* What a finished task left for the session it reported to. It is a hand-back,
+   not a fault: the line is in the card's own dim colour, not `--warn`, and it
+   opens into the items when the daemon could read them (`leftover_items`).
+   The copied `transcript.css` is pinned, so the rules live here. */
+.notice-leftovers-count { margin-top: 6px; color: var(--dim); }
+.notice-leftovers { margin-top: 6px; }
+.notice-leftovers > summary {
+    display: flex; align-items: center; gap: 6px;
+    width: fit-content; max-width: 100%;
+    min-height: 28px;
+    color: var(--dim);
+    cursor: pointer;
+    list-style: none;
+}
+.notice-leftovers > summary::-webkit-details-marker { display: none; }
+.notice-leftovers > summary::before {
+    content: "";
+    flex: none;
+    width: 0; height: 0;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform 0.12s ease;
+}
+.notice-leftovers[open] > summary::before { transform: rotate(90deg); }
+.notice-leftovers > summary:hover { color: var(--ink); }
+.notice-leftovers > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.notice-leftovers ul { list-style: none; margin: 4px 0 0; padding: 0 0 0 11px; }
+.notice-leftovers li { border-top: 1px solid var(--line); padding: 6px 0 0; margin-top: 6px; }
+.notice-leftovers li:first-child { border-top: 0; padding-top: 0; margin-top: 2px; }
+.notice-leftover-title { color: var(--ink); overflow-wrap: anywhere; }
+.notice-leftover-why { margin-top: 2px; color: var(--faint); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) {
+    .notice-leftovers > summary::before { transition: none; }
+}

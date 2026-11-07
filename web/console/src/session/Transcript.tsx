@@ -69,6 +69,7 @@ import { HistoryFill, historyAdvanced } from "./history-fill.js"
 import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
+import "./notice-leftovers.css"
 import { VideoCards } from "./VideoCards.js"
 import { ToolResult } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
@@ -1578,11 +1579,37 @@ function noticeHTML(v: View, e: Entry, at: number): ReactElement {
           : fill(outstanding === 1 ? T.webNoticeOneSibling : T.webNoticeManySiblings, { n: outstanding })
       detail += '<div class="notice-meta">' + esc(siblings) + "</div>"
     }
-    // Present only when the delivery said it left something undone.
+    // Present only when the delivery said it left something undone. The
+    // count is in the typed notice; the items are what the daemon read from
+    // the task's result when it served this page (`leftover_items`). With
+    // them the line opens into the list; without them it stays one line.
     const leftovers = n.leftovers ?? 0
     if (Number.isSafeInteger(leftovers) && leftovers > 0) {
       const left = nextWord(leftovers === 1 ? "noticeOneLeftover" : "noticeManyLeftovers", { n: leftovers })
-      detail += '<div class="notice-warning">' + esc(left) + "</div>"
+      const items = (Array.isArray(n.leftover_items) ? n.leftover_items : []).filter(
+        (item) => item && typeof item.title === "string" && item.title,
+      )
+      if (items.length > 0) {
+        detail +=
+          '<details class="notice-leftovers"><summary>' +
+          esc(left) +
+          "</summary><ul>" +
+          items
+            .map(
+              (item) =>
+                '<li><div class="notice-leftover-title">' +
+                esc(item.title) +
+                "</div>" +
+                (typeof item.why === "string" && item.why
+                  ? '<div class="notice-leftover-why">' + esc(item.why) + "</div>"
+                  : "") +
+                "</li>",
+            )
+            .join("") +
+          "</ul></details>"
+      } else {
+        detail += '<div class="notice-leftovers-count">' + esc(left) + "</div>"
+      }
     }
     if (n.claims_released === true && n.child_may_still_write === true) {
       detail += '<div class="notice-warning">' + esc(T.webNoticeClaimsReleased) + "</div>"

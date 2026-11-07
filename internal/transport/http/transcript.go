@@ -184,6 +184,7 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	if !s.admitPinnedTarget(w, r, id) {
 		return
 	}
+	s.attachLeftovers(r.Context(), page.Entries)
 	if compact {
 		page.Version = transcriptVersion(page, s.executionMachine()+"\x00"+id+"\x00"+toolResultScope(id, item))
 		if known == page.Version {

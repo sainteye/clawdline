@@ -8426,6 +8426,11 @@ type TranscriptNotice struct {
 	HandoffID      string `json:"handoff_id,omitempty"`
 	Kind           string `json:"kind"`
 
+	// task_finished only: what the delivery said it left undone, read from the task's
+	// stored result when the transcript is served (the typed notice carries only the
+	// count). Absent when the task, its result or a matching notice_id cannot be read.
+	LeftoverItems []TranscriptNoticeLeftover `json:"leftover_items,omitempty"`
+
 	// task_finished only: how many things the delivery said it left undone. Present
 	// only when above zero.
 	Leftovers int64  `json:"leftovers,omitempty"`
@@ -8446,6 +8451,11 @@ type TranscriptNotice struct {
 	Title            string                    `json:"title,omitempty"`
 	WaitID           string                    `json:"wait_id,omitempty"`
 	WaiterSessionID  string                    `json:"waiter_session_id,omitempty"`
+}
+
+type TranscriptNoticeLeftover struct {
+	Title string `json:"title"`
+	Why   string `json:"why,omitempty"`
 }
 
 type TranscriptNoticeOverlap struct {
