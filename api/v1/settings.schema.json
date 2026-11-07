@@ -573,6 +573,7 @@
         "codegraph_enabled"
       ],
       "properties": {
+        "space_saving_images": { "type": "boolean", "description": "Machine-wide image review opt-in; omitted by older daemons and off by default." },
         "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
         "workflow_skills_enabled": {
           "type": "boolean",
@@ -588,6 +589,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "space_saving_images": { "type": "boolean", "description": "Machine-wide image review opt-in; omitted by older daemons and off by default." },
         "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
         "workflow_skills_enabled": {
           "type": "boolean"

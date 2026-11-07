@@ -31,15 +31,16 @@ type Stage struct {
 // covers canonical JSON with an empty digest, including CodeGraph and all stages.
 // Instructions confer no authority beyond the user's existing permissions.
 type Snapshot struct {
-	Schema           int     `json:"schema"`
-	ProfileID        string  `json:"profile_id"`
-	Version          string  `json:"version"`
-	Source           string  `json:"source"`
-	Digest           string  `json:"digest"`
-	Instructions     string  `json:"instructions"`
-	Stages           []Stage `json:"stages"`
-	CodeGraphEnabled bool    `json:"codegraph_enabled"`
-	legacyGraphify   *bool
+	Schema            int     `json:"schema"`
+	ProfileID         string  `json:"profile_id"`
+	Version           string  `json:"version"`
+	Source            string  `json:"source"`
+	Digest            string  `json:"digest"`
+	Instructions      string  `json:"instructions"`
+	Stages            []Stage `json:"stages"`
+	CodeGraphEnabled  bool    `json:"codegraph_enabled"`
+	SpaceSavingImages bool    `json:"space_saving_images,omitempty"`
+	legacyGraphify    *bool
 }
 
 // Seal returns an independent normalized copy. A zero schema selects schema 2;
@@ -68,7 +69,7 @@ func (s Snapshot) Validate() error {
 }
 
 func (s Snapshot) validateFields() error {
-	if (s.Schema != 2 && (s.Schema != 1 || s.legacyGraphify == nil || s.CodeGraphEnabled)) || !safeID.MatchString(s.ProfileID) || strings.TrimSpace(s.Version) == "" || strings.TrimSpace(s.Source) == "" {
+	if (s.Schema != 2 && (s.Schema != 1 || s.legacyGraphify == nil || s.CodeGraphEnabled || s.SpaceSavingImages)) || !safeID.MatchString(s.ProfileID) || strings.TrimSpace(s.Version) == "" || strings.TrimSpace(s.Source) == "" {
 		return ErrInvalidSnapshot
 	}
 	for _, v := range []string{s.ProfileID, s.Version, s.Source, s.Instructions} {

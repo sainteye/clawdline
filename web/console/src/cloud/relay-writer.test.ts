@@ -2909,7 +2909,7 @@ test("integration opt-ins read and write only the selected machine", async () =>
   const { reader } = seam(client)
   assert.equal((await reader.fetch("/v1/settings/integrations")).status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "integration-settings", {}, "read"])
-  for (const key of ["workflow_skills_enabled", "codegraph_enabled"]) {
+  for (const key of ["workflow_skills_enabled", "codegraph_enabled", "space_saving_images"]) {
     for (const on of [true, false]) {
       assert.equal((await reader.fetch("/v1/settings/integrations", post({ [key]: on }))).status, 200)
       assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "integration-settings-update", { changes: { [key]: on } }, "action"])

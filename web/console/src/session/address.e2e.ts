@@ -146,7 +146,7 @@ let machineSettings: Record<string, unknown> = {
 }
 let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
-let integrationSettings: { workflow_profile?: string; workflow_skills_enabled: boolean; codegraph_enabled: boolean } = { workflow_skills_enabled: false, codegraph_enabled: false }
+let integrationSettings: { workflow_profile?: string; space_saving_images?: boolean; workflow_skills_enabled: boolean; codegraph_enabled: boolean } = { workflow_skills_enabled: false, codegraph_enabled: false }
 let integrationWrites: Record<string, unknown>[] = []
 let workflowRecords: Record<string, unknown> = {}
 let heldWorkflowInfo: { id: string; replies: (() => void)[] } | null = null
@@ -3235,7 +3235,7 @@ test("workflow settings explain both switches and persist independent changes on
         }
         await waitFor(`!!document.getElementById("settings-tab-3")`)
         await tab.run(`document.getElementById("settings-tab-3").click()`)
-        const switches = `.settings-workflow:not(.settings-integrations) [role="switch"]`
+        const switches = `[role="switch"][aria-labelledby="workflow-dispatch_full_permission-title"], [role="switch"][aria-labelledby="workflow-session_auto_discovery-title"]`
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute("aria-checked"))`), ["true", "true"])
         assert.equal(await tab.run(`document.querySelectorAll('.workflow-setting-help:not([hidden])').length`), 0)
@@ -3411,8 +3411,8 @@ test("integration switches persist machine opt-ins and recover failures in both 
         assert.equal(await tab.run(`document.querySelector('.settings-integrations [role="switch"]').disabled`), true)
         await tab.run(`document.querySelector('.settings-integrations .chip').click()`)
         const switches = `.settings-integrations [role="switch"]`
-        await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
-        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
+        await waitFor(`document.querySelectorAll('${switches}').length === 3 && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false", "false"])
         await tab.run(`document.querySelector('.settings-integrations .workflow-info').click()`)
         assert.ok(await tab.run(`document.querySelector('.settings-integrations .workflow-setting-help').textContent.includes(${JSON.stringify(tag === "en" ? "new Claude/Codex" : "新 Claude／Codex")})`))
         for (const [index, key] of [[0, "workflow_skills_enabled"], [1, "codegraph_enabled"]] as const) {
@@ -3429,7 +3429,7 @@ test("integration switches persist machine opt-ins and recover failures in both 
         await waitFor(`!!document.getElementById("settings-tab-3")`)
         await tab.run(`document.getElementById("settings-tab-3").click()`)
         await waitFor(`!document.querySelector('${switches}')?.disabled`)
-        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["true", "true"])
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["true", "true", "false"])
         refuseIntegrationWrite = true
         await tab.run(`document.querySelector('${switches}').click()`)
         await waitFor(`!document.querySelector('${switches}').disabled && !!document.querySelector('.settings-integrations .said').textContent`)
@@ -3442,6 +3442,47 @@ test("integration switches persist machine opt-ins and recover failures in both 
   }
 })
 
+
+test("space-saving image switch explains the trade-off and persists new-execution consent", async () => {
+ for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+  for (const tag of ["en", "zh-Hant"]) {
+   integrationSettings = {workflow_profile:"clawdline", workflow_skills_enabled:false, codegraph_enabled:false, space_saving_images:false}
+   integrationWrites = []
+   await inTab(size, async tab => {
+    const waitFor = async (expression:string) => {
+     const end=Date.now()+5000
+     while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}
+    }
+    await tab.go("/")
+    await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)}); location.hash="page=settings"`)
+    await tab.reload()
+    await waitFor(`!!document.getElementById("settings-tab-3")`)
+    await tab.run(`document.getElementById("settings-tab-3").click()`)
+    const button = `[aria-labelledby="integration-space_saving_images-title"][role="switch"]`
+    await waitFor(`!!document.querySelector('${button}') && !document.querySelector('${button}').disabled`)
+    assert.equal(await tab.run(`document.querySelector('${button}').getAttribute("aria-checked")`),"false")
+    const text=await tab.run(`document.querySelector('${button}').closest('.workflow-setting').textContent`)
+    assert.ok(text.includes(tag==="en"?"thumbnails may hide details":"縮圖可能漏看細節"))
+    await tab.run(`document.querySelector('[aria-controls="integration-space_saving_images-help"]').click(); document.querySelector('${button}').closest('.workflow-setting').scrollIntoView({block:'center'})`)
+    if(shots)await tab.shot(`${tag}-${sizeName}-space-images-off`)
+    await tab.run(`document.querySelector('${button}').click()`)
+    await waitFor(`document.querySelector('${button}').getAttribute('aria-checked')==='true' && !document.querySelector('${button}').disabled`)
+    assert.deepEqual(integrationWrites,[{space_saving_images:true}])
+    if(shots)await tab.shot(`${tag}-${sizeName}-space-images-on`)
+    await tab.reload()
+    await waitFor(`!!document.getElementById("settings-tab-3")`)
+    await tab.run(`document.getElementById("settings-tab-3").click()`)
+    await waitFor(`document.querySelector('${button}')?.getAttribute('aria-checked')==='true' && !document.querySelector('${button}').disabled`)
+    await tab.run(`document.querySelector('${button}').click()`)
+    await waitFor(`document.querySelector('${button}').getAttribute('aria-checked')==='false' && !document.querySelector('${button}').disabled`)
+    assert.deepEqual(integrationWrites,[{space_saving_images:true},{space_saving_images:false}])
+    assert.deepEqual(integrationSettings,{workflow_profile:"clawdline",workflow_skills_enabled:false,codegraph_enabled:false,space_saving_images:false})
+    const bounds=await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth})`)
+    assert.ok(bounds.page<=bounds.width+1)
+   })
+  }
+ }
+})
 
 test("workflow profile picker saves only the selected profile and preserves CodeGraph", async () => {
   for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {

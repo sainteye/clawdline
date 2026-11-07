@@ -253,3 +253,14 @@ public website snapshot must follow this reviewed product commit.
 
 
 SessionInfo now uses a daemon-owned conversation preference rather than appending guidance to every message. Both language explanations describe one provision with the next ordinary human send, launch-context deduplication, unchanged slash commands, unknown outcomes and explicit re-provision after clearing context. Selecting it leaves the composer unchanged and sends no terminal input. Disabling sends one preference update; it cannot retract context or revoke tool permissions. The shared bilingual instruction document and ledger are included in the reviewed sources. Local HTTP and carried Cloud writes preserve the same conversation and revision checks. Original request bytes remain stable across retries even when the daemon adds a suffix. Neither provision receipts nor frozen workflow snapshots establish model use. The public website snapshot must follow this product commit.
+
+
+Space-saving image review is a separate machine opt-in, disabled by default.
+New executions, including children of older Sessions, sample that choice while
+retaining their inherited workflow. Existing conversations and resumes are not
+reinjected. The optional snapshot field is omitted when false, retaining historical
+canonical bytes and digests. The guidance prefers thumbnails, labeled overviews
+and original-size detail crops, with direct original viewing on explicit request.
+It also suggests saving long tool output to files. This changes no provider tool
+permissions and never edits stored conversations. The dedicated inventory entry
+and both language explanations distinguish guidance from measured savings.

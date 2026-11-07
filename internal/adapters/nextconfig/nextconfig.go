@@ -565,6 +565,7 @@ var Settables = []Settable{
 	{Name: "workflow_skills_enabled", Kind: "bool"},
 	{Name: "workflow_profile", Kind: "string", Choices: []string{"clawdline", "superpowers", "poteto"}, Refusal: "invalid_workflow_profile", Because: "clawdline, superpowers or poteto"},
 	{Name: "codegraph_enabled", Kind: "bool"},
+	{Name: "space_saving_images", Kind: "bool"},
 	// The console's setup wizard (web/console/src/setup): `local` is the
 	// person choosing to use this machine only, so the header shows a quiet
 	// local mark instead of unfinished Cloud steps.

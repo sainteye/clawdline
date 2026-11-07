@@ -10753,5 +10753,13 @@
   "worktree.taskTemporary": "Task-owned temporary",
   "worktree.unknown": "unknown",
   "worktree.unlanded": "Unlanded work",
-  "worktree.untracked": "Untracked"
+  "worktree.untracked": "Untracked",
+  "integrationSettings.space_saving_imagesTitle": "Space-saving image review",
+  "integrationSettings.space_saving_imagesDescription": "Prefer thumbnails for layout, broken images and colors; combine multiple images into a labeled overview. Inspect alignment, small text, edges or anything suspicious in original-size crops. Read the original when explicitly asked. Save long tool output to files and return a summary and path.",
+  "integrationSettings.space_saving_imagesScope": "Off by default. Can reduce transcript size, but thumbnails may hide details. Applies only to Sessions and children started afterward on this machine; existing Sessions and resumes keep their launch instructions.",
+  "transparency.card.space-saving-images.title": "Optional space-saving image review",
+  "transparency.card.space-saving-images.summary": "Off by default. Prefer thumbnails and labeled overviews, then original-size detail crops when needed. Thumbnails can hide details.",
+  "transparency.card.space-saving-images.condition": "The machine image-review switch is on when a new Session or child starts.",
+  "transparency.card.space-saving-images.how": "Launch instructions suggest thumbnails for layout and colors, labeled multi-image overviews, original-size crops for small text, alignment, edges or suspicious details, and direct original viewing when explicitly requested. Long tool output goes to files with a summary and path. Existing local tools suffice.",
+  "transparency.card.space-saving-images.effect": "New executions sample the machine choice independently of the inherited workflow. Existing Sessions and resumes retain their original context. Disabled instructions remain byte-for-byte unchanged. This is guidance, not an image-viewing restriction or proof of savings; no conversation files are deleted or rewritten."
 }
