@@ -758,9 +758,11 @@ func (h *Host) Shutdown() error {
 	var clients []*antigravityprocess.Client
 	for _, c := range h.rows {
 		c.mu.Lock()
-		if c.busy && !c.hidden && !c.interrupted {
+		if c.busy && c.row.State != session.StateIdle && !c.hidden && !c.interrupted {
 			// Recorded before the process is closed, so the turn's own
-			// failure path cannot save a row without it.
+			// failure path cannot save a row without it. A turn whose reply
+			// already ended reads idle while its job is still unwinding; it
+			// was not interrupted and is not woken.
 			c.interrupted = true
 			err = errors.Join(err, c.saveState())
 		}
