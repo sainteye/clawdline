@@ -24,3 +24,14 @@ export function codegraphGuidanceStatus(g:CodegraphGuidance):string {
  if(g.state==="unavailable")return "guidanceUnavailable"
  return "guidanceOff"
 }
+
+type IndexView = { state: string; can_build: boolean; build?: { state: string } | null }
+/** What SessionInfo says about the working directory's index. The checkbox only
+ * adds guidance; without a verified index every lookup is refused, so a missing
+ * or building index has to be said where the checkbox is, not only in the viewer. */
+export function codegraphIndexHint(view: IndexView | null): { note: "" | "sessionIndexMissing" | "sessionIndexBuilding"; action: "open" | "build" } {
+ if (!view) return { note: "", action: "open" }
+ if (view.build?.state === "running") return { note: "sessionIndexBuilding", action: "open" }
+ if (view.state === "missing") return { note: "sessionIndexMissing", action: view.can_build ? "build" : "open" }
+ return { note: "", action: "open" }
+}

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10785,
+  "englishKeys": 10787,
   "counts": {
-    "negation": 3000,
-    "state": 1775,
+    "negation": 3001,
+    "state": 1777,
     "permission": 632,
     "deletion": 240,
     "uncertainty": 410
   },
-  "unionCount": 4750,
+  "unionCount": 4752,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -725,6 +725,7 @@
       "codegraphView.noSource",
       "codegraphView.providedOnce",
       "codegraphView.selectionFailed",
+      "codegraphView.sessionIndexMissing",
       "codegraphView.sessionInstructions",
       "codegraphView.sourceMissing",
       "codegraphView.stale",
@@ -3627,6 +3628,8 @@
       "codegraphView.providedOff",
       "codegraphView.providedOnce",
       "codegraphView.saved",
+      "codegraphView.sessionIndexBuilding",
+      "codegraphView.sessionIndexMissing",
       "codegraphView.sessionInstructions",
       "composerDraft.storageUnavailable",
       "count.pendingInterventions",
@@ -7216,6 +7219,8 @@
     "codegraphView.rendererUnavailable",
     "codegraphView.saved",
     "codegraphView.selectionFailed",
+    "codegraphView.sessionIndexBuilding",
+    "codegraphView.sessionIndexMissing",
     "codegraphView.sessionInstructions",
     "codegraphView.sourceMissing",
     "codegraphView.stale",

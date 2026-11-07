@@ -1,9 +1,9 @@
-import { codegraphGuidanceStatus, codegraphInstructions, legacyCodegraphEnabled, legacyCodegraphKey } from "../codegraph/session-guidance.js"
+import { codegraphGuidanceStatus, codegraphIndexHint, codegraphInstructions, legacyCodegraphEnabled, legacyCodegraphKey } from "../codegraph/session-guidance.js"
 import { captureMachineFetch } from "../cloud/install.js"
 import { newRequestID } from "../session/pending.js"
 import { readIntegrationSettings } from "../pages/settings/api.js"
-import { CODEGRAPH_SETTING, graphWord, openCodeGraph } from "../codegraph/codegraph.js"
-import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
+import { CODEGRAPH_SETTING, graphWord, openCodeGraph, readCodeGraph } from "../codegraph/codegraph.js"
+import type { CodeGraphView, ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
 import { MENU_FOLLOW } from "../session/menu-follow.js"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
@@ -92,12 +92,26 @@ const fill = L.fillString
 
 let codegraphEnabled = false
 let codegraphSettingRead = 0
+let codegraphIndex: CodeGraphView | null = null // null until read; a failed read says nothing
+let codegraphIndexRead: AbortController | null = null
 function loadCodeGraphSetting(id: string): void {
   codegraphEnabled = false
   const version = ++codegraphSettingRead
   void readIntegrationSettings().then(settings => {
-    if (version === codegraphSettingRead && forId === id && !hidden()) {codegraphEnabled = settings.codegraph_enabled === true; draw(); migrateGraphPreference(id)}
+    if (version === codegraphSettingRead && forId === id && !hidden()) {codegraphEnabled = settings.codegraph_enabled === true; draw(); migrateGraphPreference(id); if (codegraphEnabled) loadCodeGraphIndex(id, version)}
   }, () => { if (version === codegraphSettingRead && forId === id) {codegraphEnabled = false; draw()} })
+}
+// One read per card opening or refresh, the same one the viewer makes; it never builds.
+function loadCodeGraphIndex(id: string, version: number): void {
+  codegraphIndexRead?.abort()
+  const controller = new AbortController()
+  codegraphIndexRead = controller
+  void readCodeGraph({ kind: "session", id }, controller.signal).then(view => {
+    if (!controller.signal.aborted && version === codegraphSettingRead && forId === id && !hidden()) {codegraphIndex = view; draw()}
+  }, () => { /* the viewer reports failures; the card stays as it was */ })
+}
+function forgetCodeGraphIndex(): void {
+  codegraphIndexRead?.abort(); codegraphIndexRead = null; codegraphIndex = null
 }
 
 let forId: string | null = null // whose card this is
@@ -599,8 +613,9 @@ function html(d: Facts): string {
       (g.enabled && g.state!=="pending" ? '<button type="button" class="chip" data-codegraph-again'+(guidanceBusy?' disabled':'')+'>'+esc(graphWord("provideAgain"))+'</button>' : '') +
       '<details class="codegraph-guidance"><summary>' + esc(graphWord("readInstructions")) +
       '</summary><pre>' + esc(codegraphInstructions(document.documentElement.lang)) + '</pre></details>' : ""
-    out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-codegraph-open>' +
-      esc(graphWord("open")) + '</button>' + choice)
+    const hint = codegraphIndexHint(codegraphIndex)
+    out += sec(++i, graphWord("title"), "", (hint.note ? note(graphWord(hint.note)) : "") +
+      '<button type="button" class="chip" data-codegraph-open>' + esc(graphWord(hint.action)) + '</button>' + choice)
   }
   // Read-only pairings get no buttons rather than dead ones.
   if (host.writable() && (models.length || s.assistant === "codex")) {
@@ -777,6 +792,7 @@ export const Info = {
     said("")
     overlay.hidden = false
     load(forId, force)
+    forgetCodeGraphIndex()
     loadCodeGraphSetting(forId)
     focusModalContainer(node("info-sheet"))
   },
@@ -794,6 +810,7 @@ export const Info = {
   close(): void {
     codegraphSettingRead++
     codegraphEnabled = false
+    forgetCodeGraphIndex()
     RoleDetail.close(false)
     const overlay = node("info")
     if (overlay) overlay.hidden = true
@@ -1161,7 +1178,7 @@ export function bindInfo(): () => void {
   // The role section needs the catalog; a card open when it arrives draws again.
   void loadPersonas()
   const offPersonas = onPersonas(() => draw())
-  const onCodeGraphSetting = (event: Event) => {codegraphSettingRead++;codegraphEnabled = (event as CustomEvent<boolean>).detail === true; draw()}
+  const onCodeGraphSetting = (event: Event) => {const version=++codegraphSettingRead;codegraphEnabled = (event as CustomEvent<boolean>).detail === true; forgetCodeGraphIndex(); draw(); if (codegraphEnabled && forId && !hidden()) loadCodeGraphIndex(forId, version)}
   window.addEventListener(CODEGRAPH_SETTING, onCodeGraphSetting)
   overlay.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)

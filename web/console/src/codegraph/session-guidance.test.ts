@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's behavior runner loads source extensions.
-import { codegraphInstructions,codegraphGuidanceStatus } from "./session-guidance.ts"
+import { codegraphInstructions,codegraphGuidanceStatus,codegraphIndexHint } from "./session-guidance.ts"
 // @ts-expect-error -- Node's behavior runner loads source extensions.
 import { PendingSends,turnWords } from "../session/pending.ts"
 // @ts-expect-error -- Node's behavior runner loads source extensions.
@@ -48,4 +48,12 @@ test("a new attempt without guidance replaces an earlier augmented Enter suffix"
  await postCard((async()=>new Response(JSON.stringify({error:"send_failed",codegraph_suffix:suffix}),{status:502})) as typeof fetch,x=>x,card)
  await postCard((async()=>new Response(JSON.stringify({error:"send_unsubmitted"}),{status:502})) as typeof fetch,x=>x,card)
  assert.equal(card.text,"original");assert.equal(card.requestText,"original")
+})
+
+test("a missing or building index is named beside the conversation choice",()=>{
+ assert.deepEqual(codegraphIndexHint(null),{note:"",action:"open"})
+ assert.deepEqual(codegraphIndexHint({state:"missing",can_build:true,build:{state:""}}),{note:"sessionIndexMissing",action:"build"})
+ assert.deepEqual(codegraphIndexHint({state:"missing",can_build:false}),{note:"sessionIndexMissing",action:"open"})
+ assert.deepEqual(codegraphIndexHint({state:"missing",can_build:false,build:{state:"running"}}),{note:"sessionIndexBuilding",action:"open"})
+ assert.deepEqual(codegraphIndexHint({state:"source_matched",can_build:false,build:{state:""}}),{note:"",action:"open"})
 })
