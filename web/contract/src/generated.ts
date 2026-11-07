@@ -3811,6 +3811,11 @@ export interface IntegrationSettingsRequest {
   codegraph_enabled?: boolean
 
   /**
+   * Machine-wide image review opt-in; omitted by older daemons and off by default.
+   */
+  space_saving_images?: boolean
+
+  /**
    * Machine-wide main workflow; omitted by older daemons.
    */
   workflow_profile?: string
@@ -3822,6 +3827,11 @@ export interface IntegrationSettingsSnapshot {
    * Machine-wide explicit opt-in; absent settings remain disabled.
    */
   codegraph_enabled: boolean
+
+  /**
+   * Machine-wide image review opt-in; omitted by older daemons and off by default.
+   */
+  space_saving_images?: boolean
 
   /**
    * Machine-wide main workflow; omitted by older daemons.
@@ -8392,6 +8402,7 @@ export interface SettingsRequest {
    * Have a model write the sentence a notification carries.
    */
   smart_notifications: boolean | null
+  space_saving_images: boolean | null
 
   /**
    * A full Tailscale name ending in `.ts.net`, or empty.
@@ -8775,6 +8786,7 @@ export interface SettingsSnapshot {
    * Have a model write the sentence a notification carries.
    */
   smart_notifications: boolean | null
+  space_saving_images: boolean | null
 
   /**
    * This machine's full Tailscale name (`<machine>.<tailnet>.ts.net`) that

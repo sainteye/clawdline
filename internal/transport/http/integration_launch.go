@@ -6,6 +6,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/codegraph"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/domain/workflow"
 	"github.com/sainteye/clawdline/skills"
 )
 
@@ -37,6 +38,9 @@ func (s *Server) integrationLaunchText(ctx context.Context, root string) (string
 			return "", err
 		}
 		parts = append(parts, text)
+	}
+	if on, _ := values.Bool("space_saving_images"); on {
+		parts = append(parts, workflow.SpaceSavingImageInstructions())
 	}
 	return strings.Join(parts, "\n\n"), nil
 }

@@ -10207,6 +10207,11 @@
   "transparency.card.gemini-restart-continue.how": "On shutdown, each owned Gemini conversation with a running turn is marked in its saved record. On the next start, the daemon resumes that conversation and sends the message shown here as an ordinary new user message.",
   "transparency.card.gemini-restart-continue.summary": "An owned Gemini process is the daemon’s child, so a restart stops its running turn, unlike a tmux Session. Clawdline then wakes the conversation with one message telling it to continue and recheck what it was waiting on.",
   "transparency.card.gemini-restart-continue.title": "Gemini continues after a restart",
+  "transparency.card.gemini-turn-end.condition": "Every new owned Gemini conversation, including a dispatched Gemini child. Conversations that started before this change did not receive it.",
+  "transparency.card.gemini-turn-end.effect": "When a reply ends with the marker and nothing arrives for 15 seconds with no tool running, Clawdline ends the turn itself: no error is shown, the turn is reported finished, and any queued message is sent. Without the marker, a silent turn with nothing running still ends after three minutes.",
+  "transparency.card.gemini-turn-end.how": "Added after the other launch context and sent with the conversation's first message. Clawdline removes the marker line from the reply before showing or saving it.",
+  "transparency.card.gemini-turn-end.summary": "Gemini's runtime often finishes a reply without reporting that the turn ended, so the conversation stays “working”. Clawdline asks the model to end its final message with a fixed marker line so the turn can end promptly.",
+  "transparency.card.gemini-turn-end.title": "Gemini marks the end of its turn",
   "transparency.card.handoff.condition": "The Session takes over existing work",
   "transparency.card.handoff.effect": "After taking over.",
   "transparency.card.handoff.how": "A message points to handoff.md or HANDOFF.md.",
@@ -10771,5 +10776,13 @@
   "worktree.taskTemporary": "Task-owned temporary",
   "worktree.unknown": "unknown",
   "worktree.unlanded": "Unlanded work",
-  "worktree.untracked": "Untracked"
+  "worktree.untracked": "Untracked",
+  "integrationSettings.space_saving_imagesTitle": "Space-saving image review",
+  "integrationSettings.space_saving_imagesDescription": "Prefer thumbnails for layout, broken images and colors; combine multiple images into a labeled overview. Inspect alignment, small text, edges or anything suspicious in original-size crops. Read the original when explicitly asked. Save long tool output to files and return a summary and path.",
+  "integrationSettings.space_saving_imagesScope": "Off by default. Can reduce transcript size, but thumbnails may hide details. Applies only to Sessions and children started afterward on this machine; existing Sessions and resumes keep their launch instructions.",
+  "transparency.card.space-saving-images.title": "Optional space-saving image review",
+  "transparency.card.space-saving-images.summary": "Off by default. Prefer thumbnails and labeled overviews, then original-size detail crops when needed. Thumbnails can hide details.",
+  "transparency.card.space-saving-images.condition": "The machine image-review switch is on when a new Session or child starts.",
+  "transparency.card.space-saving-images.how": "Launch instructions suggest thumbnails for layout and colors, labeled multi-image overviews, original-size crops for small text, alignment, edges or suspicious details, and direct original viewing when explicitly requested. Long tool output goes to files with a summary and path. Existing local tools suffice.",
+  "transparency.card.space-saving-images.effect": "New executions sample the machine choice independently of the inherited workflow. Existing Sessions and resumes retain their original context. Disabled instructions remain byte-for-byte unchanged. This is guidance, not an image-viewing restriction or proof of savings; no conversation files are deleted or rewritten."
 }

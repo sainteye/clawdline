@@ -10207,6 +10207,11 @@
   "transparency.card.gemini-restart-continue.how": "關閉時，每個仍在執行回合的 Gemini 對話會在保存紀錄中被標記。下次啟動時，daemon 接回該對話，並把這裡列出的訊息當成一則一般的新使用者訊息送出。",
   "transparency.card.gemini-restart-continue.summary": "Clawdline 管理的 Gemini 程序是 daemon 的子程序，所以重新啟動會中斷正在執行的回合，這點和 tmux Session 不同。之後 Clawdline 會送一則訊息喚醒該對話，請它接著做，並重新確認原本在等待的事情。",
   "transparency.card.gemini-restart-continue.title": "Gemini 在重新啟動後接續工作",
+  "transparency.card.gemini-turn-end.condition": "每個新開、由 Clawdline 管理的 Gemini 對話，包括派出的 Gemini 子任務。這項變更之前就開始的對話沒有收到。",
+  "transparency.card.gemini-turn-end.effect": "回覆以標記結尾，且之後 15 秒沒有任何動靜、也沒有工具在跑時，Clawdline 會自己結束這一回合：不顯示錯誤、視為正常完成，並送出排隊中的訊息。沒有標記時，沒有工具在跑的沉默回合仍會在三分鐘後結束。",
+  "transparency.card.gemini-turn-end.how": "接在其他啟動內容之後，隨對話的第一則訊息送出。Clawdline 顯示或保存回覆前，會先移除那行標記。",
+  "transparency.card.gemini-turn-end.summary": "Gemini 的 runtime 常常回覆完了卻沒有回報回合結束，對話就一直停在「在跑」。Clawdline 請模型在最後一則訊息結尾加上一行固定標記，讓回合能及時結束。",
+  "transparency.card.gemini-turn-end.title": "Gemini 標記回合結束",
   "transparency.card.handoff.condition": "接手別的 Session 的工作",
   "transparency.card.handoff.effect": "接手之後。",
   "transparency.card.handoff.how": "訊息指向 handoff.md 或 HANDOFF.md。",
@@ -10771,5 +10776,13 @@
   "worktree.taskTemporary": "任務擁有的暫存工作樹",
   "worktree.unknown": "未知",
   "worktree.unlanded": "尚未落地的工作",
-  "worktree.untracked": "未追蹤"
+  "worktree.untracked": "未追蹤",
+  "integrationSettings.space_saving_imagesTitle": "省空間看圖",
+  "integrationSettings.space_saving_imagesDescription": "預設用縮圖確認版面、破圖與顏色，多張圖合成附名稱的總覽。對齊、小字、邊緣或可疑之處，裁切局部以原尺寸查看；明確要求仔細看時直接看原圖。長工具輸出存檔，只回報摘要與路徑。",
+  "integrationSettings.space_saving_imagesScope": "預設關閉。可減少對話檔大小，但縮圖可能漏看細節。只影響這台機器之後啟動的 Session 與 child；既有 Session 與恢復對話保留原啟動指示。",
+  "transparency.card.space-saving-images.title": "可選的省空間看圖守則",
+  "transparency.card.space-saving-images.summary": "預設關閉。先看縮圖與附名稱總覽，必要時裁切局部以原尺寸查看；縮圖可能漏看細節。",
+  "transparency.card.space-saving-images.condition": "啟動新 Session 或 child 時，機器的省空間看圖開關已開啟。",
+  "transparency.card.space-saving-images.how": "啟動指示建議用縮圖確認版面與顏色、多圖合成附名稱總覽；小字、對齊、邊緣或可疑細節用原尺寸裁切查看，明確要求仔細看時直接看原圖。長工具輸出存檔，只放摘要與路徑。沿用現有本機工具即可。",
+  "transparency.card.space-saving-images.effect": "新啟動的執行各自讀取機器選擇，與繼承的工作流程分開。既有 Session 與恢復對話保留原上下文；關閉時指示位元組不變。這是建議，不是看原圖的限制，也不證明節省效果；不刪除或改寫對話檔。"
 }

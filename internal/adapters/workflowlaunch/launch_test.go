@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/workflow"
 	"github.com/sainteye/clawdline/skills"
 	"os/exec"
 	"path/filepath"
@@ -88,5 +89,99 @@ func TestWrapperPreservesArgumentsInputEnvironmentAndExit(t *testing.T) {
 	}
 	if got := (Prepared{}).Wrap("original command"); got != "original command" {
 		t.Fatalf("legacy wrapping changed: %s", got)
+	}
+}
+
+func TestImageReviewSamplesEachNewExecutionButNeverChangesExistingLaunches(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dir := t.TempDir()
+	service := Service{Store: st, Dir: dir, Resolve: skills.ResolveWorkflow}
+	root := t.TempDir()
+	// These are the exact pre-feature instruction bytes, across all profiles.
+	for _, profile := range []string{"clawdline", "superpowers", "poteto"} {
+		before, err := skills.ResolveWorkflow(profile, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, settings := range []map[string]any{{"workflow_profile": profile}, {"workflow_profile": profile, "space_saving_images": false}} {
+			if _, err := nextconfig.Open(dir).Set(settings); err != nil {
+				t.Fatal(err)
+			}
+			p, err := service.Prepare(ctx, root, "", "")
+			if err != nil || p.Text != before.Instructions {
+				t.Fatalf("disabled %s changed bytes: %q %v", profile, p.Text, err)
+			}
+			l, found, err := st.WorkflowLaunchByID(ctx, p.ID)
+			if err != nil || !found || l.SnapshotID != before.Digest {
+				t.Fatalf("disabled snapshot changed: %+v %v", l, err)
+			}
+		}
+	}
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "clawdline", "space_saving_images": true}); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := service.Prepare(ctx, root, "", "")
+	if err != nil || enabled.Text != workflow.SpaceSavingImageInstructions() {
+		t.Fatalf("missing image rules: %q %v", enabled.Text, err)
+	}
+	if err := enabled.Bind(ctx, "%71", "image-parent"); err != nil {
+		t.Fatal(err)
+	}
+	// The next child uses current image consent, while retaining the parent's workflow.
+	for _, on := range []bool{false, true, false} {
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"space_saving_images": on, "workflow_profile": "poteto"}); err != nil {
+			t.Fatal(err)
+		}
+		child, err := service.Prepare(ctx, root, "", "image-parent")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := ""
+		if on {
+			want = workflow.SpaceSavingImageInstructions()
+		}
+		if child.Text != want {
+			t.Fatalf("child on=%v: %q", on, child.Text)
+		}
+		resumed, err := service.Prepare(ctx, root, "image-parent", "")
+		if err != nil || resumed.Text != "" {
+			t.Fatalf("resume reinjected: %q %v", resumed.Text, err)
+		}
+		l, found, err := st.WorkflowLaunchByID(ctx, resumed.ID)
+		if err != nil || !found || !l.Snapshot.SpaceSavingImages {
+			t.Fatalf("resume rewrote frozen consent: %+v %v", l, err)
+		}
+	}
+	if enabled.Text != workflow.SpaceSavingImageInstructions() {
+		t.Fatal("existing launch mutated")
+	}
+}
+
+func TestLegacyParentCanOptIntoImageReviewWithoutAcquiringTodaysWorkflow(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dir := t.TempDir()
+	service := Service{Store: st, Dir: dir, Resolve: skills.ResolveWorkflow}
+	for _, on := range []bool{false, true, false} {
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "space_saving_images": on}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := service.Prepare(ctx, t.TempDir(), "", "legacy")
+		want := ""
+		if on {
+			want = workflow.SpaceSavingImageInstructions()
+		}
+		if err != nil || p.Text != want {
+			t.Fatalf("legacy child on=%v: %q %v", on, p.Text, err)
+		}
 	}
 }

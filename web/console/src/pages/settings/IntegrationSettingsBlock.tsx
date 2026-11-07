@@ -7,7 +7,7 @@ import { WORKFLOW_PROFILES, workflowName, workflowWord } from "../../session/wor
 import { Switch } from "./Switch.js"
 import "./workflow-settings.css"
 
-const keys = ["codegraph_enabled"] as const
+const keys = ["codegraph_enabled", "space_saving_images"] as const
 type Key = typeof keys[number] | "workflow_skills_enabled"
 const word = (key: string) => catalogWord("integrationSettings", key)
 
@@ -94,9 +94,10 @@ export function IntegrationSettingsBlock({ shown }: { shown: boolean }) {
             stateText={snapshot ? word(available ? snapshot[key] ? "on" : "off" : "unavailable") : word("loading")}
             onToggle={() => void save({ [key]: !snapshot?.[key] })} />
         </div>
+        {key === "space_saving_images" && <p>{word("space_saving_imagesScope")}</p>}
         <div id={id + "-help"} className="workflow-setting-help" hidden={!expanded}>
           <p>{word(key + "Description")}</p>
-          <p>{key === "codegraph_enabled" ? graphWord("scope") : word("scope")}</p>
+          {key === "codegraph_enabled" && <p>{graphWord("scope")}</p>}
         </div>
       </div>
     })}

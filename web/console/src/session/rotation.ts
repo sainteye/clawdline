@@ -12,4 +12,3 @@ export function rotationReason(row: SessionRow | null, info: SessionInfo | null,
   if (row.state !== "idle" || !delivered || !receipt || !activity || receipt > now || activity > now) return null
   return now - Math.max(receipt, activity) >= info.rotation.idleSecondsLimit ? "idle" : null
 }
-

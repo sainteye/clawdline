@@ -41,6 +41,8 @@ type Options struct {
 	// Open tools and permission offers pause the watchdog.
 	// Defaults to DefaultInactivityTimeout if <= 0.
 	InactivityTimeout time.Duration
+	// TurnEndGrace overrides DefaultTurnEndGrace when positive.
+	TurnEndGrace time.Duration
 }
 
 // DefaultInactivityTimeout is how long a turn with no active tool and no
@@ -69,20 +71,24 @@ type Host struct {
 }
 
 type conversation struct {
-	mu                sync.Mutex
-	client            *antigravityprocess.Client
-	row               session.Session
-	entries           []contract.TranscriptEntry
-	tools             map[string]int
-	revision          uint64
-	omitted           int
-	bytes             int
-	busy              bool
-	stopping          bool
-	textIndex         int
-	writeGate         chan struct{}
-	lastActivity      atomic.Int64
-	timedOut          atomic.Bool
+	mu           sync.Mutex
+	client       *antigravityprocess.Client
+	row          session.Session
+	entries      []contract.TranscriptEntry
+	tools        map[string]int
+	revision     uint64
+	omitted      int
+	bytes        int
+	busy         bool
+	stopping     bool
+	textIndex    int
+	writeGate    chan struct{}
+	lastActivity atomic.Int64
+	timedOut     atomic.Bool
+	// endMarked says the model ended its latest message with TurnEndMarker;
+	// endedByMarker says the watchdog ended the turn because of it.
+	endMarked         bool
+	endedByMarker     atomic.Bool
 	activeTools       map[string]string // active tool ID -> native kind
 	activeToolBytes   int
 	model             string
@@ -397,6 +403,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 	c.busy = true
 	c.activeTools = nil
 	c.activeToolBytes = 0
+	c.endMarked = false
 	c.writeGate = make(chan struct{})
 	c.mu.Unlock()
 	h.jobs.Add(1)
@@ -405,6 +412,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 	done := make(chan struct{})
 	var outcome error
 	c.timedOut.Store(false)
+	c.endedByMarker.Store(false)
 	go func() {
 		defer h.jobs.Done()
 		defer close(done)
@@ -473,6 +481,10 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			if inactivityTimeout <= 0 {
 				inactivityTimeout = DefaultInactivityTimeout
 			}
+			turnEndGrace := h.opts.TurnEndGrace
+			if turnEndGrace <= 0 {
+				turnEndGrace = DefaultTurnEndGrace
+			}
 			interval := inactivityTimeout / 2
 			if interval < 10*time.Millisecond {
 				interval = 10 * time.Millisecond
@@ -497,6 +509,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 						isWorking := c.row.State == session.StateWorking
 						hasPerm := c.permission != nil && c.permission.Active()
 						hasTool := len(c.activeTools) > 0
+						marked := c.endMarked
 						c.mu.Unlock()
 
 						if hasPerm || hasTool {
@@ -507,6 +520,13 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 							return
 						}
 						last := c.lastActivity.Load()
+						if marked && time.Since(time.Unix(0, last)) >= turnEndGrace {
+							// The model said it finished and nothing has arrived since.
+							c.endedByMarker.Store(true)
+							c.timedOut.Store(true)
+							_ = cl.Interrupt(context.Background(), nil)
+							return
+						}
 						if time.Since(time.Unix(0, last)) >= inactivityTimeout {
 							c.timedOut.Store(true)
 							_ = cl.Interrupt(context.Background(), nil)
@@ -559,7 +579,11 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 					c.client = nil
 					c.row.PID = 0
 				}
-				c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
+				if c.endedByMarker.Load() {
+					notify = c.storeErr == nil
+				} else {
+					c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
+				}
 				_ = c.saveState()
 				return
 			}
@@ -585,14 +609,15 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			outcome, c.storeErr = saveErr, saveErr
 			c.row.State, c.uncertain = session.StateUnknown, true
 		}
-		if result.StopReason != "end_turn" && result.StopReason != "cancelled" {
+		marked := c.endedByMarker.Load()
+		if result.StopReason != "end_turn" && result.StopReason != "cancelled" && !marked {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
-		if result.StopReason != "end_turn" && c.timedOut.Load() {
+		if result.StopReason != "end_turn" && c.timedOut.Load() && !marked {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_inactivity_timeout", At: time.Now().Unix()})
 			_ = c.saveState()
 		}
-		notify = result.StopReason == "end_turn" && c.storeErr == nil
+		notify = (result.StopReason == "end_turn" || marked) && c.storeErr == nil
 	}()
 	select {
 	case <-accepted:
@@ -942,6 +967,9 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 	if c.row.State == session.StateWorking && !c.replaying && (u.Kind == "agent_message_chunk" || u.Kind == "agent_thought_chunk") {
 		c.modelMovedOn()
 	}
+	if u.Tool != nil || u.Kind == "agent_thought_chunk" {
+		c.endMarked = false
+	}
 	if c.store != nil {
 		return c.project(u)
 	}
@@ -978,6 +1006,11 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 			c.textIndex = len(c.entries) - 1
 		}
 		c.entries[c.textIndex].Text += u.Text
+		if role == "assistant" {
+			var found bool
+			c.entries[c.textIndex].Text, found = stripTurnEnd(c.entries[c.textIndex].Text)
+			c.noteTurnEnd(found, u.Text)
+		}
 		c.changed()
 		c.bound()
 		// Thought chunks remain distinct and are not presented as assistant replies.

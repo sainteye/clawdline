@@ -3294,6 +3294,9 @@ type ImageStoreResult struct {
 type IntegrationSettingsRequest struct {
 	CodegraphEnabled bool `json:"codegraph_enabled,omitempty"`
 
+	// Machine-wide image review opt-in; omitted by older daemons and off by default.
+	SpaceSavingImages bool `json:"space_saving_images,omitempty"`
+
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile       string `json:"workflow_profile,omitempty"`
 	WorkflowSkillsEnabled bool   `json:"workflow_skills_enabled,omitempty"`
@@ -3302,6 +3305,9 @@ type IntegrationSettingsRequest struct {
 type IntegrationSettingsSnapshot struct {
 	// Machine-wide explicit opt-in; absent settings remain disabled.
 	CodegraphEnabled bool `json:"codegraph_enabled"`
+
+	// Machine-wide image review opt-in; omitted by older daemons and off by default.
+	SpaceSavingImages bool `json:"space_saving_images,omitempty"`
 
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile string `json:"workflow_profile,omitempty"`
@@ -6983,6 +6989,7 @@ type SettingsRequest struct {
 
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
+	SpaceSavingImages  *bool `json:"space_saving_images"`
 
 	// A full Tailscale name ending in `.ts.net`, or empty.
 	TailscaleHostname *string `json:"tailscale_hostname"`
@@ -7231,6 +7238,7 @@ type SettingsSnapshot struct {
 
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
+	SpaceSavingImages  *bool `json:"space_saving_images"`
 
 	// This machine's full Tailscale name (`<machine>.<tailnet>.ts.net`) that Tailscale
 	// Serve answers on; accepted only while `remote` is on.

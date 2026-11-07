@@ -264,3 +264,17 @@ force-closes the source or deletes provider history. Both English and Taiwan
 Traditional Chinese explain that the old Session stays open for the person's
 inspection. Session info also displays the observed conversation file size; its
 existing CodeGraph instruction provision behavior is unchanged by that display.
+
+
+Space-saving image review is a separate machine opt-in, disabled by default.
+New executions, including children of older Sessions, sample that choice while
+retaining their inherited workflow. Existing conversations and resumes are not
+reinjected. The optional snapshot field is omitted when false, retaining historical
+canonical bytes and digests. The guidance prefers thumbnails, labeled overviews
+and original-size detail crops, with direct original viewing on explicit request.
+It also suggests saving long tool output to files. This changes no provider tool
+permissions and never edits stored conversations. The dedicated inventory entry
+and both language explanations distinguish guidance from measured savings.
+
+The [image-review setting and local sample](image-review.md) document its scope,
+compatibility checks and measured limitations.

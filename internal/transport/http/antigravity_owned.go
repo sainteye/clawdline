@@ -91,6 +91,16 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 	}
 	return row, nil
 }
+
+// ownedInstructions adds the turn-end request to every owned conversation's
+// launch context; terminal Gemini Sessions have no use for it.
+func ownedInstructions(text string) string {
+	if text == "" {
+		return antigravitysession.TurnEndInstruction
+	}
+	return text + "\n\n" + antigravitysession.TurnEndInstruction
+}
+
 func ownedAntigravityContext(place projects.Place, prepared app.OwnedContext) antigravitysession.LaunchContext {
 	resource := prepared.Context.PromptPath
 	if resource == "" {
@@ -99,7 +109,7 @@ func ownedAntigravityContext(place projects.Place, prepared app.OwnedContext) an
 		resource = place.Path
 	}
 	return antigravitysession.LaunchContext{
-		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: prepared.Context.Instructions(),
+		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: ownedInstructions(prepared.Context.Instructions()),
 		Persona: prepared.Persona, SquadLaunchID: prepared.LaunchID, SquadCapabilityPath: prepared.Files.CapabilityPath,
 		WorkflowLaunchID: prepared.Workflow.ID,
 	}

@@ -40,7 +40,7 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 		return got
 	}
 	got := read(s, "GET", "")
-	if len(got) != 2 || got["workflow_skills_enabled"] || got["codegraph_enabled"] {
+	if len(got) != 3 || got["workflow_skills_enabled"] || got["codegraph_enabled"] || got["space_saving_images"] {
 		t.Fatalf("new machine must opt in: %v", got)
 	}
 	got = read(s, "POST", `{"workflow_skills_enabled":true}`)
@@ -50,6 +50,10 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 	got = read(s, "POST", `{"codegraph_enabled":true}`)
 	if !got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
 		t.Fatalf("codegraph toggle lost skills opt-in: %v", got)
+	}
+	got = read(s, "POST", `{"space_saving_images":true}`)
+	if !got["space_saving_images"] || !got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
+		t.Fatalf("image toggle changed other opt-ins: %v", got)
 	}
 	got = read(s, "POST", `{"workflow_skills_enabled":false}`)
 	if got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
@@ -68,7 +72,7 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 func TestIntegrationSettingsRejectMalformedChangesAtomically(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
 	for _, body := range []string{
-		`{"graphify_enabled":true}`, `{"workflow_skills_enabled":null}`, `{"codegraph_enabled":"on"}`,
+		`{"space_saving_images":null}`, `{"space_saving_images":"on"}`, `{"graphify_enabled":true}`, `{"workflow_skills_enabled":null}`, `{"codegraph_enabled":"on"}`,
 		`{"workflow_skills_enabled":true,"remote":true}`, `{"project":"/somewhere"}`,
 		`{"workflow_skills_enabled":true} {}`, `[]`, `null`,
 		`{"workflow_profile":"unknown","codegraph_enabled":true}`, `{"workflow_profile":null}`,
