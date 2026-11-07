@@ -280,5 +280,7 @@
   "project.devstack_none": "clawdline project devstack：Clawdline 沒有為 %s 讀到任何 .devstack.json。它會在有圖示設定的 Project 與存活 Session 的目錄中尋找，並往上找到家目錄為止。\n",
   "project.devstack_truncated": "伺服器清單被截斷，所以這不能證明它不存在。",
   "project.devstack_description": "  devstack [directory]  Clawdline 從這個 Project 的 .devstack.json 讀到的伺服器、各 port 的狀態與 Link 網址",
-  "project.devstack_usage": "       clawdline project devstack [--json] [directory]"
+  "project.devstack_usage": "       clawdline project devstack [--json] [directory]",
+  "project.devstack_failed": "clawdline project devstack：%v\n",
+  "project.devstack_flag_json": "以 JSON 印出相符的 stack"
 }

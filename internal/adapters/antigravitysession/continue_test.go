@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // A restart during a turn closed the Gemini process and left the conversation
@@ -81,5 +83,43 @@ func waitFor(t *testing.T, ok func() bool) {
 			t.Fatal("condition did not hold within 5s")
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// A turn sets its state to idle when the reply ends and clears its job flag a
+// moment later. Shutdown in that moment must not mark the conversation, or the
+// next start sends a needless continuation; a turn still working is marked.
+func TestShutdownMarksOnlyATurnStillWorking(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state session.State
+		want  bool
+	}{
+		{"reply ended, job unwinding", session.StateIdle, false},
+		{"turn still working", session.StateWorking, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, row, opts := persistentFixture(t)
+			c, err := h.lookup(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.mu.Lock()
+			c.busy = true
+			c.row.State = tc.state
+			c.mu.Unlock()
+			stopHost(t, h)
+			h = reopenHost(t, opts)
+			c, err = h.lookup(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.mu.Lock()
+			got := c.interrupted
+			c.mu.Unlock()
+			if got != tc.want {
+				t.Fatalf("interrupted = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

@@ -36,7 +36,7 @@ func projectCommand(args []string) {
 		return
 	case "devstack":
 		fs := flag.NewFlagSet("project devstack", flag.ExitOnError)
-		asJSON := fs.Bool("json", false, "print the matching stacks as JSON")
+		asJSON := fs.Bool("json", false, cliCopy("misc", "project.devstack_flag_json", "print the matching stacks as JSON"))
 		_ = fs.Parse(args[1:])
 		dir := "."
 		if fs.NArg() > 0 {
@@ -189,23 +189,29 @@ type projectListRow struct {
 	projects.RegisteredPlace
 }
 
-// printProjectCandidates follows a refused `item add`: the Projects this
-// machine lists, each with the id and directory either of which is accepted.
+// printProjectCandidates follows a refused `item add` or `item propose`: the
+// Projects a Board item may name, each with the id and directory either of
+// which is accepted. It reads the Board's own catalog, which also holds
+// recorded folders and live Sessions' directories that `project list` (the
+// registered directories only) leaves out.
 func printProjectCandidates(stderr io.Writer, b *broker) {
-	a, err := b.request(http.MethodGet, "/v1/places?registered=1", nil, nil, "")
+	a, err := b.request(http.MethodGet, "/v1/work/v2/agent/projects", nil, nil, "")
 	if err != nil || !a.ok() {
 		return
 	}
 	var result struct {
-		Places []projects.RegisteredPlace `json:"places"`
+		Projects []struct {
+			ID   string `json:"id"`
+			Path string `json:"path"`
+		} `json:"projects"`
 	}
-	if json.Unmarshal(a.Body, &result) != nil || len(result.Places) == 0 {
+	if json.Unmarshal(a.Body, &result) != nil || len(result.Projects) == 0 {
 		return
 	}
 	fmt.Fprintln(stderr, cliCopy("item", "label.project_candidates", "Projects on this machine (pass the id or the directory):"))
 	w := tabwriter.NewWriter(stderr, 0, 4, 2, ' ', 0)
-	for _, row := range result.Places {
-		fmt.Fprintf(w, "  %s\t%s\n", projects.PlaceID(row.Path), row.Path)
+	for _, row := range result.Projects {
+		fmt.Fprintf(w, "  %s\t%s\n", row.ID, row.Path)
 	}
 	_ = w.Flush()
 }

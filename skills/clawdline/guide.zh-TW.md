@@ -1311,7 +1311,8 @@ clawdline item add --kind feature|issue|epic|refactor|plan --title "…" \
 ```
 
 項目屬於這個 Session 所在的 Project 時，省略 `--project`：daemon 會用這個 Session 的目錄。
-要建到別的 Project，傳入它的目錄，或 `clawdline project list` 列在旁邊的 id。描述是必填，
+要建到別的 Project，傳入它的目錄或 id。看板項目可指定的每個 Project 與其 id 由
+`GET /v1/work/v2/agent/projects` 列出；`clawdline project list` 只列明確登記的目錄。描述是必填，
 從 stdin 或 `--description-file` 提供。不要去讀 daemon 的資料庫找 id；回 `project_not_found`
 時，指令會列出它接受的 Project。
 
@@ -1432,7 +1433,7 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
  "source_work_id": "<uuid>" or "source_todo_id": "<uuid>"}
 ```
 
-- `project_id` 是 `clawdline project list` 印出的 `id`，或 Project 的目錄。
+- `project_id` 是 `GET /v1/work/v2/agent/projects` 裡的某個 `id`，或 Project 的目錄。
 - 一定要有一個來源，而且必須是你自己的：這個 Session 負責的看板項目，或這個 Session 自己的待辦
   （`proposal_source_required`、`proposal_source_invalid`）。從使用者要求而來的提案，要引用它來自
   的那筆待辦——所以路徑是：使用者提出要求、你用 `clawdline todo add` 記下來（見下文）、再以那筆待辦

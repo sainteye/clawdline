@@ -1249,7 +1249,7 @@ func TestItemStepCancellationAndRestorationUseExplicitActions(t *testing.T) {
 func TestItemAddWithoutProjectAsksAndARefusalListsTheProjects(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
 		if r.Method == http.MethodGet {
-			return 200, `{"registered":true,"places":[{"path":"/code/notes","added_at":1}]}`
+			return 200, `{"projects":[{"id":"` + projects.PlaceID("/code/notes") + `","label":"notes","path":"/code/notes"}]}`
 		}
 		return 422, `{"error":"project_not_found","detail":"No Project this machine lists matches that value."}`
 	})
@@ -1261,7 +1261,7 @@ func TestItemAddWithoutProjectAsksAndARefusalListsTheProjects(t *testing.T) {
 	}
 	seen := s.requests()
 	if len(seen) != 2 || seen[0].EscapedPath != "/v1/work/v2/agent/items" || !strings.Contains(string(seen[0].Body), `"project_id":""`) ||
-		seen[1].EscapedPath != "/v1/places" {
+		seen[1].EscapedPath != "/v1/work/v2/agent/projects" {
 		t.Fatalf("requests = %+v", seen)
 	}
 	if want := projects.PlaceID("/code/notes") + "  /code/notes"; !strings.Contains(errs.String(), want) {

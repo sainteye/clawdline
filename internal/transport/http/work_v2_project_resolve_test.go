@@ -60,3 +60,64 @@ func TestAnUnknownProjectIsRefusedWithWhatIsAccepted(t *testing.T) {
 		t.Fatalf("refusals wrote %d items (%v)", len(items), err)
 	}
 }
+
+// The refusal promises that an empty project_id means the Session's own
+// Project; the proposal route passed no directory and refused it every time
+// (review of 66b86a989). It now resolves the Project and reaches the source
+// check instead.
+func TestAProposalWithoutAProjectUsesTheSessionsOwn(t *testing.T) {
+	s, p, _ := sessionItemServer(t)
+	body, _ := json.Marshal(map[string]any{"session_id": p.s.ConversationID, "project_id": "", "kind": "issue",
+		"title": "Tidy", "description": "d", "reason": "r", "suggested_acceptance": "a"})
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/proposals", string(body), "propose-no-project"))
+	if code := codeOf(t, rec); code == "project_not_found" || code != "proposal_source_required" {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+// Two catalog places in one repository (its root and a folder inside it)
+// share the canonical path. The root answers for the repository; without it
+// the value is ambiguous and refused, never the lowest-hashing folder.
+func TestAProjectIdentitySharedByTwoPlacesPicksTheRootOrRefuses(t *testing.T) {
+	root := workV2ProjectWire{ID: projects.PlaceID("/repo"), Label: "repo", Path: "/repo"}
+	web := workV2ProjectWire{ID: projects.PlaceID("/repo/web"), Label: "web", Path: "/repo"}
+	docs := workV2ProjectWire{ID: projects.PlaceID("/repo/docs"), Label: "docs", Path: "/repo"}
+	identity := projects.ProjectID("/repo")
+	both := workV2ProjectCatalog{root.ID: root, web.ID: web}
+	if got, ok := both.resolve(identity, ""); !ok || got.ID != root.ID {
+		t.Fatalf("with the root listed: %+v %v", got, ok)
+	}
+	if got, ok := both.resolve("/repo", ""); !ok || got.ID != root.ID {
+		t.Fatalf("the root directory: %+v %v", got, ok)
+	}
+	folders := workV2ProjectCatalog{web.ID: web, docs.ID: docs}
+	if got, ok := folders.resolve(identity, ""); ok {
+		t.Fatalf("two folders and no root answered %+v", got)
+	}
+	single := workV2ProjectCatalog{web.ID: web}
+	if got, ok := single.resolve(identity, ""); !ok || got.ID != web.ID {
+		t.Fatalf("one folder: %+v %v", got, ok)
+	}
+}
+
+// The candidates a refused `item add` prints come from the same catalog the
+// route resolves against, which includes the Session's own directory.
+func TestTheAgentProjectListIsTheCatalogItemsResolveAgainst(t *testing.T) {
+	s, _, project := sessionItemServer(t)
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodGet, "/v1/work/v2/agent/projects", "", ""))
+	var got struct {
+		Projects []struct{ ID, Label, Path string } `json:"projects"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	found := false
+	for _, p := range got.Projects {
+		found = found || p.ID == project
+	}
+	if !found {
+		t.Fatalf("the Session's Project %s is not listed: %s", project, rec.Body)
+	}
+}

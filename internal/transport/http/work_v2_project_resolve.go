@@ -2,6 +2,7 @@ package http
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
@@ -47,14 +48,39 @@ func (c workV2ProjectCatalog) resolve(value, sessionCWD string) (workV2ProjectWi
 }
 
 // only answers the one entry that matches. Two catalog places can share a
-// repository (a checkout and its worktree); the lower id is chosen so the
-// same request always lands on the same entry.
+// repository (the repository root and a folder inside it both resolve to the
+// root). The place that is the repository root itself answers for it; when no
+// such place exists and several match, the value is ambiguous and refused, so
+// an item never lands under whichever folder hashes lowest.
 func (c workV2ProjectCatalog) only(match func(workV2ProjectWire) bool) (workV2ProjectWire, bool) {
-	var found workV2ProjectWire
-	for id, p := range c {
-		if match(p) && (found.ID == "" || id < found.ID) {
-			found = p
+	var found []workV2ProjectWire
+	for _, p := range c {
+		if match(p) {
+			found = append(found, p)
 		}
 	}
-	return found, found.ID != ""
+	if len(found) == 1 {
+		return found[0], true
+	}
+	for _, p := range found {
+		if p.ID == projects.PlaceID(filepath.Clean(p.Path)) {
+			return p, true
+		}
+	}
+	return workV2ProjectWire{}, false
+}
+
+// sorted is the catalog in the order a person reads it: by name, then id.
+func (c workV2ProjectCatalog) sorted() []workV2ProjectWire {
+	out := make([]workV2ProjectWire, 0, len(c))
+	for _, p := range c {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Label != out[j].Label {
+			return out[i].Label < out[j].Label
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }

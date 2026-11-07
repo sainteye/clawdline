@@ -1491,8 +1491,9 @@ clawdline item add --kind feature|issue|epic|refactor|plan --title "…" \
 ```
 
 Leave out `--project` when the item belongs to the Project this Session works in: the daemon uses
-this Session's directory. For another Project, pass its directory or the id
-`clawdline project list` prints beside it. A description is required, on stdin or from
+this Session's directory. For another Project, pass its directory or its id. Every Project a
+Board item may name, with its id, is `GET /v1/work/v2/agent/projects`; `clawdline project list`
+shows only the directories registered explicitly. A description is required, on stdin or from
 `--description-file`. Never read the daemon's database to find an id; if `project_not_found`
 answers, the command prints the Projects it accepts.
 
@@ -1649,7 +1650,7 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
  "source_work_id": "<uuid>" or "source_todo_id": "<uuid>"}
 ```
 
-- `project_id` is the `id` `clawdline project list` prints, or the Project's directory.
+- `project_id` is an `id` from `GET /v1/work/v2/agent/projects`, or the Project's directory.
 - One source is required, and it must be yours: a Board item this Session owns, or one of this
   Session's own to-dos (`proposal_source_required`, `proposal_source_invalid`). A proposal that
   came from something the person asked for cites the to-do it came from — so the path is: the

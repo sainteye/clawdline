@@ -2,7 +2,7 @@
   "version": 1,
   "englishKeys": 10749,
   "counts": {
-    "negation": 2992,
+    "negation": 2993,
     "state": 1764,
     "permission": 632,
     "deletion": 238,
@@ -2893,6 +2893,7 @@
       "transparency.card.gemini-acp-context.how",
       "transparency.card.gemini-auto-name.condition",
       "transparency.card.gemini-auto-name.effect",
+      "transparency.card.gemini-restart-continue.condition",
       "transparency.card.gemini-restart-continue.effect",
       "transparency.card.investigation.effect",
       "transparency.card.investigation.summary",

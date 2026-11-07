@@ -280,5 +280,7 @@
   "project.devstack_none": "clawdline project devstack: Clawdline reads no .devstack.json for %s. It looks in Projects with an icon entry and in the directories of live Sessions, walking up to the home directory.\n",
   "project.devstack_truncated": "The server list was cut short, so this is not proof that none exists.",
   "project.devstack_description": "  devstack [directory]  the servers Clawdline reads from this Project's .devstack.json, each port's state and its Link address",
-  "project.devstack_usage": "       clawdline project devstack [--json] [directory]"
+  "project.devstack_usage": "       clawdline project devstack [--json] [directory]",
+  "project.devstack_failed": "clawdline project devstack: %v\n",
+  "project.devstack_flag_json": "print the matching stacks as JSON"
 }

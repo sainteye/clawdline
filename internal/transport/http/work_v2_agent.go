@@ -46,6 +46,17 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		s.agentCreateItem(w, r)
 		return
 	}
+	// The Projects a Board item or proposal may name: the same catalog
+	// project_id is resolved against, which `clawdline project list` (only
+	// registered directories) does not cover.
+	if len(parts) == 1 && parts[0] == "projects" && r.Method == http.MethodGet {
+		rows := []map[string]string{}
+		for _, p := range s.workV2Projects(r.Context()).sorted() {
+			rows = append(rows, map[string]string{"id": p.ID, "label": p.Label, "path": p.Path})
+		}
+		writeJSON(w, map[string]any{"projects": rows})
+		return
+	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "gate-decision" {
 		s.workV2GateDecision(w, r, parts[1], false)
 		return
@@ -68,7 +79,15 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		project, ok := s.workV2Project(r.Context(), body.ProjectID)
 		if !ok {
-			project, ok = s.workV2Projects(r.Context()).resolve(body.ProjectID, "")
+			// An empty project_id means the proposing Session's own Project,
+			// as the refusal below promises (review of 66b86a989).
+			cwd := ""
+			if strings.TrimSpace(body.ProjectID) == "" && s.broker != nil {
+				if sess, err := s.broker.LiveRootSession(r.Context(), body.SessionID); err == nil {
+					cwd = sess.CWD
+				}
+			}
+			project, ok = s.workV2Projects(r.Context()).resolve(body.ProjectID, cwd)
 		}
 		if !ok {
 			writeRefusal(w, http.StatusUnprocessableEntity, "project_not_found", workV2ProjectNotFound)

@@ -20,7 +20,7 @@ import (
 func projectDevStack(stdout, stderr io.Writer, b *broker, dir string, asJSON bool) int {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline project devstack:", err)
+		fmt.Fprintf(stderr, cliCopy("misc", "project.devstack_failed", "clawdline project devstack: %v\n"), err)
 		return 2
 	}
 	if real, err := filepath.EvalSymlinks(abs); err == nil {
@@ -28,7 +28,7 @@ func projectDevStack(stdout, stderr io.Writer, b *broker, dir string, asJSON boo
 	}
 	a, err := b.request(http.MethodGet, "/v1/devstacks", nil, nil, "")
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline project devstack:", err)
+		fmt.Fprintf(stderr, cliCopy("misc", "project.devstack_failed", "clawdline project devstack: %v\n"), err)
 		return 3
 	}
 	if !a.ok() {
