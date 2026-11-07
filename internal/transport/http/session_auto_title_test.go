@@ -83,9 +83,9 @@ func TestGeminiAutomaticNamingRunsAfterItsTurnAndPersists(t *testing.T) {
 	if calls.Load() != 1 || len(inv.Sessions) != 1 || inv.Sessions[0].Rungs.Thread != "Calendar reminders" {
 		t.Fatalf("automatic naming did not run: calls=%d", calls.Load())
 	}
-	if err := h.Send(t.Context(), row, "Add reminders"); err != nil {
-		t.Fatal(err)
-	}
+	// The title can land before the turn has settled; a send in that moment
+	// is refused antigravity_session_busy (CI run 42336338871).
+	sendAutomaticFixture(t, s, row, "Add reminders")
 	if err := h.Shutdown(); err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +98,9 @@ func TestGeminiAutomaticNamingRunsAfterItsTurnAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stop()
+	// "Add reminders" was still running at Shutdown, so the restart sends its
+	// continuation; it holds the host's opening slot that Past also needs.
+	waitGeminiSettled(t, s, row.ID)
 	inv, _ = s.antigravitySessions.Load().Inventory(t.Context())
 	if len(inv.Sessions) != 1 || inv.Sessions[0].Rungs.Thread != "Calendar reminders" {
 		t.Fatal("title did not survive restart")
