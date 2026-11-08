@@ -2791,6 +2791,16 @@
     "Note": true
   },
   {
+    "Name": "squad.event_conversations",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "squad.event_conversations_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "squad.event_id_bytes",
     "Known": true,
     "Note": true
