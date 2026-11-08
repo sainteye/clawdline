@@ -183,3 +183,67 @@ func TestSquadEventsHTTPFiltersByConversationWithinTheBound(t *testing.T) {
 		}
 	}
 }
+
+// The role rows on screen read their launch snapshots in one request: only
+// what a row draws, enabled Skills only, never their content, and an older
+// Session with no snapshot is simply absent.
+func TestSquadSessionSnapshotsAnswerSeveralRowsInOneRead(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for i, conversation := range []string{"conversation-a", "conversation-b"} {
+		launch, err := st.PrepareSquadLaunch(ctx, json.RawMessage(`{"definition_id":"clawdline.persona.architect","scope_id":"project-test","skills":[`+
+			`{"id":"skill.a","version":"1","enabled":true,"name":{"en":"Review","zh-Hant":"審查"},"content":"Use this skill when reviewing."},`+
+			`{"id":"skill.off","version":"1","enabled":false}],"handbook":{"text":"`+conversation+`"}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.RecordSquadTerminal(ctx, launch.ID, "terminal-"+string(rune('a'+i))); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.BindSquadConversation(ctx, launch.ID, conversation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{store: st}
+	read := func(query string) (int, string) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/v1/squad/session-snapshots?"+query, nil)
+		s.squadRoute(w, r)
+		return w.Code, w.Body.String()
+	}
+	code, body := read("conversation=conversation-a,legacy-conversation&conversation=conversation-b")
+	var reply struct {
+		Snapshots []squadRowSnapshot `json:"snapshots"`
+	}
+	if err := json.Unmarshal([]byte(body), &reply); code != http.StatusOK || err != nil {
+		t.Fatalf("batch = %d %s", code, body)
+	}
+	if len(reply.Snapshots) != 2 || reply.Snapshots[0].ConversationID != "conversation-a" || reply.Snapshots[1].ConversationID != "conversation-b" {
+		t.Fatalf("batch rows = %s", body)
+	}
+	for _, row := range reply.Snapshots {
+		if row.SnapshotID == "" || row.DefinitionID != "clawdline.persona.architect" || row.ScopeID != "project-test" ||
+			len(row.Skills) != 1 || row.Skills[0].ID != "skill.a" || row.Skills[0].Name.ZhHant != "審查" {
+			t.Fatalf("row = %+v", row)
+		}
+	}
+	if strings.Contains(body, "Use this skill") || strings.Contains(body, "skill.off") {
+		t.Fatalf("a row read carries content or a disabled Skill: %s", body)
+	}
+	many := make([]string, store.MaxSquadSnapshotConversations+1)
+	for i := range many {
+		many[i] = "c" + string(rune('A'+i%26)) + string(rune('A'+i/26))
+	}
+	if code, body := read("conversation=" + strings.Join(many[:store.MaxSquadSnapshotConversations], ",")); code != http.StatusOK {
+		t.Fatalf("at the bound = %d %s", code, body)
+	}
+	for _, bad := range []string{"", "conversation=", "conversation=a,,b", "conversation=a%20b", "conversation=" + strings.Join(many, ",")} {
+		if code, body := read(bad); code != http.StatusBadRequest || !strings.Contains(body, `"bad_request"`) {
+			t.Fatalf("%q = %d %s", bad, code, body)
+		}
+	}
+}

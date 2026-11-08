@@ -189,6 +189,7 @@ export const CARRIED = {
   "squad-events.conversations": "GET /v1/squad/events?conversation=&after=&limit=",
   "squad-session-bindings": "GET /v1/squad/session-bindings",
   "squad-session-snapshot": "GET /v1/squad/session-snapshots/{conversation}",
+  "squad-session-snapshots": "GET /v1/squad/session-snapshots?conversation=",
   "squad.catalog": "GET /v1/squad/catalog",
   "squad.catalog.update": "POST /v1/squad/catalog",
   "squad.definition": "GET /v1/squad/definitions/{id}[?version=]",
