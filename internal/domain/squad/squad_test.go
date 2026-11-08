@@ -10,7 +10,7 @@ import (
 
 func TestSquadBuiltinsAndPolicy(t *testing.T) {
 	c := Builtins()
-	if len(c.Definitions) != len(persona.IDs()) || len(c.Skills) != len(builtinSkillSpecs) || len(c.Skills) != 36 {
+	if len(c.Definitions) != len(persona.IDs()) || len(c.Skills) != len(builtinSkillSpecs) || len(c.Skills) != 46 {
 		t.Fatalf("builtins: %d definitions, %d skills", len(c.Definitions), len(c.Skills))
 	}
 	skills := map[string]Skill{}

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10832,
+  "englishKeys": 10852,
   "counts": {
-    "negation": 3013,
+    "negation": 3014,
     "state": 1783,
     "permission": 634,
-    "deletion": 242,
+    "deletion": 243,
     "uncertainty": 410
   },
-  "unionCount": 4771,
+  "unionCount": 4773,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -121,6 +121,7 @@
       "builtinPersona.support.summary",
       "builtinSkill.cro.purpose",
       "builtinSkill.humanize-prose.purpose",
+      "builtinSkill.interface-design.purpose",
       "capacityRow.antigravity.acp_call_seconds.what",
       "capacityRow.antigravity.acp_frame_bytes.full",
       "capacityRow.antigravity.acp_trace_connections.full",
@@ -5448,6 +5449,7 @@
     ],
     "deletion": [
       "browserPairing.mismatch",
+      "builtinSkill.mobile-native.purpose",
       "builtinSkill.performance-optimization.purpose",
       "builtinSkill.ponytail-review.purpose",
       "capacityRow.antigravity.acp_trace_bytes.full",
@@ -6295,7 +6297,9 @@
     "builtinSkill.documentation-writer.purpose",
     "builtinSkill.exploit-path-review.purpose",
     "builtinSkill.humanize-prose.purpose",
+    "builtinSkill.interface-design.purpose",
     "builtinSkill.map-versus-territory.purpose",
+    "builtinSkill.mobile-native.purpose",
     "builtinSkill.performance-optimization.purpose",
     "builtinSkill.ponytail-review.purpose",
     "builtinSkill.seo-schema.purpose",

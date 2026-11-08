@@ -160,7 +160,14 @@ def validate(data, catalog=None):
             require(isinstance(commit, str) and HEX40.fullmatch(commit), f"{prefix}: source commit must be a full SHA")
             skill_path = candidate.get("skill_path")
             license_path = candidate.get("license_path")
-            require(valid_path(skill_path) and skill_path.endswith("/SKILL.md") or skill_path == "SKILL.md", f"{prefix}: invalid SKILL.md path")
+            # A skill's entry is its SKILL.md; a reviewed command file is named
+            # as such, so a stray Markdown file is not mistaken for an entry.
+            if candidate.get("entry_kind") == "command":
+                require(valid_path(skill_path) and skill_path.endswith(".md") and not skill_path.endswith("SKILL.md"),
+                        f"{prefix}: invalid command entry path")
+            else:
+                require("entry_kind" not in candidate, f"{prefix}: unknown entry kind")
+                require(valid_path(skill_path) and skill_path.endswith("/SKILL.md") or skill_path == "SKILL.md", f"{prefix}: invalid SKILL.md path")
             require(valid_path(license_path), f"{prefix}: invalid license path")
             require(candidate.get("skill_url") == pinned_url(repo, commit, skill_path), f"{prefix}: SKILL.md URL is not pinned to its source")
             require(candidate.get("license_url") == pinned_url(repo, commit, license_path), f"{prefix}: license URL is not pinned to its source")
@@ -306,6 +313,14 @@ def self_test(data, closure=None):
     # One role, several reviewed Skills; one Skill, several roles.
     rejected(lambda d: next(r for r in d["roles"] if r["id"] == "technical-writer")["candidates"].pop(), "shared skill not reviewed for one of its roles")
     rejected(lambda d: next(r for r in d["roles"] if r["id"] == "minimal-change")["candidates"][0]["preview"].__setitem__("status", "blocked"), "second default skill of a role not reviewed")
+    # A command file is an entry only when it says so.
+    def command(d):
+        return next(c for r in d["roles"] if r["id"] == "ui-finish-gate" for c in r["candidates"] if c.get("entry_kind") == "command")
+    rejected(lambda d: command(d).pop("entry_kind"), "a command entry without its kind")
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "ui-designer")["candidates"][0].__setitem__("entry_kind", "script"), "an unknown entry kind")
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "ui-finish-gate")["candidates"][-1].__setitem__("research_round", 6), "an unknown research round")
+    # One Skill shared by two roles is reviewed for each of them.
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "ux-architect")["candidates"].pop(), "a shared design skill not reviewed for one of its roles")
     sources, role_skills = catalog_skills()
     def with_roles(change, label):
         changed = copy.deepcopy(role_skills)
@@ -316,6 +331,7 @@ def self_test(data, closure=None):
             return
         raise Invalid(f"self-test failed to reject {label}")
     with_roles(lambda r: r["code-reviewer"].extend(["humanize-prose", "decision-record", "write-spec"]), "five default skills on one role")
+    with_roles(lambda r: r["ui-designer"].append("better-layout"), "a fifth default skill on a role already at the bound")
     with_roles(lambda r: r["code-reviewer"].append("two-axis-code-review"), "a default skill listed twice")
     with_roles(lambda r: r["technical-writer"].remove("humanize-prose") or r["pr"].clear(), "an empty role list")
     with_roles(lambda r: r["email"].append("golang-concurrency"), "a skill on a role whose ledger never reviewed it")
