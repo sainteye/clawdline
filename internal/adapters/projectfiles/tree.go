@@ -22,6 +22,8 @@ type TreeEntry struct {
 	Path string `json:"path"`
 	Kind string `json:"kind"`
 	Size int64  `json:"size,omitempty"`
+	// Sensitive marks a file whose name holds a credential; ReadTree refuses it.
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 type TreeListing struct {
@@ -114,7 +116,7 @@ func ListTree(place, directory string) (TreeListing, error) {
 		case info.IsDir():
 			entry.Kind = "directory"
 		case info.Mode().IsRegular():
-			entry.Kind, entry.Size = "file", info.Size()
+			entry.Kind, entry.Size, entry.Sensitive = "file", info.Size(), Sensitive(entry.Path)
 		default:
 			entry.Kind = "other"
 		}
@@ -131,13 +133,17 @@ func ListTree(place, directory string) (TreeListing, error) {
 	return out, nil
 }
 
-// ReadTree reads only a regular UTF-8 text file beneath the selected Project.
+// ReadTree reads only a regular UTF-8 text file beneath the selected Project,
+// and never one named like a credential (Sensitive).
 // The existing file reader binds every directory and the final file to handles
 // and rechecks their identities after opening them.
 func ReadTree(place, path string) (TreeContent, error) {
 	rel, err := TreePath(path, true)
 	if err != nil {
 		return TreeContent{}, err
+	}
+	if Sensitive(path) {
+		return TreeContent{}, ErrSensitive
 	}
 	content, err := read(candidate(place, rel, "project", "", ""))
 	if err != nil {

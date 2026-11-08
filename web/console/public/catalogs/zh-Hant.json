@@ -9319,6 +9319,8 @@
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",
   "projectFiles.sharedInstructions": "共用規則",
+  "projectTree.sensitiveDetail": "這個檔名看起來存放金鑰，所以不提供內容預覽。請在機器上開啟。",
+  "projectTree.sensitiveLabel": "金鑰檔",
   "projectUnify.applicability": "Unify 前後的工作區檔案適用範圍，不代表 Session 已載入或技能已執行。Antigravity 專用檔案維持獨立、唯讀。",
   "projectUnify.applicableTo": "{arg0} 適用檔案",
   "projectUnify.close": "關閉",

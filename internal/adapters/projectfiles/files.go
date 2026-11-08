@@ -591,6 +591,8 @@ func Refusal(err error) (int, string, string) {
 		return 404, "file_not_found", "The file is no longer in this Project. Refresh its list."
 	case errors.Is(err, ErrUnsafe):
 		return 422, "unsafe_file", "The file or its directory is linked or no longer plain. Refresh its list."
+	case errors.Is(err, ErrSensitive):
+		return 403, "sensitive_file", "This file is named like a credential, so it is not previewed. Open it on the machine."
 	case errors.Is(err, ErrLarge):
 		return 413, "file_too_large", "The file is too large to edit here."
 	case errors.Is(err, ErrText):

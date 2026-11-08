@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10832,
+  "englishKeys": 10834,
   "counts": {
-    "negation": 3013,
-    "state": 1783,
-    "permission": 634,
+    "negation": 3014,
+    "state": 1784,
+    "permission": 636,
     "deletion": 242,
     "uncertainty": 410
   },
-  "unionCount": 4771,
+  "unionCount": 4773,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2728,6 +2728,7 @@
       "playbook.sourceStartUnavailable",
       "playbook.sourceUnavailable",
       "playbook.zeroReviewBody",
+      "projectTree.sensitiveDetail",
       "projectUnify.applicability",
       "projectUnify.nativeUnreported",
       "projectUnify.unreported",
@@ -4612,6 +4613,7 @@
       "playbook.sourceNeedsSync",
       "playbook.sourceStartUnavailable",
       "playbook.sourceUnavailable",
+      "projectTree.sensitiveDetail",
       "projects.editDone",
       "projects.folderGo",
       "projects.folderTruncated",
@@ -5350,6 +5352,8 @@
       "plan.machinesOne",
       "playbook.crossReviewBody",
       "playbook.linkedMessageHint",
+      "projectTree.sensitiveDetail",
+      "projectTree.sensitiveLabel",
       "projectUnify.applicability",
       "promo.signedOut",
       "settings.cloudAccountFailed",
@@ -10360,6 +10364,8 @@
     "playbook.startUnknown",
     "playbook.unlinkSource",
     "playbook.zeroReviewBody",
+    "projectTree.sensitiveDetail",
+    "projectTree.sensitiveLabel",
     "projectUnify.applicability",
     "projectUnify.nativeUnreported",
     "projectUnify.unreported",

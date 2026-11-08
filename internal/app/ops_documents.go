@@ -66,7 +66,7 @@ func mapOpsError(err error) error {
 		return opsError(http.StatusConflict, "ops_not_git", "This Project is not in a git repository.")
 	case errors.Is(err, projectfiles.ErrUnknown), errors.Is(err, projectfiles.ErrUnsafe),
 		errors.Is(err, projectfiles.ErrLarge), errors.Is(err, projectfiles.ErrText),
-		errors.Is(err, projectfiles.ErrChanged), errors.Is(err, projectfiles.ErrReadOnly),
+		errors.Is(err, projectfiles.ErrChanged), errors.Is(err, projectfiles.ErrReadOnly), errors.Is(err, projectfiles.ErrSensitive),
 		errors.Is(err, os.ErrNotExist):
 		status, code, detail := projectfiles.Refusal(err)
 		return opsError(status, code, detail)
