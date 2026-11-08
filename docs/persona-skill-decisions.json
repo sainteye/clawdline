@@ -73,6 +73,96 @@
             "status": "unverified",
             "evidence": null
           }
+        },
+        {
+          "name": "improve-codebase-architecture",
+          "fit_status": "fits_bounded_task",
+          "fits": "Finds shallow modules and leaking seams in recently changed code and proposes ranked deepening candidates, without designing interfaces yet.",
+          "limits": "Proposals only; the role still verifies each claim against the files read and leaves the decision and any refactor to a later, authorized task.",
+          "research_round": 5,
+          "source_repository": "https://github.com/mattpocock/skills",
+          "source_commit": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa",
+          "skill_path": "skills/engineering/improve-codebase-architecture/SKILL.md",
+          "skill_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/improve-codebase-architecture/SKILL.md",
+          "skill_sha256": "35b03a3db61e0f5aa333ea59b54963e45a3d2ace6649b2ef4f9576603e2582a6",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/LICENSE",
+          "license_sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/engineering/improve-codebase-architecture/SKILL.md",
+                "url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/improve-codebase-architecture/SKILL.md",
+                "sha256": "35b03a3db61e0f5aa333ea59b54963e45a3d2ace6649b2ef4f9576603e2582a6",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/engineering/improve-codebase-architecture/HTML-REPORT.md",
+                "url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/improve-codebase-architecture/HTML-REPORT.md",
+                "sha256": "581e8bb5a521e46bbda8ca7e19b15948bed882187108092ebb90c62513b77528",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 1 local reference(s), followed recursively. The entry calls three other skills by Skill-tool name (codebase-design, grilling, domain-modeling); codebase-design's vocabulary was read and restated in our own words, grilling's interactive loop was not adopted, and domain-modeling is its own reviewed candidate. HTML-REPORT.md loads Tailwind and Mermaid from CDNs and opens a browser; that report was replaced by a plain report in the reply or the task's files. agents/openai.yaml is display metadata, not referenced."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "domain-modeling",
+          "fit_status": "fits_bounded_task",
+          "fits": "Challenges and sharpens the project's domain terms against its glossary and code, and records resolved terms in the project's existing format.",
+          "limits": "Writes a glossary or decision record only when the task's writes include it; the three-condition test for a record complements decision-record rather than replacing it.",
+          "research_round": 5,
+          "source_repository": "https://github.com/mattpocock/skills",
+          "source_commit": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa",
+          "skill_path": "skills/engineering/domain-modeling/SKILL.md",
+          "skill_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/domain-modeling/SKILL.md",
+          "skill_sha256": "7b925d7b1e341a2eeae33ad68a8a8c0ab889a38ddd22a7598e4c240e5a7556a3",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/LICENSE",
+          "license_sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/engineering/domain-modeling/SKILL.md",
+                "url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/domain-modeling/SKILL.md",
+                "sha256": "7b925d7b1e341a2eeae33ad68a8a8c0ab889a38ddd22a7598e4c240e5a7556a3",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/engineering/domain-modeling/GLOSSARY-FORMAT.md",
+                "url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/domain-modeling/GLOSSARY-FORMAT.md",
+                "sha256": "21dcc40cdec8e151a829b98ab1517c1867bc444e3665134a98c6983411996801",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/engineering/domain-modeling/ADR-FORMAT.md",
+                "url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/domain-modeling/ADR-FORMAT.md",
+                "sha256": "944c92aa790e8fbdc9199640b170979abb8a34ba8d0fe18c2a01a63bce140ca0",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 2 local reference(s), followed recursively; both are format notes with fenced examples. No script, hook or network step. The rule to create GLOSSARY.md and docs/adr/ lazily was replaced by following the project's existing location and format."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
         }
       ]
     },
@@ -129,6 +219,42 @@
           "preview": {
             "status": "eligible_for_manual_preview",
             "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "api-and-interface-design",
+          "fit_status": "fits_bounded_task",
+          "fits": "Designs stable contracts: contract first, one error shape, validation at trust boundaries, additive change, bounded lists, and honoured idempotency keys.",
+          "limits": "Fixed naming conventions and TypeScript/REST examples were replaced by following the project's own conventions and generated contracts.",
+          "research_round": 5,
+          "source_repository": "https://github.com/addyosmani/agent-skills",
+          "source_commit": "8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e",
+          "skill_path": "skills/api-and-interface-design/SKILL.md",
+          "skill_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/api-and-interface-design/SKILL.md",
+          "skill_sha256": "cc5e2166c484b2c297e8253f56e7525e5031f81d66101ca4e760ef378ea6bad0",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/LICENSE",
+          "license_sha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/api-and-interface-design/SKILL.md",
+                "url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/api-and-interface-design/SKILL.md",
+                "sha256": "cc5e2166c484b2c297e8253f56e7525e5031f81d66101ca4e760ef378ea6bad0",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 0 local reference(s); `deprecation-and-migration` names another skill, not a file. No script, install or network step."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
           },
           "adoption": {
             "status": "unverified",
@@ -587,6 +713,42 @@
             "status": "unverified",
             "evidence": null
           }
+        },
+        {
+          "name": "security-review",
+          "fit_status": "fits_bounded_task",
+          "fits": "A checklist of the controls a change touches: secrets, input, injection, authorization, XSS, CSRF, rate limits, sensitive data and dependencies.",
+          "limits": "Carried after exploit-path-review: a checklist gap is reported as a hardening suggestion unless it has a complete exploit path. Stack-specific (Next.js, Supabase, Solana) examples were made stack-neutral.",
+          "research_round": 5,
+          "source_repository": "https://github.com/affaan-m/ECC",
+          "source_commit": "b38be6a7f6350964d59328b52f0624e1d1d552d1",
+          "skill_path": "skills/security-review/SKILL.md",
+          "skill_url": "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/skills/security-review/SKILL.md",
+          "skill_sha256": "b9eb6416eebc8dda046674f0a2dbb3be88aff526d182b60a0f55998d3d6d0d8d",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/LICENSE",
+          "license_sha256": "326146379f01bb137c0a5d3c54770c1aa31076705c8b88a7f6b26a460f6221b2",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/security-review/SKILL.md",
+                "url": "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/skills/security-review/SKILL.md",
+                "sha256": "b9eb6416eebc8dda046674f0a2dbb3be88aff526d182b60a0f55998d3d6d0d8d",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 0 local reference(s); the sibling cloud-infrastructure-security.md is not referenced by the entry and was not bundled. The `npm audit fix`, `npm update`, `npm ci`/`npm install` examples were not adopted: the adaptation reports the project's existing audit command and never installs or upgrades dependencies during a review. The licence matches the notice already bundled for this repository."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
         }
       ]
     },
@@ -672,7 +834,7 @@
     {
       "id": "seo",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Search behavior changes; its bundled international and writing references are not fully reviewed here.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "seo-audit",
@@ -700,6 +862,114 @@
           "preview": {
             "status": "blocked",
             "reason": "Search behavior changes; its bundled international and writing references are not fully reviewed here."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "seo-schema",
+          "fit_status": "fits_bounded_task",
+          "fits": "Detects, validates and writes truthful Schema.org JSON-LD for a page or entity.",
+          "limits": "Feature eligibility changes over time; the adaptation requires a dated check against the engine's current documentation or an unverified label, and makes no ranking claim.",
+          "research_round": 5,
+          "source_repository": "https://github.com/AgriciDaniel/claude-seo",
+          "source_commit": "6be93f45064ffbadced572b5d5c95f55fd263af0",
+          "skill_path": "skills/seo-schema/SKILL.md",
+          "skill_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/SKILL.md",
+          "skill_sha256": "8137d12b4f5aad3f5df4c3e16507f8650cd1c0ff3fd998b6be67d513e61e3719",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/LICENSE",
+          "license_sha256": "a42b3b0253cecea9af810c5207a67b0be8c9a0cfbf52b9302c3d26b063e7a86b",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/seo-schema/SKILL.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/SKILL.md",
+                "sha256": "8137d12b4f5aad3f5df4c3e16507f8650cd1c0ff3fd998b6be67d513e61e3719",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo/references/schema-types.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo/references/schema-types.md",
+                "sha256": "fed009afae2148c7790dc0bb5d0d9ac3fc3f7bda65e7e537fa3aad64a2005e6b",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo-schema/references/deprecated-types-2024-2026.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/references/deprecated-types-2024-2026.md",
+                "sha256": "a8e0deb70032e8807182d64d407822acbc24946154d29b3551312340f7e1a6f9",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 2 local reference(s), followed recursively: the entry names the shared seo skill's schema-types list (`../seo/references/schema-types.md`), which names the deprecated-types note by plugin-root path. It also names `schema/templates.json` at the plugin root (read; sample templates with placeholders; not a reference beside the entry, not bundled) and runs a bundled parse_html.py script against a URL, which was not adopted. The dated feature-status lists (types retired or added between 2023 and 2026) were not bundled as facts: the adaptation tells the role to check the engine's current documentation and otherwise label status unverified."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "seo-hreflang",
+          "fit_status": "fits_bounded_task",
+          "fits": "Audits hreflang sets (self-reference, return links, x-default, codes, canonical alignment), the implementation method, and parity across language versions.",
+          "limits": "Hreflang is a hint; the dated region-specific search units, culture scores, fixed word-count ratios and brand substitutions were not adopted, and policy claims need a current check.",
+          "research_round": 5,
+          "source_repository": "https://github.com/AgriciDaniel/claude-seo",
+          "source_commit": "6be93f45064ffbadced572b5d5c95f55fd263af0",
+          "skill_path": "skills/seo-hreflang/SKILL.md",
+          "skill_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/SKILL.md",
+          "skill_sha256": "e0c433db352567045f30de9761fbf4d45d029e666c8cdac5c3dc83716c966ce2",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/LICENSE",
+          "license_sha256": "a42b3b0253cecea9af810c5207a67b0be8c9a0cfbf52b9302c3d26b063e7a86b",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/seo-hreflang/SKILL.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/SKILL.md",
+                "sha256": "e0c433db352567045f30de9761fbf4d45d029e666c8cdac5c3dc83716c966ce2",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo-hreflang/references/cultural-profiles.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/references/cultural-profiles.md",
+                "sha256": "b9719c15c897af247aa1601dc59b7ef856efd0f5226112f741145091e67166eb",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo-hreflang/references/locale-formats.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/references/locale-formats.md",
+                "sha256": "f9278680533041a72e3fe7fc29244453a7bf9542e9f25f16da9a5c1590f7b310",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo-hreflang/references/content-parity.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/references/content-parity.md",
+                "sha256": "b6691601644bfa06393bfdd5144a44e75b8845cef32ce60f9a84ab1b9250c67e",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo-hreflang/references/machine-translation-qa.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/references/machine-translation-qa.md",
+                "sha256": "8cccc6d268f93af80a6d321ce42c28f6ab60cf5117ebb0d93018063f6f881836",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 4 local reference(s), followed recursively. The plugin script calls (`claude-seo run content_quality.py`), the parity score and freshness day thresholds, the cultural profile tables and the dated QRG and spam-policy assertions were not bundled; the adaptation keeps the technical checks and tells the role to check current policy before stating it."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
           },
           "adoption": {
             "status": "unverified",
@@ -779,13 +1049,67 @@
             "status": "unverified",
             "evidence": null
           }
+        },
+        {
+          "name": "copywriting",
+          "fit_status": "fits_bounded_task",
+          "fits": "Diagnoses the input (blank, real voice, point edit), drafts in locked units, gates every line, and refuses unsupported claims while naming the evidence that would unlock them.",
+          "limits": "Carried after humanize-prose. Product claims still need the project's evidence; publishing or testing copy is a separate authorized step. English word lists and dash rules were not adopted.",
+          "research_round": 5,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "88c79f6528a9347420e57ceb1fff9a60de651768",
+          "skill_path": "skills/copywriting/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/SKILL.md",
+          "skill_sha256": "02f0ab1ddd41d95b3c230d4bcff3de6578c8f2e45776c8ef2e4b931636af5bee",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/copywriting/SKILL.md",
+                "url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/SKILL.md",
+                "sha256": "02f0ab1ddd41d95b3c230d4bcff3de6578c8f2e45776c8ef2e4b931636af5bee",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/copywriting/references/copy-frameworks.md",
+                "url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/references/copy-frameworks.md",
+                "sha256": "4db06c481a904be3e4571ad8f671532c97ec186ddf0fb8aee3e3a56ef8e3d441",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/copywriting/references/ai-tells.md",
+                "url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/references/ai-tells.md",
+                "sha256": "b98c3a19b3a75c714d69e80a0076e4c07244b0e833c2ce81ff2631224fb7f7b2",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/copywriting/references/natural-transitions.md",
+                "url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/references/natural-transitions.md",
+                "sha256": "9bd61b0de5be2c4de4ce130c68236b4f290b12737823827a458bb2b4c8584683",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 3 local reference(s), followed recursively. ai-tells.md points at another skill's `references/ai-writing-detection.md`, which is not a file of this skill and was not bundled. The unsourced conversion figures (+81% conversions and similar, a 3x headline result) and the product-marketing context file names were not adopted; the attribution to Profound's MIT-licensed skill is kept."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
         }
       ]
     },
     {
       "id": "ai-search",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Unverified platform-effect claims and multiple references block preview until checked against current primary sources.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "ai-seo",
@@ -820,6 +1144,54 @@
           "preview": {
             "status": "blocked",
             "reason": "Unverified platform-effect claims and multiple references block preview until checked against current primary sources."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "seo-schema",
+          "fit_status": "fits_bounded_task",
+          "fits": "Makes a page's entities machine-readable with truthful structured data, the part of AI-search work that does not depend on platform behaviour.",
+          "limits": "Carries the rule that structured data is not claimed to raise AI citation without a primary source; it does not cover answer-engine behaviour, which stays unverified.",
+          "research_round": 5,
+          "source_repository": "https://github.com/AgriciDaniel/claude-seo",
+          "source_commit": "6be93f45064ffbadced572b5d5c95f55fd263af0",
+          "skill_path": "skills/seo-schema/SKILL.md",
+          "skill_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/SKILL.md",
+          "skill_sha256": "8137d12b4f5aad3f5df4c3e16507f8650cd1c0ff3fd998b6be67d513e61e3719",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/LICENSE",
+          "license_sha256": "a42b3b0253cecea9af810c5207a67b0be8c9a0cfbf52b9302c3d26b063e7a86b",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/seo-schema/SKILL.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/SKILL.md",
+                "sha256": "8137d12b4f5aad3f5df4c3e16507f8650cd1c0ff3fd998b6be67d513e61e3719",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo/references/schema-types.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo/references/schema-types.md",
+                "sha256": "fed009afae2148c7790dc0bb5d0d9ac3fc3f7bda65e7e537fa3aad64a2005e6b",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/seo-schema/references/deprecated-types-2024-2026.md",
+                "url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/references/deprecated-types-2024-2026.md",
+                "sha256": "a8e0deb70032e8807182d64d407822acbc24946154d29b3551312340f7e1a6f9",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 2 local reference(s), followed recursively: the entry names the shared seo skill's schema-types list (`../seo/references/schema-types.md`), which names the deprecated-types note by plugin-root path. It also names `schema/templates.json` at the plugin root (read; sample templates with placeholders; not a reference beside the entry, not bundled) and runs a bundled parse_html.py script against a URL, which was not adopted. The dated feature-status lists (types retired or added between 2023 and 2026) were not bundled as facts: the adaptation tells the role to check the engine's current documentation and otherwise label status unverified."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
           },
           "adoption": {
             "status": "unverified",
@@ -1000,7 +1372,7 @@
     {
       "id": "growth",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "ab-testing",
@@ -1028,6 +1400,54 @@
           "preview": {
             "status": "blocked",
             "reason": "Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "cro",
+          "fit_status": "fits_bounded_task",
+          "fits": "Reviews a page or form in order of impact (value proposition, call to action, hierarchy, trust, objections, friction) and separates changes from test hypotheses.",
+          "limits": "Does not supply baselines or statistics, so it does not promise uplift; experiments, tracking and live edits are proposals until authorized.",
+          "research_round": 5,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "88c79f6528a9347420e57ceb1fff9a60de651768",
+          "skill_path": "skills/cro/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/cro/SKILL.md",
+          "skill_sha256": "6e172cc38178c800ff41ceb097f36c6a1db8035fb88a1fee53043f8ec38a6f35",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/cro/SKILL.md",
+                "url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/cro/SKILL.md",
+                "sha256": "6e172cc38178c800ff41ceb097f36c6a1db8035fb88a1fee53043f8ec38a6f35",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/cro/references/form.md",
+                "url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/cro/references/form.md",
+                "sha256": "49b8f29b3da1ae6510572288cad3eb1f3d43a969373443be98b38639746587e6",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/cro/references/experiments.md",
+                "url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/cro/references/experiments.md",
+                "sha256": "bbcc356c0af36cfaa4556bf9e929deac30c65cafb37f909d7c51d4777fe254ca",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 2 local reference(s), followed recursively. The external revops playbook link points at a floating main branch and was not followed or bundled; the field-count drop-off percentages and enrichment vendor names were not adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
           },
           "adoption": {
             "status": "unverified",
@@ -1155,9 +1575,15 @@
                 "url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/CONNECTORS.md",
                 "sha256": "f52733eb0cd1b46f96cbf15bd9d8dd5215c9341d9323f42da076bcddccda2f5e",
                 "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "product-management/.mcp.json",
+                "url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/.mcp.json",
+                "sha256": "cf1e1d5e2b5a51eecdb2cf15463527b976c41db20997e6a864dd746834a0ce1b",
+                "review": "read_only_content_reviewed"
               }
             ],
-            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview. On 2026-11-08 the widened code-span audit found that CONNECTORS.md names the plugin's `.mcp.json`, a list of hosted MCP server endpoints; it was read and added here. The bundled write-spec adaptation uses no connector or MCP server, so the adopted text is unchanged."
           },
           "preview": {
             "status": "eligible_for_manual_preview",
@@ -1236,6 +1662,42 @@
           "preview": {
             "status": "eligible_for_manual_preview",
             "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "prioritize-features",
+          "fit_status": "fits_bounded_task",
+          "fits": "Ranks feature ideas against a stated objective on impact, effort, risk and fit, with the evidence behind each judgment and what was deprioritized.",
+          "limits": "Carried after opportunity-cost. Effort and capacity come from the people or records doing the work; the fixed top five became the number the task calls for.",
+          "research_round": 5,
+          "source_repository": "https://github.com/phuryn/pm-skills",
+          "source_commit": "2a12295a7717569baa7be181b4cfebe3ca38a6bb",
+          "skill_path": "pm-product-discovery/skills/prioritize-features/SKILL.md",
+          "skill_url": "https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/pm-product-discovery/skills/prioritize-features/SKILL.md",
+          "skill_sha256": "d05c001ea9d71ccf6aca975e0530a2a85545192b1eec9e06cc6d1339156c0f87",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/LICENSE",
+          "license_sha256": "a2c922f9b81b4f40347ddfa79c38eda0f1278b5a6d108bd4099b4da254c774ee",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "pm-product-discovery/skills/prioritize-features/SKILL.md",
+                "url": "https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/pm-product-discovery/skills/prioritize-features/SKILL.md",
+                "sha256": "d05c001ea9d71ccf6aca975e0530a2a85545192b1eec9e06cc6d1339156c0f87",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 0 local reference(s); `prioritization-frameworks` names another skill, not a file. The further-reading links to articles and a video course were not adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
           },
           "adoption": {
             "status": "unverified",
@@ -1666,6 +2128,54 @@
           "preview": {
             "status": "eligible_for_manual_preview",
             "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "performance-optimization",
+          "fit_status": "fits_bounded_task",
+          "fits": "Measure, fix the one bottleneck, re-measure against variance, keep or revert, and log every attempt; with the usual backend and frontend suspects.",
+          "limits": "Carried after binding-constraint. Uses only the measurement tools the project already has; fixed budgets and tool installs are not adopted, and load against production or shared systems needs authorization.",
+          "research_round": 5,
+          "source_repository": "https://github.com/addyosmani/agent-skills",
+          "source_commit": "8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e",
+          "skill_path": "skills/performance-optimization/SKILL.md",
+          "skill_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/performance-optimization/SKILL.md",
+          "skill_sha256": "82af71540457cf853893685211f64509cd1e781c0de09d0186f16960f2d6eeba",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/LICENSE",
+          "license_sha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/performance-optimization/SKILL.md",
+                "url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/performance-optimization/SKILL.md",
+                "sha256": "82af71540457cf853893685211f64509cd1e781c0de09d0186f16960f2d6eeba",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/performance-optimization/references/optimization-patterns.md",
+                "url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/performance-optimization/references/optimization-patterns.md",
+                "sha256": "fbf724076ffb8ac1a28e1a2773c0b550f5361090024b2dd32e5a682c69b7945f",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "references/performance-checklist.md",
+                "url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/references/performance-checklist.md",
+                "sha256": "ce946457d4a502846e781a2747cf6af50bcc79b1957a66dc024f50557e8982e1",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 2 local reference(s), followed recursively: the optimization patterns note and the repository-level performance checklist, which both name by a parent-directory path in code spans. The `npx bundlesize`, `npx --package=@lhci/cli lhci autorun`, `npx lighthouse` and bundle-analyzer commands, the DevTools MCP mention and the fixed size and latency budgets were not adopted; the adaptation tells the role to measure with what the project already has."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation after the person approved this role and skill pair."
           },
           "adoption": {
             "status": "unverified",
