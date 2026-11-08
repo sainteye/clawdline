@@ -475,6 +475,7 @@ const (
 	SquadPlaceLookup             = "squad.place_lookup"
 	SkillSourceSummaryRunes      = "squad.skill_source_summary_runes"
 	SquadLaunchSkillWhenRunes    = "squad.launch_skill_when_runes"
+	SquadBuiltinRoleSkills       = "squad.builtin_role_skills"
 	SquadPackageArchiveBytes     = "squadpackage.archive_bytes"
 	SquadPackageRequestBytes     = "squadpackage.request_bytes"
 	SquadPackageManifestBytes    = "squadpackage.manifest_bytes"

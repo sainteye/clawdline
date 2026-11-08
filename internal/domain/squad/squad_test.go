@@ -10,12 +10,8 @@ import (
 
 func TestSquadBuiltinsAndPolicy(t *testing.T) {
 	c := Builtins()
-	if len(c.Definitions) != len(persona.IDs()) || len(c.Skills) != 24 {
+	if len(c.Definitions) != len(persona.IDs()) || len(c.Skills) != len(builtinSkillSpecs) || len(c.Skills) != 26 {
 		t.Fatalf("builtins: %d definitions, %d skills", len(c.Definitions), len(c.Skills))
-	}
-	wantSkill := map[string]bool{}
-	for _, spec := range builtinSkillSpecs {
-		wantSkill[spec.Persona] = true
 	}
 	skills := map[string]Skill{}
 	for _, s := range c.Skills {
@@ -39,37 +35,55 @@ func TestSquadBuiltinsAndPolicy(t *testing.T) {
 		}
 		skills[s.SkillID] = s
 	}
+	carried := map[string]bool{}
 	ids := map[string]bool{}
 	for _, d := range c.Definitions {
+		want := builtinRoleSkills[d.ShortID]
 		if !d.Builtin || d.ShortID == "" || d.DefinitionID != BuiltinID(d.ShortID) ||
 			!strings.HasPrefix(d.Version, "sha256:") || len(d.Digest) != 64 ||
-			d.Body == "" || d.Source == "" || d.License == "" || d.Skills == nil || len(d.Skills) > 1 ||
-			(len(d.Skills) == 1) != wantSkill[d.ShortID] {
+			d.Body == "" || d.Source == "" || d.License == "" || d.Skills == nil ||
+			len(d.Skills) > MaxBuiltinRoleSkills || len(d.Skills) != len(want) {
 			t.Fatalf("incomplete builtin: %+v", d)
 		}
-		if len(d.Skills) == 1 {
-			ref := d.Skills[0]
+		for i, ref := range d.Skills {
+			if ref.ID != "clawdline.skill."+want[i] {
+				t.Fatalf("%s skill %d is %s, want %s in the stated order", d.ShortID, i, ref.ID, want[i])
+			}
 			if skill := skills[ref.ID]; skill.SkillID == "" || skill.Version != ref.Version || !ref.Enabled {
 				t.Fatalf("unresolved builtin skill %s: %+v", d.ShortID, ref)
 			}
-			if previous := PreSkillBuiltinVersion(d); previous.Version == d.Version || len(previous.Skills) != 0 {
-				t.Fatalf("skill adoption did not version %s", d.ShortID)
+			carried[ref.ID] = true
+		}
+		earlier := EarlierBuiltinDefinitions(d)
+		if len(d.Skills) == 0 && earlier != nil {
+			t.Fatalf("a role with no skills has earlier skill versions: %s", d.ShortID)
+		}
+		for _, previous := range earlier {
+			if previous.Version == d.Version || len(previous.Skills) > len(d.Skills) || previous.Body != d.Body {
+				t.Fatalf("earlier built-in definition %s = %+v", d.ShortID, previous)
 			}
-			if historical, ok := HistoricalBuiltinDefinition(d); ok {
-				if historical.Version == d.Version || len(historical.Skills) != 1 {
-					t.Fatalf("historical built-in definition %s = %+v", d.ShortID, historical)
-				}
-				if _, ok := HistoricalBuiltinSkill(historical.Skills[0].ID, historical.Skills[0].Version); !ok {
-					t.Fatalf("historical skill %s cannot resolve", d.ShortID)
+			for _, ref := range previous.Skills {
+				if skills[ref.ID].Version != ref.Version {
+					if _, ok := HistoricalBuiltinSkill(ref.ID, ref.Version); !ok {
+						t.Fatalf("earlier skill %s of %s cannot resolve", ref.ID, d.ShortID)
+					}
 				}
 			}
-		} else if previous := PreSkillBuiltinVersion(d); previous.Version != d.Version {
-			t.Fatalf("unaffected builtin changed version %s", d.ShortID)
+		}
+		if len(d.Skills) == 0 {
+			if previous := PreSkillBuiltinVersion(d); previous.Version != d.Version {
+				t.Fatalf("unaffected builtin changed version %s", d.ShortID)
+			}
 		}
 		if id, ok := ResolveID(d.ShortID); !ok || id != d.DefinitionID {
 			t.Fatalf("alias %s => %q %t", d.ShortID, id, ok)
 		}
 		ids[d.DefinitionID] = true
+	}
+	for id := range skills {
+		if !carried[id] {
+			t.Errorf("built-in skill %s is carried by no role", id)
+		}
 	}
 	if len(ids) != len(persona.IDs()) || ValidCustomID(BuiltinID("backend")) || !ValidCustomID("example.persona.writer") {
 		t.Fatal("definition namespace collision")

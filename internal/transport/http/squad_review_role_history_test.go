@@ -71,7 +71,8 @@ func TestReviewRoleLaunchPublishesNewBodyAndKeepsTheHandbook(t *testing.T) {
 				t.Fatalf("handbook = %d %s", status, raw)
 			}
 			snapshot, err := f.s.ResolveSquadLaunch(context.Background(), id, "")
-			if err != nil || snapshot.Definition.Version == oldVersion || snapshot.Handbook.Text != "Keep the team's release checklist." || len(snapshot.Skills) != 1 {
+			if err != nil || snapshot.Definition.Version == oldVersion || snapshot.Handbook.Text != "Keep the team's release checklist." ||
+				len(snapshot.Skills) == 0 || len(snapshot.Skills) != len(snapshot.Definition.Skills) {
 				t.Fatalf("new review launch = %+v, %v", snapshot, err)
 			}
 			document, _ := json.Marshal(snapshot)

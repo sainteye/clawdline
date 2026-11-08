@@ -95,3 +95,22 @@ test("a different Project inherits global text without the first Project's overr
   assert.equal(view.personas[0].handbook.value, "Global handbook")
   assert.equal(view.personas[0].handbook.source, "global")
 })
+
+test("a skill shared by two roles is one catalog card, and a role lists its several skills in order", () => {
+  const shared = catalog.skills[0]
+  const second = { ...shared, skill_id: "community.skill.second", content: "Second skill body" }
+  const editor = {
+    ...catalog.definitions[0], definition_id: "community.persona.editor",
+    skills: [{ id: second.skill_id, version: "v1", enabled: true }, { id: shared.skill_id, version: "v1", enabled: true }],
+  }
+  const both: WireCatalog = { ...catalog, definitions: [catalog.definitions[0], editor], skills: [shared, second] }
+  const global = settings("global", field(""))
+  global.personas.push({ ...global.personas[0], definition_id: editor.definition_id, skills: field(editor.skills) })
+  const view = squadView(both, global, global, [], [], true)
+  assert.equal(view.catalogSkills.length, 2)
+  assert.deepEqual(view.catalogSkills.map((skill) => skill.id), [shared.skill_id, second.skill_id])
+  assert.deepEqual(view.personas[0].skills.map((skill) => skill.id), [shared.skill_id])
+  assert.deepEqual(view.personas[1].skills.map((skill) => [skill.id, skill.order, skill.status]),
+    [[second.skill_id, 1, "available"], [shared.skill_id, 2, "available"]])
+  assert.equal(view.personas[1].skills[1].body, view.personas[0].skills[0].body)
+})

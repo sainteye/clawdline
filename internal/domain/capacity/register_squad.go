@@ -129,6 +129,16 @@ func squadBounds() []Entry {
 			Sources: []string{"internal/adapters/squadfiles.maxSkillWhenRunes"},
 		},
 		{
+			// Default Skills one built-in role carries (2026-11-08). The list is
+			// compiled into the daemon, so a longer one fails the squad package's
+			// catalog build and its test before a build ships; a Project may still
+			// enable more Skills, bounded by the console's active-skill bytes.
+			Name: SquadBuiltinRoleSkills, Class: Buffer, Unit: Rows,
+			Limit: 4, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squad.MaxBuiltinRoleSkills"},
+		},
+		{
 			Name: SquadRequestBytes, Class: Buffer, Unit: Bytes,
 			Limit: 256 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

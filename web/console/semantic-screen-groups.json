@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10802,
-  "riskKeys": 4761,
-  "nonRiskCount": 6041,
+  "englishContentKeys": 10808,
+  "riskKeys": 4764,
+  "nonRiskCount": 6044,
   "groups": [
     {
       "name": "acp / other",
@@ -5751,7 +5751,7 @@
     },
     {
       "name": "Squad / builtin metadata",
-      "count": 117,
+      "count": 120,
       "sources": [
         "src/builtin-display-source.json"
       ],
@@ -5859,10 +5859,13 @@
         "builtinSkill.monitoring-and-alerting.purpose",
         "builtinSkill.opportunity-cost.name",
         "builtinSkill.opportunity-cost.purpose",
+        "builtinSkill.ponytail-review.name",
         "builtinSkill.research-synthesis.name",
         "builtinSkill.research-synthesis.purpose",
         "builtinSkill.smallest-sufficient-change.name",
         "builtinSkill.smallest-sufficient-change.purpose",
+        "builtinSkill.systematic-debugging.name",
+        "builtinSkill.systematic-debugging.purpose",
         "builtinSkill.tests-that-catch-breaks.name",
         "builtinSkill.two-axis-code-review.name",
         "builtinSkill.two-axis-code-review.purpose",

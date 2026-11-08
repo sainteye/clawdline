@@ -568,6 +568,7 @@
 | `snippets.scope` | 50 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `snippets.total` | 100 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `squad.body_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `squad.builtin_role_skills` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `squad.console_active_skill_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `squad.entities` | 1024 | `rows` | `refuse` | `diagnostics, health, sender` | — |
 | `squad.event_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |

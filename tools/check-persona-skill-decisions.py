@@ -8,6 +8,7 @@ import posixpath
 import re
 import sys
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
@@ -36,17 +37,29 @@ def catalog_ids():
     return ids
 
 
-def catalog_sources():
-    source = (ROOT / "internal/domain/squad/builtin_skills.go").read_text()
-    rows = re.findall(r'^\t\{"([a-z-]+)", "[a-z-]+", .*"(https://github\.com/[^"]+)", "[^"]+"\},$', source, re.M)
-    require(len(rows) >= 12, "builtinSkillSpecs was not found")
-    return rows
+MAX_ROLE_SKILLS = 4  # internal/domain/squad.MaxBuiltinRoleSkills
 
 
-def catalog_originals():
-    # A skill written for Clawdline names persona.Original instead of a URL.
+def catalog_skills():
+    """Read the built-in catalog: each Skill's source by name, and each role's Skill names in order."""
     source = (ROOT / "internal/domain/squad/builtin_skills.go").read_text()
-    return re.findall(r'^\t\{"([a-z-]+)", "([a-z-]+)", .*, persona\.Original, "[^"]+"\},$', source, re.M)
+    specs = re.search(r"var builtinSkillSpecs = \[\]builtinSkillSpec\{(.*?)\n\}", source, re.S)
+    require(specs is not None, "builtinSkillSpecs was not found")
+    sources = {}
+    for row in re.findall(r"^\t\{(.*)\},$", specs.group(1), re.M):
+        match = re.fullmatch(r'"[a-z-]+", "([a-z-]+)", .*, (?:"(https://github\.com/[^"]+)"|(persona\.Original)), "[^"]+"', row)
+        require(match is not None, f"unreadable builtinSkillSpecs row: {row[:60]}")
+        name, url, original = match.groups()
+        require(name not in sources, f"{name}: listed twice in builtinSkillSpecs")
+        sources[name] = url or original
+    require(len(sources) >= 12, "builtinSkillSpecs was not found")
+    table = re.search(r"var builtinRoleSkills = map\[string\]\[\]string\{(.*?)\n\}", source, re.S)
+    require(table is not None, "builtinRoleSkills was not found")
+    roles = {}
+    for rid, names in re.findall(r'^\t"([a-z-]+)":\s*\{([^}]*)\},$', table.group(1), re.M):
+        require(rid not in roles, f"{rid}: listed twice in builtinRoleSkills")
+        roles[rid] = re.findall(r'"([a-z-]+)"', names)
+    return sources, roles
 
 
 def valid_path(path):
@@ -76,11 +89,25 @@ def local_references(content, path):
     return found
 
 
-def validate(data):
+def sibling_names(content, path):
+    """Bare file names in code spans, such as `root-cause-tracing.md`.
+
+    Such a name is a reference only when that file exists beside the entry at
+    the pinned commit; otherwise it names a file the skill tells a reader to
+    create in their own repository, such as an ADR `template.md`.
+    """
+    content = re.sub(r"^```.*?^```", "", content, flags=re.S | re.M)
+    names = re.findall(r"`([\w-]+(?:\.[\w-]+)*\.(?:md|py|sh|js|ts|json))`", content)
+    found = {posixpath.join(posixpath.dirname(path), name) for name in names}
+    return {name for name in found if valid_path(name) and name != path}
+
+
+def validate(data, catalog=None):
     ids = catalog_ids()
     # Only a catalog row starts with an id; other tables there name files such as `CHILD.md`.
     doc_ids = re.findall(r"^\| `([a-z]+(?:-[a-z]+)*)` \|", (ROOT / "docs/personas.md").read_text(), re.M)
-    require(doc_ids == ids, "docs/personas.md does not follow persona.Order")
+    # Rows are grouped by team there, so a role moved to the Custom team is listed out of persona.Order.
+    require(sorted(doc_ids) == sorted(ids), "docs/personas.md must list every persona.Order ID exactly once")
     require(data.get("schema_version") == 1, "unsupported schema_version")
     roles = data.get("roles")
     require(isinstance(roles, list), "roles must be a list")
@@ -113,7 +140,7 @@ def validate(data):
             prefix = f"{rid}/{candidate.get('name', '?')}"
             require(candidate.get("fit_status") == "fits_bounded_task", f"{prefix}: bounded fit must be explicit")
             require(bool(candidate.get("fits")) and bool(candidate.get("limits")), f"{prefix}: fit and limits are required")
-            require(candidate.get("research_round") in (1, 2, 3), f"{prefix}: research round is required")
+            require(candidate.get("research_round") in (1, 2, 3, 4), f"{prefix}: research round is required")
             repo = candidate.get("source_repository")
             require(isinstance(repo, str) and REPO.fullmatch(repo), f"{prefix}: invalid source repository")
             commit = candidate.get("source_commit")
@@ -161,13 +188,26 @@ def validate(data):
         else:
             require(role.get("zero_preview_reason") is None, f"{rid}: zero preview reason contradicts an eligible candidate")
     by_role = {role["id"]: role for role in roles}
-    for persona, url in catalog_sources():
-        matches = [c for c in by_role.get(persona, {}).get("candidates", []) if c.get("skill_url") == url]
-        require(matches and matches[0]["preview"]["status"] == "eligible_for_manual_preview",
-                f"{persona}: the bundled skill's source {url} is not a reviewed candidate of this role")
-    originals = catalog_originals()
+    sources, role_skills = catalog if catalog is not None else catalog_skills()
+    carried = set()
+    originals = set()
+    for rid, names in role_skills.items():
+        require(rid in by_role, f"{rid}: a role in builtinRoleSkills is not in persona.Order")
+        require(0 < len(names) <= MAX_ROLE_SKILLS, f"{rid}: a built-in role carries 1 to {MAX_ROLE_SKILLS} default skills, not {len(names)}")
+        require(len(set(names)) == len(names), f"{rid}: a default skill is listed twice")
+        for name in names:
+            require(name in sources, f"{rid}: {name} is not a built-in skill")
+            carried.add(name)
+            if sources[name] == "persona.Original":
+                originals.add((rid, name))
+                continue
+            # One Skill may serve several roles; each pairing is reviewed for its own role.
+            matches = [c for c in by_role[rid].get("candidates", []) if c.get("skill_url") == sources[name]]
+            require(matches and matches[0]["preview"]["status"] == "eligible_for_manual_preview",
+                    f"{rid}: the bundled skill {name}'s source {sources[name]} is not a reviewed candidate of this role")
+    require(carried == set(sources), f"built-in skills carried by no role: {sorted(set(sources) - carried)}")
     recorded = {(role["id"], role["original_skill"]["name"]) for role in roles if role.get("conclusion") == "original_skill"}
-    require(set(originals) == recorded,
+    require(originals == recorded,
             f"original skills in the catalog {sorted(originals)} do not match the ledger {sorted(recorded)}")
     return count, preview_count
 
@@ -182,6 +222,15 @@ def verify_upstream(data):
             with urlopen(Request(url, headers={"User-Agent": "Clawdline-skill-audit"}), timeout=20) as response:
                 cache[key] = response.read()
         return cache[key]
+
+    def exists(repo, commit, path):
+        try:
+            fetch(repo, commit, path)
+        except HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise
+        return True
 
     import hashlib
     for role in data["roles"]:
@@ -206,7 +255,9 @@ def verify_upstream(data):
                 body = fetch(repo, commit, path)
                 require(hashlib.sha256(body).hexdigest() == files[path]["sha256"], f"{rid}: bundled digest mismatch: {path}")
                 found.add(path)
-                todo.extend(local_references(body.decode("utf-8"), path) - found)
+                text = body.decode("utf-8")
+                todo.extend(local_references(text, path) - found)
+                todo.extend(name for name in sibling_names(text, path) - found if exists(repo, commit, name))
             require(found == set(files), f"{rid}: preview bundle has unreferenced files")
     return len(cache), fetch
 
@@ -239,6 +290,22 @@ def self_test(data, fetch=None):
     rejected(lambda d: next(r for r in d["roles"] if r["id"] == "zero-review-lead").update(
         conclusion="no_suitable_candidate", zero_preview_reason="dropped", original_skill=None), "original skill missing from the ledger")
     rejected(lambda d: next(r for r in d["roles"] if r["id"] == "zero-review-lead")["original_skill"].__setitem__("name", "elsewhere"), "original skill at the wrong path")
+    # One role, several reviewed Skills; one Skill, several roles.
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "technical-writer")["candidates"].pop(), "shared skill not reviewed for one of its roles")
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "minimal-change")["candidates"][0]["preview"].__setitem__("status", "blocked"), "second default skill of a role not reviewed")
+    sources, role_skills = catalog_skills()
+    def with_roles(change, label):
+        changed = copy.deepcopy(role_skills)
+        change(changed)
+        try:
+            validate(copy.deepcopy(data), (sources, changed))
+        except Invalid:
+            return
+        raise Invalid(f"self-test failed to reject {label}")
+    with_roles(lambda r: r["code-reviewer"].extend(["humanize-prose", "decision-record", "write-spec"]), "five default skills on one role")
+    with_roles(lambda r: r["code-reviewer"].append("two-axis-code-review"), "a default skill listed twice")
+    with_roles(lambda r: r["technical-writer"].remove("humanize-prose") or r["pr"].clear(), "an empty role list")
+    with_roles(lambda r: r["email"].append("golang-concurrency"), "a skill on a role whose ledger never reviewed it")
     if fetch is not None:
         rejected(lambda d: next(r for r in d["roles"] if r["id"] == "accessibility")["candidates"][0]["reference_audit"]["files"].pop(), "omitted real reference", online=True)
 

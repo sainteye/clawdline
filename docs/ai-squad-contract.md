@@ -164,9 +164,17 @@ Candidate research for all 42 built-ins is recorded separately from review
 and adoption. Following the person's 2026-09-29 integration request, 12
 reviewed candidates gained portable, locally bundled adaptations in the
 built-in skill catalog, enabled by default for their matching roles; a
-2026-10-02 round over four public skill collections added 11 more. 23 roles
-now have one default skill and the remaining 19 have none
-([decisions](persona-skill-decisions.md)). A global or Project override can
+2026-10-02 round over four public skill collections added 11 more. Since
+2026-11-08 a built-in role can carry several default skills, in a stated
+order, up to `squad.MaxBuiltinRoleSkills` (4, registered as
+`squad.builtin_role_skills`), and one built-in skill can be a default of
+several roles; its ID, version and icon do not depend on which roles carry
+it. Of the 44 built-in roles, 27 carry default skills (three of them two
+each) drawn from 26 built-in skills, and 17 carry none
+([decisions](persona-skill-decisions.md)). A built-in role's definition lists
+all its defaults, so adding one gives the role a new version; the earlier
+versions, with the shorter lists, still resolve for older snapshots and
+pinned settings. A global or Project override can
 reorder, disable, or remove a role's effective skills. A launch prompt lists
 each enabled skill with its name, purpose, and the skill's own quoted
 "Use this skill ..." sentence, and asks the role to compare the task with
