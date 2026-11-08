@@ -188,6 +188,12 @@ func (b *Broker) repositoryOf(ctx context.Context, project string) (string, erro
 // rows reads every task this broker holds for a repository and decides what
 // each one is.
 func (b *Broker) rows(ctx context.Context, repo string) ([]InventoryRow, error) {
+	return b.rowsMatching(ctx, repo, nil)
+}
+
+// rowsMatching applies a caller's projection before reading Git cleanup facts.
+// Nil selects the full inventory, including settled disposal advice.
+func (b *Broker) rowsMatching(ctx context.Context, repo string, include func(Record) bool) ([]InventoryRow, error) {
 	records, bad, err := b.ledger(ctx)
 	if err != nil {
 		return nil, err
@@ -196,7 +202,7 @@ func (b *Broker) rows(ctx context.Context, repo string) ([]InventoryRow, error) 
 	out := []InventoryRow{}
 	occupied := b.occupancySnapshot(ctx)
 	for _, r := range records {
-		if !inRepository(r, repo) {
+		if !inRepository(r, repo) || (include != nil && !include(r)) {
 			continue
 		}
 		out = append(out, b.row(ctx, r, now, occupied))
@@ -234,6 +240,16 @@ func inRepository(r Record, repo string) bool {
 		home = r.Repository
 	}
 	return home == repo || strings.HasPrefix(home, repo+"/")
+}
+
+// settledLanding names the receipts whose work no longer belongs in inflight.
+// Unknown and legacy states still require the full Git reading.
+func settledLanding(state LandingState) bool {
+	switch state {
+	case LandingLanded, LandingIncorporated, LandingAbandoned, LandingNothingToLand:
+		return true
+	}
+	return false
 }
 
 // row decides one task's section, its `do` and its `why`.
@@ -280,8 +296,7 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time, occupied func
 		return row
 	}
 
-	switch row.Landing {
-	case LandingLanded, LandingIncorporated, LandingAbandoned, LandingNothingToLand:
+	if settledLanding(row.Landing) {
 		row.Section = VisibilitySettled
 	}
 
@@ -324,7 +339,6 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time, occupied func
 	if mergedKnown {
 		row.Merged = &merged
 	}
-	commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
 	// Droppable is decided first and fails safe: the branch must have been
 	// readable, and the checkout must have been readable and clean. Anything
 	// unknown is not permission.
@@ -341,6 +355,9 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time, occupied func
 			row.Do = DoDispose
 			row.Why = WhyOrphanedCheck
 		case exists && mergedKnown && merged:
+			// Only disposal's reason needs the count here. Settled rows that
+			// cannot offer disposal never expose it or use it in their receipt.
+			commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
 			row.Do = DoDispose
 			if commitsKnown && commits == 0 {
 				row.Why = WhyBranchEmpty
@@ -377,6 +394,9 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time, occupied func
 		row.Section = VisibilityUnlanded
 	}
 
+	// Unresolved work still needs its full count, including failed reads:
+	// unknown is advice to inspect, never permission to discard work.
+	commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
 	row.Do, row.Why = landingAdvice(r, commits, commitsKnown, dirty, dirtyKnown, kept)
 	return row
 }

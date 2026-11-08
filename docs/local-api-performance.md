@@ -376,3 +376,12 @@ or global agent registration; it was read and applied in this Session.
   wait, and they are not changed by this inventory optimization.
 - Production latency after installation remains to be measured. A successful
   local replay does not establish that the running daemon contains this change.
+
+
+## User-impact review (2026-11-08)
+
+The [current API baseline and prioritization review](performance/local-api-review-2026-11-08.md)
+records update dependency failures, launch-outcome gaps, unattributed overflow and
+reverted experiments. Choose future optimizations by current user impact, observed
+usage and removable real-world waiting time; a microbenchmark percentage alone
+does not justify a change. The rule is also in `AGENTS.md`.

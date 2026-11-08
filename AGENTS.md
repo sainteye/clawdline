@@ -34,6 +34,27 @@ git worktree add -f <scratch>/<name> HEAD
   (`GET /v1/orchestrator/tasks/<id>` → `.task.worktree.path`), never composed.
   `cd "$W" || exit 1` — a failed `cd` runs everything else somewhere else.
 
+## Choose performance work by user impact
+
+Prioritize current user failures or blocked interactions, then frequently used
+operations with measurable real-world waiting time. Rank candidates using observed
+usage frequency, absolute time that can actually be removed from the user's critical
+path, and the severity of the current impact. Summed request durations can overlap
+or belong to background work; they are not automatically time a person can save.
+
+A large percentage on an already imperceptibly fast operation is not a reason to
+optimize it. Microbenchmarks locate costs; they do not establish product priority or
+user benefit. Before retaining a change, record the affected action, observed
+frequency, absolute end-to-end baseline and expected saving, supporting evidence,
+correctness risk and maintenance cost. Compare repeated measurements under the same
+conditions. If the benefit is only a microbenchmark, inside noise, or unproved on the
+affected action, defer or revert it rather than sell a percentage. Resource savings
+can justify work when they demonstrably relieve current contention, cost or a
+capacity limit; state that effect instead of implying a latency improvement.
+
+See [the local API review](docs/performance/local-api-review-2026-11-08.md) for the
+baseline, rejected attempts and the next observability priorities.
+
 ## Before anything is committed
 
 The workflow targets **ten seconds during development and one minute for an ordinary local

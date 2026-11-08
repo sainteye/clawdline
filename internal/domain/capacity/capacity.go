@@ -310,6 +310,7 @@ const (
 	ReleaseCheckIntervalSeconds   = "release.check_interval_seconds"
 	ReleaseCheckJitterSeconds     = "release.check_jitter_seconds"
 	ReleaseFetchTimeoutSeconds    = "release.fetch_timeout_seconds"
+	ReleaseMetadataConcurrency    = "release.metadata_concurrency"
 	ReleaseDownloadTimeoutSeconds = "release.download_timeout_seconds"
 	ReleaseArtifactBytes          = "release.artifact_bytes"
 	ReleaseListBytes              = "release.list_bytes"

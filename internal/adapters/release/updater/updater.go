@@ -41,6 +41,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/install"
 	"github.com/sainteye/clawdline/internal/adapters/release"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // Bounds, registered in internal/domain/capacity.
@@ -216,6 +217,9 @@ type Env struct {
 	Client   *http.Client
 	Run      Runner
 	Now      func() time.Time
+	// MetadataConcurrency may lower the fixed pair to sequential reads.
+	// Zero uses MetadataReadConcurrencyLimit; values cannot increase it.
+	MetadataConcurrency int
 	// ReleaseURL is ReleaseURLEnv's value; ReleasesAPI the GitHub list.
 	ReleaseURL  string
 	ReleasesAPI string
@@ -244,11 +248,13 @@ func DefaultEnv(stateDir string) (Env, error) {
 			apps = filepath.Join(home, "Applications")
 		}
 	}
+	resolved, _ := capacity.Resolve(capacity.Register(), os.Getenv(capacity.OverrideEnv))
 	env := Env{
 		Layout: layout, StateDir: stateDir, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
 		Keys: release.TrustedKeys(), Client: &http.Client{}, Run: ExecRunner, Now: time.Now,
-		ReleaseURL:  strings.TrimRight(strings.TrimSpace(os.Getenv(ReleaseURLEnv)), "/"),
-		ReleasesAPI: DefaultReleasesAPI, AppsDir: apps, Poll: time.Second,
+		MetadataConcurrency: int(capacity.Limit(resolved, capacity.ReleaseMetadataConcurrency)),
+		ReleaseURL:          strings.TrimRight(strings.TrimSpace(os.Getenv(ReleaseURLEnv)), "/"),
+		ReleasesAPI:         DefaultReleasesAPI, AppsDir: apps, Poll: time.Second,
 		SupervisorEnv: map[string]string{},
 	}
 	// The supervisor and the daemon it restarts must see the same layout and

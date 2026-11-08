@@ -677,7 +677,20 @@ func (b *Broker) sendNotify(ctx context.Context, task, displayed, title, body, t
 // A task never sees itself in its own answer: it asked what else is going on,
 // and a row naming the asker is the one row it cannot act on.
 func (b *Broker) Inflight(ctx context.Context, repo, exclude string) ([]InventoryRow, error) {
-	rows, err := b.rows(ctx, repo)
+	rows, err := b.rowsMatching(ctx, repo, func(r Record) bool {
+		if r.ID == exclude {
+			return false
+		}
+		if !r.State.Terminal() {
+			return true
+		}
+		// Terminal tasks without a worktree are always settled. A settled
+		// landing may still offer cleanup in inventory, but never outstanding work.
+		if r.Worktree == nil {
+			return false
+		}
+		return r.Landing == nil || !settledLanding(r.Landing.State)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -695,6 +708,17 @@ func (b *Broker) Inflight(ctx context.Context, repo, exclude string) ([]Inventor
 		}
 	}
 	return out, nil
+}
+
+// ReadInflight resolves a project before projecting its outstanding work.
+// It does not build disposal advice or an unused full-inventory receipt.
+func (b *Broker) ReadInflight(ctx context.Context, project string) (string, []InventoryRow, error) {
+	repo, err := b.repositoryOf(ctx, project)
+	if err != nil {
+		return "", nil, err
+	}
+	rows, err := b.Inflight(ctx, repo, "")
+	return repo, rows, err
 }
 
 // InflightFor is the per-task form: the repository comes from the task, so a
