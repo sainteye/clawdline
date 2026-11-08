@@ -348,6 +348,7 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.15.1 publication after GitHub download failures and the Gemini CLI help fix](records/release-v2.15.1-acceptance.md).
 - [v2.15.0 publication, several Skills per role and live Skill-use screens](records/release-v2.15.0-acceptance.md).
 - [v2.14.0 publication, once-per-conversation CodeGraph guidance and installed release evidence](records/release-v2.14.0-acceptance.md).
 
