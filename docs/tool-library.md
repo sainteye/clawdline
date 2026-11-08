@@ -5,8 +5,8 @@ are stored in the machine SQLite database, shared by its paired readers. Writes
 require Send permission or the machine credential. This is a collection of source
 metadata; it never establishes that a tool is installed or enabled.
 
-The compiled recommendation snapshot contains 28 public projects, including four
-web libraries and one evaluation framework, 46 verified Skill entry paths and eleven categories. English and Taiwan Traditional Chinese
+The compiled recommendation snapshot contains 37 public projects, including three
+web libraries and one evaluation framework, 60 verified Skill entry paths and fourteen categories. English and Taiwan Traditional Chinese
 names, purposes, requirements and limitations accompany commit and entry SHA-256
 metadata. Historical ranking evidence retains its original kind, date and scope.
 Bundled icons distinguish official project assets from owner avatars; custom
@@ -35,10 +35,65 @@ reviewed product change, not runtime third-party execution.
 The dialog uses 15 px body copy and at least 13 px supporting text. Mobile
 layouts retain these sizes and reflow the cards; form fields use 16 px text.
 
+## Categories by intent
+
+Categories follow what the person wants to do. In order: Architecture & domain
+modeling; Development & code quality; Interface design direction; Interface
+review & polish; Design systems & components; Web animation & interaction;
+Creative visuals & 3D; Frontend performance & accessibility; Security review;
+Diagrams, slides & documentation; Product, SEO & growth; Video & motion
+production; Optional development workflows; Agent evaluation & improvement.
+Existing category IDs were kept, so saved projects and links still resolve;
+`design-review`, `design-system` and `creative` are new.
+
+- **Interface design direction** (`design`) chooses a visual direction before
+  code: Impeccable, Taste Skill, UI UX Pro Max, Anthropic Skills, Hallmark
+  and [Interface Design](https://github.com/Dammyjay93/interface-design) for
+  product UI that keeps its decisions in `.interface-design/system.md`.
+- **Interface review & polish** (`design-review`) audits a screen that exists:
+  Jakub Krehel's skills, now including Better Typography, and
+  [Refactoring UI](https://github.com/wondelai/skills), whose eight-check score
+  out of ten lists what remains. Its upstream affiliate book links are not
+  recommendations.
+- **Design systems & components** (`design-system`) captures or applies a
+  system: [Hue](https://github.com/dominikmartn/hue) writes a design-language
+  Skill and may fetch the URL it is given;
+  [Stitch's Extract DESIGN.md](https://github.com/google-labs-code/stitch-skills)
+  (Apache-2.0) reads frontend source without running the app, and its optional
+  push into Google Stitch is not part of preparation;
+  [shadcn/ui](https://github.com/shadcn-ui/ui) is only for shadcn/ui projects and
+  runs its CLI through the project's package runner.
+- **Web animation & interaction** (`animation`) now holds Emil Kowalski's skills
+  for UI micro-interactions, [LottieFiles Motion Design](https://github.com/LottieFiles/motion-design-skill)
+  for brand and illustration motion, and
+  [GSAP's official skills](https://github.com/greensock/gsap-skills) (core,
+  timeline, ScrollTrigger and React) beside the web libraries. The skills are
+  MIT; the gsap package they install keeps its
+  [custom standard license](https://gsap.com/standard-license/), with restrictions
+  on competing visual animation builders, and that note is the card's first
+  requirement. The gsap-skills card replaced the earlier `greensock--gsap`
+  library card: no code, test or console logic referred to that catalog ID, and a
+  saved copy is stored with its full body, so it still opens and prepares.
+- **Creative visuals & 3D** (`creative`) holds MiniMax's
+  [Shader Dev](https://github.com/MiniMax-AI/skills) (36 GLSL techniques with a
+  per-pixel loop budget; covered by the root MIT license, while the repository's
+  `LICENSES/Apache-2.0.txt` covers other Skills derived from Anthropic work) and
+  [Three.js Scroll Worlds](https://github.com/MengTo/Skills), maintained by one
+  author with about 3.7 MB of demo files in its Skill folder.
+- **Diagrams, slides & documentation** (`diagrams`) adds
+  [Frontend Slides](https://github.com/zarazhangrui/frontend-slides): single-file
+  HTML decks, PPTX to HTML conversion and PDF export, with no PPTX export. An
+  upstream step deploys to a public Vercel URL; its limitation tells the agent
+  that publishing needs the person's explicit approval.
+
+Each added source is pinned to a 40-hex commit with the hashed license file and
+the SHA-256 and byte count of every entry. Icons are owner avatars. Dependency
+closure is not reviewed.
+
 ## Web libraries
 
 The Web animation & interaction category contains [Lenis](https://github.com/darkroomengineering/lenis),
-[GSAP](https://github.com/greensock/GSAP), [Vanta.js](https://github.com/tengbao/vanta)
+[Vanta.js](https://github.com/tengbao/vanta)
 and [React Bits](https://github.com/DavidHDev/react-bits). Their reviewed trees have
 no SKILL.md. They use `integration_kind: library`, an empty Skill list and bilingual
 project prerequisites. Their cards and details identify a web library rather than
@@ -53,9 +108,7 @@ the application. Verification includes the build and relevant browser behavior,
 cleanup, reduced motion, mobile use and rendering fallbacks. It does not install
 the upstream documentation website or enable an optional MCP server.
 
-Lenis and Vanta use MIT licenses. GSAP uses its
-[custom standard license](https://gsap.com/standard-license/), with restrictions
-on competing visual animation builders. React Bits uses
+Lenis and Vanta use MIT licenses. React Bits uses
 [MIT plus Commons Clause](https://github.com/DavidHDev/react-bits/blob/4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4/LICENSE.md),
 with restrictions on redistributing the components, tools and exports themselves.
 Catalog inclusion is metadata review, not dependency review, installation or proof

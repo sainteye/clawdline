@@ -95,6 +95,20 @@ func TestToolPreparationPinsConversationAndDoesNotSend(t *testing.T) {
 	if len(p.done()) != 0 {
 		t.Fatal("framework preparation sent or executed a message", p.done())
 	}
+	input["project_id"] = "greensock--gsap-skills"
+	input["skill_id"] = "greensock--gsap-skills--gsap-react"
+	input["locale"] = "en"
+	raw, _ = json.Marshal(input)
+	status, body = f.ask("POST", "/v1/tool-library/prepare", f.sender, string(raw), "prepare-gsap-skills")
+	if status != 200 {
+		t.Fatalf("GSAP skills prepare %d %s", status, body)
+	}
+	if err := json.Unmarshal([]byte(body), &prepared); err != nil || prepared.Skill == nil || prepared.Skill.Path != "skills/gsap-react/SKILL.md" || prepared.Project.CategoryID != "animation" || !strings.Contains(prepared.Prompt, "GSAP Standard No Charge License") {
+		t.Fatalf("GSAP skills preparation: %s %v", body, err)
+	}
+	if len(p.done()) != 0 {
+		t.Fatal("GSAP skills preparation sent or executed a message", p.done())
+	}
 	input["conversation"] = "another-conversation"
 	raw, _ = json.Marshal(input)
 	if status, body = f.ask("POST", "/v1/tool-library/prepare", f.sender, string(raw), "prepare-stale"); status != 409 {
