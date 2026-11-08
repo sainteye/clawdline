@@ -7,6 +7,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 // squadCapacityMeasures measures every row of the register's "squad" area
@@ -49,6 +50,13 @@ func (s *Server) squadCapacityMeasures() map[string]func() capacity.Reading {
 				return capacity.Reading{Err: err.Error()}
 			}
 			return capacity.Reading{Known: true, Used: used, Note: "largest immutable squad launch document"}
+		},
+		capacity.SquadBuiltinRoleSkills: func() capacity.Reading {
+			largest := 0
+			for _, d := range squad.Builtins().Definitions {
+				largest = max(largest, len(d.Skills))
+			}
+			return capacity.Reading{Known: true, Used: int64(largest), Note: "compiled in; the role with the most default skills"}
 		},
 		capacity.SquadConsoleActiveSkillBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-persona Console guard; no retained measurement"}

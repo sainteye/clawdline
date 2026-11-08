@@ -104,7 +104,7 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	status, raw := f.ask("GET", "/v1/squad/catalog", f.reader, "", "")
 	var catalog contract.SquadCatalog
 	if status != 200 || json.Unmarshal([]byte(raw), &catalog) != nil ||
-		len(catalog.Definitions) != len(persona.IDs()) || len(catalog.Skills) != 24 {
+		len(catalog.Definitions) != len(persona.IDs()) || len(catalog.Skills) != 26 {
 		t.Fatalf("private catalog = %d, %s", status, raw)
 	}
 	launch, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
@@ -178,8 +178,10 @@ func TestEarlierBuiltinSkillVersionStillLaunchesAfterPortableUpdate(t *testing.T
 func TestCodeReviewerLaunchReceivesPortableReviewSkill(t *testing.T) {
 	f := newSquadFixture(t)
 	launch, err := f.s.ResolveSquadLaunch(context.Background(), "code-reviewer", "")
-	if err != nil || len(launch.Skills) != 1 ||
+	if err != nil || len(launch.Skills) != 2 ||
 		launch.Skills[0].ID != "clawdline.skill.two-axis-code-review" ||
+		launch.Skills[1].ID != "clawdline.skill.ponytail-review" ||
+		!strings.Contains(launch.Skills[1].Content, "lines the findings would remove") ||
 		!strings.Contains(launch.Skills[0].Content, "project-rules axis") ||
 		!strings.Contains(launch.Skills[0].Content, "request axis") ||
 		strings.Contains(launch.Skills[0].Content, "Clawdline") {

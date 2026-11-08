@@ -10919,6 +10919,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "squad.builtin_role_skills",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/squad.MaxBuiltinRoleSkills"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "squad.console_active_skill_bytes",
     "Class": "buffer",
     "Unit": "bytes",

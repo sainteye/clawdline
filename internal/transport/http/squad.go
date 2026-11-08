@@ -383,15 +383,12 @@ func (s *Server) squadDefinitionRead(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if d.DefinitionID == resolved && version != "" && d.Builtin && len(d.Skills) > 0 {
-			if historical, ok := squad.HistoricalBuiltinDefinition(d); ok && version == historical.Version {
-				writeJSON(w, historical)
-				return
-			}
-			previous := squad.PreSkillBuiltinVersion(d)
-			if version == previous.Version {
-				writeJSON(w, previous)
-				return
+		if d.DefinitionID == resolved && version != "" {
+			for _, previous := range squad.EarlierBuiltinDefinitions(d) {
+				if version == previous.Version {
+					writeJSON(w, previous)
+					return
+				}
 			}
 		}
 	}

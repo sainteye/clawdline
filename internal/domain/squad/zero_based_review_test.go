@@ -10,9 +10,12 @@ import (
 // rather than adapted, and a review child declares no writes of a code kind:
 // the skill applies whatever the task writes, or nothing at all.
 func TestTheZeroBasedReviewSkillIsOriginalAndAlwaysApplies(t *testing.T) {
-	skills := builtinSkills()
-	skill, ok := skills["zero-review-lead"]
-	if !ok || skill.SkillID != "clawdline.skill.zero-based-review" {
+	refs := builtinRoleSkillRefs(builtinSkills())["zero-review-lead"]
+	if len(refs) != 1 || refs[0].ID != "clawdline.skill.zero-based-review" {
+		t.Fatalf("zero-review-lead carries %+v", refs)
+	}
+	skill, ok := builtinSkills()[refs[0].ID]
+	if !ok {
 		t.Fatalf("zero-review-lead carries %+v", skill)
 	}
 	if skill.Source != persona.Original || skill.License != "MIT" {

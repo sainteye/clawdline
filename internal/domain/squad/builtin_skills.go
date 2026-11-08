@@ -20,9 +20,16 @@ var builtinSkillContent embed.FS
 var builtinSkillHistory embed.FS
 
 type builtinSkillSpec struct {
-	Persona, Name, ZhName, Purpose, ZhPurpose, Source, License string
+	// Icon names the persona whose picture the Skill carries. A Skill shared
+	// by several roles keeps the one icon it was first released with. It does
+	// not say which roles carry the Skill; builtinRoleSkills does.
+	Icon                                              string
+	Name, ZhName, Purpose, ZhPurpose, Source, License string
 }
 
+// builtinSkillSpecs holds each built-in Skill once, identified by its name;
+// builtinRoleSkills says which roles carry it.
+//
 // Each source is a reviewed, commit-pinned entry in docs/persona-skill-decisions.json,
 // or persona.Original for a text written for Clawdline, which carries the
 // repository's own licence and is recorded there as an original skill.
@@ -53,8 +60,48 @@ var builtinSkillSpecs = []builtinSkillSpec{
 	{"performance", "binding-constraint", "找出真正瓶頸", "Measure, then improve the one binding constraint", "先量測，再改善唯一的關鍵瓶頸", "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-theory-of-constraints/SKILL.md", "MIT"},
 	{"zero-review-lead", "zero-based-review", "歸零審查", "Re-justify an existing design from zero with role reviewers", "以多角色從零重新檢驗既有設計", persona.Original, "MIT"},
 	{"architect", "decision-record", "架構決策紀錄", "Record a technical decision with its alternatives", "記錄技術決策及其替代方案", "https://github.com/affaan-m/ECC/blob/c05b2d6614f62f6db0047669aa4eefb223d478f9/skills/architecture-decision-records/SKILL.md", "MIT"},
+	{"code-reviewer", "ponytail-review", "過度設計審查", "List what a change can delete or shrink", "列出改動中可以刪除或縮短的部分", "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/skills/ponytail-review/SKILL.md", "MIT"},
+	{"minimal-change", "systematic-debugging", "系統化除錯", "Find a failure's root cause before changing code", "先找出失敗的根本原因再改程式", "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md", "MIT"},
 }
 
+// builtinRoleSkills is the one place a (role, Skill) pair is registered: each
+// built-in role's default Skills, in the order its launch prompt and the
+// Squad page list them. Append a new default to the end of its role's list.
+// The released definitions before it are then the shorter lists, which
+// EarlierBuiltinDefinitions reconstructs so a pinned version still resolves.
+// A role carries at most MaxBuiltinRoleSkills; the source of each pair must
+// be a reviewed candidate of that role in docs/persona-skill-decisions.json.
+var builtinRoleSkills = map[string][]string{
+	"architect":            {"decision-record"},
+	"backend":              {"golang-concurrency"},
+	"frontend":             {"frontend-component-build"},
+	"minimal-change":       {"smallest-sufficient-change", "systematic-debugging"},
+	"code-reviewer":        {"two-axis-code-review", "ponytail-review"},
+	"reality-checker":      {"verification-before-completion"},
+	"security":             {"exploit-path-review"},
+	"technical-writer":     {"documentation-writer", "humanize-prose"},
+	"content-writer":       {"humanize-prose"},
+	"email":                {"humanize-prose"},
+	"pr":                   {"humanize-prose"},
+	"product-manager":      {"write-spec"},
+	"sprint-prioritizer":   {"opportunity-cost"},
+	"feedback-synthesizer": {"research-synthesis"},
+	"ux-researcher":        {"ux-research"},
+	"test-automation":      {"tests-that-catch-breaks"},
+	"accessibility":        {"accessibility-audit"},
+	"performance":          {"binding-constraint"},
+	"evidence-collector":   {"map-versus-territory"},
+	"sre":                  {"monitoring-and-alerting"},
+	"devops":               {"devops-rollout-plan"},
+	"incident-commander":   {"incident-response"},
+	"finops":               {"cost-optimization"},
+	"ui-designer":          {"frontend-design"},
+	"support":              {"bug-report-from-user"},
+	"devrel":               {"humanize-prose"},
+	"zero-review-lead":     {"zero-based-review"},
+}
+
+// builtinSkills returns each built-in Skill by its Skill ID.
 func builtinSkills() map[string]Skill {
 	out := make(map[string]Skill, len(builtinSkillSpecs))
 	for _, spec := range builtinSkillSpecs {
@@ -62,15 +109,46 @@ func builtinSkills() map[string]Skill {
 		if err != nil {
 			panic(err) // An embedded file is part of the build, not runtime state.
 		}
-		out[spec.Persona] = builtSkill(spec, body)
+		skill := builtSkill(spec, body)
+		if _, dup := out[skill.SkillID]; dup {
+			panic("built-in skill listed twice: " + spec.Name)
+		}
+		out[skill.SkillID] = skill
+	}
+	return out
+}
+
+// builtinRoleSkillRefs resolves builtinRoleSkills into each role's ordered
+// Skill references. The table is compiled in, so a role past the bound, a
+// repeated Skill or an unknown name is a build that must not ship.
+func builtinRoleSkillRefs(skills map[string]Skill) map[string][]SkillReference {
+	out := make(map[string][]SkillReference, len(builtinRoleSkills))
+	for role, names := range builtinRoleSkills {
+		if _, ok := persona.Known(role); !ok {
+			panic("unknown built-in skill persona: " + role)
+		}
+		if len(names) == 0 || len(names) > MaxBuiltinRoleSkills {
+			panic("built-in role " + role + " has no default skill or more than MaxBuiltinRoleSkills")
+		}
+		seen := map[string]bool{}
+		refs := make([]SkillReference, 0, len(names))
+		for _, name := range names {
+			skill, ok := skills["clawdline.skill."+name]
+			if !ok || seen[name] {
+				panic("built-in role " + role + " names an unknown or repeated skill: " + name)
+			}
+			seen[name] = true
+			refs = append(refs, SkillReference{ID: skill.SkillID, Version: skill.Version, Enabled: true})
+		}
+		out[role] = refs
 	}
 	return out
 }
 
 func builtSkill(spec builtinSkillSpec, body []byte) Skill {
-	p, ok := persona.Known(spec.Persona)
+	p, ok := persona.Known(spec.Icon)
 	if !ok {
-		panic("unknown built-in skill persona: " + spec.Persona)
+		panic("unknown built-in skill icon persona: " + spec.Icon)
 	}
 	content := strings.TrimSpace(string(body)) + "\n"
 	skill := Skill{

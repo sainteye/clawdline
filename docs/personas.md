@@ -224,7 +224,10 @@ statement of what it never overrides, so the persona's preamble is dropped there
 carried once; the persona text itself is unchanged. `CHILD.md` never carries the persona or the role
 skills: it is the task, and the system prompt is the role.
 
-The role skill section lists only skills that can apply to the task. A dispatched child passes its
+A role can carry several default skills (since 2026-11-08; `builtinRoleSkills` in
+`internal/domain/squad/builtin_skills.go` is the one table that pairs a role with a built-in
+skill). The section lists them in that order, after any change a global or Project override
+makes. The role skill section lists only skills that can apply to the task. A dispatched child passes its
 declared writes; a built-in skill whose "use this skill when" names a kind of code (Go concurrency,
 front-end components and design, `squad.SkillAppliesToWrites`) is left out of the prompt when every
 declared write is a file of another kind. It is still written into the launch and stays in the

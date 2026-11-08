@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "Public research decisions for the built-in persona catalog; no skill is installed or adopted by this document.",
-  "reviewed_on": "2026-10-06",
+  "reviewed_on": "2026-11-08",
   "preview_definition": "Eligible for a person to read the pinned entry and reviewed bundled references; this is not a Console capability or permission to execute the skill.",
   "roles": [
     {
@@ -219,13 +219,50 @@
           "license_url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/LICENSE",
           "license_sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
           "reference_audit": {
-            "status": "open",
-            "observed_entry_references": [],
-            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/systematic-debugging/SKILL.md",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md",
+                "sha256": "808fc5717aa88ad65efff312b11c186294d3e6ee301afb584e2f86599b137787",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/systematic-debugging/root-cause-tracing.md",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/root-cause-tracing.md",
+                "sha256": "75b933b6a8c40bdb2031b10f21654395b56ec6ab6bc7b018c18d3fe57aeb7fb8",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/systematic-debugging/defense-in-depth.md",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/defense-in-depth.md",
+                "sha256": "1e175fb86fc357e58c6aebf5441e481e1b7868b4380c0456b63a17eefbd18ba7",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/systematic-debugging/condition-based-waiting.md",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/condition-based-waiting.md",
+                "sha256": "e89fec8400d6cd50f43407cec9fab50976ba4d55d0ec2eb51c0bd68036b54c26",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/systematic-debugging/condition-based-waiting-example.ts",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/condition-based-waiting-example.ts",
+                "sha256": "40ae5ebe497fdf310200e43fe986552546d0a22837c0d39e855db1cfd33eb88e",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/systematic-debugging/find-polluter.sh",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/find-polluter.sh",
+                "sha256": "dd7b8f13c4cc2a24b33ff87b18da9248f3e1c80a085c3316224f69ff0fa5c43c",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 5 local reference(s), followed recursively: the entry names three sibling notes in code spans, which name a TypeScript example and a bisection script. The script runs `npm test` per file and was not adopted; the adaptation restates the four phases and the backward root-cause trace in its own words, without the example or the script."
           },
           "preview": {
-            "status": "blocked",
-            "reason": "Does not enforce this project's smallest-sufficient-change boundary or release checks."
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed on 2026-11-08 for a portable bundled adaptation carried after smallest-sufficient-change, which supplies the smallest-change boundary this text lacks."
           },
           "adoption": {
             "status": "unverified",
@@ -355,6 +392,42 @@
           "preview": {
             "status": "eligible_for_manual_preview",
             "reason": "Reviewed for a portable bundled adaptation on 2026-09-29."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "ponytail-review",
+          "fit_status": "fits_bounded_task",
+          "fits": "A second review lens beside two-axis-code-review: lists what a change could delete or shrink (reinvented standard library, unneeded dependencies, speculative abstractions), one line per finding.",
+          "limits": "Complexity only: correctness, security and performance stay with the main review and the role's severity rules. It never flags validation, data-loss handling, security, accessibility or a minimal test, and it lists cuts without applying them. The upstream 'stop ponytail-review' mode switch and slash command were not adopted.",
+          "research_round": 4,
+          "source_repository": "https://github.com/DietrichGebert/ponytail",
+          "source_commit": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+          "skill_path": "skills/ponytail-review/SKILL.md",
+          "skill_url": "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/skills/ponytail-review/SKILL.md",
+          "skill_sha256": "40df33b58fc6ef889b93585733feb9566b76e9586efa7f376785c1e995197ac0",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/LICENSE",
+          "license_sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/ponytail-review/SKILL.md",
+                "url": "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/skills/ponytail-review/SKILL.md",
+                "sha256": "40df33b58fc6ef889b93585733feb9566b76e9586efa7f376785c1e995197ac0",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-11-08 of the entry and its 0 local reference(s). No hook, script, slash command or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-11-08."
           },
           "adoption": {
             "status": "unverified",
@@ -552,6 +625,42 @@
           "preview": {
             "status": "eligible_for_manual_preview",
             "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "humanizer",
+          "fit_status": "fits_bounded_task",
+          "fits": "Final pass on finished documentation: removes machine-writing tells after documentation-writer has settled structure and facts.",
+          "limits": "Edits sentences only; it does not check accuracy or task fit, which documentation-writer and the role manual own. Code, commands and quoted output are not rewritten.",
+          "research_round": 4,
+          "source_repository": "https://github.com/blader/humanizer",
+          "source_commit": "225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8",
+          "skill_path": "SKILL.md",
+          "skill_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+          "skill_sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/LICENSE",
+          "license_sha256": "4ac4810254ab36d45419141aeb8e69bf50652cfafe5b2dab947d06d44e5cbf96",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "SKILL.md",
+                "url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+                "sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Reused on 2026-11-08: the same pinned entry and digest as content-writer's closed 2026-10-02 audit, which had 0 local references; the reviewed text is a property of the file, not the role."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Adopted on 2026-11-08 as an additional default Skill of this role, beside its existing research candidate."
           },
           "adoption": {
             "status": "unverified",
@@ -808,7 +917,7 @@
     {
       "id": "email",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Sending, consent, list handling, and integration references need separate review.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "emails",
@@ -844,6 +953,42 @@
           "preview": {
             "status": "blocked",
             "reason": "Sending, consent, list handling, and integration references need separate review."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "humanizer",
+          "fit_status": "fits_bounded_task",
+          "fits": "Final edit of an email or newsletter draft so it reads as written by a person, without adding facts or offers.",
+          "limits": "Does not cover sending, consent, list handling or deliverability; nothing is sent without authorization.",
+          "research_round": 4,
+          "source_repository": "https://github.com/blader/humanizer",
+          "source_commit": "225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8",
+          "skill_path": "SKILL.md",
+          "skill_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+          "skill_sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/LICENSE",
+          "license_sha256": "4ac4810254ab36d45419141aeb8e69bf50652cfafe5b2dab947d06d44e5cbf96",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "SKILL.md",
+                "url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+                "sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Reused on 2026-11-08: the same pinned entry and digest as content-writer's closed 2026-10-02 audit, which had 0 local references; the reviewed text is a property of the file, not the role."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Adopted on 2026-11-08 as an additional default Skill of this role, beside its existing research candidate."
           },
           "adoption": {
             "status": "unverified",
@@ -894,7 +1039,7 @@
     {
       "id": "pr",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Outreach requires explicit authorization; media and platform references remain open.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "public-relations",
@@ -926,6 +1071,42 @@
           "preview": {
             "status": "blocked",
             "reason": "Outreach requires explicit authorization; media and platform references remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "humanizer",
+          "fit_status": "fits_bounded_task",
+          "fits": "Final edit of a press statement or announcement draft so it does not read as machine-written, without adding claims.",
+          "limits": "Does not verify claims, choose outlets or authorize outreach; every factual statement still needs its source and every publication explicit authorization.",
+          "research_round": 4,
+          "source_repository": "https://github.com/blader/humanizer",
+          "source_commit": "225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8",
+          "skill_path": "SKILL.md",
+          "skill_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+          "skill_sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/LICENSE",
+          "license_sha256": "4ac4810254ab36d45419141aeb8e69bf50652cfafe5b2dab947d06d44e5cbf96",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "SKILL.md",
+                "url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+                "sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Reused on 2026-11-08: the same pinned entry and digest as content-writer's closed 2026-10-02 audit, which had 0 local references; the reviewed text is a property of the file, not the role."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Adopted on 2026-11-08 as an additional default Skill of this role, beside its existing research candidate."
           },
           "adoption": {
             "status": "unverified",
@@ -2282,7 +2463,7 @@
     {
       "id": "devrel",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Source maturity is limited; public replies and publication require authorization.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "developer-listening",
@@ -2307,6 +2488,42 @@
           "preview": {
             "status": "blocked",
             "reason": "Source maturity is limited; public replies and publication require authorization."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "humanizer",
+          "fit_status": "fits_bounded_task",
+          "fits": "Final edit of developer-facing posts, replies and tutorials so they do not read as machine-written, without adding facts.",
+          "limits": "Does not check code samples or technical accuracy and does not authorize public replies or publication.",
+          "research_round": 4,
+          "source_repository": "https://github.com/blader/humanizer",
+          "source_commit": "225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8",
+          "skill_path": "SKILL.md",
+          "skill_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+          "skill_sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/LICENSE",
+          "license_sha256": "4ac4810254ab36d45419141aeb8e69bf50652cfafe5b2dab947d06d44e5cbf96",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "SKILL.md",
+                "url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+                "sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Reused on 2026-11-08: the same pinned entry and digest as content-writer's closed 2026-10-02 audit, which had 0 local references; the reviewed text is a property of the file, not the role."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Adopted on 2026-11-08 as an additional default Skill of this role, beside its existing research candidate."
           },
           "adoption": {
             "status": "unverified",

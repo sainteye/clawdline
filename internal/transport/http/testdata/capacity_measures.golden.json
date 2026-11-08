@@ -2772,6 +2772,11 @@
     "Note": true
   },
   {
+    "Name": "squad.builtin_role_skills",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "squad.console_active_skill_bytes",
     "Known": true,
     "Note": true

@@ -6,7 +6,7 @@ It does not change this built-in role catalog or the historical research ledger.
 
 Use this reference when you design the persona squad's skill list. It gives each of the 42 adapted built-in personas one bounded-task candidate and a separate decision about whether the pinned text was ready for **manual preview** during the research cycle. The [machine-readable ledger](persona-skill-decisions.json) preserves that research snapshot, including the exact source, commit, file hash, license evidence, referenced-file audit, fit, and limit for each candidate.
 
-After the person explicitly requested integration on 2026-09-29, the 11 preview-ready candidates were reviewed against the current role manuals and repository rules, then adapted into [bundled skill content](../internal/domain/squad/builtin_skills/) and [versioned catalog entries](../internal/domain/squad/builtin_skills.go). Their roles are backend, frontend, technical-writer, product-manager, ux-researcher, accessibility, sre, devops, incident-commander, finops, and ui-designer. A later review of [Matt Pocock's pinned `code-review` skill](https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/skills/engineering/code-review/SKILL.md) added one bounded two-axis skill for `code-reviewer`. A 2026-10-02 round, described [below](#2026-10-02-four-public-skill-collections), added 11 more, and an [original skill](#original-skills) came with the `zero-review-lead` persona; the current catalog has 24 roles with one skill each and 20 with zero. These are local, portable adaptations for the repository in which a Session actually works, not provider skill installations or live network dependencies. Previous bundled texts remain in [version history](../internal/domain/squad/builtin_skill_history/) so pinned Project choices still resolve. The research ledger's `adoption: unverified` describes its earlier snapshot and is intentionally not rewritten as a claim about these later releases.
+After the person explicitly requested integration on 2026-09-29, the 11 preview-ready candidates were reviewed against the current role manuals and repository rules, then adapted into [bundled skill content](../internal/domain/squad/builtin_skills/) and [versioned catalog entries](../internal/domain/squad/builtin_skills.go). Their roles are backend, frontend, technical-writer, product-manager, ux-researcher, accessibility, sre, devops, incident-commander, finops, and ui-designer. A later review of [Matt Pocock's pinned `code-review` skill](https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/skills/engineering/code-review/SKILL.md) added one bounded two-axis skill for `code-reviewer`. A 2026-10-02 round, described [below](#2026-10-02-four-public-skill-collections), added 11 more, and an [original skill](#original-skills) came with the `zero-review-lead` persona; until 2026-11-08 the catalog gave a role at most one skill. [Since then](#2026-11-08-several-skills-per-role) a role can carry several, and 27 of the 44 roles carry default skills drawn from 26 built-in skills; 17 carry none. These are local, portable adaptations for the repository in which a Session actually works, not provider skill installations or live network dependencies. Previous bundled texts remain in [version history](../internal/domain/squad/builtin_skill_history/) so pinned Project choices still resolve. The research ledger's `adoption: unverified` describes its earlier snapshot and is intentionally not rewritten as a claim about these later releases.
 
 The `code-reviewer` adaptation retains separate checks for project rules and requested behavior, while the role manual still determines severity and evidence format. It does not install upstream setup tooling, create issue-tracker entries, publish comments, or require parallel agents. The pinned source is MIT licensed; the [copyright and permission notice](licenses/mattpocock-skills-MIT.txt) is bundled. The other candidates from this upstream repository remain research only.
 
@@ -19,7 +19,7 @@ Manual preview in this ledger means a person could read the pinned entry and the
 | architect | [architecture-blueprint-generator](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/architecture-blueprint-generator/SKILL.md) | No — The generic blueprint prompt can invent architecture unless every claim is checked against this repository. |
 | backend | [golang-concurrency](https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/SKILL.md) | Yes |
 | frontend | [frontend-component-build](https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/SKILL.md) | Yes |
-| minimal-change | [systematic-debugging](https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md) | No — Does not enforce this project's smallest-sufficient-change boundary or release checks. |
+| minimal-change | [systematic-debugging](https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md) | Yes, since 2026-11-08 — its reference audit was closed and it is carried after `smallest-sufficient-change`, which supplies the boundary it lacks. |
 | code-reviewer | [go-code-review](https://github.com/cxuu/golang-skills/blob/91f0c2eef559a3168f9d3c38f5f99936d472b508/skills/go-code-review/SKILL.md) | No — Routes to many other Go skills and a shell script; the full dependency graph is not cleared for preview. |
 | reality-checker | [qa-skill](https://github.com/Newoahil/QA-skills/blob/bfc5c490b9266292b28e0be189e6f1acacb8bea5/qa-skill/SKILL.md) | No — Its verdict and build checks do not cover Clawdline's complete Epic journey and gate rules. |
 | security | [security-review](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/security-review/SKILL.md) | No — Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules. |
@@ -72,10 +72,10 @@ Run the local check from the repository root:
 
 ```text
 python3 tools/check-persona-skill-decisions.py --self-test
-44/44 personas; 54 pinned candidates; 23 manual previews; 1 original skills; 0 upstream file reads; valid
+44/44 personas; 59 pinned candidates; 29 manual previews; 1 original skills; 0 upstream file reads; valid
 ```
 
-The self-test changes the ID order, removes and duplicates an ID, floats a source URL, mismatches license evidence, falsely marks an open audit as preview-ready, drops the original skill from the ledger, and points it at a file that does not exist. To recheck the pinned public files and recursive bundle closure, run `python3 tools/check-persona-skill-decisions.py --self-test --verify-upstream`. On 2026-09-29 this read 74 unique upstream files and passed; on 2026-10-02, with the third round, it read 102. The check also requires every skill in the built-in catalog to be a reviewed candidate of its role, which the ledger had not satisfied for `code-reviewer` until that round, and it ignores links inside fenced examples, which name no file. The online check uses public GitHub file URLs; it does not call a usage-priced API or execute third-party code.
+The self-test changes the ID order, removes and duplicates an ID, floats a source URL, mismatches license evidence, falsely marks an open audit as preview-ready, drops the original skill from the ledger, and points it at a file that does not exist. Since 2026-11-08 it also drops a shared skill's review from one of its roles, blocks a role's second skill, and gives one role five defaults, a repeated default, an empty list, or a skill its ledger entry never reviewed. To recheck the pinned public files and recursive bundle closure, run `python3 tools/check-persona-skill-decisions.py --self-test --verify-upstream`. On 2026-09-29 this read 74 unique upstream files and passed; on 2026-10-02, with the third round, it read 102; on 2026-11-08, with the fourth, 108. The check also requires every skill in the built-in catalog to be a reviewed candidate of each role that carries it, which the ledger had not satisfied for `code-reviewer` until that round, and it ignores links inside fenced examples, which name no file. The online check uses public GitHub file URLs; it does not call a usage-priced API or execute third-party code.
 
 This ledger records research and review readiness only. The 23 bundled adaptations (11 from 2026-09-29, `code-reviewer`'s, and 11 from 2026-10-02) were each adopted after the person's explicit request; future additions still require checking the candidate against the current persona manual, project rules, actual task, required tools, and measured results. An available skill is not evidence that a Session used it: use requires a receipt tied to that Session and skill.
 
@@ -99,7 +99,7 @@ The person asked which skills in four public sources could serve the built-in ro
 
 License notices for these sources are in [`licenses/`](licenses/).
 
-**Deferred.** `ponytail-review` (over-engineering lens for `code-reviewer`) and humanizer for technical-writer, pr, email and devrel need more than one skill per role, which the catalog does not yet support. `experimentation-analytics` (rampstackco) covers only A/B result reading and carries unsourced numbers. `security-baseline` and `roadmap-planning` (rampstackco) were weaker fits than the adopted security and prioritization candidates. License notices for the twelve earlier skills, and shipping all notices inside the app, are a separate follow-up.
+**Deferred**, until [2026-11-08](#2026-11-08-several-skills-per-role), when both were adopted: `ponytail-review` (over-engineering lens for `code-reviewer`) and humanizer for technical-writer, pr, email and devrel needed more than one skill per role. `experimentation-analytics` (rampstackco) covers only A/B result reading and carries unsourced numbers. `security-baseline` and `roadmap-planning` (rampstackco) were weaker fits than the adopted security and prioritization candidates. License notices for the twelve earlier skills, and shipping all notices inside the app, are a separate follow-up.
 
 **Rejected, by reason.**
 
@@ -129,3 +129,68 @@ text at `internal/domain/squad/builtin_skills/<name>.md`. `--verify-upstream` re
 | Persona | Skill | Purpose |
 | --- | --- | --- |
 | zero-review-lead | zero-based-review (Zero-Based Review) | Re-justify an existing design from zero with role reviewers. The persona is original too (`source: original`, [Session personas](personas.md)). Written 2026-10-02; no research round was run for it. |
+
+## 2026-11-08: several skills per role
+
+The person decided on 2026-11-08 that a role may have several skills. The catalog now holds each
+built-in skill once, by its skill ID, and one table, `builtinRoleSkills` in
+[`builtin_skills.go`](../internal/domain/squad/builtin_skills.go), lists each role's default
+skills in order. That table is the one place a (role, skill) pair is registered. A role carries at
+most four (`squad.MaxBuiltinRoleSkills`, registered as `squad.builtin_role_skills`); a longer,
+repeated or unknown entry stops the catalog from building. A skill shared by several roles keeps
+the ID, version, digest, text and icon it already had, so a Project setting or Session snapshot
+that pinned it still resolves. A role's definition lists all its defaults, so a role that gained
+one has a new definition version; its released versions, with the shorter lists, are
+reconstructed from the current body and still resolve (`squad.EarlierBuiltinDefinitions`). A new
+default goes at the end of its role's list for that reason.
+
+The check now reads the table: each (role, skill) pair needs the skill's pinned source as a
+reviewed, preview-eligible candidate *of that role*, so a skill reused by another role is reviewed
+for that role's task and limits, recorded as a fourth research round. Every built-in skill must be
+carried by at least one role.
+
+| Role | Default skills, in order | Change |
+| --- | --- | --- |
+| technical-writer | documentation-writer, humanize-prose | humanize-prose added as a final pass after structure and facts are settled |
+| pr | humanize-prose | first skill; claims, outlets and outreach stay outside it |
+| email | humanize-prose | first skill; sending, consent and list handling stay outside it |
+| devrel | humanize-prose | first skill; code samples and publication stay outside it |
+| code-reviewer | two-axis-code-review, ponytail-review | over-engineering lens added beside the two-axis review |
+| minimal-change | smallest-sufficient-change, systematic-debugging | root-cause debugging added after the smallest-change rules |
+| content-writer | humanize-prose | unchanged; the skill keeps its content-writer icon |
+
+`humanize-prose` reuses the text bundled on 2026-10-02 unchanged: the same pinned
+[blader/humanizer](https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md)
+entry and its closed audit, recorded again under each new role with that role's fit and limits.
+
+Two audits were run as in the earlier rounds: pinned commit, entry SHA-256, licence file SHA-256,
+and every local reference followed recursively, then checked online with `--verify-upstream`.
+
+- [`ponytail-review`](https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/skills/ponytail-review/SKILL.md)
+  was not in the ledger. Its entry has no local references. The adaptation keeps the five tags,
+  one line per finding and the line count, and the rule never to mark validation, data-loss
+  handling, security, accessibility or a minimal test for deletion; the slash command and mode
+  switch were dropped. The licence is the one already bundled for `smallest-sufficient-change`
+  ([notice](licenses/dietrichgebert-ponytail-MIT.txt)).
+- [`systematic-debugging`](https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md)
+  was a round-1 candidate with an open audit. Its entry names three sibling notes in code spans
+  (`root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`), which name a
+  TypeScript example and a bisection script; all six files are pinned in the ledger. The script
+  runs `npm test` once per file and was not adopted, nor was the example. The adaptation restates
+  the four phases and the backward root-cause trace. Its earlier limit, that it does not enforce
+  the smallest-change boundary, is met by carrying it after `smallest-sufficient-change`. The
+  licence notice was already bundled ([notice](licenses/obra-superpowers-MIT.txt)).
+
+The reference audit used to follow only Markdown links and `references/`, `assets/` and `scripts/`
+paths, so it read `systematic-debugging` as having no references. `--verify-upstream` now also
+follows a bare file name in a code span when that file exists beside the entry at the pinned
+commit; a name that does not exist there, such as the `template.md` the ADR skill tells a reader
+to create, is not a reference. All earlier closed audits still pass. The check's comparison with
+[Session personas](personas.md) now requires every persona once rather than in `persona.Order`,
+since that page groups `zh-editor` with the Custom team.
+
+**Several skills do not make a role read them all.** A controlled experiment on 2026-11-08 gave
+`ui-designer` four enabled skills and ran 8 tasks twice each. Of the 16 task-skill pairs a task
+required, the role opened 15; of the 40 it did not need, it skipped 39. The limits are real: one
+role, 16 runs, and no control group without skills, so it says the listing is selective, not that
+the skills improve the output. Use still requires a Session receipt.

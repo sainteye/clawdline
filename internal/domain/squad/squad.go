@@ -21,6 +21,8 @@ const (
 	MaxSquadPlaceLookup  = 1024
 	// Mirrored by the Console before it lets a person enable another skill.
 	MaxSquadConsoleActiveSkillBytes = 512 << 10
+	// A built-in role launches with at most this many default Skills.
+	MaxBuiltinRoleSkills = 4
 )
 
 const BuiltinPrefix = "clawdline.persona."
@@ -148,10 +150,11 @@ func PreSkillBuiltinVersion(d Definition) Definition {
 	return d
 }
 
-// HistoricalBuiltinDefinition reconstructs the previously released built-in
-// reference when a client asks for its immutable version after a skill update.
+// HistoricalBuiltinDefinition reconstructs the previously released one-Skill
+// reference when its first Skill's bundled text has changed since: the first
+// Skill alone, at its previous version.
 func HistoricalBuiltinDefinition(d Definition) (Definition, bool) {
-	if !d.Builtin || len(d.Skills) != 1 {
+	if !d.Builtin || len(d.Skills) == 0 {
 		return Definition{}, false
 	}
 	old, ok := historicalBuiltinSkillByID(d.Skills[0].ID)
@@ -164,14 +167,38 @@ func HistoricalBuiltinDefinition(d Definition) (Definition, bool) {
 	return d, true
 }
 
+// EarlierBuiltinDefinitions reconstructs the versions of a built-in role's
+// definition that were released before its current default Skills, for the
+// same body: no Skills at all, every shorter prefix of its list (a new default
+// is appended, so each earlier list is a prefix of today's), and the one-Skill
+// list at its first Skill's previous bundled text. None equals d's version.
+func EarlierBuiltinDefinitions(d Definition) []Definition {
+	if !d.Builtin || len(d.Skills) == 0 {
+		return nil
+	}
+	out := []Definition{PreSkillBuiltinVersion(d)}
+	for n := 1; n < len(d.Skills); n++ {
+		prefix := d
+		prefix.Skills = append([]SkillReference(nil), d.Skills[:n]...)
+		prefix.Digest = builtinDefinitionDigest(prefix)
+		prefix.Version = "sha256:" + prefix.Digest
+		out = append(out, prefix)
+	}
+	if historical, ok := HistoricalBuiltinDefinition(d); ok {
+		out = append(out, historical)
+	}
+	return out
+}
+
 // Builtins converts the closed launch catalog into immutable full definitions.
 // Reviewed role skills are bundled locally and never fetched at launch time.
 func Builtins() Catalog {
 	out := Catalog{Definitions: []Definition{}, Teams: []Team{}, Skills: []Skill{}}
-	skillByPersona := builtinSkills()
+	skills := builtinSkills()
 	for _, spec := range builtinSkillSpecs {
-		out.Skills = append(out.Skills, skillByPersona[spec.Persona])
+		out.Skills = append(out.Skills, skills["clawdline.skill."+spec.Name])
 	}
+	roleSkills := builtinRoleSkillRefs(skills)
 	for _, name := range persona.Teams {
 		cells := make([][]*string, 7)
 		for row := range cells {
@@ -189,10 +216,7 @@ func Builtins() Catalog {
 		for _, team := range p.Teams {
 			teams = append(teams, Reference{ID: "clawdline.team." + team, Version: "1"})
 		}
-		refs := []SkillReference{}
-		if skill, ok := skillByPersona[p.ID]; ok {
-			refs = append(refs, SkillReference{ID: skill.SkillID, Version: skill.Version, Enabled: true})
-		}
+		refs := append([]SkillReference{}, roleSkills[p.ID]...)
 		d := Definition{
 			DefinitionID: BuiltinID(p.ID), ShortID: p.ID,
 			Source: p.Source, License: persona.UpstreamLicense,

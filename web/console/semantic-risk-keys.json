@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10789,
+  "englishKeys": 10795,
   "counts": {
-    "negation": 3003,
+    "negation": 3005,
     "state": 1778,
     "permission": 632,
-    "deletion": 240,
+    "deletion": 241,
     "uncertainty": 410
   },
-  "unionCount": 4754,
+  "unionCount": 4757,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -595,6 +595,8 @@
       "capacityRow.snippets.total.full",
       "capacityRow.snippets.total.what",
       "capacityRow.squad.body_bytes.full",
+      "capacityRow.squad.builtin_role_skills.full",
+      "capacityRow.squad.builtin_role_skills.what",
       "capacityRow.squad.console_active_skill_bytes.what",
       "capacityRow.squad.entities.full",
       "capacityRow.squad.event_body_bytes.full",
@@ -5431,6 +5433,7 @@
     ],
     "deletion": [
       "browserPairing.mismatch",
+      "builtinSkill.ponytail-review.purpose",
       "capacityRow.antigravity.acp_trace_bytes.full",
       "capacityRow.antigravity.acp_trace_records.full",
       "capacityRow.antigravity.acp_trace_seconds.full",
@@ -6275,6 +6278,7 @@
     "builtinSkill.exploit-path-review.purpose",
     "builtinSkill.humanize-prose.purpose",
     "builtinSkill.map-versus-territory.purpose",
+    "builtinSkill.ponytail-review.purpose",
     "builtinSkill.tests-that-catch-breaks.purpose",
     "builtinSkill.write-spec.name",
     "capacityRow.antigravity.acp_call_seconds.what",
@@ -7030,6 +7034,8 @@
     "capacityRow.snippets.total.full",
     "capacityRow.snippets.total.what",
     "capacityRow.squad.body_bytes.full",
+    "capacityRow.squad.builtin_role_skills.full",
+    "capacityRow.squad.builtin_role_skills.what",
     "capacityRow.squad.console_active_skill_bytes.what",
     "capacityRow.squad.entities.full",
     "capacityRow.squad.entities.what",

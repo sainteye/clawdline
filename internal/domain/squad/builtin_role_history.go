@@ -29,11 +29,10 @@ func HistoricalBuiltinRoleDefinition(current Definition, version string) (Defini
 	if old.Version == version {
 		return old, true
 	}
-	if previous := PreSkillBuiltinVersion(old); previous.Version == version {
-		return previous, true
-	}
-	if previous, ok := HistoricalBuiltinDefinition(old); ok && previous.Version == version {
-		return previous, true
+	for _, previous := range EarlierBuiltinDefinitions(old) {
+		if previous.Version == version {
+			return previous, true
+		}
 	}
 	return Definition{}, false
 }
