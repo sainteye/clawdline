@@ -19,8 +19,22 @@
     {
       "id": "design",
       "name": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Interface design direction",
+        "zh-Hant": "介面設計方向"
+      }
+    },
+    {
+      "id": "design-review",
+      "name": {
+        "en": "Interface review & polish",
+        "zh-Hant": "介面審查與打磨"
+      }
+    },
+    {
+      "id": "design-system",
+      "name": {
+        "en": "Design systems & components",
+        "zh-Hant": "設計系統與元件"
       }
     },
     {
@@ -28,6 +42,13 @@
       "name": {
         "en": "Web animation & interaction",
         "zh-Hant": "網頁動畫與互動"
+      }
+    },
+    {
+      "id": "creative",
+      "name": {
+        "en": "Creative visuals & 3D",
+        "zh-Hant": "創意視覺與 3D"
       }
     },
     {
@@ -47,8 +68,8 @@
     {
       "id": "diagrams",
       "name": {
-        "en": "Architecture diagrams & documentation",
-        "zh-Hant": "架構圖與技術文件"
+        "en": "Diagrams, slides & documentation",
+        "zh-Hant": "圖表、簡報與文件"
       }
     },
     {
@@ -386,8 +407,8 @@
       },
       "category_id": "design",
       "category": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Interface design direction",
+        "zh-Hant": "介面設計方向"
       },
       "recommendation": {
         "en": "First choice for improving an existing Clawdline screen or component.",
@@ -488,10 +509,10 @@
         "en": "Detailed interaction and motion guidance grounded in design engineering practice.",
         "zh-Hant": "以設計工程實務整理互動與動效的細節準則。"
       },
-      "category_id": "design",
+      "category_id": "animation",
       "category": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Web animation & interaction",
+        "zh-Hant": "網頁動畫與互動"
       },
       "recommendation": {
         "en": "First choice for motion, mobile interaction and precise interface polish.",
@@ -629,10 +650,10 @@
         "en": "Focused interface skills for typography, layout, accessibility and product writing.",
         "zh-Hant": "以單項技能處理字體、版面、無障礙與產品文案。"
       },
-      "category_id": "design",
+      "category_id": "design-review",
       "category": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Interface review & polish",
+        "zh-Hant": "介面審查與打磨"
       },
       "recommendation": {
         "en": "First choice for multilingual interfaces, edge states and actionable UI review.",
@@ -736,6 +757,27 @@
           "source_url": "https://github.com/jakubkrehel/skills/blob/592aedc44d7d5b3e29740984252902f3e5402a1c/skills/state-machine/SKILL.md",
           "sha256": "a94d55cf0a6b71bb8e374e66da9fd66fc8095141e7ff9859ab7c23e6f704f5cf",
           "source_bytes": 6295,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "jakubkrehel--skills--better-typography",
+          "native_name": "better-typography",
+          "name": {
+            "en": "Better Typography",
+            "zh-Hant": "改善字體排印"
+          },
+          "purpose": {
+            "en": "Type scale, line height, measure, font loading, wrapping and truncation, with firm checks such as a 60–75 character measure and 16px inputs on iOS.",
+            "zh-Hant": "字級比例、行高、行寬、字型載入、斷行與截斷；有硬性檢查，例如行寬 60–75 字、iOS 輸入框 16px。"
+          },
+          "path": "skills/better-typography/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/jakubkrehel/skills/blob/592aedc44d7d5b3e29740984252902f3e5402a1c/skills/better-typography/SKILL.md",
+          "sha256": "8f00a576f6c8d2f8d72dfbffe765ce569982509d01533ea5881de6e1918d3a68",
+          "source_bytes": 12244,
           "review_status": "entry_metadata_verified",
           "dependency_review_status": "not_reviewed",
           "license": "MIT"
@@ -1001,8 +1043,8 @@
       },
       "category_id": "diagrams",
       "category": {
-        "en": "Architecture diagrams & documentation",
-        "zh-Hant": "架構圖與技術文件"
+        "en": "Diagrams, slides & documentation",
+        "zh-Hant": "圖表、簡報與文件"
       },
       "recommendation": {
         "en": "Useful for explaining Clawdline runtime paths and state transitions.",
@@ -1300,8 +1342,8 @@
       },
       "category_id": "design",
       "category": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Interface design direction",
+        "zh-Hant": "介面設計方向"
       },
       "recommendation": {
         "en": "Useful for a new landing page or a design exploration with a clear brief.",
@@ -1391,8 +1433,8 @@
       },
       "category_id": "design",
       "category": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Interface design direction",
+        "zh-Hant": "介面設計方向"
       },
       "recommendation": {
         "en": "Useful for exploring design directions; keep the established product design system authoritative.",
@@ -1486,8 +1528,8 @@
       },
       "category_id": "design",
       "category": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Interface design direction",
+        "zh-Hant": "介面設計方向"
       },
       "recommendation": {
         "en": "Use selected frontend and testing entries; document skills have separate license terms.",
@@ -1698,8 +1740,8 @@
       },
       "category_id": "diagrams",
       "category": {
-        "en": "Architecture diagrams & documentation",
-        "zh-Hant": "架構圖與技術文件"
+        "en": "Diagrams, slides & documentation",
+        "zh-Hant": "圖表、簡報與文件"
       },
       "recommendation": {
         "en": "Useful for README illustrations, architecture explanations and technical documents.",
@@ -2602,8 +2644,8 @@
       },
       "category_id": "design",
       "category": {
-        "en": "Interface & visual design",
-        "zh-Hant": "介面與視覺設計"
+        "en": "Interface design direction",
+        "zh-Hant": "介面設計方向"
       },
       "recommendation": {
         "en": "Useful for building a purpose-led landing page or exploring alternative visual directions.",
@@ -2755,17 +2797,17 @@
       "dependency_review_status": "not_reviewed"
     },
     {
-      "id": "greensock--gsap",
-      "repo_url": "https://github.com/greensock/GSAP",
+      "id": "greensock--gsap-skills",
+      "repo_url": "https://github.com/greensock/gsap-skills",
       "owner": "greensock",
-      "repo": "GSAP",
+      "repo": "gsap-skills",
       "name": {
-        "en": "GSAP",
-        "zh-Hant": "GSAP 動畫工具組"
+        "en": "GSAP official skills",
+        "zh-Hant": "GSAP 官方 Skill"
       },
       "summary": {
-        "en": "Timeline, text, SVG and scroll-driven animations with plugins such as ScrollTrigger.",
-        "zh-Hant": "以時間軸控制文字、SVG 與捲動動畫，可選用 ScrollTrigger 等外掛。"
+        "en": "GreenSock's own skills for core tweens, timelines, ScrollTrigger and React, including cleanup with useGSAP and revert.",
+        "zh-Hant": "GreenSock 官方 Skill：核心動畫、timeline、ScrollTrigger 與 React 整合，包含用 useGSAP、revert 正確清理。"
       },
       "category_id": "animation",
       "category": {
@@ -2773,57 +2815,122 @@
         "zh-Hant": "網頁動畫與互動"
       },
       "recommendation": {
-        "en": "Choose this library for a matching animation task; review prerequisites and verify the actual browser result.",
-        "zh-Hant": "依動畫任務需求選用，先核對前置需求，再驗證實際瀏覽器效果。"
+        "en": "Choose it for timeline or scroll-driven animation built on GSAP; review the GSAP license first.",
+        "zh-Hant": "以 GSAP 做時間軸或捲動動畫時選用，先核對 GSAP 授權。"
       },
       "recommendation_tier": "task_specific",
       "icon": {
-        "url": "https://avatars.githubusercontent.com/u/2386673?v=4&s=96",
+        "url": "https://github.com/greensock.png?size=96",
         "kind": "owner_avatar",
         "source_url": "https://github.com/greensock",
-        "asset": "/tool-library/greensock--gsap.png"
+        "asset": "/tool-library/greensock--gsap-skills.png"
       },
-      "source_commit": "13e2b790546426a1a2e0e9b409f3f8dc6d6611f2",
-      "license": "GSAP Standard No Charge License",
+      "source_commit": "aed9cfd3277740755f6bfc1155c7aa645403b760",
+      "license": "MIT",
       "license_evidence": [
         {
-          "path": "package.json",
-          "source_url": "https://github.com/greensock/GSAP/blob/13e2b790546426a1a2e0e9b409f3f8dc6d6611f2/package.json",
-          "sha256": "4ca16b896affd09e270d4dcf5149a02f57def55e4747ce11f68c7723fd3dedaa",
-          "license": "GSAP Standard No Charge License"
+          "path": "LICENSE",
+          "source_url": "https://github.com/greensock/gsap-skills/blob/aed9cfd3277740755f6bfc1155c7aa645403b760/LICENSE",
+          "sha256": "51b04b06556662dd817e8f4aa6d06bc7139dc73739e1319a7233cfde3e147b90",
+          "license": "MIT"
         }
       ],
-      "skills": [],
-      "integration_kind": "library",
-      "requirements": [
+      "skills": [
         {
-          "en": "Install gsap with the application package manager; import and register only required plugins.",
-          "zh-Hant": "以應用程式的套件管理器安裝 gsap，只匯入並註冊必要外掛。"
+          "id": "greensock--gsap-skills--gsap-core",
+          "native_name": "gsap-core",
+          "name": {
+            "en": "GSAP Core",
+            "zh-Hant": "GSAP 核心動畫"
+          },
+          "purpose": {
+            "en": "Tweens, easing, stagger and gsap.matchMedia for responsive and reduced-motion setups.",
+            "zh-Hant": "補間、easing、stagger，以及處理響應式與減少動態的 gsap.matchMedia。"
+          },
+          "path": "skills/gsap-core/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/greensock/gsap-skills/blob/aed9cfd3277740755f6bfc1155c7aa645403b760/skills/gsap-core/SKILL.md",
+          "sha256": "3887b47e050ab5afbe2a9a820f23d39fa02ab785e06a343be44c6f91d84d12b3",
+          "source_bytes": 14792,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
         },
         {
-          "en": "For React, evaluate @gsap/react and clean up contexts, timelines and scroll triggers on unmount.",
-          "zh-Hant": "React 可評估 @gsap/react；卸載時清理 context、時間軸及捲動觸發器。"
-        }
-      ],
-      "limitations": [
-        {
-          "en": "This is a web library, not an agent Skill. No SKILL.md exists in the reviewed tree; no installation or dependency audit was performed.",
-          "zh-Hant": "這是網頁函式庫，並非 agent Skill；檢閱版本未找到 SKILL.md，尚未執行安裝或相依稽核。"
+          "id": "greensock--gsap-skills--gsap-timeline",
+          "native_name": "gsap-timeline",
+          "name": {
+            "en": "GSAP Timeline",
+            "zh-Hant": "GSAP 時間軸"
+          },
+          "purpose": {
+            "en": "Sequence animations with timelines, position parameters and nesting.",
+            "zh-Hant": "用時間軸、位置參數與巢狀結構編排動畫順序。"
+          },
+          "path": "skills/gsap-timeline/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/greensock/gsap-skills/blob/aed9cfd3277740755f6bfc1155c7aa645403b760/skills/gsap-timeline/SKILL.md",
+          "sha256": "1a8b0f39cc4be3ed3d834b89672e4ae2f151b901dc3450bebf10bbc45379fe02",
+          "source_bytes": 4394,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
         },
         {
-          "en": "Custom license, not MIT. Review the standard license, including restrictions on competing visual animation builders.",
-          "zh-Hant": "採自訂授權，並非 MIT。須核對標準授權，包含競爭性視覺動畫編輯工具的限制。"
+          "id": "greensock--gsap-skills--gsap-scrolltrigger",
+          "native_name": "gsap-scrolltrigger",
+          "name": {
+            "en": "GSAP ScrollTrigger",
+            "zh-Hant": "GSAP 捲動觸發"
+          },
+          "purpose": {
+            "en": "Scroll-linked animation, pinning and scrub.",
+            "zh-Hant": "捲動連動動畫、固定區塊與 scrub。"
+          },
+          "path": "skills/gsap-scrolltrigger/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/greensock/gsap-skills/blob/aed9cfd3277740755f6bfc1155c7aa645403b760/skills/gsap-scrolltrigger/SKILL.md",
+          "sha256": "9351b6666a4749c0740406ea363aaccb99a087ff45cc5e8b99a0f367facf3ef4",
+          "source_bytes": 18390,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "greensock--gsap-skills--gsap-react",
+          "native_name": "gsap-react",
+          "name": {
+            "en": "GSAP React",
+            "zh-Hant": "GSAP React 整合"
+          },
+          "purpose": {
+            "en": "Use useGSAP, refs and gsap.context, and revert animations on unmount.",
+            "zh-Hant": "使用 useGSAP、ref 與 gsap.context，卸載時 revert 動畫。"
+          },
+          "path": "skills/gsap-react/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/greensock/gsap-skills/blob/aed9cfd3277740755f6bfc1155c7aa645403b760/skills/gsap-react/SKILL.md",
+          "sha256": "88e2a5312b45e8cc7b3c496637ff5bc9af2ae9c925b555c8b235b34cbc989d74",
+          "source_bytes": 6565,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
         }
       ],
       "evidence": [
         {
           "kind": "upstream_documentation",
-          "url": "https://github.com/greensock/GSAP/blob/13e2b790546426a1a2e0e9b409f3f8dc6d6611f2/README.md",
-          "observed_at": "2026-10-31",
-          "scope": "project_readme",
+          "url": "https://github.com/greensock/gsap-skills/blob/aed9cfd3277740755f6bfc1155c7aa645403b760/skills/gsap-core/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "3887b47e050ab5afbe2a9a820f23d39fa02ab785e06a343be44c6f91d84d12b3",
           "note": {
-            "en": "Official documentation checked at the pinned revision; no ranking claim.",
-            "zh-Hant": "已核對固定版本的官方文件；不宣稱任何榜單排名。"
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
           }
         },
         {
@@ -2837,8 +2944,32 @@
           }
         }
       ],
-      "review_status": "documentation_metadata_verified",
-      "dependency_review_status": "not_reviewed"
+      "integration_kind": "skill",
+      "status": "recommended",
+      "requirements": [
+        {
+          "en": "The skills are MIT, but they install the gsap package, which keeps its own GSAP Standard No Charge License. Review it, including restrictions on competing visual animation builders.",
+          "zh-Hant": "Skill 本身是 MIT，但會安裝的 gsap 套件沿用 GSAP Standard No Charge License；須核對授權，包含競爭性視覺動畫編輯工具的限制。"
+        },
+        {
+          "en": "Install gsap with the application package manager; import and register only required plugins.",
+          "zh-Hant": "以應用程式的套件管理器安裝 gsap，只匯入並註冊必要外掛。"
+        },
+        {
+          "en": "For React, evaluate @gsap/react and clean up contexts, timelines and scroll triggers on unmount.",
+          "zh-Hant": "React 可評估 @gsap/react；卸載時清理 context、時間軸及捲動觸發器。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Vue, Svelte and other frameworks are covered by the repository's separate gsap-frameworks skill, which is not listed here.",
+          "zh-Hant": "Vue、Svelte 等框架由同儲存庫另一個 gsap-frameworks Skill 處理，此處未列入。"
+        }
+      ]
     },
     {
       "id": "tengbao--vanta",
@@ -3098,6 +3229,815 @@
       ],
       "review_status": "documentation_metadata_verified",
       "dependency_review_status": "not_reviewed"
+    },
+    {
+      "id": "dammyjay93--interface-design",
+      "repo_url": "https://github.com/Dammyjay93/interface-design",
+      "owner": "Dammyjay93",
+      "repo": "interface-design",
+      "name": {
+        "en": "Interface Design",
+        "zh-Hant": "Interface Design 產品介面設計"
+      },
+      "summary": {
+        "en": "Product UI such as dashboards, admin panels and settings: choose density and visual direction before code, and keep decisions in `.interface-design/system.md` for later Sessions. Not for marketing pages.",
+        "zh-Hant": "專做後台、儀表板、設定頁這類產品介面：先決定資訊密度與視覺方向再寫程式，設計決定存在 `.interface-design/system.md`，下次延續。不適合行銷頁。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface design direction",
+        "zh-Hant": "介面設計方向"
+      },
+      "recommendation": {
+        "en": "Pick it for dashboards, admin tools and settings that should keep one consistent direction across Sessions.",
+        "zh-Hant": "適合後台、管理工具與設定頁，想讓多個 Session 延續同一套設計方向時選用。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/Dammyjay93.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/Dammyjay93",
+        "asset": "/tool-library/dammyjay93--interface-design.jpg"
+      },
+      "source_commit": "2f9be3206855bcb2d1d0af262c8bae25cba6658d",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/Dammyjay93/interface-design/blob/2f9be3206855bcb2d1d0af262c8bae25cba6658d/LICENSE",
+          "sha256": "54c405ef24e71634b73c994133d028e7a96d1906f42615366296d6583dcaba8f",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "dammyjay93--interface-design--interface-design",
+          "native_name": "interface-design",
+          "name": {
+            "en": "Interface Design",
+            "zh-Hant": "產品介面設計"
+          },
+          "purpose": {
+            "en": "Set density, tokens and visual direction for product UI, then save the decisions for later work.",
+            "zh-Hant": "替產品介面決定密度、設計 token 與視覺方向，並保存決定供後續延用。"
+          },
+          "path": ".claude/skills/interface-design/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/Dammyjay93/interface-design/blob/2f9be3206855bcb2d1d0af262c8bae25cba6658d/.claude/skills/interface-design/SKILL.md",
+          "sha256": "720b31a31276e899fbe3006a33cbfeaceb77a73ba4c27b80d29afd38c8b7b208",
+          "source_bytes": 29614,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/Dammyjay93/interface-design/blob/2f9be3206855bcb2d1d0af262c8bae25cba6658d/.claude/skills/interface-design/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "720b31a31276e899fbe3006a33cbfeaceb77a73ba4c27b80d29afd38c8b7b208",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Writes `.interface-design/system.md` in the project when the person agrees to save patterns.",
+          "zh-Hant": "使用者同意保存時，會在專案寫入 `.interface-design/system.md`。"
+        }
+      ]
+    },
+    {
+      "id": "wondelai--skills",
+      "repo_url": "https://github.com/wondelai/skills",
+      "owner": "wondelai",
+      "repo": "skills",
+      "name": {
+        "en": "Refactoring UI",
+        "zh-Hant": "Refactoring UI 介面審查"
+      },
+      "summary": {
+        "en": "Audits hierarchy, spacing, colour and depth with an 8-check score out of 10, listing what remains to reach 10.",
+        "zh-Hant": "用 8 項檢查替畫面的層次、間距、顏色與深度打 0–10 分，並列出還差什麼才到 10 分。"
+      },
+      "category_id": "design-review",
+      "category": {
+        "en": "Interface review & polish",
+        "zh-Hant": "介面審查與打磨"
+      },
+      "recommendation": {
+        "en": "Use when a screen looks off and you want a scored list of concrete visual fixes.",
+        "zh-Hant": "畫面看起來不對勁、想要一份有分數的具體視覺修正清單時使用。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/wondelai.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/wondelai",
+        "asset": "/tool-library/wondelai--skills.png"
+      },
+      "source_commit": "d8d5d75f83da9f16d8aad5bab5f5b341a4770a30",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/wondelai/skills/blob/d8d5d75f83da9f16d8aad5bab5f5b341a4770a30/LICENSE",
+          "sha256": "87c3c90f9e673a76b8ca81049b8fe30996b910a7a80140c3ed57a2ee922d2579",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "wondelai--skills--refactoring-ui",
+          "native_name": "refactoring-ui",
+          "name": {
+            "en": "Refactoring UI",
+            "zh-Hant": "視覺層次審查"
+          },
+          "purpose": {
+            "en": "Score hierarchy, spacing, colour and depth against eight checks and fix the gaps.",
+            "zh-Hant": "以八項檢查評分層次、間距、顏色與深度，並修正缺口。"
+          },
+          "path": "refactoring-ui/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/wondelai/skills/blob/d8d5d75f83da9f16d8aad5bab5f5b341a4770a30/refactoring-ui/SKILL.md",
+          "sha256": "d10d15b81aa00f427811741d83ac2bb918aabfae3d4489c751615bdf85e1674c",
+          "source_bytes": 15635,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/wondelai/skills/blob/d8d5d75f83da9f16d8aad5bab5f5b341a4770a30/refactoring-ui/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "d10d15b81aa00f427811741d83ac2bb918aabfae3d4489c751615bdf85e1674c",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "The upstream text contains affiliate book links; they are not Clawdline recommendations.",
+          "zh-Hant": "上游內容含有書籍聯盟行銷連結，並非 Clawdline 的推薦。"
+        }
+      ]
+    },
+    {
+      "id": "dominikmartn--hue",
+      "repo_url": "https://github.com/dominikmartn/hue",
+      "owner": "dominikmartn",
+      "repo": "hue",
+      "name": {
+        "en": "Hue",
+        "zh-Hant": "Hue 設計語言產生器"
+      },
+      "summary": {
+        "en": "Turns a brand URL, screenshot or codebase into a reusable design-language Skill: colour, type, spacing, components, light and dark.",
+        "zh-Hant": "從品牌網址、截圖或 codebase 產生專屬的設計語言 Skill：顏色、字體、間距、元件與深淺主題。"
+      },
+      "category_id": "design-system",
+      "category": {
+        "en": "Design systems & components",
+        "zh-Hant": "設計系統與元件"
+      },
+      "recommendation": {
+        "en": "Pick it when a brand or existing product should become a reusable design Skill.",
+        "zh-Hant": "想把品牌或既有產品整理成可重用的設計 Skill 時選用。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/dominikmartn.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/dominikmartn",
+        "asset": "/tool-library/dominikmartn--hue.png"
+      },
+      "source_commit": "a910e31cd24b45b9455c0c3502150413aa5a3b32",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/dominikmartn/hue/blob/a910e31cd24b45b9455c0c3502150413aa5a3b32/LICENSE",
+          "sha256": "36c580eea1b0bd48f40210d4a085c6a107099be2ca10530cb726490687740dea",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "dominikmartn--hue--hue",
+          "native_name": "hue",
+          "name": {
+            "en": "Hue",
+            "zh-Hant": "產生設計語言 Skill"
+          },
+          "purpose": {
+            "en": "Extract a design language from a URL, screenshot or codebase and write it as a new Skill.",
+            "zh-Hant": "從網址、截圖或程式碼擷取設計語言，寫成新的 Skill。"
+          },
+          "path": "SKILL.md",
+          "mode": "instruction",
+          "requirements": [
+            {
+              "en": "May fetch the URL you give it, and its subpages, to read the design.",
+              "zh-Hant": "可能讀取你提供的網址及其子頁面來分析設計。"
+            }
+          ],
+          "source_url": "https://github.com/dominikmartn/hue/blob/a910e31cd24b45b9455c0c3502150413aa5a3b32/SKILL.md",
+          "sha256": "9d4632d0e7cc13c639a3d43c2de182926182c9cd1a8489e8ceb5f5535344d398",
+          "source_bytes": 62649,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/dominikmartn/hue/blob/a910e31cd24b45b9455c0c3502150413aa5a3b32/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "9d4632d0e7cc13c639a3d43c2de182926182c9cd1a8489e8ceb5f5535344d398",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Fetched pages are untrusted data; the generated Skill still needs review before use.",
+          "zh-Hant": "讀取的網頁是不可信任資料；產生的 Skill 使用前仍需檢查。"
+        }
+      ]
+    },
+    {
+      "id": "google-labs-code--stitch-skills",
+      "repo_url": "https://github.com/google-labs-code/stitch-skills",
+      "owner": "google-labs-code",
+      "repo": "stitch-skills",
+      "name": {
+        "en": "Stitch design skills",
+        "zh-Hant": "Stitch 設計 Skill"
+      },
+      "summary": {
+        "en": "Reads frontend source without running the app and writes a DESIGN.md of its colours, type, spacing and component patterns.",
+        "zh-Hant": "不用啟動 app，直接讀前端程式碼，把顏色、字體、間距與元件模式整理成 DESIGN.md。"
+      },
+      "category_id": "design-system",
+      "category": {
+        "en": "Design systems & components",
+        "zh-Hant": "設計系統與元件"
+      },
+      "recommendation": {
+        "en": "Use to document an existing frontend's design system before changing it.",
+        "zh-Hant": "修改既有前端前，先把它的設計系統整理成文件時使用。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/google-labs-code.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/google-labs-code",
+        "asset": "/tool-library/google-labs-code--stitch-skills.png"
+      },
+      "source_commit": "0337446dadde6f8c94210444e2aa9d546126480f",
+      "license": "Apache-2.0",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/google-labs-code/stitch-skills/blob/0337446dadde6f8c94210444e2aa9d546126480f/LICENSE",
+          "sha256": "b4133a55232c0996713349891dc55469d46a16ec027c033c9e4108b2149abb42",
+          "license": "Apache-2.0"
+        }
+      ],
+      "skills": [
+        {
+          "id": "google-labs-code--stitch-skills--extract-design-md",
+          "native_name": "stitch::extract-design-md",
+          "name": {
+            "en": "Extract DESIGN.md",
+            "zh-Hant": "擷取 DESIGN.md"
+          },
+          "purpose": {
+            "en": "Read the frontend source and write a DESIGN.md of its tokens and component patterns.",
+            "zh-Hant": "讀取前端程式碼，把設計 token 與元件模式寫成 DESIGN.md。"
+          },
+          "path": "plugins/stitch-design/skills/extract-design-md/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/google-labs-code/stitch-skills/blob/0337446dadde6f8c94210444e2aa9d546126480f/plugins/stitch-design/skills/extract-design-md/SKILL.md",
+          "sha256": "f9c32b30acd9fea3dba7306bf38e3a859f49c1f27bcf44f9cf16d3a60a730276",
+          "source_bytes": 14078,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/google-labs-code/stitch-skills/blob/0337446dadde6f8c94210444e2aa9d546126480f/plugins/stitch-design/skills/extract-design-md/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "f9c32b30acd9fea3dba7306bf38e3a859f49c1f27bcf44f9cf16d3a60a730276",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "The optional push into Google Stitch (MCP / Stitch API) is not part of preparation and needs separate authorization.",
+          "zh-Hant": "選用的推送至 Google Stitch（MCP／Stitch API）不在準備範圍內，需另行授權。"
+        }
+      ]
+    },
+    {
+      "id": "shadcn-ui--ui",
+      "repo_url": "https://github.com/shadcn-ui/ui",
+      "owner": "shadcn-ui",
+      "repo": "ui",
+      "name": {
+        "en": "shadcn/ui",
+        "zh-Hant": "shadcn/ui 元件"
+      },
+      "summary": {
+        "en": "The official skill for adding, updating, debugging and composing shadcn/ui components the shadcn way.",
+        "zh-Hant": "shadcn 官方 Skill：用 shadcn 的方式新增、更新、除錯與組合元件。"
+      },
+      "category_id": "design-system",
+      "category": {
+        "en": "Design systems & components",
+        "zh-Hant": "設計系統與元件"
+      },
+      "recommendation": {
+        "en": "Use only in projects already built on shadcn/ui.",
+        "zh-Hant": "只在已採用 shadcn/ui 的專案中使用。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://github.com/shadcn-ui.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/shadcn-ui",
+        "asset": "/tool-library/shadcn-ui--ui.png"
+      },
+      "source_commit": "42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE.md",
+          "source_url": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/LICENSE.md",
+          "sha256": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "shadcn-ui--ui--shadcn",
+          "native_name": "shadcn",
+          "name": {
+            "en": "shadcn",
+            "zh-Hant": "shadcn 元件管理"
+          },
+          "purpose": {
+            "en": "Add, search, fix and compose shadcn/ui components with the project's own configuration.",
+            "zh-Hant": "依專案設定新增、搜尋、修正與組合 shadcn/ui 元件。"
+          },
+          "path": "skills/shadcn/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "Runs the `shadcn` CLI through the project's package runner (npx, pnpm dlx or bunx).",
+              "zh-Hant": "透過專案的套件執行器（npx、pnpm dlx 或 bunx）執行 `shadcn` CLI。"
+            }
+          ],
+          "source_url": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/skills/shadcn/SKILL.md",
+          "sha256": "93951e5e83f616a3e046491c00d770bd54c0a64164706cd1191822a233d27592",
+          "source_bytes": 21606,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/skills/shadcn/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "93951e5e83f616a3e046491c00d770bd54c0a64164706cd1191822a233d27592",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "requirements": [
+        {
+          "en": "Only for projects that use shadcn/ui.",
+          "zh-Hant": "只適用於使用 shadcn/ui 的專案。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "The CLI can add files and dependencies to the project; review each change.",
+          "zh-Hant": "CLI 可能在專案加入檔案與相依，須逐項檢查變更。"
+        }
+      ]
+    },
+    {
+      "id": "lottiefiles--motion-design-skill",
+      "repo_url": "https://github.com/LottieFiles/motion-design-skill",
+      "owner": "LottieFiles",
+      "repo": "motion-design-skill",
+      "name": {
+        "en": "LottieFiles Motion Design",
+        "zh-Hant": "LottieFiles 動態設計"
+      },
+      "summary": {
+        "en": "Duration and easing tables, four motion personalities, Disney principles and choreography for any animation system. Best for brand and illustration motion; use Emil Kowalski's skills for UI micro-interactions.",
+        "zh-Hant": "時長與 easing 對照表、四種動態個性、Disney 原則與編排，不綁工具。偏品牌與插畫動態；UI 微互動用 Emil 的 Skill。"
+      },
+      "category_id": "animation",
+      "category": {
+        "en": "Web animation & interaction",
+        "zh-Hant": "網頁動畫與互動"
+      },
+      "recommendation": {
+        "en": "Pick it to give brand or illustration motion a deliberate personality and timing.",
+        "zh-Hant": "想替品牌或插畫動態定出明確個性與節奏時選用。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/LottieFiles.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/LottieFiles",
+        "asset": "/tool-library/lottiefiles--motion-design-skill.png"
+      },
+      "source_commit": "f9a8a041b85185ee4881b3471d3415e939aac772",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/LottieFiles/motion-design-skill/blob/f9a8a041b85185ee4881b3471d3415e939aac772/LICENSE",
+          "sha256": "9fc2e8685daa09e28d54b6afa8a38f168417c5735a3cd676c80c159785e93a80",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "lottiefiles--motion-design-skill--motion-design",
+          "native_name": "motion-design",
+          "name": {
+            "en": "Motion Design",
+            "zh-Hant": "動態設計原則"
+          },
+          "purpose": {
+            "en": "Choose timing, easing, motion personality and choreography independent of the animation tool.",
+            "zh-Hant": "不綁工具，決定時長、easing、動態個性與編排。"
+          },
+          "path": "skills/motion-design/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/LottieFiles/motion-design-skill/blob/f9a8a041b85185ee4881b3471d3415e939aac772/skills/motion-design/SKILL.md",
+          "sha256": "8729ecbc7e5736c1295baaa8ba0384bb4b1aac9cf91b83fcdc64d9548a57bb19",
+          "source_bytes": 12580,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/LottieFiles/motion-design-skill/blob/f9a8a041b85185ee4881b3471d3415e939aac772/skills/motion-design/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "8729ecbc7e5736c1295baaa8ba0384bb4b1aac9cf91b83fcdc64d9548a57bb19",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "minimax-ai--skills",
+      "repo_url": "https://github.com/MiniMax-AI/skills",
+      "owner": "MiniMax-AI",
+      "repo": "skills",
+      "name": {
+        "en": "Shader Dev",
+        "zh-Hant": "Shader Dev 著色器技法"
+      },
+      "summary": {
+        "en": "36 ShaderToy-style GLSL techniques, from SDFs and ray marching to fluids, particles and terrain, with built-in performance caps.",
+        "zh-Hant": "36 種 ShaderToy 風格 GLSL 技法，從 SDF、ray marching 到流體、粒子與地形，內建效能上限。"
+      },
+      "category_id": "creative",
+      "category": {
+        "en": "Creative visuals & 3D",
+        "zh-Hant": "創意視覺與 3D"
+      },
+      "recommendation": {
+        "en": "Use for a specific GLSL effect where frame rate matters.",
+        "zh-Hant": "要做特定 GLSL 效果、又在意幀率時使用。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://github.com/MiniMax-AI.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/MiniMax-AI",
+        "asset": "/tool-library/minimax-ai--skills.jpg"
+      },
+      "source_commit": "60aaae52bb2af8162732751a4332f62a5fef518b",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/MiniMax-AI/skills/blob/60aaae52bb2af8162732751a4332f62a5fef518b/LICENSE",
+          "sha256": "eed4ccce37c2d24822da3bd9d5bee7bc12d494741de56ada513d0b97f537fcd0",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "minimax-ai--skills--shader-dev",
+          "native_name": "shader-dev",
+          "name": {
+            "en": "Shader Dev",
+            "zh-Hant": "GLSL 著色器開發"
+          },
+          "purpose": {
+            "en": "Route a visual request to matching GLSL techniques and keep loops within a per-pixel budget.",
+            "zh-Hant": "依視覺需求挑選對應 GLSL 技法，並把迴圈控制在每像素預算內。"
+          },
+          "path": "skills/shader-dev/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/MiniMax-AI/skills/blob/60aaae52bb2af8162732751a4332f62a5fef518b/skills/shader-dev/SKILL.md",
+          "sha256": "7d3cc9d69da2b598e423da5ec927ff61371edab669e2b9a2f4bcf3ec0f29db4d",
+          "source_bytes": 16887,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/MiniMax-AI/skills/blob/60aaae52bb2af8162732751a4332f62a5fef518b/skills/shader-dev/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "7d3cc9d69da2b598e423da5ec927ff61371edab669e2b9a2f4bcf3ec0f29db4d",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "shader-dev is covered by the root MIT license. The repository's LICENSES/Apache-2.0.txt covers other Skills derived from Anthropic work (see CREDITS.md), not shader-dev.",
+          "zh-Hant": "shader-dev 適用根目錄 MIT 授權；儲存庫的 LICENSES/Apache-2.0.txt 用於其他改編自 Anthropic 作品的 Skill（見 CREDITS.md），不涵蓋 shader-dev。"
+        }
+      ]
+    },
+    {
+      "id": "mengto--skills",
+      "repo_url": "https://github.com/MengTo/Skills",
+      "owner": "MengTo",
+      "repo": "Skills",
+      "name": {
+        "en": "Three.js Scroll Worlds",
+        "zh-Hant": "Three.js 捲動 3D 世界"
+      },
+      "summary": {
+        "en": "One persistent Three.js world driven by native page scroll: camera, chapters and preloading.",
+        "zh-Hant": "用原生頁面捲動驅動同一個 Three.js 3D 世界：鏡頭、章節與預載。"
+      },
+      "category_id": "creative",
+      "category": {
+        "en": "Creative visuals & 3D",
+        "zh-Hant": "創意視覺與 3D"
+      },
+      "recommendation": {
+        "en": "Pick it for a scroll-driven 3D story that should stay in one continuous scene.",
+        "zh-Hant": "要做一路捲動、維持同一個連續場景的 3D 敘事頁時選用。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://github.com/MengTo.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/MengTo",
+        "asset": "/tool-library/mengto--skills.jpg"
+      },
+      "source_commit": "5ea1661a0e05d82b054553daaa6baf6d0233c33c",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/MengTo/Skills/blob/5ea1661a0e05d82b054553daaa6baf6d0233c33c/LICENSE",
+          "sha256": "b2a071ba22fefd803f4e9d1f5c777dd79c62d191695586a1a73fd4d0ebd051c6",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "mengto--skills--build-threejs-scroll-worlds",
+          "native_name": "build-threejs-scroll-worlds",
+          "name": {
+            "en": "Build Three.js Scroll Worlds",
+            "zh-Hant": "建立捲動 3D 世界"
+          },
+          "purpose": {
+            "en": "Plan chapters, camera paths and loading for a single real-time Three.js scene.",
+            "zh-Hant": "替單一即時 Three.js 場景規劃章節、鏡頭路徑與載入。"
+          },
+          "path": "agent-skills/web-design/build-threejs-scroll-worlds/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/MengTo/Skills/blob/5ea1661a0e05d82b054553daaa6baf6d0233c33c/agent-skills/web-design/build-threejs-scroll-worlds/SKILL.md",
+          "sha256": "bb36c79ff435045f57a7f3ec3f50c27d37087c2e5a5ab1b17b6ba219d3f2c091",
+          "source_bytes": 18658,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/MengTo/Skills/blob/5ea1661a0e05d82b054553daaa6baf6d0233c33c/agent-skills/web-design/build-threejs-scroll-worlds/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "bb36c79ff435045f57a7f3ec3f50c27d37087c2e5a5ab1b17b6ba219d3f2c091",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Maintained by one author. The Skill folder ships about 3.7 MB of demo files, including images and a minified Three.js.",
+          "zh-Hant": "由單一作者維護；Skill 資料夾附約 3.7 MB 的示範檔，包含圖片與壓縮版 Three.js。"
+        }
+      ]
+    },
+    {
+      "id": "zarazhangrui--frontend-slides",
+      "repo_url": "https://github.com/zarazhangrui/frontend-slides",
+      "owner": "zarazhangrui",
+      "repo": "frontend-slides",
+      "name": {
+        "en": "Frontend Slides",
+        "zh-Hant": "Frontend Slides 網頁簡報"
+      },
+      "summary": {
+        "en": "Animated single-file HTML decks from scratch, PPTX to HTML conversion and PDF export. It does not export PPTX.",
+        "zh-Hant": "從零做有動畫的單檔 HTML 簡報，也能 PPTX 轉 HTML、匯出 PDF；不能匯出 PPTX。"
+      },
+      "category_id": "diagrams",
+      "category": {
+        "en": "Diagrams, slides & documentation",
+        "zh-Hant": "圖表、簡報與文件"
+      },
+      "recommendation": {
+        "en": "Use for a browser-first talk or pitch deck; choose another tool when PPTX output is required.",
+        "zh-Hant": "適合以瀏覽器播放的演講或提案簡報；需要 PPTX 檔時改用其他工具。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/zarazhangrui.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/zarazhangrui",
+        "asset": "/tool-library/zarazhangrui--frontend-slides.jpg"
+      },
+      "source_commit": "9906a34d640d2111f724544cbc50f7f130569ae1",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/zarazhangrui/frontend-slides/blob/9906a34d640d2111f724544cbc50f7f130569ae1/LICENSE",
+          "sha256": "62928eb197fe4662d1efc3af0735b3ba5df3c0308badd9a2baf2b619009f5366",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "zarazhangrui--frontend-slides--frontend-slides",
+          "native_name": "frontend-slides",
+          "name": {
+            "en": "Frontend Slides",
+            "zh-Hant": "製作 HTML 簡報"
+          },
+          "purpose": {
+            "en": "Build or convert a deck into one animated HTML file and optionally export a PDF.",
+            "zh-Hant": "製作或轉換成單一有動畫的 HTML 檔，可選擇匯出 PDF。"
+          },
+          "path": "SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "PPTX conversion uses Python with python-pptx; PDF export uses Node.js and Playwright.",
+              "zh-Hant": "PPTX 轉換需要 Python 與 python-pptx；匯出 PDF 需要 Node.js 與 Playwright。"
+            }
+          ],
+          "source_url": "https://github.com/zarazhangrui/frontend-slides/blob/9906a34d640d2111f724544cbc50f7f130569ae1/SKILL.md",
+          "sha256": "832994fe1dfcce2aa7ceca9a1b7b708eca94becef242713999855f4e946cf4d5",
+          "source_bytes": 28187,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/zarazhangrui/frontend-slides/blob/9906a34d640d2111f724544cbc50f7f130569ae1/SKILL.md",
+          "observed_at": "2026-11-08",
+          "scope": "skill_entry",
+          "sha256": "832994fe1dfcce2aa7ceca9a1b7b708eca94becef242713999855f4e946cf4d5",
+          "note": {
+            "en": "Reviewed the pinned Skill entry and license; no ranking, installation or measured local benefit is claimed.",
+            "zh-Hant": "已檢閱固定版本的 Skill 入口與授權；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "An upstream step deploys the deck to a public Vercel URL. Publishing needs the person's explicit approval; preparation never authorizes it.",
+          "zh-Hant": "上游有一步會把簡報部署到公開的 Vercel 網址；發布須取得使用者明確同意，準備任務不代表已授權。"
+        }
+      ]
     }
   ],
   "research_backlog": [
