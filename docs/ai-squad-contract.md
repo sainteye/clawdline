@@ -169,8 +169,8 @@ built-in skill catalog, enabled by default for their matching roles; a
 order, up to `squad.MaxBuiltinRoleSkills` (4, registered as
 `squad.builtin_role_skills`), and one built-in skill can be a default of
 several roles; its ID, version and icon do not depend on which roles carry
-it. Of the 44 built-in roles, 27 carry default skills (three of them two
-each) drawn from 26 built-in skills, and 17 carry none
+it. Of the 44 built-in roles, 30 carry default skills (ten of them more
+than one) drawn from 36 built-in skills, and 14 carry none
 ([decisions](persona-skill-decisions.md)). A built-in role's definition lists
 all its defaults, so adding one gives the role a new version; the earlier
 versions, with the shorter lists, still resolve for older snapshots and
