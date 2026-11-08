@@ -73,6 +73,12 @@ func (s *Server) squadCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.SquadEventPageRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "cursor page; additional events remain in the store"}
 		},
+		capacity.SquadEventConversations: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read conversation filter; refused above the limit"}
+		},
+		capacity.SquadEventConversationsBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read conversation filter text; refused above the limit"}
+		},
 		capacity.PersonaSuggestionContextBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-turn Board role-classification input; released with the turn"}
 		},
