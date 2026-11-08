@@ -212,6 +212,23 @@ func TestRealSyntheticExecutableUsesOnlyLocalFingerprintCommands(t *testing.T) {
 	}
 }
 
+// The measured standalone 1.5.0 prints --help only to stderr, exiting 0, while
+// --version stays on stdout. Reading stdout alone reported it incompatible.
+func TestRealExecutableHelpOnStderrIsCompatible(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	path := filepath.Join(t.TempDir(), "standalone agy")
+	script := "#!/bin/sh\ncase \"$1\" in\n--version) echo 1.5.0;;\n--help) cat >&2 <<'HELP'\n" + cliHelp + "HELP\n;;\n*) exit 13;;\nesac\n"
+	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	got := NewResolver([]string{path}, nil).Snapshot(context.Background())
+	if !got.Compatible || got.Version != "1.5.0" || got.Reason != "" {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestProbeOutputBoundRefusesWithoutRetainingOverflow(t *testing.T) {
 	w := &limitedOutput{}
 	if _, err := w.Write([]byte(strings.Repeat("x", CLIProbeOutputLimit))); err != nil {

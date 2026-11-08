@@ -208,6 +208,12 @@ func runProbe(ctx context.Context, path, flag string) ([]byte, error) {
 	cmd.WaitDelay = CLIProbeTimeLimit
 	output := &limitedOutput{}
 	cmd.Stdout, cmd.Stderr = output, io.Discard
+	if flag == "--help" {
+		// Standalone 1.5.0 writes its help to stderr only. The bound covers both
+		// streams together; --version stays stdout-only so stray stderr cannot
+		// turn a version into a multi-line refusal.
+		cmd.Stderr = output
+	}
 	err := cmd.Run()
 	return output.data, err
 }
