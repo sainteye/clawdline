@@ -32,6 +32,7 @@ import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/c
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
 import type { MachineListPresentation, MachineSessionProjection, SessionDestination, SessionListPresentation } from "./all-machine-sessions.js"
 import { authenticatedRefusalKey } from "./refusal-client.js"
+// @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { MAX_SQUAD_EVENT_CONVERSATIONS, MAX_SQUAD_EVENT_ID_BYTES } from "../session/skill-event-bounds.ts"
 import { SESSION_INVENTORY_ID, channelSegment } from "../legacy/js/net/client.js"
 
