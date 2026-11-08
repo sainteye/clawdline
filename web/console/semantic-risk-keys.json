@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10857,
+  "englishKeys": 10861,
   "counts": {
-    "negation": 3015,
-    "state": 1784,
+    "negation": 3017,
+    "state": 1786,
     "permission": 636,
     "deletion": 243,
     "uncertainty": 410
   },
-  "unionCount": 4775,
+  "unionCount": 4777,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -615,6 +615,8 @@
       "capacityRow.squad.settings_rows.full",
       "capacityRow.squad.skill_source_summary_runes.full",
       "capacityRow.squad.snapshot_bytes.full",
+      "capacityRow.squad.snapshot_conversations.full",
+      "capacityRow.squad.snapshot_conversations_bytes.full",
       "capacityRow.squadpackage.archive_bytes.full",
       "capacityRow.squadpackage.entries.full",
       "capacityRow.squadpackage.expanded_bytes.full",
@@ -3541,6 +3543,8 @@
       "capacityRow.squad.settings_rows.full",
       "capacityRow.squad.settings_rows.what",
       "capacityRow.squad.snapshot_bytes.full",
+      "capacityRow.squad.snapshot_conversations.full",
+      "capacityRow.squad.snapshot_conversations_bytes.full",
       "capacityRow.squadpackage.entries.full",
       "capacityRow.squadpackage.expanded_bytes.full",
       "capacityRow.squadpackage.expansion_ratio.full",
@@ -7085,6 +7089,8 @@
     "capacityRow.squad.settings_rows.what",
     "capacityRow.squad.skill_source_summary_runes.full",
     "capacityRow.squad.snapshot_bytes.full",
+    "capacityRow.squad.snapshot_conversations.full",
+    "capacityRow.squad.snapshot_conversations_bytes.full",
     "capacityRow.squadpackage.archive_bytes.full",
     "capacityRow.squadpackage.entries.full",
     "capacityRow.squadpackage.expanded_bytes.full",

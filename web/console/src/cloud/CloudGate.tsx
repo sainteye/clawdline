@@ -54,6 +54,7 @@ import { machinePaired } from "./pairing-completion.js"
 import { setProjectSyncSeam, syncSeamFor, type SyncClient } from "./project-sync.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { forgetPersonas } from "../personas.js"
+import { forgetSkillFeeds } from "../session/skill-feed.js"
 import { clearPersonaDisplayCache } from "./persona-cache.js"
 import { accountMachineForConfirmation, accountMachineRoster, devicesPageRows, machineIdentityFacts, sessionsFact, withAccountNames, withAccountRegistrations, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
@@ -819,6 +820,9 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     // Catalogs read once "per page" were read once per machine while a page
     // was one machine's for its whole life. They are not any more.
     forgetPersonas()
+    // The Skill feed's cursor and ledger were the last machine's; a row of
+    // this machine now shares the page's own feed (session/skill-feed.ts).
+    forgetSkillFeeds(machineID)
     return next
   }, [transport, admitFleetMutation, liveSessionSource])
 

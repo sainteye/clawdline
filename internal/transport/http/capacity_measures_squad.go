@@ -79,6 +79,12 @@ func (s *Server) squadCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.SquadEventConversationsBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read conversation filter text; refused above the limit"}
 		},
+		capacity.SquadSnapshotConversations: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read snapshot batch; refused above the limit"}
+		},
+		capacity.SquadSnapshotConvBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read snapshot batch text; refused above the limit"}
+		},
 		capacity.PersonaSuggestionContextBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-turn Board role-classification input; released with the turn"}
 		},

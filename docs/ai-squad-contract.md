@@ -140,14 +140,36 @@ repeats or takes a comma-separated list, at most 50 IDs
 `bad_request`. Without `conversation` the route answers the whole log as
 before. The live poll then reads the whole feed after the head, so a receipt
 plays only when it arrived live and a reload replays nothing. A conversation
-shown later is read the same way, up to the live cursor. On a log of 1,000
-receipts a page load went from 21 reads (the head and 20 pages from the start)
-to 3 (the head, one filtered read, one live poll), measured in
-`skill-feed-core.test.ts`. The phone reads the same routes through the relay
+shown later is read the same way, up to the live cursor. The rows' launch
+snapshots are read together too: `GET /v1/squad/session-snapshots?conversation=`
+names up to 50 conversations (`squad.snapshot_conversations`) and answers
+each bound one with only what a row draws (snapshot, definition and scope IDs,
+enabled Skills' IDs, versions, names, purposes and icons); the open Session
+still reads its own full snapshot, whose Skill content says when each applies.
+On a log of 1,000 receipts with 10 role rows a page load reads 5 times (one
+snapshot batch, the head, one filtered read, one live poll, the motion
+setting), where it read 14 with one snapshot read per row (and 32 before the
+filter: 21 event reads, 10 snapshots, the setting), measured in the synthetic fixture
+`web/console/tools/fixtures/skill-use-fleet.*`; the event reads alone are in
+`skill-feed-core.test.ts`. The all-machines list on the phone shows each
+row's Skill use from its own machine: one feed per machine, its reads carried
+with `?machine=`, and the Cloud console restarts every feed when it starts
+reading another machine, so a cursor kept for one is never used on another.
+A machine that offers no squad events shows nothing on its rows. The phone reads the same routes through the relay
 (`squad-event-head`, `squad-events.conversations`, `squad-events`,
-`squad-session-snapshot`); a machine whose descriptor does not list
-`squad-events.conversations` is read with `squad-events`, the whole log, as
-before.
+`squad-session-snapshots`, `squad-session-snapshot`); a machine that does not
+list `squad-session-snapshots` is asked with one `squad-session-snapshot` per
+row, answered in the batch's form; a machine whose descriptor does not list
+`squad-events.conversations` is read with `squad-events`, the whole log. The
+relay marks that answer `unfiltered`, and a machine that ignores the filter
+names conversations nobody asked for; either way the feed then holds every
+conversation's still state up to the cursor and never reads the log again in
+that page's life, so such a machine costs one read of its log per page as it
+did before the filter, not one per Session shown later (12 reads on load and
+none per later Session at 1,000 receipts, where it had been 11 more each). An
+ID the daemon would refuse is never sent, so it cannot refuse the read for
+the other Sessions on screen, and a failed still read only backs off: it
+leaves no gap in the live cursor, so the next live receipts still play.
 
 ## Offline package and privacy boundary
 

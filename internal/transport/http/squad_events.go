@@ -128,6 +128,12 @@ func (s *Server) squadEvents(w http.ResponseWriter, r *http.Request) {
 // Duplicates count once; more than the bound, an empty entry between commas,
 // or an over-long or unprintable ID refuses the whole read.
 func squadEventConversations(values []string) ([]string, bool) {
+	return squadConversationList(values, store.MaxSquadEventConversations)
+}
+
+// squadConversationList reads a repeatable, comma-separated list of
+// conversation IDs under the event filter's rules, at most limit of them.
+func squadConversationList(values []string, limit int) ([]string, bool) {
 	var out []string
 	seen := map[string]bool{}
 	for _, value := range values {
@@ -140,7 +146,7 @@ func squadEventConversations(values []string) ([]string, bool) {
 			}
 			seen[id] = true
 			out = append(out, id)
-			if len(out) > store.MaxSquadEventConversations {
+			if len(out) > limit {
 				return nil, false
 			}
 		}

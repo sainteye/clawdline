@@ -16,8 +16,9 @@ func TestTheConsoleCopiesTheSkillEventConversationBound(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		SquadEventConversations: "MAX_SQUAD_EVENT_CONVERSATIONS",
-		SquadEventIDBytes:       "MAX_SQUAD_EVENT_ID_BYTES",
+		SquadEventConversations:    "MAX_SQUAD_EVENT_CONVERSATIONS",
+		SquadEventIDBytes:          "MAX_SQUAD_EVENT_ID_BYTES",
+		SquadSnapshotConversations: "MAX_SQUAD_SNAPSHOT_CONVERSATIONS",
 	}
 	found := 0
 	for _, row := range Register() {

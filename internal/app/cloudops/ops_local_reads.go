@@ -97,6 +97,9 @@ func init() {
 
 		op{name: "squad-session-bindings", read: true},
 		op{name: "squad-session-snapshot", read: true},
+		// The role rows on screen in one read; a machine that does not
+		// list this word is asked for each row with `squad-session-snapshot`.
+		op{name: "squad-session-snapshots", read: true},
 
 		op{name: "squad-event-head", read: true},
 

@@ -354,7 +354,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["work.decision-dismiss"], "POST /v1/work/decisions/{id}/dismiss")
   // The Session Skill feed's still-state read for the conversations on screen (session/skill-feed-core.ts).
   assert.equal(CARRIED["squad-events.conversations"], "GET /v1/squad/events?conversation=&after=&limit=")
-  assert.equal(Object.keys(CARRIED).length, 204)
+  // The Session list's role rows read their launch snapshots in one batch (session/skill-feed.ts).
+  assert.equal(CARRIED["squad-session-snapshots"], "GET /v1/squad/session-snapshots?conversation=")
+  assert.equal(Object.keys(CARRIED).length, 205)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

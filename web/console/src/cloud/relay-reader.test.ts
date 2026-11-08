@@ -2114,6 +2114,67 @@ test("a filtered squad event read uses the conversation word only on a machine t
   assert.equal((await r.fetch("/v1/squad/events?conversation=" + fifty)).status, 200)
 })
 
+test("a fallback to the whole Skill log says it is unfiltered, so the feed reads it once", async () => {
+  const client = new FakeClient()
+  client.readAnswer = async () => ({ events: [], next_after: 0, has_more: false })
+  const r = reader(client, { t: 1000 })
+  const reply = await r.fetch("/v1/squad/events?conversation=conversation-a&after=0&limit=100")
+  assert.equal((await reply.json() as { unfiltered?: boolean }).unfiltered, true)
+  assert.equal((await (await r.fetch("/v1/squad/events?after=0&limit=50")).json() as { unfiltered?: boolean }).unfiltered, undefined,
+    "an unfiltered read is not marked")
+})
+
+test("the role rows' snapshots are one read on a machine that lists the batch, one per row on one that does not", async () => {
+  const client = new FakeClient()
+  let implemented = false
+  ;(client as unknown as { _machineImplements(machine: string, word: string): string })._machineImplements =
+    (_machine, word) => word === "squad-session-snapshots" && implemented ? "yes" : "unknown"
+  const full = (id: string) => ({ snapshot_id: "snap." + id, snapshot: { definition_id: "persona.a", scope_id: "repo.a", skills: [
+    { id: "skill.a", version: "1", enabled: true, name: { en: "A" }, purpose: { en: "P" }, content: "Use this skill when testing.", icon: { accent: "#fff", cells: [] } },
+    { id: "skill.off", version: "1", enabled: false, name: { en: "Off" } }] } })
+  client.readAnswer = async (word) => {
+    const body = client.reads.at(-1)!.body
+    if (word === "squad-session-snapshot") {
+      if (body.conversation === "legacy") throw Object.assign(new Error("none"), { code: "snapshot_not_found", status: 404 })
+      return full(body.conversation as string)
+    }
+    return { snapshots: [] }
+  }
+  const r = reader(client, { t: 1000 })
+  const old = await r.fetch("/v1/squad/session-snapshots?conversation=c1,legacy&conversation=c2&machine=mac-b")
+  assert.equal(old.status, 200)
+  assert.deepEqual(client.reads.map((read) => [read.machine, read.word, read.body.conversation]),
+    [["mac-b", "squad-session-snapshot", "c1"], ["mac-b", "squad-session-snapshot", "legacy"], ["mac-b", "squad-session-snapshot", "c2"]])
+  const rows = (await old.json() as { snapshots: Record<string, unknown>[] }).snapshots
+  assert.deepEqual(rows.map((row) => row.conversation_id), ["c1", "c2"], "a Session with no snapshot is left out")
+  assert.deepEqual(rows[0], { conversation_id: "c1", snapshot_id: "snap.c1", definition_id: "persona.a", scope_id: "repo.a",
+    skills: [{ id: "skill.a", version: "1", name: { en: "A" }, purpose: { en: "P" }, icon: { accent: "#fff", cells: [] } }] }, "the row form: no content, enabled only")
+  implemented = true
+  client.reads = []
+  assert.equal((await r.fetch("/v1/squad/session-snapshots?conversation=c1,c2")).status, 200)
+  assert.deepEqual(client.reads, [{ machine: "mac-a", word: "squad-session-snapshots", body: { conversations: "c1,c2" } }])
+  for (const path of ["/v1/squad/session-snapshots", "/v1/squad/session-snapshots?conversation=a%20b",
+    "/v1/squad/session-snapshots?conversation=" + Array.from({ length: 51 }, (_, i) => "c" + i).join(",")]) {
+    assert.equal((await r.fetch(path)).status, 400, path)
+  }
+  assert.equal(client.reads.length, 1, "invalid batches never reach the machine")
+})
+
+test("squad reads name another machine with ?machine=, as an all-machines row needs", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+  const cases: [string, string, Record<string, unknown>][] = [
+    ["/v1/squad/events/head?machine=mac-b", "squad-event-head", {}],
+    ["/v1/squad/events?after=3&limit=50&machine=mac-b", "squad-events", { after: 3, limit: 50 }],
+    ["/v1/squad/session-snapshots/conversation-a?machine=mac-b", "squad-session-snapshot", { conversation: "conversation-a" }],
+    ["/v1/squad/settings?scope_id=repo.a&machine=mac-b", "squad.settings", { scope_id: "repo.a" }],
+  ]
+  for (const [path, word, reqBody] of cases) {
+    assert.equal((await r.fetch(path)).status, 200, path)
+    assert.deepEqual(client.reads.at(-1), { machine: "mac-b", word, body: reqBody }, path)
+  }
+})
+
 // "Read again" on a waiting card (2026-10-14): across Cloud it is the one-row
 // read, so the machine captures that Session's screen and states its row now.
 test("read again asks the machine for just that row", async () => {

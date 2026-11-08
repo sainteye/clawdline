@@ -584,6 +584,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `squad.settings_rows` | 10000 | `rows` | `refuse` | `diagnostics, health, sender` | — |
 | `squad.skill_source_summary_runes` | 240 | `characters` | `evict_oldest` | `diagnostics, sender` | — |
 | `squad.snapshot_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
+| `squad.snapshot_conversations` | 50 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `squad.snapshot_conversations_bytes` | 6449 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `squadpackage.archive_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `squadpackage.entries` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `squadpackage.expanded_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |

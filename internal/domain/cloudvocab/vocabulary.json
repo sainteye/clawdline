@@ -2701,6 +2701,20 @@
       "decode": {"reply": "machine", "fields": {"conversation": {"type": "string", "non_empty": true, "checks": ["printable"]}}, "route": {"path": "/v1/squad/session-snapshots/{conversation}"}}
     },
     {
+      "op": "squad-session-snapshots",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/squad/session-snapshots?conversation=",
+      "console_seam": "reader",
+      "local": {"method": "GET", "device": true},
+      "example": {"conversations": "conversation-a,conversation-b", "request": "req-role-snapshots", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["conversations", "request", "session"], "path": "/v1/squad/session-snapshots", "query": ["conversation"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"conversations": {"type": "string", "non_empty": true, "max_bytes": 6449, "checks": ["printable"], "copies": {"max_bytes": "store.MaxSquadSnapshotConversationsBytes"}}}, "route": {"path": "/v1/squad/session-snapshots", "query": {"conversation": {"from": "conversations"}}}}
+    },
+    {
       "op": "squad.catalog",
       "kind": "read",
       "write_gate": false,

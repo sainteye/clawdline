@@ -97,7 +97,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
       {machineScope && coordinatorBound ? <span className="coordinator-chip" aria-hidden="true">Clawdfather</span> : null}</div>
     {status ? <StateLine row={{ ...status, id: sessionID, state } as SessionRow}
-      role={role} suffix={freshness} runningAgents={runningAgents} skills={false} />
+      role={role} suffix={freshness} runningAgents={runningAgents} machine={machineID} />
       : <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
         <span>{stateLabel}</span><RunningAgents count={runningAgents} />{freshness && <span className="session-activity">{freshness}</span>}
         {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>}
@@ -288,12 +288,13 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
  * one, and then `stateLine`'s words. The role is written into the same markup
  * as the words so that it swipes with them and adds no line of its own.
  */
-function StateLine({ row, role, suffix = "", runningAgents = listRunningAgents(row), skills = true }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine>;
-  suffix?: string; runningAgents?: number | null; skills?: boolean }) {
+function StateLine({ row, role, suffix = "", runningAgents = listRunningAgents(row), machine = null }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine>;
+  suffix?: string; runningAgents?: number | null; machine?: string | null }) {
   const ref = useRef<HTMLDivElement>(null)
   const { html, shape } = stateLine(row)
-  // A Skill the role reports, beside its bot (SkillUse.tsx); one shared feed for every row.
-  const skill = useRowSkills(role && skills ? row : { persona: undefined, sessionId: undefined })
+  // A Skill the role reports, beside its bot (SkillUse.tsx); one shared feed per machine for every row,
+  // an all-machines row reading its own machine's.
+  const skill = useRowSkills(role ? row : { persona: undefined, sessionId: undefined }, machine)
   const agentWord = runningAgentsWord(runningAgents)
   const remoteControl = row.backend === "claude_remote" ? '<span class="session-activity">' + L.escapeHTML(nextWord("claudeRemoteShort")) + '</span>' : ""
   const statusHTML = html + remoteControl + (agentWord ? '<span class="session-agent-count">' + L.escapeHTML(agentWord) + '</span>' : "") + (suffix ? '<span class="session-activity">' + L.escapeHTML(suffix) + "</span>" : "")

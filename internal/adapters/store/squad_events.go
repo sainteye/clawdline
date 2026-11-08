@@ -20,6 +20,13 @@ const (
 	// MaxSquadEventConversationsBytes is the comma-joined form of that
 	// many IDs at their longest, which the relay copies as its byte bound.
 	MaxSquadEventConversationsBytes = MaxSquadEventConversations*(MaxSquadEventIDBytes+1) - 1
+	// MaxSquadSnapshotConversations is how many conversations one batched
+	// launch-snapshot read may name: the role rows on screen. IDs follow the
+	// same rule as the event filter.
+	MaxSquadSnapshotConversations = 50
+	// MaxSquadSnapshotConversationsBytes is that list comma-joined at its
+	// longest, which the relay copies as its byte bound.
+	MaxSquadSnapshotConversationsBytes = MaxSquadSnapshotConversations*(MaxSquadEventIDBytes+1) - 1
 )
 
 var (

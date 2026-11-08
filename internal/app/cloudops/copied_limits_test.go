@@ -36,6 +36,7 @@ var copiedConstants = map[string]int64{
 	"squadpack.MaxRequestBytes":                    squadpack.MaxRequestBytes,
 	"store.MaxSquadEventPageRows":                  store.MaxSquadEventPageRows,
 	"store.MaxSquadEventConversationsBytes":        store.MaxSquadEventConversationsBytes,
+	"store.MaxSquadSnapshotConversationsBytes":     store.MaxSquadSnapshotConversationsBytes,
 }
 
 // Every limit the table copies equals the constant it names, and every

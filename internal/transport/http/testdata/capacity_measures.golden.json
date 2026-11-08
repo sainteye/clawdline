@@ -2849,6 +2849,16 @@
     "Note": true
   },
   {
+    "Name": "squad.snapshot_conversations",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "squad.snapshot_conversations_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "squadpackage.archive_bytes",
     "Known": true,
     "Note": true

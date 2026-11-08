@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
@@ -54,6 +55,8 @@ func (s *Server) squadRoute(w http.ResponseWriter, r *http.Request) {
 		s.squadSkillSources(w, r)
 	case "/v1/squad/auto-candidates":
 		s.squadCandidateRead(w, r)
+	case "/v1/squad/session-snapshots":
+		s.squadSessionSnapshotsRead(w, r)
 	default:
 		if strings.HasPrefix(routePath(r), "/v1/squad/session-snapshots/") {
 			s.squadSessionSnapshotRead(w, r)
@@ -93,6 +96,68 @@ func (s *Server) squadSessionSnapshotRead(w http.ResponseWriter, r *http.Request
 		SnapshotID string          `json:"snapshot_id"`
 		Snapshot   json.RawMessage `json:"snapshot"`
 	}{SnapshotID: id, Snapshot: document})
+}
+
+// squadRowSkill is what a Session list row draws for one enabled Skill of
+// its launch snapshot: never the Skill's content, which only the open
+// Session reads (squadSessionSnapshotRead).
+type squadRowSkill struct {
+	ID      string      `json:"id"`
+	Version string      `json:"version"`
+	Name    squad.Names `json:"name"`
+	Purpose squad.Names `json:"purpose"`
+	Icon    squad.Icon  `json:"icon"`
+}
+
+type squadRowSnapshot struct {
+	ConversationID string          `json:"conversation_id"`
+	SnapshotID     string          `json:"snapshot_id"`
+	DefinitionID   string          `json:"definition_id"`
+	ScopeID        string          `json:"scope_id"`
+	Skills         []squadRowSkill `json:"skills"`
+}
+
+// squadSessionSnapshotsRead answers the role rows on screen in one read:
+// `conversation=` names up to store.MaxSquadSnapshotConversations of them
+// (repeatable, comma-separated, the event filter's ID rules). A conversation
+// with no snapshot is left out, as an older Session.
+func (s *Server) squadSessionSnapshotsRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Session role snapshots are read with GET.")
+		return
+	}
+	conversations, ok := squadConversationList(r.URL.Query()["conversation"], store.MaxSquadSnapshotConversations)
+	if !ok || len(conversations) == 0 {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "Name 1 to "+strconv.Itoa(store.MaxSquadSnapshotConversations)+" conversations, each non-empty and printable.")
+		return
+	}
+	out := make([]squadRowSnapshot, 0, len(conversations))
+	for _, conversation := range conversations {
+		document, id, found, err := s.store.SquadSnapshotForConversation(r.Context(), conversation)
+		if err != nil {
+			squadFailure(w, err, true)
+			return
+		}
+		if !found {
+			continue
+		}
+		var snapshot squad.LaunchSnapshot
+		if err := json.Unmarshal(document, &snapshot); err != nil {
+			writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "A role snapshot could not be read.")
+			return
+		}
+		row := squadRowSnapshot{ConversationID: conversation, SnapshotID: id, DefinitionID: snapshot.DefinitionID,
+			ScopeID: snapshot.ScopeID, Skills: []squadRowSkill{}}
+		for _, skill := range snapshot.Skills {
+			if skill.Enabled {
+				row.Skills = append(row.Skills, squadRowSkill{ID: skill.ID, Version: skill.Version, Name: skill.Name, Purpose: skill.Purpose, Icon: skill.Icon})
+			}
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, struct {
+		Snapshots []squadRowSnapshot `json:"snapshots"`
+	}{Snapshots: out})
 }
 
 func (s *Server) squadCandidateRead(w http.ResponseWriter, r *http.Request) {

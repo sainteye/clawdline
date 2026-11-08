@@ -11240,6 +11240,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "squad.snapshot_conversations",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 50,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.MaxSquadSnapshotConversations"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "squad.snapshot_conversations_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 6449,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.MaxSquadSnapshotConversationsBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "squadpackage.archive_bytes",
     "Class": "buffer",
     "Unit": "bytes",

@@ -26,7 +26,7 @@ func TestSquadAgentCreatesBindsUpdatesAndLaunchesWithoutPersonCredential(t *test
 		return r.Code, r.Body.Bytes()
 	}
 	// The new contract grants only catalog/settings/scopes, not AI or telemetry.
-	for _, path := range []string{"/v1/squad/role-draft", "/v1/squad/session-bindings", "/v1/squad/session-snapshots/anything", "/v1/squad-packages/export"} {
+	for _, path := range []string{"/v1/squad/role-draft", "/v1/squad/session-bindings", "/v1/squad/session-snapshots/anything", "/v1/squad/session-snapshots?conversation=anything", "/v1/squad-packages/export"} {
 		if status, _ := ask("GET", path, nil, ""); status != 403 {
 			t.Fatalf("Agent got %d on %s", status, path)
 		}
