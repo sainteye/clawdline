@@ -104,12 +104,13 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	status, raw := f.ask("GET", "/v1/squad/catalog", f.reader, "", "")
 	var catalog contract.SquadCatalog
 	if status != 200 || json.Unmarshal([]byte(raw), &catalog) != nil ||
-		len(catalog.Definitions) != len(persona.IDs()) || len(catalog.Skills) != 26 {
+		len(catalog.Definitions) != len(persona.IDs()) || len(catalog.Skills) != 36 {
 		t.Fatalf("private catalog = %d, %s", status, raw)
 	}
 	launch, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
-	if err != nil || len(launch.Skills) != 1 || !launch.Skills[0].Enabled ||
-		launch.Skills[0].Content == "" || launch.Skills[0].ID != "clawdline.skill.golang-concurrency" {
+	if err != nil || len(launch.Skills) != 2 || !launch.Skills[0].Enabled || !launch.Skills[1].Enabled ||
+		launch.Skills[0].Content == "" || launch.Skills[0].ID != "clawdline.skill.golang-concurrency" ||
+		launch.Skills[1].ID != "clawdline.skill.api-and-interface-design" {
 		t.Fatalf("default built-in skill launch = %+v, %v", launch.Skills, err)
 	}
 	for _, d := range catalog.Definitions {
@@ -220,7 +221,7 @@ func TestZeroReviewLeadLaunchCarriesTheReviewSkillWhateverItWrites(t *testing.T)
 func TestSquadBuiltInSkillReachesNewSessionFiles(t *testing.T) {
 	f := newSquadFixture(t)
 	snapshot, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
-	if err != nil || len(snapshot.Skills) != 1 || !snapshot.Skills[0].Enabled {
+	if err != nil || len(snapshot.Skills) != 2 || !snapshot.Skills[0].Enabled || !snapshot.Skills[1].Enabled {
 		t.Fatalf("default backend snapshot: %+v, %v", snapshot.Skills, err)
 	}
 	document, err := json.Marshal(snapshot)
@@ -233,16 +234,25 @@ func TestSquadBuiltInSkillReachesNewSessionFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	prompt, err := os.ReadFile(files.PromptPath)
-	if err != nil || !strings.Contains(string(prompt), snapshot.Skills[0].ID) {
-		t.Fatalf("launch prompt omitted the built-in skill: %v", err)
+	if err != nil || !strings.Contains(string(prompt), snapshot.Skills[0].ID) || !strings.Contains(string(prompt), snapshot.Skills[1].ID) {
+		t.Fatalf("launch prompt omitted a built-in skill: %v", err)
 	}
 	entries, err := os.ReadDir(filepath.Join(filepath.Dir(files.SnapshotPath), "skills"))
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != 2 {
 		t.Fatalf("launch skill files: %d, %v", len(entries), err)
 	}
-	content, err := os.ReadFile(filepath.Join(filepath.Dir(files.SnapshotPath), "skills", entries[0].Name()))
-	if err != nil || string(content) != snapshot.Skills[0].Content {
-		t.Fatalf("launch skill content differs from snapshot: %v", err)
+	written := map[string]bool{}
+	for _, entry := range entries {
+		content, err := os.ReadFile(filepath.Join(filepath.Dir(files.SnapshotPath), "skills", entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		written[string(content)] = true
+	}
+	for _, skill := range snapshot.Skills {
+		if !written[skill.Content] {
+			t.Fatalf("launch skill files do not hold %s's snapshot content", skill.ID)
+		}
 	}
 }
 

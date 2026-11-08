@@ -69,6 +69,12 @@ func squadPromptBytes(t *testing.T, short string, claims []string) int {
 // (seo) 6004. After: CHILD.md 5432, the backend prompt 5798 for a task that
 // writes Go and 5063 for one that writes only docs, seo 5067. The bounds are
 // those numbers rounded up, so the text cannot grow back unnoticed.
+//
+// On 2026-11-08 backend gained a second default skill, api-and-interface-design,
+// which applies to any write: its prompt measured 6479 bytes writing Go and
+// 6128 writing only docs, the docs case now carrying the usage paragraph and
+// one entry instead of one line. seo gained skills too, so a role with none is
+// measured with pricing (4683 bytes).
 func TestTheFixedLaunchAdditionsAreMeasured(t *testing.T) {
 	b := &Broker{Tasks: taskdir.New("/Users/someone/.config/clawdline-next"),
 		Executable: "/Applications/Clawdline Next.app/Contents/MacOS/clawdline", Port: 7727}
@@ -76,13 +82,13 @@ func TestTheFixedLaunchAdditionsAreMeasured(t *testing.T) {
 	child := len(b.ChildBrief(r, "/Users/someone/.config/clawdline-next/worktrees/clawdline-0000000a/"+r.ID))
 	backendGo := squadPromptBytes(t, "backend", []string{"internal/a.go"})
 	backendDocs := squadPromptBytes(t, "backend", []string{"docs/a.md"})
-	seo := squadPromptBytes(t, "seo", nil)
-	t.Logf("CHILD.md %d bytes; backend squad prompt %d bytes writing Go, %d writing only docs; seo (no skill) %d bytes",
-		child, backendGo, backendDocs, seo)
+	noSkill := squadPromptBytes(t, "pricing", nil)
+	t.Logf("CHILD.md %d bytes; backend squad prompt %d bytes writing Go, %d writing only docs; pricing (no skill) %d bytes",
+		child, backendGo, backendDocs, noSkill)
 	for _, m := range []struct {
 		name       string
 		got, bound int
-	}{{"CHILD.md", child, 5500}, {"backend writing Go", backendGo, 5900}, {"backend writing docs", backendDocs, 5100}, {"seo", seo, 5100}} {
+	}{{"CHILD.md", child, 5500}, {"backend writing Go", backendGo, 6550}, {"backend writing docs", backendDocs, 6200}, {"pricing", noSkill, 4750}} {
 		if m.got > m.bound {
 			t.Errorf("%s is %d bytes, past the %d it was cut to", m.name, m.got, m.bound)
 		}

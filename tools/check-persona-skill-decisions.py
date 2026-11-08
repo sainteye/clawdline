@@ -75,7 +75,6 @@ def local_references(content, path):
     # A link inside a fenced example (a sample index, a template) names no file.
     content = re.sub(r"^```.*?^```", "", content, flags=re.S | re.M)
     links = re.findall(r"\[[^\]]+\]\(([^)\s]+)\)", content)
-    links += re.findall(r"`((?:references|assets|scripts)/[\w./-]+\.(?:md|py|sh|js|ts|json))`", content)
     found = set()
     for raw in links:
         raw = raw.split("#", 1)[0].strip()
@@ -89,17 +88,31 @@ def local_references(content, path):
     return found
 
 
-def sibling_names(content, path):
-    """Bare file names in code spans, such as `root-cause-tracing.md`.
+def code_span_names(content, path):
+    """File paths written in code spans, such as `root-cause-tracing.md`,
+    `references/form.md`, `../../references/checklist.md` or
+    `${CLAUDE_PLUGIN_ROOT}/skills/x/notes.md` (resolved from the repository root).
 
-    Such a name is a reference only when that file exists beside the entry at
-    the pinned commit; otherwise it names a file the skill tells a reader to
-    create in their own repository, such as an ADR `template.md`.
+    Such a path is a reference only when that file exists at the pinned
+    commit; otherwise it names a file the skill tells a reader to create in
+    their own repository, such as an ADR `template.md`, or a file of another
+    skill that the entry only points at.
     """
     content = re.sub(r"^```.*?^```", "", content, flags=re.S | re.M)
-    names = re.findall(r"`([\w-]+(?:\.[\w-]+)*\.(?:md|py|sh|js|ts|json))`", content)
-    found = {posixpath.join(posixpath.dirname(path), name) for name in names}
-    return {name for name in found if valid_path(name) and name != path}
+    found = set()
+    for span in re.findall(r"`([^`\s]+)`", content):
+        span = span.strip("\"'").split("#", 1)[0]
+        if "://" in span or not re.search(r"\.(?:md|py|sh|js|ts|json)$", span):
+            continue
+        if span.startswith("${CLAUDE_PLUGIN_ROOT}/"):
+            name = posixpath.normpath(span.removeprefix("${CLAUDE_PLUGIN_ROOT}/"))
+        elif "$" in span or "<" in span or "{" in span:
+            continue
+        else:
+            name = posixpath.normpath(posixpath.join(posixpath.dirname(path), span))
+        if valid_path(name) and name != path:
+            found.add(name)
+    return found
 
 
 def validate(data, catalog=None):
@@ -140,7 +153,7 @@ def validate(data, catalog=None):
             prefix = f"{rid}/{candidate.get('name', '?')}"
             require(candidate.get("fit_status") == "fits_bounded_task", f"{prefix}: bounded fit must be explicit")
             require(bool(candidate.get("fits")) and bool(candidate.get("limits")), f"{prefix}: fit and limits are required")
-            require(candidate.get("research_round") in (1, 2, 3, 4), f"{prefix}: research round is required")
+            require(candidate.get("research_round") in (1, 2, 3, 4, 5), f"{prefix}: research round is required")
             repo = candidate.get("source_repository")
             require(isinstance(repo, str) and REPO.fullmatch(repo), f"{prefix}: invalid source repository")
             commit = candidate.get("source_commit")
@@ -233,6 +246,25 @@ def verify_upstream(data):
         return True
 
     import hashlib
+
+    def check_closure(rid, candidate):
+        repo, commit = candidate["source_repository"], candidate["source_commit"]
+        files = {item["path"]: item for item in candidate["reference_audit"]["files"]}
+        found = set()
+        todo = [candidate["skill_path"]]
+        while todo:
+            path = todo.pop()
+            if path in found:
+                continue
+            require(path in files, f"{rid}: referenced file omitted from preview bundle: {path}")
+            body = fetch(repo, commit, path)
+            require(hashlib.sha256(body).hexdigest() == files[path]["sha256"], f"{rid}: bundled digest mismatch: {path}")
+            found.add(path)
+            text = body.decode("utf-8")
+            todo.extend(local_references(text, path) - found)
+            todo.extend(name for name in code_span_names(text, path) - found if exists(repo, commit, name))
+        require(found == set(files), f"{rid}: preview bundle has unreferenced files")
+
     for role in data["roles"]:
         for candidate in role["candidates"]:
             rid = role["id"]
@@ -241,41 +273,22 @@ def verify_upstream(data):
             require(hashlib.sha256(entry).hexdigest() == candidate["skill_sha256"], f"{rid}: upstream SKILL.md digest changed")
             license_bytes = fetch(repo, commit, candidate["license_path"])
             require(hashlib.sha256(license_bytes).hexdigest() == candidate["license_sha256"], f"{rid}: upstream license digest changed")
-            audit = candidate["reference_audit"]
-            if audit["status"] != "closed_for_manual_preview":
-                continue
-            files = {item["path"]: item for item in audit["files"]}
-            found = set()
-            todo = [candidate["skill_path"]]
-            while todo:
-                path = todo.pop()
-                if path in found:
-                    continue
-                require(path in files, f"{rid}: referenced file omitted from preview bundle: {path}")
-                body = fetch(repo, commit, path)
-                require(hashlib.sha256(body).hexdigest() == files[path]["sha256"], f"{rid}: bundled digest mismatch: {path}")
-                found.add(path)
-                text = body.decode("utf-8")
-                todo.extend(local_references(text, path) - found)
-                todo.extend(name for name in sibling_names(text, path) - found if exists(repo, commit, name))
-            require(found == set(files), f"{rid}: preview bundle has unreferenced files")
-    return len(cache), fetch
+            if candidate["reference_audit"]["status"] == "closed_for_manual_preview":
+                check_closure(rid, candidate)
+    return len(cache), check_closure
 
 
-def self_test(data, fetch=None):
-    def rejected(mutator, label, online=False):
+def self_test(data, closure=None):
+    def rejected(mutator, label, online=None):
         changed = copy.deepcopy(data)
         mutator(changed)
         try:
             validate(changed)
             if online:
-                require(fetch is not None, "online self-test needs upstream cache")
-                role = next(r for r in changed["roles"] if r["id"] == "accessibility")
-                candidate = role["candidates"][0]
-                files = {item["path"]: item for item in candidate["reference_audit"]["files"]}
-                entry = candidate["skill_path"]
-                refs = local_references(fetch(candidate["source_repository"], candidate["source_commit"], entry).decode(), entry)
-                require(refs <= set(files), "referenced file omitted from preview bundle")
+                require(closure is not None, "online self-test needs upstream cache")
+                rid, name = online
+                role = next(r for r in changed["roles"] if r["id"] == rid)
+                closure(rid, next(c for c in role["candidates"] if c["name"] == name))
         except Invalid:
             return
         raise Invalid(f"self-test failed to reject {label}")
@@ -306,8 +319,21 @@ def self_test(data, fetch=None):
     with_roles(lambda r: r["code-reviewer"].append("two-axis-code-review"), "a default skill listed twice")
     with_roles(lambda r: r["technical-writer"].remove("humanize-prose") or r["pr"].clear(), "an empty role list")
     with_roles(lambda r: r["email"].append("golang-concurrency"), "a skill on a role whose ledger never reviewed it")
-    if fetch is not None:
-        rejected(lambda d: next(r for r in d["roles"] if r["id"] == "accessibility")["candidates"][0]["reference_audit"]["files"].pop(), "omitted real reference", online=True)
+    if closure is not None:
+        def drop(rid, name, path):
+            def mutate(d):
+                candidate = next(c for c in next(r for r in d["roles"] if r["id"] == rid)["candidates"] if c["name"] == name)
+                files = candidate["reference_audit"]["files"]
+                files.remove(next(item for item in files if item["path"] == path))
+            return mutate
+        accessibility = next(r for r in data["roles"] if r["id"] == "accessibility")["candidates"][0]
+        rejected(drop("accessibility", accessibility["name"], accessibility["reference_audit"]["files"][-1]["path"]),
+                 "omitted real reference", online=("accessibility", accessibility["name"]))
+        # A path two directories up in a code span, and one from the plugin root.
+        rejected(drop("performance", "performance-optimization", "references/performance-checklist.md"),
+                 "omitted parent-directory reference", online=("performance", "performance-optimization"))
+        rejected(drop("seo", "seo-schema", "skills/seo-schema/references/deprecated-types-2024-2026.md"),
+                 "omitted plugin-root reference", online=("seo", "seo-schema"))
 
 
 def main():
@@ -317,12 +343,12 @@ def main():
     args = parser.parse_args()
     data = json.loads(DATA.read_text())
     count, previews = validate(data)
-    fetch = None
+    closure = None
     requests = 0
     if args.verify_upstream:
-        requests, fetch = verify_upstream(data)
+        requests, closure = verify_upstream(data)
     if args.self_test:
-        self_test(data, fetch)
+        self_test(data, closure)
     ids = len(data["roles"])
     originals = sum(role.get("conclusion") == "original_skill" for role in data["roles"])
     print(f"{ids}/{ids} personas; {count} pinned candidates; {previews} manual previews; {originals} original skills; {requests} upstream file reads; valid")

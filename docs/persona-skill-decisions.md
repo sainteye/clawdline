@@ -6,7 +6,7 @@ It does not change this built-in role catalog or the historical research ledger.
 
 Use this reference when you design the persona squad's skill list. It gives each of the 42 adapted built-in personas one bounded-task candidate and a separate decision about whether the pinned text was ready for **manual preview** during the research cycle. The [machine-readable ledger](persona-skill-decisions.json) preserves that research snapshot, including the exact source, commit, file hash, license evidence, referenced-file audit, fit, and limit for each candidate.
 
-After the person explicitly requested integration on 2026-09-29, the 11 preview-ready candidates were reviewed against the current role manuals and repository rules, then adapted into [bundled skill content](../internal/domain/squad/builtin_skills/) and [versioned catalog entries](../internal/domain/squad/builtin_skills.go). Their roles are backend, frontend, technical-writer, product-manager, ux-researcher, accessibility, sre, devops, incident-commander, finops, and ui-designer. A later review of [Matt Pocock's pinned `code-review` skill](https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/skills/engineering/code-review/SKILL.md) added one bounded two-axis skill for `code-reviewer`. A 2026-10-02 round, described [below](#2026-10-02-four-public-skill-collections), added 11 more, and an [original skill](#original-skills) came with the `zero-review-lead` persona; until 2026-11-08 the catalog gave a role at most one skill. [Since then](#2026-11-08-several-skills-per-role) a role can carry several, and 27 of the 44 roles carry default skills drawn from 26 built-in skills; 17 carry none. These are local, portable adaptations for the repository in which a Session actually works, not provider skill installations or live network dependencies. Previous bundled texts remain in [version history](../internal/domain/squad/builtin_skill_history/) so pinned Project choices still resolve. The research ledger's `adoption: unverified` describes its earlier snapshot and is intentionally not rewritten as a claim about these later releases.
+After the person explicitly requested integration on 2026-09-29, the 11 preview-ready candidates were reviewed against the current role manuals and repository rules, then adapted into [bundled skill content](../internal/domain/squad/builtin_skills/) and [versioned catalog entries](../internal/domain/squad/builtin_skills.go). Their roles are backend, frontend, technical-writer, product-manager, ux-researcher, accessibility, sre, devops, incident-commander, finops, and ui-designer. A later review of [Matt Pocock's pinned `code-review` skill](https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/skills/engineering/code-review/SKILL.md) added one bounded two-axis skill for `code-reviewer`. A 2026-10-02 round, described [below](#2026-10-02-four-public-skill-collections), added 11 more, and an [original skill](#original-skills) came with the `zero-review-lead` persona; until 2026-11-08 the catalog gave a role at most one skill. [Since then](#2026-11-08-several-skills-per-role) a role can carry several. A [fifth round](#2026-11-08-engineering-and-marketing-skills) the same day added ten more, so 30 of the 44 roles carry default skills drawn from 36 built-in skills; 14 carry none. These are local, portable adaptations for the repository in which a Session actually works, not provider skill installations or live network dependencies. Previous bundled texts remain in [version history](../internal/domain/squad/builtin_skill_history/) so pinned Project choices still resolve. The research ledger's `adoption: unverified` describes its earlier snapshot and is intentionally not rewritten as a claim about these later releases.
 
 The `code-reviewer` adaptation retains separate checks for project rules and requested behavior, while the role manual still determines severity and evidence format. It does not install upstream setup tooling, create issue-tracker entries, publish comments, or require parallel agents. The pinned source is MIT licensed; the [copyright and permission notice](licenses/mattpocock-skills-MIT.txt) is bundled. The other candidates from this upstream repository remain research only.
 
@@ -24,13 +24,13 @@ Manual preview in this ledger means a person could read the pinned entry and the
 | reality-checker | [qa-skill](https://github.com/Newoahil/QA-skills/blob/bfc5c490b9266292b28e0be189e6f1acacb8bea5/qa-skill/SKILL.md) | No — Its verdict and build checks do not cover Clawdline's complete Epic journey and gate rules. |
 | security | [security-review](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/security-review/SKILL.md) | No — Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules. |
 | technical-writer | [documentation-writer](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/documentation-writer/SKILL.md) | Yes |
-| seo | [seo-audit](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/seo-audit/SKILL.md) | No — Search behavior changes; its bundled international and writing references are not fully reviewed here. |
+| seo | [seo-audit](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/seo-audit/SKILL.md) | No — Search behavior changes; its bundled international and writing references are not fully reviewed here. Since 2026-11-08 the role carries `seo-schema` and `seo-hreflang` from another source ([below](#2026-11-08-engineering-and-marketing-skills)). |
 | content-writer | [draft-content](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/marketing/skills/draft-content/SKILL.md) | No — Product claims and connector assumptions require independent verification. |
-| ai-search | [ai-seo](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ai-seo/SKILL.md) | No — Unverified platform-effect claims and multiple references block preview until checked against current primary sources. |
+| ai-search | [ai-seo](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ai-seo/SKILL.md) | No — Unverified platform-effect claims and multiple references block preview until checked against current primary sources. Since 2026-11-08 the role carries `seo-schema`, which makes no platform-effect claim ([below](#2026-11-08-engineering-and-marketing-skills)). |
 | social-media | [social](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/social/SKILL.md) | No — Scheduling and publishing are outside this role's authorization; bundled platform references remain open. |
 | instagram | [carousel-writer](https://github.com/social-media-skills/skills/blob/6e30eeb2f6736bda8683b6bbaa674af3641d7945/skills/carousel-writer/SKILL.md) | No — Does not independently clear image rights, alt text, or the whole Instagram grid; bundled references remain open. |
 | email | [emails](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/emails/SKILL.md) | No — Sending, consent, list handling, and integration references need separate review. |
-| growth | [ab-testing](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ab-testing/SKILL.md) | No — Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open. |
+| growth | [ab-testing](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ab-testing/SKILL.md) | No — Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open. Since 2026-11-08 the role carries `cro`, which proposes tests without promising uplift ([below](#2026-11-08-engineering-and-marketing-skills)). |
 | pr | [public-relations](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/public-relations/SKILL.md) | No — Outreach requires explicit authorization; media and platform references remain open. |
 | zh-editor | None | No — The public Chinese humanizer skills reviewed on 2026-10-06 edit sentences rather than the reader, point, and structure of a whole article; the procedure is in the persona text. |
 | product-manager | [write-spec](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/write-spec/SKILL.md) | Yes |
@@ -72,10 +72,10 @@ Run the local check from the repository root:
 
 ```text
 python3 tools/check-persona-skill-decisions.py --self-test
-44/44 personas; 59 pinned candidates; 29 manual previews; 1 original skills; 0 upstream file reads; valid
+44/44 personas; 70 pinned candidates; 40 manual previews; 1 original skills; 0 upstream file reads; valid
 ```
 
-The self-test changes the ID order, removes and duplicates an ID, floats a source URL, mismatches license evidence, falsely marks an open audit as preview-ready, drops the original skill from the ledger, and points it at a file that does not exist. Since 2026-11-08 it also drops a shared skill's review from one of its roles, blocks a role's second skill, and gives one role five defaults, a repeated default, an empty list, or a skill its ledger entry never reviewed. To recheck the pinned public files and recursive bundle closure, run `python3 tools/check-persona-skill-decisions.py --self-test --verify-upstream`. On 2026-09-29 this read 74 unique upstream files and passed; on 2026-10-02, with the third round, it read 102; on 2026-11-08, with the fourth, 108. The check also requires every skill in the built-in catalog to be a reviewed candidate of each role that carries it, which the ledger had not satisfied for `code-reviewer` until that round, and it ignores links inside fenced examples, which name no file. The online check uses public GitHub file URLs; it does not call a usage-priced API or execute third-party code.
+The self-test changes the ID order, removes and duplicates an ID, floats a source URL, mismatches license evidence, falsely marks an open audit as preview-ready, drops the original skill from the ledger, and points it at a file that does not exist. Since 2026-11-08 it also drops a shared skill's review from one of its roles, blocks a role's second skill, and gives one role five defaults, a repeated default, an empty list, or a skill its ledger entry never reviewed. To recheck the pinned public files and recursive bundle closure, run `python3 tools/check-persona-skill-decisions.py --self-test --verify-upstream`. On 2026-09-29 this read 74 unique upstream files and passed; on 2026-10-02, with the third round, it read 102; on 2026-11-08, with the fourth, 108, and with the fifth, 141. The online self-test also drops a real reference from three closed audits (a sibling path, a path two directories up, and a plugin-root path) and requires each to be rejected. The check also requires every skill in the built-in catalog to be a reviewed candidate of each role that carries it, which the ledger had not satisfied for `code-reviewer` until that round, and it ignores links inside fenced examples, which name no file. The online check uses public GitHub file URLs; it does not call a usage-priced API or execute third-party code.
 
 This ledger records research and review readiness only. The 23 bundled adaptations (11 from 2026-09-29, `code-reviewer`'s, and 11 from 2026-10-02) were each adopted after the person's explicit request; future additions still require checking the candidate against the current persona manual, project rules, actual task, required tools, and measured results. An available skill is not evidence that a Session used it: use requires a receipt tied to that Session and skill.
 
@@ -109,7 +109,7 @@ License notices for these sources are in [`licenses/`](licenses/).
 - *Publishes or acts without authorization*: EveryInc ce-debug, which commits, pushes and opens a pull request on its own (its minimal-fix excerpt was noted but not needed after ponytail).
 - *Too narrow or too framework-bound*: undeadlist api-tester and perf-auditor (fixed Next.js paths and ports), ECC verification-loop (fixed npm, pyright and coverage), EveryInc performance-oracle (fixed thresholds), mhattingpete test-fixing (fixed `make test`).
 
-No candidate passed for api-tester, privacy, seo, trend-researcher, secrets, analytics or the marketing roles; they keep zero skills.
+No candidate passed for api-tester, privacy, seo, trend-researcher, secrets, analytics or the marketing roles; they kept zero skills until seo, ai-search and growth gained theirs [on 2026-11-08](#2026-11-08-engineering-and-marketing-skills).
 
 **How the skills reach a role.** A launch prompt lists each enabled skill with its name, purpose and its own quoted "Use this skill ..." sentence, and asks the role to compare the task with them before starting. Before this change the prompt repeated the skill's ID where its description belonged; on the maintainer's machine 33 of 72 role launches had carried a skill and none had recorded a skill receipt.
 
@@ -194,3 +194,78 @@ since that page groups `zh-editor` with the Custom team.
 required, the role opened 15; of the 40 it did not need, it skipped 39. The limits are real: one
 role, 16 runs, and no control group without skills, so it says the listing is selective, not that
 the skills improve the output. Use still requires a Session receipt.
+
+## 2026-11-08: engineering and marketing skills
+
+The person approved ten more role and skill pairs on 2026-11-08. Each was read at a pinned commit
+with `gh api … -H 'Accept: application/vnd.github.raw'`, never installed or run, and recorded as the
+ledger's fifth research round: entry and licence SHA-256, every local reference followed
+recursively, fit and limits for the role that carries it. All ten passed the 2026-10-02 admission
+rules after the parts named below were dropped; none was rejected. Existing defaults stay first.
+
+| Role | Default skills, in order | Added skill and pinned source |
+| --- | --- | --- |
+| architect | decision-record, improve-codebase-architecture, domain-modeling | [improve-codebase-architecture](https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/improve-codebase-architecture/SKILL.md), [domain-modeling](https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/domain-modeling/SKILL.md) |
+| backend | golang-concurrency, api-and-interface-design | [api-and-interface-design](https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/api-and-interface-design/SKILL.md) |
+| performance | binding-constraint, performance-optimization | [performance-optimization](https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/performance-optimization/SKILL.md) |
+| security | exploit-path-review, security-review | [security-review](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/skills/security-review/SKILL.md) |
+| content-writer | humanize-prose, copywriting | [copywriting](https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/SKILL.md) |
+| growth | cro | [cro](https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/cro/SKILL.md) |
+| seo | seo-schema, seo-hreflang | [seo-schema](https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/SKILL.md), [seo-hreflang](https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/SKILL.md) |
+| ai-search | seo-schema | the same `seo-schema`, registered once |
+| sprint-prioritizer | opportunity-cost, prioritize-features | [prioritize-features](https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/pm-product-discovery/skills/prioritize-features/SKILL.md) |
+
+What each adaptation dropped, in our own words where the source was long:
+
+- `improve-codebase-architecture`: the HTML report built with Tailwind and Mermaid from CDNs and
+  opened in a browser, the interactive "grilling" skill and the parallel sub-agent design pass. The
+  `codebase-design` vocabulary it calls by name was read and restated. Proposals only, no edits.
+- `domain-modeling`: creating `GLOSSARY.md` and `docs/adr/` in fixed places; it follows the
+  project's existing location and writes only within the task's writes.
+- `api-and-interface-design`: fixed naming conventions and the TypeScript/REST samples; the project's
+  own conventions and generated contracts win. The idempotency rules were kept.
+- `performance-optimization`: `npx bundlesize`, `npx --package=@lhci/cli lhci autorun`,
+  `npx lighthouse`, the bundle analyzers, the DevTools MCP mention and fixed size and latency
+  budgets. The measure, one-change, keep-or-revert and attempt-log method was kept; tools are
+  whatever the project already has.
+- `security-review`: `npm audit fix`, `npm update` and the `npm ci`/`npm install` sample, and the
+  Next.js, Supabase and Solana specifics, made stack-neutral. It is listed after
+  `exploit-path-review`, so a checklist gap without an exploit path is a hardening suggestion. The
+  licence at this commit matches the bundled [notice](licenses/affaan-m-ecc-MIT.txt).
+- `copywriting`: unsourced conversion figures (+81% conversions and similar, a 3x headline result),
+  English word lists and dash rules, and the product-marketing file names. The diagnosis, line gate
+  and supportable-claims rule were kept, with the source's credit to Profound's MIT skill.
+- `cro`: field-count drop-off percentages, enrichment vendors and a link to a floating `main`
+  branch. It separates changes from test hypotheses and promises no uplift.
+- `seo-schema`: the bundled `parse_html.py` script, the dated lists of types retired or added
+  between 2023 and 2026, and the templates file. Which types earn a search feature must be checked,
+  dated, against current documentation, or labelled unverified, and the skill makes no ranking or
+  AI-citation claim, the two concerns recorded for `seo` and `ai-search`.
+- `seo-hreflang`: plugin script calls, the dated region-specific search units, cultural profile
+  tables, culture and parity scores, fixed word-count ratios and freshness day thresholds, and the
+  dated policy assertions. The hreflang checks and parity checks were kept.
+- `prioritize-features`: the fixed top five, `$ARGUMENTS`, and further-reading links to articles and
+  a course.
+
+Licence notices were bundled for the four new sources
+([addyosmani](licenses/addyosmani-agent-skills-MIT.txt),
+[coreyhaines31](licenses/coreyhaines31-marketingskills-MIT.txt),
+[AgriciDaniel](licenses/agricidaniel-claude-seo-MIT.txt), [phuryn](licenses/phuryn-pm-skills-MIT.txt));
+Matt Pocock's and ECC's were already present and match these commits byte for byte. The seo
+skills' per-directory `LICENSE.txt` files only point at the root MIT licence.
+
+**The reference audit now follows paths in code spans.** `performance-optimization` names its
+checklist as `../../references/performance-checklist.md`, and the shared schema list names its
+deprecated-types note as `${CLAUDE_PLUGIN_ROOT}/skills/seo-schema/references/…`. `--verify-upstream`
+used to follow only Markdown links, a bare sibling name, and `references/`, `assets/` and `scripts/`
+paths. It now follows any relative path or plugin-root path in a code span when that file exists
+at the pinned commit, so a name of a file to create, or of another skill's file, is still not a
+reference. Run over every earlier closed audit, the wider rule found one omission: write-spec's
+`CONNECTORS.md` names the plugin's `.mcp.json`, a list of hosted MCP endpoints. It was read and
+added to that audit; the bundled write-spec text uses no connector and is unchanged.
+
+Released definitions keep resolving. The nine roles' versions before this change are pinned as
+literals from `16cfd8960` in `role_skills_test.go`, including growth, seo and ai-search, which
+carried no skill and resolve as the no-skill version. Each launch prompt quotes the skill's own
+"Use this skill when …" sentence, and a test now keeps that sentence within the 240 characters the
+prompt keeps, for every built-in skill.

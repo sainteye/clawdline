@@ -62,6 +62,16 @@ var builtinSkillSpecs = []builtinSkillSpec{
 	{"architect", "decision-record", "架構決策紀錄", "Record a technical decision with its alternatives", "記錄技術決策及其替代方案", "https://github.com/affaan-m/ECC/blob/c05b2d6614f62f6db0047669aa4eefb223d478f9/skills/architecture-decision-records/SKILL.md", "MIT"},
 	{"code-reviewer", "ponytail-review", "過度設計審查", "List what a change can delete or shrink", "列出改動中可以刪除或縮短的部分", "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/skills/ponytail-review/SKILL.md", "MIT"},
 	{"minimal-change", "systematic-debugging", "系統化除錯", "Find a failure's root cause before changing code", "先找出失敗的根本原因再改程式", "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md", "MIT"},
+	{"architect", "improve-codebase-architecture", "改善程式架構", "Find where shallow modules make change and testing hard", "找出讓修改與測試變難的淺層模組", "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/improve-codebase-architecture/SKILL.md", "MIT"},
+	{"architect", "domain-modeling", "領域用語建模", "Sharpen the project's domain terms and glossary", "釐清專案的領域用語與詞彙表", "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/domain-modeling/SKILL.md", "MIT"},
+	{"backend", "api-and-interface-design", "API 與介面設計", "Design interfaces that stay stable as callers depend on them", "設計在呼叫端依賴後仍穩定的介面", "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/api-and-interface-design/SKILL.md", "MIT"},
+	{"performance", "performance-optimization", "效能優化", "Measure, fix one bottleneck, then keep or revert", "先量測、只修一個瓶頸，再決定保留或還原", "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/performance-optimization/SKILL.md", "MIT"},
+	{"security", "security-review", "安全檢查清單", "Check the security controls a change touches", "檢查改動涉及的安全控制", "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/skills/security-review/SKILL.md", "MIT"},
+	{"content-writer", "copywriting", "行銷文案", "Write page copy whose every claim can be supported", "撰寫每個說法都有根據的頁面文案", "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/SKILL.md", "MIT"},
+	{"growth", "cro", "轉換率檢查", "Find why a page or form does not convert", "找出頁面或表單轉換不佳的原因", "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/cro/SKILL.md", "MIT"},
+	{"seo", "seo-schema", "結構化資料", "Detect, validate and write truthful structured data", "偵測、驗證並撰寫如實的結構化資料", "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/SKILL.md", "MIT"},
+	{"seo", "seo-hreflang", "多語系 hreflang", "Audit hreflang sets and parity across language versions", "檢查 hreflang 設定與各語言版本的一致性", "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/SKILL.md", "MIT"},
+	{"sprint-prioritizer", "prioritize-features", "功能優先排序", "Rank feature ideas against an objective with stated evidence", "依目標與明列的證據排序功能構想", "https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/pm-product-discovery/skills/prioritize-features/SKILL.md", "MIT"},
 }
 
 // builtinRoleSkills is the one place a (role, Skill) pair is registered: each
@@ -72,24 +82,24 @@ var builtinSkillSpecs = []builtinSkillSpec{
 // A role carries at most MaxBuiltinRoleSkills; the source of each pair must
 // be a reviewed candidate of that role in docs/persona-skill-decisions.json.
 var builtinRoleSkills = map[string][]string{
-	"architect":            {"decision-record"},
-	"backend":              {"golang-concurrency"},
+	"architect":            {"decision-record", "improve-codebase-architecture", "domain-modeling"},
+	"backend":              {"golang-concurrency", "api-and-interface-design"},
 	"frontend":             {"frontend-component-build"},
 	"minimal-change":       {"smallest-sufficient-change", "systematic-debugging"},
 	"code-reviewer":        {"two-axis-code-review", "ponytail-review"},
 	"reality-checker":      {"verification-before-completion"},
-	"security":             {"exploit-path-review"},
+	"security":             {"exploit-path-review", "security-review"},
 	"technical-writer":     {"documentation-writer", "humanize-prose"},
-	"content-writer":       {"humanize-prose"},
+	"content-writer":       {"humanize-prose", "copywriting"},
 	"email":                {"humanize-prose"},
 	"pr":                   {"humanize-prose"},
 	"product-manager":      {"write-spec"},
-	"sprint-prioritizer":   {"opportunity-cost"},
+	"sprint-prioritizer":   {"opportunity-cost", "prioritize-features"},
 	"feedback-synthesizer": {"research-synthesis"},
 	"ux-researcher":        {"ux-research"},
 	"test-automation":      {"tests-that-catch-breaks"},
 	"accessibility":        {"accessibility-audit"},
-	"performance":          {"binding-constraint"},
+	"performance":          {"binding-constraint", "performance-optimization"},
 	"evidence-collector":   {"map-versus-territory"},
 	"sre":                  {"monitoring-and-alerting"},
 	"devops":               {"devops-rollout-plan"},
@@ -98,6 +108,9 @@ var builtinRoleSkills = map[string][]string{
 	"ui-designer":          {"frontend-design"},
 	"support":              {"bug-report-from-user"},
 	"devrel":               {"humanize-prose"},
+	"growth":               {"cro"},
+	"seo":                  {"seo-schema", "seo-hreflang"},
+	"ai-search":            {"seo-schema"},
 	"zero-review-lead":     {"zero-based-review"},
 }
 

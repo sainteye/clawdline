@@ -245,6 +245,11 @@ Measured on 2026-10-02 with `TestTheFixedLaunchAdditionsAreMeasured`, for a one-
 | `backend` prompt, task writes only docs | 6,557 bytes | 5,063 bytes |
 | `seo` prompt (no role skill) | 6,004 bytes | 5,067 bytes |
 
+On 2026-11-08 backend gained `api-and-interface-design`, which applies to any write: its prompt is
+6,479 bytes for a task writing Go and 6,128 for one writing only docs, which now lists one skill
+instead of one line. `seo` gained skills too, so the role without one is measured with `pricing`
+(4,683 bytes).
+
 The protocol `CHILD.md` used to carry is `clawdline guide child` (`orchestrator.ChildGuide`, about
 6 KB), read once rather than on every call. The test holds each number under a bound just above it.
 
