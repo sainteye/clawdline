@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10802,
-  "riskKeys": 4761,
-  "nonRiskCount": 6041,
+  "englishContentKeys": 10806,
+  "riskKeys": 4764,
+  "nonRiskCount": 6042,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 423,
+      "count": 424,
       "sources": [
         null
       ],
@@ -781,6 +781,7 @@
         "capacityRow.squad.body_bytes.what",
         "capacityRow.squad.console_active_skill_bytes.full",
         "capacityRow.squad.event_body_bytes.what",
+        "capacityRow.squad.event_conversations_bytes.what",
         "capacityRow.squad.event_id_bytes.what",
         "capacityRow.squad.event_page_rows.what",
         "capacityRow.squad.launch_skill_when_runes.what",
