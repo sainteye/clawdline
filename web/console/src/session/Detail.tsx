@@ -56,6 +56,7 @@ import { richSessionSwipeActions } from "./swipe.js"
 import { BRAND_MARK, detailSessionName, sessionCoordinatorBound } from "../brand-mark.js"
 import { headPersona, type HeadPersona } from "../personas.js"
 import { PersonaBot, usePersonas } from "./PersonaBot.js"
+import { SkillBotToggle, SkillStrip, useDetailSkills } from "./SkillUse.js"
 import "./work-tree.css"
 import "./git-status.css"
 import "./empty-detail.css"
@@ -283,6 +284,9 @@ export function Detail({
   }, [mark])
 
   const role = headPersona(usePersonas(), row?.persona)
+  // The role's Skills, from this Session's own launch snapshot (SkillUse.tsx).
+  const skills = useDetailSkills(row, !!role)
+  const skillToggle = !!role && !!skills.snapshot?.skills.length && !selectedAgent
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const snippetsSays = steward
     ? suggestionsTitle()
@@ -365,13 +369,14 @@ export function Detail({
                 {row ? detailSessionName(row) : ""}
               </span>
               <span className="sub" id="detail-sub">
-                {role ? <DetailPersona head={role} /> : null}
+                {role ? <DetailPersona head={role} bot={!skillToggle} /> : null}
                 <WorkflowProfileHeader row={row} machine={readerMachine} />
                 {detailSub(row, projectedCoordinatorBound)}
               </span>
             </span>
           </button>
         </div>
+        {row && role && skillToggle && <SkillBotToggle persona={role.persona} name={role.name} skills={skills} />}
         {row && hasOutputs && <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
           aria-label={nextWord("outputsTitle")} title={nextWord("outputsTitle")} disabled={ending}
           onClick={() => setOutputsFor(outputsOpen ? null : outputIdentity)}>
@@ -393,6 +398,7 @@ export function Detail({
           />
         </div>
       </div>}
+      {skillToggle && <SkillStrip skills={skills} />}
 
       <div className="session-output-layout" data-open={outputsOpen ? "true" : undefined}>
       <div className="session-conversation">
@@ -523,10 +529,11 @@ export function HomeHero() {
  * catalog is empty unless the machine offers `personas`, so nothing there
  * either.
  */
-function DetailPersona({ head }: { head: HeadPersona }) {
+function DetailPersona({ head, bot = true }: { head: HeadPersona; bot?: boolean }) {
+  // With Skills, the bot is drawn once, as the Skill strip's toggle beside this button.
   return (
-    <span className="detail-persona" id="detail-persona" title={head.title}>
-      <PersonaBot persona={head.persona} cellPx={2} className="detail-persona-bot" />
+    <span className="detail-persona" id="detail-persona" title={head.title} data-bot={bot ? undefined : "toggle"}>
+      {bot && <PersonaBot persona={head.persona} cellPx={2} className="detail-persona-bot" />}
       <span className="detail-persona-words" id="detail-persona-words">
         {head.title}
       </span>

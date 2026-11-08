@@ -114,10 +114,27 @@ The same event ID and payload returns the original receipt; a different
 payload with that ID returns `event_conflict`. A monotonic sequence and `after`
 cursor let clients catch up after reconnect. `applied` means "Session reported
 use"; it cannot prove the output was caused by the skill. The UI only animates
-new receipts after its initial cursor, for the matching session, definition,
-and Project scope, and never on replay, `read`, `failed`, or cross-session
-events. Motion defaults
-on, Project can override it, and `prefers-reduced-motion` always wins.
+new receipts after its initial cursor, for the matching session, snapshot,
+definition, Project scope and skill version. Both `read` and `applied` animate
+(decided 2026-11-08, replacing the earlier "never on `read`" rule); it never
+animates on replay, `failed`, or cross-session events. A replayed or `failed`
+receipt still changes what is drawn, without movement. Motion defaults on,
+Project can override it, and `prefers-reduced-motion` always wins; under either
+the same information is drawn still.
+
+The Session screens show a role's Skill use from that Session's own launch
+snapshot (`/v1/squad/session-snapshots/{conversation}`), not current settings:
+the detail header's role bot toggles a strip of the snapshot's enabled Skills
+(used ones lit, unused dimmed), which opens by itself on the Session's first
+receipt; `read` pulses the Skill's icon half-lit, `applied` lights it with a
+ring and makes the bot hop once; the transcript carries one card per Skill at
+its first receipt's time, updated in place; a finished task's Session gets a
+summary of used and unused Skills; and a list row shows the Skill beside its
+bot. All of them share one reader of `/v1/squad/events` (read from the start
+for the still state, then polled after its cursor), never one per row
+(`web/console/src/session/skill-feed.ts`). The phone reads the same three
+routes through the relay (`squad-event-head`, `squad-events`,
+`squad-session-snapshot`).
 
 ## Offline package and privacy boundary
 

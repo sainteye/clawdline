@@ -11,6 +11,7 @@ import { conversationNotStarted } from "./readiness.js"
 import { waitingForWords, runningShellCount } from "./waiting-for.js"
 import { retainedStateWords, sessionReadingChinese } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
+import { paintRowSkills, useRowSkills } from "./SkillUse.js"
 import { usePersonas } from "./PersonaBot.js"
 import { listRunningAgents } from "./background.js"
 import { runWorkingClock } from "./working-clock.js"
@@ -96,7 +97,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
       {machineScope && coordinatorBound ? <span className="coordinator-chip" aria-hidden="true">Clawdfather</span> : null}</div>
     {status ? <StateLine row={{ ...status, id: sessionID, state } as SessionRow}
-      role={role} suffix={freshness} runningAgents={runningAgents} />
+      role={role} suffix={freshness} runningAgents={runningAgents} skills={false} />
       : <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
         <span>{stateLabel}</span><RunningAgents count={runningAgents} />{freshness && <span className="session-activity">{freshness}</span>}
         {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>}
@@ -287,22 +288,25 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
  * one, and then `stateLine`'s words. The role is written into the same markup
  * as the words so that it swipes with them and adds no line of its own.
  */
-function StateLine({ row, role, suffix = "", runningAgents = listRunningAgents(row) }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine>;
-  suffix?: string; runningAgents?: number | null }) {
+function StateLine({ row, role, suffix = "", runningAgents = listRunningAgents(row), skills = true }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine>;
+  suffix?: string; runningAgents?: number | null; skills?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const { html, shape } = stateLine(row)
+  // A Skill the role reports, beside its bot (SkillUse.tsx); one shared feed for every row.
+  const skill = useRowSkills(role && skills ? row : { persona: undefined, sessionId: undefined })
   const agentWord = runningAgentsWord(runningAgents)
   const remoteControl = row.backend === "claude_remote" ? '<span class="session-activity">' + L.escapeHTML(nextWord("claudeRemoteShort")) + '</span>' : ""
   const statusHTML = html + remoteControl + (agentWord ? '<span class="session-agent-count">' + L.escapeHTML(agentWord) + '</span>' : "") + (suffix ? '<span class="session-activity">' + L.escapeHTML(suffix) + "</span>" : "")
   const roleHTML = role
     ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
       '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
-      '<span class="persona-state-name">' + L.escapeHTML(role.name) + "</span></span>"
+      '<span class="persona-state-name">' + L.escapeHTML(role.name) + "</span></span>" + skill.html
     : ""
   useLayoutEffect(() => {
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
     if (role) L.paintIcon(ref.current?.querySelector<HTMLCanvasElement>("canvas.persona-state-bot") ?? null, role.persona.icon, 2)
-  }, [statusHTML, role?.persona])
+    paintRowSkills(ref.current, skill.icons)
+  }, [statusHTML, role?.persona, skill.html])
   // A daemon that sends `working_since` sends the line again only when more
   // than its clock moved, so the clock is drawn here (working-clock.ts). The
   // markup stays as sent and only the line's text moves; without the field the
