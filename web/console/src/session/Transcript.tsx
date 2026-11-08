@@ -75,6 +75,7 @@ import { ToolResult } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
 import { NativeToolRun, nativeRunLength } from "./NativeToolActivity.js"
 import { ToolRow, ToolRunToggle } from "./ToolPresentation.js"
+import { transcriptSkillCards, useSessionSkills } from "./SkillUse.js"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -208,6 +209,8 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   const pendingVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   const cards = agentId ? [] : pendingSends.of(id)
   const session = useSession(id, row)
+  // The role's Skill use, as cards at their receipts' times (SkillUse.tsx).
+  const skillState = useSessionSkills(agentId ? null : session)
   const nativeSendAt = useRef(0)
   const cardSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
   // A native echo removes the delivery card before the reply exists. Keep the
@@ -688,7 +691,9 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
     icons,
     slots: new Map(),
   }
-  const drawn = drawTranscriptEntries(entries, session?.state === "working", newestFirst, view, queue.current)
+  const task = session ? L.taskOfChild(session.id) : null
+  const skillCards = agentId ? [] : transcriptSkillCards(skillState, !!task && !L.taskLive(task))
+  const drawn = drawTranscriptEntries(entries, session?.state === "working", newestFirst, view, queue.current, skillCards)
   // The oldest end offers another page when the daemon names a cursor. Older
   // daemons still show the diagnostic cut note rather than a dead control.
   const cut = olderControl ?? (!earlier && cutNote(data))
@@ -709,7 +714,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
 
 /** The original conversation renderer, shared by local and pinned Cloud reads. */
 function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boolean, newestFirst: boolean,
-  view: View, pictures?: NonNullable<TranscriptEntry["artifacts"]>): ReactElement[] {
+  view: View, pictures?: NonNullable<TranscriptEntry["artifacts"]>, inserts: readonly { at: number; node: ReactElement }[] = []): ReactElement[] {
   const blocks = blocksOf(entries.map((entry) => ({ ...entry })).filter(worthDrawing), working, view.assistant)
   // Both local and pinned Cloud readers resolve the same artifact slots through
   // their respective picture source after the shared entry markup is drawn.
@@ -722,17 +727,31 @@ function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boo
     }
   }
   let at = 0
+  // Inserted cards (a role's Skill use) go before the first block timed after
+  // them; a block with no time of its own is as late as the one before it.
+  let insertAt = 0
+  let blockTime = Number.NEGATIVE_INFINITY
   const drawn = blocks.map((block) => {
     const start = at
     at += block.rows.length
+    blockTime = Math.max(blockTime, block.rows[0]?.at ?? blockTime)
+    const before: ReactElement[] = []
+    while (insertAt < inserts.length && inserts[insertAt].at < blockTime) before.push(inserts[insertAt++].node)
+    const own = drawBlock(block, start)
+    return newestFirst ? [...own, ...before.reverse()] : [...before, ...own]
+  })
+  const after = inserts.slice(insertAt).map((insert) => insert.node)
+  if (after.length) drawn.push(newestFirst ? after.reverse() : after)
+  if (newestFirst) drawn.reverse()
+  return drawn.flat()
+
+  function drawBlock(block: Block, start: number): ReactElement[] {
     if (block.kind === "native") return [<NativeToolRun key={"native:"+(block.rows[0].id || block.rows[0].activity?.toolCallID || start)} entries={block.rows} sessionID={view.sessionID} toolLabel={view.who.tool} countLabel={count => L.fillString(L.strings.webSteps, { n: count })}/>]
     if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
     if (block.kind === "explored") return exploredRunHTML(view, block.rows, start)
     if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
     return [entryHTML(view, block.rows[0], start)]
-  })
-  if (newestFirst) drawn.reverse()
-  return drawn.flat()
+  }
 }
 
 /** Render a pinned machine's transcript with the same blocks as the local Session. */

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10789,
-  "riskKeys": 4754,
-  "nonRiskCount": 6035,
+  "englishContentKeys": 10802,
+  "riskKeys": 4761,
+  "nonRiskCount": 6041,
   "groups": [
     {
       "name": "acp / other",
@@ -3762,7 +3762,7 @@
     },
     {
       "name": "next / other",
-      "count": 652,
+      "count": 658,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4218,7 +4218,13 @@
         "next.skillInstallPartial",
         "next.skillInstalled",
         "next.skillInstalling",
+        "next.skillListSeparator",
+        "next.skillStatusRead",
+        "next.skillStripLabel",
+        "next.skillStripToggle",
+        "next.skillSummaryTitle",
         "next.skillUpdate",
+        "next.skillUseReading",
         "next.smartTitleAction",
         "next.smartTitleButton",
         "next.smartTitleConfirmTitle",

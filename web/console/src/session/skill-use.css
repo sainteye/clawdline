@@ -1,0 +1,162 @@
+/*
+ * A role using a Skill, on the Session screens (SkillUse.tsx). Motion moves
+ * only transform and opacity, eases out, and stays under 300 ms; the strip's
+ * first entrance is 220 ms. Under the Squad motion setting or
+ * `prefers-reduced-motion`, nothing is marked to play and the same state is
+ * drawn still.
+ */
+:root { --skill-ease: cubic-bezier(.22, 1, .36, 1); }
+
+.skill-icon { display: block; image-rendering: pixelated; }
+
+/* The header's role bot is the strip's toggle: a 44px target around a 16px bot. */
+.detail-head .skill-bot-toggle {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 -6px 0 -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.detail-head .skill-bot-toggle:hover { background: var(--accent-in); }
+.detail-head .skill-bot-toggle[aria-expanded="true"] { background: var(--accent-in); }
+.detail-head .skill-bot-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.skill-bot-hop { display: block; }
+.skill-bot { display: block; image-rendering: pixelated; }
+.skill-bot-hop[data-hop] { animation: skill-hop 290ms var(--skill-ease); }
+
+/* The strip under the header. */
+.skill-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.skill-strip[data-enter] { animation: skill-strip-in 220ms var(--skill-ease); }
+.skill-strip-list {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.skill-strip-list::-webkit-scrollbar { display: none; }
+.skill-strip-said {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-chip {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.skill-chip-icon { position: relative; display: block; transition: opacity 200ms var(--skill-ease); }
+.skill-chip[data-state="unused"] { color: var(--faint); }
+.skill-chip[data-state="unused"] .skill-chip-icon,
+.skill-chip[data-state="unused"] .skill-chip-name { opacity: .35; }
+.skill-chip[data-state="read"] .skill-chip-icon { opacity: .6; }
+.skill-chip[data-state="applied"] { border-color: var(--accent-ed); background: var(--accent-in); }
+.skill-chip[data-state="failed"] { color: var(--dim); }
+.skill-chip[data-state="failed"] .skill-chip-icon { opacity: .45; }
+/* A failed use is a still, muted mark: a short slash beside the name. */
+.skill-chip-failed {
+  width: 7px;
+  height: 1.5px;
+  background: var(--dim);
+  transform: rotate(-45deg);
+}
+.skill-chip-icon[data-play="read"] { animation: skill-read 280ms var(--skill-ease); }
+.skill-chip-icon[data-play="applied"]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
+  opacity: 0;
+  animation: skill-ring 280ms var(--skill-ease);
+}
+
+/* The transcript's card, one per Skill, updated in place. */
+.skill-use-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0;
+  padding: 7px 12px 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.skill-use-card[data-enter] { animation: skill-card-in 220ms var(--skill-ease); }
+.skill-use-card-icon { transition: opacity 200ms var(--skill-ease); }
+.skill-use-card[data-state="read"] .skill-use-card-icon { opacity: .6; }
+.skill-use-card[data-state="failed"] .skill-use-card-icon { opacity: .45; }
+.skill-use-card[data-state="applied"] { border-color: var(--accent-ed); }
+.skill-use-card-words { display: grid; gap: 1px; min-width: 0; }
+.skill-use-card-words b { font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
+.skill-use-card-words small { color: var(--dim); font-size: 11px; }
+
+/* The end-of-task summary. */
+.skill-summary {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.skill-summary h3 { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; }
+.skill-summary-used { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.skill-summary p { margin: 0; color: var(--dim); font-size: 12px; }
+.skill-summary p.skill-summary-unused { margin-top: 8px; }
+
+/* The list row: a Skill icon beside the role bot. */
+.persona-skill-pop,
+.persona-skill-chips { display: inline-flex; align-items: center; gap: 3px; margin: 0 4px 0 -2px; vertical-align: middle; }
+.persona-skill-pop { animation: skill-pop-in 200ms var(--skill-ease), skill-pop-out 250ms var(--skill-ease) 1300ms forwards; }
+.persona-skill-chip { display: inline-block; }
+
+@keyframes skill-hop { 0% { transform: none; } 40% { transform: translateY(-6px); } 100% { transform: none; } }
+@keyframes skill-strip-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes skill-read { 0% { opacity: .3; } 55% { opacity: .9; } 100% { opacity: .6; } }
+@keyframes skill-ring { 0% { opacity: .9; transform: scale(.8); } 100% { opacity: 0; transform: scale(1.25); } }
+@keyframes skill-card-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes skill-pop-in { from { opacity: 0; transform: scale(.6) translateX(-4px); } to { opacity: 1; transform: none; } }
+@keyframes skill-pop-out { to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-bot-hop[data-hop], .skill-strip[data-enter], .skill-chip-icon[data-play], .skill-chip-icon[data-play]::after,
+  .skill-use-card[data-enter], .persona-skill-pop { animation: none; }
+  .skill-chip-icon, .skill-use-card-icon { transition: none; }
+}
+
+/* With Skills, the header's sub line keeps only the role's words, for a screen reader. */
+.detail-head .detail-persona[data-bot="toggle"] { margin: 0; }
