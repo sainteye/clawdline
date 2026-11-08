@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/release"
@@ -32,8 +34,11 @@ func TestSyntheticEgressUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	var paths []string
+	var pathsMu sync.Mutex
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		pathsMu.Lock()
 		paths = append(paths, req.URL.Path)
+		pathsMu.Unlock()
 		body, err := io.ReadAll(req.Body)
 		if err != nil {
 			t.Error(err)
@@ -58,6 +63,7 @@ func TestSyntheticEgressUpdate(t *testing.T) {
 	if err != nil || got.Version != "v1.2.3" {
 		t.Fatalf("fetch: %+v %v", got, err)
 	}
+	sort.Strings(paths)
 	if len(paths) != 2 || paths[0] != "/synthetic/manifest.json" || paths[1] != "/synthetic/manifest.sig.json" {
 		t.Fatalf("unexpected paths: %v", paths)
 	}

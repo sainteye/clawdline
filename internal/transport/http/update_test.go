@@ -26,7 +26,7 @@ import (
 // releaseUpdateServer is a daemon running from release v0.10.0 of a test
 // layout, with a release host that publishes `published` (signed by a test
 // key) and a hosted BUILD.json that counts how often it is asked.
-func releaseUpdateServer(t *testing.T, dir, published string) (*Server, *atomic.Int64, func()) {
+func releaseUpdateServer(t testing.TB, dir, published string) (*Server, *atomic.Int64, func()) {
 	t.Helper()
 	commit := strings.Repeat("a", 40)
 	base := t.TempDir()

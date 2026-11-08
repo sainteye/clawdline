@@ -201,3 +201,16 @@ that broader installation was unnecessary for task-scoped instruction use.
 No usage-priced external API was called. Three foreground updater requests made
 ordinary existing signed-release metadata reads; no terminal launch, provider
 transcription, assistant dispatch, deployment, restart or public release occurred.
+
+
+## Next round: removing a foreground network wait
+
+The [signed update metadata experiment](update-metadata-overlap-2026-11-08.md)
+removes the serial manifest/signature download dependency. It records actual
+absolute foreground and real-source savings, request caps, costs and unchanged
+verification/failure semantics. The earlier rejected experiments above remain
+rejected; source verification does not establish installation or deployment.
+
+The [combined three-target round](api-round-two-2026-11-08.md) adds outstanding-work
+and full-inventory projections, with separate HTTP measurements, historical replay
+comparison and rejected low-impact candidates.

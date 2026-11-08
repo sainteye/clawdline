@@ -109,7 +109,11 @@ manifest and can install them itself. The manifest, its signatures and the versi
 ### The check
 
 The daemon reads `<base>/manifest.json` and `<base>/manifest.sig.json` when it starts and again
-every 6 hours plus up to 30 minutes of random jitter, each read within 30 s. The manifest is
+every 6 hours plus up to 30 minutes of random jitter. Each verification downloads the
+manifest and its signatures concurrently, with at most two metadata reads and each
+read within 30 s. Lowering `release.metadata_concurrency` to one serializes the
+reads. A failed manifest cancels and joins its sibling; manifest errors
+retain precedence, and both inputs are still required before verification. The manifest is
 accepted only when a release key compiled into the binary signed it (`release.Open`); anything
 else is reported in `error` and never followed. The base is:
 
@@ -494,3 +498,8 @@ and `tools/package-macos.sh` run from it — and exits non-zero.
 `clawdline update --apply` on a source build is the development path described in
 [Catching up a development machine now](#catching-up-a-development-machine-now): a source checkout
 keeps deploying commits, not releases.
+
+
+The [metadata overlap measurement](performance/update-metadata-overlap-2026-11-08.md)
+records complete foreground-request timings, real-source comparisons and failure
+injection. It does not establish that the running installation includes the change.

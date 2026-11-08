@@ -8,6 +8,9 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) releaseCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		capacity.ReleaseMetadataConcurrency: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-verification guard: one manifest and one signature read; no retained queue"}
+		},
 		capacity.ReleaseManifestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read guard on one release manifest; no retained buffer"}
 		},

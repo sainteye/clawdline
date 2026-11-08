@@ -446,17 +446,12 @@ func (s *Server) brokerInflight(w http.ResponseWriter, r *http.Request) {
 	if project == "" {
 		project = q.Get("project_dir")
 	}
-	inv, err := s.broker.ReadInventory(r.Context(), project, nil)
+	repo, rows, err := s.broker.ReadInflight(r.Context(), project)
 	if err != nil {
 		writeBrokerError(w, err)
 		return
 	}
-	rows, err := s.broker.Inflight(r.Context(), inv.Repository, "")
-	if err != nil {
-		writeBrokerError(w, err)
-		return
-	}
-	writeJSON(w, s.inflightPayload(r, inv.Repository, rows))
+	writeJSON(w, s.inflightPayload(r, repo, rows))
 }
 
 func (s *Server) inflightPayload(r *http.Request, repo string, rows []orchestrator.InventoryRow) contract.BrokerInflight {

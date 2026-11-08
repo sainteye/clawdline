@@ -14,6 +14,10 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/release"
 )
 
+// MetadataReadConcurrencyLimit describes the fixed manifest/signature pair.
+// Fetch's request-count/overlap test guards this construction against drift.
+const MetadataReadConcurrencyLimit = 2
+
 // Base is where the manifest of channel (or of one version) lives:
 // <base>/manifest.json and <base>/manifest.sig.json.
 func (e Env) Base(ctx context.Context, channel, version string) (string, error) {
@@ -112,21 +116,42 @@ func (e Env) get(ctx context.Context, url string, limit int64) ([]byte, error) {
 	return body, nil
 }
 
-// Fetch reads and verifies the manifest at base. Nothing of it is believed
-// until release.Open has checked its signature.
+// Fetch downloads the manifest and signatures together, then verifies them.
+// Nothing of the manifest is believed until release.Open checks its signature.
 func (e Env) Fetch(ctx context.Context, base string) (release.Manifest, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var signatures []byte
+	var signatureErr error
+	var reads sync.WaitGroup
+	parallel := e.MetadataConcurrency != 1
+	if parallel {
+		reads.Add(1)
+		go func() {
+			defer reads.Done()
+			signatures, signatureErr = e.get(ctx, base+"/manifest.sig.json", release.MaxSignatureBytes())
+		}()
+	}
 	m, err := e.get(ctx, base+"/manifest.json", release.MaxManifestBytes())
 	if err != nil {
+		// Preserve manifest error precedence and stop the sibling download.
+		// Join it before returning so no metadata work outlives this check.
+		cancel()
+		reads.Wait()
 		return release.Manifest{}, err
 	}
-	s, err := e.get(ctx, base+"/manifest.sig.json", release.MaxSignatureBytes())
-	if err != nil {
-		if ue, ok := err.(*Error); ok && ue.Code == CodeNoReleasePublished {
+	if parallel {
+		reads.Wait()
+	} else {
+		signatures, signatureErr = e.get(ctx, base+"/manifest.sig.json", release.MaxSignatureBytes())
+	}
+	if signatureErr != nil {
+		if ue, ok := signatureErr.(*Error); ok && ue.Code == CodeNoReleasePublished {
 			return release.Manifest{}, &release.Error{Code: release.CodeManifestUnsigned, Detail: "the release has a manifest and no manifest.sig.json"}
 		}
-		return release.Manifest{}, err
+		return release.Manifest{}, signatureErr
 	}
-	return release.Open(m, s, e.Keys)
+	return release.Open(m, signatures, e.Keys)
 }
 
 // Checker holds the last release check. A request reads it and never waits

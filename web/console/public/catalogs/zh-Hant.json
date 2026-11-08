@@ -1667,6 +1667,8 @@
   "capacityRow.release.lock_stale_seconds.what": "「正在更新」的標記要放多久，Clawdline 才會認定留下它的程序已經死掉。這個標記是用來避免兩個更新同時跑。",
   "capacityRow.release.manifest_bytes.full": "太大的清單會被當成格式錯誤而拒絕，裡面的內容一概不採用，也不會因此提供更新；版本面板會顯示錯誤。正在執行的版本不受影響。",
   "capacityRow.release.manifest_bytes.what": "已安裝的 Clawdline 檢查更新時，描述一個版本的簽章清單最多多大。正常的檔案很小，設上限是擋掉損壞或惡意的下載吃掉記憶體。",
+  "capacityRow.release.metadata_concurrency.full": "固定只有這兩份資料，不加入第三筆下載或重試佇列。上限降為一時改為依序讀取。兩次讀取仍受大小與時間限制，也一定會驗證簽章。",
+  "capacityRow.release.metadata_concurrency.what": "一次版本驗證同時下載的資料數量。僅讀取版本描述與簽章清單，讓即時檢查不用依序等兩次網路下載。",
   "capacityRow.release.pending_deadline_seconds.full": "新版本在期限之後才啟動，就會放棄這次更新、讓原本的版本重新啟動，更新面板會顯示已回復。你不用做任何事。",
   "capacityRow.release.pending_deadline_seconds.what": "一次更新最多能停在「進行到一半」多久。避免機器一直卡在舊版和新版之間。",
   "capacityRow.release.previous_releases_kept.full": "更新成功後，超出的較舊版本會被刪掉；從你自己原始碼建出來的版本不會刪。你不用做任何事。",

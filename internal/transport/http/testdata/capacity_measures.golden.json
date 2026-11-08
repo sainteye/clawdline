@@ -2445,6 +2445,11 @@
     "Note": true
   },
   {
+    "Name": "release.metadata_concurrency",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "release.pending_deadline_seconds",
     "Known": true,
     "Note": true

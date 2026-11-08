@@ -4,6 +4,14 @@ package capacity
 func releaseBounds() []Entry {
 	return []Entry{
 		{
+			// One verification reads only its manifest and signature list in
+			// parallel. It admits no additional metadata work or retry queue.
+			Name: ReleaseMetadataConcurrency, Class: Buffer, Unit: Rows,
+			Limit: 2, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/release/updater.MetadataReadConcurrencyLimit"},
+		},
+		{
 			// One release manifest.json. A longer one is refused as
 			// manifest_malformed and nothing of it is followed.
 			Name: ReleaseManifestBytes, Class: Buffer, Unit: Bytes,

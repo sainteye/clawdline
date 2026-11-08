@@ -9605,6 +9605,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "release.metadata_concurrency",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/release/updater.MetadataReadConcurrencyLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "release.pending_deadline_seconds",
     "Class": "buffer",
     "Unit": "seconds",

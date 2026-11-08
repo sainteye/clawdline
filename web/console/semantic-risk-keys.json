@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10861,
+  "englishKeys": 10863,
   "counts": {
-    "negation": 3017,
+    "negation": 3019,
     "state": 1786,
-    "permission": 636,
+    "permission": 637,
     "deletion": 243,
     "uncertainty": 410
   },
-  "unionCount": 4777,
+  "unionCount": 4779,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -525,6 +525,8 @@
       "capacityRow.release.health_wait_seconds.full",
       "capacityRow.release.list_bytes.full",
       "capacityRow.release.manifest_bytes.full",
+      "capacityRow.release.metadata_concurrency.full",
+      "capacityRow.release.metadata_concurrency.what",
       "capacityRow.release.pending_deadline_seconds.full",
       "capacityRow.release.previous_releases_kept.full",
       "capacityRow.release.signature_bytes.full",
@@ -4922,6 +4924,7 @@
       "capacityRow.places.setup_readers.full",
       "capacityRow.projects.codegraph_request_ms.what",
       "capacityRow.push.subscriptions.full",
+      "capacityRow.release.metadata_concurrency.full",
       "capacityRow.session.todo_batch_rows.what",
       "capacityRow.sessions.claude_remote_response_bytes.what",
       "capacityRow.sessions.rc_permission_bytes.what",
@@ -6963,6 +6966,8 @@
     "capacityRow.release.lock_stale_seconds.full",
     "capacityRow.release.lock_stale_seconds.what",
     "capacityRow.release.manifest_bytes.full",
+    "capacityRow.release.metadata_concurrency.full",
+    "capacityRow.release.metadata_concurrency.what",
     "capacityRow.release.pending_deadline_seconds.full",
     "capacityRow.release.pending_deadline_seconds.what",
     "capacityRow.release.previous_releases_kept.full",

@@ -501,6 +501,7 @@
 | `release.list_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `release.lock_stale_seconds` | 1800 | `seconds` | `expire` | `diagnostics` | — |
 | `release.manifest_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
+| `release.metadata_concurrency` | 2 | `rows` | `refuse` | `diagnostics` | — |
 | `release.pending_deadline_seconds` | 600 | `seconds` | `refuse` | `diagnostics` | — |
 | `release.previous_releases_kept` | 2 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `release.signature_bytes` | 16384 | `bytes` | `refuse` | `diagnostics` | — |
