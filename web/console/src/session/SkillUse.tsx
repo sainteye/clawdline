@@ -42,7 +42,7 @@ export interface SessionSkills {
 export function useSessionSkills(row: Pick<SessionRow, "persona" | "sessionId"> | null | undefined, read = true): SessionSkills {
   const conversation = read && row?.persona ? row.sessionId : undefined
   const snapshot = useSessionSnapshot(conversation)
-  const ledger = useSkillLedger(!!snapshot?.skills.length)
+  const ledger = useSkillLedger(snapshot?.skills.length ? snapshot.conversationId : null)
   const motion = useSkillMotion(snapshot?.scopeId)
   const uses = ledger ? ledger.usesFor(snapshot) : new Map<string, SkillUse>()
   return { snapshot, uses, motion }
@@ -193,7 +193,7 @@ export function transcriptSkillCards(skills: SessionSkills, finished: boolean): 
  */
 export function useRowSkills(row: Pick<SessionRow, "persona" | "sessionId">): { html: string; icons: (Icon | undefined)[] } {
   const snapshot = useSessionSnapshot(row.persona ? row.sessionId : undefined)
-  const ledger = useSkillLedger(!!snapshot?.skills.length)
+  const ledger = useSkillLedger(snapshot?.skills.length ? snapshot.conversationId : null)
   const motion = useSkillMotion(snapshot?.scopeId)
   const playing = usePlaying(snapshot, 1600)
   {

@@ -130,11 +130,24 @@ receipt; `read` pulses the Skill's icon half-lit, `applied` lights it with a
 ring and makes the bot hop once; the transcript carries one card per Skill at
 its first receipt's time, updated in place; a finished task's Session gets a
 summary of used and unused Skills; and a list row shows the Skill beside its
-bot. All of them share one reader of `/v1/squad/events` (read from the start
-for the still state, then polled after its cursor), never one per row
-(`web/console/src/session/skill-feed.ts`). The phone reads the same three
-routes through the relay (`squad-event-head`, `squad-events`,
-`squad-session-snapshot`).
+bot. All of them share one reader of `/v1/squad/events`, never one per row
+(`web/console/src/session/skill-feed-core.ts`). The still state is read only
+for the conversations on screen — the open Session and the list rows with a
+role — with `GET /v1/squad/events?conversation=<id>&after=0`: the parameter
+repeats or takes a comma-separated list, at most 50 IDs
+(`squad.event_conversations`), and the daemon reads each along the
+`(conversation_id, seq)` index; too many, empty or unprintable IDs are a
+`bad_request`. Without `conversation` the route answers the whole log as
+before. The live poll then reads the whole feed after the head, so a receipt
+plays only when it arrived live and a reload replays nothing. A conversation
+shown later is read the same way, up to the live cursor. On a log of 1,000
+receipts a page load went from 21 reads (the head and 20 pages from the start)
+to 3 (the head, one filtered read, one live poll), measured in
+`skill-feed-core.test.ts`. The phone reads the same routes through the relay
+(`squad-event-head`, `squad-events.conversations`, `squad-events`,
+`squad-session-snapshot`); a machine whose descriptor does not list
+`squad-events.conversations` is read with `squad-events`, the whole log, as
+before.
 
 ## Offline package and privacy boundary
 

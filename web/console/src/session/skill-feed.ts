@@ -1,31 +1,25 @@
 /*
- * The one feed of Skill receipts every Session view shares. While any view
- * listens, it reads `/v1/squad/events` from the start once (static state),
- * then polls after its cursor the way the Squad page does. The head read at
- * start is the baseline: only later receipts play (skill-use.ts). The same
- * routes are carried to the phone by the relay reader (`squad-event-head`,
- * `squad-events`, `squad-session-snapshot` in cloud/relay-reader.ts).
+ * The one feed of Skill receipts every Session view shares (skill-feed-core.ts
+ * holds how it reads). While any view listens it reads the still state of the
+ * conversations on screen — the open Session and the list rows with a role —
+ * in one filtered `/v1/squad/events?conversation=` read, then polls the whole
+ * feed after the head the way the Squad page does. Only later receipts play
+ * (skill-use.ts). The same routes are carried to the phone by the relay
+ * reader (`squad-event-head`, `squad-events.conversations`, `squad-events`,
+ * `squad-session-snapshot` in cloud/relay-reader.ts).
  */
 import { useEffect, useSyncExternalStore } from "react"
 import type { Icon } from "@clawdline/contract"
 import { client } from "../client.js"
 import { builtinDisplay } from "../builtin-display.js"
-import type { SquadReceipt } from "../pages/squad/model.js"
 import type { WireNames } from "../pages/squad/wire.js"
-import { SkillLedger, type SessionSkillSnapshot, type SkillMoment } from "./skill-use.js"
+import { SkillFeed } from "./skill-feed-core.js"
+import type { SessionSkillSnapshot, SkillLedger, SkillMoment } from "./skill-use.js"
 
-const POLL_MS = 3000
-const MAX_BACKOFF_MS = 30000
-
-let ledger = new SkillLedger()
 let version = 0
 const listeners = new Set<() => void>()
 const momentListeners = new Set<(moment: SkillMoment) => void>()
 let users = 0
-let generation = 0
-let timer: ReturnType<typeof setTimeout> | null = null
-
-function changed(): void { version++; for (const listener of [...listeners]) listener() }
 
 async function readJSON<T>(path: string): Promise<{ status: number; value: T | null }> {
   const response = await fetch(client.url(path), { credentials: "same-origin" })
@@ -33,78 +27,34 @@ async function readJSON<T>(path: string): Promise<{ status: number; value: T | n
   return { status: response.status, value: await response.json() as T }
 }
 
-interface WireEvent { seq: number; receipt_id: string; snapshot_id: string; conversation_id: string; definition_id: string; scope_id: string; skill_id: string; skill_version: string; status: SquadReceipt["status"]; at: number }
+function changed(): void { version++; for (const listener of [...listeners]) listener() }
 
-function receiptOf(entry: WireEvent): SquadReceipt {
-  return { seq: entry.seq, receiptId: entry.receipt_id, snapshotId: entry.snapshot_id, conversationId: entry.conversation_id,
-    definitionId: entry.definition_id, scopeId: entry.scope_id, skillId: entry.skill_id, skillVersion: entry.skill_version, status: entry.status, at: entry.at }
-}
+const feed = new SkillFeed(readJSON, changed, (moment) => {
+  for (const listener of [...momentListeners]) { try { listener(moment) } catch (error) { console.error(error) } }
+})
 
-/** Sequences that arrived live in this page's life; a transcript card for one enters, a replayed one does not. */
-const liveSeqs = new Set<number>()
-export function arrivedLive(seq: number): boolean { return liveSeqs.has(seq) }
-
-function start(): void {
-  const mine = ++generation
-  ledger = new SkillLedger()
-  let live = true
-  let delay = POLL_MS
-  const later = (ms: number) => { if (mine === generation) timer = setTimeout(poll, ms) }
-  async function poll(): Promise<void> {
-    try {
-      if (!ledger.baselined) {
-        const head = await readJSON<{ seq: number }>("/v1/squad/events/head")
-        if (mine !== generation) return
-        // An older machine has no squad events: nothing to show, nothing to poll.
-        if (!head.value) { if (head.status === 404 || head.status === 501) return; throw new Error("head") }
-        ledger.baseline(head.value.seq)
-      }
-      const page = await readJSON<{ events: WireEvent[]; next_after: number; has_more: boolean }>(
-        "/v1/squad/events?after=" + ledger.after + "&limit=50")
-      if (mine !== generation) return
-      if (!page.value) throw new Error("events")
-      let moved = false
-      for (const entry of page.value.events) {
-        const moment = ledger.take(receiptOf(entry), live)
-        moved = true
-        if (moment) { liveSeqs.add(moment.receipt.seq); for (const listener of [...momentListeners]) { try { listener(moment) } catch (error) { console.error(error) } } }
-      }
-      ledger.advance(page.value.next_after)
-      if (moved) changed()
-      // Every page of a catch-up after a failure stays quiet, the last one too.
-      if (!page.value.has_more) live = true
-      delay = POLL_MS
-      later(page.value.has_more ? 0 : delay)
-    } catch {
-      if (mine !== generation) return
-      live = false
-      delay = Math.min(delay * 2, MAX_BACKOFF_MS)
-      later(delay)
-    }
-  }
-  void poll()
-}
-
-function stop(): void {
-  generation++
-  if (timer) clearTimeout(timer)
-  timer = null
-}
+/** Whether a sequence arrived live in this page's life; a transcript card for one enters, a replayed one does not. */
+export function arrivedLive(seq: number): boolean { return feed.liveSeqs.has(seq) }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
-  if (users++ === 0) start()
+  if (users++ === 0) feed.start()
   return () => {
     listeners.delete(listener)
-    if (--users === 0) stop()
+    if (--users === 0) feed.stop()
   }
 }
 
-/** The shared ledger, re-rendering when a receipt arrives; `null` keeps the feed closed. */
+/**
+ * The shared ledger, re-rendering when a receipt arrives, with `conversation`
+ * counted as on screen while mounted; `null` keeps the feed closed.
+ */
 const closed = () => () => {}
-export function useSkillLedger(enabled: boolean): SkillLedger | null {
+export function useSkillLedger(conversation: string | null | undefined): SkillLedger | null {
+  const enabled = !!conversation
   useSyncExternalStore(enabled ? subscribe : closed, () => version)
-  return enabled ? ledger : null
+  useEffect(() => conversation ? feed.show(conversation) : undefined, [conversation])
+  return enabled ? feed.ledger : null
 }
 
 /** Calls `listener` for each live moment while mounted. */
