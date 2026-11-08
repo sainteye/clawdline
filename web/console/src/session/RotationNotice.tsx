@@ -5,6 +5,7 @@ import { deliverUntilSeen, pendingSends } from "./send.js"
 import { rotationReason } from "./rotation.js"
 import { interventionTarget, sameInterventionTarget } from "./intervention-composer.js"
 import { ActionSpinner } from "../ui/ActionProgress.js"
+import { assistantProtocolOwned } from "./antigravity-ui.js"
 import { SessionFacts } from "../overlays/facts.js"
 
 /** An optional card in the existing attention panel, never a footer surface. */
@@ -38,7 +39,10 @@ export function useRotationNote(row: SessionRow | null, onReplySent?: () => void
   if (!row || !reason) return null
   const previous = pendingSends.all().find(card => card.session === row.id && card.conversation === row.sessionId && card.text === message)
   const asked = !!previous || (!!key && requested === key)
-  const idle = row.state === "idle"
+  // Claude Code and Codex take input mid-turn in a terminal, exactly as the
+  // composer sends it. Only a protocol-owned conversation, whose composer may
+  // hold input in the browser until the turn ends, waits for idle here.
+  const idle = row.state === "idle" || !assistantProtocolOwned(row)
   const request = async () => {
     if (sending.current || asked || !idle || !target || !sameInterventionTarget(target, latest.current)) return
     sending.current = true

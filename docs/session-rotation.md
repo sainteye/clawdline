@@ -27,7 +27,10 @@ conversation, including after reload. It is a local browser preference, not a
 cross-device Note resolution. A new conversation has its own suggestion. If
 browser storage is unavailable, dismissal still hides it in the current view.
 
-**Prepare handoff** is available while idle. It sends a conversation-bound request
+**Prepare handoff** is available while the Session is working, as the composer
+is: Claude Code and Codex take terminal input mid-turn. Only a protocol-owned
+conversation, whose composer may hold input in the browser until the turn ends,
+waits for idle. It sends a conversation-bound request
 through the existing send receipt and pending-message controls. A recorded or
 accepted request is not proof that a receiver exists or has read the package.
 Failed or uncertain sends retain the normal retry/read-back controls; the notice

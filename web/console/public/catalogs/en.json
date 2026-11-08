@@ -10280,7 +10280,7 @@
   "transparency.card.runtime.how": "Command arguments or environment variables. Permission defaults depend on the launch entry point. Parent launch capabilities are cleared before this launch’s private values are set.",
   "transparency.card.runtime.summary": "Model, reasoning effort and permission mode affect execution but are not instruction text. Reasoning defaults use each provider’s own validated setting; resumes do not reread that default.",
   "transparency.card.runtime.title": "Launch parameters, not instructions",
-  "transparency.card.session-rotation.condition": "The reminder is visible and the person presses Prepare handoff while idle",
+  "transparency.card.session-rotation.condition": "The reminder is visible and the person presses Prepare handoff, including while the Session is working",
   "transparency.card.session-rotation.effect": "The assistant preserves decisions, work ownership, evidence and next step. Existing handoff receipts and Board transfer remain authoritative; the old Session stays open for safety inspection and manual close.",
   "transparency.card.session-rotation.how": "Sends a localized user message to the exact conversation, asking its assistant to read the landing guide and prepare a milestone summary.",
   "transparency.card.session-rotation.summary": "A Note in the existing attention panel suggests a fresh Session at 50 MiB or after 24 delivered idle hours. Prepare handoff sends the request; Dismiss hides it in this browser. No background launch, forced close or provider-file cleanup.",

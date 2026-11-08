@@ -3999,7 +3999,8 @@ test("ACP lifecycle evidence renders in English and Traditional Chinese on phone
 
 
 test("rotation reminder uses attention notes, dismisses without sending and hands off on one press", async () => {
-  rotationScenario = { bytes: 64*1024*1024, state: "idle", sent: [], stage: 0 }
+  // A working source still accepts the request, as its composer would.
+  rotationScenario = { bytes: 64*1024*1024, state: "working", sent: [], stage: 0 }
   try {
     await inTab(DESK, async tab => {
       await tab.go("/" + FRAGMENT[TMUX])

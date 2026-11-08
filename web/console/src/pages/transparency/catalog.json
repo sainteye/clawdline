@@ -3079,7 +3079,7 @@
       "sources": [
         {
           "path": "web/console/src/session/RotationNotice.tsx",
-          "line": 11
+          "line": 12
         },
         {
           "path": "web/console/src/session/rotation.ts",
@@ -3222,7 +3222,7 @@
     "web/console/src/next-strings.ts": "66a07be98f891026d5c5ea47b1af221410dfb7f5ae76e2dad6b0c3d89ffd1c6a",
     "web/console/src/overlays/info.ts": "87c9601250420efc16e8defeba2297eb769794666ccd946604372b19a1cb3a20",
     "web/console/src/session/Composer.tsx": "aa9ee0430cb616ebda2e6c7673408be294ae1aa148cbab063758542153b8a513",
-    "web/console/src/session/RotationNotice.tsx": "ab1475b8c2a32784a6f9ee13d3615047e18cb7052c15d3f9f5c692e9500d065b",
+    "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "b2b576e077cb9de4fa43fe8bd54a0f9295cfa5bdf964a6937440bc3d6f60ab0a",
     "web/console/src/session/pending.ts": "764578f38ef7e6f697934b77c20b69a5862630544d98827be497b0f839f3d798",
     "web/console/src/session/persist.ts": "1885793298d4b4d833dd42c312f6f15f88c258f7a65cc4d4d3c0bcc25f65c961",
@@ -3231,7 +3231,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "ce3a12afb7fce00ee000b81a28d7875a471e2dd9b865776ef2aa0443b8f08355",
-    "zh-Hant": "e12e9364ba36025d48397eb2350211ae35cee1b46e7256e05e3c88e0fd5f0bf8"
+    "en": "e63096b649c7f95e2b479397242729f4a07a54027ea9a106964843ef08bdcca4",
+    "zh-Hant": "5606b76f378aac5eab924458aa86ddf5541e3a8721ae262d0eaeda85438ede72"
   }
 }

@@ -10280,7 +10280,7 @@
   "transparency.card.runtime.how": "啟動參數或環境變數；權限預設依啟動入口而異。先清除父程序繼承的啟動憑證，再設定本次啟動的私有值。",
   "transparency.card.runtime.summary": "模型、推理強度與權限模式會影響執行，但不是指示文字。推理預設值依供應商分別驗證；續接時不重新讀取該預設值。",
   "transparency.card.runtime.title": "啟動參數（不是指示文字）",
-  "transparency.card.session-rotation.condition": "提醒出現且 Session 閒置時，使用者點選「準備換手」",
+  "transparency.card.session-rotation.condition": "提醒出現時，使用者點選「準備換手」；Session 工作中也可送出",
   "transparency.card.session-rotation.effect": "助理保留決策、工作歸屬、證據與下一步。接手收據與看板移交沿用既有機制；舊 Session 保持開啟，通過安全檢查後由使用者關閉。",
   "transparency.card.session-rotation.how": "向確切對話送出依介面語言撰寫的訊息，請原助理讀取換手指引並整理里程碑摘要。",
   "transparency.card.session-rotation.summary": "對話檔達 50 MiB，或已交付且閒置滿 24 小時時，在既有關注區顯示便條。「準備換手」才送出請求；「略過」會在此瀏覽器隱藏便條。不會在背景啟動、強制關閉或清理供應商對話檔。",
