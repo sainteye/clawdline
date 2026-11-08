@@ -490,6 +490,8 @@ const (
 	SquadRecoveryRows            = "squad.recovery_page_rows"
 	SquadEventIDBytes            = "squad.event_id_bytes"
 	SquadEventPageRows           = "squad.event_page_rows"
+	SquadEventConversations      = "squad.event_conversations"
+	SquadEventConversationsBytes = "squad.event_conversations_bytes"
 	SquadEventBodyBytes          = "squad.event_body_bytes"
 	// How the console's transcript pane reads (web/console/src/session/
 	// transcript-follow.ts) and how the Cloud seam answers it

@@ -7,12 +7,19 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
 const (
 	MaxSquadEventIDBytes  = 128
 	MaxSquadEventPageRows = 100
+	// MaxSquadEventConversations is how many conversations one filtered
+	// event read may name: the open Session and the list rows on screen.
+	MaxSquadEventConversations = 50
+	// MaxSquadEventConversationsBytes is the comma-joined form of that
+	// many IDs at their longest, which the relay copies as its byte bound.
+	MaxSquadEventConversationsBytes = MaxSquadEventConversations*(MaxSquadEventIDBytes+1) - 1
 )
 
 var (
@@ -189,12 +196,44 @@ func (s *Store) SquadEventHead(ctx context.Context) (int64, error) {
 
 // SquadEventsAfter reads receipts after an exclusive sequence cursor.
 func (s *Store) SquadEventsAfter(ctx context.Context, after int64, pageRows int) ([]SquadSkillReceipt, bool, error) {
-	if after < 0 || pageRows < 1 || pageRows > MaxSquadEventPageRows {
+	return s.SquadEventsAfterFor(ctx, nil, after, pageRows)
+}
+
+// SquadEventsAfterFor reads receipts after an exclusive sequence cursor,
+// only of the named conversations when any are named. Each conversation is
+// read along the (conversation_id, seq) index, so the cost follows those
+// conversations' receipts, not the length of the whole log.
+func (s *Store) SquadEventsAfterFor(ctx context.Context, conversations []string, after int64, pageRows int) ([]SquadSkillReceipt, bool, error) {
+	if after < 0 || pageRows < 1 || pageRows > MaxSquadEventPageRows || len(conversations) > MaxSquadEventConversations {
 		return nil, false, ErrSquadEventInvalid
 	}
-	rows, err := s.rd.QueryContext(ctx, `SELECT seq,receipt_id,snapshot_id,conversation_id,definition_id,scope_id,
+	query := `SELECT seq,receipt_id,snapshot_id,conversation_id,definition_id,scope_id,
 		skill_id,skill_version,status,failure_code,at FROM squad_skill_events
-		WHERE seq>? ORDER BY seq LIMIT ?`, after, pageRows+1)
+		WHERE seq>? ORDER BY seq LIMIT ?`
+	args := []any{after, pageRows + 1}
+	if len(conversations) > 0 {
+		// One indexed range per conversation, merged by sequence: an
+		// IN list over the whole table would let the planner scan by seq.
+		parts := make([]string, 0, len(conversations))
+		args = args[:0]
+		named := make(map[string]bool, len(conversations))
+		for _, conversation := range conversations {
+			if conversation == "" || len(conversation) > MaxSquadEventIDBytes {
+				return nil, false, ErrSquadEventInvalid
+			}
+			if named[conversation] {
+				continue
+			}
+			named[conversation] = true
+			parts = append(parts, `SELECT * FROM (SELECT seq,receipt_id,snapshot_id,conversation_id,definition_id,scope_id,
+		skill_id,skill_version,status,failure_code,at FROM squad_skill_events INDEXED BY squad_skill_events_conversation_seq
+		WHERE conversation_id=? AND seq>? ORDER BY seq LIMIT ?)`)
+			args = append(args, conversation, after, pageRows+1)
+		}
+		query = strings.Join(parts, " UNION ALL ") + ` ORDER BY seq LIMIT ?`
+		args = append(args, pageRows+1)
+	}
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, false, classify(err)
 	}

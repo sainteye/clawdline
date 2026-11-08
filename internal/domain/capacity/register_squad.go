@@ -83,6 +83,23 @@ func squadBounds() []Entry {
 			Sources:   []string{"internal/adapters/store.MaxSquadEventPageRows"},
 		},
 		{
+			// One filtered skill-event read names the conversations on
+			// screen; more are read in another request, never dropped.
+			Name: SquadEventConversations, Class: Buffer, Unit: Rows,
+			Limit: 50, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.MaxSquadEventConversations"},
+		},
+		{
+			// The same list joined by commas, as the relay bounds it.
+			Name: SquadEventConversationsBytes, Class: Buffer, Unit: Bytes,
+			Limit: 50*(128+1) - 1, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.MaxSquadEventConversationsBytes"},
+		},
+		{
 			// One explicitly requested Board-role classification reads the
 			// closed catalog and as much of the item's title and description as
 			// fits beside it. The rest of a long description is not sent.
