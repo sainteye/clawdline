@@ -55,7 +55,7 @@ class Clock implements FeedClock {
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
 
 const snapshotOf = (conversation: string): SessionSkillSnapshot => ({ snapshotId: "snap." + conversation, conversationId: conversation,
-  definitionId: "persona.a", scopeId: "repo.a", skills: [{ id: "skill.review", version: "v1", name: "Review" }] })
+  definitionId: "persona.a", scopeId: "repo.a", skills: [{ id: "skill.review", version: "v1", name: "Review", when: "" }] })
 
 /** About a thousand receipts over forty Sessions, as on a machine that has run roles for a while. */
 function busyMachine(filters = true): Machine {

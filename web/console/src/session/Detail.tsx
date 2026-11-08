@@ -398,7 +398,7 @@ export function Detail({
           />
         </div>
       </div>}
-      {skillToggle && <SkillStrip skills={skills} />}
+      {skillToggle && <SkillStrip skills={skills} role={role?.name ?? ""} />}
 
       <div className="session-output-layout" data-open={outputsOpen ? "true" : undefined}>
       <div className="session-conversation">

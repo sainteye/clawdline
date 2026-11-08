@@ -14,7 +14,7 @@ import { client } from "../client.js"
 import { builtinDisplay } from "../builtin-display.js"
 import type { WireNames } from "../pages/squad/wire.js"
 import { SkillFeed } from "./skill-feed-core.js"
-import type { SessionSkillSnapshot, SkillLedger, SkillMoment } from "./skill-use.js"
+import { skillWhen, type SessionSkillSnapshot, type SkillLedger, type SkillMoment } from "./skill-use.js"
 
 let version = 0
 const listeners = new Set<() => void>()
@@ -70,7 +70,7 @@ export function useSkillMoments(enabled: boolean, listener: (moment: SkillMoment
 
 interface WireSnapshot {
   snapshot_id: string
-  snapshot: { definition_id: string; scope_id: string; skills?: { id: string; version: string; enabled: boolean; name: WireNames; purpose: WireNames; icon?: Icon }[] }
+  snapshot: { definition_id: string; scope_id: string; skills?: { id: string; version: string; enabled: boolean; name: WireNames; purpose: WireNames; content?: string; icon?: Icon }[] }
 }
 
 type SnapshotReading = { kind: "loading" } | { kind: "ready"; value: SessionSkillSnapshot } | { kind: "none" }
@@ -92,10 +92,10 @@ function readSnapshot(conversation: string): void {
       snapshotChanged()
       return
     }
-    const skills = (body.snapshot.skills ?? []).filter((skill) => skill.enabled).map((skill) => ({
-      id: skill.id, version: skill.version, icon: skill.icon,
-      name: builtinDisplay("skill", skill.id, skill.name ?? { en: skill.id, "zh-Hant": skill.id }, skill.purpose ?? { en: "", "zh-Hant": "" }).name,
-    }))
+    const skills = (body.snapshot.skills ?? []).filter((skill) => skill.enabled).map((skill) => {
+      const shown = builtinDisplay("skill", skill.id, skill.name ?? { en: skill.id, "zh-Hant": skill.id }, skill.purpose ?? { en: "", "zh-Hant": "" })
+      return { id: skill.id, version: skill.version, icon: skill.icon, name: shown.name, when: skillWhen(skill.content) || shown.detail }
+    })
     snapshots.set(conversation, { kind: "ready", value: { snapshotId: body.snapshot_id, conversationId: conversation,
       definitionId: body.snapshot.definition_id, scopeId: body.snapshot.scope_id, skills } })
     snapshotChanged()

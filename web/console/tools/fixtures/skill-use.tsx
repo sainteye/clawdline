@@ -53,10 +53,12 @@ const bot = { accent: "#d97757", cells: pixels(["..oooo..", ".oooooo.", ".o.oo.o
 const icon = (color: string, rows: string[]) => ({ accent: color, cells: pixels(rows, { x: color, w: "#f3efe8" }) })
 const skills = [
   { id: "clawdline.skill.code-review", version: "1", enabled: true, name: { en: "Code review", "zh-Hant": "程式碼審查" }, purpose: { en: "Review", "zh-Hant": "審查" },
+    content: "# Code review\n\nUse this skill when a change is ready for review and touches more than one file, e.g. a rename. Then read the diff.",
     icon: icon("#5fa8d3", ["xxxxxx", "xwwwwx", "xwxxwx", "xwwwwx", "xxxxxx"]) },
   { id: "community.skill.test-plan", version: "2", enabled: true, name: { en: "Test plan", "zh-Hant": "測試計畫" }, purpose: { en: "Plan", "zh-Hant": "計畫" },
+    content: "---\nname: test-plan\ndescription: \"Use when a release needs a list of what to test first.\"\n---\n# Test plan\n\nSteps.",
     icon: icon("#7bc47f", ["x....x", "xx..xx", "x.xx.x", "x....x", "xxxxxx"]) },
-  { id: "community.skill.release-notes", version: "1", enabled: true, name: { en: "Release notes", "zh-Hant": "版本說明" }, purpose: { en: "Notes", "zh-Hant": "說明" },
+  { id: "community.skill.release-notes", version: "1", enabled: true, name: { en: "Release notes", "zh-Hant": "版本說明" }, purpose: { en: "Write the notes a release ships with", "zh-Hant": "寫出版本附帶的說明" },
     icon: icon("#e0b45c", ["xxxxx.", "x...xx", "xxxx.x", "x....x", "xxxxxx"]) },
 ]
 const events: { seq: number; receipt_id: string; snapshot_id: string; conversation_id: string; definition_id: string; scope_id: string; skill_id: string; skill_version: string; status: string; at: number }[] = []
