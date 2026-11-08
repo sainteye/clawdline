@@ -41,6 +41,18 @@ directory handles, with symlink changes rejected. Symlinks and nonregular entrie
 the tree but cannot be followed or previewed. The directory read stops after 1,024 entries and
 says it is truncated; text above 128 KiB or containing NUL or invalid UTF-8 is refused by name.
 
+A file named like a credential is listed with `sensitive: true` and its content is refused with
+`403 sensitive_file`, for every viewer, including this machine's own console. The rule is in
+`projectfiles.Sensitive`: `.env` and `.env.*` (except `.example`, `.sample`, `.template`,
+`.dist`), `.envrc`, `.npmrc`, `.netrc`, `.pypirc`, `.git-credentials`, `credentials(.json)`,
+`secrets.*`, SSH private keys, Terraform state, key and certificate-store extensions (`.pem`,
+`.key`, `.p8`, `.p12`, `.pfx`, `.jks`, `.keystore`, `.ppk`, `.kdbx`, `.tfvars`), and anything
+under `.ssh`, `.gnupg` or `.aws`. The reason is the read-only device: it cannot open a terminal,
+so the preview was its only way to a credential it was never given. Ops documents read files
+through the same reader and show the same refusal. The match is by name only; a secret in an
+ordinarily named file is still previewed, and the Session transcript is not masked — a credential
+for a tool goes through Secret Handoff (`docs/secret-handoff.md`).
+
 The paired Cloud console carries separate `project-tree-list` and `project-tree-read` words. Both
 are reads on the Project's owning machine. Selecting a file sends its text in the encrypted relay answer;
 folder expansion sends only that folder's immediate names and metadata. No tree write word exists.

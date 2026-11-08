@@ -9339,6 +9339,8 @@
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",
+  "projectTree.sensitiveDetail": "This file is named like a credential, so its content is not previewed. Open it on the machine.",
+  "projectTree.sensitiveLabel": "Credential",
   "projectUnify.applicability": "Workspace file applicability before and after Unify. This does not confirm active Session context or skill execution. Antigravity-only files remain separate and read-only.",
   "projectUnify.applicableTo": "Applicable files for {arg0}",
   "projectUnify.close": "Close",

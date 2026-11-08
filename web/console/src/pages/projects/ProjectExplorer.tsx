@@ -14,6 +14,7 @@ function failure(reason: unknown): string {
       case "not_text": return catalogWord("literal", "ef78406e2d2a")
       case "file_too_large": return catalogWord("literal", "3d56bf3cb7fb")
       case "unsafe_file": return catalogWord("literal", "fffb2491d13a")
+      case "sensitive_file": return catalogWord("projectTree", "sensitiveDetail")
       case "file_permission": case "forbidden": return catalogWord("literal", "2233fee94e8e")
       case "file_not_found": return catalogWord("literal", "d244c8aec386")
       case "project_not_found": return catalogWord("literal", "e04c8f261fd5")
@@ -43,7 +44,9 @@ function DirectoryRows({ listing, listings, loading, errors, selected, open, cho
           {errors[entry.path] && <p role="alert">{errors[entry.path]} <button type="button" onClick={() => retry(entry.path)}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
           {listings[entry.path] && <DirectoryRows listing={listings[entry.path]} listings={listings} loading={loading} errors={errors} selected={selected} open={open} choose={choose} retry={retry} />}
         </div>
-      </details> : entry.kind === "file" ? <button type="button" className="project-explorer-file" aria-current={selected === entry.path ? "true" : undefined} onClick={() => choose(entry)}>
+      </details> : entry.kind === "file" && entry.sensitive ? <span className="project-explorer-unavailable" title={catalogWord("projectTree", "sensitiveDetail")}>
+        <ProjectTreeIcon kind="file" /><span>{entry.name}</span><small>{catalogWord("projectTree", "sensitiveLabel")}</small>
+      </span> : entry.kind === "file" ? <button type="button" className="project-explorer-file" aria-current={selected === entry.path ? "true" : undefined} onClick={() => choose(entry)}>
         <ProjectTreeIcon kind="file" /><span>{entry.name}</span>
       </button> : <span className="project-explorer-unavailable" title={entry.kind === "link" ? catalogWord("literal", "fafba231d972") : catalogWord("literal", "bdff2374d8c9")}>
         <ProjectTreeIcon kind={entry.kind} /><span>{entry.name}</span><small>{entry.kind === "link" ? catalogWord("literal", "eacc3c13a4ba") : catalogWord("literal", "0bdbbebb7c1e")}</small>

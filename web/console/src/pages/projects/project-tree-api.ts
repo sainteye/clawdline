@@ -7,6 +7,8 @@ export interface TreeEntry {
   path: string
   kind: "directory" | "file" | "link" | "other"
   size?: number
+  /** The machine refuses this file's content because its name holds a credential. */
+  sensitive?: boolean
 }
 
 export interface TreeListing { directory: string; entries: TreeEntry[]; truncated: boolean }

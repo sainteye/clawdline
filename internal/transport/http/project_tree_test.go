@@ -74,6 +74,13 @@ func TestProjectTreeRouteListsAndReadsOnlyWithinChosenProject(t *testing.T) {
 			t.Errorf("bad path %q: %d %s", target, out.Code, out.Body.String())
 		}
 	}
+	if err := os.WriteFile(filepath.Join(project.Path, ".env"), []byte("API_KEY=sk-fake\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out := request("GET", base+"/file?path=.env", local); out.Code != 403 ||
+		!strings.Contains(out.Body.String(), "sensitive_file") || strings.Contains(out.Body.String(), "sk-fake") {
+		t.Fatalf("credential file: %d %s", out.Code, out.Body.String())
+	}
 	if out := request("PUT", base+"/file?path=src%2Fpage.ts", local); out.Code != 405 {
 		t.Fatalf("read-only route: %d %s", out.Code, out.Body.String())
 	}
