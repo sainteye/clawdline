@@ -28,6 +28,8 @@ export interface SessionSkillSnapshot {
   definitionId: string
   scopeId: string
   skills: SnapshotSkill[]
+  /** The machine it was read from, for a row of the all-machines list; null or absent is this page's machine. */
+  machine?: string | null
 }
 
 /** What one Skill did in one Session, as far as its receipts say. */

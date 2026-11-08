@@ -57,8 +57,8 @@ export interface SessionSkills {
 export function useSessionSkills(row: Pick<SessionRow, "persona" | "sessionId"> | null | undefined, read = true): SessionSkills {
   const conversation = read && row?.persona ? row.sessionId : undefined
   const snapshot = useSessionSnapshot(conversation)
-  const ledger = useSkillLedger(snapshot?.skills.length ? snapshot.conversationId : null)
-  const motion = useSkillMotion(snapshot?.scopeId)
+  const ledger = useSkillLedger(snapshot?.skills.length ? snapshot.conversationId : null, snapshot?.machine ?? null)
+  const motion = useSkillMotion(snapshot?.scopeId, snapshot?.machine ?? null)
   const uses = ledger ? ledger.usesFor(snapshot) : new Map<string, SkillUse>()
   return { snapshot, uses, motion }
 }
@@ -70,7 +70,7 @@ function usePlaying(snapshot: SessionSkillSnapshot | null, hold?: number): Skill
   useEffect(() => () => queue.stop(), [queue])
   useEffect(() => { queue.stop(); setPlaying(null) }, [queue, snapshot?.conversationId, snapshot?.snapshotId])
   const listener = useCallback((moment: SkillMoment) => { if (receiptBelongs(moment.receipt, snapshot)) queue.push(moment) }, [queue, snapshot])
-  useSkillMoments(!!snapshot?.skills.length, listener)
+  useSkillMoments(!!snapshot?.skills.length, listener, snapshot?.machine ?? null)
   return playing
 }
 
@@ -88,7 +88,7 @@ function useSaid(snapshot: SessionSkillSnapshot | null): SkillSaid | null {
   useEffect(() => () => line.stop(), [line])
   useEffect(() => { line.stop(); setSaid(null) }, [line, snapshot?.conversationId, snapshot?.snapshotId])
   const listener = useCallback((moment: SkillMoment) => { if (receiptBelongs(moment.receipt, snapshot)) line.push(moment) }, [line, snapshot])
-  useSkillMoments(!!snapshot?.skills.length, listener)
+  useSkillMoments(!!snapshot?.skills.length, listener, snapshot?.machine ?? null)
   return said
 }
 
@@ -305,10 +305,11 @@ export function transcriptSkillCards(skills: SessionSkills, finished: boolean): 
  * move, the used Skills as still chips. Its canvases are painted by
  * `paintRowSkills`.
  */
-export function useRowSkills(row: Pick<SessionRow, "persona" | "sessionId">): { html: string; icons: (Icon | undefined)[] } {
-  const snapshot = useSessionSnapshot(row.persona ? row.sessionId : undefined)
-  const ledger = useSkillLedger(snapshot?.skills.length ? snapshot.conversationId : null)
-  const motion = useSkillMotion(snapshot?.scopeId)
+export function useRowSkills(row: Pick<SessionRow, "persona" | "sessionId">, machine: string | null = null): { html: string; icons: (Icon | undefined)[] } {
+  // Read with the other rows on screen, from the row's own machine (skill-feed.ts).
+  const snapshot = useSessionSnapshot(row.persona ? row.sessionId : undefined, machine, false)
+  const ledger = useSkillLedger(snapshot?.skills.length ? snapshot.conversationId : null, machine)
+  const motion = useSkillMotion(snapshot?.scopeId, machine)
   const playing = usePlaying(snapshot, 1600)
   {
     if (!snapshot?.skills.length || !ledger) return { html: "", icons: [] }
