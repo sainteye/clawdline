@@ -229,7 +229,7 @@ A role can carry several default skills (since 2026-11-08; `builtinRoleSkills` i
 skill). The section lists them in that order, after any change a global or Project override
 makes. The role skill section lists only skills that can apply to the task. A dispatched child passes its
 declared writes; a built-in skill whose "use this skill when" names a kind of code (Go concurrency,
-front-end components and design, `squad.SkillAppliesToWrites`) is left out of the prompt when every
+front-end components, design, layout, typography, motion and accessibility, `squad.SkillAppliesToWrites`) is left out of the prompt when every
 declared write is a file of another kind. It is still written into the launch and stays in the
 snapshot, so a receipt for it remains valid. Unknown is not "no": an interactive Session, a handoff,
 a task without declared writes, or a write that is a directory or a pattern lists every skill. With

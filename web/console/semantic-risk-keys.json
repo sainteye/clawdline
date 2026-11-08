@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10808,
+  "englishKeys": 10828,
   "counts": {
-    "negation": 3010,
+    "negation": 3011,
     "state": 1780,
     "permission": 632,
-    "deletion": 241,
+    "deletion": 242,
     "uncertainty": 410
   },
-  "unionCount": 4764,
+  "unionCount": 4766,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -120,6 +120,7 @@
       "builtinPersona.sprint-prioritizer.summary",
       "builtinPersona.support.summary",
       "builtinSkill.humanize-prose.purpose",
+      "builtinSkill.interface-design.purpose",
       "capacityRow.antigravity.acp_call_seconds.what",
       "capacityRow.antigravity.acp_frame_bytes.full",
       "capacityRow.antigravity.acp_trace_connections.full",
@@ -5440,6 +5441,7 @@
     ],
     "deletion": [
       "browserPairing.mismatch",
+      "builtinSkill.mobile-native.purpose",
       "builtinSkill.ponytail-review.purpose",
       "capacityRow.antigravity.acp_trace_bytes.full",
       "capacityRow.antigravity.acp_trace_records.full",
@@ -6284,7 +6286,9 @@
     "builtinSkill.documentation-writer.purpose",
     "builtinSkill.exploit-path-review.purpose",
     "builtinSkill.humanize-prose.purpose",
+    "builtinSkill.interface-design.purpose",
     "builtinSkill.map-versus-territory.purpose",
+    "builtinSkill.mobile-native.purpose",
     "builtinSkill.ponytail-review.purpose",
     "builtinSkill.tests-that-catch-breaks.purpose",
     "builtinSkill.write-spec.name",

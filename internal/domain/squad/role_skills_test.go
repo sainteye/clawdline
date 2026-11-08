@@ -17,6 +17,18 @@ var beforeSeveralSkills = map[string]string{
 	"devrel":           "sha256:cbb258bf9bec1995cca1d64b55b84357783ed695afebcc16708515d5cf7a43a6",
 }
 
+// The released definitions of the design and frontend roles before their
+// reviewed upstream Skills were added, read from the catalog at 16cfd8960.
+// The last three had no default Skill.
+var beforeDesignSkills = map[string]string{
+	"ui-designer":    "sha256:d2fc6d2f7c0d1fbb624ebe8dfe6ffa216c7d2924714b2881ab82f53daef09978",
+	"frontend":       "sha256:abc387bcedf75bb5f69fea7ff8d3986b2e54ae12b0d93276feb01ebe178dd222",
+	"accessibility":  "sha256:96b116bb7dfc86849237c409c7a646dede4e4ff96dae2a2b756a763fe12dfbc1",
+	"ui-finish-gate": "sha256:261df8b77b77a681d3e94276b52bf4e8a161e98ef82aa5e5b76b6227df3259da",
+	"ux-architect":   "sha256:53289efeaa46b781d3f4de7396af0bf6453f1fe2339c39140b99101d72aebe13",
+	"brand-guardian": "sha256:99813f20f764303228d1113064c8be3be9e0fdc1cc081d787f079a71feb90be5",
+}
+
 // Released Skill versions a Project override or a Session snapshot may pin.
 // A role-mapping change must not move them.
 var releasedSkillVersions = map[string]string{
@@ -25,6 +37,9 @@ var releasedSkillVersions = map[string]string{
 	"clawdline.skill.two-axis-code-review":       "sha256:1221272ac73f36a5323171093d7c8534cfebe90c82a93a0c8721ef5b41bb398d",
 	"clawdline.skill.smallest-sufficient-change": "sha256:b0a174e89e9c2dad7e3d5e9f00f8425177caa5f5fc09cff3aca4ec121ab22bd3",
 	"clawdline.skill.golang-concurrency":         "sha256:b34e8fa6b1c083c12688d73801e17bc544ea909128cdd8b19de63ce3e63a248f",
+	"clawdline.skill.frontend-design":            "sha256:79bcf617093ac4bfbcd1462ebccd8a0cf143789edcecca3a2f9c440f8e93ed38",
+	"clawdline.skill.frontend-component-build":   "sha256:951e6cf0254f5aa7731d299911993fc0120751523314f45628e562ed3cc730f9",
+	"clawdline.skill.accessibility-audit":        "sha256:13d1d0b4c68759abbe066b0f7f2229f6821f1a59025daf55d28ce50a51340192",
 }
 
 func TestBuiltinRolesCarrySeveralDefaultSkills(t *testing.T) {
@@ -41,6 +56,14 @@ func TestBuiltinRolesCarrySeveralDefaultSkills(t *testing.T) {
 		"email":            {"clawdline.skill.humanize-prose"},
 		"pr":               {"clawdline.skill.humanize-prose"},
 		"devrel":           {"clawdline.skill.humanize-prose"},
+		"ui-designer": {"clawdline.skill.frontend-design", "clawdline.skill.interface-design",
+			"clawdline.skill.visual-hierarchy-audit", "clawdline.skill.better-typography"},
+		"ui-finish-gate": {"clawdline.skill.better-interface", "clawdline.skill.motion-review",
+			"clawdline.skill.better-layout", "clawdline.skill.web-interface-review"},
+		"ux-architect":   {"clawdline.skill.better-layout"},
+		"frontend":       {"clawdline.skill.frontend-component-build", "clawdline.skill.better-accessibility", "clawdline.skill.mobile-native"},
+		"accessibility":  {"clawdline.skill.accessibility-audit", "clawdline.skill.better-accessibility"},
+		"brand-guardian": {"clawdline.skill.extract-design-md"},
 	}
 	for role, ids := range want {
 		got := defs[role].Skills
@@ -95,7 +118,14 @@ func TestDefinitionsReleasedBeforeSeveralSkillsStillResolve(t *testing.T) {
 	for _, d := range Builtins().Definitions {
 		defs[d.ShortID] = d
 	}
+	released := map[string]string{}
 	for role, version := range beforeSeveralSkills {
+		released[role] = version
+	}
+	for role, version := range beforeDesignSkills {
+		released[role] = version
+	}
+	for role, version := range released {
 		t.Run(role, func(t *testing.T) {
 			current := defs[role]
 			if current.Version == version {

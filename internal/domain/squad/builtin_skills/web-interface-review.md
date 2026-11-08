@@ -1,0 +1,26 @@
+# Web interface rule check
+
+Use this skill when checking web UI source files line by line against a fixed list of interface rules and reporting terse `file:line` findings; not for judging visual direction or reviewing a rendered flow.
+
+Read the named files and check them against the rules below. Items marked *(React)*, *(Next.js)* or *(Tailwind)* apply only when the project uses that stack; write every fix in the project's own idiom. Copy rules follow the project's own style guide and language.
+
+- **Accessibility.** Icon-only buttons and form controls have accessible names. `<button>` for actions, links for navigation, never a clickable `<div>`; custom interactive elements have keyboard handlers. Images have `alt` (empty when decorative); decorative icons are `aria-hidden`. Async updates such as toasts and validation are announced politely. Semantic HTML before ARIA; hierarchical headings and a skip link; anchored headings have a scroll margin. Meaningful media has captions or descriptions, and media controls work by keyboard.
+- **Focus.** Visible focus on every interactive element, via `:focus-visible`; no `outline: none` without a replacement; `:focus-within` for compound controls; sticky chrome never covers the focused element.
+- **Forms.** `autocomplete` and a meaningful `name`; correct `type` and `inputmode`; never block paste; clickable labels sharing one target with checkboxes and radios; spellcheck off for emails, codes and usernames; submit stays enabled until the request starts and shows progress; inline errors with focus on the first one; `autocomplete="off"` on non-authentication fields that would trigger password managers; warn before leaving with unsaved changes.
+- **Animation.** Honour reduced motion; animate `transform` and `opacity` only; never `transition: all`; correct `transform-origin` (for SVG, transform a `<g>` with `transform-box: fill-box`); interruptible; autoplay over 5 seconds has pause or hide controls, and decorative loops stop under reduced motion.
+- **Typography.** `tabular-nums` for number columns and comparisons; balanced or pretty wrapping on headings; non-breaking spaces inside values and shortcuts such as `10 MB`; the ellipsis character in loading states.
+- **Content.** Containers handle long text (truncate, clamp or break words); flex children that truncate need `min-width: 0`; empty strings and arrays render a real empty state; expect short, average and very long user content.
+- **Images.** Explicit `width` and `height`; lazy loading below the fold; high fetch priority for critical images above it.
+- **Performance.** Virtualise or use `content-visibility` for lists over about 50 items; no layout reads during render; batch DOM reads and writes; cheap controlled inputs *(React)*; preconnect asset domains and preload critical fonts with `font-display: swap`; video instead of animated GIF, with a still alternative.
+- **Navigation and state.** The URL reflects filters, tabs, pagination and expanded panels so they can be deep-linked; real links for navigation; destructive actions need confirmation or an undo window.
+- **Touch.** `touch-action: manipulation`; a deliberate tap highlight; `overscroll-behavior: contain` in modals, drawers and sheets; no text selection and `inert` on dragged elements during a drag; gestures have tap and keyboard alternatives; `autoFocus` sparingly, never on mobile.
+- **Layout and theming.** Safe-area insets for full-bleed layouts; fix overflow instead of hiding scrollbars; flex and grid over JavaScript measurement; `color-scheme: dark` on `<html>` for dark themes; `theme-color` matching the page background; explicit colours on native `<select>` for Windows dark mode.
+- **Locale.** `Intl.DateTimeFormat` and `Intl.NumberFormat` instead of hard-coded formats; language from the browser's languages, not IP; `translate="no"` on brand names, code tokens and identifiers.
+- **Hydration** *(React, Next.js)*. A `value` needs `onChange` (or use `defaultValue`); guard date and time rendering against server and client mismatch; `suppressHydrationWarning` only where truly needed.
+- **States and copy.** Buttons and links have hover feedback, and hover, active and focus are more prominent than rest. Active voice, numerals for counts, specific button labels, errors that name the next step.
+
+**Flag on sight:** disabled zoom; paste blocked; `transition: all`; outline removed without replacement; click navigation without a link; clickable `<div>` or `<span>`; images without dimensions; large unvirtualised lists; unlabelled inputs; icon buttons without names; hard-coded date or number formats; unjustified `autoFocus`; animated GIF where video fits; gesture-only actions.
+
+**Output.** Group by file, one terse line per finding as `path:line - issue`, and `✓ pass` for a clean file. Explain only when the fix is not obvious; no preamble.
+
+Adapted from vercel-labs/web-interface-guidelines' `command.md` at commit 434b7f91364665f2f733b310ec54809bf8f37937 (MIT; copyright 2025 Vercel Labs). Its house copy rules (Title Case, curly quotes, `&` for "and") were not adopted, and stack-specific items are marked as conditional. See the pinned source and bundled license in the skill catalog.

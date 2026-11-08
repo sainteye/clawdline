@@ -68,14 +68,14 @@ test("builtin metadata follows all nine active catalogs without changing wire or
 
 test("builtin source guard rejects missing, changed and newly added metadata", () => {
   const root = path.resolve(import.meta.dirname, "../../..")
-  assert.equal(checkBuiltinDisplay(root), 140)
+  assert.equal(checkBuiltinDisplay(root), 160)
   const fixture = mkdtempSync(path.join(tmpdir(), "builtin-display-"))
   try {
     for (const file of ["internal/domain/persona/catalog", "internal/domain/squad/builtin_skills.go", "web/console/src/builtin-display-source.json",
       "web/console/public/catalogs/en.json", "web/console/public/catalogs/zh-Hant.json"]) {
       cpSync(path.join(root, file), path.join(fixture, file), { recursive: true })
     }
-    assert.equal(checkBuiltinDisplay(fixture), 140)
+    assert.equal(checkBuiltinDisplay(fixture), 160)
     const file = path.join(fixture, "internal/domain/persona/catalog/backend.md")
     const original = readFileSync(file, "utf8")
     writeFileSync(file, original.replace("name_en: Backend Engineer", "name_en: Changed role"))
