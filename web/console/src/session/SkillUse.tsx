@@ -5,13 +5,14 @@
  * when the Session's task has finished, and a small icon beside the bot on a
  * list row. Data: skill-feed.ts; rules: skill-use.ts.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from "react"
+import { createPortal } from "react-dom"
 import type { Icon, Persona, SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { PersonaBot } from "./PersonaBot.js"
 import { arrivedLive, useSessionSnapshot, useSkillLedger, useSkillMoments, useSkillMotion } from "./skill-feed.js"
-import { MomentQueue, receiptBelongs, skillSummary, type SessionSkillSnapshot, type SkillMoment, type SkillUse, type SkillUseStatus, type SnapshotSkill } from "./skill-use.js"
+import { MomentQueue, SaidLine, SkillListFocus, receiptBelongs, skillSummary, type SessionSkillSnapshot, type SkillMoment, type SkillUse, type SkillUseStatus, type SnapshotSkill } from "./skill-use.js"
 import "./skill-use.css"
 
 /** One Skill's own pixel icon, drawn once at whole pixels per cell. */
@@ -27,6 +28,20 @@ export function skillUseLine(status: SkillUseStatus, name: string): string {
 
 function statusWord(status: SkillUseStatus | undefined): string {
   return nextWord(status === "read" ? "skillStatusRead" : status === "applied" ? "skillStatusApplied" : status === "failed" ? "skillStatusFailed" : "skillStatusUnused")
+}
+
+/**
+ * The small mark beside a state's words: dots that pulse while a role
+ * consults a Skill (still dots when nothing may move), a green check once
+ * applied, the muted slash for a failed use, a muted dash when unused. Always
+ * hidden from a screen reader; the words beside it are the label.
+ */
+export function SkillStatusMark({ status }: { status: SkillUseStatus | undefined }) {
+  if (status === "read") return <span className="skill-mark skill-mark-read" aria-hidden="true"><i /><i /><i /></span>
+  if (status === "applied") return <svg className="skill-mark skill-mark-applied" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+    <path d="M2.5 6.4 5 8.8 9.6 3.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+  if (status === "failed") return <span className="skill-mark skill-mark-failed" aria-hidden="true"><span className="skill-chip-failed" /></span>
+  return <span className="skill-mark skill-mark-unused" aria-hidden="true" />
 }
 
 export interface SessionSkills {
@@ -62,8 +77,24 @@ function usePlaying(snapshot: SessionSkillSnapshot | null, hold?: number): Skill
 /** Whether a Session's strip is open: opened by its first live receipt, or by the toggle. */
 const stripChoice = new Map<string, boolean>()
 
+/** A live use's words, shown for a few seconds (`SaidLine`). */
+export interface SkillSaid { skillId: string; status: SkillUseStatus; seq: number; leaving: boolean }
+
+/** The live uses this Session's snapshot owns, each said for a few seconds and then not. */
+function useSaid(snapshot: SessionSkillSnapshot | null): SkillSaid | null {
+  const [said, setSaid] = useState<SkillSaid | null>(null)
+  const line = useMemo(() => new SaidLine<SkillMoment>((shown) => setSaid(shown ? { skillId: shown.value.receipt.skillId,
+    status: shown.value.receipt.status, seq: shown.value.receipt.seq, leaving: shown.leaving } : null)), [])
+  useEffect(() => () => line.stop(), [line])
+  useEffect(() => { line.stop(); setSaid(null) }, [line, snapshot?.conversationId, snapshot?.snapshotId])
+  const listener = useCallback((moment: SkillMoment) => { if (receiptBelongs(moment.receipt, snapshot)) line.push(moment) }, [line, snapshot])
+  useSkillMoments(!!snapshot?.skills.length, listener)
+  return said
+}
+
 export interface DetailSkills extends SessionSkills {
   playing: SkillMoment | null
+  said: SkillSaid | null
   open: boolean
   entering: boolean
   toggle: () => void
@@ -73,6 +104,7 @@ export function useDetailSkills(row: SessionRow | null, read: boolean): DetailSk
   const skills = useSessionSkills(row, read)
   const { snapshot, uses } = skills
   const playing = usePlaying(snapshot)
+  const said = useSaid(snapshot)
   const key = snapshot ? snapshot.conversationId : ""
   const [, redraw] = useState(0)
   const [entering, setEntering] = useState(false)
@@ -91,7 +123,7 @@ export function useDetailSkills(row: SessionRow | null, read: boolean): DetailSk
     setEntering(false)
     redraw((n) => n + 1)
   }, [key])
-  return { ...skills, playing, open: !!key && !!stripChoice.get(key), entering: entering && skills.motion, toggle }
+  return { ...skills, playing, said, open: !!key && !!stripChoice.get(key), entering: entering && skills.motion, toggle }
 }
 
 /** The header's role bot, as the strip's toggle; it hops once on `applied`. */
@@ -108,33 +140,115 @@ export function SkillBotToggle({ persona, name, skills }: { persona: Persona; na
   )
 }
 
-/** The strip of this Session's Skills: used ones lit, unused dimmed, the latest use said in words. */
-export function SkillStrip({ skills }: { skills: DetailSkills }) {
-  const { snapshot, uses, playing, motion } = skills
+/**
+ * The strip of this Session's Skills: used ones lit, unused dimmed. Each chip
+ * is a button that opens the list of this role's Skills on that Skill. A live
+ * use is said in words for a few seconds; the lasting state is the chip's own.
+ */
+export function SkillStrip({ skills, role }: { skills: DetailSkills; role: string }) {
+  const { snapshot, uses, playing, motion, said } = skills
+  const [listOn, setListOn] = useState<string | null>(null)
+  const list = useMemo(() => new SkillListFocus(setListOn), [])
+  useEffect(() => () => list.close(), [list])
+  const strip = useRef<HTMLDivElement>(null)
+  const close = useCallback(() => list.close(), [list])
+  const onListKey = useCallback((key: string) => list.key(key), [list])
   if (!snapshot?.skills.length || !skills.open) return null
-  const latest = [...uses.values()].sort((a, b) => b.seq - a.seq)[0]
-  const said = playing ? { skillId: playing.receipt.skillId, status: playing.receipt.status } : latest
   const saidSkill = said && snapshot.skills.find((skill) => skill.id === said.skillId)
   return (
-    <div className="skill-strip" id="skill-strip" data-enter={skills.entering ? "on" : undefined}>
+    <div className="skill-strip" id="skill-strip" ref={strip} data-enter={skills.entering ? "on" : undefined}>
       <ul className="skill-strip-list" aria-label={nextWord("skillStripLabel")}>
         {snapshot.skills.map((skill) => {
           const status = uses.get(skill.id)?.status
           const play = motion && playing?.receipt.skillId === skill.id ? playing.receipt.status : undefined
           return (
-            <li key={skill.id} className="skill-chip" data-state={status ?? "unused"} title={skill.name + " · " + statusWord(status)}>
-              <span className="skill-chip-icon" key={play ? playing!.receipt.seq : 0} data-play={play}>
-                <SkillIcon icon={skill.icon} />
-              </span>
-              <span className="skill-chip-name">{skill.name}</span>
-              {status === "failed" && <span className="skill-chip-failed" aria-hidden="true" />}
-              <span className="sr-only skill-chip-status">{statusWord(status)}</span>
+            <li key={skill.id} className="skill-strip-item">
+              <button type="button" className="skill-chip" data-state={status ?? "unused"} data-skill={skill.id} aria-haspopup="dialog"
+                aria-expanded={listOn === skill.id} title={skill.name + " · " + statusWord(status)}
+                onClick={(event) => list.open(skill.id, event.currentTarget)}>
+                <span className="skill-chip-icon" key={play ? playing!.receipt.seq : 0} data-play={play}>
+                  <SkillIcon icon={skill.icon} />
+                </span>
+                <span className="skill-chip-name">{skill.name}</span>
+                {status === "failed" && <span className="skill-chip-failed" aria-hidden="true" />}
+                <span className="sr-only skill-chip-status">{statusWord(status)}</span>
+              </button>
             </li>
           )
         })}
       </ul>
-      <p className="skill-strip-said" role="status" aria-live="polite">{said && saidSkill ? skillUseLine(said.status, saidSkill.name) : ""}</p>
+      <p className="skill-strip-said" role="status" aria-live="polite" data-leaving={said?.leaving ? "on" : undefined} data-still={motion ? undefined : "on"}>
+        {said && saidSkill ? <span className="skill-strip-said-words" key={said.seq}><SkillStatusMark status={said.status} />{skillUseLine(said.status, saidSkill.name)}</span> : null}
+      </p>
+      {listOn && <SkillList snapshot={snapshot} uses={uses} role={role} focus={listOn} motion={motion} anchor={strip.current} onKey={onListKey} onClose={close} />}
     </div>
+  )
+}
+
+/**
+ * The list of this role's Skills: a sheet on a phone, a panel under the strip
+ * on a wider screen. Opened on one Skill, which takes the focus; Escape, the
+ * close button or a press outside closes it, and the caller returns the focus
+ * to the chip that opened it.
+ */
+export function SkillList({ snapshot, uses, role, focus, motion, anchor, onKey, onClose }: { snapshot: SessionSkillSnapshot; uses: ReadonlyMap<string, SkillUse>;
+  role: string; focus: string; motion: boolean; anchor: HTMLElement | null; onKey: (key: string) => boolean; onClose: () => void }) {
+  const panel = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<{ top: number; left: number; width: number } | null>(null)
+  useLayoutEffect(() => {
+    const rect = anchor?.getBoundingClientRect()
+    if (rect) setPlace({ top: Math.round(rect.bottom + 6), left: Math.round(rect.left + 12), width: Math.round(Math.min(420, rect.width - 24)) })
+  }, [anchor])
+  useLayoutEffect(() => {
+    const row = [...(panel.current?.querySelectorAll<HTMLElement>(".skill-list-row") ?? [])].find((el) => el.dataset.skill === focus)
+    row?.focus({ preventScroll: true })
+    row?.scrollIntoView?.({ block: "nearest" })
+  }, [focus])
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => { if (onKey(event.key)) { event.preventDefault(); event.stopPropagation() } }
+    document.addEventListener("keydown", listen, true)
+    return () => document.removeEventListener("keydown", listen, true)
+  }, [onKey])
+  // Tab stays inside the list while it is open.
+  const trap = (event: ReactKeyboardEvent) => {
+    if (event.key !== "Tab" || !panel.current) return
+    const stops = [...panel.current.querySelectorAll<HTMLElement>("button, .skill-list-row")]
+    if (!stops.length) return
+    const at = stops.indexOf(document.activeElement as HTMLElement)
+    const next = event.shiftKey ? (at <= 0 ? stops.length - 1 : at - 1) : (at < 0 || at === stops.length - 1 ? 0 : at + 1)
+    event.preventDefault()
+    stops[next].focus()
+  }
+  const style = place ? { "--skill-list-top": place.top + "px", "--skill-list-left": place.left + "px", "--skill-list-width": place.width + "px" } as CSSProperties : undefined
+  return createPortal(
+    <div className="skill-list-scrim" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="skill-list" ref={panel} role="dialog" aria-modal="true" aria-labelledby="skill-list-title" style={style}
+        data-still={motion ? undefined : "on"} onKeyDown={trap}>
+        <div className="skill-list-head">
+          <h2 id="skill-list-title">{nextWord("skillListTitle", { role })}</h2>
+          <button type="button" className="skill-list-close" aria-label={nextWord("skillListClose")} title={nextWord("skillListClose")} onClick={onClose}>
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+        <p className="skill-list-note">{nextWord("skillListNote")}</p>
+        <ul className="skill-list-rows">
+          {snapshot.skills.map((skill) => {
+            const status = uses.get(skill.id)?.status
+            return (
+              <li key={skill.id} className="skill-list-row" data-skill={skill.id} data-state={status ?? "unused"} data-focus={skill.id === focus ? "on" : undefined} tabIndex={-1}>
+                <span className="skill-list-icon"><SkillIcon icon={skill.icon} cellPx={3} /></span>
+                <span className="skill-list-words">
+                  <b>{skill.name}</b>
+                  {skill.when && <small>{skill.when}</small>}
+                </span>
+                <span className="skill-list-state"><SkillStatusMark status={status} />{statusWord(status)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

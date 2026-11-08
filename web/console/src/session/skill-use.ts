@@ -16,6 +16,8 @@ export interface SnapshotSkill {
   id: string
   version: string
   name: string
+  /** The Skill's own line on when it applies (`skillWhen`), else its purpose; may be "". */
+  when: string
   icon?: Icon
 }
 
@@ -187,5 +189,125 @@ export class MomentQueue<T> {
   stop(): void {
     if (this.timer) this.clock.clear(this.timer)
     this.timer = null; this.queue = []; this.playing = null
+  }
+}
+
+/** How long a live use's words stay beside the strip, and the fade at their end. */
+export const SKILL_SAID_MS = 4000
+export const SKILL_SAID_FADE_MS = 300
+
+/**
+ * Says the newest live moment for `hold` milliseconds, marking it `leaving`
+ * for the last `fade` of them, then says nothing. A newer moment replaces the
+ * one shown and starts its time again. Only live moments reach it, so a
+ * reload or a replay shows nothing here; the lasting state is the chips'.
+ */
+export class SaidLine<T> {
+  private timers: ReturnType<typeof setTimeout>[] = []
+  private readonly show: (said: { value: T; leaving: boolean } | null) => void
+  private readonly hold: number
+  private readonly fade: number
+  private readonly clock: { set: typeof setTimeout; clear: typeof clearTimeout }
+
+  constructor(show: (said: { value: T; leaving: boolean } | null) => void, hold = SKILL_SAID_MS, fade = SKILL_SAID_FADE_MS,
+    clock: { set: typeof setTimeout; clear: typeof clearTimeout } = { set: ((run: () => void, ms: number) => setTimeout(run, ms)) as typeof setTimeout, clear: ((id: ReturnType<typeof setTimeout>) => clearTimeout(id)) as typeof clearTimeout }) {
+    this.show = show; this.hold = hold; this.fade = Math.min(fade, hold); this.clock = clock
+  }
+
+  push(value: T): void {
+    this.clearTimers()
+    this.show({ value, leaving: false })
+    this.timers.push(this.clock.set(() => this.show({ value, leaving: true }), this.hold - this.fade))
+    this.timers.push(this.clock.set(() => { this.timers = []; this.show(null) }, this.hold))
+  }
+
+  stop(): void { this.clearTimers() }
+
+  private clearTimers(): void { for (const timer of this.timers) this.clock.clear(timer); this.timers = [] }
+}
+
+/** The most characters a Skill's own "when it applies" line contributes, as the launch prompt bounds it. */
+export const MAX_SKILL_WHEN_CHARS = 240
+
+/**
+ * The Skill's own statement of when it applies, as the launch prompt finds it
+ * (internal/adapters/squadfiles/launch.go `skillWhen`): the first sentence
+ * that begins "Use this skill", else the frontmatter description; "" when
+ * neither is there.
+ */
+export function skillWhen(content: string | undefined): string {
+  if (!content) return ""
+  let body = content
+  let description = ""
+  if (content.startsWith("---\n")) {
+    const rest = content.slice(4)
+    const end = rest.indexOf("\n---")
+    if (end >= 0) {
+      body = rest.slice(end + 4)
+      for (const line of rest.slice(0, end).split("\n")) {
+        if (line.startsWith("description:")) description = line.slice("description:".length).trim().replace(/^["']+|["']+$/g, "")
+      }
+    }
+  }
+  const text = oneLine(body)
+  const at = text.search(/\buse this skill\b/i)
+  if (at >= 0) return clipWhen(firstSentence(text.slice(at)))
+  if (description) return clipWhen(firstSentence(oneLine(description)))
+  return ""
+}
+
+const oneLine = (value: string) => value.split(/\s+/).filter(Boolean).join(" ")
+
+function firstSentence(text: string): string {
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\u3002") return text.slice(0, i + 1)
+    if (text[i] !== ".") continue
+    if (i + 1 < text.length && text[i + 1] !== " ") continue
+    const before = text.slice(Math.max(0, i - 3), i + 1).toLowerCase()
+    if (before.endsWith("e.g.") || before.endsWith("i.e.") || before.endsWith("etc.") || before.endsWith(" vs.")) continue
+    return text.slice(0, i + 1)
+  }
+  return text
+}
+
+function clipWhen(text: string): string {
+  const chars = [...text]
+  return chars.length > MAX_SKILL_WHEN_CHARS ? chars.slice(0, MAX_SKILL_WHEN_CHARS).join("") + "…" : text
+}
+
+/** Something the list can give the focus back to: the chip that opened it. */
+export interface FocusReturn { focus(options?: FocusOptions): void; readonly isConnected: boolean }
+
+/**
+ * Which Skill the list is open on, and the chip that opened it. Closing, by
+ * Escape or otherwise, gives that chip the focus back while it is still on
+ * the page.
+ */
+export class SkillListFocus {
+  private opened: { skillId: string; from: FocusReturn } | null = null
+  private readonly changed: (skillId: string | null) => void
+
+  constructor(changed: (skillId: string | null) => void) { this.changed = changed }
+
+  get skillId(): string | null { return this.opened?.skillId ?? null }
+
+  open(skillId: string, from: FocusReturn): void {
+    this.opened = { skillId, from }
+    this.changed(skillId)
+  }
+
+  /** True when the key closed the list. */
+  key(key: string): boolean {
+    if (key !== "Escape" || !this.opened) return false
+    this.close()
+    return true
+  }
+
+  close(): void {
+    const was = this.opened
+    if (!was) return
+    this.opened = null
+    this.changed(null)
+    if (was.from.isConnected) was.from.focus({ preventScroll: true })
   }
 }
