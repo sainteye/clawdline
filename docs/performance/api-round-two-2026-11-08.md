@@ -217,3 +217,9 @@ with a hard cap of 72 and no automatic retries. Two preliminary asset downloads
 were separate from that experiment. These were ordinary public release reads,
 with no usage-priced API charge. No assistant call, terminal launch, deployment,
 restart or public release was performed.
+
+## Follow-up inventory measurement
+
+[The inventory Git-read follow-up](inventory-git-reads-2026-11-08.md) profiles the
+remaining seconds and verifies request-scoped branch batching and one-process
+ancestry reads separately from this round's earlier commit-count projection.
