@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10861,
+  "englishKeys": 10862,
   "counts": {
     "negation": 3017,
-    "state": 1786,
-    "permission": 636,
+    "state": 1787,
+    "permission": 637,
     "deletion": 243,
     "uncertainty": 410
   },
-  "unionCount": 4777,
+  "unionCount": 4778,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -4360,6 +4360,7 @@
       "next.endWorkReleaseFailed",
       "next.firstSessionAgentMacHint",
       "next.firstSessionOpenSetup",
+      "next.firstSessionSignInHelp",
       "next.fleetUpdateFailed",
       "next.fleetUpdateRolledBack",
       "next.handoverDone",
@@ -5263,6 +5264,7 @@
       "next.doorCodeExpired",
       "next.firstSessionAgentMacHint",
       "next.firstSessionAgentOtherHint",
+      "next.firstSessionSignInHelp",
       "next.firstSessionSignInRequired",
       "next.fleetUpdateUnpaired",
       "next.gitPermissionDenied",
@@ -9651,6 +9653,7 @@
     "next.firstSessionAgentOtherHint",
     "next.firstSessionOpenSetup",
     "next.firstSessionPlacesUnread",
+    "next.firstSessionSignInHelp",
     "next.firstSessionSignInRequired",
     "next.fleetUpdateFailed",
     "next.fleetUpdateOffline",

@@ -104,7 +104,7 @@ let redrawModel: () => void = () => {}
 let resumeAs = ""
 let loading = false
 let placesUnread = false
-let agentSignInRequired = false
+let agentSignInRequired = ""
 let startOS = ""
 let startArch = ""
 let pressing: string | null = null
@@ -557,7 +557,9 @@ function draw(): void {
   retry.textContent = placesUnread ? nextWord("firstSessionRetry") : nextWord("firstSessionRetryAgent")
   setup.hidden = machineOnly || mode !== "session" || !needsAgent || !localMac
   agentHelp.hidden = machineOnly || mode !== "session" || !needsAgent
-  agentHelp.textContent = localMac ? nextWord("firstSessionAgentMacHint") : nextWord("firstSessionAgentOtherHint")
+  agentHelp.textContent = agentSignInRequired
+    ? nextWord("firstSessionSignInHelp", { assistant: agentSignInRequired, command: agentSignInRequired === "Codex" ? "codex login" : "claude auth login" })
+    : localMac ? nextWord("firstSessionAgentMacHint") : nextWord("firstSessionAgentOtherHint")
   const editProjects = el<HTMLButtonElement>("start-edit-projects")
   const editLabel = catalogWord("projects", editingProjects ? "editDone" : "editList")
   editProjects.setAttribute("aria-label", editLabel)
@@ -913,7 +915,7 @@ function press(id: string): void {
   }
   if (!admitted("start")) { said(assistantStatus("start")); return }
   pressing = id
-  agentSignInRequired = false
+  agentSignInRequired = ""
   said("")
   draw()
   startPress.start()
@@ -936,7 +938,7 @@ function press(id: string): void {
         if (e && e.code === "write_disabled") {
           write = false
         } else if (e && e.code === "assistant_sign_in_required") {
-          agentSignInRequired = true
+          agentSignInRequired = e.app || (with_ === "codex" ? "Codex" : "Claude Code")
         } else if (e && e.code === "not_found") {
           places = null
           load()
@@ -1077,7 +1079,7 @@ function openMode(machine: boolean, requested: StartMode = "session", on: { id: 
   el("start").hidden = false
   said("")
   placesUnread = false
-  agentSignInRequired = false
+  agentSignInRequired = ""
   startOS = ""
   startArch = ""
   leave()
@@ -1285,7 +1287,7 @@ export function StartSheet() {
     const onInput = () => Start.typed(filter.value)
     const onScroll = () => Start.scrolled()
     const onAddProject = () => setFolderOpen(true)
-    const onRetryPlaces = () => { if (!loading) { placesUnread = false; agentSignInRequired = false; places = null; load() } }
+    const onRetryPlaces = () => { if (!loading) { placesUnread = false; agentSignInRequired = ""; places = null; load() } }
     const onAgentSetup = (ev: Event) => {
       const handler = (window as Window & { webkit?: { messageHandlers?: { shellAgentSetup?: { postMessage: (body: unknown) => void } } } })
         .webkit?.messageHandlers?.shellAgentSetup
