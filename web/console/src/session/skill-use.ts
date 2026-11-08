@@ -1,9 +1,9 @@
 /*
  * What a Session's role did with its Skills, from the machine's skill-event
- * receipts (docs/ai-squad-contract.md, "skill events"). One ledger reads the
- * machine's whole feed once and keeps, per conversation, the latest status of
- * each Skill identity; a Session view asks it for the Skills of its own launch
- * snapshot. Pure: the feed and the screens live in skill-feed.ts and
+ * receipts (docs/ai-squad-contract.md, "skill events"). One ledger holds
+ * what the shared feed read for the Sessions on screen and keeps, per
+ * conversation, the latest status of each Skill identity; a Session view asks
+ * it for the Skills of its own launch snapshot. Pure: the feed and the screens live in skill-feed.ts and
  * SkillUse.tsx.
  */
 import type { Icon } from "@clawdline/contract"
@@ -67,8 +67,13 @@ export function receiptBelongs(receipt: SquadReceipt, snapshot: SessionSkillSnap
  */
 function merged(was: SkillUse | undefined, receipt: SquadReceipt): SkillUse {
   if (!was) return { skillId: receipt.skillId, status: receipt.status, firstAt: receipt.at, firstSeq: receipt.seq, at: receipt.at, seq: receipt.seq }
-  if (receipt.seq <= was.seq || was.status === "applied") return was
-  return { ...was, status: receipt.status, at: receipt.at, seq: receipt.seq }
+  // The still-state read of a Session shown late can bring older receipts
+  // after the live poll brought newer ones: order by sequence, not arrival.
+  let out = was
+  if (receipt.seq < out.firstSeq) out = { ...out, firstAt: receipt.at, firstSeq: receipt.seq }
+  if (out.status === "applied") return out
+  if (receipt.status === "applied" || receipt.seq > out.seq) out = { ...out, status: receipt.status, at: receipt.at, seq: receipt.seq }
+  return out
 }
 
 /**
@@ -98,14 +103,24 @@ export class SkillLedger {
   take(receipt: SquadReceipt, live: boolean): SkillMoment | null {
     if (!Number.isSafeInteger(receipt.seq) || receipt.seq <= this.cursor) return null
     this.cursor = receipt.seq
-    if (this.seen.has(receipt.receiptId)) return null
+    if (!this.record(receipt)) return null
+    if (!live || receipt.seq <= this.liveAfter || receipt.status === "failed") return null
+    return { receipt }
+  }
+
+  /**
+   * Records a still-state receipt, read for one shown Session apart from the
+   * live cursor: never a moment, and once by receipt ID whichever read
+   * brought it first. False when it was already recorded.
+   */
+  record(receipt: SquadReceipt): boolean {
+    if (!Number.isSafeInteger(receipt.seq) || this.seen.has(receipt.receiptId)) return false
     this.seen.add(receipt.receiptId)
     let session = this.uses.get(receipt.conversationId)
     if (!session) this.uses.set(receipt.conversationId, session = new Map())
     const key = identity(receipt)
     session.set(key, merged(session.get(key), receipt))
-    if (!live || receipt.seq <= this.liveAfter || receipt.status === "failed") return null
-    return { receipt }
+    return true
   }
 
   /** The Skills of one Session's own snapshot that its receipts name, by Skill ID. */

@@ -101,6 +101,9 @@ func init() {
 		op{name: "squad-event-head", read: true},
 
 		op{name: "squad-events", read: true},
+		// The same feed for the conversations on screen only; a machine
+		// that does not list this word is read with `squad-events`.
+		op{name: "squad-events.conversations", read: true},
 
 		op{name: "past-sessions", read: true},
 

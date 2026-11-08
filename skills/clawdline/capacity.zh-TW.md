@@ -572,6 +572,8 @@
 | `squad.console_active_skill_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `squad.entities` | 1024 | `rows` | `refuse` | `diagnostics, health, sender` | — |
 | `squad.event_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `squad.event_conversations` | 50 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `squad.event_conversations_bytes` | 6449 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `squad.event_id_bytes` | 128 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `squad.event_page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `squad.launch_skill_when_runes` | 240 | `characters` | `evict_oldest` | `diagnostics, sender` | — |

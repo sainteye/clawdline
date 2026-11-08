@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 )
@@ -96,7 +99,12 @@ func (s *Server) squadEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		pageRows = parsed
 	}
-	events, more, err := s.store.SquadEventsAfter(r.Context(), after, pageRows)
+	conversations, ok := squadEventConversations(r.URL.Query()["conversation"])
+	if !ok {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "Name at most "+strconv.Itoa(store.MaxSquadEventConversations)+" conversations, each non-empty and printable.")
+		return
+	}
+	events, more, err := s.store.SquadEventsAfterFor(r.Context(), conversations, after, pageRows)
 	if err != nil {
 		writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "Skill events could not be read.")
 		return
@@ -113,6 +121,43 @@ func (s *Server) squadEvents(w http.ResponseWriter, r *http.Request) {
 		NextAfter int64                     `json:"next_after"`
 		HasMore   bool                      `json:"has_more"`
 	}{Events: events, NextAfter: next, HasMore: more})
+}
+
+// squadEventConversations is the `conversation` filter: the parameter may
+// repeat and each value may be a comma-separated list. No value is no filter.
+// Duplicates count once; more than the bound, an empty entry between commas,
+// or an over-long or unprintable ID refuses the whole read.
+func squadEventConversations(values []string) ([]string, bool) {
+	var out []string
+	seen := map[string]bool{}
+	for _, value := range values {
+		for _, id := range strings.Split(value, ",") {
+			if id == "" || len(id) > store.MaxSquadEventIDBytes || !printableID(id) {
+				return nil, false
+			}
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, id)
+			if len(out) > store.MaxSquadEventConversations {
+				return nil, false
+			}
+		}
+	}
+	return out, true
+}
+
+func printableID(id string) bool {
+	if !utf8.ValidString(id) {
+		return false
+	}
+	for _, c := range id {
+		if !unicode.IsPrint(c) || unicode.IsSpace(c) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) squadSessionEvents(w http.ResponseWriter, r *http.Request) {

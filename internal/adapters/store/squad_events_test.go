@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 )
 
@@ -104,3 +105,89 @@ func TestSquadSkillEventFailureDoesNotReserveReceipt(t *testing.T) {
 		t.Fatalf("retry after transient failure: %v", err)
 	}
 }
+
+func boundSquadLaunchFor(t *testing.T, s *Store, terminal, conversation string) SquadLaunch {
+	t.Helper()
+	ctx := context.Background()
+	launch, err := s.PrepareSquadLaunch(ctx, json.RawMessage(`{"definition_id":"clawdline.persona.architect","scope_id":"project-test","skills":[{"id":"skill.a","version":"1","enabled":true}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordSquadTerminal(ctx, launch.ID, terminal); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BindSquadConversation(ctx, launch.ID, conversation); err != nil {
+		t.Fatal(err)
+	}
+	return launch
+}
+
+func TestSquadEventsForConversationsReadOnlyTheirReceipts(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	launches := map[string]SquadLaunch{}
+	for _, name := range []string{"a", "b", "noise"} {
+		launches[name] = boundSquadLaunchFor(t, s, "terminal-"+name, "conversation-"+name)
+	}
+	used := map[string]int{}
+	record := func(name string, n int) {
+		for i := used[name]; i < used[name]+n; i++ {
+			event := SquadSkillEvent{SkillID: "skill.a", SkillVersion: "1", ClientEventID: name + "-" + itoaTest(i), Status: "read"}
+			if _, err := s.RecordSquadSkillEvent(ctx, launches[name].ActorCapability, event); err != nil {
+				t.Fatal(err)
+			}
+		}
+		used[name] += n
+	}
+	record("noise", 200)
+	record("a", 3)
+	record("noise", 200)
+	record("b", 2)
+	record("a", 1)
+
+	page, more, err := s.SquadEventsAfterFor(ctx, []string{"conversation-a", "conversation-b", "conversation-a"}, 0, 50)
+	if err != nil || more || len(page) != 6 {
+		t.Fatalf("filtered page = %d rows, more %t, %v", len(page), more, err)
+	}
+	for i, event := range page {
+		if event.ConversationID != "conversation-a" && event.ConversationID != "conversation-b" {
+			t.Fatalf("row %d belongs to %q", i, event.ConversationID)
+		}
+		if i > 0 && event.Seq <= page[i-1].Seq {
+			t.Fatalf("rows out of sequence: %d after %d", event.Seq, page[i-1].Seq)
+		}
+	}
+	// Paging by the cursor: two rows, then the rest after the second.
+	first, more, err := s.SquadEventsAfterFor(ctx, []string{"conversation-a", "conversation-b"}, 0, 2)
+	if err != nil || !more || len(first) != 2 {
+		t.Fatalf("first filtered page = %d, %t, %v", len(first), more, err)
+	}
+	rest, more, err := s.SquadEventsAfterFor(ctx, []string{"conversation-a", "conversation-b"}, first[1].Seq, 50)
+	if err != nil || more || len(rest) != 4 || rest[0].Seq <= first[1].Seq {
+		t.Fatalf("second filtered page = %+v, %t, %v", rest, more, err)
+	}
+	// No conversations named is the whole log, as before.
+	all, more, err := s.SquadEventsAfterFor(ctx, nil, 0, MaxSquadEventPageRows)
+	if err != nil || !more || len(all) != MaxSquadEventPageRows {
+		t.Fatalf("unfiltered page = %d, %t, %v", len(all), more, err)
+	}
+	tooMany := make([]string, MaxSquadEventConversations+1)
+	for i := range tooMany {
+		tooMany[i] = "conversation-" + itoaTest(i)
+	}
+	if _, _, err := s.SquadEventsAfterFor(ctx, tooMany, 0, 50); !errors.Is(err, ErrSquadEventInvalid) {
+		t.Fatalf("too many conversations = %v", err)
+	}
+	if _, _, err := s.SquadEventsAfterFor(ctx, tooMany[:MaxSquadEventConversations], 0, 50); err != nil {
+		t.Fatalf("conversations at the bound = %v", err)
+	}
+	if _, _, err := s.SquadEventsAfterFor(ctx, []string{""}, 0, 50); !errors.Is(err, ErrSquadEventInvalid) {
+		t.Fatalf("empty conversation = %v", err)
+	}
+}
+
+func itoaTest(i int) string { return strconv.Itoa(i) }

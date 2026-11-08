@@ -10999,6 +10999,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "squad.event_conversations",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 50,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.MaxSquadEventConversations"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "squad.event_conversations_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 6449,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.MaxSquadEventConversationsBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "squad.event_id_bytes",
     "Class": "buffer",
     "Unit": "bytes",

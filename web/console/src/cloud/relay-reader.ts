@@ -32,6 +32,8 @@ import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/c
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
 import type { MachineListPresentation, MachineSessionProjection, SessionDestination, SessionListPresentation } from "./all-machine-sessions.js"
 import { authenticatedRefusalKey } from "./refusal-client.js"
+// @ts-expect-error -- Node loads the source extension in focused behavior tests.
+import { MAX_SQUAD_EVENT_CONVERSATIONS, MAX_SQUAD_EVENT_ID_BYTES } from "../session/skill-event-bounds.ts"
 import { SESSION_INVENTORY_ID, channelSegment } from "../legacy/js/net/client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
@@ -333,6 +335,26 @@ export const TRANSCRIPT_LINE_REREAD_MS = 15_000
  * update"; this file only uses them to attach the machine's version.
  */
 const MACHINE_LACKS_WORD: ReadonlySet<string> = new Set(["unknown_command", "cloud_feature_unavailable", "cloud_machine_unsupported"])
+
+/**
+ * The `conversation` filter of `/v1/squad/events` as the daemon reads it
+ * (`squadEventConversations`, internal/transport/http/squad_events.go):
+ * repeatable, each value comma-separated, duplicates once, at most
+ * `MAX_SQUAD_EVENT_CONVERSATIONS`. Null refuses the whole read.
+ */
+export function squadEventConversations(values: readonly string[]): string[] | null {
+  const out: string[] = []
+  const encoder = new TextEncoder()
+  for (const value of values) {
+    for (const id of value.split(",")) {
+      if (!id || encoder.encode(id).length > MAX_SQUAD_EVENT_ID_BYTES || /[\s\p{C}]/u.test(id)) return null
+      if (out.includes(id)) continue
+      out.push(id)
+      if (out.length > MAX_SQUAD_EVENT_CONVERSATIONS) return null
+    }
+  }
+  return out
+}
 
 /**
  * The chosen machine's Clawdline version and route level, out of the
@@ -1102,10 +1124,20 @@ export class RelayReader {
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "squad-event-head", {})
         case "/v1/squad/events": {
-          const q = this.only(url, path, "after", "limit")
+          const q = this.only(url, path, "after", "limit", "conversation")
           const after = q.after ?? "0", limit = q.limit ?? "50"
           if (!/^(0|[1-9][0-9]*)$/.test(after) || !/^[1-9][0-9]*$/.test(limit) || !Number.isSafeInteger(Number(after)) || !Number.isSafeInteger(Number(limit))) {
             return this.refuse(method, path, 400, "invalid_cursor", "The squad event cursor or limit is invalid.")
+          }
+          if (url.searchParams.has("conversation")) {
+            const conversations = squadEventConversations(url.searchParams.getAll("conversation"))
+            if (!conversations) return this.refuse(method, path, 400, "bad_request", "Name at most " + MAX_SQUAD_EVENT_CONVERSATIONS + " conversations, each non-empty and printable.")
+            // A machine from before the filter answers the whole log, which
+            // the feed reads as it always has (session/skill-feed.ts).
+            if (this.machineImplements("squad-events.conversations")) {
+              return await this.machineRead(init?.signal, method, path, "squad-events.conversations",
+                { after: Number(after), limit: Number(limit), conversations: conversations.join(",") })
+            }
           }
           return await this.machineRead(init?.signal, method, path, "squad-events", { after: Number(after), limit: Number(limit) })
         }
