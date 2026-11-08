@@ -125,6 +125,7 @@ var generatedDecoders = map[string]genDecoder{
 	"snippets":                           genDecodeSnippets,
 	"squad-event-head":                   genDecodeSquadEventHead,
 	"squad-events":                       genDecodeSquadEvents,
+	"squad-events.conversations":         genDecodeSquadEventsConversations,
 	"squad-session-bindings":             genDecodeSquadSessionBindings,
 	"squad-session-snapshot":             genDecodeSquadSessionSnapshot,
 	"squad.catalog":                      genDecodeSquadCatalog,
@@ -2854,6 +2855,33 @@ func genDecodeSquadEvents(b body) (plan, LocalRequest, bool) {
 	path := "/v1/squad/events"
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"after": genValue{from: "after"}, "limit": genValue{from: "limit"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeSquadEventsConversations is the `squad-events.conversations` row's decode.
+func genDecodeSquadEventsConversations(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "after", "conversations", "limit", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("after", genRule{kind: "integer", min: genInt(0)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversations", genRule{kind: "string", nonEmpty: true, maxBytes: 6449, checks: []func(string) bool{printable}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("limit", genRule{kind: "integer", min: genInt(1), max: genInt(100)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/squad/events"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"after": genValue{from: "after"}, "conversation": genValue{from: "conversations"}, "limit": genValue{from: "limit"}})
 	req.Header = asDevice()
 	return p, req, true
 }

@@ -2088,6 +2088,32 @@ test("squad reads carry exact scope, binding and cursor fields to the chosen mac
   assert.equal(client.reads.length, count, "invalid reads never reach the machine")
 })
 
+test("a filtered squad event read uses the conversation word only on a machine that lists it", async () => {
+  const client = new FakeClient()
+  let implemented = false
+  ;(client as unknown as { _machineImplements(machine: string, word: string): string })._machineImplements =
+    (_machine, word) => word === "squad-events.conversations" && implemented ? "yes" : "unknown"
+  const r = reader(client, { t: 1000 })
+  // An older machine: the filter is dropped and the whole log is read, as before.
+  assert.equal((await r.fetch("/v1/squad/events?conversation=conversation-a,conversation-b&after=0&limit=50")).status, 200)
+  assert.deepEqual(client.reads.at(-1), { machine: "mac-a", word: "squad-events", body: { after: 0, limit: 50 } })
+  implemented = true
+  assert.equal((await r.fetch("/v1/squad/events?conversation=conversation-a&conversation=conversation-b,conversation-a&after=3&limit=50")).status, 200)
+  assert.deepEqual(client.reads.at(-1), { machine: "mac-a", word: "squad-events.conversations",
+    body: { after: 3, limit: 50, conversations: "conversation-a,conversation-b" } })
+  const count = client.reads.length
+  const many = Array.from({ length: 51 }, (_, i) => "c" + i).join(",")
+  for (const path of ["/v1/squad/events?conversation=" + many, "/v1/squad/events?conversation=a,,b", "/v1/squad/events?conversation=",
+    "/v1/squad/events?conversation=" + "x".repeat(129), "/v1/squad/events?conversation=a%20b"]) {
+    const reply = await r.fetch(path)
+    assert.equal(reply.status, 400, path)
+    assert.equal(((await reply.json()) as { error?: string }).error, "bad_request", path)
+  }
+  assert.equal(client.reads.length, count, "invalid filters never reach the machine")
+  const fifty = Array.from({ length: 50 }, (_, i) => "c" + i).join(",")
+  assert.equal((await r.fetch("/v1/squad/events?conversation=" + fifty)).status, 200)
+})
+
 // "Read again" on a waiting card (2026-10-14): across Cloud it is the one-row
 // read, so the machine captures that Session's screen and states its row now.
 test("read again asks the machine for just that row", async () => {

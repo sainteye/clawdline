@@ -186,6 +186,7 @@ export const CARRIED = {
   snippets: "GET /v1/snippets",
   "squad-event-head": "GET /v1/squad/events/head",
   "squad-events": "GET /v1/squad/events?after=&limit=",
+  "squad-events.conversations": "GET /v1/squad/events?conversation=&after=&limit=",
   "squad-session-bindings": "GET /v1/squad/session-bindings",
   "squad-session-snapshot": "GET /v1/squad/session-snapshots/{conversation}",
   "squad.catalog": "GET /v1/squad/catalog",

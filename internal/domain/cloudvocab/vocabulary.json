@@ -2659,6 +2659,20 @@
       "decode": {"reply": "machine", "fields": {"after": {"type": "integer", "min": 0}, "limit": {"type": "integer", "min": 1, "max": 100, "copies": {"max": "store.MaxSquadEventPageRows"}}}, "route": {"path": "/v1/squad/events", "query": {"after": {"from": "after"}, "limit": {"from": "limit"}}}}
     },
     {
+      "op": "squad-events.conversations",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/squad/events?conversation=&after=&limit=",
+      "console_seam": "reader",
+      "local": {"method": "GET", "device": true},
+      "example": {"after": 0, "conversations": "conversation-a,conversation-b", "limit": 50, "request": "req-events-for", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["after", "conversations", "limit", "request", "session"], "path": "/v1/squad/events", "query": ["after", "conversation", "limit"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"after": {"type": "integer", "min": 0}, "limit": {"type": "integer", "min": 1, "max": 100, "copies": {"max": "store.MaxSquadEventPageRows"}}, "conversations": {"type": "string", "non_empty": true, "max_bytes": 6449, "checks": ["printable"], "copies": {"max_bytes": "store.MaxSquadEventConversationsBytes"}}}, "route": {"path": "/v1/squad/events", "query": {"after": {"from": "after"}, "limit": {"from": "limit"}, "conversation": {"from": "conversations"}}}}
+    },
+    {
       "op": "squad-session-bindings",
       "kind": "read",
       "write_gate": false,

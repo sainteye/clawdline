@@ -361,6 +361,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-events",
 		method: "GET", path: "/v1/squad/events", query: map[string]string{"after": "7", "limit": "50"},
 	}, {
+		word: "squad-events.conversations",
+		body: map[string]any{"type": "squad-events.conversations", "session": machine, "request": "req-events-for",
+			"after": 0, "limit": 50, "conversations": "conversation-a,conversation-b"},
+		session: machine, name: "read:req-events-for",
+		method: "GET", path: "/v1/squad/events", query: map[string]string{"after": "0", "limit": "50", "conversation": "conversation-a,conversation-b"},
+	}, {
 		word: "past-sessions",
 		body: map[string]any{"type": "past-sessions", "session": machine, "request": "req-past",
 			"place": "/Users/sean/code/clawdline-go", "assistant": "codex"},
