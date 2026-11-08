@@ -352,7 +352,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["project-folder-create"], "POST /v1/project-folders?machine=")
   // The person's Dismiss on a stale decision (session/Todos.tsx).
   assert.equal(CARRIED["work.decision-dismiss"], "POST /v1/work/decisions/{id}/dismiss")
-  assert.equal(Object.keys(CARRIED).length, 203)
+  // The Session Skill feed's still-state read for the conversations on screen (session/skill-feed-core.ts).
+  assert.equal(CARRIED["squad-events.conversations"], "GET /v1/squad/events?conversation=&after=&limit=")
+  assert.equal(Object.keys(CARRIED).length, 204)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
