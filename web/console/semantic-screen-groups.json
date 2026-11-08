@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10857,
-  "riskKeys": 4775,
-  "nonRiskCount": 6082,
+  "englishContentKeys": 10861,
+  "riskKeys": 4777,
+  "nonRiskCount": 6084,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 424,
+      "count": 426,
       "sources": [
         null
       ],
@@ -788,6 +788,8 @@
         "capacityRow.squad.place_lookup.what",
         "capacityRow.squad.skill_source_summary_runes.what",
         "capacityRow.squad.snapshot_bytes.what",
+        "capacityRow.squad.snapshot_conversations.what",
+        "capacityRow.squad.snapshot_conversations_bytes.what",
         "capacityRow.squadpackage.archive_bytes.what",
         "capacityRow.squadpackage.entries.what",
         "capacityRow.squadpackage.expanded_bytes.what",
