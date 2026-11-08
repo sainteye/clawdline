@@ -12,12 +12,21 @@
  * conversation shown later is read the same way, up to the live cursor; it
  * never asks per row and never replays.
  *
- * A machine that ignores the filter answers the whole log; the ledger keeps
- * each receipt by conversation either way, so that machine costs what it did.
+ * A machine that ignores the filter answers the whole log: a page names a
+ * conversation that was not asked for, or the relay says it read the
+ * unfiltered word (`unfiltered`). The feed then holds the whole still state
+ * up to the cursor, so it marks every shown and every later conversation
+ * read and never asks again: such a machine costs one read of its log per
+ * page life, as it did before the filter.
+ *
+ * An ID the machine would refuse (`squadEventIDValid`) is never sent, so one
+ * cannot refuse the read for every other Session on screen. A failed still
+ * read only backs off; it leaves no gap in the live cursor, so the next live
+ * receipts still play.
  */
 import type { SquadReceipt } from "../pages/squad/model.js"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
-import { MAX_SQUAD_EVENT_CONVERSATIONS } from "./skill-event-bounds.ts"
+import { MAX_SQUAD_EVENT_CONVERSATIONS, squadEventIDValid } from "./skill-event-bounds.ts"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { SkillLedger, type SkillMoment } from "./skill-use.ts"
 
@@ -36,7 +45,8 @@ export interface FeedClock {
 }
 
 interface WireEvent { seq: number; receipt_id: string; snapshot_id: string; conversation_id: string; definition_id: string; scope_id: string; skill_id: string; skill_version: string; status: SquadReceipt["status"]; at: number }
-interface WirePage { events: WireEvent[]; next_after: number; has_more: boolean }
+/** `unfiltered` is the relay reader's word for a `conversation=` read it answered with the whole log. */
+interface WirePage { events: WireEvent[]; next_after: number; has_more: boolean; unfiltered?: boolean }
 
 function receiptOf(entry: WireEvent): SquadReceipt {
   return { seq: entry.seq, receiptId: entry.receipt_id, snapshotId: entry.snapshot_id, conversationId: entry.conversation_id,
@@ -61,6 +71,8 @@ export class SkillFeed {
   private timer: unknown = null
   private live = true
   private delay = POLL_MS
+  /** The machine answered a filtered read with its whole log: every conversation is read. */
+  private unfiltered = false
 
   private readonly read: FeedRead
   private readonly changed: () => void
@@ -75,6 +87,7 @@ export class SkillFeed {
   /** Marks a conversation on screen until the returned function is called. */
   show(conversation: string): () => void {
     this.shown.set(conversation, (this.shown.get(conversation) ?? 0) + 1)
+    if (this.unfiltered) this.loaded.add(conversation)
     if (!this.loaded.has(conversation)) this.wake()
     let done = false
     return () => {
@@ -92,6 +105,7 @@ export class SkillFeed {
     this.generation++
     this.ledger = new SkillLedger()
     this.loaded = new Set()
+    this.unfiltered = false
     this.live = true
     this.delay = POLL_MS
     void this.poll(this.generation)
@@ -136,11 +150,27 @@ export class SkillFeed {
         // The live poll starts at the head; what came before is still state.
         this.ledger.advance(seq)
       }
-      const pending = [...this.shown.keys()].filter((conversation) => !this.loaded.has(conversation)).slice(0, MAX_SQUAD_EVENT_CONVERSATIONS)
+      const pending: string[] = []
+      for (const conversation of this.shown.keys()) {
+        if (this.loaded.has(conversation)) continue
+        // Nothing to ask for: the whole log is held, or the machine would refuse this ID.
+        if (this.unfiltered || !squadEventIDValid(conversation)) { this.loaded.add(conversation); continue }
+        if (pending.length < MAX_SQUAD_EVENT_CONVERSATIONS) pending.push(conversation)
+      }
       if (pending.length) {
-        await this.readStill(mine, pending)
+        try {
+          await this.readStill(mine, pending)
+        } catch {
+          // No live receipt was skipped, so `live` stays as it was.
+          if (mine !== this.generation) return
+          this.delay = Math.min(this.delay * 2, MAX_BACKOFF_MS)
+          this.later(mine, this.delay)
+          return
+        }
         if (mine !== this.generation) return
         for (const conversation of pending) this.loaded.add(conversation)
+        if (this.unfiltered) for (const conversation of this.shown.keys()) this.loaded.add(conversation)
+        this.delay = POLL_MS
         this.changed()
         this.later(mine, 0)
         return
@@ -179,6 +209,7 @@ export class SkillFeed {
    */
   private async readStill(mine: number, conversations: string[]): Promise<void> {
     const until = this.ledger.after
+    const asked = new Set(conversations)
     const query = conversations.map((conversation) => "conversation=" + encodeURIComponent(conversation)).join("&")
     let after = 0
     for (;;) {
@@ -186,7 +217,9 @@ export class SkillFeed {
       if (mine !== this.generation) return
       const page = pageOf(reply.value)
       if (!page) throw new Error("events")
+      if (page.unfiltered === true) this.unfiltered = true
       for (const entry of page.events) {
+        if (!asked.has(entry.conversation_id)) this.unfiltered = true
         if (entry.seq > until) return
         this.ledger.record(receiptOf(entry))
       }

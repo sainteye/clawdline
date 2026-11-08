@@ -146,8 +146,16 @@ to 3 (the head, one filtered read, one live poll), measured in
 `skill-feed-core.test.ts`. The phone reads the same routes through the relay
 (`squad-event-head`, `squad-events.conversations`, `squad-events`,
 `squad-session-snapshot`); a machine whose descriptor does not list
-`squad-events.conversations` is read with `squad-events`, the whole log, as
-before.
+`squad-events.conversations` is read with `squad-events`, the whole log. The
+relay marks that answer `unfiltered`, and a machine that ignores the filter
+names conversations nobody asked for; either way the feed then holds every
+conversation's still state up to the cursor and never reads the log again in
+that page's life, so such a machine costs one read of its log per page as it
+did before the filter, not one per Session shown later (12 reads on load and
+none per later Session at 1,000 receipts, where it had been 11 more each). An
+ID the daemon would refuse is never sent, so it cannot refuse the read for
+the other Sessions on screen, and a failed still read only backs off: it
+leaves no gap in the live cursor, so the next live receipts still play.
 
 ## Offline package and privacy boundary
 

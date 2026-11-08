@@ -33,7 +33,7 @@ import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
 import type { MachineListPresentation, MachineSessionProjection, SessionDestination, SessionListPresentation } from "./all-machine-sessions.js"
 import { authenticatedRefusalKey } from "./refusal-client.js"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
-import { MAX_SQUAD_EVENT_CONVERSATIONS, MAX_SQUAD_EVENT_ID_BYTES } from "../session/skill-event-bounds.ts"
+import { MAX_SQUAD_EVENT_CONVERSATIONS, MAX_SQUAD_SNAPSHOT_CONVERSATIONS, squadEventIDValid } from "../session/skill-event-bounds.ts"
 import { SESSION_INVENTORY_ID, channelSegment } from "../legacy/js/net/client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
@@ -340,20 +340,29 @@ const MACHINE_LACKS_WORD: ReadonlySet<string> = new Set(["unknown_command", "clo
  * The `conversation` filter of `/v1/squad/events` as the daemon reads it
  * (`squadEventConversations`, internal/transport/http/squad_events.go):
  * repeatable, each value comma-separated, duplicates once, at most
- * `MAX_SQUAD_EVENT_CONVERSATIONS`. Null refuses the whole read.
+ * `MAX_SQUAD_EVENT_CONVERSATIONS` (`limit`; the batched snapshot read takes
+ * `MAX_SQUAD_SNAPSHOT_CONVERSATIONS`). Null refuses the whole read.
  */
-export function squadEventConversations(values: readonly string[]): string[] | null {
+export function squadEventConversations(values: readonly string[], limit = MAX_SQUAD_EVENT_CONVERSATIONS): string[] | null {
   const out: string[] = []
-  const encoder = new TextEncoder()
   for (const value of values) {
     for (const id of value.split(",")) {
-      if (!id || encoder.encode(id).length > MAX_SQUAD_EVENT_ID_BYTES || /[\s\p{C}]/u.test(id)) return null
+      if (!squadEventIDValid(id)) return null
       if (out.includes(id)) continue
       out.push(id)
-      if (out.length > MAX_SQUAD_EVENT_CONVERSATIONS) return null
+      if (out.length > limit) return null
     }
   }
   return out
+}
+
+/** The row form of one full launch snapshot (`squadRowSnapshot`, internal/transport/http/squad.go). */
+function rowSnapshot(conversation: string, answer: unknown): Record<string, unknown> | null {
+  const body = answer as { snapshot_id?: unknown; snapshot?: { definition_id?: unknown; scope_id?: unknown; skills?: unknown } } | null
+  if (!body || typeof body.snapshot_id !== "string" || !body.snapshot) return null
+  const skills = Array.isArray(body.snapshot.skills) ? body.snapshot.skills as { id?: unknown; version?: unknown; enabled?: unknown; name?: unknown; purpose?: unknown; icon?: unknown }[] : []
+  return { conversation_id: conversation, snapshot_id: body.snapshot_id, definition_id: body.snapshot.definition_id, scope_id: body.snapshot.scope_id,
+    skills: skills.filter((skill) => skill?.enabled === true).map(({ id, version, name, purpose, icon }) => ({ id, version, name, purpose, icon })) }
 }
 
 /**
@@ -1074,11 +1083,14 @@ export class RelayReader {
         if (!id || id.includes("/")) return this.refuse(method, path, 404, "unknown_definition", "No definition has that ID.")
         return await this.machineRead(init?.signal, method, path, "squad.definition", { definition_id: id, ...(q.version ? { version: q.version } : {}) })
       }
+      // The squad reads below take `?machine=`, as `/v1/personas` does: a
+      // row of the all-machines list reads its own machine's Skill use
+      // (session/skill-feed.ts), one feed per machine.
       if (path.startsWith("/v1/squad/session-snapshots/")) {
-        this.only(url, path)
+        const machine = this.only(url, path, "machine").machine || this.machine
         const conversation = decodeURIComponent(path.slice("/v1/squad/session-snapshots/".length))
         if (!conversation || conversation.includes("/")) return this.refuse(method, path, 404, "snapshot_not_found", "No role snapshot belongs to that conversation.")
-        return await this.machineRead(init?.signal, method, path, "squad-session-snapshot", { conversation })
+        return await this.machineRead(init?.signal, method, path, "squad-session-snapshot", { conversation }, machine)
       }
       const gateExport = workV2ItemActionID(path, "gate-export")
       if (gateExport) {
@@ -1113,18 +1125,46 @@ export class RelayReader {
           return await this.machineRead(init?.signal, method, path, "squad.skill-sources", q)
         }
         case "/v1/squad/settings": {
-          const q = this.only(url, path, "place_id", "scope_id")
+          const q = this.only(url, path, "place_id", "scope_id", "machine")
           if (q.place_id && q.scope_id) return this.refuse(method, path, 400, "scope_mismatch", "Name one Project scope.")
-          return await this.machineRead(init?.signal, method, path, "squad.settings", q.place_id ? { place_id: q.place_id } : q.scope_id ? { scope_id: q.scope_id } : {})
+          return await this.machineRead(init?.signal, method, path, "squad.settings", q.place_id ? { place_id: q.place_id } : q.scope_id ? { scope_id: q.scope_id } : {}, q.machine || this.machine)
+        }
+        case "/v1/squad/session-snapshots": {
+          const q = this.only(url, path, "conversation", "machine")
+          const machine = q.machine || this.machine
+          const conversations = squadEventConversations(url.searchParams.getAll("conversation"), MAX_SQUAD_SNAPSHOT_CONVERSATIONS)
+          if (!conversations?.length) return this.refuse(method, path, 400, "bad_request", "Name 1 to " + MAX_SQUAD_SNAPSHOT_CONVERSATIONS + " conversations, each non-empty and printable.")
+          if (this.machineImplements("squad-session-snapshots", machine)) {
+            return await this.machineRead(init?.signal, method, path, "squad-session-snapshots", { conversations: conversations.join(",") }, machine)
+          }
+          // A machine from before the batch: one read per row, as before,
+          // answered in the batch's form so the console has one path.
+          const snapshots: Record<string, unknown>[] = []
+          for (const conversation of conversations) {
+            let reply: Response
+            try { reply = await this.machineRead(init?.signal, method, path, "squad-session-snapshot", { conversation }, machine) }
+            catch (error) {
+              // An older Session has no snapshot; any other failure fails the batch, to be read again.
+              if ((error as { status?: unknown } | null)?.status === 404) continue
+              throw error
+            }
+            if (reply.status === 404) continue
+            if (!reply.ok) return reply
+            const row = rowSnapshot(conversation, await reply.json())
+            if (row) snapshots.push(row)
+          }
+          return json(200, { snapshots })
         }
         case "/v1/squad/session-bindings":
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "squad-session-bindings", {})
-        case "/v1/squad/events/head":
-          this.only(url, path)
-          return await this.machineRead(init?.signal, method, path, "squad-event-head", {})
+        case "/v1/squad/events/head": {
+          const machine = this.only(url, path, "machine").machine || this.machine
+          return await this.machineRead(init?.signal, method, path, "squad-event-head", {}, machine)
+        }
         case "/v1/squad/events": {
-          const q = this.only(url, path, "after", "limit", "conversation")
+          const q = this.only(url, path, "after", "limit", "conversation", "machine")
+          const machine = q.machine || this.machine
           const after = q.after ?? "0", limit = q.limit ?? "50"
           if (!/^(0|[1-9][0-9]*)$/.test(after) || !/^[1-9][0-9]*$/.test(limit) || !Number.isSafeInteger(Number(after)) || !Number.isSafeInteger(Number(limit))) {
             return this.refuse(method, path, 400, "invalid_cursor", "The squad event cursor or limit is invalid.")
@@ -1132,14 +1172,19 @@ export class RelayReader {
           if (url.searchParams.has("conversation")) {
             const conversations = squadEventConversations(url.searchParams.getAll("conversation"))
             if (!conversations) return this.refuse(method, path, 400, "bad_request", "Name at most " + MAX_SQUAD_EVENT_CONVERSATIONS + " conversations, each non-empty and printable.")
-            // A machine from before the filter answers the whole log, which
-            // the feed reads as it always has (session/skill-feed.ts).
-            if (this.machineImplements("squad-events.conversations")) {
+            if (this.machineImplements("squad-events.conversations", machine)) {
               return await this.machineRead(init?.signal, method, path, "squad-events.conversations",
-                { after: Number(after), limit: Number(limit), conversations: conversations.join(",") })
+                { after: Number(after), limit: Number(limit), conversations: conversations.join(",") }, machine)
             }
+            // A machine from before the filter answers the whole log. Saying
+            // so lets the feed hold it for every Session and not ask again
+            // (`unfiltered`, session/skill-feed-core.ts).
+            const reply = await this.machineRead(init?.signal, method, path, "squad-events", { after: Number(after), limit: Number(limit) }, machine)
+            if (!reply.ok) return reply
+            const page = await reply.json() as Record<string, unknown> | null
+            return json(200, page && typeof page === "object" ? { ...page, unfiltered: true } : page)
           }
-          return await this.machineRead(init?.signal, method, path, "squad-events", { after: Number(after), limit: Number(limit) })
+          return await this.machineRead(init?.signal, method, path, "squad-events", { after: Number(after), limit: Number(limit) }, machine)
         }
         case "/v1/sessions":
           if (url.searchParams.has("look")) {
@@ -2787,10 +2832,10 @@ export class RelayReader {
    * `QUESTION_RESTATE_MS`, so a machine that answers with no question is not
    * asked in a loop.
    */
-  /** Whether this page's machine lists `word` among the reads it answers. */
-  private machineImplements(word: string): boolean {
+  /** Whether this page's machine, or `machine`, lists `word` among the reads it answers. */
+  private machineImplements(word: string, machine: string = this.machine): boolean {
     return (this.client as { _machineImplements?(machine: string, word: string): string } | null)
-      ?._machineImplements?.(this.machine, word) === "yes"
+      ?._machineImplements?.(machine, word) === "yes"
   }
 
   private askForOpenedQuestion(target: SessionDestination): boolean {

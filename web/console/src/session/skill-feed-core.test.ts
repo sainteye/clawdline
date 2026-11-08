@@ -153,3 +153,87 @@ test("a machine that ignores the filter is read as before and shows the same sti
   assert.equal(moments.length, 0)
   feed.stop()
 })
+
+test("a machine that ignores the filter is read once: Sessions shown later never reread the log", async () => {
+  for (const marked of [false, true]) {
+    const machine = busyMachine(false)
+    // `marked` is the relay's fallback, which says so even before a foreign receipt is seen.
+    const read = marked ? async (path: string) => {
+      const reply = await machine.read(path)
+      return path.includes("conversation=") ? { ...reply, value: { ...(reply.value as object), unfiltered: true } } : reply
+    } : machine.read
+    const clock = new Clock()
+    const moments: SkillMoment[] = []
+    const feed = new SkillFeed(read, () => {}, (moment: SkillMoment) => moments.push(moment), clock)
+    feed.show("conversation.1")
+    feed.start()
+    await clock.tick()
+    await clock.tick()
+    const first = machine.requests.length
+    // The whole log once, 100 a page, then the head and one live poll.
+    assert.equal(machine.requests.filter((path) => path.includes("after=0&")).length, 1, machine.requests.join("\n"))
+    assert.equal(first, 1 + Math.ceil(1000 / 100) + 1, machine.requests.join("\n"))
+    for (const conversation of ["conversation.2", "conversation.3"]) {
+      machine.requests = []
+      feed.show(conversation)
+      await clock.tick()
+      assert.deepEqual(machine.requests.filter((path) => path.includes("after=0&") || path.includes("conversation=")), [],
+        conversation + " was read again: " + machine.requests.join("\n"))
+      assert.equal(feed.ledger.usesFor(snapshotOf(conversation)).get("skill.review")?.status, "applied", conversation)
+    }
+    machine.add("conversation.3", "read")
+    await clock.tick(POLL_MS)
+    assert.deepEqual(moments.map((moment) => moment.receipt.seq), [1001], "a later receipt still plays once")
+    feed.stop()
+  }
+})
+
+test("an ID the machine would refuse is never sent and does not block the other Sessions", async () => {
+  const machine = busyMachine()
+  const strict = async (path: string) => {
+    const ids = new URL(path, "http://m").searchParams.getAll("conversation").flatMap((value) => value.split(","))
+    // The daemon refuses the whole read for one bad ID (squad_events.go).
+    if (ids.some((id) => !id || /[\s\p{C}]/u.test(id) || new TextEncoder().encode(id).length > 128)) { machine.requests.push(path); return { status: 400, value: { error: "bad_request" } } }
+    return machine.read(path)
+  }
+  const clock = new Clock()
+  const feed = new SkillFeed(strict, () => {}, () => {}, clock)
+  for (const conversation of ["conversation.3", "bad id", "x".repeat(129), "tab\tid", "conversation.7"]) feed.show(conversation)
+  feed.start()
+  await clock.tick()
+  const still = machine.requests.filter((path) => path.includes("conversation="))
+  assert.equal(still.length, 1, still.join("\n"))
+  assert.deepEqual(new URL(still[0], "http://m").searchParams.getAll("conversation"), ["conversation.3", "conversation.7"])
+  assert.equal(feed.ledger.usesFor(snapshotOf("conversation.7")).get("skill.review")?.status, "applied")
+  machine.requests = []
+  await clock.tick(POLL_MS)
+  assert.ok(machine.requests.every((path) => !path.includes("conversation=")), "nothing is asked again: " + machine.requests.join("\n"))
+  feed.stop()
+})
+
+test("a failed still read backs off without silencing the next live receipts", async () => {
+  const machine = busyMachine()
+  let failing = false
+  const flaky = async (path: string) => {
+    if (failing && path.includes("conversation=")) { machine.requests.push(path); return { status: 503, value: null } }
+    return machine.read(path)
+  }
+  const clock = new Clock()
+  const moments: SkillMoment[] = []
+  const feed = new SkillFeed(flaky, () => {}, (moment: SkillMoment) => moments.push(moment), clock)
+  feed.show("conversation.1")
+  feed.start()
+  await clock.tick()
+  failing = true
+  feed.show("conversation.2")
+  await clock.tick()
+  assert.ok(machine.requests.at(-1)?.includes("conversation=conversation.2"), "the still read was tried and failed")
+  failing = false
+  machine.add("conversation.1", "applied")
+  // The backoff after one failure is twice the poll; then the still read, then the live poll.
+  await clock.tick(2 * POLL_MS)
+  await clock.tick(POLL_MS)
+  assert.deepEqual(moments.map((moment) => moment.receipt.seq), [1001], "the live receipt after the failure plays")
+  assert.equal(feed.ledger.usesFor(snapshotOf("conversation.2")).get("skill.review")?.status, "applied")
+  feed.stop()
+})
