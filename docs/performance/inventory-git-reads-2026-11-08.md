@@ -112,3 +112,11 @@ at `addyosmani/agent-skills` commit
 Its MIT license, relative references and task-local preparation are retained in
 the earlier report. No measurement dependency or global skill was installed.
 The role's read/applied receipts are recorded for this task.
+
+## R1 correction
+
+The read-only review found that a missing checkout's unresolved work could be
+hidden when its branch returned after an earlier batch. The corrected predicate,
+red/green regression and fresh three-version measurements are recorded in
+[the R1 correction](inventory-r1-correction-2026-11-09.md). These later checks
+supersede any interpretation that the original candidate was ready to install.

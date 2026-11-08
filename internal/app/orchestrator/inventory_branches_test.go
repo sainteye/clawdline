@@ -179,3 +179,103 @@ func TestInventoryExistingCheckoutDoesNotUseEarlierBranchAbsence(t *testing.T) {
 		t.Fatal("earlier branch absence changed an existing checkout's disposal evidence")
 	}
 }
+
+func TestInventoryMissingCheckoutReadsUnresolvedBranchesImmediately(t *testing.T) {
+	for _, state := range []LandingState{"", LandingPending, "future-review"} {
+		name := string(state)
+		if name == "" {
+			name = "legacy without landing"
+		}
+		t.Run(name, func(t *testing.T) {
+			b, ctx, repo := archivedInventory(t, 1)
+			records, _, err := b.Records(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := records[0]
+			r.Worktree.Branch = "restored-delivery"
+			if state == "" {
+				r.Landing = nil
+			} else {
+				r.Landing = &Landing{State: state, Target: "main"}
+			}
+			// A retired record may use the same branch name. Restricting
+			// batch inputs alone cannot keep this unresolved row fresh.
+			retired := r
+			retired.Landing = &Landing{State: LandingLanded, Target: "main"}
+			lookup := b.branchPresence([]Record{retired, r})
+			if exists, known := lookup(ctx, repo, r.Worktree.Branch); exists || !known {
+				t.Fatal("initial branch absence not established")
+			}
+			gitIn(t, repo, "checkout", "-q", "-b", r.Worktree.Branch)
+			gitIn(t, repo, "commit", "-q", "--allow-empty", "-m", "restored work")
+			gitIn(t, repo, "checkout", "-q", "main")
+			now := time.Now()
+			got := b.rowWithBranches(ctx, r, now, b.occupancySnapshot(ctx), lookup)
+			want := b.row(ctx, r, now, b.occupancySnapshot(ctx))
+			if want.Section != VisibilityUnlanded || want.Do != DoLandOrAbandon {
+				t.Fatalf("invalid immediate-read control: %+v", want)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("missing checkout changed unresolved work: got %s/%s branched=%v; want %s/%s branched=%v", got.Section, got.Do, got.Branched, want.Section, want.Do, want.Branched)
+			}
+		})
+	}
+}
+
+func TestInventoryMissingCheckoutRestoredDuringRequestStaysVisible(t *testing.T) {
+	b, ctx, repo := archivedInventory(t, 3)
+	now := time.Now()
+	b.Clock = func() time.Time { return now }
+	records, _, err := b.Records(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, unresolved, retired := records[0], records[1], records[2]
+	first.ChildTerminalID, first.ChildBackend = "%77", "tmux"
+	unresolved.Landing = nil
+	unresolved.Worktree.Branch = "restored-delivery"
+	retired.Worktree.Branch = unresolved.Worktree.Branch
+	for _, r := range []Record{first, unresolved, retired} {
+		if err := b.save(ctx, r, HashSecret("s"), "task.test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := b.Store.MarkReclaim(ctx, store.Reclaim{Task: first.ID, Subject: ReclaimWorktree, Outcome: ReclaimRemoved, LastAt: now}, nil); err != nil {
+		t.Fatal(err)
+	}
+	b.keepReading(reading{sessions: map[string]session.Session{"%1": {ID: "%1"}}, complete: true, sources: map[string]bool{"tmux": true}})
+	created := false
+	b.ProcessCWDs = func(context.Context) ([]string, error) {
+		if !created {
+			// The first cleanup row has already read the batch. Restore the
+			// later legacy task's branch before that task is classified.
+			gitIn(t, repo, "checkout", "-q", "-b", unresolved.Worktree.Branch)
+			gitIn(t, repo, "commit", "-q", "--allow-empty", "-m", "restored work")
+			gitIn(t, repo, "checkout", "-q", "main")
+			created = true
+		}
+		return nil, nil
+	}
+	inv, err := b.ReadInventory(ctx, repo, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("fixture did not restore the branch inside the request")
+	}
+	if len(inv.Unlanded) != 1 || inv.Unlanded[0].Task != unresolved.ID || inv.Unlanded[0].Do != DoLandOrAbandon {
+		t.Fatalf("restored unresolved task disappeared: unlanded=%+v", inv.Unlanded)
+	}
+	fresh, err := b.ReadInventory(ctx, repo, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(InventoryPayload(inv), InventoryPayload(fresh)) {
+		t.Fatal("same-request restoration differs from a fresh inventory or generation")
+	}
+	inflight, err := b.Inflight(ctx, repo, "")
+	if err != nil || len(inflight) != 1 || inflight[0].Task != unresolved.ID {
+		t.Fatalf("restored task missing from inflight: rows=%+v err=%v", inflight, err)
+	}
+}

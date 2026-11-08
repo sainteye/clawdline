@@ -335,10 +335,10 @@ func (b *Broker) rowWithBranches(ctx context.Context, r Record, now time.Time, o
 	}
 
 	readBranch := branches
-	if row.OnDisk {
-		// An earlier absent-branch reading must not turn a checkout into
-		// an orphan after another writer creates its delivery branch.
-		// Keep the immediate individual read for existing checkouts.
+	if row.OnDisk || !settledLanding(row.Landing) {
+		// Existing checkouts and unresolved landings need an immediate
+		// read. A branch restored after the batch must not become an
+		// orphan or disappear from outstanding work when its checkout is gone.
 		readBranch = b.Git.BranchExists
 	}
 	exists, branchKnown := readBranch(ctx, r.Worktree.Repository, r.Worktree.Branch)
