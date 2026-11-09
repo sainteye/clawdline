@@ -772,6 +772,9 @@ func (c *Client) badResult(code string) error {
 // AlwaysProceedConfigured reads the native profile's explicit tool policy.
 // A modern execution mode alone never establishes full tool approval.
 func (c *Client) AlwaysProceedConfigured() bool {
+	if c.opts.Assistant == session.AssistantGrok {
+		return false
+	}
 	return (!PublicCLI(c.opts.Args) || c.fullApproval) && c.configuredAlwaysProceed()
 }
 

@@ -647,6 +647,7 @@
   "http.79ecca38aa1c8919": "Could not find that session's working directory",
   "http.79f767282a388fd5": "The package request must be one JSON object without duplicate keys.",
   "http.7a152f1c0aca7343": "Agent notifications were turned off by the user. Turn them on in Notifications.",
+  "http.7a512054f936f703": "Image input is not available for Grok in this integration yet.",
   "http.7a9f746e2233167d": "This Cloud line cannot rotate a key.",
   "http.7ae1806ec2c52361": "This key was already used for a different request; nothing was done. Use a new key.",
   "http.7b60aa169d77d4b7": "That could not be done.",

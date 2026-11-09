@@ -198,3 +198,68 @@ func TestGrokAccountQuotaIsExplicitlyUnsupported(t *testing.T) {
 		t.Fatalf("unsupported quota claimed a reading: %+v %v", reading, err)
 	}
 }
+
+func TestGrokCancellationPersistsPendingToolsWithoutInventingSuccess(t *testing.T) {
+	t.Setenv("CLW_WATCHDOG_TOOL_PEER", "yes")
+	h, row, opts := grokFixture(t)
+	if err := h.Send(context.Background(), row, "run the synthetic foreground command"); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := h.lookup(row)
+	waitFor(t, func() bool { c.mu.Lock(); defer c.mu.Unlock(); return len(c.activeTools) == 2 })
+	emitUpdate(t, c, row, map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "tool-one", "rawOutput": "partial output"})
+	emitUpdate(t, c, row, map[string]any{"sessionUpdate": "tool_call", "toolCallId": "already-done", "title": "Finished read", "status": "completed", "rawOutput": "kept result"})
+	if err := h.Interrupt(context.Background(), row); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+	check := func() {
+		t.Helper()
+		page, err := h.Transcript(row, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]bool{}
+		for _, e := range page.Entries {
+			if e.Activity == nil {
+				continue
+			}
+			id := e.Activity.ToolCallID
+			want := "cancelled"
+			if id == "already-done" {
+				want = "completed"
+			}
+			if e.Activity.Status != want {
+				t.Fatalf("tool %s status = %q; want %q", id, e.Activity.Status, want)
+			}
+			if id == "tool-one" && !strings.Contains(e.Activity.Result, "partial output") {
+				t.Fatal("cancellation discarded partial output")
+			}
+			seen[id] = true
+		}
+		for _, id := range []string{"tool-one", "tool-two", "already-done"} {
+			if !seen[id] {
+				t.Fatalf("tool %s missing", id)
+			}
+		}
+	}
+	check()
+	stopHost(t, h)
+	h = reopenHost(t, opts)
+	check()
+}
+
+func TestGrokNeverAdoptsGeminiFullApprovalProfile(t *testing.T) {
+	h, row, opts := grokFixture(t)
+	dir := filepath.Join(opts.AccountDir, "antigravity-acp")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"toolPermission":"always-proceed"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := h.lookup(row)
+	if c.client.AlwaysProceedConfigured() {
+		t.Fatal("Grok inherited Gemini's full approval profile")
+	}
+}

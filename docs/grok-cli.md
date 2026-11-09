@@ -5,9 +5,11 @@ This integration uses the official **Grok Build** coding agent, through
 coding harness around the xAI chat API. Grok owns file edits, shell tools,
 repository instructions and its native tool permission offers.
 
-This page describes the implementation candidate. Real account authentication,
-coding acceptance, independent end-to-end review and deployment are still
-pending; passing protocol peers does not establish those results.
+This page describes the supported coding surface and its verification boundaries.
+An authorized real account was used for native file edits, shell verification,
+same-conversation follow-up, saved history and a worktree dispatch with result
+and completion-notice acknowledgement. Release and installation status must be
+checked separately; a successful local candidate is not deployment evidence.
 
 ## Installation and account
 
@@ -66,7 +68,9 @@ Bare slash and shell controls without a verified route stay in the draft.
 `/model <offered-id>` and Session model controls use native model selection;
 file paths containing slashes or extensions remain ordinary input. This first
 surface does not claim the complete native slash catalog, images, arbitrary
-native interaction extensions, scheduling or a terminal fallback. Those need
+native interaction extensions, scheduling or a terminal fallback. Image controls,
+paste and drop cannot enqueue Grok pictures; the server also refuses image input
+before storing a picture or sending model input. Those need
 separate capability verification, rather than assuming Gemini support applies.
 
 ## Completion, interruption and recovery
@@ -79,7 +83,11 @@ and do not expose raw provider errors or credentials.
 Grok cancellation includes `_meta.cancelTrigger: "ctrl_c"`. The daemon can
 cancel and tear down its exact owned process. That alone does not establish
 that a detached native job, child process or external side effect stopped;
-real tool cancellation must be verified separately. An uncertain write is
+real tool cancellation must be verified separately. The foreground cancellation
+check observed a native `cancelled` result, a stopped heartbeat and an absent
+process without a cleanup kill. Pending tool cards are persisted as cancelled,
+with completed cards and partial output preserved. This records the invocation's
+outcome, not a guarantee about every external effect. An uncertain write is
 never automatically repeated. After a daemon restart, the original transcript
 can be resumed, but queued or interrupted Grok prompts are not automatically
 resent. The person controls the next input.
@@ -109,4 +117,20 @@ restart replay refusal, false-success prevention, repeated dispatch and
 unsupported permission refusal. Failure-injection runs demonstrated the old
 restart/marker/inactivity defects, incorrect provider address, accepting an
 unsupported edits ceiling and unverified account mode before their corrections.
-These are local tests, not real-provider end-to-end or deployed acceptance.
+These are local tests, not deployed acceptance.
+
+Independent real-provider verification also covered desktop and phone views,
+per-operation edit and shell permission replies, refresh, the native worker's
+commit, and the same root's completion notice and acknowledgement. A separate
+UX review found stale running tool cards after cancellation and an unsupported
+image affordance; targeted local regressions cover their corrections. The real
+worker exercise did not select a persona, so it does not establish native
+persona delivery. Frozen role/context serialization and provider isolation are
+covered by local contract tests.
+
+The CLI's persisted per-conversation usage did not include the cancelled turn.
+Missing usage is unknown, never zero, and a recorded CLI cost is not proof of a
+cash charge after subscription offsets. No extra model prompt is sent merely
+to fill that gap. The Session footer stays unknown without a verified native
+plan reading. A separate provider-service quota, when available, identifies its
+own source and observation time; it is not a Session token or cash-cost total.

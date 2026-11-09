@@ -744,7 +744,7 @@ func actionStatus(code string) int {
 		// are — the state, not the request, is what refused, and attaching a
 		// terminal and asking again is the remedy.
 		return http.StatusConflict
-	case "backend_unsupported":
+	case "backend_unsupported", "provider_images_unsupported":
 		return http.StatusNotImplemented
 	case "send_unsubmitted":
 		// The line was typed and Enter was held back: it is in the session's

@@ -123,6 +123,11 @@ test("Grok tool cards preserve vendor titles, incomplete status and escaped nati
   assert.match(html, /running/)
   assert.match(html, /&lt;script&gt;native output&lt;\/script&gt;/)
   assert.doesNotMatch(html, /<script>|completed/)
+  entry.activity.status = "cancelled"
+  const cancelled = renderToStaticMarkup(React.createElement(NativeToolCard, { entry, assistant: "grok", toolLabel: "tool", expanded: true }))
+  assert.match(cancelled, /cancelled/)
+  assert.doesNotMatch(cancelled, /running|completed/)
+  assert.match(cancelled, /&lt;script&gt;native output&lt;\/script&gt;/)
 })
 
 function cloudFixture() {

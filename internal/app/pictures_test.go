@@ -350,3 +350,15 @@ func TestQuotedPath(t *testing.T) {
 		}
 	}
 }
+
+func TestGrokPicturesRefuseBeforeAnyFileOrNativeInput(t *testing.T) {
+	a, host, lender, drops := pictureFixture(t, session.AssistantGrok)
+	_, err := a.SendWithPictures(context.Background(), "%7", "inspect this", []string{pngURL(t, 1, 1)})
+	var ref Refusal
+	if !errors.As(err, &ref) || ref.Code != "provider_images_unsupported" {
+		t.Fatalf("image refusal = %v", err)
+	}
+	if len(host.acts) != 0 || len(lender.acts) != 0 || len(files(t, drops)) != 0 {
+		t.Fatal("unsupported pictures caused a side effect")
+	}
+}

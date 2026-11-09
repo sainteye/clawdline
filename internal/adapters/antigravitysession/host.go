@@ -640,6 +640,11 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			_ = c.saveState()
 			return
 		}
+		if h.assistant() == session.AssistantGrok && result.StopReason == "cancelled" && c.storeErr == nil {
+			if err := c.cancelActiveTools(); err != nil {
+				outcome, c.storeErr = err, err
+			}
+		}
 		c.row.State = session.StateIdle
 		c.uncertain = false
 		if c.storeErr != nil {

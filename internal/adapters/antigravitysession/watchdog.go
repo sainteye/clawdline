@@ -76,3 +76,22 @@ func (h *Host) ActiveToolBytes() int {
 	}
 	return largest
 }
+
+// A native cancelled result ends the current invocation, not proof that every
+// external side effect stopped. Persist that outcome without inventing output
+// or replacing tools whose own terminal result was already received.
+func (c *conversation) cancelActiveTools() error {
+	status := "cancelled"
+	for id := range c.activeTools {
+		delta := &antigravityacp.ToolCallDelta{ToolCallID: id, Status: &status}
+		if c.store != nil {
+			if err := c.project(antigravityacp.SessionUpdate{Tool: delta}); err != nil {
+				return err
+			}
+		} else if index, ok := c.tools[id]; ok && index >= 0 && index < len(c.entries) && c.entries[index].Activity != nil {
+			applyToolDelta(&c.entries[index], delta)
+			c.changed()
+		}
+	}
+	return nil
+}

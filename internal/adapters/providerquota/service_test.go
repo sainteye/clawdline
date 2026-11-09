@@ -26,7 +26,7 @@ func TestProviderPayloadsKeepZeroUnknownAndWindowIdentity(t *testing.T) {
 		{"gemini malformed fraction", "gemini", `{"buckets":[{"modelId":"gemini-pro","remainingFraction":2}]}`, 0, 0, ""},
 		{"grok explicit zero", "grok", `{"config":{"creditUsagePercent":0}}`, 1, 0, "7d"},
 		{"grok unknown", "grok", `{"config":{"onDemandUsed":{"val":0}}}`, 0, 0, ""},
-		{"grok weekly default zero", "grok", `{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-10-01T00:00:00Z","end":"2026-10-08T00:00:00Z"},"billingPeriodStart":"2026-10-01T00:00:00Z","billingPeriodEnd":"2026-10-08T00:00:00Z"}`, 1, 0, "7d"},
+		{"grok dated weekly missing percent remains unknown", "grok", `{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-10-01T00:00:00Z","end":"2026-10-08T00:00:00Z"},"billingPeriodStart":"2026-10-01T00:00:00Z","billingPeriodEnd":"2026-10-08T00:00:00Z"}`, 0, 0, ""},
 		{"grok monthly never weekly", "grok", `{"config":{"monthlyLimit":{"val":"200"},"used":{"val":"50"}}}`, 1, 25, "monthly"},
 		{"grok bad money", "grok", `{"monthlyLimit":{"val":"200oops"},"used":{"val":"50"}}`, 0, 0, ""},
 	}

@@ -48,6 +48,8 @@
 
 Clawdline runs the daemon and console on your machine and works with Claude Code and Codex Sessions you already use. Cloud is optional; its relay carries encrypted data. [How it works](docs/architecture.md)
 
+Official [Grok Build coding Sessions](docs/grok-cli.md) also support native file edits, tool approvals and worktree dispatch after CLI sign-in.
+
 ## Sessions that work across machines (Cloud)
 
 Let Codex on your Mac work with Claude Code on Linux. After reciprocal pairing, Agents can discover remote Projects and Sessions, dispatch work to a chosen Project, message an existing Session, and resume when results return. You do not have to copy instructions and replies between machines.

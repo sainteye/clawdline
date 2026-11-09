@@ -31,7 +31,7 @@ export var T = {
     webCountNone: "no sessions",
     webFilterPlaceholder: "Filter by task, project or tty",
     webFilterLabel: "Filter sessions",
-    webListLabel: "Claude Code sessions",
+    webListLabel: "Sessions",
     webPull: "Pull to refresh",
     webPullRelease: "Release to refresh",
     webPullBusy: "Refreshing…",

@@ -1,3 +1,4 @@
+import { assistantLabel } from "../session/antigravity-ui.js"
 import { codegraphGuidanceStatus, codegraphIndexHint, codegraphInstructions, legacyCodegraphEnabled, legacyCodegraphKey } from "../codegraph/session-guidance.js"
 import { captureMachineFetch } from "../cloud/install.js"
 import { newRequestID } from "../session/pending.js"
@@ -601,7 +602,10 @@ function html(d: Facts): string {
   out += workflowInfoHTML(d.workflow)
   let i = 0
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
-  if (d.protocol) out += sec(++i, catalogWord("acp", "title"), "", protocolStateHTML(d.protocol, key => catalogWord("acp", key), esc, L.clock))
+  if (d.protocol) {
+    const protocolWord = (key: string) => catalogWord("acp", key).replaceAll("{assistant}", assistantLabel(s.assistant))
+    out += sec(++i, protocolWord("title"), "", protocolStateHTML(d.protocol, protocolWord, esc, L.clock))
+  }
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
   if (codegraphEnabled && s.cwd) {

@@ -586,6 +586,9 @@ func (a Actions) SendWithPictures(ctx context.Context, id, text string, images [
 	if err != nil {
 		return session.Session{}, err
 	}
+	if s.Assistant == session.AssistantGrok {
+		return s, beforeTheFirstByte(Refusal{Code: "provider_images_unsupported", Detail: "Image input is not available for Grok in this integration yet."})
+	}
 	if err := a.checkTodoProcess(s); err != nil {
 		return s, err
 	}

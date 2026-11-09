@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10885,
+  "englishKeys": 10887,
   "counts": {
-    "negation": 3025,
+    "negation": 3027,
     "state": 1787,
     "permission": 639,
     "deletion": 243,
     "uncertainty": 413
   },
-  "unionCount": 4787,
+  "unionCount": 4789,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -770,6 +770,7 @@
       "documents.videoError",
       "documents.videoNotFound",
       "documents.videoReadFailed",
+      "grok.imagesUnavailable",
       "grok.slashDraft",
       "grok.turnIncomplete",
       "health.at_failed",
@@ -1365,6 +1366,7 @@
       "http.79564a6a4af96242",
       "http.79ecca38aa1c8919",
       "http.79f767282a388fd5",
+      "http.7a512054f936f703",
       "http.7a9f746e2233167d",
       "http.7ae1806ec2c52361",
       "http.7b60aa169d77d4b7",
@@ -7334,6 +7336,7 @@
     "documents.videoNotFound",
     "documents.videoPosterUnavailable",
     "documents.videoReadFailed",
+    "grok.imagesUnavailable",
     "grok.slashDraft",
     "grok.turnIncomplete",
     "health.at_failed",
@@ -8159,6 +8162,7 @@
     "http.79564a6a4af96242",
     "http.79ecca38aa1c8919",
     "http.79f767282a388fd5",
+    "http.7a512054f936f703",
     "http.7a9f746e2233167d",
     "http.7ae1806ec2c52361",
     "http.7b60aa169d77d4b7",

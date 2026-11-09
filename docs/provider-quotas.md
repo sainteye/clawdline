@@ -64,8 +64,10 @@ it does not bypass provider cooldowns.
 Failed refreshes keep the last successful windows marked outdated. A changed credential identity
 clears the previous account's cached reading, and an in-flight answer for it cannot publish into
 the new identity. Missing login files clear that provider. A missing numeric response is unknown,
-not zero. Grok's omitted scalar zero is inferred only with an explicitly weekly period and matching,
-valid billing dates; a computable monthly budget stays monthly. Quota percentages that have passed
+not zero. Grok requires an explicit percentage or a numeric used/limit pair. A dated weekly period
+alone remains unknown: the [official CLI billing codec](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/extensions/billing.rs#L55)
+represents `credit_usage_percent` as optional. This does not reinterpret an explicit zero.
+Computable monthly budgets stay monthly. Quota percentages that have passed
 their reset time remain marked outdated until the next usable observation.
 
 ## Claude without a status line

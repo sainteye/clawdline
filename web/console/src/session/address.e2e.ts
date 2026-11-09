@@ -87,12 +87,13 @@ const picker = (question: string, labels: string[]) => ({ question,
   options: labels.map((label, i) => ({ n: i + 1, label, can: true, selected: i === 0 })) })
 const ACP = "owned:acp:fixture"
 let acpProtocolState: Record<string, unknown> | undefined
+let protocolAssistant = "antigravity"
 let protocolMenuScenario: { waiting: boolean; requests: Record<string, unknown>[] } | null = null
 const protocolMenu = { revision: "native-offer-exact", question: "Inspect the attached image?", options: [
   { n: 1, label: "Allow once", can: true, selected: false }, { n: 2, label: "Deny", can: true, selected: false },
 ] }
 function protocolRow() {
- return { ...row(ACP, "Gemini fixture", "owned", "native-fixture"), assistant: "antigravity", identity: "protocol", isClaude: false,
+ return { ...row(ACP, "Gemini fixture", "owned", "native-fixture"), assistant: protocolAssistant, identity: "protocol", isClaude: false,
   evidence: "structured", state: protocolMenuScenario?.waiting ? "waiting" : "idle", menu: protocolMenuScenario?.waiting ? protocolMenu : null }
 }
 const codegraphRealView=process.env.CLAWDLINE_CODEGRAPH_SMOKE_VIEW?JSON.parse(readFileSync(process.env.CLAWDLINE_CODEGRAPH_SMOKE_VIEW,"utf8")):null
@@ -418,7 +419,7 @@ function daemon(): Server {
           session: {
             id: session.id,
             title: session.label,
-            assistant: id === ACP ? "antigravity" : rotationScenario ? "codex" : "claude",
+            assistant: id === ACP ? protocolAssistant : rotationScenario ? "codex" : "claude",
             namingAssistant,
             sessionId: session.sessionId,
             cwd: session.cwd,
@@ -4010,7 +4011,8 @@ test("Sigma rendering failure keeps the keyboard node list and source inspector 
 test("ACP lifecycle evidence renders in English and Traditional Chinese on phone and desktop", async () => {
   protocolMenuScenario = {waiting:false,requests:[]}
   try {
-    for (const lang of ["en", "zh-Hant"]) for (const [name,size] of [["desktop",DESK],["phone",PHONE]] as const) {
+    for (const assistant of ["antigravity", "grok"]) for (const lang of ["en", "zh-Hant"]) for (const [name,size] of [["desktop",DESK],["phone",PHONE]] as const) {
+      protocolAssistant = assistant
       acpProtocolState = {phase:"cancel_requested",operation:"prompt",sequence:5,unrecognized:0,last_received_at:1e9,trace_enabled:true}
       await inTab(size,async tab => {
         await tab.go("/")
@@ -4029,13 +4031,15 @@ test("ACP lifecycle evidence renders in English and Traditional Chinese on phone
           };check()
         })`)
         assert.match(String(seen),lang==="en"?/Cancellation was sent/:/已送出取消/)
+        assert.match(String(seen), assistant === "grok" ? /Grok/ : /Gemini/)
+        if (assistant === "grok") assert.doesNotMatch(String(seen), /Gemini/)
         assert.match(String(seen),lang==="en"?/Raw communication is recorded locally/:/原始通訊保存在本機/)
         const bounds=await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth})`)
         assert.ok(bounds.page<=bounds.width+1,JSON.stringify(bounds))
-        if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`acp-lifecycle-${lang}-${name}`)}
+        if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`acp-lifecycle-${assistant}-${lang}-${name}`)}
       })
     }
-  } finally {protocolMenuScenario=null;acpProtocolState=undefined}
+  } finally {protocolMenuScenario=null;acpProtocolState=undefined;protocolAssistant="antigravity"}
 })
 
 
@@ -4096,4 +4100,35 @@ test("rotation reminder uses attention notes, dismisses without sending and hand
       await tab.shot("rotation-05-receiver")
     })
   } finally { rotationScenario=null }
+})
+
+// A synthetic provider boundary: these uploads never leave this test server.
+test("Grok pictures stay out of every composer input route", async () => {
+ protocolMenuScenario = { waiting: false, requests: [] }
+ protocolAssistant = "grok"
+ try {
+  await inTab({ width: 390, height: 844, mobile: true }, async tab => {
+   await tab.go("/?ui=en#session=" + encodeURIComponent(ACP))
+   await tab.until("Grok opens", state => state.open === ACP)
+   const until = Date.now() + 5000
+   while (!await tab.run(`document.getElementById("msg")?.isContentEditable`)) {
+    if (Date.now() > until) assert.fail("Grok composer did not load")
+    await new Promise(resolve => setTimeout(resolve, 20))
+   }
+   assert.equal(await tab.run(`document.getElementById("attach")?.disabled`), true)
+   await tab.run(`new Promise(resolve => {
+    const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
+    canvas.toBlob(blob => {
+     const dt = new DataTransfer(); dt.items.add(new File([blob], "unsupported.png", {type:"image/png"}));
+     const pick = document.getElementById("pick"); pick.files = dt.files; pick.dispatchEvent(new Event("change",{bubbles:true}));
+     document.getElementById("msg").dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true}));
+     document.getElementById("pane-detail").dispatchEvent(new DragEvent("drop",{dataTransfer:dt,bubbles:true,cancelable:true}));
+     resolve(true);
+    });
+   })`)
+   await new Promise(resolve => setTimeout(resolve, 100))
+   assert.equal(await tab.run(`document.querySelectorAll("#shots .shot").length`), 0)
+   assert.equal(await tab.run(`document.getElementById("send")?.disabled`), true)
+  })
+ } finally { protocolAssistant = "antigravity"; protocolMenuScenario = null }
 })

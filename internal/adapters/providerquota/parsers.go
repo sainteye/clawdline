@@ -115,10 +115,7 @@ func parseGrok(b []byte) ([]Window, error) {
 			return []Window{{Name: "monthly", UsedPercent: clamp(used / cap * 100), ResetsAt: resetAt(c.End)}}, nil
 		}
 	}
-	// Protobuf JSON may omit scalar zero. Infer it only from an explicitly weekly,
-	// dated period, never from a missing field or an overflow-spending balance.
-	if c.Period != nil && c.Period.Type == "USAGE_PERIOD_TYPE_WEEKLY" && resetAt(c.Period.Start) != nil && resetAt(c.Period.End) != nil && c.Start == c.Period.Start && c.End == c.Period.End {
-		return []Window{{Name: "7d", UsedPercent: 0, ResetsAt: resetAt(c.Period.End)}}, nil
-	}
+	// BillingConfig.credit_usage_percent is optional in the native CLI codec.
+	// Dates alone do not establish a numeric reading, even for a weekly period.
 	return []Window{}, nil
 }
