@@ -65,6 +65,25 @@ func TestCodexPageHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestCodexPageWaitsForSlowProviderWithinRequestBudget(t *testing.T) {
+	const id = "00000000-0000-4000-8000-000000000004"
+	exe, _ := historyProvider(t, `{"id":1,"result":{"data":[{"id":"`+id+`","cwd":"/project","source":"cli","updatedAt":10,"preview":"Continue the design"}],"nextCursor":null}}`)
+	raw, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Real provider reads can take more than eight seconds after initialize.
+	// A healthy reply within the overall request budget must remain usable.
+	raw = []byte(strings.Replace(string(raw), "*thread/list*|*thread/read*) echo", "*thread/list*|*thread/read*) sleep 9; echo", 1))
+	if err := os.WriteFile(exe, raw, 0700); err != nil {
+		t.Fatal(err)
+	}
+	rows, next, err := codexPastPage(context.Background(), exe, Place{Path: "/project"}, nil, PastTitles{}, "")
+	if err != nil || len(rows) != 1 || rows[0].ID != id || next != "" {
+		t.Fatalf("slow provider: rows=%v next=%q err=%v", rows, next, err)
+	}
+}
+
 func TestCodexResumeReadsOnlyTheSelectedThreadAndChecksItsProject(t *testing.T) {
 	const id = "00000000-0000-4000-8000-000000000002"
 	for _, cwd := range []string{"/project", "/another-project"} {
