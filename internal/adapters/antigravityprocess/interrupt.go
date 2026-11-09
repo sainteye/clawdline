@@ -3,6 +3,7 @@ package antigravityprocess
 import (
 	"context"
 	"encoding/json"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"time"
 )
 
@@ -52,7 +53,11 @@ func (c *Client) Interrupt(ctx context.Context, before func() error) error {
 	}
 	c.cancelledPrompt = id
 	c.stateMu.Unlock()
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]string{"sessionId": c.SessionID()}})
+	params := map[string]any{"sessionId": c.SessionID()}
+	if c.opts.Assistant == session.AssistantGrok {
+		params["_meta"] = map[string]string{"cancelTrigger": "ctrl_c"}
+	}
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": params})
 	if err := c.writeUnlocked(b); err != nil {
 		c.shutdown(failure("write_failed", Uncertain))
 		return failure("write_failed", Uncertain)

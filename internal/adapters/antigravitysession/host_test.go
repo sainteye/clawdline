@@ -28,6 +28,9 @@ func TestOwnedPeer(t *testing.T) {
 	enc := json.NewEncoder(os.Stdout)
 	nativeID := "synthetic-native"
 	dir := os.Getenv("GEMINI_HOME")
+	if os.Getenv("GROK_HOME") != "" {
+		dir = os.Getenv("GROK_HOME")
+	}
 	if os.Getenv("CLW_IDENTITY_CHECK") == "yes" {
 		path := os.Getenv("CLAWDLINE_PROTOCOL_SESSION_FILE")
 		if raw, err := os.ReadFile(path); err == nil {
@@ -97,6 +100,10 @@ func TestOwnedPeer(t *testing.T) {
 			continue
 		case "initialize":
 			result = map[string]any{"protocolVersion": 1}
+			if os.Getenv("GROK_HOME") != "" {
+				result.(map[string]any)["_meta"] = map[string]any{"grokShell": true, "agentVersion": "1.0.77"}
+				result.(map[string]any)["authMethods"] = []any{map[string]string{"id": "cached_token"}}
+			}
 			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
 				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
 			}

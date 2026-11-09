@@ -20,6 +20,7 @@ const (
 	AssistantClaude      Assistant = "claude"
 	AssistantCodex       Assistant = "codex"
 	AssistantAntigravity Assistant = "antigravity"
+	AssistantGrok        Assistant = "grok"
 )
 
 // assistants is every assistant kind known to this daemon.

@@ -55,7 +55,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	if c == nil && importing {
 		now := time.Now()
 		c = &conversation{store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text(), tools: map[string]int{}, textIndex: -1,
-			row: session.Session{ID: "owned:acp:" + rand.Text(), Backend: session.BackendOwned, Assistant: session.AssistantAntigravity, CWD: cwd, ConversationID: conversationID, Binding: session.BindingProtocol, State: session.StateUnknown, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}}}
+			row: session.Session{ID: "owned:acp:" + rand.Text(), Backend: session.BackendOwned, Assistant: h.assistant(), CWD: cwd, ConversationID: conversationID, Binding: session.BindingProtocol, State: session.StateUnknown, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}}}
 	}
 	if c == nil {
 		h.mu.Unlock()
@@ -107,7 +107,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		}
 	}
 	identityPath := h.identityPath(stage.row.ID)
-	if err := publishIdentity(identityPath, conversationID); err != nil {
+	if err := publishIdentityFor(identityPath, conversationID, string(h.assistant())); err != nil {
 		return session.Session{}, err
 	}
 	importedIdentityKept := false
@@ -120,7 +120,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	// callbacks; it never calls a client method or waits on an RPC from a callback.
 	var relay sync.Mutex
 	target := stage
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{OnWire: h.wireObserver(stage.row.ID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, SquadCapabilityPath: stage.launchContext.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: func(ctx context.Context, raw json.RawMessage) error {
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Assistant: h.assistant(), OnWire: h.wireObserver(stage.row.ID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, SquadCapabilityPath: stage.launchContext.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: func(ctx context.Context, raw json.RawMessage) error {
 		relay.Lock()
 		defer relay.Unlock()
 		return target.update(ctx, raw)
@@ -378,7 +378,7 @@ func (c *conversation) project(u antigravityacp.SessionUpdate) (err error) {
 		ordinal = c.ordinal
 	}
 	e.Text += u.Text
-	if role == "assistant" {
+	if role == "assistant" && c.row.Assistant != session.AssistantGrok {
 		var found bool
 		e.Text, found = stripTurnEnd(e.Text)
 		c.noteTurnEnd(found, u.Text)

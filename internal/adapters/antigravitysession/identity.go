@@ -22,6 +22,13 @@ func (h *Host) identityPath(ownedID string) string {
 // publishIdentity replaces complete private JSON atomically. Retrying publishes
 // the same identity; a failed write never exposes partial JSON to native tools.
 func publishIdentity(path, nativeID string) error {
+	return publishIdentityFor(path, nativeID, "antigravity")
+}
+
+func publishIdentityFor(path, nativeID, assistant string) error {
+	if assistant != "antigravity" && assistant != "grok" {
+		return refusal("identity_unavailable")
+	}
 	if path == "" {
 		return nil
 	} // In-memory SDK hosts retain their no-file behavior.
@@ -31,7 +38,7 @@ func publishIdentity(path, nativeID string) error {
 	raw, err := json.Marshal(struct {
 		Assistant      string `json:"assistant"`
 		ConversationID string `json:"conversation_id"`
-	}{"antigravity", nativeID})
+	}{assistant, nativeID})
 	if err != nil {
 		return refusal("identity_unavailable")
 	}

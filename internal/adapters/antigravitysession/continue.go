@@ -23,6 +23,10 @@ const ContinueText = "[Clawdline] The Clawdline daemon restarted while your prev
 // so a failed or repeated start never sends it twice. It answers how many
 // conversations it started to wake; each send runs as a host job.
 func (h *Host) ContinueInterrupted(ctx context.Context) int {
+	// Recovery never creates new Grok work or drains inputs after an uncertain edit.
+	if h.assistant() == session.AssistantGrok {
+		return 0
+	}
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()

@@ -23,6 +23,8 @@ import (
 // Options selects an already signed-in personal profile. No profile is copied,
 // discovered, or enabled by default. The lifetime belongs to the daemon.
 type Options struct {
+	// Assistant is an explicit native provider; empty keeps Gemini compatibility.
+	Assistant              session.Assistant
 	Executable, AccountDir string
 	StateDir               string
 	Args                   []string
@@ -143,7 +145,7 @@ func (e *Error) Error() string     { return "antigravity_session_" + e.Code }
 func refusal(code string) error    { return &Error{Code: code, Delivery: antigravityprocess.NotWritten} }
 
 func New(ctx context.Context, opts Options) (*Host, error) {
-	if ctx == nil || ctx.Err() != nil || !filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) {
+	if (opts.Assistant != "" && opts.Assistant != session.AssistantAntigravity && opts.Assistant != session.AssistantGrok) || ctx == nil || ctx.Err() != nil || !filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) {
 		return nil, refusal("invalid_configuration")
 	}
 	if opts.InactivityTimeout <= 0 {
@@ -172,6 +174,13 @@ func New(ctx context.Context, opts Options) (*Host, error) {
 			return nil, err
 		}
 	}
+	for _, c := range h.rows {
+		if c.row.Assistant != h.assistant() {
+			h.store.db.Close()
+			cancel()
+			return nil, refusal("identity_changed")
+		}
+	}
 	if opts.RawTrace {
 		if h.store == nil {
 			h.traceErr = "trace_unavailable"
@@ -183,6 +192,13 @@ func New(ctx context.Context, opts Options) (*Host, error) {
 	}
 	return h, nil
 }
+func (h *Host) assistant() session.Assistant {
+	if h.opts.Assistant == session.AssistantGrok {
+		return session.AssistantGrok
+	}
+	return session.AssistantAntigravity
+}
+
 func (h *Host) Name() string { return string(session.BackendOwned) }
 
 func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session, error) {
@@ -216,7 +232,7 @@ func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch 
 	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text(), launchContext: launch}
 	ownedID := "owned:acp:" + rand.Text()
 	identityPath := h.identityPath(ownedID)
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{OnWire: h.wireObserver(ownedID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Assistant: h.assistant(), OnWire: h.wireObserver(ownedID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -255,12 +271,12 @@ func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch 
 	if err := selectInitialModel(ctx, client, c, model); err != nil {
 		return session.Session{}, err
 	}
-	if err := publishIdentity(identityPath, client.SessionID()); err != nil {
+	if err := publishIdentityFor(identityPath, client.SessionID(), string(h.assistant())); err != nil {
 		return session.Session{}, err
 	}
 	now := time.Now()
 	c.mu.Lock()
-	c.row = session.Session{ID: ownedID, Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, WorkflowLaunchID: launch.WorkflowLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
+	c.row = session.Session{ID: ownedID, Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, WorkflowLaunchID: launch.WorkflowLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: h.assistant(), CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	if err := c.saveState(); err != nil {
 		c.mu.Unlock()
 		return session.Session{}, err
@@ -279,7 +295,7 @@ func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch 
 }
 
 func (h *Host) lookup(s session.Session) (*conversation, error) {
-	if s.Backend != session.BackendOwned || s.Binding != session.BindingProtocol || s.Assistant != session.AssistantAntigravity {
+	if s.Backend != session.BackendOwned || s.Binding != session.BindingProtocol || s.Assistant != h.assistant() {
 		return nil, refusal("identity_changed")
 	}
 	h.mu.Lock()
@@ -527,7 +543,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 							return
 						}
 						last := c.lastActivity.Load()
-						if marked && time.Since(time.Unix(0, last)) >= turnEndGrace {
+						if h.assistant() != session.AssistantGrok && marked && time.Since(time.Unix(0, last)) >= turnEndGrace {
 							// The model said it finished and nothing has arrived since.
 							c.endedFinished.Store(true)
 							c.timedOut.Store(true)
@@ -537,7 +553,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 						if time.Since(time.Unix(0, last)) >= inactivityTimeout {
 							// A reply that ended in text with nothing running is a
 							// finished turn the runtime did not report, not a failure.
-							c.endedFinished.Store(replied)
+							c.endedFinished.Store(replied && h.assistant() != session.AssistantGrok)
 							c.timedOut.Store(true)
 							_ = cl.Interrupt(context.Background(), nil)
 							return
@@ -570,6 +586,12 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 		defer c.mu.Unlock()
 		outcome = err
 		c.permission = nil
+		if h.assistant() == session.AssistantGrok && c.timedOut.Load() {
+			c.row.State, c.uncertain = session.StateUnknown, true
+			c.append(contract.TranscriptEntry{Role: "error", Text: "grok_turn_inactivity_timeout", At: time.Now().Unix()})
+			_ = c.saveState()
+			return
+		}
 		if err != nil {
 			var local interface{ BeforeWrite() bool }
 			if errors.As(err, &local) && local.BeforeWrite() {
@@ -1019,7 +1041,7 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 			c.textIndex = len(c.entries) - 1
 		}
 		c.entries[c.textIndex].Text += u.Text
-		if role == "assistant" {
+		if role == "assistant" && c.row.Assistant != session.AssistantGrok {
 			var found bool
 			c.entries[c.textIndex].Text, found = stripTurnEnd(c.entries[c.textIndex].Text)
 			c.noteTurnEnd(found, u.Text)

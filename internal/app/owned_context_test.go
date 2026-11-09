@@ -14,6 +14,32 @@ import (
 	"github.com/sainteye/clawdline/skills"
 )
 
+func TestOwnedGrokUsesItsLanguageWithoutGeminiPreferences(t *testing.T) {
+	place := projects.Place{Path: t.TempDir()}
+	s := Starter{Memory: func(path string) string {
+		if path != place.Path {
+			t.Fatal("wrong project")
+		}
+		return "Synthetic project rules"
+	}, Language: func(provider string) string {
+		if provider != "grok" {
+			t.Fatalf("language provider=%q", provider)
+		}
+		return "zh-Hant-TW"
+	}, GeminiStepExplanations: func() bool { t.Fatal("Grok read a Gemini-only preference"); return true }}
+	got, err := s.PrepareOwnedContextFor(t.Context(), place, "", "grok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := got.Context.Instructions()
+	if !strings.Contains(text, "zh-Hant-TW") || !strings.Contains(text, "Synthetic project rules") || got.Context.ShouldExplainSteps() || strings.Contains(text, "progress step-by-step") {
+		t.Fatalf("provider context=%s", text)
+	}
+	if _, err := s.PrepareOwnedContextFor(t.Context(), place, "", "unrecognized"); err == nil {
+		t.Fatal("unknown provider accepted")
+	}
+}
+
 func TestOwnedGeminiFreezesCodeGraphConsentAndWorkflowReceipt(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "off", true: "on"}[enabled], func(t *testing.T) {

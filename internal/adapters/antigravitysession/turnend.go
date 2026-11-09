@@ -46,7 +46,7 @@ func stripTurnEnd(text string) (string, bool) {
 // was accumulated. Only a marker with nothing but whitespace after it marks
 // the end; anything the model does next clears it.
 func (c *conversation) noteTurnEnd(found bool, chunk string) {
-	if c.replaying || c.row.State != session.StateWorking {
+	if c.row.Assistant == session.AssistantGrok || c.replaying || c.row.State != session.StateWorking {
 		return
 	}
 	if found {
@@ -63,6 +63,9 @@ func (c *conversation) noteTurnEnd(found bool, chunk string) {
 // assistant text then a usage_update; a step that ends in a tool call reports
 // the tool, and a usage_update after text is how a generation step closes.
 func (c *conversation) noteReplyEnd(kind string) {
+	if c.row.Assistant == session.AssistantGrok {
+		return
+	}
 	switch kind {
 	case "usage_update":
 		if c.lastKind == "agent_message_chunk" {

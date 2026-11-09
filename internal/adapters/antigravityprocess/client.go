@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravityacp"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Delivery distinguishes a local refusal from an acknowledged response and an
@@ -52,6 +53,8 @@ func failure(code string, delivery Delivery) *Error { return &Error{Code: code, 
 // not call Close or another client method synchronously. Returning an error stops
 // the process; its text is never propagated. No callback means discard updates.
 type Options struct {
+	// Assistant selects the native dialect. Empty preserves the personal Gemini contract.
+	Assistant                          session.Assistant
 	Executable, AccountDir, WorkingDir string
 	// SquadCapabilityPath is the exact daemon-prepared capability file, never its value.
 	SquadCapabilityPath string
@@ -145,6 +148,7 @@ type Client struct {
 	closeErr                      error
 	sequence                      uint64
 	initialized, authenticated    bool
+	cachedToken                   bool
 	sessionID                     string
 	usage                         *usageCapture               // stateMu; readLoop owns chunk order
 	configResult                  func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
@@ -166,7 +170,7 @@ type usageCapture struct {
 // Start does not authenticate. ctx owns the entire process lifetime. Cancellation
 // kills the private group before reaping its leader and unblocks both pipes.
 func Start(ctx context.Context, opts Options) (*Client, error) {
-	if ctx == nil || opts.MaxFrameBytes <= 0 || opts.MaxFrameBytes == int(^uint(0)>>1) || opts.CallTimeout <= 0 ||
+	if (opts.Assistant != "" && opts.Assistant != session.AssistantAntigravity && opts.Assistant != session.AssistantGrok) || ctx == nil || opts.MaxFrameBytes <= 0 || opts.MaxFrameBytes == int(^uint(0)>>1) || opts.CallTimeout <= 0 ||
 		(opts.SquadCapabilityPath != "" && !filepath.IsAbs(opts.SquadCapabilityPath)) ||
 		(opts.SessionIdentityPath != "" && !filepath.IsAbs(opts.SessionIdentityPath)) ||
 		!filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) || !filepath.IsAbs(opts.WorkingDir) {
@@ -186,7 +190,7 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 		return nil, failure("pipe_failed", NotWritten)
 	}
 	defer stderr.Close()
-	cmd.Dir, cmd.Env, cmd.Stderr = opts.WorkingDir, personalEnv(opts.AccountDir), stderr
+	cmd.Dir, cmd.Env, cmd.Stderr = opts.WorkingDir, providerEnv(opts.AccountDir, opts.Assistant), stderr
 	if opts.SquadCapabilityPath != "" {
 		cmd.Env = append(cmd.Env, "CLAWDLINE_SQUAD_CAPABILITY_FILE="+opts.SquadCapabilityPath)
 	}
@@ -228,7 +232,9 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 	return c, nil
 }
 
-func personalEnv(account string) []string {
+func personalEnv(account string) []string { return providerEnv(account, session.AssistantAntigravity) }
+
+func providerEnv(account string, assistant session.Assistant) []string {
 	var env []string
 	for _, pair := range os.Environ() {
 		key, _, _ := strings.Cut(pair, "=")
@@ -236,14 +242,18 @@ func personalEnv(account string) []string {
 		blocked := key == "BROWSER" || key == "LC_ALL" || key == "CLAWDLINE_PROTOCOL_SESSION_FILE" ||
 			key == "CLAWDLINE_SQUAD_CAPABILITY_FILE" || strings.HasPrefix(key, "CLAUDE") || key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID" ||
 			key == "CLAWDLINE_SESSION_ID" || key == "CLAWDLINE_CONVERSATION_ID" || key == "CLAWDLINE_TASK_SECRET"
-		for _, marker := range []string{"API_KEY", "APIKEY", "VERTEX", "ADC", "APPLICATION_CREDENTIALS", "GOOGLE", "CLOUDSDK", "GCLOUD", "ENTERPRISE", "MODEL_PROVIDER", "GEMINI", "ANTIGRAVITY", "AGY_", "ANTHROPIC", "OPENAI", "AI_CREDIT"} {
+		for _, marker := range []string{"API_KEY", "APIKEY", "VERTEX", "ADC", "APPLICATION_CREDENTIALS", "GOOGLE", "CLOUDSDK", "GCLOUD", "ENTERPRISE", "MODEL_PROVIDER", "GEMINI", "ANTIGRAVITY", "AGY_", "ANTHROPIC", "OPENAI", "AI_CREDIT", "GROK", "XAI"} {
 			blocked = blocked || strings.Contains(key, marker)
 		}
 		if !blocked {
 			env = append(env, pair)
 		}
 	}
-	return append(env, "GEMINI_HOME="+account, "BROWSER="+disabledBrowser(), "LC_ALL=C")
+	homeKey := "GEMINI_HOME="
+	if assistant == session.AssistantGrok {
+		homeKey = "GROK_HOME="
+	}
+	return append(env, homeKey+account, "BROWSER="+disabledBrowser(), "LC_ALL=C")
 }
 
 // Initialize returns the raw result for the owner's capability codec. Success
@@ -256,13 +266,36 @@ func (c *Client) Initialize(ctx context.Context) (json.RawMessage, error) {
 	if c.initialized {
 		return nil, failure("invalid_state", NotWritten)
 	}
-	r, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "clawdline", "version": "1"}})
+	params := map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "clawdline", "version": "1"}}
+	if c.opts.Assistant == session.AssistantGrok {
+		params["_meta"] = map[string]string{"clientType": "extension"}
+	}
+	r, err := c.call(ctx, "initialize", params)
 	if err != nil {
 		return nil, err
 	}
 	m, err := object(r)
 	if err != nil || !bytes.Equal(bytes.TrimSpace(m["protocolVersion"]), []byte("1")) {
 		return nil, c.badResult("unsupported_protocol")
+	}
+	if c.opts.Assistant == session.AssistantGrok {
+		var identity struct {
+			Meta struct {
+				Shell   bool   `json:"grokShell"`
+				Version string `json:"agentVersion"`
+			} `json:"_meta"`
+			Auth []struct {
+				ID string `json:"id"`
+			} `json:"authMethods"`
+		}
+		if json.Unmarshal(r, &identity) != nil || !identity.Meta.Shell || identity.Meta.Version == "" {
+			return nil, c.badResult("provider_cli_incompatible")
+		}
+		for _, method := range identity.Auth {
+			if method.ID == "cached_token" {
+				c.cachedToken = true
+			}
+		}
 	}
 	c.initialized = true
 	var caps struct {
@@ -295,7 +328,14 @@ func (c *Client) AuthenticatePersonal(ctx context.Context) (json.RawMessage, err
 	if err := c.checkPersonal(); err != nil {
 		return nil, err
 	}
-	r, err := c.call(ctx, "authenticate", map[string]string{"methodId": "oauth-personal"})
+	params := map[string]any{"methodId": "oauth-personal"}
+	if c.opts.Assistant == session.AssistantGrok {
+		if !c.cachedToken {
+			return nil, failure("auth_required", NotWritten)
+		}
+		params = map[string]any{"methodId": "cached_token", "_meta": map[string]bool{"headless": true}}
+	}
+	r, err := c.call(ctx, "authenticate", params)
 	if err == nil {
 		c.authenticated = true
 	}
@@ -539,6 +579,9 @@ func (c *Client) observeConfig(raw json.RawMessage) {
 // caller text. Its message chunks are withheld from OnUpdate; context and tool
 // updates still flow normally. The existing frame budget also bounds the sum.
 func (c *Client) Usage(ctx context.Context) (string, error) {
+	if c.opts.Assistant == session.AssistantGrok {
+		return "", failure("usage_unsupported", NotWritten)
+	}
 	if !c.callMu.TryLock() {
 		return "", failure("busy", NotWritten)
 	}
@@ -671,6 +714,9 @@ func (c *Client) badResult(code string) error {
 }
 
 func (c *Client) checkPersonal() error {
+	if c.opts.Assistant == session.AssistantGrok {
+		return nil
+	}
 	f, err := os.Open(filepath.Join(c.opts.AccountDir, "antigravity-acp", "settings.json"))
 	if err != nil {
 		return failure("personal_settings_required", NotWritten)

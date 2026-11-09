@@ -22,6 +22,14 @@ type OwnedContext struct {
 }
 
 func (s Starter) PrepareOwnedContext(ctx context.Context, place projects.Place, persona string) (OwnedContext, error) {
+	return s.PrepareOwnedContextFor(ctx, place, persona, projects.AssistantAntigravity)
+}
+
+// PrepareOwnedContextFor freezes context for the actual native provider.
+func (s Starter) PrepareOwnedContextFor(ctx context.Context, place projects.Place, persona, assistant string) (OwnedContext, error) {
+	if assistant != projects.AssistantAntigravity && assistant != "grok" {
+		return OwnedContext{}, projects.ErrProviderOptionsUnsupported
+	}
 	var workflow workflowlaunch.Prepared
 	if s.PrepareWorkflow != nil {
 		var err error
@@ -42,7 +50,7 @@ func (s Starter) PrepareOwnedContext(ctx context.Context, place projects.Place, 
 		}
 		return OwnedContext{}, err
 	}
-	owned, err := s.OwnedContextFromPublished(ctx, place, persona, prepared.launch.ID, prepared.files)
+	owned, err := s.OwnedContextFromPublishedFor(ctx, place, persona, prepared.launch.ID, prepared.files, assistant)
 	if err != nil {
 		return fail(err)
 	}
@@ -65,6 +73,14 @@ func (o OwnedContext) WithWorkflow(prepared workflowlaunch.Prepared) (OwnedConte
 // OwnedContextFromPublished reads the immutable publication already prepared by
 // the broker, preserving its task claims and actor instead of publishing twice.
 func (s Starter) OwnedContextFromPublished(ctx context.Context, place projects.Place, persona, launchID string, files squadfiles.Files) (OwnedContext, error) {
+	return s.OwnedContextFromPublishedFor(ctx, place, persona, launchID, files, projects.AssistantAntigravity)
+}
+
+// OwnedContextFromPublishedFor does not import another provider's preferences.
+func (s Starter) OwnedContextFromPublishedFor(ctx context.Context, place projects.Place, persona, launchID string, files squadfiles.Files, assistant string) (OwnedContext, error) {
+	if assistant != projects.AssistantAntigravity && assistant != "grok" {
+		return OwnedContext{}, projects.ErrProviderOptionsUnsupported
+	}
 	if err := ctx.Err(); err != nil {
 		return OwnedContext{}, err
 	}
@@ -89,10 +105,13 @@ func (s Starter) OwnedContextFromPublished(ctx context.Context, place projects.P
 		memory = s.Memory(place.Path)
 	}
 	if s.Language != nil {
-		language = s.Language(projects.AssistantAntigravity)
+		language = s.Language(assistant)
 	}
 	var explainSteps *bool
-	if s.GeminiStepExplanations != nil {
+	if assistant == "grok" {
+		off := false
+		explainSteps = &off
+	} else if s.GeminiStepExplanations != nil {
 		on := s.GeminiStepExplanations()
 		explainSteps = &on
 	}
