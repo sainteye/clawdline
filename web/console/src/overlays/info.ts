@@ -1011,11 +1011,14 @@ export const Info = {
         editingTitle = false
         titleDraft = ""
         if (data?.session && typeof answer.display_title === "string") {
-          data.session.title = answer.display_title
+          data = { ...data, session: { ...data.session, title: answer.display_title } }
+          // Publish the acknowledged facts and supersede any older in-flight
+          // info read. Re-reading here can join a pre-write Cloud read.
+          ticket += 1
+          loading = false
+          SessionFacts.receiveFull(id, data)
         }
-        SessionFacts.drop(id)
         host.refreshSessions(id, answer.display_title)
-        load(id, true)
         if (answer.local_applied === false) said(T.webInfoTitleNotDurable, true)
         else if (answer.downstream === "queued") said(T.webInfoTitleQueued, true)
         else if (["busy", "unavailable", "failed"].includes(answer.downstream)) said(T.webInfoTitleLocal, true)
@@ -1056,11 +1059,14 @@ export const Info = {
         if (forId !== id) return
         busy = false
         if (data?.session && typeof answer.display_title === "string") {
-          data.session.title = answer.display_title
+          data = { ...data, session: { ...data.session, title: answer.display_title } }
+          // Publish the acknowledged facts and supersede any older in-flight
+          // info read. Re-reading here can join a pre-write Cloud read.
+          ticket += 1
+          loading = false
+          SessionFacts.receiveFull(id, data)
         }
-        SessionFacts.drop(id)
         host.refreshSessions(id, answer.display_title)
-        load(id, true)
         said(answer.named_by ? nextWord("smartTitleSavedBy", { assistant: namingAssistantName(answer.named_by) })
           : nextWord("smartTitleSaved"), true)
         draw()

@@ -385,3 +385,9 @@ against the diff: launch instructions, applicability, permission ceilings and
 continuation semantics are unchanged. The new strings are UI explanations, not
 provider instructions. Refreshing the source receipt does not establish website
 publication or successful provider inference.
+
+The SessionInfo title update now publishes acknowledged facts without an
+immediate readback. Review of the English and Traditional Chinese
+`machine-codegraph` explanations confirms that guidance selection, provisioning,
+consent and launch snapshots are unchanged. Its source receipt follows the
+reviewed title-only UI change.

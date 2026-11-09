@@ -53,6 +53,7 @@ export class FleetStore {
   private state: FleetState = { snapshot: null, loaded: false, error: null, live: false, tasks: null, tasksLive: false }
   private listeners = new Set<FleetListener>()
   private handle: StreamHandle | undefined
+  private titles = new Map<string, { title: string; conversation: string | undefined; execution: string | undefined }>()
 
   constructor(
     private readonly client: ClawdlineClient,
@@ -109,10 +110,30 @@ export class FleetStore {
     }
   }
 
+  /** A successful write is newer than the producer's next, possibly held list. */
+  titleSaved(id: string, title: string | undefined): void {
+    const snapshot = this.state.snapshot
+    const row = snapshot?.sessions.find(row => row.id === id)
+    if (title === undefined || !snapshot || !row) return
+    this.titles.set(id, { title, conversation: row.sessionId, execution: row.execution_generation })
+    this.set({ snapshot: { ...snapshot, sessions: snapshot.sessions.map(row => row.id === id ? { ...row, label: title } : row) } })
+  }
+
   /** Takes a snapshot, unless it is older than the one already held (`fleet-accept.ts`). */
   private accept(next: SessionsSnapshot): void {
     const accepted = acceptSnapshot(this.state.snapshot, next)
-    if (accepted) this.set({ snapshot: accepted, loaded: true, error: null })
+    if (!accepted) return
+    for (const [id, saved] of this.titles) {
+      const row = accepted.sessions.find(row => row.id === id)
+      if (!row || row.sessionId !== saved.conversation || row.execution_generation !== saved.execution ||
+        next.sessions.some(incoming => incoming.id === id && incoming.label === saved.title))
+        this.titles.delete(id)
+    }
+    const sessions = accepted.sessions.map(row => {
+      const saved = this.titles.get(row.id)
+      return saved ? { ...row, label: saved.title } : row
+    })
+    this.set({ snapshot: { ...accepted, sessions }, loaded: true, error: null })
   }
 
   private set(patch: Partial<FleetState>): void {

@@ -3279,7 +3279,7 @@
     "web/console/src/cloud/relay-writer.ts": "3304ac093963382f64067ebfae410d07dd763a272bd43936c75a1af19a17428d",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "f59188271fa1de0aab8b6d9039cb14a72a9f40f1a7c18c19dd8139fff9da765f",
-    "web/console/src/overlays/info.ts": "74ddce5e96d20f0dcb7edba3c55791a87368028862d2f1febce3ea4a3f74c5c7",
+    "web/console/src/overlays/info.ts": "0b7fe4e6c32eda93042e9c9110f3188c574306f90e8c13c8d45a513f3a0946bd",
     "web/console/src/session/Composer.tsx": "b789d5cd82291af6cc4a507dd9dbed0839b2dcff86082d67b188021a63d9d844",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "1f1f0c58d2c3814e5f7d133b1ae154bdb31d1b9f49a8c10346d6fa2bc768115f",

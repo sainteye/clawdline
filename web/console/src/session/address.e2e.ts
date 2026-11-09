@@ -123,6 +123,7 @@ let projectFileText = "first instruction"
 let projectFileVersion = "version-one"
 let smartTitleRequests = 0
 let manualTitleRequests = 0
+let holdTitleReadback = false
 let machineSettings: Record<string, unknown> = {
   codex_default_model: "",
   claude_default_model: "",
@@ -466,7 +467,7 @@ function daemon(): Server {
       void requestJSON(req).then((body) => {
         const title = String(body.title ?? "")
         const session = ROWS.find((candidate) => candidate.id === decodeURIComponent(manualTitle[1]))
-        if (session) session.label = title
+        if (session && !holdTitleReadback) session.label = title
         json(res, 200, { ok: true, title, display_title: title, local_applied: true,
           downstream: "local_only", downstream_synced: false })
       }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
@@ -1700,6 +1701,48 @@ test("phone: one touch on Save writes the edited Session title", () =>
       session.label = original
     }
   }))
+
+for (const [surface, size, smart] of [["phone", PHONE, false], ["desk", DESK, false], ["phone smart", PHONE, true]] as const) {
+  test(`${surface}: acknowledged Session names reach info, heading and list before readback`, () =>
+    inTab(size, async tab => {
+      holdTitleReadback = true
+      const title = smart ? "Smart release helper" : "Renamed before the next snapshot"
+      try {
+        await tab.go("/" + FRAGMENT[TTY])
+        await tab.until("the session opens", s => s.open === TTY)
+        await tab.run(`document.getElementById("detail-info").click()`)
+        await tab.run(`(async () => {
+          for (let i = 0; i < 100 && !document.querySelector("button[data-title-edit]"); i++)
+            await new Promise(r => setTimeout(r, 25))
+          if (!document.querySelector("button[data-title-edit]")) throw Error("missing title editor")
+        })()`)
+        if (smart) {
+          await tab.run(`document.querySelector("button.title-smart").click(); document.getElementById("action-confirm-go").click()`)
+        } else {
+          await tab.run(`document.querySelector("button[data-title-edit]").click();
+            document.querySelector(".title-editor input").value = ${JSON.stringify(title)};
+            document.querySelector(".title-editor").requestSubmit()`)
+        }
+        await tab.run(`(async () => {
+          const expected = ${JSON.stringify(title)}
+          const names = () => ({ info: document.querySelector(".session-title span")?.textContent,
+            heading: document.getElementById("detail-name")?.textContent,
+            list: document.querySelector('#rows li[data-id="${TTY}"] .label')?.textContent })
+          for (let i = 0; i < 100; i++) {
+            if (Object.values(names()).every(value => value === expected)) return
+            await new Promise(r => setTimeout(r, 25))
+          }
+          throw Error("acknowledged name did not reach all surfaces: " + JSON.stringify(names()))
+        })()`)
+        // The old list can keep streaming while its producer catches up.
+        await new Promise(r => setTimeout(r, 500))
+        assert.equal(await tab.run(`document.getElementById("detail-name").textContent`), title)
+        await tab.run(`document.getElementById("info-close").click(); document.getElementById("detail-info").click()`)
+        assert.equal(await tab.run(`document.querySelector(".session-title span")?.textContent`), title,
+          "reopening the card uses the acknowledged facts")
+      } finally { holdTitleReadback = false }
+    }))
+}
 
 test("desk: smart naming explains the one model turn before it spends it, then saves the answer", () =>
   inTab(DESK, async (tab) => {

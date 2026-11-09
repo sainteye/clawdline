@@ -721,15 +721,19 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
 
   // The phone's back gesture (`input/action-confirm.js`), and a window that
   // changes width under an open session (`input/edges.js`).
-  const layoutRef = useRef({ closeDetail, refresh: fleet.refresh, titleSaved: onTitleSaved })
-  layoutRef.current = { closeDetail, refresh: fleet.refresh, titleSaved: onTitleSaved }
+  const layoutRef = useRef({ closeDetail, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved })
+  layoutRef.current = { closeDetail, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved }
 
   // What the overlays ask of the page. `writable` is the original's `S.write`,
   // which comes from `/v1/health`; this daemon's health does not carry it, and
   // the composer already takes the page as writable until a send is refused.
   useEffect(() => {
     hostInfo({ openId: () => openRef.current, writable: () => true,
-      refreshSessions: (id, title) => { layoutRef.current.refresh(); layoutRef.current.titleSaved?.(id, title) } })
+      refreshSessions: (id, title) => {
+        layoutRef.current.receiveTitle(id, title)
+        layoutRef.current.titleSaved?.(id, title)
+        layoutRef.current.refresh()
+      } })
     hostConfirm({
       openId: () => openRef.current,
       writable: () => true,

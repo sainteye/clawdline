@@ -19,7 +19,7 @@ import {
  * the only part of the fleet list a React Native app would have to write again,
  * and it is nine lines.
  */
-export function useFleet(client: ClawdlineClient): FleetState & { refresh: () => void } {
+export function useFleet(client: ClawdlineClient): FleetState & { refresh: () => void; titleSaved: (id: string, title: string | undefined) => void } {
   const store = useMemo(() => new FleetStore(client, fleetTransport()), [client])
   useEffect(() => {
     void store.start()
@@ -41,7 +41,8 @@ export function useFleet(client: ClawdlineClient): FleetState & { refresh: () =>
   const refresh = useCallback(() => {
     void store.refresh()
   }, [store])
-  return { ...state, refresh }
+  const titleSaved = useCallback((id: string, title: string | undefined) => store.titleSaved(id, title), [store])
+  return { ...state, refresh, titleSaved }
 }
 
 /**
