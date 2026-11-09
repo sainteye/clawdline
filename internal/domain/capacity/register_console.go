@@ -35,6 +35,30 @@ func consoleBounds() []Entry {
 			Sources: []string{"internal/domain/capacity.MaximumStartedSessionFollowSeconds"},
 		},
 		{
+			Name: "console.voice_recording_bytes", Class: Buffer, Unit: Bytes,
+			Limit: MaximumVoiceRecordingBytes, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/domain/capacity.MaximumVoiceRecordingBytes"},
+		},
+		{
+			Name: "console.voice_stop_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumVoiceStopMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVoiceStopMilliseconds"},
+		},
+		{
+			Name: "console.voice_prepare_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumVoicePrepareMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVoicePrepareMilliseconds"},
+		},
+		{
+			Name: "console.voice_read_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumVoiceReadMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVoiceReadMilliseconds"},
+		},
+		{
 			Name: "console.video_preview_frames", Class: Buffer, Unit: Rows,
 			Limit: MaximumVideoPreviewFrames, AtLimit: Refuse,
 			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,

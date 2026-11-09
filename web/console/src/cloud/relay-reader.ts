@@ -775,6 +775,16 @@ export class RelayReader {
     })
   }
 
+  /** Deliver typed voice-stage metadata through the existing paired viewer log. */
+  reportVoiceDiagnostic(row: { stage: string; code: string; bytes: number; complete: boolean }): void {
+    try {
+      const log = (this.client as { viewerEvents?: { record?(event: string, data: Record<string, unknown>, key?: string): unknown } } | null)?.viewerEvents
+      log?.record?.("voice.recording.recovery", {
+        machine: this.machine, stage: row.stage, code: row.code, bytes: row.bytes, complete: row.complete,
+      }, ["voice.recording.recovery", this.machine, row.stage, row.code].join("|"))
+    } catch { /* recording recovery cannot depend on diagnostics */ }
+  }
+
   /**
    * The Board's Session list read failed (`SessionListReader`, pages/work).
    * Its word, this machine, the failure's code and how long it took go to the

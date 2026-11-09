@@ -79,7 +79,9 @@ const style=document.createElement('style');style.textContent='body{margin:0}.cl
         await page.locator('#list-scroll').evaluate(el => { el.scrollTop = 0 })
         await page.evaluate(() => window.fixture.hold())
         await gesture(0, 220, false)
-        assert.equal(await page.locator('#ptr-label').textContent(), lang === 'en' ? 'Release to refresh' : '放開就重新整理')
+        // The pad updates synchronously; React commits its label separately.
+        await page.waitForFunction(label => document.querySelector('#ptr-label')?.textContent === label,
+          lang === 'en' ? 'Release to refresh' : '放開就重新整理')
         await page.locator('#list-scroll').evaluate(el => {
           const event = new Event('touchend',{bubbles:true})
           Object.defineProperties(event,{touches:{value:[]},changedTouches:{value:[]}})

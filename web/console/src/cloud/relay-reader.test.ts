@@ -1183,6 +1183,19 @@ test("the Board's Session list failure is recorded for the machine's log without
     data: { word: "sessions.snapshot", machine: "mac-b", code: "timeout", elapsed_ms: 15000, connection: "ready" } }])
 })
 
+test("voice recovery diagnostics send only stage metadata through the paired machine log", () => {
+  const rows: { event: string; data: Record<string, unknown>; key?: string }[] = []
+  const client = new FakeClient()
+  client.viewerEvents = { record(event, data, key) { rows.push({ event, data, key }) } }
+  const r = new RelayReader("mac-b")
+  r.attach(client)
+  const row = { stage: "stopping", code: "stop_timeout", bytes: 2048, complete: false,
+    audio: "must not leave the browser", transcript: "must not enter diagnostics" }
+  r.reportVoiceDiagnostic(row)
+  assert.deepEqual(rows, [{ event: "voice.recording.recovery", key: "voice.recording.recovery|mac-b|stopping|stop_timeout",
+    data: { machine: "mac-b", stage: "stopping", code: "stop_timeout", bytes: 2048, complete: false } }])
+})
+
 test("reopening a complete list reads the relay once without restating every Session", async () => {
   const client = new FakeClient()
   client.rows = [row("mac-a", "s1")]

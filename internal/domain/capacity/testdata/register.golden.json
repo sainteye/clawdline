@@ -6645,6 +6645,86 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.voice_prepare_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoicePrepareMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.voice_read_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 120000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoiceReadMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.voice_recording_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoiceRecordingBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.voice_stop_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 5000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoiceStopMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "coordinator.aliases",
     "Class": "journal",
     "Unit": "rows",

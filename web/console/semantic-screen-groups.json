@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10895,
-  "riskKeys": 4793,
-  "nonRiskCount": 6102,
+  "englishContentKeys": 10922,
+  "riskKeys": 4811,
+  "nonRiskCount": 6111,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 430,
+      "count": 431,
       "sources": [
         null
       ],
@@ -647,6 +647,7 @@
         "capacityRow.console.viewer_health_retry_after_seconds.what",
         "capacityRow.console.viewer_health_send_every_seconds.full",
         "capacityRow.console.viewer_health_send_every_seconds.what",
+        "capacityRow.console.voice_read_milliseconds.what",
         "capacityRow.coordinator.aliases.what",
         "capacityRow.deploy.health_seconds.full",
         "capacityRow.diagnostics.api_active.what",
@@ -3780,7 +3781,7 @@
     },
     {
       "name": "next / other",
-      "count": 669,
+      "count": 677,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4452,6 +4453,14 @@
         "next.usageUnsupported",
         "next.voiceInstallPromptSetUp",
         "next.voiceInstallPromptTitle",
+        "next.voiceMicStopped",
+        "next.voicePause",
+        "next.voicePaused",
+        "next.voicePreparing",
+        "next.voiceRetry",
+        "next.voiceStopping",
+        "next.voiceTryPartial",
+        "next.voiceWaitForAudio",
         "next.workCreateItem",
         "next.worktreeRemoveClose"
       ]
