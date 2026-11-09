@@ -6414,8 +6414,16 @@ type SessionProtocol struct {
 	LastReceivedAt    int64  `json:"last_received_at,omitempty"`
 	LastReceivedKind  string `json:"last_received_kind,omitempty"`
 	Operation         string `json:"operation,omitempty"`
-	Phase             string `json:"phase"`
-	RequestID         string `json:"request_id,omitempty"`
+
+	// ID type of the last discarded idle Grok reply; no ID value is retained. Survives
+	// the start of another request.
+	OrphanResponseIDKind string `json:"orphan_response_id_kind,omitempty"`
+
+	// Connection-lifetime count of valid Grok replies received without a registered
+	// client request and discarded without delivery. Contains no provider ID or body.
+	OrphanResponses int64  `json:"orphan_responses,omitempty"`
+	Phase           string `json:"phase"`
+	RequestID       string `json:"request_id,omitempty"`
 
 	// Last response ID type only; no provider ID value or content is retained.
 	// Independent of opt-in raw tracing.
@@ -6431,7 +6439,7 @@ type SessionProtocol struct {
 	TraceEnabled       bool   `json:"trace_enabled"`
 	TraceError         string `json:"trace_error,omitempty"`
 
-	// Count of valid string-ID replies discarded during the current Grok prompt.
+	// Count of valid string-ID replies discarded during the current Grok request.
 	// Numeric mismatches remain failures. Does not acknowledge completion and retains
 	// no provider IDs or content.
 	UnmatchedResponses int64 `json:"unmatched_responses,omitempty"`

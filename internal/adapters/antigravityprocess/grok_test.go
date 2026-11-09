@@ -52,6 +52,9 @@ func TestGrokProcessPeer(t *testing.T) {
 			}
 			result = map[string]any{"protocolVersion": 1, "_meta": map[string]any{"grokShell": true, "agentVersion": "1.0.77"}, "authMethods": methods,
 				"agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}}}
+			if os.Getenv("CLW_XIDLE") != "" {
+				result.(map[string]any)["agentCapabilities"].(map[string]any)["loadSession"] = true
+			}
 		case "authenticate":
 			var p struct {
 				Method string `json:"methodId"`
@@ -73,13 +76,27 @@ func TestGrokProcessPeer(t *testing.T) {
 				}
 				result = map[string]any{"_meta": map[string]any{"auth_mode": mode, "backend_billed": false}}
 			}
-		case "session/new":
+		case "session/new", "session/load":
 			result = map[string]string{"sessionId": "synthetic-coding-session"}
 		case "session/prompt":
 			enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-coding-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Synthetic coding reply"}}}})
 			result = map[string]string{"stopReason": "end_turn"}
 		}
+		if os.Getenv("CLW_XIDLE") == "control" && req.Method == "session/set_model" {
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "synthetic-control-reply", "result": map[string]string{"stopReason": "end_turn"}})
+		}
 		enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+		if os.Getenv("CLW_XIDLE") != "" && (req.Method == "session/new" || req.Method == "session/load" || req.Method == "session/prompt" || req.Method == "session/set_model") {
+			if os.Getenv("CLW_XIDLE") == "invalid" {
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "synthetic-idle-reply", "result": "invalid scalar"})
+				continue
+			}
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "synthetic-idle-reply", "result": map[string]string{"stopReason": "end_turn"}})
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "synthetic-idle-error", "error": map[string]any{"code": -32003, "message": "synthetic private body"}})
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": nil, "error": map[string]any{"code": -32601, "message": "synthetic unknown request"}})
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-coding-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic-idle-reader-alive"}}}})
+		}
 	}
 	os.Exit(0)
 }

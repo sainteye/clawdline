@@ -7599,6 +7599,18 @@ export interface SessionProtocol {
   last_received_at?: number
   last_received_kind?: string
   operation?: string
+
+  /**
+   * ID type of the last discarded idle Grok reply; no ID value is retained.
+   * Survives the start of another request.
+   */
+  orphan_response_id_kind?: string
+
+  /**
+   * Connection-lifetime count of valid Grok replies received without a registered
+   * client request and discarded without delivery. Contains no provider ID or body.
+   */
+  orphan_responses?: number
   phase: string
   request_id?: string
 
@@ -7621,7 +7633,7 @@ export interface SessionProtocol {
   trace_error?: string
 
   /**
-   * Count of valid string-ID replies discarded during the current Grok prompt.
+   * Count of valid string-ID replies discarded during the current Grok request.
    * Numeric mismatches remain failures. Does not acknowledge completion and retains
    * no provider IDs or content.
    */

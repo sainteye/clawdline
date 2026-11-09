@@ -179,28 +179,32 @@ account scope and observation time; it is not a Session token or cash-cost total
 
 ## Response identity diagnostics
 
-Client requests use numeric JSON-RPC IDs. During an active Grok prompt, a valid
-response with a string ID belongs to a different namespace and is discarded
-before it can reach the prompt, change configuration or close metadata capture.
-A string such as `"4"` is never coerced to the numeric ID `4`. Such a response
-cannot complete a turn, acknowledge a request or cause an automatic resend. The
-client continues waiting for the exact numeric prompt response. Its existing
-cancellation and inactivity handling still apply if that response never arrives.
-Numeric mismatches, invalid response envelopes, control RPC mismatches and other
-providers retain their existing refusal behavior. Matching RPC errors still
-reach the caller with their original delivery classification.
+Client requests use numeric JSON-RPC IDs. Before writing an RPC, the client
+registers its pending response ID. A matching reply retires that registration
+before delivery to its caller. This prevents a later response from blocking the
+reader on an unbuffered channel until the next user input arrives.
 
-The optional `unmatched_responses` metadata counter records discarded responses
-for the current request without retaining their IDs, error bodies or content.
-The existing response ID type/relation fields describe the last received
-response; a later matching response can replace those fields. Starting another
-request clears the counter and identity fields. Raw wire tracing remains a
-separate opt-in capability.
+With no registered Grok request, a well-formed orphan response is discarded
+without changing configuration, capturing metadata or completing work. During
+any Grok RPC, a valid string-ID response cannot match our numeric ID and is also
+discarded. A string such as `"4"` is never coerced to numeric `4`. Active numeric
+mismatches and malformed envelopes remain failures. Matching RPC errors keep
+their original delivery classification; Gemini routing is unchanged. Discarding
+a reply never acknowledges, retries or replays a request. Control deadlines,
+explicit cancellation and the model inactivity watchdog remain in force.
 
-An observed native failure involved a numeric prompt ID and a different string
-response ID, after a pending permission request. The exact alien ID and response
-body were not retained, so this does not establish why Grok emitted it or prove
-that every native interruption has been repaired. Local peer tests reproduce
-premature termination before the routing correction and verify exact completion,
-permission selection, cancellation, malformed responses and unchanged numeric-ID
-refusals afterward. No additional paid model prompt was used for these tests.
+The optional `orphan_responses` connection-lifetime counter and
+`orphan_response_id_kind` preserve sanitized idle evidence across new requests.
+`unmatched_responses` counts valid string replies discarded during the current
+request and resets at its start. Existing response ID type/relation fields name
+the latest received response. No provider ID values, error bodies or message
+content enter these fields; raw wire tracing is a separate opt-in capability.
+
+The earlier active-prompt-only correction missed idle and control boundaries.
+A local peer reproduces blocked notifications after `session/new` and
+`session/load` on that revision. Regression tests cover orphan strings, duplicate
+numeric replies and null-ID errors at idle, notifications reaching the client,
+consecutive prompts, model controls, cancellation and unchanged refusal cases.
+The exact native orphan payload was not retained. A metadata-only native load
+probe returned `-32602` and did not reproduce the failure; it is not live-model
+acceptance. No additional paid model prompt was used for this investigation.

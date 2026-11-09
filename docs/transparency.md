@@ -423,3 +423,21 @@ unchanged. No instruction text or applicability changed, so those bilingual
 explanations remain accurate. The new routing helper is registered as reviewed
 source. Native interruption origin and live-model acceptance remain unproved;
 this receipt does not establish website publication or successful inference.
+
+## Grok idle response registration (2026-11-09)
+
+The earlier string-reply change covered active prompts but left idle responses
+blocking the next caller. The transport now registers the pending numeric RPC
+before its write and retires it before matching response delivery. Grok orphan
+responses at idle and unrelated string-ID replies during controls or prompts
+are discarded before metadata, configuration or completion handling. Active
+numeric mismatches, invalid responses, matching RPC errors and Gemini routing
+retain their refusal semantics. Sanitized lifetime orphan counters preserve
+evidence across requests without provider ID values or content.
+
+Both language versions of the Grok and Gemini context cards were checked
+against the shared-source diff: launch resources, roles, workflow snapshots,
+permission selections and no-resend rules are unchanged. Their explanations
+remain accurate. The reviewed source receipt follows the transport correction;
+it does not prove the native origin of an orphan, a live coding turn, installation
+or website deployment.

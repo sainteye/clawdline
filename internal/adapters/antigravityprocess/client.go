@@ -159,6 +159,7 @@ type Client struct {
 	configOptions                 json.RawMessage    // stateMu; current native metadata, never persisted
 	canLoad, canResume, canList   bool               // negotiated before opening a session
 	activePrompt, cancelledPrompt string             // stateMu; native turn, not process lifetime
+	pendingResponseID             string             // stateMu; registered client RPC, cleared before delivery
 	activePermission              *PermissionRequest // stateMu
 	lifeMu                        sync.Mutex
 	lifecycle                     Lifecycle
@@ -844,15 +845,16 @@ func (c *Client) exchange(ctx context.Context, method string, params any, before
 	}
 	c.sequence++
 	id := strconv.FormatUint(c.sequence, 10)
-	if method == "session/prompt" {
-		defer func() {
-			c.stateMu.Lock()
-			if c.activePrompt == id {
-				c.activePrompt = ""
-			}
-			c.stateMu.Unlock()
-		}()
-	}
+	defer func() {
+		c.stateMu.Lock()
+		if c.pendingResponseID == id {
+			c.pendingResponseID = ""
+		}
+		if method == "session/prompt" && c.activePrompt == id {
+			c.activePrompt = ""
+		}
+		c.stateMu.Unlock()
+	}()
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(id), "method": method, "params": params})
 	if len(b) > c.opts.MaxFrameBytes {
 		return nil, failure("frame_too_large", NotWritten)
@@ -888,12 +890,13 @@ func (c *Client) exchange(ctx context.Context, method string, params any, before
 		}
 		attempted.Store(true)
 		metadata := false
+		c.stateMu.Lock()
+		c.pendingResponseID = id
 		if method == "session/prompt" {
-			c.stateMu.Lock()
 			c.activePrompt = id
 			metadata = c.usage != nil
-			c.stateMu.Unlock()
 		}
+		c.stateMu.Unlock()
 		c.requestStarted(id, method, metadata)
 		writeErr := c.writeUnlocked(b)
 		c.writeMu.Unlock()
@@ -1041,12 +1044,19 @@ func (c *Client) readLoop() {
 			c.observe("in", "applied", frame, 0)
 			continue
 		}
-		if skipped, err := c.skipUnmatchedGrokResponse(frame, m); err != nil {
+		if skipped, err := c.routeGrokResponse(frame, m); err != nil {
 			c.shutdown(err)
 			return
 		} else if skipped {
 			continue
 		}
+		// Retire the matching transport registration before the caller wakes:
+		// a following orphan must not wait for the next caller on responses.
+		c.stateMu.Lock()
+		if string(bytes.TrimSpace(m["id"])) == c.pendingResponseID {
+			c.pendingResponseID = ""
+		}
+		c.stateMu.Unlock()
 		// The reply is the metadata boundary. Clear it here in wire order,
 		// before handing the response to the waiting caller.
 		c.observeConfig(m["result"])

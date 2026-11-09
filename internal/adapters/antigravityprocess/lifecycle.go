@@ -10,26 +10,28 @@ import (
 // Lifecycle describes protocol evidence, not whether the model is using CPU.
 // Only the matching prompt response ends a turn. Silence and text never do.
 type Lifecycle struct {
-	UnmatchedResponses uint64 `json:"unmatched_responses,omitempty"`
-	ResponseIDKind     string `json:"response_id_kind,omitempty"`
-	ResponseIDRelation string `json:"response_id_relation,omitempty"`
-	Phase              string `json:"phase"`
-	RequestID          string `json:"request_id,omitempty"`
-	Operation          string `json:"operation,omitempty"`
-	StartedAt          int64  `json:"started_at,omitempty"`
-	CancelRequestedAt  int64  `json:"cancel_requested_at,omitempty"`
-	LastReceivedAt     int64  `json:"last_received_at,omitempty"`
-	LastReceivedKind   string `json:"last_received_kind,omitempty"`
-	LastAppliedAt      int64  `json:"last_applied_at,omitempty"`
-	LastAppliedKind    string `json:"last_applied_kind,omitempty"`
-	CompletedAt        int64  `json:"completed_at,omitempty"`
-	StopReason         string `json:"stop_reason,omitempty"`
-	RPCError           *int64 `json:"rpc_error,omitempty"`
-	Failure            string `json:"failure,omitempty"`
-	Sequence           uint64 `json:"sequence"`
-	Unrecognized       uint64 `json:"unrecognized"`
-	TraceEnabled       bool   `json:"trace_enabled"`
-	TraceError         string `json:"trace_error,omitempty"`
+	OrphanResponses      uint64 `json:"orphan_responses,omitempty"`
+	OrphanResponseIDKind string `json:"orphan_response_id_kind,omitempty"`
+	UnmatchedResponses   uint64 `json:"unmatched_responses,omitempty"`
+	ResponseIDKind       string `json:"response_id_kind,omitempty"`
+	ResponseIDRelation   string `json:"response_id_relation,omitempty"`
+	Phase                string `json:"phase"`
+	RequestID            string `json:"request_id,omitempty"`
+	Operation            string `json:"operation,omitempty"`
+	StartedAt            int64  `json:"started_at,omitempty"`
+	CancelRequestedAt    int64  `json:"cancel_requested_at,omitempty"`
+	LastReceivedAt       int64  `json:"last_received_at,omitempty"`
+	LastReceivedKind     string `json:"last_received_kind,omitempty"`
+	LastAppliedAt        int64  `json:"last_applied_at,omitempty"`
+	LastAppliedKind      string `json:"last_applied_kind,omitempty"`
+	CompletedAt          int64  `json:"completed_at,omitempty"`
+	StopReason           string `json:"stop_reason,omitempty"`
+	RPCError             *int64 `json:"rpc_error,omitempty"`
+	Failure              string `json:"failure,omitempty"`
+	Sequence             uint64 `json:"sequence"`
+	Unrecognized         uint64 `json:"unrecognized"`
+	TraceEnabled         bool   `json:"trace_enabled"`
+	TraceError           string `json:"trace_error,omitempty"`
 }
 
 // WireEvent is private diagnostic evidence. Frame is the exact line before

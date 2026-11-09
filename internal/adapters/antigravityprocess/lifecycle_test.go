@@ -97,6 +97,8 @@ func TestLifecycleObservesUpdatesWithoutInventingCompletion(t *testing.T) {
 	if got.Phase != "idle" || got.StopReason != "end_turn" || got.CompletedAt == 0 || got.RequestID != "" || got.Unrecognized != 1 {
 		t.Fatal(got)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	for _, kind := range []string{"user_message_chunk", "agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan", "usage_update", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "notice", "compaction_update", "compaction_summary_chunk", "future_update"} {
 		if !kinds[kind] {
 			t.Error("not delivered", kind)
