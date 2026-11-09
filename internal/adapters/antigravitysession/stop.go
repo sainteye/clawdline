@@ -28,6 +28,7 @@ func (h *Host) Stop(ctx context.Context, row session.Session) error {
 		h.mu.Unlock()
 		return refusal("busy")
 	}
+	wasHidden, wasUncertain, state, permission := c.hidden, c.uncertain, c.row.State, c.permission
 	c.stopping = true
 	c.hidden = true
 	c.permission = nil
@@ -37,6 +38,14 @@ func (h *Host) Stop(ctx context.Context, row session.Session) error {
 	}
 	client := c.client
 	err = c.saveState()
+	if err != nil {
+		// No native side effect precedes a failed durable close intent.
+		c.hidden, c.uncertain, c.row.State, c.permission = wasHidden, wasUncertain, state, permission
+		c.stopping = false
+		c.mu.Unlock()
+		h.mu.Unlock()
+		return err
+	}
 	h.jobs.Add(1)
 	c.mu.Unlock()
 	h.mu.Unlock()

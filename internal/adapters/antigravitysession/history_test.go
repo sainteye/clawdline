@@ -515,7 +515,7 @@ func TestHistoryShutdownResumeThenSendOnceAndUncertainNeverResends(t *testing.T)
 	}
 }
 
-func TestMetadataLeaseRefusesAClosedConversationAndProtectsItsClient(t *testing.T) {
+func TestCloseCancelsMetadataAndRefusesClosedConversationCalls(t *testing.T) {
 	h, row, _ := persistentFixture(t)
 	c, err := h.lookup(row)
 	if err != nil {
@@ -525,13 +525,13 @@ func TestMetadataLeaseRefusesAClosedConversationAndProtectsItsClient(t *testing.
 	if err != nil || client == nil {
 		t.Fatal("metadata admission failed", err)
 	}
-	if err := h.Close(context.Background(), row); err == nil {
-		t.Fatal("close stole an admitted client")
+	if err := h.Close(context.Background(), row); err != nil {
+		t.Fatal("explicit close could not cancel metadata", err)
+	}
+	if client.Err() == nil {
+		t.Fatal("metadata worker survived close")
 	}
 	done()
-	if err := h.Close(context.Background(), row); err != nil {
-		t.Fatal(err)
-	}
 	if client, done, err := h.beginMetadata(c); err == nil || client != nil || done != nil {
 		t.Fatal("closed metadata admission succeeded")
 	}
