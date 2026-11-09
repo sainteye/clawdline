@@ -1,3 +1,4 @@
+import { attachVoiceDiagnostics } from "../legacy/voice-events.js"
 import { followFleetFrom, followFleetWriteAccess } from "../client.js"
 import { readingThrough } from "./machine-switch.js"
 import { carryPictures } from "../legacy/images-bridge.js"
@@ -57,6 +58,7 @@ const changingFleet: StreamTransport = {
 
 export function readThroughRelay(reader: RelayReader): void {
   activeReader = reader
+  attachVoiceDiagnostics((row) => activeReader?.reportVoiceDiagnostic(row))
   readingThrough(reader)
   if (networkFetch) {
     for (const slot of fleetListeners) {

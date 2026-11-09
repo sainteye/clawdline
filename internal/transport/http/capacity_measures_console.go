@@ -67,6 +67,18 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.support_title_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser support title input guard; Cloud independently validates titles"}
 		},
+		"console.voice_recording_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
+		"console.voice_stop_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
+		"console.voice_prepare_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
+		"console.voice_read_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
 		"console.video_preview_frames": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser representative video frame sampling; daemon cannot measure another device's decoder"}
 		},
