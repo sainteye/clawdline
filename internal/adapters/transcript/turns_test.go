@@ -678,3 +678,55 @@ func TestFirstUserOfABashModeSessionIsTheTypedLine(t *testing.T) {
 		t.Fatalf("first user = %q, %v", got, err)
 	}
 }
+
+// Coordination uses the notice wrapper but its own protocol. Both stored
+// body-only notices and newer typed notices must reach the notice renderer.
+func TestCoordinationNoticesReachTheTranscript(t *testing.T) {
+	const id = "a7000000-0000-4000-8000-000000000001"
+	for _, kind := range []string{"pause", "wake"} {
+		wire := `<clawdline-notice>{"protocol":"clawdline.coordination","version":1,"kind":"` + kind + `","request_id":"` + id + `","body":"Finish safely; then acknowledge."}</clawdline-notice>`
+		for name, input := range map[string]string{"plain": wire, "pasted": "<pasted_content id=\"1\">\n" + wire + "\n</pasted_content id=\"1\">"} {
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				claude, err := ReadClaude(writeRecord(t, claudeRow("user", input)), 10)
+				if err != nil || len(claude.Entries) != 1 || claude.Entries[0].Kind != KindNotice || claude.Entries[0].Notice.Kind != kind || claude.Entries[0].Text != "Finish safely; then acknowledge." {
+					t.Fatalf("Claude coordination notice: %+v, %v", claude.Entries, err)
+				}
+			})
+		}
+		codex, err := ReadCodex(writeRecord(t, codexItem(m{"type": "UserMessage", "content": []m{{"type": "text", "text": wire}}})), 10)
+		if err != nil || len(codex.Entries) != 1 || codex.Entries[0].Kind != KindNotice || codex.Entries[0].Notice.Kind != kind {
+			t.Fatalf("Codex coordination notice: %+v, %v", codex.Entries, err)
+		}
+	}
+}
+
+func TestCoordinationNoticeValidatesTypedFields(t *testing.T) {
+	wire := `<clawdline-notice>{"protocol":"clawdline.coordination","version":1,"kind":"pause","request_id":"a7000000-0000-4000-8000-000000000001","body":"Finish safely.","requester_session_id":"a7000000-0000-4000-8000-000000000002","reason":"Prepare restart <b>carefully</b>","wake_condition":"lease:daemon_restart"}</clawdline-notice>`
+	for _, kind := range []string{"pause", "wake"} {
+		n, ok := decodeNotice(strings.Replace(wire, `"kind":"pause"`, `"kind":"`+kind+`"`, 1))
+		if !ok || n.RequestID != "a7000000-0000-4000-8000-000000000001" || n.RequesterSessionID != "a7000000-0000-4000-8000-000000000002" || n.Reason != "Prepare restart <b>carefully</b>" || n.WakeCondition != "lease:daemon_restart" {
+			t.Fatalf("typed notice = %+v, %v", n, ok)
+		}
+	}
+	for name, change := range map[string][2]string{
+		"wrong protocol":      {"clawdline.coordination", "clawdline.other"},
+		"wrong version":       {`"version":1`, `"version":2`},
+		"fractional version":  {`"version":1`, `"version":1.5`},
+		"unknown kind":        {`"kind":"pause"`, `"kind":"safe"`},
+		"invalid request":     {`"request_id":"a7000000-0000-4000-8000-000000000001"`, `"request_id":"no"`},
+		"invalid requester":   {`"requester_session_id":"a7000000-0000-4000-8000-000000000002"`, `"requester_session_id":"no"`},
+		"missing typed field": {`,"reason":"Prepare restart <b>carefully</b>"`, ""},
+		"empty reason":        {`"reason":"Prepare restart <b>carefully</b>"`, `"reason":" "`},
+		"invalid condition":   {`"wake_condition":"lease:daemon_restart"`, `"wake_condition":false`},
+		"empty body":          {`"body":"Finish safely."`, `"body":""`},
+		"extra action":        {`"version":1`, `"version":1,"action":"run"`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw := strings.Replace(wire, change[0], change[1], 1)
+			page, err := ReadClaude(writeRecord(t, claudeRow("user", raw)), 10)
+			if err != nil || len(page.Entries) != 1 || page.Entries[0].Kind != KindUser || page.Entries[0].Text != raw {
+				t.Fatalf("malformed envelope must remain ordinary text: %+v, %v", page.Entries, err)
+			}
+		})
+	}
+}

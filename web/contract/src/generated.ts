@@ -10175,9 +10175,8 @@ export interface TranscriptFileChange {
 }
 
 /**
- * A decoded Clawdline notice without its protocol, version and body — the Swift
- * app's `webObject`. Which fields are present depends on `kind`: task_finished,
- * workspace_overlap, file_wait_request, file_wait_release or handoff_receipt.
+ * A decoded Clawdline notice without its protocol, version and body. Fields depend
+ * on the task, file wait, handoff or coordination kind.
  */
 export interface TranscriptNotice {
   ack_path?: string
@@ -10223,12 +10222,15 @@ export interface TranscriptNotice {
   reason?: string
   release_condition?: string
   repository?: string
+  request_id?: string
+  requester_session_id?: string
   result_path?: string
   state?: string
   task?: TranscriptNoticeTask
   title?: string
   wait_id?: string
   waiter_session_id?: string
+  wake_condition?: string
 }
 
 export interface TranscriptNoticeLeftover {

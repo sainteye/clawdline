@@ -99,7 +99,7 @@ func TestOwnedPeer(t *testing.T) {
 			interruptedPrompt = nil
 			continue
 		case "initialize":
-			result = map[string]any{"protocolVersion": 1}
+			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": "antigravity-acp", "version": "1.4.1"}}
 			if os.Getenv("GROK_HOME") != "" {
 				result.(map[string]any)["_meta"] = map[string]any{"grokShell": true, "agentVersion": "1.0.77"}
 				result.(map[string]any)["authMethods"] = []any{map[string]string{"id": "cached_token"}}
@@ -314,6 +314,57 @@ func TestOwnedPeer(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestPublicUsageCommandNeverBecomesModelInput(t *testing.T) {
+	t.Setenv("CLW_SESSION_PEER", "yes")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLW_NATIVE_TEST_EXE", exe)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "antigravity-acp"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cli := filepath.Join(dir, "cli")
+	body := "#!/bin/sh\nif [ \"$1\" = acp ]; then exec \"$CLW_NATIVE_TEST_EXE\" '-test.run=^TestOwnedPeer$'; fi\nprintf 'read\\n' >> \"$GEMINI_HOME/usage-reads\"\nprintf 'Gemini Models\\tWeekly Limit Remaining\\t73%%\\t2031-01-02T03:04:05Z\\n'\n"
+	if err := os.WriteFile(cli, []byte(body), 0700); err != nil {
+		t.Fatal(err)
+	}
+	h := reopenHost(t, Options{Executable: cli, Args: []string{"acp", "--app-data-dir", "antigravity-acp"}, AccountDir: dir})
+	row, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := 0
+	for _, command := range []string{"/usage", "/quota"} {
+		if err := h.SendProtocol(context.Background(), row, command, func() error { checks++; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		idleHost(t, h, row)
+	}
+	if checks != 2 {
+		t.Fatal("missing operation fence", checks)
+	}
+	if got := readFile(t, filepath.Join(dir, "usage-reads")); got != "read\nread\n" {
+		t.Fatal("not independent quota reads", got)
+	}
+	page, err := h.Transcript(row, 10)
+	if err != nil || len(page.Entries) != 0 {
+		t.Fatal("quota became chat history", page, err)
+	}
+	facts, err := h.Facts(row)
+	if err != nil || facts.Limits == nil || len(facts.Limits.Windows) != 1 || facts.Limits.Windows[0].UsedPercent != 27 {
+		t.Fatal("quota not published", facts, err)
+	}
+	inv, err := h.Inventory(context.Background())
+	if err != nil || len(inv.Sessions) != 1 || inv.Sessions[0].ID != row.ID {
+		t.Fatal("quota changed user sessions", inv, err)
+	}
 }
 
 func syntheticConfigOptions(model, effort string, efforts []string) []any {

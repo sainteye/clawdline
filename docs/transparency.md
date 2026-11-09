@@ -329,3 +329,24 @@ active. Review of both language versions of the owned-ACP context explanation
 confirms that this changes permission negotiation, not injected instructions,
 profile identity, AI-credit policy or model input. The source receipt follows
 the native-policy reader. Real native startup acceptance used metadata only.
+
+Coordination notice cards were reviewed against the unchanged pause/wake
+receiver instructions in `session_pause.go` and both language versions of the
+notice explanation. The wire now also carries the requester conversation ID,
+reason and wake condition as inert fields for display. Cards neither run the
+receipt commands nor change delivery, safe-point or lease semantics. Stored
+body-only notices keep the original instructions under technical details.
+
+## Public Gemini CLI quota and approval compatibility (2026-11-09)
+
+Public ACP 1.5 does not implement the legacy `/usage` metadata prompt. The
+fixed CLI print report now supplies quota, and unknown ACP versions refuse the
+prompt-based probe. The fixed `/usage` and `/quota` send actions use this reader
+without inserting model input or chat history. An explicit saved full-approval
+policy now reaches public ACP through its native startup flag and an acknowledged
+mode selection after load/resume. Ordinary review-mode conversations receive no
+new approval override. Both `gemini-acp-context` and `gemini-restart-continue`
+explanations and original excerpts were reviewed in English and Traditional
+Chinese: their injected text, first-turn context, identity binding and restart
+continuation semantics are unchanged. Source locations and review receipts follow
+the changed files; website snapshot publication remains a separate acceptance.

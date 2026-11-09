@@ -196,11 +196,27 @@ func (c *conversation) readMetadata(raw json.RawMessage, allowLegacy bool) error
 	return nil
 }
 
-// RefreshQuota performs at most one metadata-only read. Summary/list/send paths
-// never call it, and a busy session refuses rather than queuing or retrying.
+// RefreshQuota performs one metadata read under the existing Session metadata
+// lease. Public CLI reads use an independent process. The fixed
+// /usage and /quota actions call this without becoming model input or history.
 func (h *Host) RefreshQuota(ctx context.Context, s session.Session) error {
 	c, err := h.lookup(s)
 	if err != nil {
+		return err
+	}
+	if antigravityprocess.PublicCLI(h.opts.Args) {
+		_, done, err := h.beginMetadata(c)
+		if err != nil {
+			return err
+		}
+		defer done()
+		reading, err := h.AccountQuota(ctx)
+		if err != nil {
+			reading = unknownQuota(contract.AssistantUnknownReasonUnreadable)
+		}
+		c.mu.Lock()
+		c.quota = reading
+		c.mu.Unlock()
 		return err
 	}
 	if _, err = h.Resume(ctx, s.CWD, s.ConversationID); err != nil {
@@ -246,6 +262,17 @@ func (h *Host) AccountQuota(ctx context.Context) (reading *contract.SessionLimit
 		return nil, refusal("unavailable")
 	}
 	defer os.RemoveAll(cwd)
+	if antigravityprocess.PublicCLI(h.opts.Args) {
+		readCtx, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(h.ctx, cancel)
+		defer cancel()
+		defer stop()
+		text, err := antigravityprocess.ReadCLIUsage(readCtx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime})
+		if err != nil {
+			return nil, err
+		}
+		return parseQuota(text, time.Now()), nil
+	}
 	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Assistant: h.assistant(), OnWire: h.wireObserver("metadata:quota"), Executable: h.opts.Executable, Args: h.processArgs(LaunchContext{}), AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime})
 	if err != nil {
 		return nil, err
@@ -277,6 +304,9 @@ func (h *Host) AccountQuota(ctx context.Context) (reading *contract.SessionLimit
 var quotaRemaining = regexp.MustCompile(`^- \*\*(Weekly Limit Remaining|Five Hour Limit Remaining|Gemini 4 Argon Weekly Limit):\*\* ([0-9]+(?:\.[0-9]+)?)% remaining(?: \(resets (.+ UTC)\))?$`)
 
 func parseQuota(text string, at time.Time) *contract.SessionLimits {
+	if strings.Contains(text, "\t") {
+		return parseCLIQuota(text, at)
+	}
 	out := unknownQuota(contract.AssistantUnknownReasonNoReading)
 	inQuota, group := false, ""
 	found := map[string]bool{}

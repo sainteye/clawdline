@@ -90,7 +90,10 @@ func TestACPProcess(t *testing.T) {
 			if os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") != "" || os.Getenv("GEMINI_API_KEY") != "" || os.Getenv("LC_ALL") != "C" {
 				os.Exit(33)
 			}
-			result = map[string]any{"protocolVersion": 1, "authMethods": []any{map[string]string{"id": "oauth-personal"}}}
+			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": "antigravity-acp", "version": "1.4.1"}, "authMethods": []any{map[string]string{"id": "oauth-personal"}}}
+			if mode == "usage-modern" {
+				result.(map[string]any)["agentInfo"] = map[string]string{"name": "antigravity-acp", "version": "1.5.0"}
+			}
 			if mode != "no-restore" {
 				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": mode != "no-context"}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
 			}

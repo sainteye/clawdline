@@ -1,0 +1,11 @@
+/* Coordination cards share the existing notice surface. Long legacy bodies,
+   conditions and identifiers must wrap within the transcript on a phone. */
+.notice-coordination-body {
+    margin-top: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.notice-coordination-details { margin-top: 6px; overflow-wrap: anywhere; }
+.notice-coordination-details > summary { cursor: pointer; width: fit-content; }
+.notice-coordination-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.clawdline-notice .notice-task, .clawdline-notice .notice-meta { overflow-wrap: anywhere; }

@@ -144,6 +144,9 @@ type Action struct {
 // set; Body is the prose the entry shows.
 type Notice struct {
 	Kind               string
+	RequestID          string
+	RequesterSessionID string
+	WakeCondition      string
 	Audience           string
 	Task               *NoticeTask
 	State              string
@@ -2144,6 +2147,9 @@ func decodeNotice(raw string) (*Notice, bool) {
 	version, hasVersion := obj.integer("version")
 	kind, hasKind := obj.str("kind")
 	body, _ := obj.str("body")
+	if proto == "clawdline.coordination" {
+		return coordinationNotice(obj, version, kind, body)
+	}
 	if proto != "clawdline.notice" || !hasVersion || version < 1 || version > 3 || !hasKind || body == "" {
 		return nil, false
 	}
@@ -2279,6 +2285,29 @@ func decodeNotice(raw string) (*Notice, bool) {
 	default:
 		return nil, false
 	}
+	return n, true
+}
+
+// coordinationNotice accepts the original body-only envelope and the typed
+// fields now written for cards. Never infer fields by parsing the English body.
+func coordinationNotice(obj object, version int64, kind, body string) (*Notice, bool) {
+	id, _ := obj.str("request_id")
+	if version != 1 || (kind != "pause" && kind != "wake") || strings.TrimSpace(body) == "" || !isUUID(id) {
+		return nil, false
+	}
+	required := []string{"protocol", "version", "kind", "request_id", "body"}
+	n := &Notice{Kind: kind, RequestID: id, Body: body}
+	if sameKeys(obj, required...) {
+		return n, true
+	}
+	requester, _ := obj.str("requester_session_id")
+	reason, _ := obj.str("reason")
+	wake, _ := obj.str("wake_condition")
+	if !sameKeys(obj, append(required, "requester_session_id", "reason", "wake_condition")...) ||
+		!isUUID(requester) || strings.TrimSpace(reason) == "" || strings.TrimSpace(wake) == "" {
+		return nil, false
+	}
+	n.RequesterSessionID, n.Reason, n.WakeCondition = requester, reason, wake
 	return n, true
 }
 

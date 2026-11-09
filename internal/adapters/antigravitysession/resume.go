@@ -179,6 +179,13 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	if err != nil {
 		return session.Session{}, err
 	}
+	// Public ACP restores its default mode, not the mode selected before the
+	// worker stopped. Reapply only the explicit global full-approval policy.
+	if client.AlwaysProceedConfigured() {
+		if err := selectInitialMode(ctx, client, metadata, h.opts.NewSessionMode); err != nil {
+			return session.Session{}, err
+		}
+	}
 	relay.Lock()
 	defer relay.Unlock()
 	stage.mu.Lock()

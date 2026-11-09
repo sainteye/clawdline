@@ -149,6 +149,8 @@ type Client struct {
 	sequence                      uint64
 	initialized, authenticated    bool
 	cachedToken                   bool
+	legacyUsage                   bool
+	fullApproval                  bool
 	sessionID                     string
 	usage                         *usageCapture               // stateMu; readLoop owns chunk order
 	configResult                  func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
@@ -179,7 +181,31 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, failure("cancelled", NotWritten)
 	}
-	cmd := exec.Command(opts.Executable, append([]string(nil), opts.Args...)...)
+	args := append([]string(nil), opts.Args...)
+	fullApproval := false
+	if PublicCLI(args) {
+		policy := &Client{opts: opts}
+		if err := policy.checkPersonal(); err != nil {
+			return nil, err
+		}
+		// Public ACP does not consume the legacy profile's toolPermission key.
+		// Pass the native flag only for an explicit saved full-approval policy.
+		full := policy.configuredAlwaysProceed()
+		fullApproval = full
+		hasFlag := false
+		for _, arg := range args {
+			if strings.HasPrefix(arg, "--dangerously-skip-permissions") {
+				if !full || arg != "--dangerously-skip-permissions" || hasFlag {
+					return nil, failure("permission_settings_required", NotWritten)
+				}
+				hasFlag = true
+			}
+		}
+		if full && !hasFlag {
+			args = append(args, "--dangerously-skip-permissions")
+		}
+	}
+	cmd := exec.Command(opts.Executable, args...)
 	if err := prepareProcess(cmd); err != nil {
 		return nil, err
 	}
@@ -218,7 +244,7 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 	childIn.Close()
 	childOut.Close()
 	life, cancel := context.WithCancel(ctx)
-	c := &Client{opts: opts, cmd: cmd, in: in, out: out, ctx: life, cancel: cancel,
+	c := &Client{opts: opts, fullApproval: fullApproval, cmd: cmd, in: in, out: out, ctx: life, cancel: cancel,
 		done: make(chan struct{}), readDone: make(chan struct{}), watchDone: make(chan struct{}), responses: make(chan json.RawMessage)}
 	go c.readLoop()
 	go func() {
@@ -298,6 +324,13 @@ func (c *Client) Initialize(ctx context.Context) (json.RawMessage, error) {
 		}
 	}
 	c.initialized = true
+	var agent struct {
+		Info struct{ Name, Version string } `json:"agentInfo"`
+	}
+	_ = json.Unmarshal(r, &agent)
+	// Only this captured legacy runtime is known to answer /usage locally.
+	// Public ACP 1.5 treats that string as a model prompt instead.
+	c.legacyUsage = agent.Info.Name == "antigravity-acp" && agent.Info.Version == "1.4.1"
 	var caps struct {
 		AgentCapabilities struct {
 			PromptCapabilities struct {
@@ -609,6 +642,12 @@ func (c *Client) Usage(ctx context.Context) (string, error) {
 	if err := c.checkPersonal(); err != nil {
 		return "", err
 	}
+	if PublicCLI(c.opts.Args) {
+		return ReadCLIUsage(ctx, c.opts)
+	}
+	if !c.legacyUsage {
+		return "", failure("usage_unsupported", NotWritten)
+	}
 	capture := &usageCapture{}
 	c.stateMu.Lock()
 	c.usage = capture
@@ -733,6 +772,10 @@ func (c *Client) badResult(code string) error {
 // AlwaysProceedConfigured reads the native profile's explicit tool policy.
 // A modern execution mode alone never establishes full tool approval.
 func (c *Client) AlwaysProceedConfigured() bool {
+	return (!PublicCLI(c.opts.Args) || c.fullApproval) && c.configuredAlwaysProceed()
+}
+
+func (c *Client) configuredAlwaysProceed() bool {
 	f, err := os.Open(filepath.Join(c.opts.AccountDir, "antigravity-acp", "settings.json"))
 	if err != nil {
 		return false
@@ -766,6 +809,9 @@ func (c *Client) checkPersonal() error {
 	auth, err := object(m["auth"])
 	if err != nil || !bytes.Equal(bytes.TrimSpace(m["useG1Credits"]), []byte("false")) || !equalString(auth["type"], "oauth-personal") {
 		return failure("personal_settings_required", NotWritten)
+	}
+	if PublicCLI(c.opts.Args) && c.cmd != nil && c.fullApproval != equalString(m["toolPermission"], "always-proceed") {
+		return failure("permission_settings_changed", NotWritten)
 	}
 	return nil
 }

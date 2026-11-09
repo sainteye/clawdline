@@ -83,7 +83,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			interruptedPrompt = nil
 			continue
 		case "initialize":
-			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
+			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": "antigravity-acp", "version": "1.4.1"}, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
 			if os.Getenv("GROK_HOME") != "" {
 				result.(map[string]any)["_meta"] = map[string]any{"grokShell": true, "agentVersion": "1.0.77"}
 				result.(map[string]any)["authMethods"] = []any{map[string]string{"id": "cached_token"}}

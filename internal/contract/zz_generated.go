@@ -8409,10 +8409,8 @@ type TranscriptFileChange struct {
 	UnifiedDiff string                 `json:"unifiedDiff,omitempty"`
 }
 
-// A decoded Clawdline notice without its protocol, version and body — the
-// Swift app's `webObject`. Which fields are present depends on `kind`:
-// task_finished, workspace_overlap, file_wait_request, file_wait_release or
-// handoff_receipt.
+// A decoded Clawdline notice without its protocol, version and body. Fields
+// depend on the task, file wait, handoff or coordination kind.
 type TranscriptNotice struct {
 	AckPath   string `json:"ack_path,omitempty"`
 	Assistant string `json:"assistant,omitempty"`
@@ -8439,19 +8437,22 @@ type TranscriptNotice struct {
 	NoticeID  string `json:"notice_id,omitempty"`
 
 	// task_finished only, where the decoder requires it, so absence there means 0.
-	Outstanding      int64                     `json:"outstanding,omitempty"`
-	Overlaps         []TranscriptNoticeOverlap `json:"overlaps,omitempty"`
-	Paths            []string                  `json:"paths,omitempty"`
-	ProjectDir       string                    `json:"project_dir,omitempty"`
-	Reason           string                    `json:"reason,omitempty"`
-	ReleaseCondition string                    `json:"release_condition,omitempty"`
-	Repository       string                    `json:"repository,omitempty"`
-	ResultPath       string                    `json:"result_path,omitempty"`
-	State            string                    `json:"state,omitempty"`
-	Task             *TranscriptNoticeTask     `json:"task,omitempty"`
-	Title            string                    `json:"title,omitempty"`
-	WaitID           string                    `json:"wait_id,omitempty"`
-	WaiterSessionID  string                    `json:"waiter_session_id,omitempty"`
+	Outstanding        int64                     `json:"outstanding,omitempty"`
+	Overlaps           []TranscriptNoticeOverlap `json:"overlaps,omitempty"`
+	Paths              []string                  `json:"paths,omitempty"`
+	ProjectDir         string                    `json:"project_dir,omitempty"`
+	Reason             string                    `json:"reason,omitempty"`
+	ReleaseCondition   string                    `json:"release_condition,omitempty"`
+	Repository         string                    `json:"repository,omitempty"`
+	RequestID          string                    `json:"request_id,omitempty"`
+	RequesterSessionID string                    `json:"requester_session_id,omitempty"`
+	ResultPath         string                    `json:"result_path,omitempty"`
+	State              string                    `json:"state,omitempty"`
+	Task               *TranscriptNoticeTask     `json:"task,omitempty"`
+	Title              string                    `json:"title,omitempty"`
+	WaitID             string                    `json:"wait_id,omitempty"`
+	WaiterSessionID    string                    `json:"waiter_session_id,omitempty"`
+	WakeCondition      string                    `json:"wake_condition,omitempty"`
 }
 
 type TranscriptNoticeLeftover struct {

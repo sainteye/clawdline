@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10879,
+  "englishContentKeys": 10885,
   "riskKeys": 4787,
-  "nonRiskCount": 6092,
+  "nonRiskCount": 6098,
   "groups": [
     {
       "name": "acp / other",
@@ -3776,7 +3776,7 @@
     },
     {
       "name": "next / other",
-      "count": 663,
+      "count": 669,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4003,6 +4003,12 @@
         "next.noteWithdrawalReason",
         "next.noticeManyLeftovers",
         "next.noticeOneLeftover",
+        "next.noticePause",
+        "next.noticePauseSay",
+        "next.noticeRequester",
+        "next.noticeWake",
+        "next.noticeWakeCondition",
+        "next.noticeWakeSay",
         "next.notificationNav",
         "next.outputsAll",
         "next.outputsClose",
