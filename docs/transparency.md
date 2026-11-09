@@ -350,3 +350,11 @@ explanations and original excerpts were reviewed in English and Traditional
 Chinese: their injected text, first-turn context, identity binding and restart
 continuation semantics are unchanged. Source locations and review receipts follow
 the changed files; website snapshot publication remains a separate acceptance.
+
+An explicitly confirmed user close now stops the exact owned Gemini worker even
+during a model or metadata call. The close intent is persisted before stopping;
+history and native identity remain available for explicit resume. The existing
+HTTP closeability version and force confirmation remain required. Both language
+versions of the ACP context and restart-continuation cards were reviewed again:
+closing adds no instructions and does not send a model prompt or automatically
+resume a closed conversation. Their injected text and excerpts are unchanged.

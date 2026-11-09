@@ -821,50 +821,14 @@ func (h *Host) Screen(ctx context.Context, s session.Session, cols int) (string,
 	return sb.String(), true
 }
 func (h *Host) Close(ctx context.Context, s session.Session) error {
-	c, err := h.lookup(s)
-	if err != nil {
+	// The caller has authorized closing this exact owned conversation. Stop
+	// its worker even during a prompt or metadata RPC, keeping the same history
+	// and the stopping fence instead of clearing another operation's busy lease.
+	if err := h.Stop(ctx, s); err != nil {
 		return err
 	}
 	h.mu.Lock()
-	if h.closed {
-		h.mu.Unlock()
-		return refusal("closed")
-	}
-	c.mu.Lock()
-	client := c.client
-	if c.busy && (c.permission == nil || !c.permission.Active()) {
-		c.mu.Unlock()
-		h.mu.Unlock()
-		return refusal("busy")
-	}
-	c.busy = true
-	h.jobs.Add(1)
-	h.mu.Unlock()
-	defer h.jobs.Done()
-	defer func() { c.mu.Lock(); c.busy = false; c.mu.Unlock() }()
-	c.hidden = true
-	c.permission = nil
-	if client != nil && client.Err() != nil {
-		c.uncertain = true
-		c.row.State = session.StateUnknown
-	}
-	if err := c.saveState(); err != nil {
-		c.hidden = false
-		c.mu.Unlock()
-		return err
-	}
-	c.mu.Unlock()
-	if client != nil {
-		if err = client.Close(); err != nil {
-			return err
-		}
-	}
-	c.mu.Lock()
-	c.client = nil
-	c.row.PID = 0
-	c.mu.Unlock()
-	h.mu.Lock()
-	if c.store == nil {
+	if c := h.rows[s.ID]; c != nil && c.store == nil {
 		delete(h.rows, s.ID)
 	}
 	h.mu.Unlock()
