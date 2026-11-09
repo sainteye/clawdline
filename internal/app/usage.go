@@ -510,6 +510,15 @@ func (u *UsageLedger) discover(since time.Time) map[string]usageFile {
 		parent := filepath.Base(filepath.Dir(filepath.Dir(p)))
 		add(usageFile{assistant: "claude", conversation: stem(p), path: p, parent: parent})
 	}
+	// Use the native path validator before admitting Gemini logs. Its existing
+	// snapshot reader bounds bytes and rejects incomplete token counters.
+	native, _ := filepath.Glob(filepath.Join(u.Home, ".gemini", "antigravity-cli", "brain", "*", ".system_generated", "logs", "transcript_full.jsonl"))
+	for _, p := range native {
+		id := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(p))))
+		if safe, ok := transcript.AntigravityPath(u.Home, id); ok {
+			add(usageFile{assistant: "antigravity", conversation: id, path: safe})
+		}
+	}
 	root := filepath.Join(u.Home, ".codex", "sessions")
 	end := u.now()
 	// Codex files a rollout under the local date it started.

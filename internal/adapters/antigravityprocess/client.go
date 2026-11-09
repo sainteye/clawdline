@@ -730,6 +730,22 @@ func (c *Client) badResult(code string) error {
 	return e
 }
 
+// AlwaysProceedConfigured reads the native profile's explicit tool policy.
+// A modern execution mode alone never establishes full tool approval.
+func (c *Client) AlwaysProceedConfigured() bool {
+	f, err := os.Open(filepath.Join(c.opts.AccountDir, "antigravity-acp", "settings.json"))
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, int64(c.opts.MaxFrameBytes)+1))
+	if err != nil || len(raw) > c.opts.MaxFrameBytes {
+		return false
+	}
+	settings, err := object(raw)
+	return err == nil && equalString(settings["toolPermission"], "always-proceed")
+}
+
 func (c *Client) checkPersonal() error {
 	if c.opts.Assistant == session.AssistantGrok {
 		return nil

@@ -318,3 +318,14 @@ turn-end and restart-continuation instructions are not applied to Grok. An
 inactivity timeout records an uncertain outcome rather than successful work.
 The English and Taiwan Traditional Chinese explanations describe these actual
 provider boundaries; the website must import this reviewed product revision.
+
+The standalone ACP 1.5.0 permission vocabulary separates edit mode from tool
+approval. Maximum approval uses the native `always-proceed` profile policy with
+an offered `accept-edits` execution mode; the old `yolo` token is retained for
+legacy runtimes. Clawdline validates this explicit policy and native mode ACK
+instead of treating ordinary edit approval as full tool permission. A lower
+requested dispatch permission is refused while the native global override is
+active. Review of both language versions of the owned-ACP context explanation
+confirms that this changes permission negotiation, not injected instructions,
+profile identity, AI-credit policy or model input. The source receipt follows
+the native-policy reader. Real native startup acceptance used metadata only.

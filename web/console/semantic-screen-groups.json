@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10874,
-  "riskKeys": 4784,
-  "nonRiskCount": 6090,
+  "englishContentKeys": 10879,
+  "riskKeys": 4787,
+  "nonRiskCount": 6092,
   "groups": [
     {
       "name": "acp / other",
@@ -3776,7 +3776,7 @@
     },
     {
       "name": "next / other",
-      "count": 661,
+      "count": 663,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4406,6 +4406,8 @@
         "next.updateTitle",
         "next.updateToVersion",
         "next.updateVerifying",
+        "next.usageAgentUpgrade",
+        "next.usageAgents",
         "next.usageAllProjects",
         "next.usageCacheRead",
         "next.usageCacheWrite",

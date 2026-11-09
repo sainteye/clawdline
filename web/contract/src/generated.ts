@@ -10927,6 +10927,7 @@ export interface UsageNamedSize {
 }
 
 export interface UsageOverview {
+  agents?: UsageOverviewAgent[]
   at: number
   coverage: UsageOverviewCoverage
   daily: UsageOverviewDay[]
@@ -10942,6 +10943,11 @@ export interface UsageOverview {
   timezone: string
   totals: UsageOverviewTotals
   until: number
+}
+
+export interface UsageOverviewAgent {
+  id: string
+  tokens: number | null
 }
 
 export interface UsageOverviewCoverage {

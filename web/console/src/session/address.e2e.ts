@@ -270,6 +270,7 @@ const usagePickerOptions = [
   { id: "unattributed", name: "unattributed" },
 ]
 let usagePickerQueries: URLSearchParams[] = []
+let usageAgentLegacy = false
 const draftSendBodies: Record<string, unknown>[] = []
 const guidanceRecords:Record<string,{conversation:string;enabled:boolean;revision:number;state:string;version:string;source:string;language?:string}>={}
 const guidanceTyped:string[]=[]
@@ -292,7 +293,8 @@ function daemon(): Server {
         parts: { input: 400, output: 400, cache_read: 200, cache_write: 200 } }
       return json(res, 200, { days: Number(url.searchParams.get("days") || 7), project: url.searchParams.get("project") || "", timezone: "UTC",
         daily: [{ date: "2026-10-12", ...totals, coverage: "complete" }], previous_daily: [], totals, previous_totals: totals,
-        coverage: { state: "complete", sessions_read: 1, sessions_total: 1 }, projects: [], project_options: usagePickerOptions })
+        coverage: { state: "complete", sessions_read: 1, sessions_total: 1 }, projects: [], project_options: usagePickerOptions,
+        agents: usageAgentLegacy ? undefined : [{id:"claude",tokens:600},{id:"codex",tokens:300},{id:"gemini",tokens:300},{id:"grok",tokens:null}] })
     }
     if (path === "/v1/strings") {
       const tag = url.searchParams.get("lang") || "en"
@@ -3237,6 +3239,45 @@ for (const size of [DESK, { width: 640, height: 844, mobile: true }, PHONE, { wi
   })
 }
 
+
+for (const [name, size, tag, legacy] of [
+  ['desktop', DESK, 'en', false], ['phone', PHONE, 'en', false],
+  ['narrow', { width: 320, height: 640, mobile: true }, 'en', false],
+  ['phone-zh', PHONE, 'zh-Hant', false], ['legacy-zh', PHONE, 'zh-Hant', true],
+] as const) test(`usage agent distribution ${name}`, async () => {
+  usageAgentLegacy = legacy
+  try {
+    await inTab(size, async tab => {
+      await tab.go("/")
+      await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)}); location.hash = "page=usage"`)
+      await tab.reload()
+      await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000
+        const read = () => {
+          if (document.querySelector('.usage-agents')?.innerText.includes(${JSON.stringify(legacy ? "更新這台機器" : (tag === 'en' ? "No recorded data" : "尚無資料"))})) return resolve(true)
+          if (Date.now() > deadline) return reject(new Error('agent distribution did not load'))
+          setTimeout(read, 25)
+        }; read()
+      })`)
+      const distribution = await tab.run(`(() => {
+        const section = document.querySelector('.usage-agents')
+        section.scrollIntoView({block: 'center'})
+        return { text: section.innerText, widths: [...section.querySelectorAll('.usage-agent-composition span')].map(el => el.style.width),
+          fits: [...section.querySelectorAll('dl > div')].every(el => { const r=el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && el.querySelector('dt').getBoundingClientRect().right <= el.querySelector('dd').getBoundingClientRect().left }),
+          overflow: document.documentElement.scrollWidth > innerWidth }
+      })()`)
+      assert.ok(distribution.text.includes(tag === 'en' ? 'Agent token distribution' : 'Agent Token 分佈'))
+      if (legacy) assert.ok(distribution.text.includes('更新這台機器'))
+      else {
+        for (const label of ['Claude Code', 'Codex', 'Gemini', 'Grok', '50%', '25%']) assert.ok(distribution.text.includes(label), label)
+        assert.deepEqual(distribution.widths, ['50%', '25%', '25%'])
+        assert.equal(distribution.fits, true)
+      }
+      assert.equal(distribution.overflow, false)
+      await tab.shot('usage-agents-' + name)
+    })
+  } finally { usageAgentLegacy = false }
+})
 
 test("workflow settings explain both switches and persist independent changes on desktop and phone", async () => {
   for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
