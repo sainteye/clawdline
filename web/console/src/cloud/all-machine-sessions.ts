@@ -180,7 +180,7 @@ export type MachineSessionProjection =
   | { kind: "ready"; complete: boolean; observedAt: number; snapshotGeneration?: string; presentationGeneration?: string;
       rows: ProjectedSession[]; unknownTargets?: number }
   | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[]; retryAt?: number;
-      complete?: true; snapshotGeneration?: string; unknownTargets?: number
+      complete?: boolean; snapshotGeneration?: string; unknownTargets?: number
       /**
        * An `event_gap`'s rows that did arrive. They never decide which
        * Sessions are listed — the gap means that is not known — only what a
@@ -212,6 +212,8 @@ export type SessionOlderPage =
   | Extract<SessionContent, { kind: "unavailable" }>
 
 export interface SessionProjectionSource {
+  /** Apply a successful terminal close receipt to every list of this exact execution. */
+  confirmedClosed?(destination: SessionDestination): void
   /** Must settle or reject; each machine is requested independently. */
   readMachine(machineID: string, signal: AbortSignal, fresh?: boolean): Promise<MachineSessionProjection>
   /** Request a fresh machine observation of the opened Session. Published status arrives through subscribe. */
@@ -231,7 +233,7 @@ export interface SessionProjectionSource {
   /** Release both the rich Session and transcript channels on detail exit. */
   closeDetail?(destination: SessionDestination): void
   /** An event gap invalidates that machine's current projection and detail cache. */
-  subscribe(listener: (event: { machineID: string; kind: "changed" | "gap" | "detail_changed" | "access_changed"; sessionID?: string }) => void): () => void
+  subscribe(listener: (event: { machineID: string; kind: "changed" | "gap" | "detail_changed" | "access_changed"; sessionID?: string; closed?: SessionDestination }) => void): () => void
 }
 
 const DESTINATION = /^#machine=([^&]+)&session=([^&]+)&generation=([^&]+)$/

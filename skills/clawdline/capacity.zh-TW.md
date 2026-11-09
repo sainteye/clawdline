@@ -249,6 +249,7 @@
 | `console.assistant_facts_read_milliseconds` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `console.closed_session_receipts` | 512 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.community_share_fetch_seconds` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `console.community_share_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
@@ -310,6 +311,9 @@
 | `console.service_performance_routes` | 32 | `rows` | `refuse` | `diagnostics` | — |
 | `console.service_performance_timeout_ms` | 6000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.started_session_follow_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.started_session_reads` | 12 | `rows` | `refuse` | `diagnostics` | — |
+| `console.started_session_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |

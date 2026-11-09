@@ -4,7 +4,7 @@ import type { SessionStatus, SessionStatusInventory } from "@clawdline/contract"
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
 import { statusGapTarget, statusPassTransition, statusProjection } from "./status-projection.ts"
 // @ts-expect-error -- the same runner, for the key the pinned read is asked again on.
-import { presentationPass } from "./all-machine-sessions.ts"
+import { destinationAvailable, presentationPass } from "./all-machine-sessions.ts"
 
 /**
  * The page against a machine that states only the status rows that changed.
@@ -147,17 +147,19 @@ test("rows of a new pass that overtake its marker are a transition, not a gap", 
   assert.equal(statusPassTransition(client, MACHINE), false)
 })
 
-test("a row left alone for longer than the freshness window is stale, not accepted", () => {
+test("an aged row stays stale without blocking the other current Sessions", () => {
   const { client, publish } = relay()
   for (const id of ids) publish(id, row(id, setPass, seconds))
   // The machine restates every row and the marker on its heartbeat, inside
-  // this window. Past it the list is retained but stale, as it always was.
+  // this window. A missed row stays stale without aging the healthy rows.
   publish("%10", row("%10", setPass, seconds - 400))
   publish(INVENTORY, marker(ids, setPass, firstDisplay, seconds))
   const reading = statusProjection(client, MACHINE, NOW)
-  assert.equal(reading.kind === "unavailable" && reading.reason, "stale")
+  assert.equal(reading.kind, "ready")
   assert.equal(reading.rows?.length, 3)
-  assert.ok(reading.rows?.every((entry) => entry.freshness === "stale"))
+  for (const entry of reading.rows ?? []) {
+    assert.equal(destinationAvailable(entry.destination, reading), entry.destination.sessionID === ids[0] ? "stale" : "ready")
+  }
 })
 
 test("the pinned list is re-read when the display id moves, and when only it can", () => {

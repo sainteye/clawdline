@@ -10887,5 +10887,13 @@
   "transparency.card.grok-acp-context.title": "Grok 自有 ACP 對話內容",
   "transparency.grok": "Grok Build",
   "grok.imagesUnavailable": "此整合目前尚未提供 Grok 圖片輸入。",
-  "http.7a512054f936f703": "此整合目前尚未提供 Grok 圖片輸入。"
+  "http.7a512054f936f703": "此整合目前尚未提供 Grok 圖片輸入。",
+  "capacityRow.console.started_session_follow_seconds.full": "到達期限後，暫時追蹤新 Session 的計時器、讀取與訂閱會釋放。一般列表更新與下拉重新整理仍各自正常運作。",
+  "capacityRow.console.started_session_retry_seconds.full": "下一次會讀取新的列表，不會再開另一個 Session。",
+  "capacityRow.console.closed_session_receipts.what": "單一瀏覽器暫存的終端關閉成功結果，用於擋住較舊的列表資料。",
+  "capacityRow.console.started_session_reads.what": "一次啟動確認最多可以讀取幾輪 Session 列表；各機器共用這個額度，狀態事件觸發的讀取也計入。",
+  "capacityRow.console.started_session_reads.full": "用完此讀取額度後，暫時的新 Session 追蹤會停止，不會再次建立 Session；一般列表更新與下拉重新整理仍可使用。",
+  "capacityRow.console.closed_session_receipts.full": "新的已簽章清單會確認移除。達到記憶體上限時替換最舊結果；新執行仍會顯示，且不會額外排程查詢。",
+  "capacityRow.console.started_session_follow_seconds.what": "一次已確認啟動的 Session 最久可以持續重查多久，包括尚未完成的讀取。",
+  "capacityRow.console.started_session_retry_seconds.what": "已確認開啟的新 Session 尚未出現在列表時，隔多久再讀一次。每台機器同時最多讀取一次，各機器獨立進行。"
 }

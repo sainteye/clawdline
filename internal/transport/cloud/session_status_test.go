@@ -565,34 +565,34 @@ func TestStatusInventoryPublishesAnEmptySet(t *testing.T) {
 	}
 }
 
-func TestPartialScanCannotReplaceTheLastCompleteStatusSet(t *testing.T) {
+func TestPartialScanPublishesHealthyRowsAndRetainsUnobservedSessions(t *testing.T) {
 	c := &collector{}
 	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
-	id := "%19"
-	complete := sessionReading{sessions: []map[string]any{{"id": id, "state": "idle"}}, at: json.RawMessage(`100`), complete: true}
-	p.publishStatuses(context.Background(), complete, []string{id})
-	first := c.payload(t, "ss/mac_a/"+InventorySessionID)
-	if len(c.channels()) != 2 {
-		t.Fatalf("first complete pass published %v", c.channels())
+	old := map[string]any{"id": "old", "backend": "ps", "state": "idle", "execution_generation": strings.Repeat("a", 32),
+		"source": map[string]any{"freshness": "current", "observed_at": float64(100), "provenance": "ps"}}
+	complete := sessionReading{sessions: []map[string]any{old}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), complete, []string{"old"})
+	newRow := map[string]any{"id": "%19", "backend": "tmux", "state": "working", "execution_generation": strings.Repeat("b", 32),
+		"source": map[string]any{"freshness": "current", "observed_at": float64(200), "provenance": "tmux"}}
+	partial := sessionReading{sessions: []map[string]any{newRow}, at: json.RawMessage(`200`)}
+	// inventoryIDs already retained the old id because its owner did not answer.
+	p.publishStatuses(context.Background(), partial, []string{"%19", "old"})
+	marker := c.payload(t, "ss/mac_a/"+InventorySessionID)
+	if marker["complete"] != false || len(marker["inventory"].(map[string]any)["sessions"].([]any)) != 2 {
+		t.Fatalf("partial scan claimed absence or withheld the new set: %v", marker)
 	}
-	partial := sessionReading{sessions: []map[string]any{{"id": id, "state": "working"}}, at: json.RawMessage(`200`)}
-	p.publishStatuses(context.Background(), partial, []string{id})
-	if len(c.channels()) != 2 {
-		t.Fatalf("partial pass replaced the complete status set: %v", c.channels())
+	fresh := c.payload(t, "ss/mac_a/%2519")
+	if fresh["state"] != "working" || fresh["inventory_complete"] != false || fresh["source"].(map[string]any)["freshness"] != "current" {
+		t.Fatalf("healthy source was blocked by the unreadable source: %v", fresh)
 	}
-	if got := c.payload(t, "ss/mac_a/"+InventorySessionID); got["snapshot_generation"] != first["snapshot_generation"] {
-		t.Fatalf("partial pass changed the status barrier: %v", got)
+	carried := c.payload(t, "ss/mac_a/old")
+	if carried["execution_generation"] != old["execution_generation"] || carried["source"].(map[string]any)["freshness"] != "unverified" || carried["source"].(map[string]any)["observed_at"] != float64(100) {
+		t.Fatalf("unobserved row was lost or made current: %v", carried)
 	}
 	partial.complete = true
-	p.publishStatuses(context.Background(), partial, []string{id})
-	// The set is the same one Session, so the barrier stands and only the row
-	// that now says something else goes out.
-	if got := c.channels(); len(got) != 3 || got[2] != "ss/mac_a/%2519" {
-		t.Fatalf("next complete pass did not replace the row: %v", got)
-	}
-	if got := c.payload(t, "ss/mac_a/%2519"); got["state"] != "working" ||
-		got["snapshot_generation"] != first["snapshot_generation"] {
-		t.Fatalf("the replaced row is not the newest reading of this set: %v", got)
+	p.publishStatuses(context.Background(), partial, []string{"%19"})
+	if got := c.payload(t, "ss/mac_a/"+InventorySessionID); got["complete"] != true || len(got["inventory"].(map[string]any)["sessions"].([]any)) != 1 {
+		t.Fatalf("complete scan could not confirm removal: %v", got)
 	}
 }
 

@@ -174,9 +174,9 @@ type Publisher struct {
 	// so the row of an id that leaves the set is forgotten rather than left to
 	// be skipped against whatever the relay still retains under it. It is the
 	// inventory's own set and so bounded by InventoryLimit.
-	statusRows map[string]bool
+	statusRows map[string]SessionStatus
 	// statusPass is the pass id the ss/ marker of the current pass stated, or
-	// empty when this pass stated none (a partial reading, a refused row). A
+	// empty when this pass stated none (a failed reading or refused row). A
 	// re-statement answers with it, so a viewer whose held marker already
 	// names that id knows its list is confirmed without waiting for a pass id
 	// that only a changed set would produce (statusGeneration).

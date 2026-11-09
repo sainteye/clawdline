@@ -155,10 +155,11 @@ test("a cold browser asks a named paired schedule machine before its descriptor 
 })
 
 test("the original one-machine page subscribes only exact rich rows named by that machine's status", () => {
+  for (const complete of [true, false]) {
   const client = Object.create(StatusCloudClient.prototype)
   client.statusSnapshots = new Map([
     [JSON.stringify(["m", "__clawdline_inventory_v1__"]), { payload: {
-      complete: true, snapshot_generation: genA, inventory: { version: 1, sessions: ["s1", "s2"] },
+      complete, snapshot_generation: genA, inventory: { version: 1, sessions: ["s1", "s2"] },
     } }],
     [JSON.stringify(["m", "s1"]), { payload: { snapshot_generation: genA, execution_generation: genA } }],
     [JSON.stringify(["m", "s2"]), { payload: { snapshot_generation: genA, execution_generation: genB } }],
@@ -191,6 +192,7 @@ test("the original one-machine page subscribes only exact rich rows named by tha
   assert.deepEqual(frames.at(-1), { type: "subscribe", channels: ["s/m/s2"] })
   assert.deepEqual([...client.socketSubscriptions.keys()], ["s/m/s2"],
     "opening one fleet Session does not recover every rich row on its machine")
+  }
 })
 
 test("the original list recovers more rows when other idle Cloud channels fill the relay budget", () => {
