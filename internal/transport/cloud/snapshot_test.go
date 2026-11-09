@@ -431,8 +431,8 @@ func TestARestatementNamesNoPassItsMarkerDidNotState(t *testing.T) {
 		// A marker behind a row that did not leave names a Session the viewer never gets.
 		{name: "a status row was refused", fail: row, body: completeScan, quiet: true},
 		{name: "the status marker was refused", fail: marker, body: completeScan},
-		// A partial reading states no ss/ set, so the previous pass's id is not this pass's.
-		{name: "the reading was partial", body: partial, quiet: true},
+		// A partial reading publishes a partial barrier for the retained set.
+		{name: "the reading was partial", body: partial},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := &collector{}
@@ -453,6 +453,12 @@ func TestARestatementNamesNoPassItsMarkerDidNotState(t *testing.T) {
 			refuse = tc.fail
 			router.set(tc.body)
 			second := restated(t, publisher)
+			if tc.name == "the reading was partial" {
+				if second.refusal != nil || second.stated.Generation == "" || second.stated.Complete || out.payload(t, marker)["complete"] != false {
+					t.Fatalf("partial status pass did not state its actual barrier: %+v, %+v", second.stated, second.refusal)
+				}
+				return
+			}
 			if second.refusal == nil && second.stated.Generation != "" {
 				t.Fatalf("a pass that stated no marker named pass %q (the first pass named %q)",
 					second.stated.Generation, first.stated.Generation)

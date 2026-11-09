@@ -182,7 +182,7 @@ function supportsPinnedRead(client: StatusClient, machineID: string, nowMs = Dat
 function retainedStatus(reading: MachineSessionProjection, reason: "offline" | "stale", retryAt?: number): MachineSessionProjection {
   return { kind: "unavailable", reason, observedAt: reading.observedAt,
     rows: reading.rows?.map((row) => ({ ...row, freshness: "stale" })),
-    complete: reading.kind === "ready" ? true : reading.complete,
+    complete: reading.complete,
     snapshotGeneration: reading.snapshotGeneration, unknownTargets: reading.unknownTargets, retryAt }
 }
 

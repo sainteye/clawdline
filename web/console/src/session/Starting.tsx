@@ -1,5 +1,6 @@
-import { useEffect } from "react"
+import { useEffect, useSyncExternalStore } from "react"
 import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
 import { Start } from "./Start.js"
 
 /**
@@ -10,6 +11,7 @@ import { Start } from "./Start.js"
  * into it, and its × is the way to let go of the wait.
  */
 export function Starting() {
+  useSyncExternalStore(Start.subscribe, Start.version)
   const T = L.strings
   useEffect(() => {
     const x = document.getElementById("starting-close")
@@ -22,6 +24,9 @@ export function Starting() {
     <div className="starting" id="starting" hidden role="status" aria-live="polite">
       <canvas id="starting-spin"></canvas>
       <span id="starting-say"></span>
+      <button id="starting-retry" className="chip" type="button" hidden={!Start.progress()?.retry} onClick={() => Start.retry()}>
+        {nextWord("startProgressRetry")}
+      </button>
       <button className="x" id="starting-close" type="button" aria-label={T.webClose}>
         ×
       </button>

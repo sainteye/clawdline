@@ -310,6 +310,9 @@
 | `console.service_performance_routes` | 32 | `rows` | `refuse` | `diagnostics` | — |
 | `console.service_performance_timeout_ms` | 6000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.started_session_follow_seconds` | 60 | `seconds` | `expire` | `sender, diagnostics` | — |
+| `console.started_session_reads` | 12 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.started_session_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |

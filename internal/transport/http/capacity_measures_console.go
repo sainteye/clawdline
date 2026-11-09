@@ -212,6 +212,15 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleExecutionRecoveryAttempts: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console opening recovery guard; daemon cannot measure another device's recovery attempts"}
 		},
+		capacity.ConsoleStartedSessionRetry: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-confirmed-start browser retry cadence; daemon cannot measure another device's timers"}
+		},
+		capacity.ConsoleStartedSessionFollow: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-confirmed-start browser follow window; daemon cannot measure another device's timers"}
+		},
+		capacity.ConsoleStartedSessionReads: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-confirmed-start browser read budget; daemon cannot measure another device's attempts"}
+		},
 		// The console's transcript cadence lives in each open tab; the
 		// daemon serves the reads and cannot count a tab's timers.
 		capacity.ConsoleTranscriptSafetySeconds: func() capacity.Reading {

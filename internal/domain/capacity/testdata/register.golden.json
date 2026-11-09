@@ -5923,6 +5923,65 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.started_session_follow_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 60,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumStartedSessionFollowSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.started_session_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 12,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumStartedSessionReads"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.started_session_retry_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumStartedSessionRetrySeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.status_gap_retry_seconds",
     "Class": "cache",
     "Unit": "seconds",

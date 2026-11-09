@@ -142,6 +142,7 @@ export interface StartProgress {
   /** The band's own sentence, when the stage has one of its own to say. */
   words: string
   background: boolean
+  retry?: () => void
 }
 let progress: StartProgress | null = null
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -1014,6 +1015,7 @@ function began(answer: L.StartAnswer | undefined, place: Place | null): void {
   if (timer) clearTimeout(timer)
   timer = setTimeout(() => {
     if (!wait) return
+    if (wait.eager) return
     wait.late = true
     band(detached ? detachedWords() : T().webStartSlow, true)
     moveProgress(detached ? "detached" : "slow", detached ? detachedWords() : T().webStartSlow)
@@ -1152,6 +1154,27 @@ export const Start = {
 
   /** The start the progress dialog shows, or null when there is none to show. */
   progress: (): StartProgress | null => progress,
+
+  /** The confirmed Cloud launch is observed under its own finite read budget. */
+  observing(id: string) {
+    if (!wait || wait.id !== id || !progress) return
+    wait.late = false
+    const words = nextWord("startProgressChecking")
+    band(words, false)
+    showProgress({ ...progress, stage: "waiting", words, retry: undefined })
+  },
+
+  observationStopped(id: string, retry: () => void) {
+    if (!wait || wait.id !== id || !progress) return
+    wait.late = true
+    if (timer) clearTimeout(timer)
+    timer = null
+    const words = nextWord("startProgressStopped")
+    band(words, true)
+    showProgress({ ...progress, stage: "slow", words, retry })
+  },
+
+  retry() { progress?.retry?.() },
 
   afterProgressHidden,
 

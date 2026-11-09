@@ -51,11 +51,13 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     typeof marker.snapshot_generation !== "string" || !/^[0-9a-f]{32}$/u.test(marker.snapshot_generation)) {
     return { kind: "unavailable", reason: "bad_projection" }
   }
-  if (marker.complete !== true) return { kind: "unavailable", reason: "unknown", observedAt: Number(marker.at) * 1000 }
+  if (typeof marker.complete !== "boolean") return { kind: "unavailable", reason: "bad_projection" }
+  const complete = marker.complete
   // An expired but internally consistent pass remains a readable observation.
   // Its rows cannot authorize fresh content reads or changing operations.
-  let stale = outsideFreshWindow(Number(marker.at) * 1000, nowMs)
+  const stale = outsideFreshWindow(Number(marker.at) * 1000, nowMs)
   const rows: ProjectedSession[] = []
+  let allRowsAged = ids.length > 0
   const taskParents = descriptorParents(client, machine, ids as string[], nowMs)
   let unknownTargets = 0
   // A gap makes the set uncertain, not each row: the rows that did arrive are
@@ -70,7 +72,7 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     }
     const data = record(entry.payload)
     const source = record(data?.source)
-    if (!data || data.machine_id !== machine || data.session_id !== session || data.inventory_complete !== true ||
+    if (!data || data.machine_id !== machine || data.session_id !== session || data.inventory_complete !== complete ||
       !["working", "waiting", "idle", "unknown"].includes(String(data.state)) ||
       !Number.isFinite(data.projected_at) || !Number.isFinite(source?.observed_at) ||
       !["current", "unverified", "missing"].includes(String(source?.freshness))) {
@@ -80,7 +82,7 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     if (data.snapshot_generation !== marker.snapshot_generation) gap = true
     const rowStale = outsideFreshWindow(Number(data.projected_at) * 1000, nowMs) ||
       (source!.freshness === "current" && outsideFreshWindow(Number(source!.observed_at) * 1000, nowMs))
-    stale ||= rowStale
+    allRowsAged &&= rowStale
     if (typeof data.execution_generation !== "string" || !/^[0-9a-f]{32}$/u.test(data.execution_generation)) {
       unknownTargets += 1
       continue
@@ -117,10 +119,10 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
   }
   if (gap) return { kind: "unavailable", reason: "event_gap", observedAt: Number(marker.at) * 1000,
     latest: rows.map((row) => ({ ...row, freshness: "stale" })) }
-  if (stale) return { kind: "unavailable", reason: "stale", complete: true,
+  if (stale || allRowsAged) return { kind: "unavailable", reason: "stale", complete,
     observedAt: Number(marker.at) * 1000, snapshotGeneration: marker.snapshot_generation as string,
     rows: rows.map((row) => ({ ...row, freshness: "stale" })), unknownTargets }
-  return { kind: "ready", complete: true, observedAt: Number(marker.at) * 1000,
+  return { kind: "ready", complete, observedAt: Number(marker.at) * 1000,
     snapshotGeneration: marker.snapshot_generation as string,
     presentationGeneration: typeof marker.presentation_generation === "string" &&
       /^[0-9a-f]{32}$/u.test(marker.presentation_generation) ? marker.presentation_generation : undefined,
@@ -144,7 +146,7 @@ export function statusInventoryIDs(client: StatusProjectionClient, machine: stri
 export function statusGapTarget(client: StatusProjectionClient, machine: string): { sessionID: string; snapshotGeneration: string } | null {
   const marker = record(held(client, machine, INVENTORY)?.payload)
   const inventory = record(marker?.inventory)
-  if (!marker || !inventory || marker.complete !== true || !Array.isArray(inventory.sessions) ||
+  if (!marker || !inventory || typeof marker.complete !== "boolean" || !Array.isArray(inventory.sessions) ||
     !/^[0-9a-f]{32}$/u.test(String(marker.snapshot_generation))) return null
   for (const sessionID of inventory.sessions) {
     if (typeof sessionID !== "string" || !sessionID || sessionID === INVENTORY) return null

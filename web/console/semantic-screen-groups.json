@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10875,
-  "riskKeys": 4783,
-  "nonRiskCount": 6092,
+  "englishContentKeys": 10884,
+  "riskKeys": 4789,
+  "nonRiskCount": 6095,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 426,
+      "count": 428,
       "sources": [
         null
       ],
@@ -597,6 +597,8 @@
         "capacityRow.console.service_performance_refresh_ms.what",
         "capacityRow.console.service_performance_routes.what",
         "capacityRow.console.service_performance_timeout_ms.what",
+        "capacityRow.console.started_session_follow_seconds.what",
+        "capacityRow.console.started_session_reads.what",
         "capacityRow.console.status_marker_recovery_wait_seconds.what",
         "capacityRow.console.support_image_bytes.what",
         "capacityRow.console.support_image_count.what",
@@ -3765,7 +3767,7 @@
     },
     {
       "name": "next / other",
-      "count": 669,
+      "count": 670,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4252,6 +4254,7 @@
         "next.startProgressHint",
         "next.startProgressOpen",
         "next.startProgressResumeTitle",
+        "next.startProgressRetry",
         "next.startProgressTitle",
         "next.swipeArchiveAction",
         "next.swipeArchiveLabel",

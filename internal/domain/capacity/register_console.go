@@ -1,8 +1,32 @@
 package capacity
 
+const (
+	MaximumStartedSessionRetrySeconds  = 5
+	MaximumStartedSessionFollowSeconds = 60
+	MaximumStartedSessionReads         = 12
+)
+
 // consoleBounds is every registered row named console.*.
 func consoleBounds() []Entry {
 	return append(append(append(append(append(append(publicAnalyticsUIBounds(), connectionHealthUIBounds()...), servicePerformanceUIBounds()...), supportUIBounds()...), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
+		{
+			Name: ConsoleStartedSessionRetry, Class: Cache, Unit: Seconds,
+			Limit: MaximumStartedSessionRetrySeconds, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumStartedSessionRetrySeconds"},
+		},
+		{
+			Name: ConsoleStartedSessionReads, Class: Buffer, Unit: Rows,
+			Limit: MaximumStartedSessionReads, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/domain/capacity.MaximumStartedSessionReads"},
+		},
+		{
+			Name: ConsoleStartedSessionFollow, Class: Cache, Unit: Seconds,
+			Limit: MaximumStartedSessionFollowSeconds, AtLimit: Expire,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumStartedSessionFollowSeconds"},
+		},
 		{
 			Name: "console.video_preview_frames", Class: Buffer, Unit: Rows,
 			Limit: MaximumVideoPreviewFrames, AtLimit: Refuse,

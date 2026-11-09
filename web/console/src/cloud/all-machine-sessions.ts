@@ -180,7 +180,7 @@ export type MachineSessionProjection =
   | { kind: "ready"; complete: boolean; observedAt: number; snapshotGeneration?: string; presentationGeneration?: string;
       rows: ProjectedSession[]; unknownTargets?: number }
   | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[]; retryAt?: number;
-      complete?: true; snapshotGeneration?: string; unknownTargets?: number
+      complete?: boolean; snapshotGeneration?: string; unknownTargets?: number
       /**
        * An `event_gap`'s rows that did arrive. They never decide which
        * Sessions are listed — the gap means that is not known — only what a

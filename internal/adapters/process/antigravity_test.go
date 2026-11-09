@@ -32,6 +32,29 @@ func TestAntigravityDiscoveryKeepsUnreadableDistinctFromIDE(t *testing.T) {
 	}
 }
 
+func TestNonForegroundAntigravityCannotMakeTerminalDiscoveryIncomplete(t *testing.T) {
+	for _, table := range []string{
+		"?? 41 41 0 1 /synthetic/bin/agy --acp",
+		"? 41 41 -1 1 /synthetic/bin/agy --acp",
+		"- 41 41 -1 1 /synthetic/bin/agy --acp",
+		"ttyA 41 41 42 1 /synthetic/bin/agy",
+	} {
+		p := &PS{table: func(context.Context) ([]byte, error) { return []byte(table), nil },
+			Antigravity: antigravityVerifierFixture{err: errors.New("terminal identity unavailable")}}
+		inv, err := p.Scan(context.Background())
+		if err != nil || !inv.Complete || len(inv.Sessions) != 0 || len(inv.Notes) != 0 {
+			t.Fatalf("non-foreground process contaminated terminal discovery: %q: %+v, %v", table, inv, err)
+		}
+	}
+	// A real foreground candidate must still report unknown identity honestly.
+	p := &PS{table: func(context.Context) ([]byte, error) { return []byte("ttyA 41 41 41 1 /synthetic/bin/agy"), nil },
+		Antigravity: antigravityVerifierFixture{err: errors.New("terminal identity unavailable")}}
+	inv, err := p.Scan(context.Background())
+	if err != nil || inv.Complete || len(inv.Notes) != 1 || inv.Notes[0] != "antigravity_process_unreadable" {
+		t.Fatalf("foreground identity failure was hidden: %+v, %v", inv, err)
+	}
+}
+
 func (f antigravityVerifierFixture) VerifyAntigravityProcess(context.Context, int) (ports.AntigravityProcess, error) {
 	return f.p, f.err
 }

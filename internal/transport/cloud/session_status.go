@@ -198,16 +198,28 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	if p.Publish == nil {
 		return
 	}
-	// A partial source scan cannot replace the last complete ss/ set. Keep its
-	// original observation time so the viewer eventually marks it stale; a
-	// later authoritative pass will publish a fresh set and removal barrier.
-	if !reading.whole() {
-		return
-	}
+	// inventoryIDs has already preserved every id whose owning source could
+	// not prove it absent. Incompleteness withholds absence, not healthy rows.
+	complete := reading.whole()
 	rows := make(map[string]map[string]any, len(reading.sessions))
 	for _, row := range reading.sessions {
 		if id, _ := row["id"].(string); id != "" {
 			rows[id] = row
+		}
+	}
+	// The shared inventory retained these ids because their source could not
+	// establish absence. Keep their display ancestry without refreshing them.
+	for _, id := range ids {
+		if rows[id] != nil {
+			continue
+		}
+		var held struct {
+			Session map[string]any `json:"session"`
+		}
+		if json.Unmarshal(p.held[id].body, &held) == nil && held.Session != nil {
+			previous, _ := held.Session["source"].(map[string]any)
+			held.Session["source"] = map[string]any{"freshness": "unverified", "observed_at": previous["observed_at"], "provenance": previous["provenance"]}
+			rows[id] = held.Session
 		}
 	}
 	var at int64
@@ -235,7 +247,22 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	p.noteChildParents(rows, parents, causes)
 	for _, id := range ids {
 		row := rows[id]
-		status := ProjectSessionStatus(p.MachineID, id, row, true, at)
+		status := ProjectSessionStatus(p.MachineID, id, row, complete, at)
+		if status.Source.Freshness != "current" {
+			if prior, ok := p.statusRows[id]; ok && prior.ExecutionGeneration != "" {
+				// Carry the exact old execution only as a stale display target.
+				// Neither its observation time nor its actionable facts advance.
+				generation, _ := row["execution_generation"].(string)
+				if generation == "" || generation == prior.ExecutionGeneration {
+					status = prior
+					status.InventoryComplete = complete
+					status.Source.Freshness = "unverified"
+					status.WaitingForReply = false
+					status.CloseBlocked = nil
+					status.NoMovement = nil
+				}
+			}
+		}
 		status.ParentSessionID = parents[id]
 		statuses = append(statuses, status)
 		executions = append(executions, status.ExecutionGeneration)
@@ -288,13 +315,14 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		IDs        []string `json:"ids"`
 		Executions []string `json:"executions"`
 		Parents    []string `json:"parents"`
-	}{IDs: ids, Executions: executions, Parents: parentIDs})
+		Complete   bool     `json:"complete"`
+	}{IDs: ids, Executions: executions, Parents: parentIDs, Complete: complete})
 	presentation := statusGeneration(displays)
 	// A row of a Session that has left the set is forgotten, so the id that
 	// comes back is stated again rather than left to whatever the relay still
 	// retains under it.
 	if p.statusRows == nil {
-		p.statusRows = map[string]bool{}
+		p.statusRows = map[string]SessionStatus{}
 	}
 	listed := make(map[string]bool, len(ids))
 	for _, id := range ids {
@@ -309,7 +337,6 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	for i, id := range ids {
 		status := statuses[i]
 		status.SnapshotGeneration = pass
-		p.statusRows[id] = true
 		// The pass id is part of each row's identity, so a set that changed
 		// republishes every row without being asked to.
 		identity := status
@@ -334,6 +361,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 			p.logf("cloud: the status row was not published: %v", err)
 			return
 		}
+		p.statusRows[id] = status
 	}
 	// A status-only viewer cannot read the old s/ inventory after the relay
 	// tightens its capability. Publish the same id barrier on ss/ after rows.
@@ -346,7 +374,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		Complete               bool   `json:"complete"`
 		SnapshotGeneration     string `json:"snapshot_generation"`
 		PresentationGeneration string `json:"presentation_generation"`
-	}{At: at, Complete: true, SnapshotGeneration: pass, PresentationGeneration: presentation}
+	}{At: at, Complete: complete, SnapshotGeneration: pass, PresentationGeneration: presentation}
 	marker.Inventory.Version = 1
 	marker.Inventory.Sessions = append([]string{}, ids...)
 	// `at` is left out of the marker's identity: a pass where only the clock
@@ -361,8 +389,8 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		Complete     bool     `json:"complete"`
 	}
 	if !p.changedCoalesced(statusMarkerKey,
-		mustJSON(markerIdentity{IDs: ids, Pass: pass, Presentation: presentation, Complete: true}),
-		mustJSON(markerIdentity{IDs: ids, Pass: pass, Presentation: statusGeneration(steadyDisplays), Complete: true})) {
+		mustJSON(markerIdentity{IDs: ids, Pass: pass, Presentation: presentation, Complete: complete}),
+		mustJSON(markerIdentity{IDs: ids, Pass: pass, Presentation: statusGeneration(steadyDisplays), Complete: complete})) {
 		// Unchanged and still retained: the viewer's marker already names it.
 		p.statusPass = pass
 		return

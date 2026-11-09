@@ -1507,6 +1507,21 @@
     "Note": true
   },
   {
+    "Name": "console.started_session_follow_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.started_session_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.started_session_retry_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.status_gap_retry_seconds",
     "Known": true,
     "Note": true

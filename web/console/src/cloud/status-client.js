@@ -331,7 +331,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     const machine = this.classicSessionMachine
     if (!machine || !this.ready) return
     const marker = this.statusSnapshots.get(JSON.stringify([machine, SESSION_INVENTORY_ID]))?.payload
-    const ids = marker?.complete === true && marker?.inventory?.version === 1 &&
+    const ids = typeof marker?.complete === "boolean" && marker?.inventory?.version === 1 &&
       Array.isArray(marker.inventory.sessions) ? marker.inventory.sessions : null
     if (!ids || ids.length > SESSION_INVENTORY_LIMIT || !GENERATION.test(marker.snapshot_generation)) return
     if (this.classicSessionPass !== marker.snapshot_generation) {
