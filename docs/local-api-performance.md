@@ -385,3 +385,7 @@ records update dependency failures, launch-outcome gaps, unattributed overflow a
 reverted experiments. Choose future optimizations by current user impact, observed
 usage and removable real-world waiting time; a microbenchmark percentage alone
 does not justify a change. The rule is also in `AGENTS.md`.
+
+The [API admission corrections](performance/api-admission-corrections-2026-11-09.md) distinguish
+native pre-write busy refusals from uncertain close effects and measure shared Cloud health reads.
+The controlled gain is fewer refused reads, not a claimed production latency percentage.

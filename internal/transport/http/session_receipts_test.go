@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app"
@@ -31,12 +33,14 @@ import (
 
 // pane is one tmux pane this daemon can type at, with a picker on it.
 type pane struct {
-	mu      sync.Mutex
-	s       session.Session
-	screen  string
-	acts    []string
-	failKey bool
-	onKey   func(p *pane, b []byte)
+	mu         sync.Mutex
+	s          session.Session
+	screen     string
+	acts       []string
+	failKey    bool
+	onKey      func(p *pane, b []byte)
+	closeErr   error
+	closeCalls int
 }
 
 func (p *pane) Name() string { return "tmux" }
@@ -52,6 +56,13 @@ func (p *pane) Send(ctx context.Context, s session.Session, text string) error {
 }
 func (p *pane) Interrupt(ctx context.Context, s session.Session) error { return nil }
 func (p *pane) Close(ctx context.Context, s session.Session) error {
+	p.mu.Lock()
+	p.closeCalls++
+	err := p.closeErr
+	p.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	p.act("close")
 	return nil
 }
@@ -327,6 +338,55 @@ func TestACloseRetriedUnderItsKeyClosesOnce(t *testing.T) {
 	}
 	if got := p.done(); len(got) != 1 || got[0] != "close" {
 		t.Fatalf("acts %q", got)
+	}
+}
+
+func TestACloseBusyBeforeWriteCanRetryItsKeyButAnUncertainCloseCannot(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		delivery antigravityprocess.Delivery
+		status   int
+		calls    int
+	}{
+		{"not written", antigravityprocess.NotWritten, http.StatusTooManyRequests, 2},
+		{"uncertain", antigravityprocess.Uncertain, http.StatusInternalServerError, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := waitingPane("%4", "")
+			p.s.State = session.StateIdle
+			p.s.TTY, p.s.PID = "ttys004", os.Getpid()
+			p.s.ConversationID = "00000000-0000-4000-8000-000000000004"
+			p.closeErr = &antigravitysession.Error{Code: "busy", Delivery: tc.delivery}
+			s := paneServer(t, p)
+			first := act(t, s, "close", "%4", "end-busy", `{"force":false}`)
+			if first.Code != tc.status {
+				t.Fatalf("first: %d %s", first.Code, first.Body)
+			}
+			p.mu.Lock()
+			p.closeErr = nil
+			p.mu.Unlock()
+			again := act(t, s, "close", "%4", "end-busy", `{"force":false}`)
+			want := tc.status
+			if tc.calls == 2 {
+				want = http.StatusOK
+			}
+			if again.Code != want {
+				t.Fatalf("retry: %d %s", again.Code, again.Body)
+			}
+			replay := act(t, s, "close", "%4", "end-busy", `{"force":false}`)
+			if replay.Code != want || replay.Header().Get("Idempotent-Replayed") != "true" {
+				t.Fatalf("replay: %d %s", replay.Code, replay.Body)
+			}
+			p.mu.Lock()
+			calls := p.closeCalls
+			p.mu.Unlock()
+			if calls != tc.calls {
+				t.Fatalf("close attempts %d, want %d", calls, tc.calls)
+			}
+			if got := len(p.done()); got != tc.calls-1 {
+				t.Fatalf("successful closes %d", got)
+			}
+		})
 	}
 }
 

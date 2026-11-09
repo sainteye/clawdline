@@ -19,7 +19,7 @@ export function AttentionPanel({ apiOrigin, get, say, go }: { apiOrigin: string;
 
 export function AttentionBody({ value, say, go }: { value: Attention | null; say: HealthSay; go: (href: string) => void }) {
   if (value === null) return <p className="adm-fine" role="status">{say("at_loading")}</p>
-  if (value.state === "failed") return <p className="adm-fine" role="status">{say("at_failed", { code: value.code })}</p>
+  if (value.state === "failed") return <p className="adm-fine" role="status">{value.code === "rate_limited" ? say("st_fail_rate_limited") : say("at_failed", { code: value.code })}</p>
   if (value.state === "unavailable") return <p className="adm-fine" role="status">{say("at_unavailable")}</p>
   if (value.items.length === 0) return <p className="adm-fine" role="status">{value.complete ? say("at_none") : say("at_noneIncomplete")}</p>
   return (

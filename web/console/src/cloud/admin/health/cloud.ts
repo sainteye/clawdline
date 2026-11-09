@@ -2,7 +2,7 @@
  * operator reads, `GET {api}/su/v1/health/…`, with the page's own session cookie.
  *
  * One load is a fixed plan of at most three reads (never one per row), run at
- * most two at a time — the Cloud admits two in-flight reads per principal — each
+ * most two at a time, shared with the tab's other health readers, each
  * under its own deadline and all under one overall budget, cancelled together.
  * A read that fails keeps its own typed reason and never discards a read that
  * succeeded. A refusal of the session (401, or the operator surface answering
@@ -28,8 +28,12 @@ export const HEALTH_UI_LIMITS = {
   requestMs: 6_000,
   /** The whole load, every read included. */
   budgetMs: 12_000,
-  /** Reads in flight at once: the Cloud's per-principal read admission. */
+  /** Shared tab admission stays compatible with the previous two-slot API. */
   parallel: 2,
+  /** Waiting reads across page loads and attention; excess is typed backpressure. */
+  queuedReads: 8,
+  /** Maximum server-directed pause; refreshes never retry a read immediately. */
+  retryAfterMs: 60_000,
   /** Reads one screen's load may issue. */
   readsPerLoad: 3,
   /** Live refresh cadence, one load outstanding. */
@@ -54,6 +58,64 @@ export const HEALTH_UI_LIMITS = {
   trendSignals: 20,
 } as const
 
+type WaitingRead = { start: () => void; cancel: () => void }
+type ReadAdmission = { active: number; waiting: WaitingRead[] }
+const admissions = new Map<string, ReadAdmission>()
+
+export class HealthReadBusy extends Error {
+  readonly code = "rate_limited"
+  constructor() { super("health_read_busy") }
+}
+
+/** One FIFO per origin, with no cached answer or credentials. Abort removes a queued read;
+ * an active read keeps its slot until the underlying fetch actually settles. */
+export function healthGet(get: typeof fetch, url: string, init: RequestInit): Promise<Response> {
+  const origin = new URL(url).origin
+  const signal = init.signal
+  if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"))
+  let pool = admissions.get(origin)
+  if (!pool) { pool = { active: 0, waiting: [] }; admissions.set(origin, pool) }
+  const current = pool
+  if (current.active >= HEALTH_UI_LIMITS.parallel && current.waiting.length >= HEALTH_UI_LIMITS.queuedReads)
+    return Promise.reject(new HealthReadBusy())
+  return new Promise<Response>((resolve, reject) => {
+    const cleanup = () => {
+      if (current.active === 0 && current.waiting.length === 0) admissions.delete(origin)
+    }
+    const finish = () => {
+      current.active--
+      current.waiting.shift()?.start()
+      cleanup()
+    }
+    const waiting: WaitingRead = {
+      start() {
+        signal?.removeEventListener("abort", waiting.cancel)
+        current.active++
+        // Synchronous fetch failures have the same release boundary as rejected promises.
+        void Promise.resolve().then(() => get(url, init)).then(resolve, reject).finally(finish)
+      },
+      cancel() {
+        const at = current.waiting.indexOf(waiting)
+        if (at < 0) return
+        current.waiting.splice(at, 1)
+        signal?.removeEventListener("abort", waiting.cancel)
+        reject(new DOMException("Aborted", "AbortError"))
+        cleanup()
+      },
+    }
+    if (current.active < HEALTH_UI_LIMITS.parallel) waiting.start()
+    else { current.waiting.push(waiting); signal?.addEventListener("abort", waiting.cancel, { once: true }) }
+  })
+}
+
+/** Retain a bounded Retry-After hint; a hint never causes an automatic fetch retry. */
+export function retryAfterMs(response: Response, now = Date.now()): number | undefined {
+  const value = response.headers.get("retry-after")
+  if (value === null) return undefined
+  const delay = /^\d+$/.test(value) ? Number(value) * 1000 : Date.parse(value) - now
+  return Number.isFinite(delay) ? Math.min(HEALTH_UI_LIMITS.retryAfterMs, Math.max(0, delay)) : undefined
+}
+
 export type PartName = "overview" | "outcomes" | "sources" | "events" | "trace" | "incidents" | "incident" | "aggregates" | "probes"
 export type PartBody = {
   probes: ProbesBody
@@ -76,7 +138,7 @@ export type StoredFailure =
 export type Refusal = "signed_out" | "forbidden"
 
 /** `expiredAt`: the Cloud's `details.expired_at` on `410 incident_expired`, so the page can say when. */
-export type PartResult<N extends PartName = PartName> = { ok: true; body: PartBody[N] } | { ok: false; code: StoredFailure; expiredAt?: string | null }
+export type PartResult<N extends PartName = PartName> = { ok: true; body: PartBody[N] } | { ok: false; code: StoredFailure; expiredAt?: string | null; retryAfterMs?: number }
 
 export type Read = { part: PartName; path: string; params: Record<string, string> }
 
@@ -216,14 +278,15 @@ export function errorInfo(text: string | null): { code: string | null; expiredAt
   }
 }
 
-type One = { ok: true; body: PartBody[PartName] } | { ok: false; code: StoredFailure; expiredAt?: string | null } | { refused: Refusal }
+type One = { ok: true; body: PartBody[PartName] } | { ok: false; code: StoredFailure; expiredAt?: string | null; retryAfterMs?: number } | { refused: Refusal }
 
 async function readOne(get: typeof fetch, url: string, part: PartName, signal: AbortSignal): Promise<One> {
-  const res = await get(url, { credentials: "include", headers: { accept: "application/json" }, signal })
+  const res = await healthGet(get, url, { credentials: "include", headers: { accept: "application/json" }, signal })
   if (!res.ok) {
     const info = errorInfo(await boundedText(res).catch(() => null))
     const failure = failureFor(res.status, info.code)
     if (isRefusal(failure)) return { refused: failure }
+    if (failure === "rate_limited") return { ok: false, code: failure, retryAfterMs: retryAfterMs(res) }
     return failure === "incident_expired" ? { ok: false, code: failure, expiredAt: info.expiredAt } : { ok: false, code: failure }
   }
   const text = await boundedText(res)
@@ -282,8 +345,8 @@ export async function runReads(get: typeof fetch, apiOrigin: string, reads: Read
         return
       }
       parts[read.part] = result
-    } catch {
-      parts[read.part] = { ok: false, code: timedOut ? "timeout" : budgetSpent ? "budget" : "network" }
+    } catch (error) {
+      parts[read.part] = { ok: false, code: timedOut ? "timeout" : budgetSpent ? "budget" : error instanceof HealthReadBusy ? "rate_limited" : "network" }
     } finally {
       clearTimeout(timer)
       all.signal.removeEventListener("abort", stop)

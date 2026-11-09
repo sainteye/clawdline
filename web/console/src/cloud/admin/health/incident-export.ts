@@ -12,7 +12,7 @@
  * Nothing is imported at run time except the loader's own helpers, so node's tests load it as is. */
 import type { Refusal, StoredFailure } from "./cloud.ts"
 // @ts-expect-error -- a `.ts` path, so node's strip-types tests can import this module.
-import { errorInfo, failureFor, HEALTH_UI_LIMITS } from "./cloud.ts"
+import { errorInfo, failureFor, HEALTH_UI_LIMITS, healthGet, HealthReadBusy } from "./cloud.ts"
 // @ts-expect-error -- a `.ts` path, so node's strip-types tests can import this module.
 import { CONTENT_HASH, INCIDENT_ID, parseBundle, StoredContractError } from "./stored.ts"
 
@@ -137,9 +137,9 @@ export async function fetchIncidentExport(get: typeof fetch, apiOrigin: string, 
   if (account !== null) params.account = account
   let res: Response
   try {
-    res = await get(scoped(apiOrigin, `incidents/${encodeURIComponent(incidentId)}/export`, params), { credentials: "include", headers: { accept: "application/json" }, signal })
-  } catch {
-    return { ok: false, code: "network" }
+    res = await healthGet(get, scoped(apiOrigin, `incidents/${encodeURIComponent(incidentId)}/export`, params), { credentials: "include", headers: { accept: "application/json" }, signal })
+  } catch (error) {
+    return { ok: false, code: error instanceof HealthReadBusy ? "rate_limited" : "network" }
   }
   if (!res.ok) {
     const raw = await readCapped(res, 16 * 1024).catch(() => null)

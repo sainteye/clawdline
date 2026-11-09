@@ -976,6 +976,7 @@ func (a Actions) closer(ctx context.Context, s session.Session) (func(context.Co
 // away, and every one of them leaves the session exactly as it was.
 func closeRefusal(err error) error {
 	var (
+		busy        interface{ BusyBeforeWrite() bool }
 		unreadable  terminal.Unreadable
 		occupied    terminal.Occupied
 		quitRefused terminal.QuitRefused
@@ -985,6 +986,8 @@ func closeRefusal(err error) error {
 		failure     terminal.Failure
 	)
 	switch {
+	case errors.As(err, &busy) && busy.BusyBeforeWrite():
+		return Refusal{RawDetail: true, Code: "busy", Detail: err.Error(), Cause: err}
 	case errors.As(err, &unreadable):
 		return Refusal{Code: "close_unreadable", Detail: unreadable.Why, Cause: err}
 	case errors.As(err, &occupied):

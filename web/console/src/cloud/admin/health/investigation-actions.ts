@@ -5,7 +5,7 @@
  * Nothing is imported at run time except the loader's own helpers, so node's tests load it as is. */
 import type { Refusal, StoredFailure } from "./cloud.ts"
 // @ts-expect-error -- a `.ts` path, so node's strip-types tests can import this module.
-import { errorInfo, failureFor, HEALTH_UI_LIMITS } from "./cloud.ts"
+import { errorInfo, failureFor, HEALTH_UI_LIMITS, healthGet, HealthReadBusy } from "./cloud.ts"
 import type { Investigation } from "./investigations.ts"
 // @ts-expect-error -- a `.ts` path, so node's strip-types tests can import this module.
 import { parseInvestigation } from "./investigations.ts"
@@ -83,9 +83,9 @@ async function cappedText(res: Response): Promise<string | null> {
 export async function fetchDestinations(get: typeof fetch, apiOrigin: string, signal: AbortSignal): Promise<DestinationsResult> {
   let res: Response
   try {
-    res = await get(`${apiOrigin}/su/v1/health/investigation-destinations`, { credentials: "include", cache: "no-store", headers: { accept: "application/json" }, signal })
-  } catch {
-    return { ok: false, code: "network" }
+    res = await healthGet(get, `${apiOrigin}/su/v1/health/investigation-destinations`, { credentials: "include", cache: "no-store", headers: { accept: "application/json" }, signal })
+  } catch (error) {
+    return { ok: false, code: error instanceof HealthReadBusy ? "rate_limited" : "network" }
   }
   const text = await cappedText(res).catch(() => null)
   if (res.status === 401) return { refused: "signed_out" }

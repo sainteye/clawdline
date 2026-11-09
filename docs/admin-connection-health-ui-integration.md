@@ -65,6 +65,14 @@ Copy is in `health/words.ts` (English and Taiwan Traditional Chinese); the page 
 public catalogs as `health.<key>` (`tools/check-source-catalog.mjs` keeps them in step). Bounds are
 registered as `console.health_ui_*` (`internal/domain/capacity/register_connection_health_ui.go`).
 
+The [2026-11-09 admission correction](performance/api-admission-corrections-2026-11-09.md) makes
+the two active read slots shared per Cloud origin within a tab, including attention, audited
+exports and investigation destinations, with eight queued reads and abort removal. Queue wait is
+inside the existing page deadline/budget. Stored-page and attention refreshes honor a bounded
+`Retry-After` (up to 60 seconds). There is no automatic retry of mutations. The separate Cloud
+candidate allows four reads per principal and keeps the process-wide ceiling at 16; publication
+and production behavior require their own verification.
+
 ## Truth rules the code enforces
 
 - The overall verdict is always "unknown — no presence contract". Evidence age (`fresh`/`stale`) is
