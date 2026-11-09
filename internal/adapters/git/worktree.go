@@ -80,11 +80,19 @@ func (g *Git) BranchExists(ctx context.Context, repo, branch string) (exists boo
 
 // Merged is whether every commit on branch is already on target.
 func (g *Git) Merged(ctx context.Context, repo, branch, target string) (merged bool, known bool) {
-	ok, err := g.IsAncestor(ctx, repo, "refs/heads/"+branch, target)
-	if err != nil {
+	cmd := exec.CommandContext(ctx, g.Binary, "-C", repo,
+		"merge-base", "--is-ancestor", "refs/heads/"+branch, target)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	if err := cmd.Run(); err != nil {
+		// Only exit 1 means two readable commits that are not ancestors.
+		// Missing/invalid refs and other failures remain unknown; they do
+		// not require two separate rev-parse processes to distinguish.
+		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
+			return false, true
+		}
 		return false, false
 	}
-	return ok, true
+	return true, true
 }
 
 // UpstreamRemote is the remote a local branch tracks (`branch.<name>.remote`),

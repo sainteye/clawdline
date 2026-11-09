@@ -201,11 +201,16 @@ func (b *Broker) rowsMatching(ctx context.Context, repo string, include func(Rec
 	now := b.now()
 	out := []InventoryRow{}
 	occupied := b.occupancySnapshot(ctx)
+	selected := []Record{}
 	for _, r := range records {
 		if !inRepository(r, repo) || (include != nil && !include(r)) {
 			continue
 		}
-		out = append(out, b.row(ctx, r, now, occupied))
+		selected = append(selected, r)
+	}
+	branches := b.branchPresence(selected)
+	for _, r := range selected {
+		out = append(out, b.rowWithBranches(ctx, r, now, occupied, branches))
 	}
 	for _, u := range bad {
 		home := u.Repository
@@ -259,6 +264,10 @@ func settledLanding(state LandingState) bool {
 // could read is not permission to dispose of a checkout. That rule is the
 // reason this reads as much as it does.
 func (b *Broker) row(ctx context.Context, r Record, now time.Time, occupied func(...string) (string, error)) InventoryRow {
+	return b.rowWithBranches(ctx, r, now, occupied, b.Git.BranchExists)
+}
+
+func (b *Broker) rowWithBranches(ctx context.Context, r Record, now time.Time, occupied func(...string) (string, error), branches branchPresenceReader) InventoryRow {
 	row := InventoryRow{
 		Task:      r.ID,
 		Title:     r.Title,
@@ -325,7 +334,14 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time, occupied func
 		return row
 	}
 
-	exists, branchKnown := b.Git.BranchExists(ctx, r.Worktree.Repository, r.Worktree.Branch)
+	readBranch := branches
+	if row.OnDisk || !settledLanding(row.Landing) {
+		// Existing checkouts and unresolved landings need an immediate
+		// read. A branch restored after the batch must not become an
+		// orphan or disappear from outstanding work when its checkout is gone.
+		readBranch = b.Git.BranchExists
+	}
+	exists, branchKnown := readBranch(ctx, r.Worktree.Repository, r.Worktree.Branch)
 	row.Branched = exists
 	// Merged into the target the record names, and into nothing else (D19).
 	// The first version asked about the main checkout's HEAD, which is
