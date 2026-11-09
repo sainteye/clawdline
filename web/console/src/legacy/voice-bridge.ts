@@ -5,10 +5,9 @@
 // `els.mic` at import, through `core/dom.js`, which looks every id up once
 // before React has drawn any of them — and it reaches for `api.voice`,
 // `renderComposer` and `appendMsg`, none of which exist on this side. So the
-// whole of it is restated here line for line (`input/voice.js` 39–887), with
-// the same constants, the same thresholds, the same catalog words and the same
-// markup, and `session/Composer.tsx` supplies the row, the sink and the
-// microphone's own three attributes, which it renders.
+// recording path is owned here. The row retains the original markup while
+// capture release, finalization and recoverable processing have independent
+// lifetimes. `session/Composer.tsx` supplies the row, sink and mic attributes.
 // If `input/voice.js` is ever copied, this goes and its exports are used.
 //
 // **The row is built here and not in JSX**, which is the original's
@@ -22,6 +21,8 @@
 // The one thing that had to be arranged differently is the toast and
 // `renderComposer`: nothing under `legacy/` imports the app, so the host hands
 // this module those two calls once (`attachVoice`).
+import { nextWord } from "../next-strings.js"
+import { recordVoiceDiagnostic, type VoiceDiagnostic } from "./voice-events.js"
 import { T, fill } from "./js/core/i18n.js"
 import { reduced } from "./js/core/env.js"
 import { failureSentence } from "./js/core/failure-text.js"
@@ -86,7 +87,13 @@ const WIDE = 1
 const ATTACK_MS = 45
 const RELEASE_MS = 260
 
-export type VoiceState = "off" | "opening" | "recording" | "reading"
+// Mirrored by capacity/voice_recording.go and checked against its register.
+export const VOICE_RECORDING_BYTES = 16777216
+export const VOICE_STOP_MS = 5000
+export const VOICE_PREPARE_MS = 15000
+export const VOICE_READ_MS = 120000
+
+export type VoiceState = "off" | "opening" | "recording" | "stopping" | "preparing" | "reading" | "recoverable"
 
 /** Where a recording goes, and who is holding the button that started it. */
 export interface VoiceJob {
@@ -131,7 +138,25 @@ export function attachVoice(next: VoiceHost): void {
 let state: VoiceState = "off"
 let stream: MediaStream | null = null
 let recorder: MediaRecorder | null = null
-let chunks: Blob[] = []
+interface Recording {
+  chunks: Blob[]
+  bytes: number
+  complete: boolean
+  finished: boolean
+  limited: boolean
+  mime: string
+  revision: number
+  discarded?: boolean
+  prepared?: { revision: number; promise: Promise<string> }
+  closeDecoder?: () => void
+  // A cancelled wait may still be executing on the host. Reuse that request
+  // until it settles; manual Retry must not amplify a stalled transcription.
+  reading?: { revision: number; promise: Promise<{ text?: string; ms?: number }> }
+}
+let recording: Recording | null = null
+let stageTimer: ReturnType<typeof setTimeout> | null = null
+let attempt = 0
+let recoveryCode: VoiceDiagnostic["code"] = "paused"
 /** When the *current* count started, which is not when the recording began. */
 let since = 0
 let ticker: ReturnType<typeof setInterval> | null = null
@@ -348,24 +373,44 @@ function open(): void {
 
 function begin(got: MediaStream, mine: number): void {
   stream = got
-  chunks = []
+  const take: Recording = { chunks: [], bytes: 0, complete: false, finished: false, limited: false, mime: "", revision: 0 }
+  recording = take
   try {
-    recorder = new MediaRecorder(got)
-    recorder.ondataavailable = (ev) => {
-      if (ev.data && ev.data.size) chunks.push(ev.data)
+    const current = new MediaRecorder(got)
+    recorder = current
+    current.ondataavailable = (ev) => {
+      if (mine !== token || recording !== take || !ev.data?.size) return
+      if (take.bytes + ev.data.size > VOICE_RECORDING_BYTES) {
+        take.limited = true
+        stop()
+        recover("recording_limit")
+        return
+      }
+      take.chunks.push(ev.data)
+      take.bytes += ev.data.size
+      take.mime = ev.data.type || current.mimeType || take.mime
+      take.revision += 1
+      if (state === "recoverable") { drawn = ""; show() }
     }
-    recorder.onstop = () => landed(mine)
+    current.onstop = () => landed(mine)
     // A recorder that falls over mid-sentence: whatever it managed to collect
     // is still worth reading, so this ends the same way the button does rather
     // than throwing the words away and complaining.
-    recorder.onerror = () => stop()
-    recorder.start()
+    current.onerror = () => {
+      if (mine !== token || recording !== take) return
+      recordVoiceDiagnostic({ stage: "stopping", code: "recorder_error", bytes: take.bytes, complete: take.complete })
+      stop()
+    }
+    // Ask for periodic checkpoints, keeping all chunks in order. Individual
+    // chunks need not be playable; a browser may delay them despite timeslice.
+    current.start(1000)
   } catch {
     // A browser that has `MediaRecorder` and will not build one for this
     // stream. Rare, and reported rather than swallowed: the microphone was
     // granted, so nothing else on screen would explain why the count never
     // started.
     release()
+    recording = null
     state = "off"
     show()
     // refusal-ok: a MediaRecorder the browser will not build throws a DOMException, which has no daemon code to name
@@ -387,6 +432,12 @@ function begin(got: MediaStream, mine: number): void {
   // Four times a second. The count is in whole seconds, and a one-second timer
   // drawing a one-second number lands visibly late about half the time.
   ticker = setInterval(() => beat(mine), 250)
+  document.addEventListener("visibilitychange", backgrounded)
+  window.addEventListener("pagehide", stop)
+}
+
+function backgrounded(): void {
+  if (document.visibilityState === "hidden" && state === "recording") stop()
 }
 
 function beat(mine: number): void {
@@ -410,7 +461,7 @@ function elapsed(): number {
 }
 
 /**
- * Stop listening and start reading.
+ * Stop capture immediately, then wait for encoded final data.
  *
  * The count restarts here rather than carrying on, because it stops being the
  * same number: up to this point it was how long you have been talking, and
@@ -419,70 +470,152 @@ function elapsed(): number {
  */
 function stop(): void {
   if (state !== "recording") return
-  state = "reading"
+  state = "stopping"
   since = Date.now()
-  show()
+  deadline(VOICE_STOP_MS, "stop_timeout")
   try {
-    recorder?.stop()
+    if (recorder?.state !== "inactive") recorder?.stop()
   } catch {
-    // Already stopped, or never really started. `onstop` will not fire now, so
-    // the next step is taken by hand — and unhooked first, so it cannot also
-    // fire late.
-    if (recorder) recorder.onstop = null
-    landed(token)
+    // A refusal is not evidence that final bytes have been delivered. Keep
+    // the callbacks and collected chunks until the bounded recovery path.
+  } finally {
+    // Do not await onstop (or a redraw) to stop capturing. Keep data/stop
+    // handlers attached: release() would throw away the final encoded bytes.
+    stopCapture()
   }
+  show()
 }
 
-/**
- * The recording, finished.
- *
- * The microphone is handed back first and before anything else can throw: on a
- * phone the indicator in the status bar is the reader's own evidence that this
- * page has stopped listening, and it should go out when the listening stops
- * rather than when the request comes back twelve seconds later.
- */
+function stopCapture(): void {
+  silence(stream)
+  stream = null
+  deaf()
+}
+
+function clearDeadline(): void {
+  if (stageTimer !== null) clearTimeout(stageTimer)
+  stageTimer = null
+}
+
+function deadline(ms: number, code: VoiceDiagnostic["code"]): void {
+  clearDeadline()
+  const mine = token, operation = attempt
+  stageTimer = setTimeout(() => {
+    stageTimer = null
+    if (mine === token && operation === attempt) recover(code)
+  }, ms)
+}
+
+function recover(code: VoiceDiagnostic["code"]): void {
+  if (!recording) return
+  const stage = state === "stopping" || state === "preparing" || state === "reading" ? state : "recoverable"
+  clearDeadline()
+  attempt += 1
+  stopCapture()
+  recoveryCode = code
+  state = "recoverable"
+  drawn = ""
+  recordVoiceDiagnostic({ stage, code, bytes: recording.bytes, complete: recording.complete })
+  show()
+}
+
+/** The browser may still finish after the recovery row appeared. Keep it. */
 function landed(mine: number): void {
-  const got = chunks
-  chunks = []
+  if (mine !== token || !recording) return
+  recording.complete = !recording.limited
+  recording.finished = true
   release()
-  if (mine !== token) return
-  const job = activeJob
-  prepare(new Blob(got))
-    .then((audio) => {
-      if (mine !== token) return null
-      return job?.transcribe ? job.transcribe(audio, RATE) : postVoice(audio, RATE)
-    })
-    .then((answer) => {
-      if (mine !== token || !answer) return
-      quit()
-      // Before the branch, because what this says is "the machine has
-      // answered" and not "there were words in it". A pocket cannot tell those
-      // apart anyway, and the thing worth signalling is that the waiting is
-      // over and the screen is worth looking at again.
-      knockTwice()
-      // **An empty `text` is an answer, not a failure.** The machine heard the
-      // recording and there were no words in it, which happens to a pocket and
-      // to a room that went quiet — and a red banner for that would be the
-      // page reporting a fault that did not occur.
-      const said = String(answer.text || "").trim()
-      if (!said) {
-        speak(S.webVoiceEmpty)
-        return
+  if (state === "preparing" || state === "reading") {
+    // A partial attempt must not consume the recording just completed by
+    // the browser. Fence its answer and offer the full bytes for retry.
+    recover("stop_timeout")
+    return
+  }
+  clearDeadline()
+  if (state === "recoverable" || recording.limited) { drawn = ""; show(); return }
+  processRecording()
+}
+
+function retry(): void {
+  const take = recording
+  if (!take || state !== "recoverable") return
+  if (!take.bytes && !take.finished) {
+    // There may be no checkpoint yet. Ask the existing recorder once more;
+    // never open another microphone and overwrite what the person said.
+    state = "stopping"
+    since = Date.now()
+    deadline(VOICE_STOP_MS, "stop_timeout")
+    try {
+      if (recorder && recorder.state !== "inactive") {
+        recorder.requestData()
+        recorder.stop()
       }
-      job?.sink(said)
+    } catch { /* the deadline offers recovery again */ }
+    show()
+    return
+  }
+  processRecording()
+}
+
+function processRecording(): void {
+  const take = recording, job = activeJob
+  if (!take) return
+  clearDeadline()
+  const mine = token, operation = ++attempt
+  const current = () => mine === token && operation === attempt && recording === take
+  state = "preparing"
+  since = Date.now()
+  deadline(VOICE_PREPARE_MS, "prepare_timeout")
+  show()
+  const revision = take.revision
+  if (!take.prepared || take.prepared.revision !== revision) {
+    take.closeDecoder?.()
+    take.closeDecoder = undefined
+    const promise = prepare(new Blob(take.chunks, { type: take.mime }), take)
+    take.prepared = { revision, promise }
+    void promise.catch(() => {
+      if (take.prepared?.promise === promise) take.prepared = undefined
     })
-    .catch((e: VoiceFailure) => {
-      if (mine !== token) return
-      quit()
-      if (e && e.code === "no_whisper") {
-        whisperless = e
-        if (job?.missingWhisper) {
-          job.missingWhisper(e)
-          return
-        }
-      }
-      speak(complain(e), !e || e.code !== "too_short")
-    })
+  }
+  take.prepared.promise.then((audio) => {
+    if (!current()) return null
+    clearDeadline()
+    state = "reading"
+    since = Date.now()
+    deadline(VOICE_READ_MS, "read_timeout")
+    show()
+    if (!take.reading || take.reading.revision !== revision) {
+      const prior = take.reading?.promise
+      // If final bytes arrived during a partial attempt, wait for that host
+      // request to settle before starting the manually requested full one.
+      const request: Promise<{ text?: string; ms?: number }> = Promise.resolve(prior).catch(() => null).then(() => {
+        if (!current()) return {}
+        return job?.transcribe ? job.transcribe(audio, RATE) : postVoice(audio, RATE)
+      })
+      take.reading = { revision, promise: request }
+      void request.then((answer) => {
+        if (!String(answer.text || "").trim() && take.reading?.promise === request) take.reading = undefined
+      }, () => { if (take.reading?.promise === request) take.reading = undefined })
+    }
+    return take.reading.promise
+  }).then((answer) => {
+    if (!current() || !answer) return
+    const said = String(answer.text || "").trim()
+    // Empty recognition is retryable too: keep the original rather than
+    // silently throwing away a recording that might contain speech.
+    if (!said) { recover("processing_failed"); speak(S.webVoiceEmpty); return }
+    cancel()
+    knockTwice()
+    job?.sink(said)
+  }).catch((e: VoiceFailure) => {
+    if (!current()) return
+    recover("processing_failed")
+    if (e?.code === "no_whisper" && job?.missingWhisper) {
+      job.missingWhisper(e)
+      return
+    }
+    speak(complain(e), !e || e.code !== "too_short")
+  })
 }
 
 /// Back to nothing, with the microphone already handed back or never taken.
@@ -507,7 +640,12 @@ function quit(): void {
  */
 export function cancel(): void {
   token += 1
-  if (recorder && state === "recording") {
+  attempt += 1
+  clearDeadline()
+  if (recording) recording.discarded = true
+  recording?.closeDecoder?.()
+  recording = null
+  if (recorder && recorder.state !== "inactive") {
     try {
       recorder.stop()
     } catch {
@@ -519,15 +657,15 @@ export function cancel(): void {
 }
 
 function release(): void {
+  document.removeEventListener("visibilitychange", backgrounded)
+  window.removeEventListener("pagehide", stop)
   if (recorder) {
     recorder.ondataavailable = null
     recorder.onstop = null
     recorder.onerror = null
   }
   recorder = null
-  deaf()
-  silence(stream)
-  stream = null
+  stopCapture()
 }
 
 function silence(got: MediaStream | null): void {
@@ -674,11 +812,15 @@ function deaf(): void {
 
 /* ---- turning a recording into something whisper.cpp can read ------------ */
 
-function prepare(blob: Blob): Promise<string> {
+function prepare(blob: Blob, take: Recording): Promise<string> {
   if (!blob.size) return Promise.reject(fresh(S.webVoiceTooShort, "too_short"))
   return bytesOf(blob)
-    .then(decode)
+    .then((buffer) => {
+      if (take.discarded) throw fresh(S.webVoiceFailed, "cancelled")
+      return decode(buffer, take)
+    })
     .then((audio) => {
+      if (take.discarded) throw fresh(S.webVoiceFailed, "cancelled")
       if (audio.duration < MIN_SECONDS) throw fresh(S.webVoiceTooShort, "too_short")
       return resample(audio)
     })
@@ -709,7 +851,7 @@ function bytesOf(blob: Blob): Promise<ArrayBuffer> {
  * returns `undefined` — so a page that only used the promise would hang on it
  * forever with a counter running.
  */
-function decode(buffer: ArrayBuffer): Promise<AudioBuffer> {
+function decode(buffer: ArrayBuffer, take: Recording): Promise<AudioBuffer> {
   const Ctx = audioContextClass()
   let ctx: AudioContext
   try {
@@ -717,6 +859,8 @@ function decode(buffer: ArrayBuffer): Promise<AudioBuffer> {
   } catch {
     return Promise.reject(fresh(S.webVoiceFailed, "no_audio"))
   }
+  const close = () => shut(ctx)
+  take.closeDecoder = close
   return new Promise<AudioBuffer>((ready, fail) => {
     let maybe: Promise<AudioBuffer> | undefined
     try {
@@ -728,10 +872,12 @@ function decode(buffer: ArrayBuffer): Promise<AudioBuffer> {
     if (maybe && typeof maybe.then === "function") maybe.then(ready, fail)
   }).then(
     (audio) => {
+      if (take.closeDecoder === close) take.closeDecoder = undefined
       shut(ctx)
       return audio
     },
     () => {
+      if (take.closeDecoder === close) take.closeDecoder = undefined
       shut(ctx)
       throw fresh(S.webVoiceFailed, "undecodable")
     },
@@ -740,7 +886,7 @@ function decode(buffer: ArrayBuffer): Promise<AudioBuffer> {
 
 function shut(ctx: AudioContext | null): void {
   try {
-    if (ctx && ctx.close) void ctx.close()
+    if (ctx && ctx.close) void ctx.close().catch(() => {})
   } catch {
     /* it was closing anyway */
   }
@@ -832,8 +978,8 @@ function base64(bytes: Uint8Array): string {
  * generated refusal does not, and the client's ten-second timeout is shorter
  * than the first transcription after a reboot.
  *
- * The key is minted once per recording, so a retry of *this* request is not a
- * second read.
+ * One key per submitted request. Recovery shares an outstanding promise; a
+ * fresh manual request is made only after the earlier one has settled.
  */
 export async function postVoice(audio: string, rate: number): Promise<{ text?: string; ms?: number }> {
   let res: Response
@@ -923,7 +1069,7 @@ function show(): void {
     box.textContent = ""
     box.removeAttribute("data-near")
     box.removeAttribute("data-slow")
-    if (state === "reading") {
+    if (state !== "recording" && state !== "recoverable") {
       // The same turning mark the session list draws, on the same clock — this
       // page has one way of saying "something is happening over there".
       const spin = document.createElement("canvas")
@@ -931,6 +1077,8 @@ function show(): void {
       box.appendChild(spin)
       holdSpin(spin)
       paintSpin(spin, spinPhase as number)
+    } else if (state === "recoverable") {
+      holdSpin(null)
     } else if (ears) {
       // The dot this row has always drawn, now with a disc around it that
       // answers to the room instead of to a clock. `data-live` is what takes
@@ -969,7 +1117,9 @@ function show(): void {
     said.className = "said"
     const note = document.createElement("span")
     note.className = "note"
-    note.textContent = S.webVoiceSlow
+    note.textContent = state === "recoverable" ? nextWord(recording?.bytes ? "voiceRecoveryKept"
+      : recording?.finished ? "voiceRecoveryEmpty" : "voiceRecoveryNoBytes")
+      : state === "reading" ? S.webVoiceSlow : nextWord("voiceMicStopped")
     what.appendChild(said)
     what.appendChild(note)
     box.appendChild(what)
@@ -990,13 +1140,21 @@ function show(): void {
      * microphone still stops it; it simply stopped being the only way, and
      * this is the one place somebody is already looking.
      *
-     * Transcribing keeps the single Cancel: there is no "finish" to offer for
-     * something that is being done at the other end.
+     * Processing can be paused without discarding the audio. Recovery offers
+     * separate retry and explicit discard controls.
      */
     const acts = document.createElement("div")
     acts.className = "acts"
-    acts.appendChild(way(S.webCancel, "drop", cancel))
-    if (state === "recording") acts.appendChild(way(S.webVoiceDone, "go", stop))
+    if (state === "recording") {
+      acts.appendChild(way(S.webCancel, "drop", cancel))
+      acts.appendChild(way(S.webVoiceDone, "go", stop))
+    } else if (state === "recoverable") {
+      acts.appendChild(way(nextWord("voiceDiscard"), "drop", cancel))
+      if (recording?.bytes || !recording?.finished) acts.appendChild(way(recording?.complete ? nextWord("voiceRetry")
+        : recording?.bytes ? nextWord("voiceTryPartial") : nextWord("voiceWaitForAudio"), "go", retry))
+    } else {
+      acts.appendChild(way(nextWord("voicePause"), "drop", () => recover("paused")))
+    }
     box.appendChild(acts)
     box.hidden = false
   }
@@ -1039,8 +1197,26 @@ function say(): void {
   const said = box?.querySelector(".said")
   if (!box || !said) return
   const n = Math.floor(elapsed())
+  if (state === "recoverable") {
+    const key = recoveryCode === "recording_limit" ? "voiceRecordingLimit"
+      : recording?.finished && !recording.bytes ? "voiceNoAudioFinished"
+      : !recording?.complete ? (recording?.bytes ? "voiceIncomplete" : "voiceNoAudioYet")
+      : recoveryCode === "stop_timeout" ? "voiceRecoveredLate"
+      : recoveryCode === "paused" ? "voicePaused" : "voiceRetryNeeded"
+    said.textContent = nextWord(key)
+    box.setAttribute("data-slow", "1")
+    return
+  }
+  if (state === "stopping" || state === "preparing") {
+    said.textContent = fillWords(nextWord(state === "stopping" ? "voiceStopping" : "voicePreparing"), { n })
+    box.setAttribute("data-slow", "1")
+    return
+  }
   if (state === "reading") {
     said.textContent = fillWords(S.webVoiceReading, { n })
+    const note = box.querySelector(".note")
+    if (note) note.textContent = recording && !recording.complete ? nextWord("voicePartialWarning") : S.webVoiceSlow
+    if (recording && !recording.complete) box.setAttribute("data-slow", "1")
     // Twelve seconds of nothing has an explanation and it is worth giving.
     // Anything shorter does not, and a permanent line of it would be an
     // apology for a wait that usually is not one.

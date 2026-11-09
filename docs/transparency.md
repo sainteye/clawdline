@@ -347,3 +347,12 @@ HTTP closeability version and force confirmation remain required. Both language
 versions of the ACP context and restart-continuation cards were reviewed again:
 closing adds no instructions and does not send a model prompt or automatically
 resume a closed conversation. Their injected text and excerpts are unchanged.
+
+## Browser recording recovery copy (2026-11-09)
+
+The voice recovery labels added to `next-strings.ts` are browser UI text, not
+provider instructions. The Session rotation request and its English and Taiwan
+Traditional Chinese explanations remain unchanged. Reviewing the two language
+catalogs found no change to `transparency.*` or rotation request values; only the
+shared source-file receipt changes. Public website snapshot publication remains
+separate from this local source review.

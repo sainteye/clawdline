@@ -1692,6 +1692,26 @@
     "Note": true
   },
   {
+    "Name": "console.voice_prepare_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.voice_read_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.voice_recording_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.voice_stop_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "coordinator.aliases",
     "Known": true
   },

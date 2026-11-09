@@ -347,6 +347,10 @@
 | `console.viewer_health_request_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
 | `console.viewer_health_retry_after_seconds` | 3600 | `seconds` | `expire` | `diagnostics` | — |
 | `console.viewer_health_send_every_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.voice_prepare_milliseconds` | 15000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.voice_read_milliseconds` | 120000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.voice_recording_bytes` | 16777216 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.voice_stop_milliseconds` | 5000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `coordinator.aliases` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `coordinator.bind_attempts` | 6 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
