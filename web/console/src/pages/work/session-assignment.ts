@@ -321,11 +321,11 @@ export function assignmentChoicesWords(choices: AssignmentChoices): string | nul
 }
 
 /** The assistants a new Session can be opened with, in the order the Board offers them. */
-export const NEW_SESSION_ASSISTANTS: readonly Assistant[] = ["codex", "claude", "antigravity"]
+export const NEW_SESSION_ASSISTANTS: readonly Assistant[] = ["codex", "claude", "antigravity", "grok"]
 
 /** Which company's assistant a Session runs, as the person reads it. */
 export function assistantName(assistant: SessionRow["assistant"]): string {
-  return assistant === "claude" ? "Claude Code" : assistant === "codex" ? "Codex" : assistant === "antigravity" ? "Gemini" : catalogWord("literal", "1d6ea8ca2af5")
+  return assistant === "claude" ? "Claude Code" : assistant === "codex" ? "Codex" : assistant === "antigravity" ? "Gemini" : assistant === "grok" ? "Grok" : catalogWord("literal", "1d6ea8ca2af5")
 }
 
 const LAST_ASSISTANT = "clawdline.work.new-session-assistant"
@@ -334,7 +334,7 @@ const LAST_ASSISTANT = "clawdline.work.new-session-assistant"
 export function rememberedAssistant(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Assistant {
   try {
     const value = storage?.getItem(LAST_ASSISTANT)
-    return value === "claude" || value === "codex" || value === "antigravity" ? value : "codex"
+    return value === "claude" || value === "codex" || value === "antigravity" || value === "grok" ? value : "codex"
   } catch {
     return "codex"
   }

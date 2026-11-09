@@ -1,7 +1,7 @@
 import { BoardCardDetail } from "./BoardCardDetail.js"
 import { ActionProgress } from "../../ui/ActionProgress.js"
 import { useAssistantFacts } from "../../session/assistant-facts.js"
-import { assistantAdmits, assistantUnavailable } from "../../session/antigravity-ui.js"
+import { assistantAdmits, assistantRolesAdmit, assistantUnavailable } from "../../session/antigravity-ui.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { ProjectPicker } from "../../ui/ProjectPicker.js"
 import { catalogFormat } from "../../catalog.js"
@@ -886,7 +886,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState("")
   const [team, setTeam] = useState(rememberedTeam)
-  const persona = personaById(personas, personaChoice)
+  const persona = assistantRolesAdmit(assistant, providerFacts(assistant)) ? personaById(personas, personaChoice) : undefined
   const [aiSuggestion, setAISuggestion] = useState<Awaited<ReturnType<typeof suggestPersonaWorkV2>> | null>(null)
   const [aiSuggestionBusy, setAISuggestionBusy] = useState(false)
   const [aiSuggestionFailure, setAISuggestionFailure] = useState("")
@@ -1087,7 +1087,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
         </div>
         <WorkModelChoice id={`work-models-${item.id}`} assistant={assistant} choice={model} disabled={!!busy || aiSuggestionBusy}
           onPick={(option) => setModelChoice(option ? { assistant, option } : null)} />
-        {personas.length > 0 && <div className="work-launch-option">
+        {personas.length > 0 && assistantRolesAdmit(assistant, providerFacts(assistant)) && <div className="work-launch-option">
           <button ref={roleTrigger} className="work-launch-toggle" type="button" disabled={!!busy || aiSuggestionBusy}
             aria-expanded={rolesOpen} aria-controls={`work-roles-${item.id}`} onClick={() => setRolesOpen(!rolesOpen)}>
             <span>{nextWord("personaPicker")}</span>

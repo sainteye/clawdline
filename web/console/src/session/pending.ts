@@ -55,6 +55,8 @@ export interface PendingSend {
   /** Original request bytes, frozen before optional daemon guidance. */
   requestText?: string
   conversation?: string
+  /** A durable to-do is sent through its own receipt route, including on retry. */
+  todoID?: string
   /** The pictures as `data:` URLs, kept so that sending again sends them too. */
   readonly pictures: readonly string[]
   /**
@@ -220,13 +222,14 @@ export class PendingSends {
   }
 
   /** A card for words that are about to be sent. */
-  add(session: string, text: string, pictures: readonly string[], now: number, queued = false, conversation?: string): PendingSend {
+  add(session: string, text: string, pictures: readonly string[], now: number, queued = false, conversation?: string, todoID?: string): PendingSend {
     this.count += 1
     const card: PendingSend = {
       token: `p${this.count}-${now}-${pageMark}`,
       session,
       text,
       ...(conversation ? {conversation}:{}),
+      ...(todoID ? { todoID } : {}),
       pictures: [...pictures],
       request: newRequestID(),
       state: queued ? "queued" : "sending",

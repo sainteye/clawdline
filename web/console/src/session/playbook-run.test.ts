@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node's strip-types test runner needs the source extension.
-import { playbookRunOf, playbookTodoText } from "./playbook-run.ts"
+import { playbookCardText, playbookRunOf, playbookSendText, playbookTodoText } from "./playbook-run.ts"
 // @ts-expect-error Node's strip-types test runner needs the source extension.
 import { localizedPlaybook } from "../playbook-words.ts"
 // @ts-expect-error Node's strip-types test runner needs the source extension.
@@ -65,4 +65,20 @@ test("cross-surface review localizes the full launch message and keeps authored 
       assert.equal(localizedPlaybook(edited), edited)
     }
   } finally { resetCatalogForTest(); globalThis.document = prior }
+})
+
+
+test("the Playbook card describes the exact native to-do message", () => {
+  const text = playbookTodoText(ID, "Review", "Inspect the change.")
+  assert.equal(playbookSendText("todo-fixture", text), text +
+    "\n\n(Clawdline to-do todo-fixture. When it is done: clawdline todo done todo-fixture)")
+})
+
+
+test("the Playbook card displays the launch text without changing its native echo identity", () => {
+  const message = "Read every step."
+  const sent = playbookSendText("todo-fixture", playbookTodoText(ID, "Review", message))
+  assert.equal(playbookCardText(sent, "todo-fixture"), message)
+  assert.equal(playbookCardText(sent, "another-todo"), sent)
+  assert.equal(playbookCardText("Ordinary message"), "Ordinary message")
 })

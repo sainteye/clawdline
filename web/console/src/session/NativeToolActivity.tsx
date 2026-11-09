@@ -5,7 +5,8 @@ import { nextWord } from "../next-strings.js"
 import { LazyEntryBody } from "./LazyEntryBody.js"
 import { ToolRow, ToolRunToggle } from "./ToolPresentation.js"
 
-export function nativeToolTitle(entry: TranscriptEntry): string {
+export function nativeToolTitle(entry: TranscriptEntry, assistant?: string): string {
+  if (assistant === "grok" && entry.activity?.title) return entry.activity.title
   const action = entry.activity?.actions?.[0]
   if ((entry.tool === "read" || entry.tool === "search") && action?.path) {
     const name = action.path.split(/[\\/]/).filter(Boolean).pop() || action.path
@@ -43,13 +44,13 @@ function NativeToolBody({ entry }: { entry: TranscriptEntry }) {
 
 type NativeToolLabels = { toolLabel: string; countLabel: (count: number) => string }
 
-export function NativeToolCard({ entry, sessionID, expanded = false, toolLabel }: { entry: TranscriptEntry; sessionID?: string; expanded?: boolean; toolLabel: string }) {
+export function NativeToolCard({ entry, sessionID, expanded = false, toolLabel, assistant }: { entry: TranscriptEntry; sessionID?: string; expanded?: boolean; toolLabel: string; assistant?: string }) {
   const [open, setOpen] = useState(expanded)
   const activity = entry.activity
   const statuses: Record<string, string> = { completed: "toolCompleted", inProgress: "toolRunning", in_progress: "toolRunning", pending: "toolPending", failed: "toolFailed", cancelled: "toolCancelled" }
   const status = activity?.status ? (statuses[activity.status] ? catalogWord("antigravity", statuses[activity.status]) : activity.status) : ""
   const agent = activity?.agentID
-  const title = nativeToolTitle(entry)
+  const title = nativeToolTitle(entry, assistant)
   return <ToolRow label={agent ? nextWord("nativeToolAgent", { id: agent.slice(0, 8) }) : toolLabel} labelTitle={agent}
     subject={title} name={entry.tool === "execute" ? "shell" : undefined} meta={status}
     open={open} onToggle={() => setOpen(value => !value)} agentID={agent}
@@ -68,16 +69,16 @@ export function NativeToolCard({ entry, sessionID, expanded = false, toolLabel }
   </ToolRow>
 }
 
-export function NativeToolRun({ entries, sessionID, toolLabel, countLabel }: { entries: readonly TranscriptEntry[]; sessionID?: string } & NativeToolLabels) {
+export function NativeToolRun({ entries, sessionID, toolLabel, countLabel, assistant }: { entries: readonly TranscriptEntry[]; sessionID?: string; assistant?: string } & NativeToolLabels) {
   const [open, setOpen] = useState(false)
-  if (entries.length === 1) return <NativeToolCard entry={entries[0]} sessionID={sessionID} toolLabel={toolLabel} />
+  if (entries.length === 1) return <NativeToolCard entry={entries[0]} sessionID={sessionID} toolLabel={toolLabel} assistant={assistant} />
   const agent = entries[0].activity?.agentID
   const waiting = entries.filter(e => ["pending", "in_progress", "inProgress"].includes(e.activity?.status || "")).length
   return <>
     <ToolRunToggle label={agent ? nextWord("nativeToolAgent", { id: agent.slice(0, 8) }) : toolLabel} labelTitle={agent}
-      count={countLabel(entries.length)} description={entries.map(nativeToolTitle).filter((name, n, names) => names.indexOf(name) === n).join(" · ")}
+      count={countLabel(entries.length)} description={entries.map(entry => nativeToolTitle(entry, assistant)).filter((name, n, names) => names.indexOf(name) === n).join(" · ")}
       meta={waiting > 0 ? nextWord("nativeToolAwaiting", { count: waiting }) : undefined}
       open={open} onToggle={() => setOpen(value => !value)} live={waiting > 0} agentID={agent} />
-    {open && entries.map((entry, n) => <NativeToolCard key={entry.id || entry.activity?.toolCallID || n} entry={entry} sessionID={sessionID} toolLabel={toolLabel} />)}
+    {open && entries.map((entry, n) => <NativeToolCard key={entry.id || entry.activity?.toolCallID || n} entry={entry} sessionID={sessionID} toolLabel={toolLabel} assistant={assistant} />)}
   </>
 }

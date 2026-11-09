@@ -185,8 +185,9 @@ export type Assistant =
     "claude"
   | "codex"
   | "antigravity"
+  | "grok"
 
-export const AssistantValues: readonly Assistant[] = ["claude", "codex", "antigravity"] as const
+export const AssistantValues: readonly Assistant[] = ["claude", "codex", "antigravity", "grok"] as const
 
 /**
  * One of four things this Mac can honestly say about an assistant's account-level

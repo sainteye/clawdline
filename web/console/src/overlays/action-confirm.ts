@@ -1,6 +1,8 @@
 import type { CloseReason } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import "./action-confirm.css"
+import { playbookRunOf } from "../session/playbook-run.js"
+import { playbookWord } from "../playbook-words.js"
 import { client } from "../client.js"
 import { focusModalContainer } from "../modal-focus.js"
 import * as L from "../legacy/bridge.js"
@@ -405,7 +407,10 @@ export const ActionConfirm = {
       heading.textContent = nextWord("endWorkOpenHeading")
       const list = document.createElement("ul")
       for (const item of work) list.appendChild(this.endWorkRow(nextWord("endWorkBoardLabel"), item.title))
-      for (const todo of openDirect) list.appendChild(this.endWorkRow(nextWord("endWorkTodoLabel"), todo.text))
+      for (const todo of openDirect) {
+        const run = playbookRunOf(todo.text)
+        list.appendChild(this.endWorkRow(run ? playbookWord("playbook") : nextWord("endWorkTodoLabel"), run ? run.title : todo.text))
+      }
       section.append(heading, list)
       say.appendChild(section)
     } else {

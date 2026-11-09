@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10864,
-  "riskKeys": 4780,
-  "nonRiskCount": 6084,
+  "englishContentKeys": 10868,
+  "riskKeys": 4782,
+  "nonRiskCount": 6086,
   "groups": [
     {
       "name": "acp / other",
@@ -1303,6 +1303,17 @@
         "documents.videoPlay",
         "documents.videoPreview",
         "documents.videoTooLarge"
+      ]
+    },
+    {
+      "name": "grok / other",
+      "count": 2,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "grok.placeholder",
+        "grok.sendUnavailable"
       ]
     },
     {

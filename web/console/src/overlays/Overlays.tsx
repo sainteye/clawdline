@@ -137,7 +137,8 @@ export function Overlays() {
           aria-describedby="action-confirm-say"
         >
           <h2 id="action-confirm-title">{catalogWord("inline", "81191ae00ea5")}</h2>
-          <div className="say" id="action-confirm-say">{catalogWord("inline", "250f3493e97c")}
+          <div className="confirm-body">
+            <div className="say" id="action-confirm-say">{catalogWord("inline", "250f3493e97c")}</div>
           </div>
           <div className="buttons">
             <button className="chip" id="action-confirm-cancel" type="button"></button>
