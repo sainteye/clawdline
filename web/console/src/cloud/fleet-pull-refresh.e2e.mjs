@@ -21,14 +21,16 @@ test("fleet pull refresh updates every machine, waits for answers and preserves 
     writeFileSync(fixture, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="session-state-filter-slot"></div><div id="root"></div><script type="module" src="/fleet-pull-fixture.tsx"></script>')
     writeFileSync(entry, `import React from 'react';import {createRoot} from 'react-dom/client';
 import {FleetSessionList} from './src/cloud/FleetSessionList';import {bootCatalog} from './src/catalog';import {loadStrings} from './src/legacy/bridge';
+import {statusProjection} from './src/cloud/status-projection';
 import './src/legacy/tokens.css';import './src/legacy/list.css';
 localStorage.setItem('ui_language',new URLSearchParams(location.search).get('lang')||'en');
 await bootCatalog(tag=>'/catalogs/'+tag+'.json');await loadStrings(async()=>({}));
 const machines=['alpha','beta'].map(id=>({id,name:id,platform:'Linux',freshness:'current'}));
-const calls={alpha:0,beta:0};const pending=[];let held=false;let fail=false;
-window.fixture={calls,hold:()=>{held=true},release:()=>{held=false;pending.splice(0).forEach(done=>done())},fail:()=>{fail=true}};
+const calls={alpha:0,beta:0};const freshCalls={alpha:0,beta:0};const pending=[];const listeners=new Set();let held=false;let fail=false;let partial=false;
+window.fixture={calls,freshCalls,hold:()=>{held=true},release:()=>{held=false;pending.splice(0).forEach(done=>done())},fail:()=>{fail=true},partial:()=>{partial=true;listeners.forEach(fn=>fn({machineID:'alpha',kind:'changed'}))},closeBeta:()=>listeners.forEach(fn=>fn({machineID:'beta',sessionID:'session-beta',kind:'changed',closed:destination('beta')}))};
 const destination=id=>({machineID:id,sessionID:'session-'+id,executionGeneration:'1'.padStart(32,'0')});
-const source={subscribe:()=>()=>{},readMachine:async(id,signal)=>{calls[id]++;if(held)await new Promise(done=>pending.push(done));if(fail&&id==='beta')throw new Error('offline');return {kind:'ready',complete:true,observedAt:Date.now(),snapshotGeneration:String(calls[id]),rows:[{destination:destination(id),state:'working',freshness:'current',needsAttention:false,observedAt:Date.now()}]}},readMachinePresentations:async id=>[{destination:destination(id),title:id+' reading '+calls[id],status:{state:'working',sessionId:'saved-'+id}}]};
+const partialReading=id=>{const now=Date.now()/1000;const generation='a'.repeat(32);const ids=['session-'+id,'new-'+id];const statusSnapshots=new Map(ids.map((session,index)=>[JSON.stringify([id,session]),{identity:{machine:id,session},observedAt:Date.now(),sequence:index+1,payload:{machine_id:id,session_id:session,execution_generation:'1'.padStart(32,'0'),snapshot_generation:generation,inventory_complete:false,state:'idle',projected_at:index?now:now-600,source:{freshness:index?'current':'unverified',observed_at:index?now:now-600,provenance:index?'tmux':'ps'}}}]));statusSnapshots.set(JSON.stringify([id,'__clawdline_inventory_v1__']),{identity:{machine:id,session:'__clawdline_inventory_v1__'},observedAt:Date.now(),sequence:3,payload:{inventory:{version:1,sessions:ids},at:now,complete:false,snapshot_generation:generation}});return statusProjection({statusSnapshots},id)};
+const source={subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},readMachine:async(id,signal,fresh=false)=>{calls[id]++;if(fresh)freshCalls[id]++;if(held)await new Promise(done=>pending.push(done));if(fail&&id==='beta')throw new Error('offline');if(partial)return partialReading(id);return {kind:'ready',complete:true,observedAt:Date.now(),snapshotGeneration:String(calls[id]),rows:[{destination:destination(id),state:'working',freshness:'current',needsAttention:false,observedAt:Date.now()}]}},readMachinePresentations:async id=>[{destination:destination(id),title:id+' reading '+calls[id],status:{state:'working',sessionId:'saved-'+id}},...(partial?[{destination:{...destination(id),sessionID:'new-'+id},title:id+' new Session',status:{state:'idle'}}]:[])]};
 createRoot(document.getElementById('root')).render(<FleetSessionList machines={machines} source={source} target={null} filter="" onFilter={()=>{}} onOpen={()=>{}} onConnection={()=>{}} onCloseRequest={()=>{}} onArchiveRequest={()=>{}}/>);
 const style=document.createElement('style');style.textContent='body{margin:0}.cloud-all-list-scroll{height:650px;overflow:auto;overscroll-behavior:contain}.cloud-all-groups{min-height:1100px}.row{min-height:90px}.ptr{flex-shrink:0}';document.head.append(style);`)
     vite = spawn(process.execPath, [resolve(root, "web/node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", "0"],
@@ -67,6 +69,7 @@ const style=document.createElement('style');style.textContent='body{margin:0}.cl
         }, { dx, dy, release, row })
         const counts = () => page.evaluate(() => ({...window.fixture.calls}))
         const baseline = await counts()
+        assert.deepEqual(await page.evaluate(() => ({...window.fixture.freshCalls})), {alpha:0,beta:0})
         await gesture(0, 35)
         await gesture(-150, 90, true, true)
         assert.deepEqual(await counts(), baseline, "short pulls and horizontal row swipes do not refresh")
@@ -76,7 +79,9 @@ const style=document.createElement('style');style.textContent='body{margin:0}.cl
         await page.locator('#list-scroll').evaluate(el => { el.scrollTop = 0 })
         await page.evaluate(() => window.fixture.hold())
         await gesture(0, 220, false)
-        assert.equal(await page.locator('#ptr-label').textContent(), lang === 'en' ? 'Release to refresh' : '放開就重新整理')
+        // The pad updates synchronously; React commits its label separately.
+        await page.waitForFunction(label => document.querySelector('#ptr-label')?.textContent === label,
+          lang === 'en' ? 'Release to refresh' : '放開就重新整理')
         await page.locator('#list-scroll').evaluate(el => {
           const event = new Event('touchend',{bubbles:true})
           Object.defineProperties(event,{touches:{value:[]},changedTouches:{value:[]}})
@@ -95,6 +100,19 @@ const style=document.createElement('style');style.textContent='body{margin:0}.cl
         await page.waitForFunction(() => window.fixture.calls.alpha === 3 && window.fixture.calls.beta === 3)
         await page.waitForFunction(() => document.querySelector('#ptr').style.height === '0px')
         await page.getByText('alpha reading 3', {exact:true}).waitFor()
+        assert.deepEqual(await page.evaluate(() => ({...window.fixture.freshCalls})), {alpha:2,beta:2},
+          'every pull bypasses cached status independently on every machine, even without events')
+        await page.evaluate(() => window.fixture.partial())
+        await page.getByText('alpha new Session', {exact:true}).waitFor()
+        await page.getByText('alpha reading 4', {exact:true}).waitFor()
+        assert.equal(await page.locator('li.row').count(), 3,
+          'an unreadable source and an offline peer do not hide a healthy new Session or erase the old rows')
+        await page.evaluate(() => window.fixture.closeBeta())
+        await page.waitForFunction(() => document.querySelectorAll('li.row').length === 2)
+        assert.equal(await page.getByText('beta reading 2', {exact:true}).count(), 0,
+          'a successful close removes the row immediately even when the follow-up read fails')
+        if (process.env.SESSION_REFRESH_SCREENSHOTS) await page.screenshot({
+          path: resolve(process.env.SESSION_REFRESH_SCREENSHOTS, engine.name()+'-'+lang+'.png'), fullPage:true })
         assert.deepEqual(errors, [], "the fleet has no browser exceptions")
         console.log(engine.name(), lang, await counts())
         await page.close()

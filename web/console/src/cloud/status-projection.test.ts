@@ -8,6 +8,25 @@ const execution = "0123456789abcdef0123456789abcdef"
 const passOne = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const passTwo = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+test("a partial status pass exposes healthy new Sessions without claiming absence", () => {
+  const source = fleet("a", ["old", "new"])
+  const marker = source.statusSnapshots.get(JSON.stringify(["a", INVENTORY])) as { payload: Record<string, unknown> }
+  marker.payload.complete = false
+  for (const id of ["old", "new"]) {
+    const entry = source.statusSnapshots.get(JSON.stringify(["a", id])) as { payload: Record<string, unknown> }
+    entry.payload.inventory_complete = false
+  }
+  const old = source.statusSnapshots.get(JSON.stringify(["a", "old"])) as { payload: Record<string, unknown> }
+  old.payload.source = { provenance: "ps", observed_at: 1, freshness: "unverified" }
+  old.payload.projected_at = -1000
+  const reading = statusProjection(source, "a", 2000)
+  assert.equal(reading.kind, "ready")
+  if (reading.kind !== "ready") return
+  assert.equal(reading.complete, false)
+  assert.equal(reading.rows.find((row) => row.destination.sessionID === "old")?.freshness, "stale")
+  assert.equal(reading.rows.find((row) => row.destination.sessionID === "new")?.freshness, "current")
+})
+
 test("capacity refusal crosses the status projection without inventing a menu", () => {
   const source = fleet("a", ["same"])
   const entry = source.statusSnapshots.get(JSON.stringify(["a", "same"])) as { payload: Record<string, unknown> }

@@ -1016,6 +1016,7 @@ function began(answer: L.StartAnswer | undefined, place: Place | null): void {
   if (timer) clearTimeout(timer)
   timer = setTimeout(() => {
     if (!wait) return
+    if (wait.eager) return
     wait.late = true
     band(detached ? detachedWords() : T().webStartSlow, true)
     moveProgress(detached ? "detached" : "slow", detached ? detachedWords() : T().webStartSlow)

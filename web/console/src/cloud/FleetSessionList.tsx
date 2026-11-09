@@ -168,13 +168,13 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       if (!pendingRefresh.delete(machineID)) return
       if (pendingRefresh.size === 0) showResult()
     }
-    const read = (machineID: string) => {
+    const read = (machineID: string, fresh = false) => {
       aborts.get(machineID)?.abort()
       const abort = new AbortController()
       aborts.set(machineID, abort)
       setReadings((before) => before[machineID]?.phase === "settled" ? before :
         ({ ...before, [machineID]: { phase: "loading" } }))
-      void source.readMachine(machineID, abort.signal).then((value) => {
+      void source.readMachine(machineID, abort.signal, fresh).then((value) => {
         if (!live || abort.signal.aborted) return
         finishRefresh(machineID)
         if (value.kind === "ready") scheduleMachineReady(machineID)
@@ -189,8 +189,14 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             { kind: "unavailable", reason: problemOf(error) }, STATUS_GAP_RETRY_MS) } }))
       })
     }
-    const stop = source.subscribe(({ machineID, sessionID, kind }) => {
+    const stop = source.subscribe(({ machineID, sessionID, kind, closed }) => {
       if (!machines.some((machine) => machine.id === machineID)) return
+      if (closed) setReadings(before => {
+        const reading = before[machineID]
+        if (reading?.phase !== "settled" || !reading.value.rows) return before
+        return { ...before, [machineID]: { ...reading, value: { ...reading.value,
+          rows: reading.value.rows.filter(row => destinationKey(row.destination) !== destinationKey(closed)) } } }
+      })
       if (kind === "access_changed" || kind === "detail_changed" && sessionID) {
         // Keep the verified label visible while its replacement is read. The
         // presentation key includes the execution generation, so a restarted
@@ -203,7 +209,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       }
       read(machineID)
     })
-    for (const machine of machines) read(machine.id)
+    for (const machine of machines) read(machine.id, refreshFeedback === "loading")
     return () => {
       live = false
       if (resultTimer !== undefined) window.clearTimeout(resultTimer)

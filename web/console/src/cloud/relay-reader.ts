@@ -653,6 +653,8 @@ export interface RelayReaderOptions {
     expected?: readonly PresentationWant[] | null) => Promise<MachineListPresentation[] | null>
   /** The fleet's verified per-machine Session set; the classic list reads this first. */
   machineProjection?: (machineID: string, fresh?: boolean) => Promise<MachineSessionProjection>
+  /** Share a successful terminal close with the fleet list of the same execution. */
+  onClosed?: (destination: SessionDestination) => void
   /** Resolve an exact execution through the verified status source if ss/ replay is missing. */
   resolveSession?: (machineID: string, sessionID: string) => Promise<SessionDestination | null>
   /** Recheck one visible fleet mutation against the latest ss/ pass. */
@@ -819,7 +821,7 @@ export class RelayReader {
       },
       settledWords: (word, machine) => this.settledWords(word, undefined, machine),
       wrote: (session, outcome) => this.wrote(session, outcome),
-      closed: (session) => this.closed(session),
+      closed: (session, generation) => this.closed(session, generation),
       note: (row) => this.note(row.method, row.path, row.answer, row.code, row),
       reportWriteFailure: (row) => {
         try {
@@ -858,8 +860,9 @@ export class RelayReader {
    * newer current terminal observation can show the same id again, while an
    * authoritative inventory without it confirms the deletion and clears it.
    */
-  closed(session: string): void {
+  closed(session: string, generation?: string): void {
     this.closedAt.set(session, Math.floor(this.now() / 1000))
+    if (generation) this.options.onClosed?.({ machineID: this.machine, sessionID: session, executionGeneration: generation })
     for (const stream of this.streams) this.queueFrame(stream)
   }
 

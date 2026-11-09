@@ -237,7 +237,7 @@ export interface WriteHost {
   /** Something was just done to this session: its transcript is about to change. */
   wrote(session: string, outcome: "done" | "unknown" | "refused"): void
   /** The machine's terminal backend confirmed that this session was closed. */
-  closed(session: string): void
+  closed(session: string, generation?: string): void
   note(row: Omit<SeamRow, "at">): void
   reportWriteFailure?(row: { word: string; code: string; layer: string; status: number; outcome: string | null;
     stage: string; ms: number; session: string | null }): void
@@ -1151,12 +1151,6 @@ export class RelayWriter {
       // it does not set every poll re-reading it (F12).
       const session = route.op === "focus" ? null : sessionOf(route)
       if (session) this.host.wrote(session, "done")
-      // This is not an optimistic delete. A successful `end` answer is the
-      // daemon reporting that its terminal backend took the tab or pane away.
-      // Apply that existence fact before an older retained Cloud row can win
-      // the redraw; a later current terminal enumeration may supersede it.
-      // An archive is a close first: its answer is the same existence fact.
-      if (route.op === "end" || route.op === "archive") this.host.closed(route.session)
       this.host.note({ method, path, answer: "relay", word: route.word, ms })
       // A unify apply that stopped part-way crosses as its body beside a 500
       // (`cloudops.stoppedUnify`), so the copied client settles it rather than
@@ -1260,9 +1254,11 @@ export class RelayWriter {
           ? body.expected_closeability_version : typeof closeability?.version === "string" ? closeability.version : ""
         const request = headerOf(init, "idempotency-key")
         if (!request.trim()) throw failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400)
-        return current._read!(identity, "end", {
+        const answer = await current._read!(identity, "end", {
           request, execution_generation: generation, accept_loss: body.force === true, expected_closeability_version: version,
         }, "action:" + request)
+        this.host.closed(route.session, generation)
+        return answer
       }
       case "archive": {
         // The close's own decision key is the command's request, as `end`
@@ -1278,9 +1274,11 @@ export class RelayWriter {
         const closeability = row?.closeability as { version?: unknown } | undefined
         const version = typeof body.expected_closeability_version === "string" && body.expected_closeability_version
           ? body.expected_closeability_version : typeof closeability?.version === "string" ? closeability.version : ""
-        return current._read!(identity, route.word, {
+        const answer = await current._read!(identity, route.word, {
           request, execution_generation: generation, force: body.force === true, expected_closeability_version: version,
         }, "action:" + request)
+        this.host.closed(route.session, generation)
+        return answer
       }
       case "focus":
         if (this.host.exactTarget?.()) {

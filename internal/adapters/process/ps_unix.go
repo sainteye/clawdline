@@ -115,6 +115,12 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 		}
 		var antigravity ports.AntigravityProcess
 		if assistant == "" && path.Base(fields[5]) == "agy" {
+			// Owned ACP servers have no controlling terminal and are listed by
+			// the owned source. They cannot satisfy terminal identity; probing
+			// them here made unrelated terminal discovery permanently partial.
+			if unattachedTTY(tty) || pgidText != tpgidText || pgidText == "0" {
+				continue
+			}
 			fact, ok, complete := p.antigravityProcessStatus(ctx, pid, tty)
 			if !complete {
 				inv.Complete = false
