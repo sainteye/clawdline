@@ -34,6 +34,7 @@ test("assignment choices name which company's assistant each Session runs", () =
   assert.equal(assistantName("claude"), "Claude Code")
   assert.equal(assistantName("codex"), "Codex")
   assert.equal(assistantName("antigravity"), "Gemini")
+  assert.equal(assistantName("grok"), "Grok")
   assert.equal(assistantName(undefined), "助理不明")
 })
 
@@ -45,6 +46,8 @@ test("a new Session keeps the assistant last chosen, and Codex before any choice
   assert.equal(rememberedAssistant(storage), "claude")
   rememberAssistant("antigravity", storage)
   assert.equal(rememberedAssistant(storage), "antigravity")
+  rememberAssistant("grok", storage)
+  assert.equal(rememberedAssistant(storage), "grok")
   kept.set("clawdline.work.new-session-assistant", "gemini")
   assert.equal(rememberedAssistant(storage), "codex")
   const blocked = { getItem: () => { throw new Error("blocked") }, setItem: () => { throw new Error("blocked") } }

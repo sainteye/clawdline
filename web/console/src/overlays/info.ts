@@ -229,7 +229,7 @@ function statusShape(s: Row | null): string {
 function canSwitch(): boolean {
   const s = session()
   return !!(s && host.writable() && s.state === "idle" && !busy &&
-    (s.assistant !== "antigravity" || !!data?.models.length))
+    ((s.assistant !== "antigravity" && s.assistant !== "grok") || !!data?.models.length))
 }
 /** A request typed into a working Session would land in the middle of its turn. */
 function canAsk(): boolean {
@@ -273,6 +273,7 @@ function smartTitleButton(disabled: boolean): string {
 function namingAssistantName(assistant: string | undefined): string {
   if (assistant === "claude") return "Claude Code"
   if (assistant === "codex") return "Codex"
+  if (assistant === "grok") return "Grok"
   if (assistant === "antigravity" || assistant === "gemini") return "Gemini"
   // A turn under `auto` that ran and failed was Claude Code's: Codex is only
   // asked when Claude Code could not answer at all.
@@ -620,7 +621,7 @@ function html(d: Facts): string {
   // Read-only pairings get no buttons rather than dead ones.
   if (host.writable() && (models.length || s.assistant === "codex")) {
     out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
-  } else if (host.writable() && s.assistant === "antigravity") {
+  } else if (host.writable() && (s.assistant === "antigravity" || s.assistant === "grok")) {
     out += sec(++i, T.webInfoSwitchModel, "", note(catalogWord("antigravity", "modelUnavailable")))
   }
   if (s.assistant === "codex" || s.assistant === "claude" || s.assistant === "antigravity") {
@@ -738,7 +739,7 @@ function load(id: string, force: boolean): void {
 
 /** A model can change its offered effort levels. This reads held local facts,
  * once, without another native quota request or a transcript polling loop. */
-async function refreshGeminiSettings(id: string): Promise<void> {
+async function refreshNativeSettings(id: string): Promise<void> {
   const held = data
   try {
     const summary = await SessionFacts.getSummary(id, true)
@@ -878,12 +879,12 @@ export const Info = {
     client.send(id, "/model " + word, pressKey("model")).then(
       async () => {
         if (forId !== id) return
-        if (data?.session.assistant === "antigravity") {
+        if (data?.session.assistant === "antigravity" || data?.session.assistant === "grok") {
           // Native setting acknowledgement selects the next turn. It is not a
           // terminal command waiting to appear in the conversation transcript.
           pending = null
           data.session.model = word
-          await refreshGeminiSettings(id)
+          await refreshNativeSettings(id)
           if (forId !== id || !data) return
           busy = false
           SessionFacts.receiveFull(id, data)
@@ -919,7 +920,7 @@ export const Info = {
     client.send(id, "/effort " + raw, pressKey("effort")).then(async () => {
       if (forId !== id || !data) return
       data.session.effort = raw
-      await refreshGeminiSettings(id)
+      await refreshNativeSettings(id)
       if (forId !== id || !data) return
       busy = false
       SessionFacts.receiveFull(id, data)

@@ -1,7 +1,7 @@
 import { playbookCardText } from "./playbook-run.js"
 import { LazyEntryBody } from "./LazyEntryBody.js"
 import { catalogWord } from "../catalog.js"
-import { assistantLabel, assistantProtocolOwned } from "./antigravity-ui.js"
+import { assistantLabel, assistantProtocolOwned, assistantTurnIncomplete } from "./antigravity-ui.js"
 import {
   useCallback,
   useEffect,
@@ -747,7 +747,7 @@ function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boo
   return drawn.flat()
 
   function drawBlock(block: Block, start: number): ReactElement[] {
-    if (block.kind === "native") return [<NativeToolRun key={"native:"+(block.rows[0].id || block.rows[0].activity?.toolCallID || start)} entries={block.rows} sessionID={view.sessionID} toolLabel={view.who.tool} countLabel={count => L.fillString(L.strings.webSteps, { n: count })}/>]
+    if (block.kind === "native") return [<NativeToolRun key={"native:"+(block.rows[0].id || block.rows[0].activity?.toolCallID || start)} entries={block.rows} assistant={view.assistant} sessionID={view.sessionID} toolLabel={view.who.tool} countLabel={count => L.fillString(L.strings.webSteps, { n: count })}/>]
     if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
     if (block.kind === "explored") return exploredRunHTML(view, block.rows, start)
     if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
@@ -1181,7 +1181,7 @@ function blocksOf(entries: Entry[], working: boolean, assistant?: string): Block
       i += 1
       continue
     }
-    if (assistant === "antigravity" && activityOf(entries[i])) {
+    if ((assistant === "antigravity" || assistant === "grok") && activityOf(entries[i])) {
       const length = nativeRunLength(entries, i)
       blocks.push({kind:"native",rows:entries.slice(i,i+length)})
       i+=length
@@ -1525,8 +1525,8 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
   const record = role === "user" ? L.parseWorkflowRecord(e.text, role) : null
   let body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") +
     L.richTextHTML(record ? (record as { text: string }).text : e.text)
-  if (role === "error" && /^antigravity_(?:session|process|turn)_/.test(e.text)) {
-    body = '<p class="turn-error-copy">' + esc(catalogWord("antigravity", "turnIncomplete")) + '</p><p class="turn-error-copy">' +
+  if (role === "error" && assistantTurnIncomplete(v.assistant, e.text)) {
+    body = '<p class="turn-error-copy">' + esc(catalogWord(v.assistant === "grok" ? "grok" : "antigravity", "turnIncomplete")) + '</p><p class="turn-error-copy">' +
       esc(catalogWord("antigravity", "inspectBeforeSending")) + "</p><code>" + esc(e.text) + "</code>"
   }
   if (record) {

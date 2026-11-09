@@ -176,10 +176,11 @@ const (
 	AssistantClaude      Assistant = "claude"
 	AssistantCodex       Assistant = "codex"
 	AssistantAntigravity Assistant = "antigravity"
+	AssistantGrok        Assistant = "grok"
 )
 
 // AssistantValues is every value the contract allows, in contract order.
-var AssistantValues = []Assistant{AssistantClaude, AssistantCodex, AssistantAntigravity}
+var AssistantValues = []Assistant{AssistantClaude, AssistantCodex, AssistantAntigravity, AssistantGrok}
 
 // One of four things this Mac can honestly say about an assistant's
 // account-level quota, tightest to loosest. Never a percentage: both providers

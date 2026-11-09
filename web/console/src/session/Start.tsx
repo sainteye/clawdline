@@ -329,7 +329,7 @@ function assistantStatus(operation: AssistantOperation): string {
   const selected = assistants.find(a => a.id === with_)
   const reason = assistantUnavailable(selected, operation)
   if (!selected || !reason) return ""
-  const name = (selected.id === "antigravity" ? assistantLabel(selected.id) : selected.label || assistantLabel(selected.id)) + (selected.version ? " " + selected.version : "")
+  const name = ((selected.id === "antigravity" || selected.id === "grok") ? assistantLabel(selected.id) : selected.label || assistantLabel(selected.id)) + (selected.version ? " " + selected.version : "")
   const status = reason
   return catalogWord("antigravity", status).replace("{assistant}", name)
 }
@@ -351,7 +351,7 @@ function when(unix: number | undefined): string {
 function drawWith(): void {
   const row = el("start-with")
   // No `machines` read on this transport, so the first half is always false.
-  row.hidden = (assistants.length < 2 && assistants[0]?.id !== "antigravity") || !!at || !places?.length
+  row.hidden = (assistants.length < 2 && assistants[0]?.id !== "antigravity" && assistants[0]?.id !== "grok") || !!at || !places?.length
   if (row.hidden) {
     row.innerHTML = ""
     return
@@ -365,9 +365,9 @@ function drawWith(): void {
     const chip = document.createElement("button")
     chip.type = "button"
     chip.className = "chip" + (a.id === with_ ? " on" : "")
-    chip.innerHTML = L.assistantLogoHTML(a.id) + '<span>' + L.escapeHTML(a.id === "antigravity" ? assistantLabel(a.id) : a.label || a.id) + '</span>'
+    chip.innerHTML = L.assistantLogoHTML(a.id) + '<span>' + L.escapeHTML((a.id === "antigravity" || a.id === "grok") ? assistantLabel(a.id) : a.label || a.id) + '</span>'
     const reason = assistantUnavailable(a, "start")
-    if (reason) chip.title = catalogWord("antigravity", reason).replace("{assistant}", (a.id === "antigravity" ? assistantLabel(a.id) : a.label || assistantLabel(a.id)))
+    if (reason) chip.title = catalogWord("antigravity", reason).replace("{assistant}", ((a.id === "antigravity" || a.id === "grok") ? assistantLabel(a.id) : a.label || assistantLabel(a.id)))
     chip.disabled = !!pressing || !!wait
     chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false")
     chip.onclick = () => {
@@ -558,7 +558,9 @@ function draw(): void {
   setup.hidden = machineOnly || mode !== "session" || !needsAgent || !localMac
   agentHelp.hidden = machineOnly || mode !== "session" || !needsAgent
   agentHelp.textContent = agentSignInRequired
-    ? nextWord("firstSessionSignInHelp", { assistant: agentSignInRequired, command: agentSignInRequired === "Codex" ? "codex login" : "claude auth login" })
+    ? agentSignInRequired === "Grok" || agentSignInRequired === "Gemini"
+      ? catalogWord("antigravity", "required").replace("{assistant}", agentSignInRequired)
+      : nextWord("firstSessionSignInHelp", { assistant: agentSignInRequired, command: agentSignInRequired === "Codex" ? "codex login" : "claude auth login" })
     : localMac ? nextWord("firstSessionAgentMacHint") : nextWord("firstSessionAgentOtherHint")
   const editProjects = el<HTMLButtonElement>("start-edit-projects")
   const editLabel = catalogWord("projects", editingProjects ? "editDone" : "editList")
@@ -938,7 +940,7 @@ function press(id: string): void {
         if (e && e.code === "write_disabled") {
           write = false
         } else if (e && e.code === "assistant_sign_in_required") {
-          agentSignInRequired = e.app || (with_ === "codex" ? "Codex" : "Claude Code")
+          agentSignInRequired = e.app || assistantLabel(with_ ?? undefined)
         } else if (e && e.code === "not_found") {
           places = null
           load()

@@ -6,11 +6,16 @@ export type AssistantOperation = keyof StartCapabilities
 export type AssistantUnavailable = "missing" | "integrationMissing" | "required" | "unsupported" | "unknownAuth" | "disabled" | "incompatible" | "unknown"
 
 export function isAssistant(value: unknown): value is Assistant {
-  return value === "claude" || value === "codex" || value === "antigravity"
+  return value === "claude" || value === "codex" || isProtocolAssistant(value)
+}
+
+/** These providers require explicit capabilities rather than the legacy terminal fallback. */
+export function isProtocolAssistant(value: unknown): value is "antigravity" | "grok" {
+  return value === "antigravity" || value === "grok"
 }
 
 export function assistantLabel(value: string | undefined): string {
-  return value === "claude" ? "Claude Code" : value === "codex" ? "Codex" : value === "antigravity" ? "Gemini" : "AI"
+  return value === "claude" ? "Claude Code" : value === "codex" ? "Codex" : value === "antigravity" ? "Gemini" : value === "grok" ? "Grok" : "AI"
 }
 
 export function assistantUnavailable(facts: AssistantFacts | null | undefined, operation: AssistantOperation): AssistantUnavailable | null {
@@ -21,12 +26,12 @@ export function assistantUnavailable(facts: AssistantFacts | null | undefined, o
   if (facts.integrationState === "disabled") return "disabled"
   // A safe bootstrap is explicitly advertised by the backend, never inferred from auth.
   if ((operation === "start" || operation === "resume") && facts.capabilities?.[operation] === true &&
-    (facts.id !== "antigravity" || facts.installed === true) && facts.integrationState === "active" && facts.authState !== "unsupported_account") return null
+    (!isProtocolAssistant(facts.id) || facts.installed === true) && facts.integrationState === "active" && facts.authState !== "unsupported_account") return null
   if (facts.authState === "required") return "required"
   if (facts.authState === "unsupported_account") return "unsupported"
   if (facts.authState === "unknown") return "unknownAuth"
   if (facts.capabilities?.[operation] === false) return "disabled"
-  if (facts.id !== "antigravity") return null
+  if (!isProtocolAssistant(facts.id)) return null
   if (facts.installed !== true) return "unknown"
   if (facts.integrationState !== "active" || facts.authState !== "ready" || facts.capabilities?.[operation] !== true) return "unknown"
   return null
@@ -42,7 +47,10 @@ export function assistantAdmits(facts: AssistantFacts | null | undefined, operat
 export function antigravitySlashDraft(assistant: string | undefined, text: string, protocolOwned = false): boolean {
   const draft = text.trimStart()
   // These are metadata operations implemented by the owned Host itself.
-  if (protocolOwned && /^\/(?:model|effort) +\S[^\r\n]*$/.test(draft)) return false
+  if (protocolOwned && /^\/model +\S[^\r\n]*$/.test(draft)) return false
+  if (assistant === "antigravity" && protocolOwned && /^\/effort +\S[^\r\n]*$/.test(draft)) return false
+  // Unknown Grok commands are not prompts. File paths and filenames remain text.
+  if (assistant === "grok") return draft.trim() === "/" || /^\/[a-z][\w-]*(?:\s|$)/i.test(draft)
   return assistant === "antigravity" && (draft.trim() === "/" ||
     /^\/(?:btw|changelog|clear|codesearch|cs|search|compact|config|settings|context|diff|effort|exit|quit|fast|feedback|fork|branch|goal|help|hooks|keybindings|learn|logout|mcp|model|open|permissions|planning|plugin|plugins|rename|remote-control|resume|switch|conversation|rewind|undo|schedule|skills|statusline|tasks|teamwork-preview|teamwork|title|usage|quota|voice|record)(?:\s|$)/.test(draft))
 }
@@ -50,11 +58,12 @@ export function antigravitySlashDraft(assistant: string | undefined, text: strin
 /** Session hosts supply machine readiness separately from permission to write to that machine. */
 export function assistantComposeAdmits(assistant: string | undefined, facts: AssistantFacts | undefined,
   state: string | undefined, hasMenu: boolean, protocolOwned = false): boolean {
-  if (assistant !== "antigravity") return true
+  if (!isProtocolAssistant(assistant)) return true
   // Owned writes are checked at the server; do not preflight the account again in the view.
   // A stopped or interrupted owned conversation resumes on the person's next
   // explicit message. The Host reconciles native history before that one send.
   if (protocolOwned) return state === "idle" || state === "unknown" || state === "working" || state === "waiting"
+  if (assistant === "grok") return false
   return facts?.id === assistant && assistantAdmits(facts, "send") && state === "idle" && !hasMenu
 }
 
@@ -65,11 +74,12 @@ export function assistantQueuesInput(facts: AssistantFacts | null | undefined): 
 
 /** Owned offers use native revisions; terminal menus also require a current screen identity. */
 export function assistantMenuAdmits(row: SessionRow | null, facts?: AssistantFacts): boolean {
-  if (row?.assistant !== "antigravity") return true
+  if (!isProtocolAssistant(row?.assistant)) return true
   // Owned ACP offers are checked by the server against their native revision.
   // They have no terminal screen or separate account-readiness preflight.
   if (assistantProtocolOwned(row)) return row.state === "waiting" && !!row.menu?.revision &&
     !!row.menu?.options?.length && row.menu.source !== "transcript"
+  if (row?.assistant === "grok") return false
   return assistantStateCurrent(row) &&
     row.state === "waiting" && !!row.line && !!row.menu?.options?.length && row.menu.source !== "transcript" &&
     facts?.id === "antigravity" && assistantAdmits(facts, "menus")
@@ -90,7 +100,12 @@ export function assistantStateCurrent(row: SessionRow | null, now = Date.now()):
 
 /** Old daemon versions must not offer a role their ACP start route rejects. */
 export function assistantRolesAdmit(assistant: string | null, facts?: AssistantFacts): boolean {
-  return assistant !== "antigravity" || facts?.capabilities?.roles === true
+  return !isProtocolAssistant(assistant) || facts?.capabilities?.roles === true
+}
+
+/** Shared transport errors retain their stable codes; the Session owns the display name. */
+export function assistantTurnIncomplete(assistant: string | undefined, text: string): boolean {
+  return isProtocolAssistant(assistant) && /^(?:antigravity|grok)_(?:session|process|turn)_/.test(text)
 }
 
 export function sessionActionVisibility(row: SessionRow | null): {

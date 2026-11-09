@@ -346,7 +346,7 @@ export function Composer({
   }, [T])
   const voiceBusy = voice !== "off"
   const voiceLive = voice === "recording"
-  let placeholder = T.placeholder
+  let placeholder = (remote?.assistant ?? row?.assistant) === "grok" ? catalogWord("grok", "placeholder") : T.placeholder
   if ((remote?.assistant ?? row?.assistant) === "antigravity") placeholder = catalogWord("antigravity", "placeholder")
   else if ((remote?.assistant ?? row?.assistant) === "codex") {
     const name = assistantLabel(remote?.assistant ?? row?.assistant)
@@ -618,7 +618,7 @@ export function Composer({
     const input = toolMessage(rawText().trim(), toolAttachment.current, toolIdentity)
     const pictures = Shots.urls().slice()
     if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, input, protocolOwned)) {
-      setFailure(catalogWord("antigravity", "slashDraft"))
+      setFailure(catalogWord((remote?.assistant ?? row?.assistant) === "grok" ? "grok" : "antigravity", "slashDraft"))
       return
     }
     if ((!input && !pictures.length) || (!row && !remote) || !on ||
@@ -704,7 +704,7 @@ export function Composer({
   const providerReason = assistantReadiness && assistantReadiness !== "ready" ? assistantReadiness
     : assistantUnavailable(remote?.assistantFacts ?? assistantFacts, "send")
   const providerWords = protocolOwned || providerReason === "loading" ? "" : providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
-    : catalogWord("antigravity", "sendUnavailable")
+    : catalogWord((remote?.assistant ?? row?.assistant) === "grok" ? "grok" : "antigravity", "sendUnavailable")
   const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
     : "") || (remoteControl ? nextWord("claudeRemoteReadOnly") : "")

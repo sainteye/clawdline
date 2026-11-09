@@ -1854,7 +1854,7 @@ export class RelayReader {
         parent_session_id: row.parentSessionID,
         machine_scope: row.machineScope === true, coordinator_bound: row.coordinatorBound === true,
         label: presentation?.title ?? row.destination.sessionID, cwd: presentation?.cwd, project_key: presentation?.projectKey,
-        icon: presentation?.icon, assistant: row.assistant ?? presentation?.assistant, backend: row.backend ?? (presentation?.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined), state: row.state,
+        icon: presentation?.icon, assistant: row.assistant ?? presentation?.assistant, backend: row.backend ?? (presentation?.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined), state: row.state,
         source: { freshness: row.freshness === "current" ? "current" : "unverified",
           observed_at: row.observedAt / 1000 } }
     })
@@ -2052,7 +2052,7 @@ export class RelayReader {
           cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
           assistant: signedRow ? data?.assistant ?? presentation.assistant : presentation.projection?.assistant ?? presentation.assistant,
           backend: (signedRow ? data?.backend : presentation.projection?.backend) ??
-            (presentation.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined),
+            (presentation.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined),
           state: signedRow ? data?.state : presentation.status?.state ?? "unknown",
           source: signedRow ? data?.source : { freshness: presentation.projection?.freshness === "current" ? "current" : "unverified",
             observed_at: (presentation.projection?.observedAt ?? this.now()) / 1000 } })
@@ -2083,7 +2083,7 @@ export class RelayReader {
           parent_session_id: typeof data.parent_session_id === "string" ? data.parent_session_id : undefined,
           label: presentation.title, cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
           assistant: data.assistant ?? presentation.assistant, backend: data.backend ??
-            (presentation.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined), state: data.state, source: data.source })
+            (presentation.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined), state: data.state, source: data.source })
       }
     }
     this.askForOpenedRow(client, machineRows)

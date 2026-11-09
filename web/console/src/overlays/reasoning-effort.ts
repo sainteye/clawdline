@@ -6,11 +6,11 @@ export function reasoningEffortHTML(
   esc: (text: string) => string,
   offered?: readonly string[],
 ): string {
-  const levels = assistant === "antigravity" ? [...(offered || [])] : assistant === "codex"
+  const levels = (assistant === "antigravity" || assistant === "grok") ? [...(offered || [])] : assistant === "codex"
     ? ["low", "medium", "high", "xhigh", "max", "ultra"]
     : ["low", "medium", "high", "xhigh", "max"]
   // Preserve readings from older Codex models without adding irrelevant ticks to every model.
-  if (assistant !== "antigravity" && (effort === "none" || effort === "minimal")) levels.unshift("none", "minimal")
+  if (assistant !== "antigravity" && assistant !== "grok" && (effort === "none" || effort === "minimal")) levels.unshift("none", "minimal")
   const keys = { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Xhigh", max: "Max", ultra: "Ultra" } as const
   const index = levels.indexOf(effort || "")
   if (index < 0) {
@@ -24,5 +24,5 @@ export function reasoningEffortHTML(
     '<div class="effort-scale" role="meter" aria-label="' + esc(word("infoReasoningEffort")) +
     '" aria-valuemin="1" aria-valuemax="' + levels.length + '" aria-valuenow="' + (index + 1) +
     '" aria-valuetext="' + esc(selected) + '" title="' + esc(word("infoEffortOrdinal")) + '">' + ticks + '</div>' +
-    (assistant === "antigravity" ? "" : '<p class="note effort-source">' + esc(word("infoEffortLastTurn")) + '</p>')
+    ((assistant === "antigravity" || assistant === "grok") ? "" : '<p class="note effort-source">' + esc(word("infoEffortLastTurn")) + '</p>')
 }

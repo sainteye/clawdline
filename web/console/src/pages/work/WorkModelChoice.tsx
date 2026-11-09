@@ -18,7 +18,7 @@ export function WorkModelChoice({ id, assistant, choice, disabled, onPick }: {
   const [reading, setReading] = useState<{ snapshot?: DefaultModelsSnapshot; failed?: boolean }>({})
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    if (!open) return
+    if (!open || assistant === "grok") return
     let active = true
     setReading({})
     void readDefaultModels().then(
@@ -26,9 +26,9 @@ export function WorkModelChoice({ id, assistant, choice, disabled, onPick }: {
       () => { if (active) setReading({ failed: true }) },
     )
     return () => { active = false }
-  }, [open, attempt])
+  }, [open, attempt, assistant])
   const label = catalogWord("work", "launchModelDefault")
-  const options = defaultModelOptions(reading.snapshot ?? null, assistant, choice?.value ?? "", label)
+  const options = assistant === "grok" ? [{ value: "", label }] : defaultModelOptions(reading.snapshot ?? null, assistant, choice?.value ?? "", label)
   return <div className="work-launch-option">
     <button ref={trigger} type="button" className="work-launch-toggle" disabled={disabled}
       aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
@@ -45,7 +45,7 @@ export function WorkModelChoice({ id, assistant, choice, disabled, onPick }: {
           {option.label}
         </button>)}
       </div>
-      {reading.failed ? <p className="work-note" role="alert">{catalogWord("work", "launchModelsFailed")} <button type="button" className="chip"
+      {assistant === "grok" ? <p className="work-note">{catalogWord("work", "launchModelHint")}</p> : reading.failed ? <p className="work-note" role="alert">{catalogWord("work", "launchModelsFailed")} <button type="button" className="chip"
         disabled={disabled} onClick={() => setAttempt(attempt + 1)}>{nextWord("defaultModelsRetry")}</button></p>
         : !reading.snapshot ? <p className="work-note" role="status">{L.strings.webLoading}</p>
         : <p className="work-note">{catalogWord("work", "launchModelHint")}</p>}

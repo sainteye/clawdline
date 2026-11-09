@@ -155,7 +155,7 @@ function directList(client: StatusClient, machineID: string, reply: unknown, now
           status.screen_reading === "unavailable" && menu?.source === "transcript")
       return { destination: { machineID, sessionID: String(row!.id),
         executionGeneration: String(row!.execution_generation) }, state: String(status.state),
-      assistant: row!.assistant === "claude" || row!.assistant === "codex" || row!.assistant === "antigravity" ? row!.assistant : before?.assistant,
+      assistant: row!.assistant === "claude" || row!.assistant === "codex" || row!.assistant === "antigravity" || row!.assistant === "grok" ? row!.assistant : before?.assistant,
       backend: row!.backend === "tmux" || row!.backend === "iterm" || row!.backend === "ps" || row!.backend === "owned" || row!.backend === "claude_remote" ? row!.backend : before?.backend,
       parentSessionID: parentSessionID && parentSessionID !== row!.id ? parentSessionID : before?.parentSessionID,
       machineScope: status.machine_scope === true || before?.machineScope === true,
@@ -425,7 +425,7 @@ export function statusSource(current: () => StatusClient | null,
           const statusState = status?.state
           result.push({ destination, projection: currentRows.get(key), title: session.title.trim(),
             observedAt: trustworthyListTime ? listObservedAt : undefined,
-            assistant: session.assistant === "claude" || session.assistant === "codex" || session.assistant === "antigravity" ? session.assistant : undefined,
+            assistant: session.assistant === "claude" || session.assistant === "codex" || session.assistant === "antigravity" || session.assistant === "grok" ? session.assistant : undefined,
             cwd: typeof session.cwd === "string" ? session.cwd : undefined,
             projectKey: typeof session.project_key === "string" ? session.project_key : undefined,
             status: status && typeof status.work_state === "string" &&

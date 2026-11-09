@@ -463,13 +463,13 @@ export default function Bar() {
       return
     }
     if (antigravitySlashDraft(target.assistant, body, assistantProtocolOwned(target))) {
-      say(catalogWord("antigravity", "slashDraft"), true)
+      say(catalogWord(target.assistant === "grok" ? "grok" : "antigravity", "slashDraft"), true)
       return
     }
     if ((target.assistant === "antigravity" && !assistantStateCurrent(target)) || !assistantComposeAdmits(target.assistant, factsRef.current.assistants.find(facts => facts.id === target.assistant), target.state, !!target.menu, assistantProtocolOwned(target))) {
       const reason = factsRef.current.kind !== "ready" ? factsRef.current.kind
         : assistantUnavailable(factsRef.current.assistants.find(facts => facts.id === target.assistant), "send")
-      say(reason ? catalogWord("antigravity", reason).replace("{assistant}", assistantLabel(target.assistant)) : catalogWord("antigravity", "sendUnavailable"), true)
+      say(reason ? catalogWord("antigravity", reason).replace("{assistant}", assistantLabel(target.assistant)) : catalogWord(target.assistant === "grok" ? "grok" : "antigravity", "sendUnavailable"), true)
       return
     }
     remember(body)
@@ -691,7 +691,7 @@ export default function Bar() {
   const project = L.projectLabel(current?.cwd)
   const hints = keysShown ? HINTS : HINTS_CLOSED
   const placeholder = current?.assistant === "antigravity"
-    ? catalogWord("antigravity", "placeholder") : placeholderFor(current?.assistant)
+    ? catalogWord("antigravity", "placeholder") : current?.assistant === "grok" ? catalogWord("grok", "placeholder") : placeholderFor(current?.assistant)
 
   return (
     <div className="bar-card" ref={cardRef}>

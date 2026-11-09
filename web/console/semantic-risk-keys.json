@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10864,
+  "englishKeys": 10868,
   "counts": {
-    "negation": 3019,
+    "negation": 3021,
     "state": 1787,
     "permission": 638,
     "deletion": 243,
     "uncertainty": 411
   },
-  "unionCount": 4780,
+  "unionCount": 4782,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -770,6 +770,8 @@
       "documents.videoError",
       "documents.videoNotFound",
       "documents.videoReadFailed",
+      "grok.slashDraft",
+      "grok.turnIncomplete",
       "health.at_failed",
       "health.at_incomplete",
       "health.at_none",
@@ -7325,6 +7327,8 @@
     "documents.videoNotFound",
     "documents.videoPosterUnavailable",
     "documents.videoReadFailed",
+    "grok.slashDraft",
+    "grok.turnIncomplete",
     "health.at_failed",
     "health.at_incomplete",
     "health.at_loading",
