@@ -282,3 +282,15 @@ and both language explanations distinguish guidance from measured savings.
 
 The [image-review setting and local sample](image-review.md) document its scope,
 compatibility checks and measured limitations.
+
+
+Offline Clawdfather bindings now stop occupying the active registration while the
+broker retains their delivery ledger. Live Project Roots can request cooperative
+pauses directly; notices identify the actual requester, and wake/retry remain
+limited to that requester or the current online Clawdfather. The English and
+Taiwan Traditional Chinese coordination guide sections were reviewed together.
+The machine-workspace and owned-ACP cards still describe the same instruction
+loading boundaries: executable recovery uses the installed CLI's public ACP
+entry point without changing the configured profile or adding model input.
+Missing profile data is a setup failure. Source receipts follow these changes;
+this review does not establish an authenticated Gemini conversation.

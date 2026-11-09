@@ -2,6 +2,8 @@ package http
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -68,8 +70,8 @@ func (s *Server) sessionPausesRoute(w http.ResponseWriter, r *http.Request) {
 		if !decodeClosed(w, r, &body, "request_id", "requester_session_id", "target_session_id", "reason", "wake_condition") {
 			return
 		}
-		if !s.isBoundCoordinator(ctx, body.Requester) {
-			writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusForbidden, Code: "not_coordinator", Message: "Only the registered online Clawdfather may request a Session pause."})
+		if _, err := s.broker.LiveRootSession(ctx, body.Requester); err != nil {
+			writeBrokerError(w, err)
 			return
 		}
 		row, err := s.broker.RequestPause(ctx, orchestrator.PauseRequest{ID: body.RequestID, Requester: body.Requester,
@@ -104,8 +106,21 @@ func (s *Server) sessionPausesRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		row, err = s.broker.PauseReceipt(ctx, id, body.Session, action)
 	case "wake", "retry":
-		if !s.isBoundCoordinator(ctx, body.Session) {
-			writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusForbidden, Code: "not_coordinator", Message: "Only the registered online Clawdfather may wake or retry this request."})
+		if _, err := s.broker.LiveRootSession(ctx, body.Session); err != nil {
+			writeBrokerError(w, err)
+			return
+		}
+		pause, readErr := s.store.Pause(ctx, id)
+		if readErr != nil {
+			if errors.Is(readErr, sql.ErrNoRows) {
+				writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusNotFound, Code: "pause_not_found", Message: "No current pause has that id."})
+			} else {
+				writeBrokerError(w, readErr)
+			}
+			return
+		}
+		if pause.Requester != body.Session && !s.isBoundCoordinator(ctx, body.Session) {
+			writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusForbidden, Code: "not_pause_requester", Message: "Only the requesting Session or the registered online Clawdfather may wake or retry this request."})
 			return
 		}
 		if action == "wake" {

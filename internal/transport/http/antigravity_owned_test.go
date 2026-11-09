@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app"
@@ -672,5 +673,82 @@ func TestNativeGeminiAccountQuotaReachesFooterWithoutAUserConversation(t *testin
 	usage, err := os.ReadFile(filepath.Join(root, "usage"))
 	if err != nil || string(usage) != "usage\n" {
 		t.Fatalf("metadata read was replayed: %q %v", usage, err)
+	}
+}
+
+func TestOwnedSessionReportsMissingProfileInsteadOfGenericDisabled(t *testing.T) {
+	s := capacityServer(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := json.Marshal(map[string]any{"executable": exe, "accountDir": filepath.Join(t.TempDir(), "removed-account")})
+	if err := os.WriteFile(filepath.Join(s.cfg.Dir, "antigravity-acp-pilot.json"), cfg, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stop, err := s.StartAntigravitySessions(context.Background())
+	if stop != nil {
+		stop()
+	}
+	if err == nil {
+		t.Fatal("a deleted account directory was advertised as usable")
+	}
+	for _, row := range s.availableAssistants() {
+		if row.ID == "antigravity" && row.IntegrationState != contract.StartIntegrationStateMissing {
+			t.Fatalf("missing setup became %+v", row)
+		}
+	}
+}
+
+func TestOwnedSessionReplacesOnlyAMissingLegacyExecutable(t *testing.T) {
+	s := capacityServer(t)
+	dir := t.TempDir()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.antigravityInstallation = func(context.Context) antigravity.Installation {
+		return antigravity.Installation{InstalledKnown: true, Installed: true, Compatible: true, Path: exe, Version: "1.5.0"}
+	}
+	cfg, _ := json.Marshal(map[string]any{"executable": filepath.Join(dir, "deleted-evaluation", "agy_acp_server.par"), "accountDir": dir})
+	if err := os.WriteFile(filepath.Join(s.cfg.Dir, "antigravity-acp-pilot.json"), cfg, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stop, err := s.StartAntigravitySessions(context.Background())
+	if err != nil {
+		t.Fatalf("installed CLI could not replace removed evaluation binary: %v", err)
+	}
+	defer stop()
+	if s.antigravitySessions.Load() == nil {
+		t.Fatal("runtime was not restored")
+	}
+}
+
+func TestLegacyExecutableRecoveryPreservesProfileAndCustomLaunches(t *testing.T) {
+	s := capacityServer(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.antigravityInstallation = func(context.Context) antigravity.Installation {
+		return antigravity.Installation{InstalledKnown: true, Installed: true, Compatible: true, Path: exe}
+	}
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		recover bool
+	}{
+		{"agy_acp_server.par", nil, true}, {"custom-server", nil, false}, {"agy_acp_server.par", []string{"custom"}, false},
+	} {
+		path := filepath.Join(t.TempDir(), tc.name)
+		args := append([]string(nil), tc.args...)
+		err := s.resolveOwnedAntigravityExecutable(context.Background(), &path, &args)
+		if tc.recover {
+			if err != nil || path != exe || !reflect.DeepEqual(args, []string{"acp", "--app-data-dir", "antigravity-acp"}) {
+				t.Fatalf("recovery = %q %v %v", path, args, err)
+			}
+		} else if err == nil {
+			t.Fatalf("custom launch %s was replaced", tc.name)
+		}
 	}
 }

@@ -147,9 +147,6 @@ var antigravityResolver = sync.OnceValue(func() *antigravity.Resolver {
 
 func antigravityStartAssistant(info antigravity.Installation) contract.StartAssistant {
 	state := contract.StartIntegrationStateMissing
-	if info.Compatible {
-		state = contract.StartIntegrationStateDisabled
-	}
 	if info.Installed && info.Reason == "provider_cli_incompatible" {
 		state = contract.StartIntegrationStateIncompatible
 	}

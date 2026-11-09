@@ -92,7 +92,7 @@ func TestAntigravityInstallationNeverClaimsAuthenticationOrInteractiveReadiness(
 			if row.Installed == nil || *row.Installed != installed {
 				t.Fatalf("installed lost: %+v", row)
 			}
-			if compatible && row.IntegrationState != contract.StartIntegrationStateDisabled {
+			if compatible && row.IntegrationState != contract.StartIntegrationStateMissing {
 				t.Fatalf("compatible CLI was reported missing: %+v", row)
 			}
 			if row.Capabilities == nil || *row.Capabilities != (contract.StartCapabilities{}) {

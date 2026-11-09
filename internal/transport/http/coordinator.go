@@ -71,8 +71,8 @@ func (s *Server) coordinatorRoute(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, contract.CoordinatorSnapshot{
-		Registered: st.Record != nil,
-		Record:     wireCoordinator(st.Record),
+		Registered: st.Record != nil && st.Liveness != coordinator.Offline,
+		Record:     wireCoordinator(activeCoordinatorRecord(st)),
 		Liveness:   liveness,
 		Candidates: sortedStrings(candidates),
 	})
@@ -336,13 +336,22 @@ func writeCoordinatorError(w http.ResponseWriter, err error) {
 	writeBrokerError(w, err)
 }
 
-// coordinatorMetadata is Coordinator.swift's coordinatorMetadata.
+// The ledger survives a closed Session for delivery aliases and CAS. Only an
+// online or unreadable binding occupies the role; proven offline is unregistered.
+func activeCoordinatorRecord(st app.State) *coordinator.Record {
+	if st.Liveness == coordinator.Offline {
+		return nil
+	}
+	return st.Record
+}
+
+// coordinatorMetadata projects the active registration, separately from its ledger.
 func coordinatorMetadata(st app.State) contract.CoordinatorMetadata {
 	out := contract.CoordinatorMetadata{
 		Scope: coordinator.Scope, Label: coordinator.Label,
 		Status: contract.CoordinatorStatusUnregistered, Lifecycle: contract.CoordinatorLifecycle(app.Lifecycle(st)),
 	}
-	rec := st.Record
+	rec := activeCoordinatorRecord(st)
 	if rec == nil {
 		return out
 	}
@@ -380,8 +389,10 @@ func (s *Server) coordinatorInspection(ctx context.Context, w http.ResponseWrite
 	}
 	registration := "available"
 	switch {
-	case st.Record != nil:
+	case st.Record != nil && st.Liveness != coordinator.Offline:
 		registration = "configured"
+	case st.Record != nil && st.Liveness == coordinator.Offline:
+		registration = "available"
 	case st.Status != "absent":
 		registration = "blocked"
 	}

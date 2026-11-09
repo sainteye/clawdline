@@ -266,3 +266,23 @@ func TestAnOldRowIsNeitherReadAsARoleNorOverwritten(t *testing.T) {
 		t.Fatalf("registering over an old row: %v", err)
 	}
 }
+
+func TestAnOfflineRoleCanRegisterAgainWithoutLosingItsHistory(t *testing.T) {
+	c, m, now := newRole(t)
+	ctx := context.Background()
+	m.rows = []session.Session{row("%1", convA, 101)}
+	old, _, err := c.Register(ctx, convA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(time.Minute)
+	m.at = *now
+	m.rows = []session.Session{row("%2", convB, 102)}
+	next, registered, err := c.Register(ctx, convB)
+	if err != nil || !registered {
+		t.Fatalf("offline registration remained occupied: %v", err)
+	}
+	if next.Record.ID != old.Record.ID || next.Record.Generation != 2 || len(next.Record.Aliases) != 1 || next.Record.Aliases[0].ConversationID != convA {
+		t.Fatalf("registration lost the prior binding: %+v", next.Record)
+	}
+}

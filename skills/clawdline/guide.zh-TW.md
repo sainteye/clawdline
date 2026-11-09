@@ -1898,7 +1898,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 ## 11. 協調
 
 **整台機器的 coordinator（"Clawdfather"）。** 它在 daemon 管理的獨立機器工作區處理 Session 報告與受控機器作業，絕不修改任何 Project 的程式碼，包含 Clawdline。使用者明確要求工程工作時，先用 `clawdline item add --project … --assign-new` 建立目標 Project 的看板項目，再交給該 Project 的 Session；沒有建立項目的明確要求時，先送提案給使用者決定。接手的看板負責人負責拆解、派工、驗證與落地。工作區是工作流程邊界，不是檔案系統沙盒。新綁定必須來自該工作區，既有綁定仍可讀取。請從控制台的 Clawdfather 入口開啟 Session，再以對話 ID 登記角色。產品邊界見 `docs/clawdfather-role.md`。
-在新 Session 裡執行 `clawdline coordinator bind`，用自己的對話 ID 登記；只有舊綁定已被證實離線時才會換綁，在線或讀不到狀態都會拒絕。
+在新 Session 裡執行 `clawdline coordinator bind`，用自己的對話 ID 登記；只有舊綁定已被證實離線時才會換綁，在線或讀不到狀態都會拒絕。綁定來源的完整讀取證實 Session 離線時，會自動解除有效登記；身分帳本仍保留供待送通知的別名使用，後續登記以世代比對重新綁定。
 `GET /v1/orchestrator/coordinator` 查看這個角色；
 `/coordinator/bearings` 是整台機器的概況（進行中的 task、pending 的 landing、還開著的 wait、dead letter、
 被持有的 lease，以及哪些是 `unknown`）。帶 `{"session_id": "<conversation id>"}` 呼叫
@@ -1927,7 +1927,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 Root 的 `heavy` 預設在需要等待時啟動 callback，並以 **76** 結束，印出 callback ID 與已知的排隊位置。這時結束這個 turn，等待通知。一般 `tools/check.sh` 不排隊；child、缺少 conversation ID、callback 被拒絕或 daemon 無法連線時，仍在原處等待。
 
-**Session 暫停與喚醒。** 排列衝突工作前，先讀 `docs/session-resource-coordination.md`。`clawdline coordination status` 顯示持久化的暫停回執。`clawdline coordination pause --reason "…" --wake "lease:heavy_compile" <目標對話 ID>…` 接受指令並嘗試送達。收件 Session 完成重要命令後執行 `clawdline coordination observed <指令 ID>`，到安全停點再執行 `clawdline coordination safe <指令 ID>`，然後結束模型回合。只有最後一筆收件者回執代表已暫停。條件成立後執行 `wake <指令 ID>`；收件者執行 `resumed <指令 ID>`，且仍須先取得租約或確認等待已釋放，才能工作。`retry <指令 ID>` 可重試失敗或結果不明的送達。新的已註冊 Clawdfather 可以喚醒離線前任留下的 Session。候位期間不要讓模型回合定期輪詢。
+**Session 暫停與喚醒。** 任何存活的 Root Session 都能直接提出暫停請求，不必登記為 Clawdfather 或先與它聯絡。喚醒與重試限原本仍存活的請求者，或目前在線的 Clawdfather。排列衝突工作前，先讀 `docs/session-resource-coordination.md`。`clawdline coordination status` 顯示持久化的暫停回執。`clawdline coordination pause --reason "…" --wake "lease:heavy_compile" <目標對話 ID>…` 接受指令並嘗試送達。收件 Session 完成重要命令後執行 `clawdline coordination observed <指令 ID>`，到安全停點再執行 `clawdline coordination safe <指令 ID>`，然後結束模型回合。只有最後一筆收件者回執代表已暫停。條件成立後執行 `wake <指令 ID>`；收件者執行 `resumed <指令 ID>`，且仍須先取得租約或確認等待已釋放，才能工作。`retry <指令 ID>` 可重試失敗或結果不明的送達。新的已註冊 Clawdfather 可以喚醒離線前任留下的 Session。候位期間不要讓模型回合定期輪詢。
 
 主線落地或 daemon 重新啟動須使用 `clawdline coordination run --resource landing --checkout /絕對路徑 -- <指令>` 或 `--resource daemon_restart -- <指令>`。沒有授予租約時不會執行，執行期間續租，結束後釋放。Root 候位操作預設交給 callback，以 **76** 結束，完成後通知 Session。callback 可維持候位，模型回合不必留著。編譯用 `heavy`。重新啟動仍須遵守既有 maintenance 流程，並在之後確認 `GET /`。
 

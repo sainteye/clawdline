@@ -356,7 +356,7 @@ or offering an unverified terminal model picker.
 The preview is disabled unless the machine's state directory contains
 `antigravity-acp-pilot.json`, with absolute `executable` and `accountDir` paths and
 optional `args`. These paths select an already authenticated personal profile;
-configuration does not copy credentials or launch a process. Daemon shutdown
+configuration does not copy credentials or launch a process. Keep both paths outside disposable task or evaluation directories. For the installed standalone CLI, use its absolute executable path and `args: ["acp", "--app-data-dir", "antigravity-acp"]`, retaining the same persistent personal `accountDir`. If an old pilot's default `agy_acp_server.par` has disappeared, the daemon resolves the installed compatible CLI and this public subcommand instead; custom commands and arguments are never substituted. A missing account directory is a setup failure, not permission to switch profiles. It must be restored or explicitly configured and signed in again before Sessions can start. The console reports missing setup separately from an unavailable operation. Daemon shutdown
 cancels and joins the owned processes and prompts. Entry visibility follows the
 machine's advertised assistant capabilities for all users, with no administrator-only gate.
 

@@ -389,7 +389,7 @@
   "antigravity.error": "Could not check {assistant} on this machine. Reconnect and try again.",
   "antigravity.incompatible": "The installed {assistant} CLI version is not supported.",
   "antigravity.inspectBeforeSending": "Review the conversation and tool results before sending another message. This message was not automatically sent again.",
-  "antigravity.integrationMissing": "{assistant} integration is not set up on this machine.",
+  "antigravity.integrationMissing": "{assistant} integration is not set up or its configured files are missing. Set it up again on this machine.",
   "antigravity.loading": "Checking {assistant} availability on this machine…",
   "antigravity.missing": "{assistant} CLI is not installed. Install it on this machine before starting a Session.",
   "antigravity.modelSelected": "Next turn: {model}",

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
@@ -199,8 +200,13 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	if json.Unmarshal(raw, &cfg) != nil {
 		return nil, ownedAntigravityUnavailable()
 	}
-	if st, err := os.Stat(cfg.Executable); err != nil || st.IsDir() || st.Mode()&0111 == 0 {
+	// Keep the exact configured profile: replacing a missing account with a
+	// different home would hide its conversations and change the login identity.
+	if st, err := os.Stat(cfg.AccountDir); err != nil || !st.IsDir() {
 		return nil, ownedAntigravityUnavailable()
+	}
+	if err := s.resolveOwnedAntigravityExecutable(ctx, &cfg.Executable, &cfg.Args); err != nil {
+		return nil, err
 	}
 	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", RawTrace: cfg.RawTrace, TurnComplete: s.automaticGeminiTitle, PromptAccepted: s.automaticGeminiTitle})
 	if err != nil {
@@ -222,6 +228,30 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 			s.antigravitySessions.CompareAndSwap(h, nil)
 		})
 	}, nil
+}
+
+// Older pilots pinned an extracted server inside a disposable evaluation tree.
+// Recover only that known default, using the installed CLI's public ACP entry
+// point. Custom executables, arguments and profiles are never silently replaced.
+func (s *Server) resolveOwnedAntigravityExecutable(ctx context.Context, executable *string, args *[]string) error {
+	st, err := os.Stat(*executable)
+	if errors.Is(err, os.ErrNotExist) && filepath.IsAbs(*executable) && filepath.Base(*executable) == "agy_acp_server.par" && len(*args) == 0 {
+		installation := s.antigravityInstallation
+		if installation == nil {
+			installation = func(ctx context.Context) antigravity.Installation { return antigravityResolver().Snapshot(ctx) }
+		}
+		info := installation(ctx)
+		if !info.InstalledKnown || !info.Installed || !info.Compatible || !filepath.IsAbs(info.Path) {
+			return ownedAntigravityUnavailable()
+		}
+		*executable = info.Path
+		*args = []string{"acp", "--app-data-dir", "antigravity-acp"}
+		st, err = os.Stat(*executable)
+	}
+	if err != nil || !st.Mode().IsRegular() || st.Mode()&0111 == 0 {
+		return ownedAntigravityUnavailable()
+	}
+	return nil
 }
 
 func (s *Server) availableAssistants() []contract.StartAssistant {

@@ -169,7 +169,8 @@ func (c *Coordinator) resolve(seen Seen, conversation string) (session.Session, 
 }
 
 // Register binds the role to one live session, or recognises the same
-// session registering again (created false). It is never a takeover.
+// session registering again (created false). A proven offline binding is history,
+// not an occupied role; registration reconnects it with the same CAS as rebind.
 func (c *Coordinator) Register(ctx context.Context, conversation string) (State, bool, error) {
 	st, err := c.State(ctx)
 	if err != nil {
@@ -179,6 +180,9 @@ func (c *Coordinator) Register(ctx context.Context, conversation string) (State,
 		return st, false, RoleRefusal{Status: http.StatusConflict, Code: "coordinator_store_invalid",
 			Message: "The stored role is not a record this daemon can vouch for (" + string(st.Status) +
 				"); it is left as it is for a person to look at, and nothing was registered.", RawMessage: true}
+	}
+	if st.Record != nil && st.Liveness == coordinator.Offline {
+		return c.Rebind(ctx, st.Record.ID, st.Record.Generation, conversation)
 	}
 	live, err := c.resolve(st.Seen, conversation)
 	if err != nil && st.Record == nil {

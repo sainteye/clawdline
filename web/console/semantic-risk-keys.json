@@ -6,7 +6,7 @@
     "state": 1787,
     "permission": 638,
     "deletion": 243,
-    "uncertainty": 410
+    "uncertainty": 411
   },
   "unionCount": 4780,
   "categories": {
@@ -5716,6 +5716,7 @@
       "admin.visitsUnknown",
       "antigravity.bootstrap",
       "antigravity.disabled",
+      "antigravity.integrationMissing",
       "antigravity.sendUnavailable",
       "antigravity.unknownAuth",
       "antigravityConsent.helperUnavailable",

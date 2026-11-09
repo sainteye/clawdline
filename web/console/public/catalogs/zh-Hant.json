@@ -389,7 +389,7 @@
   "antigravity.error": "無法確認這台機器的 {assistant} 狀態。請重新連線後再試。",
   "antigravity.incompatible": "目前安裝的 {assistant} CLI 版本尚不支援。",
   "antigravity.inspectBeforeSending": "請先查看對話與工具結果，再決定是否傳送下一則訊息。系統未自動重送這則訊息。",
-  "antigravity.integrationMissing": "這台機器尚未設定 {assistant} 整合。",
+  "antigravity.integrationMissing": "{assistant} 整合尚未設定，或設定指向的檔案已遺失。請在這台機器重新設定。",
   "antigravity.loading": "正在確認這台機器的 {assistant} 是否可用…",
   "antigravity.missing": "尚未安裝 {assistant} CLI。請先在這台機器安裝，再開啟 Session。",
   "antigravity.modelSelected": "下一回合使用 {model}",

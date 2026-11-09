@@ -142,3 +142,15 @@ func TestMachineWorkspaceRejectsPublicDirectory(t *testing.T) {
 		t.Fatal("a public machine workspace was accepted")
 	}
 }
+
+func TestOfflineClawdfatherIsNoLongerConfigured(t *testing.T) {
+	st := app.State{Record: &coordinator.Record{ID: "old-role"}, Liveness: coordinator.Offline}
+	meta := coordinatorMetadata(st)
+	if meta.Configured || meta.Session != nil || string(meta.Status) != "unregistered" {
+		t.Fatalf("closed Session still occupies the role: %+v", meta)
+	}
+	st.Liveness = coordinator.Unknown
+	if !coordinatorMetadata(st).Configured {
+		t.Fatal("unknown was treated as offline")
+	}
+}

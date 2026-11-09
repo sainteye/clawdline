@@ -24,7 +24,7 @@ type pauseEffect struct {
 }
 
 func pauseWire(p store.PauseRow, kind string) string {
-	text := "Pause request " + p.ID + " from Clawdfather: " + p.Reason + ". Finish any important command, then run `clawdline coordination observed " + p.ID + "` and `clawdline coordination safe " + p.ID + "`; end this model turn. Wake condition: " + p.WakeCondition + ". Do not run resource work until the lease is granted or the named wait is released."
+	text := "Pause request " + p.ID + " from Session " + p.Requester + ": " + p.Reason + ". Finish any important command, then run `clawdline coordination observed " + p.ID + "` and `clawdline coordination safe " + p.ID + "`; end this model turn. Wake condition: " + p.WakeCondition + ". Do not run resource work until the lease is granted or the named wait is released."
 	if kind == "wake" {
 		text = "Resume request " + p.ID + ": the wake condition is ready. Run `clawdline coordination resumed " + p.ID + "`, then acquire the required lease or confirm the wait is released before work."
 	}
@@ -135,8 +135,8 @@ func (b *Broker) WakePause(ctx context.Context, id, requester string) (store.Pau
 		if current == nil || current.ID != id {
 			return nil, nil, refuse(http.StatusConflict, "pause_changed", "The pause changed before the wake request.")
 		}
-		// HTTP has verified the currently bound Clawdfather. A new binding
-		// may wake a request left by its offline predecessor.
+		// HTTP verifies the live requester or current Clawdfather. A new
+		// binding may wake a request left by its offline predecessor.
 		if current.SafeAt.IsZero() {
 			return nil, nil, refuse(http.StatusConflict, "not_at_safe_point", "The Session has not acknowledged a safe point.")
 		}

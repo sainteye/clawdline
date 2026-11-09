@@ -328,6 +328,7 @@
   "http.3f98fb70cca83292": "This task has no isolated delivery head and base to distinguish from the carrier's work.",
   "http.3fbe47c79bcf3e83": "A peer pair or grant is changed with POST.",
   "http.3fd254231acc0e0b": "This item is already terminal.",
+  "http.4009762903f8bd7f": "Only the requesting Session or the registered online Clawdfather may wake or retry this request.",
   "http.4072f0bb20b499dd": "task_id cannot name a worktree path.",
   "http.40b4ec8eb866b455": "Verification detail is exported with GET.",
   "http.40be9714d7c70405": "No such lease route.",
