@@ -99,6 +99,7 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 | [plan.md](plan.md) | Internal migration record | Chinese | The rewrite's original plan. §1 (the ten rules) and §3 (package layout, the web split) still describe the design; the rest records coexistence with the Swift app and the milestones |
 | [cutover.md](cutover.md) | Internal migration record | Chinese | What retiring the Swift app costs, item by item, and in what order |
 | [replica.md](replica.md) | Internal migration record | Chinese | How the console was copied screen for screen from the original, and the review rounds |
+| [voice-recording-recovery.md](voice-recording-recovery.md) | Browser recording recovery and verification | English | Immediate microphone release, retained audio and manual retry |
 | [wave8.md](wave8.md) | Internal migration record | Chinese | The plan for one wave of parallel work: pictures, dictation and the session menu |
 | [broker-design.md](broker-design.md) | Internal migration record | Chinese | The analysis of which parts of the old broker to port and which to redesign |
 | [broker-design-challenge.md](broker-design-challenge.md) | Internal migration record | Chinese | A deliberate challenge to that analysis: which ports were only history |

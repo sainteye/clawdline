@@ -50,14 +50,19 @@ export function CloudSessionSheets({ machineID, machines, source, pending, onCon
   useEffect(() => {
     let closed = false
     let active = 0
+    let starting = false
     let stopOpen: () => void = () => undefined
-    const open = (sessionID: string, accept: () => boolean = () => true, machine?: string) => {
+    const open = (sessionID: string, accept: () => boolean = () => true, machine?: string, stopped?: () => void) => {
+      starting = false
       stopOpen()
       const mine = ++active
       stopOpen = observeStartedSession(source, sessionID, () => machine ? [machine] : looking.current,
         () => !closed && mine === active && accept(),
-        (destination) => Start.afterProgressHidden(() => opened.current(destination)))
+        (destination) => Start.afterProgressHidden(() => opened.current(destination)), stopped)
     }
+    const stopWait = Start.subscribe(() => {
+      if (starting && !Start.progress()) stopOpen()
+    })
     Start.host({ open, openId: () => null, refresh: () => undefined,
       openStarted: (answer, place, finish) => {
         if (!answer.id) return false
@@ -66,12 +71,16 @@ export function CloudSessionSheets({ machineID, machines, source, pending, onCon
         open(answer.id, () => {
           const navigate = finish()
           return location.hash === from && navigate
-        }, place?.machine)
+        }, place?.machine || machineID, () => Start.dismiss())
+        starting = true
         return true
       },
     })
     Command.host({ open, refresh: () => undefined })
-    return () => { closed = true; active++; stopOpen() }
+    return () => {
+      closed = true; active++; stopOpen(); stopWait()
+      if (starting) Start.dismiss()
+    }
   }, [machineID, source])
 
   useEffect(() => {

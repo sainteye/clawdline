@@ -1,8 +1,63 @@
 package capacity
 
+const (
+	MaximumClosedSessionReceipts       = 512
+	MaximumStartedSessionRetrySeconds  = 5
+	MaximumStartedSessionFollowSeconds = 60
+	MaximumStartedSessionReads         = 12
+)
+
 // consoleBounds is every registered row named console.*.
 func consoleBounds() []Entry {
 	return append(append(append(append(append(append(publicAnalyticsUIBounds(), connectionHealthUIBounds()...), servicePerformanceUIBounds()...), supportUIBounds()...), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
+		{
+			Name: ConsoleClosedSessionReceipts, Class: Cache, Unit: Rows,
+			Limit: MaximumClosedSessionReceipts, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumClosedSessionReceipts"},
+		},
+		{
+			Name: ConsoleStartedSessionRetry, Class: Cache, Unit: Seconds,
+			Limit: MaximumStartedSessionRetrySeconds, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumStartedSessionRetrySeconds"},
+		},
+		{
+			Name: ConsoleStartedSessionReads, Class: Buffer, Unit: Rows,
+			Limit: MaximumStartedSessionReads, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumStartedSessionReads"},
+		},
+		{
+			Name: ConsoleStartedSessionFollow, Class: Cache, Unit: Seconds,
+			Limit: MaximumStartedSessionFollowSeconds, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumStartedSessionFollowSeconds"},
+		},
+		{
+			Name: "console.voice_recording_bytes", Class: Buffer, Unit: Bytes,
+			Limit: MaximumVoiceRecordingBytes, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/domain/capacity.MaximumVoiceRecordingBytes"},
+		},
+		{
+			Name: "console.voice_stop_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumVoiceStopMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVoiceStopMilliseconds"},
+		},
+		{
+			Name: "console.voice_prepare_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumVoicePrepareMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVoicePrepareMilliseconds"},
+		},
+		{
+			Name: "console.voice_read_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumVoiceReadMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVoiceReadMilliseconds"},
+		},
 		{
 			Name: "console.video_preview_frames", Class: Buffer, Unit: Rows,
 			Limit: MaximumVideoPreviewFrames, AtLimit: Refuse,

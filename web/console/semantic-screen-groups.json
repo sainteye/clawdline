@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10891,
-  "riskKeys": 4791,
-  "nonRiskCount": 6100,
+  "englishContentKeys": 10926,
+  "riskKeys": 4813,
+  "nonRiskCount": 6113,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 428,
+      "count": 433,
       "sources": [
         null
       ],
@@ -547,6 +547,7 @@
         "capacityRow.cloud.terminal_viewer_connections.what",
         "capacityRow.cloud.viewer_events_batch_bytes.what",
         "capacityRow.console.assistant_facts_read_milliseconds.what",
+        "capacityRow.console.closed_session_receipts.what",
         "capacityRow.console.community_share_fetch_seconds.full",
         "capacityRow.console.community_share_response_bytes.full",
         "capacityRow.console.community_share_response_bytes.what",
@@ -599,6 +600,9 @@
         "capacityRow.console.service_performance_refresh_ms.what",
         "capacityRow.console.service_performance_routes.what",
         "capacityRow.console.service_performance_timeout_ms.what",
+        "capacityRow.console.started_session_follow_seconds.full",
+        "capacityRow.console.started_session_follow_seconds.what",
+        "capacityRow.console.started_session_reads.what",
         "capacityRow.console.status_marker_recovery_wait_seconds.what",
         "capacityRow.console.support_image_bytes.what",
         "capacityRow.console.support_image_count.what",
@@ -645,6 +649,7 @@
         "capacityRow.console.viewer_health_retry_after_seconds.what",
         "capacityRow.console.viewer_health_send_every_seconds.full",
         "capacityRow.console.viewer_health_send_every_seconds.what",
+        "capacityRow.console.voice_read_milliseconds.what",
         "capacityRow.coordinator.aliases.what",
         "capacityRow.deploy.health_seconds.full",
         "capacityRow.diagnostics.api_active.what",
@@ -3778,7 +3783,7 @@
     },
     {
       "name": "next / other",
-      "count": 669,
+      "count": 677,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4450,6 +4455,14 @@
         "next.usageUnsupported",
         "next.voiceInstallPromptSetUp",
         "next.voiceInstallPromptTitle",
+        "next.voiceMicStopped",
+        "next.voicePause",
+        "next.voicePaused",
+        "next.voicePreparing",
+        "next.voiceRetry",
+        "next.voiceStopping",
+        "next.voiceTryPartial",
+        "next.voiceWaitForAudio",
         "next.workCreateItem",
         "next.worktreeRemoveClose"
       ]

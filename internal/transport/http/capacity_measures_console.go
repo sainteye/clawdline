@@ -67,6 +67,18 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.support_title_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser support title input guard; Cloud independently validates titles"}
 		},
+		"console.voice_recording_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
+		"console.voice_stop_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
+		"console.voice_prepare_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
+		"console.voice_read_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
+		},
 		"console.video_preview_frames": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser representative video frame sampling; daemon cannot measure another device's decoder"}
 		},
@@ -217,6 +229,18 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.ConsoleExecutionRecoveryAttempts: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console opening recovery guard; daemon cannot measure another device's recovery attempts"}
+		},
+		capacity.ConsoleClosedSessionReceipts: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded per-browser terminal close receipts; daemon cannot measure another device's presentation cache"}
+		},
+		capacity.ConsoleStartedSessionRetry: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-confirmed-start browser retry cadence; daemon cannot measure another device's timers"}
+		},
+		capacity.ConsoleStartedSessionFollow: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-confirmed-start browser follow window; daemon cannot measure another device's timers"}
+		},
+		capacity.ConsoleStartedSessionReads: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-confirmed-start browser read budget; daemon cannot measure another device's attempts"}
 		},
 		// The console's transcript cadence lives in each open tab; the
 		// daemon serves the reads and cannot count a tab's timers.

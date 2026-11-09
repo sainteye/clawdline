@@ -1202,6 +1202,11 @@
     "Note": true
   },
   {
+    "Name": "console.closed_session_receipts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.community_share_fetch_seconds",
     "Known": true,
     "Note": true
@@ -1517,6 +1522,21 @@
     "Note": true
   },
   {
+    "Name": "console.started_session_follow_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.started_session_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.started_session_retry_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.status_gap_retry_seconds",
     "Known": true,
     "Note": true
@@ -1698,6 +1718,26 @@
   },
   {
     "Name": "console.viewer_health_send_every_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.voice_prepare_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.voice_read_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.voice_recording_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.voice_stop_milliseconds",
     "Known": true,
     "Note": true
   },

@@ -249,6 +249,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.assistant_facts_read_milliseconds` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `console.closed_session_receipts` | 512 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.community_share_fetch_seconds` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `console.community_share_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
@@ -312,6 +313,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.service_performance_routes` | 32 | `rows` | `refuse` | `diagnostics` | — |
 | `console.service_performance_timeout_ms` | 6000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.started_session_follow_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.started_session_reads` | 12 | `rows` | `refuse` | `diagnostics` | — |
+| `console.started_session_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
@@ -349,6 +353,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.viewer_health_request_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
 | `console.viewer_health_retry_after_seconds` | 3600 | `seconds` | `expire` | `diagnostics` | — |
 | `console.viewer_health_send_every_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.voice_prepare_milliseconds` | 15000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.voice_read_milliseconds` | 120000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.voice_recording_bytes` | 16777216 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.voice_stop_milliseconds` | 5000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `coordinator.aliases` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `coordinator.bind_attempts` | 6 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |

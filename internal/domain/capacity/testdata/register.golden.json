@@ -4875,6 +4875,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.closed_session_receipts",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumClosedSessionReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.community_share_fetch_seconds",
     "Class": "cache",
     "Unit": "seconds",
@@ -5957,6 +5976,63 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.started_session_follow_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 60,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumStartedSessionFollowSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.started_session_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 12,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumStartedSessionReads"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.started_session_retry_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumStartedSessionRetrySeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.status_gap_retry_seconds",
     "Class": "cache",
     "Unit": "seconds",
@@ -6600,6 +6676,86 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.voice_prepare_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoicePrepareMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.voice_read_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 120000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoiceReadMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.voice_recording_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoiceRecordingBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.voice_stop_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 5000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVoiceStopMilliseconds"
+    ]
   },
   {
     "Register": "daemon",

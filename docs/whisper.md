@@ -1,6 +1,8 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 <!-- clawdline-doc: kind=record audience=both -->
 
+> Current browser recording behavior: [recording recovery](voice-recording-recovery.md).
+
 # Dictating locally in more than one language
 
 **Claude Code has its own dictation.** `/voice`, hold space, and it is good — so the honest
