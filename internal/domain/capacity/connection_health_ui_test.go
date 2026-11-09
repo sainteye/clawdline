@@ -53,6 +53,8 @@ func TestConnectionHealthUIBoundsMatchThePage(t *testing.T) {
 		"requestMs":           {ConsoleHealthUIRequestSeconds, 1000},
 		"budgetMs":            {ConsoleHealthUIBudgetSeconds, 1000},
 		"parallel":            {ConsoleHealthUIParallelReads, 1},
+		"queuedReads":         {ConsoleHealthUIQueuedReads, 1},
+		"retryAfterMs":        {ConsoleHealthUIRetrySeconds, 1000},
 		"readsPerLoad":        {ConsoleHealthUIReadsPerLoad, 1},
 		"refreshMs":           {ConsoleHealthUIRefreshSeconds, 1000},
 		"bodyBytes":           {ConsoleHealthUIBodyBytes, 1},

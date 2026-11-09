@@ -1322,6 +1322,11 @@
     "Note": true
   },
   {
+    "Name": "console.health_ui_queued_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.health_ui_reads_per_load",
     "Known": true,
     "Note": true
@@ -1333,6 +1338,11 @@
   },
   {
     "Name": "console.health_ui_request_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.health_ui_retry_seconds",
     "Known": true,
     "Note": true
   },

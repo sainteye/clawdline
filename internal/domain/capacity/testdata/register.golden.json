@@ -5286,6 +5286,23 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.health_ui_queued_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.health_ui_reads_per_load",
     "Class": "buffer",
     "Unit": "rows",
@@ -5324,6 +5341,23 @@
     "Class": "cache",
     "Unit": "seconds",
     "Limit": 6,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.health_ui_retry_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 60,
     "WarnAt": 0,
     "AtLimit": "expire",
     "Deviation": "",

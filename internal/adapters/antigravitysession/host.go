@@ -141,8 +141,11 @@ type Error struct {
 }
 
 func (e *Error) BeforeWrite() bool { return e.Delivery == antigravityprocess.NotWritten }
-func (e *Error) Error() string     { return "antigravity_session_" + e.Code }
-func refusal(code string) error    { return &Error{Code: code, Delivery: antigravityprocess.NotWritten} }
+
+// BusyBeforeWrite distinguishes temporary admission from an uncertain effect.
+func (e *Error) BusyBeforeWrite() bool { return e.Code == "busy" && e.BeforeWrite() }
+func (e *Error) Error() string         { return "antigravity_session_" + e.Code }
+func refusal(code string) error        { return &Error{Code: code, Delivery: antigravityprocess.NotWritten} }
 
 func New(ctx context.Context, opts Options) (*Host, error) {
 	if (opts.Assistant != "" && opts.Assistant != session.AssistantAntigravity && opts.Assistant != session.AssistantGrok) || ctx == nil || ctx.Err() != nil || !filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) {

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
 	"github.com/sainteye/clawdline/internal/app/ports"
@@ -34,6 +36,8 @@ func TestEachRungOfACloseSaysWhichOneItWas(t *testing.T) {
 		{terminal.Failure{Attention: true, Message: "iTerm2 did not answer in time."}, "close_needs_a_person"},
 		{terminal.Failure{Message: "iTerm2 refused."}, "close_failed"},
 		{errors.New("something nobody typed"), "close_failed"},
+		{&antigravitysession.Error{Code: "busy", Delivery: antigravityprocess.NotWritten}, "busy"},
+		{&antigravitysession.Error{Code: "busy", Delivery: antigravityprocess.Uncertain}, "close_failed"},
 	} {
 		ref, ok := closeRefusal(c.err).(Refusal)
 		if !ok || ref.Code != c.code {

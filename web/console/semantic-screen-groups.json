@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10922,
-  "riskKeys": 4811,
-  "nonRiskCount": 6111,
+  "englishContentKeys": 10926,
+  "riskKeys": 4813,
+  "nonRiskCount": 6113,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 431,
+      "count": 433,
       "sources": [
         null
       ],
@@ -565,6 +565,7 @@
         "capacityRow.console.health_ui_incident_rows.what",
         "capacityRow.console.health_ui_incident_window_seconds.what",
         "capacityRow.console.health_ui_page_rows.what",
+        "capacityRow.console.health_ui_parallel_reads.full",
         "capacityRow.console.health_ui_parallel_reads.what",
         "capacityRow.console.health_ui_probe_hosts.what",
         "capacityRow.console.health_ui_probe_targets.full",
@@ -574,6 +575,7 @@
         "capacityRow.console.health_ui_refresh_seconds.what",
         "capacityRow.console.health_ui_request_seconds.full",
         "capacityRow.console.health_ui_request_seconds.what",
+        "capacityRow.console.health_ui_retry_seconds.what",
         "capacityRow.console.health_ui_trend_lanes.full",
         "capacityRow.console.health_ui_trend_lanes.what",
         "capacityRow.console.health_ui_trend_signals.what",

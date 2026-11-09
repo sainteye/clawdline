@@ -89,7 +89,17 @@ func (b Bridge) sessionCommand(ctx context.Context, cmd Command, parsed body, p 
 		}
 		p.executionGeneration = generation
 		answer := b.route(ctx, cmd, p, o)
-		if !b.completeSessionReceipt(ctx, k, answer) {
+		// A close's typed busy response is a refusal before any write. Do not
+		// let the outer Cloud receipt pin that temporary refusal after the local
+		// route has released its own key. Other refusals and uncertain effects
+		// remain durable, including other 429s.
+		var recorded bool
+		if o.name == "end" && answer.Status == 429 && answer.Code == "busy" {
+			recorded = b.Receipts.ReleaseReceipt(context.WithoutCancel(ctx), k) == nil
+		} else {
+			recorded = b.completeSessionReceipt(ctx, k, answer)
+		}
+		if !recorded {
 			return b.publish(cmd, p, Refusal{Status: 503, Code: "receipt_outcome_unknown",
 				Message: "The action may have run, but its durable result could not be recorded."}, nil)
 		}
