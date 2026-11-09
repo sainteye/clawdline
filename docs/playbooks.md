@@ -86,6 +86,17 @@ Delivery and reading are not reported as completion. If creation succeeds but
 send fails, the unsent row stays in the fold with a Send action; an uncertain
 result directs the person to that fold before retrying.
 
+After the to-do is created, the launch sheet closes and the shared message card
+immediately shows its send in progress, displaying the launch message without
+its transport markers. The card uses the existing to-do send
+route and keeps that row's ID across retries and browser reloads. It follows the
+same transcript refresh and native-echo reconciliation as the composer; a
+successful HTTP response means accepted, not that the assistant has replied.
+The confirmation for closing a Session lists an unfinished Playbook by its
+launch-time name. Its complete message remains in Session to-dos. Long ordinary
+to-dos and technical details scroll inside the confirmation, while its title
+and decision buttons stay in view.
+
 The first version does not schedule Playbooks, chain Sessions, run commands
 directly, or define a second step language. The launch message may tell the
 assistant to use a Skill, but Clawdline does not interpret that instruction.

@@ -61,8 +61,8 @@ const POST_WAIT_MS = 75_000
 
 /**
  * One attempt, as the daemon's own route takes it: `POST
- * /v1/sessions/<id>/send` under the card's current Idempotency-Key. The body
- * stays the same when an attempt is retried, because a key names the route
+ * /v1/sessions/<id>/send`, or the durable to-do's send action, under the card's
+ * current Idempotency-Key. The body stays the same when an attempt is retried, because a key names the route
  * and the body together, and a key reused with other bytes is refused.
  */
 export async function postCard(doFetch: typeof fetch, url: (path: string) => string, card: PendingSend): Promise<Posted> {
@@ -72,14 +72,17 @@ export async function postCard(doFetch: typeof fetch, url: (path: string) => str
   if (original) body.text = original
   if (card.conversation) body.conversation=card.conversation
   if (card.pictures.length) body.images = [...card.pictures]
+  const path = card.todoID
+    ? `/v1/work/v2/session-todos/${encodeURIComponent(card.session)}/${encodeURIComponent(card.todoID)}/send`
+    : "/v1/sessions/" + encodeURIComponent(card.session) + "/send"
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), POST_WAIT_MS)
   let res: Response
   try {
-    res = await doFetch(url("/v1/sessions/" + encodeURIComponent(card.session) + "/send"), {
+    res = await doFetch(url(path), {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": card.request },
-      body: JSON.stringify(body),
+      body: JSON.stringify(card.todoID ? {} : body),
       credentials: "same-origin",
       signal: controller.signal,
     })

@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see `order.test.ts`.
 import { PendingSends, type SeenTurn } from "./pending.ts"
 // @ts-expect-error -- a `.ts` path, for node; see `order.test.ts`.
-import { Sender, type Posted } from "./sender.ts"
+import { postCard, Sender, type Posted } from "./sender.ts"
 // @ts-expect-error -- a `.ts` path, for node; see `order.test.ts`.
 import { outcomeOf } from "./outcome.ts"
 
@@ -325,4 +325,46 @@ test("words no longer in the input line are looked at rather than pressed again"
   assert.equal(moved.cards.card(moved.card.token)?.failure, "input_moved")
   await moved.sender.enter(moved.card.token)
   assert.equal(moved.pressed.length, 1, "no Enter is offered once the words have moved")
+})
+
+
+test("a lost Playbook send answer retries the durable to-do under the same receipt", async () => {
+  const cards = new PendingSends()
+  const card = cards.add("%fixture", "Launch message with its to-do reminder", [], T0, false, undefined, "todo-fixture")
+  const requests: { path: string; key: string; body: string }[] = []
+  const receipts = new Set<string>()
+  let deliveries = 0
+  const fetcher: typeof fetch = async (input, init) => {
+    const request = { path: String(input), key: String(new Headers(init?.headers).get("Idempotency-Key")), body: String(init?.body) }
+    requests.push(request)
+    if (!receipts.has(request.key)) { receipts.add(request.key); deliveries++ }
+    if (requests.length === 1) throw new Error("answer lost after delivery")
+    return Response.json({ ok: true, todo: { id: "todo-fixture" } })
+  }
+  const sender = new Sender({ cards, now: () => T0 + 1, post: c => postCard(fetcher, p => p, c),
+    readBack: async () => [], outcomeOf })
+  await sender.deliver(card)
+  assert.equal(card.state, "unknown")
+  await sender.look(card.token)
+  await sender.resend(card.token)
+  assert.equal(card.state, "accepted")
+  assert.equal(requests.length, 2)
+  assert.equal(deliveries, 1)
+  assert.equal(requests[0].path, "/v1/work/v2/session-todos/%25fixture/todo-fixture/send")
+  assert.equal(requests[0].body, "{}")
+  assert.deepEqual(requests[1], requests[0], "retry uses the same route, payload and key")
+})
+
+
+test("ordinary cards keep the composer route and original message payload", async () => {
+  const card = new PendingSends().add("%fixture", "Ordinary message", ["data:image/png;base64,fixture"], T0, false, "conversation-fixture")
+  let received: { path: string; body: unknown } | undefined
+  const fetcher: typeof fetch = async (input, init) => {
+    received = { path: String(input), body: JSON.parse(String(init?.body)) }
+    return Response.json({ ok: true })
+  }
+  assert.deepEqual(await postCard(fetcher, p => p, card), { ok: true })
+  assert.deepEqual(received, { path: "/v1/sessions/%25fixture/send", body: {
+    text: "Ordinary message", images: ["data:image/png;base64,fixture"], conversation: "conversation-fixture",
+  } })
 })

@@ -79,6 +79,10 @@ let playbookNoPlaces = false
 let playbookFilesUnavailable = false
 let playbookTodo: Row | null = null
 let playbookSends = 0
+let holdPlaybookSend = false
+let finishPlaybookSend: (() => void) | null = null
+let playbookEcho: Row[] = []
+let closeTodoExtras: Row[] = []
 let sessionGap = false
 let sessionGapComplete = false
 
@@ -492,8 +496,12 @@ function daemon(): Server {
     }
     if (path === "/v1/work/v2/session-todos/" + encodeURIComponent(SAFE) + "/playbook-todo-fixture/send" && req.method === "POST") {
       playbookSends++
-      playbookTodo = { ...playbookTodo, sent_at: 6, version: 2 }
-      return json(res, 200, { todo: playbookTodo })
+      const finish = () => {
+        playbookTodo = { ...playbookTodo, sent_at: 6, version: 2 }
+        json(res, 200, { todo: playbookTodo })
+      }
+      if (holdPlaybookSend) { finishPlaybookSend = finish; return }
+      return finish()
     }
     if (path === "/v1/work/v2/session-todos/" + encodeURIComponent(SAFE) + "/playbook-todo-fixture/complete" && req.method === "POST") {
       playbookTodo = { ...playbookTodo, completed_at: 7, version: 3 }
@@ -716,7 +724,7 @@ function daemon(): Server {
               version: 1,
             }]
         : []
-      const direct = ownsSafe && playbookTodo ? [playbookTodo]
+      const direct = ownsSafe && playbookTodo ? [playbookTodo, ...closeTodoExtras]
         : sessionID === BLOCKED
         ? [{ id: "todo-fixture", text: "Review the release note", created_at: 1, sent_at: 2, read_at: 3, completed_at: null, version: 3,
             images: [{ id: "todo-image-fixture", title: "release-evidence.png", media_type: "image/png", byte_count: 68,
@@ -844,7 +852,7 @@ function daemon(): Server {
         { role: "assistant", text: "🏗️ Go 測試已交給 Callback，完成通知會叫我回來。", at: 1 },
         ...(callbackDone ? [{ role: "notice", text: "callback finished: success", at: 2,
           notice: { kind: "task_finished", state: "success", task: { id: "callback-demo", title: "Go 測試完成" }, outstanding: 0 } }] : []),
-      ] : []
+      ] : playbookEcho
       return json(res, 200, { entries, evidence: "process", id: url.searchParams.get("session"), signature: "fixture" })
     }
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
@@ -1061,8 +1069,8 @@ class Tab {
     await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: false }, this.session)
   }
 
-  async phoneWidth(width: number): Promise<void> {
-    await this.b.send("Emulation.setDeviceMetricsOverride", { width, height: PHONE.height, mobile: true, deviceScaleFactor: 2 }, this.session)
+  async phoneWidth(width: number, height = PHONE.height): Promise<void> {
+    await this.b.send("Emulation.setDeviceMetricsOverride", { width, height, mobile: true, deviceScaleFactor: 2 }, this.session)
     await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 }, this.session)
   }
 
@@ -3384,6 +3392,106 @@ test("rows travel to a changed sorted position instead of snapping there", () =>
     await tab.until("the rows reach their new resting positions", (s) => !s.moving)
   }))
 
+
+test("a long Playbook cannot push the close confirmation buttons off a phone", () =>
+  inTab(async (tab) => {
+    const title = "LongLaunch"
+    playbookTodo = { id: "playbook-todo-fixture", text: "Check each step and retain the complete evidence. ".repeat(100) +
+      "\n\n[Clawdline-Playbook " + playbookID + " " + encodeURIComponent(title) + "]",
+      created_at: 5, sent_at: 6, read_at: null, completed_at: null, version: 2 }
+    closeTodoExtras = [{ id: "long-todo", text: "Keep this ordinary to-do fully readable. ".repeat(100),
+      created_at: 5, sent_at: 6, read_at: null, completed_at: null, version: 2 }]
+    try {
+      await list(tab)
+      await swipeOpen(tab, SAFE)
+      await tab.press("li.row[data-swipe='open'] > .swipe-end")
+      await tab.until("the long Playbook has loaded", (s) => (s.sheetSay ?? "").includes(title) && s.confirmDisabled === false)
+      await tab.shot("playbook-close-long")
+      for (const size of [{ width: 390, height: 844 }, { width: 844, height: 390 }, { width: 1280, height: 900 }]) {
+        if (size.width === 1280) await tab.desktop()
+        else await tab.phoneWidth(size.width, size.height)
+        const bounds = await tab.run(`(() => {
+        const sheet = document.querySelector('#action-confirm-sheet').getBoundingClientRect()
+        const buttons = [...document.querySelectorAll('#action-confirm .buttons button')].map(el => {
+          const r = el.getBoundingClientRect()
+          return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }
+        })
+        return { top: sheet.top, bottom: sheet.bottom, height: innerHeight, width: innerWidth, buttons }
+      })()`)
+      assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.height, JSON.stringify(bounds))
+        for (const button of bounds.buttons) assert.ok(button.top >= 0 && button.bottom <= bounds.height && button.left >= 0 && button.right <= bounds.width, JSON.stringify(bounds))
+      }
+      await tab.phoneWidth(390)
+      assert.doesNotMatch((await tab.seen()).sheetSay ?? "", /Clawdline-Playbook|Check each step/)
+      const scrolled = await tab.run(`(() => {
+        const body = document.querySelector('#action-confirm .confirm-body')
+        body.scrollTop = body.scrollHeight
+        return { top: body.scrollTop, height: body.clientHeight, total: body.scrollHeight }
+      })()`)
+      assert.ok(scrolled.top > 0 && scrolled.total > scrolled.height, JSON.stringify(scrolled))
+      await tab.press("#action-confirm-cancel")
+      await tab.until("Cancel dismisses the long-work confirmation", (s) => s.sheet === null)
+      assert.equal(closes.length, 0)
+      await tab.press("li.row[data-swipe='open'] > .swipe-end")
+      await tab.until("the confirmation can be opened again", (s) => s.confirmDisabled === false && s.sheet !== null)
+      await tab.press("#action-confirm-go")
+      await tab.until("Confirm closes only the selected fixture Session", () => closes.length === 1)
+      assert.equal(closes[0].id, SAFE)
+    } finally { playbookTodo = null; closeTodoExtras = [] }
+  }))
+
+test("a Playbook shows a sending card before its delayed send answer and settles on its native echo", () =>
+  inTab(async (tab) => {
+    playbookTodo = null; playbookSends = 0; holdPlaybookSend = true; playbookEcho = []
+    playbookRecords = [{ id: playbookID, title: "Immediate launch", body: "Review the current change.", scope: "playbook", position: 100, created_at: 1, updated_at: 1 }]
+    try {
+      await tab.go("/")
+      await tab.run(`localStorage.removeItem('clawdline.session.cards')`)
+      await tab.go("/?playbook-send=1#session=" + encodeURIComponent(SAFE))
+      await tab.until("the Session opens", (s) => s.open === SAFE)
+      await tab.press("#detail-snippets")
+      await tab.press(".snippets-tabs button:last-child")
+      await tab.run(`new Promise((resolve, reject) => {
+        const end = Date.now() + 5000
+        const look = () => document.querySelector('.playbook-picker-row') ? resolve(true) : Date.now() > end ? reject(new Error('no Playbook')) : setTimeout(look, 25)
+        look()
+      })`)
+      await tab.press(".playbook-picker-row")
+      await tab.press(".playbook-start")
+      const card = await tab.run(`new Promise((resolve, reject) => {
+        const end = Date.now() + 2000
+        const look = () => {
+          const card = document.querySelector('.entry.pending[data-send="sending"]')
+          if (card && !document.querySelector('#snippets-sheet')) return resolve(card.textContent)
+          if (Date.now() > end) return reject(new Error('no visible sending card before the send answer'))
+          setTimeout(look, 25)
+        }; look()
+      })`)
+      assert.match(card, /Review the current change/)
+      assert.doesNotMatch(card, /Clawdline-Playbook|clawdline todo done/)
+      await tab.shot("playbook-sending")
+      assert.equal(playbookSends, 1)
+      assert.ok(finishPlaybookSend, "the daemon answer is still held")
+      finishPlaybookSend!(); finishPlaybookSend = null
+      await tab.run(`new Promise((resolve, reject) => {
+        const end = Date.now() + 2000
+        const look = () => document.querySelector('.entry.pending[data-send="accepted"]') ? resolve(true) : Date.now() > end ? reject(new Error('no accepted card')) : setTimeout(look, 25)
+        look()
+      })`)
+      playbookEcho = [{ role: "user", text: String((playbookTodo as Row | null)?.text) +
+        "\n\n(Clawdline to-do playbook-todo-fixture. When it is done: clawdline todo done playbook-todo-fixture)", at: Math.floor(Date.now() / 1000) }]
+      await tab.run(`new Promise((resolve, reject) => {
+        const end = Date.now() + 6000
+        const look = () => !document.querySelector('.entry.pending') && document.querySelector('#tx-scroll')?.textContent.includes('Review the current change') ? resolve(true) : Date.now() > end ? reject(new Error('native echo did not replace the sending card: ' + JSON.stringify({pending: document.querySelector('.entry.pending')?.textContent, entries: [...document.querySelectorAll('.entry')].map(x => x.textContent), scroll: !!document.querySelector('#tx-scroll')}))) : setTimeout(look, 25)
+        look()
+      })`)
+      assert.equal(playbookSends, 1, "observing the native echo never resends")
+    } finally {
+      finishPlaybookSend?.(); finishPlaybookSend = null
+      holdPlaybookSend = false; playbookEcho = []; playbookTodo = null; playbookRecords = []
+    }
+  }))
+
 // ---- the swipe
 
 test("a closed short row reserves horizontal swipes before the finger lands", () =>
@@ -3430,14 +3538,14 @@ test("a left swipe uncovers a close, and the swipe itself closes nothing", () =>
     assert.equal(open.sheet, null, "and nothing has been asked yet either")
   }))
 
-test("pressing the uncovered close asks first, naming the row, with Cancel under the focus", () =>
+test("pressing the uncovered close asks first, naming the row, with the dialog under the focus", () =>
   inTab(async (tab) => {
     await list(tab)
     await swipeOpen(tab, SAFE)
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
     const asked = await tab.until("the confirmation is up", (s) => s.sheet !== null)
     assert.equal(asked.sheet, "要關閉 Alpha is finished 嗎？", "it names the row it would act on")
-    assert.equal(asked.focused, "action-confirm-cancel", "and opens on the answer that changes nothing")
+    assert.equal(asked.focused, "action-confirm-sheet", "the warning receives focus without selecting an action")
     const work = await tab.until("the unfinished Board item is named", (s) =>
       s.confirmDisabled === false && (s.sheetSay ?? "").includes("Finish the release receipt"))
     assert.match(work.sheetSay ?? "", /還有未完成項目/)

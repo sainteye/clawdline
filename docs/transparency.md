@@ -282,3 +282,16 @@ and both language explanations distinguish guidance from measured savings.
 
 The [image-review setting and local sample](image-review.md) document its scope,
 compatibility checks and measured limitations.
+
+## Playbook send cards and close confirmations (2026-11-09)
+
+Playbook launches now reuse the message card, transcript following and native
+message reconciliation. Their cards retain the durable to-do ID and send through
+that row's existing action route, including after a browser reload or an explicit
+retry; they do not become ordinary composer sends. The original request text and
+CodeGraph suffix handling on ordinary sends remain unchanged. Both language
+explanations for optional CodeGraph guidance were reviewed against these paths
+and remain accurate. Closing a Session summarizes Playbooks by name and scrolls
+long work inside the confirmation; this adds no provider instructions. The
+reviewed source receipts follow the three message-card files. Website snapshot
+publication remains separate from this source review.
