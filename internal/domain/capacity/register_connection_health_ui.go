@@ -10,6 +10,8 @@ const (
 	ConsoleHealthUIBudgetSeconds  = "console.health_ui_budget_seconds"
 	ConsoleHealthUIRefreshSeconds = "console.health_ui_refresh_seconds"
 	ConsoleHealthUIParallelReads  = "console.health_ui_parallel_reads"
+	ConsoleHealthUIQueuedReads    = "console.health_ui_queued_reads"
+	ConsoleHealthUIRetrySeconds   = "console.health_ui_retry_seconds"
 	ConsoleHealthUIReadsPerLoad   = "console.health_ui_reads_per_load"
 	ConsoleHealthUIBodyBytes      = "console.health_ui_body_bytes"
 	ConsoleHealthUIPageRows       = "console.health_ui_page_rows"
@@ -68,10 +70,20 @@ func connectionHealthUIBounds() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
-			// Reads in flight at once (parallel): the Cloud admits two
-			// in-flight health reads per principal. A third waits its turn.
+			// Shared reads in flight per tab (parallel), compatible with the
+			// previous API's two-slot limit. Page and attention share it.
 			Name: ConsoleHealthUIParallelReads, Class: Buffer, Unit: Rows,
 			Limit: 2, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			Name: ConsoleHealthUIQueuedReads, Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			Name: ConsoleHealthUIRetrySeconds, Class: Cache, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{

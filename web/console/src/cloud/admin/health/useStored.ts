@@ -10,24 +10,30 @@ export function useStored(get: typeof fetch, apiOrigin: string, route: HealthRou
   const key = routeKey(route)
   const [state, dispatch] = useReducer(storedReducer, key, emptyStored)
   const inFlight = useRef<AbortController | null>(null)
+  const retryAt = useRef(0)
   const routeRef = useRef(route)
   routeRef.current = route
   const stateRef = useRef(state)
   stateRef.current = state
 
   const run = useCallback(() => {
-    if (inFlight.current) return
+    if (inFlight.current || Date.now() < retryAt.current) return
     const ctl = new AbortController()
     inFlight.current = ctl
     dispatch({ type: "start" })
     void loadStored(get, apiOrigin, routeRef.current, Date.now(), ctl.signal).then((outcome) => {
       if (inFlight.current === ctl) inFlight.current = null
-      if (!ctl.signal.aborted) dispatch({ type: "loaded", outcome, at: Date.now() })
+      if (!ctl.signal.aborted) {
+        const delay = outcome.kind === "parts" ? Math.max(0, ...Object.values(outcome.parts).map(p => p && !p.ok && p.code === "rate_limited" ? p.retryAfterMs ?? 0 : 0)) : 0
+        retryAt.current = Date.now() + delay
+        dispatch({ type: "loaded", outcome, at: Date.now() })
+      }
     })
   }, [get, apiOrigin])
 
   useEffect(() => {
     dispatch({ type: "reset", key })
+    retryAt.current = 0
     run()
     return () => {
       inFlight.current?.abort()
@@ -79,6 +85,7 @@ export function useStored(get: typeof fetch, apiOrigin: string, route: HealthRou
   const refuse = useCallback((r: Refusal) => {
     inFlight.current?.abort()
     inFlight.current = null
+    retryAt.current = 0
     dispatch({ type: "older_refused", refusal: r })
   }, [])
 

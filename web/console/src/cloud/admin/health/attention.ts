@@ -6,7 +6,7 @@
  * not point at one of this console's own incident screens is not shown as zero.
  * Nothing is imported at run time, so node's strip-types tests load it as it is. */
 // @ts-expect-error -- a `.ts` path, so node's strip-types tests can import this module.
-import { HEALTH_UI_LIMITS } from "./cloud.ts"
+import { HEALTH_UI_LIMITS, healthGet, HealthReadBusy, retryAfterMs } from "./cloud.ts"
 // @ts-expect-error -- a `.ts` path, so node's strip-types tests can import this module.
 import { INCIDENT_ID } from "./stored.ts"
 
@@ -37,9 +37,9 @@ export type AttentionItem = {
 export type Attention =
   | { state: "ok"; items: AttentionItem[]; complete: boolean }
   | { state: "unavailable" }
-  | { state: "failed"; code: AttentionFailure }
+  | { state: "failed"; code: AttentionFailure; retryAfterMs?: number }
 
-export type AttentionFailure = "signed_out" | "forbidden" | "network" | "timeout" | "http_error" | "contract" | "body_too_large"
+export type AttentionFailure = "signed_out" | "forbidden" | "rate_limited" | "network" | "timeout" | "http_error" | "contract" | "body_too_large"
 
 function str(v: unknown, max = 1024): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= max
@@ -87,17 +87,19 @@ export function parseAttention(body: unknown): Attention | null {
 export async function readAttention(apiOrigin: string, get: typeof fetch, signal?: AbortSignal): Promise<Attention> {
   const ctl = new AbortController()
   const abort = () => ctl.abort()
-  signal?.addEventListener("abort", abort, { once: true })
+  if (signal?.aborted) abort()
+  else signal?.addEventListener("abort", abort, { once: true })
   const timer = setTimeout(abort, HEALTH_UI_LIMITS.requestMs)
   try {
     let res: Response
     try {
-      res = await get(`${apiOrigin}/su/v1/health/attention`, { credentials: "include", cache: "no-store", signal: ctl.signal })
-    } catch {
-      return { state: "failed", code: ctl.signal.aborted && !signal?.aborted ? "timeout" : "network" }
+      res = await healthGet(get, `${apiOrigin}/su/v1/health/attention`, { credentials: "include", cache: "no-store", signal: ctl.signal })
+    } catch (error) {
+      return { state: "failed", code: ctl.signal.aborted && !signal?.aborted ? "timeout" : error instanceof HealthReadBusy ? "rate_limited" : "network" }
     }
     if (res.status === 401) return { state: "failed", code: "signed_out" }
     if (res.status === 403 || res.status === 404) return { state: "failed", code: "forbidden" }
+    if (res.status === 429) return { state: "failed", code: "rate_limited", retryAfterMs: retryAfterMs(res) }
     if (!res.ok) return { state: "failed", code: "http_error" }
     const declared = Number(res.headers.get("content-length"))
     if (Number.isFinite(declared) && declared > HEALTH_UI_LIMITS.bodyBytes) return { state: "failed", code: "body_too_large" }
@@ -128,6 +130,7 @@ type Doc = { readonly visibilityState: string; addEventListener: (t: "visibility
 export function attentionWatch(apiOrigin: string, get: typeof fetch, doc: Doc | null = typeof document === "undefined" ? null : document, everyMs: number = HEALTH_UI_LIMITS.refreshMs): AttentionWatch {
   let value: Attention | null = null
   let lastRead = 0
+  let retryAt = 0
   let inFlight: AbortController | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   const listeners = new Set<(a: Attention | null) => void>()
@@ -136,7 +139,7 @@ export function attentionWatch(apiOrigin: string, get: typeof fetch, doc: Doc | 
     if (timer !== null) clearTimeout(timer)
     timer = null
     if (listeners.size === 0 || !visible()) return
-    timer = setTimeout(read, Math.max(0, lastRead + everyMs - Date.now()))
+    timer = setTimeout(read, Math.max(0, lastRead + everyMs - Date.now(), retryAt - Date.now()))
   }
   const read = () => {
     timer = null
@@ -148,6 +151,7 @@ export function attentionWatch(apiOrigin: string, get: typeof fetch, doc: Doc | 
       if (inFlight === ctl) inFlight = null
       if (ctl.signal.aborted) return
       value = next
+      retryAt = next.state === "failed" && next.code === "rate_limited" ? Date.now() + (next.retryAfterMs ?? 0) : 0
       for (const fn of listeners) fn(value)
       schedule()
     })

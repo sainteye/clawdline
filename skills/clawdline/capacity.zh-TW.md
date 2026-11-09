@@ -272,9 +272,11 @@
 | `console.health_ui_probe_claims` | 8 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_probe_hosts` | 204 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_probe_targets` | 64 | `rows` | `refuse` | `diagnostics` | — |
+| `console.health_ui_queued_reads` | 8 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_reads_per_load` | 3 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_refresh_seconds` | 15 | `seconds` | `expire` | `diagnostics` | — |
 | `console.health_ui_request_seconds` | 6 | `seconds` | `expire` | `diagnostics` | — |
+| `console.health_ui_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.health_ui_trend_lanes` | 12 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_trend_signals` | 20 | `rows` | `refuse` | `diagnostics` | — |
 | `console.local_performance_body_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics` | — |

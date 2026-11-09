@@ -14,6 +14,62 @@ import (
 
 const testExecution = "0123456789abcdef0123456789abcdef"
 
+type closeRetryRouter struct {
+	status int
+	code   string
+	calls  int
+}
+
+func (r *closeRetryRouter) Do(_ context.Context, _ LocalRequest) (LocalResponse, error) {
+	r.calls++
+	if r.calls == 1 {
+		code := r.code
+		return LocalResponse{Status: r.status, Body: []byte(`{"error":"` + code + `","detail":"close refused"}`)}, nil
+	}
+	return LocalResponse{Status: 200, Body: []byte(`{"ok":true}`)}, nil
+}
+
+func TestCloudCloseReleasesOnlyItsDefiniteBusyReceipt(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		code   string
+		retry  bool
+	}{
+		{"before write", 429, "busy", true},
+		{"uncertain", 500, "close_failed", false},
+		{"other limit", 429, "receipt_capacity", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, err := store.Open(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			r := &closeRetryRouter{status: tc.status, code: tc.code}
+			b := receiptBridge(st, r)
+			cmd := request(t, ClassCtl, map[string]any{"type": "end", "session": pane, "request": "close-1",
+				"execution_generation": testExecution, "accept_loss": false, "expected_closeability_version": ""})
+			first := b.Handle(context.Background(), cmd)
+			if first.Status != tc.status {
+				t.Fatalf("first: %+v", first)
+			}
+			again := b.Handle(context.Background(), cmd)
+			wantStatus, wantCalls := 200, 2
+			if !tc.retry {
+				wantStatus, wantCalls = tc.status, 1
+			}
+			if again.Status != wantStatus || r.calls != wantCalls {
+				t.Fatalf("again: %+v, calls %d", again, r.calls)
+			}
+			b.Handle(context.Background(), cmd)
+			if r.calls != wantCalls {
+				t.Fatalf("replayed an effect: %d calls", r.calls)
+			}
+		})
+	}
+}
+
 type receiptRouter struct {
 	calls   atomic.Int32
 	entered chan struct{}
