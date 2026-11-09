@@ -9,7 +9,11 @@ raise the native single-writer limit, or claim zero downtime.
 
 The application baseline is `44fdc88182e98146f9e09a22cdeb2f3131cd3c49`. Its modern Gemini quota
 implementation already uses an independent native CLI usage process, without an ACP model prompt.
-That upstream correction is reused. Unknown ACP implementations remain unsupported; this candidate
+That upstream correction is reused. Before delivery, the candidate also integrated main
+`aac10e248aadd63bc0a76dcf55e76918d972b8ae`: its authorized close stops a busy worker through
+the stopping fence while retaining the conversation. The typed pre-write refusal handling below
+is a conservative fallback when a close is actually refused, not a replacement for that stop path.
+Unknown ACP implementations remain unsupported; this candidate
 does not probe a live model, expand the legacy allowlist, or change login/configuration.
 
 Only a typed Session `busy` error whose delivery is `not_written` becomes the existing `busy`
