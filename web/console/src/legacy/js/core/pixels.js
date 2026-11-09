@@ -14,8 +14,8 @@ function dpr() { return Math.max(1, Math.min(3, window.devicePixelRatio || 1)); 
 // Project images share one bounded renderer across legacy and React views.
 export { drawIcon, drawIconOnce } from "./project-icon.js";
 
-/* Provider product marks share the existing row-sized geometry. Gemini uses
-   the bundled official favicon; no provider request is made by the page. */
+/* Provider product marks share the existing row-sized geometry. Provider assets are
+   bundled locally; no provider request is made by the page. */
 export var ASSISTANT_LOGOS = {
     // Gemini's official web favicon, https://gemini.google.com/ (2026-10-23).
     antigravity: {
@@ -26,10 +26,10 @@ export var ASSISTANT_LOGOS = {
         viewBox: "0 0 512 512",
         image: "/icons/gemini.png"
     },
-    // A neutral letter mark keeps Grok identifiable without borrowing another provider's logo.
+    // Official Grok_Logomark_Light.svg, unmodified; see public/icons/README.md.
     grok: {
-        colour: "currentColor",
-        path: "M19 6a9 9 0 1 0 1 11V11h-9v3h6v2a6 6 0 1 1-1-8z"
+        viewBox: "0 0 512 512",
+        image: "/icons/grok.svg"
     },
     claude: {
         colour: "#D97757",
