@@ -504,7 +504,9 @@ function limitsHTML(limits: SessionLimits): string {
   // line configured — the only thing Claude Code ever hands its 5h and 7d
   // percentages to — with nowhere to read why the corner is blank.
   if (!limits.windows.length) return note(data?.session.assistant === "grok" ? nextWord("infoGrokLimitsUnknown") : data?.session.assistant === "antigravity" ? T.webInfoUnknown : limits.detail || T.webInfoUnknown)
-  return limits.windows
+  const account = data?.session.assistant === "grok"
+    ? note(nextWord("infoGrokAccountQuota")) + (limits.at ? note(nextWord("quotaUpdated", { time: L.clock(limits.at) })) : "") + (limits.stale ? note(nextWord("quotaStale")) : "") : ""
+  return account + limits.windows
     .map((window) => {
       const pct = Math.max(0, Math.min(100, Math.round(window.usedPercent)))
       const level = pct >= 85 ? "bad" : pct >= 60 ? "warn" : "ok"

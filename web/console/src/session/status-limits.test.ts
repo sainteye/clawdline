@@ -77,3 +77,13 @@ test("a reading with windows draws them and never the unknown cell", () => {
 
 // Not covered: the Session info card passes the daemon's own reason on instead of saying only
 // unknown. What stood here read the component's source; asserting it needs a DOM runner.
+
+
+test("an account quota reading names its scope and visibly marks historical data", () => {
+  assert.deepEqual(statusLimitRow({ windows: [{name:"7d",usedPercent:26}],stale:true },
+    {...WORDS,stale:"Outdated",source:"This machine's Grok account"}),
+    [{name:"7d",value:"26% · Outdated",level:"ok",title:"This machine's Grok account"}])
+  assert.deepEqual(statusLimitRow({ windows: [{name:"7d",usedPercent:0}],stale:false },
+    {...WORDS,stale:"Outdated",source:"Grok"}),
+    [{name:"7d",value:"0%",level:"ok",title:"Grok"}])
+})

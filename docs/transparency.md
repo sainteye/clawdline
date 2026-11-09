@@ -385,3 +385,19 @@ against the diff: launch instructions, applicability, permission ceilings and
 continuation semantics are unchanged. The new strings are UI explanations, not
 provider instructions. Refreshing the source receipt does not establish website
 publication or successful provider inference.
+
+
+## Grok account quota and response diagnostics (2026-11-09)
+
+Both Session Info channels now read Grok account quota from the same local
+provider cache as the global bar. The Session footer distinguishes stale,
+unknown and measured zero without an assistant-wide cross-machine overlay.
+Response diagnostics retain only ID type and relation to our request sequence,
+never provider IDs or message bodies. Grok display errors no longer expose the
+shared Gemini adapter name, including when viewing historical entries.
+
+Review of the registered shared source diff and both language explanations
+confirmed no change to context injection, role snapshots, permissions or native
+turn completion. ID mismatch still fails uncertain and never resends the input.
+The source receipt tracks UI and read-path changes, not successful native
+inference or website deployment.

@@ -108,6 +108,22 @@ export function assistantTurnIncomplete(assistant: string | undefined, text: str
   return isProtocolAssistant(assistant) && /^(?:antigravity|grok)_(?:session|process|turn)_/.test(text)
 }
 
+/** Historical Grok entries used the shared ACP adapter's Gemini prefix. Only
+ * known code-shaped entries are relabelled; persisted history is unchanged. */
+export function assistantTurnFailureCode(assistant: string | undefined, text: string): string {
+  return assistant === "grok" && /^antigravity_(?:process|session|turn)_[a-z_]+$/.test(text)
+    ? text.replace(/^antigravity_/, "grok_") : text
+}
+
+export function assistantTurnFailureWord(assistant: string | undefined, text: string): "grokRateLimited" | "grokResponseMismatch" | "grokRequestFailed" | null {
+  if (assistant !== "grok") return null
+  const code = assistantTurnFailureCode(assistant, text)
+  if (code === "grok_turn_rate_limited") return "grokRateLimited"
+  if (code === "grok_process_unexpected_id") return "grokResponseMismatch"
+  if (code === "grok_process_rpc_error") return "grokRequestFailed"
+  return null
+}
+
 export function sessionActionVisibility(row: SessionRow | null): {
   interrupt: boolean
   focus: boolean

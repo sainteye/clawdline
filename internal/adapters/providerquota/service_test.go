@@ -300,3 +300,47 @@ func TestNativeGeminiReplacesLegacyCredentialsAndKeepsSingleFlight(t *testing.T)
 		t.Fatalf("failure lost last good quota: %+v calls=%d", r, hits.Load())
 	}
 }
+
+func TestGrokSessionReadSharesCacheWithoutRefreshingOtherProviders(t *testing.T) {
+	home := t.TempDir()
+	writeCredential(t, home, "grok", `{"https://auth.x.ai":{"key":"synthetic-token"}}`)
+	s := New(home, nil).WithGemini(func(context.Context) ([]Window, string) {
+		t.Error("Grok read refreshed Gemini")
+		return nil, "unavailable"
+	})
+	s.getenv = func(string) string { return "" }
+	var hits atomic.Int64
+	started, gate := make(chan struct{}), make(chan struct{})
+	s.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		if hits.Add(1) == 1 {
+			close(started)
+		}
+		<-gate
+		return response(200, `{"config":{"creditUsagePercent":26}}`), nil
+	})
+	now := time.Now()
+	s.Grok(now)
+	<-started
+	for i := 0; i < 20; i++ {
+		s.Grok(now)
+	}
+	close(gate)
+	waitFinished(t, s)
+	got := s.Grok(now)
+	if hits.Load() != 1 || len(got.Windows) != 1 || got.Windows[0].UsedPercent != 26 {
+		t.Fatal(hits.Load(), got)
+	}
+	if other := New(t.TempDir(), nil).Grok(now); len(other.Windows) != 0 {
+		t.Fatal("another machine inherited quota", other)
+	}
+	all := s.Inspect(now)
+	if len(all.Providers) != 2 || len(all.Providers[0].Windows) != 0 || len(all.Providers[1].Windows) != 1 || all.Providers[1].Windows[0].UsedPercent != 26 {
+		t.Fatal(all)
+	}
+	if err := os.Remove(filepath.Join(home, ".grok", "auth.json")); err != nil {
+		t.Fatal(err)
+	}
+	if got = s.Grok(now); len(got.Windows) != 0 || got.Problem != "not_signed_in" || hits.Load() != 1 {
+		t.Fatal("logout retained account", got)
+	}
+}

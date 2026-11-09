@@ -75,8 +75,11 @@ func (h *Host) configureGrok(ctx context.Context, row session.Session, model, ef
 // preserve uncertain delivery for every unacknowledged or unrelated failure.
 func (h *Host) turnFailureText(err error) string {
 	var rpc *antigravityprocess.Error
-	if h.assistant() == session.AssistantGrok && errors.As(err, &rpc) && rpc.Code == "rpc_error" && rpc.RPCCode == -32003 && rpc.Delivery == antigravityprocess.Acknowledged {
-		return "grok_turn_rate_limited"
+	if h.assistant() == session.AssistantGrok && errors.As(err, &rpc) {
+		if rpc.Code == "rpc_error" && rpc.RPCCode == -32003 && rpc.Delivery == antigravityprocess.Acknowledged {
+			return "grok_turn_rate_limited"
+		}
+		return "grok_process_" + rpc.Code
 	}
 	return err.Error()
 }

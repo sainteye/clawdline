@@ -723,7 +723,11 @@ The metadata-only Session Info snapshot now separates `starting`, `idle`,
 `not_connected`. It records the active request ID, whether the operation is a
 user prompt, the fixed `/usage` metadata command, or an exact control method, receive/application times,
 last observed update kind, completion reason, numeric RPC error and sanitized
-local failure. Unknown stop-reason strings are labeled `unrecognized` in public
+local failure. Optional `response_id_kind` and `response_id_relation` fields
+retain only the ID type and relation to our numeric request sequence, even with
+raw capture disabled. Provider ID values and error bodies remain excluded.
+These fields reset at each new request and cannot acknowledge a mismatched
+response. Unknown stop-reason strings are labeled `unrecognized` in public
 metadata, with their exact bytes retained only in private capture. These timestamps are local Unix nanoseconds. They neither prove
 remote execution nor infer responsiveness from elapsed silence. Receiving text,
 a completed tool, a finished plan, session metadata or usage cannot end a prompt.

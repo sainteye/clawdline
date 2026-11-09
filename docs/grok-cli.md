@@ -45,7 +45,7 @@ unmetered: native usage and extra-credit policy still belong to the account.
 - Model selection accepts current native offers only. Omit a model to retain
   the native default. `grok-build` is a product label, not an invented model ID.
   Session Info shows those offers without an arbitrary-model input. Missing
-  native token usage or plan quota is reported as unreported.
+  native token usage is reported as unreported. Account quota is read separately.
 - Native tool permissions use the existing live permission endpoint and exact
   option IDs. The current Session, operation fence and authorization are
   checked again before writing a reply; expired offers are not replayed.
@@ -112,13 +112,19 @@ The provider quota bar retains Grok when a completed provider read reports
 `no_reading`, or an earlier observation exists. With no valid percentage it
 shows unknown without a progress bar or an invented zero. An initial empty slot
 or signed-out account stays hidden. Mobile visibility remains limited to the
-Session list. A native Session limit and a provider-account quota are separate
-readings. Closing the quota dialog with Escape preserves the underlying Session
+Session list. The Session footer and full Info also show the responding machine's
+Grok account quota, shared by Sessions. They use the same account cache, single
+flight and fifteen-minute cooldown, without refreshing other providers. Account
+changes and logout invalidate the previous identity; older readings are marked
+outdated and retain their observation time. The footer never overlays an
+assistant-only reading from a previously selected machine. Missing percentages
+stay unknown rather than zero. Closing the quota dialog with Escape preserves the underlying Session
 and returns focus to the button that opened it.
 
 An acknowledged Grok ACP `-32003` becomes `grok_turn_rate_limited`, with a
-localized explanation. Other providers, adjacent codes and unacknowledged
-delivery keep their existing failures. This does not invent a reset time,
+localized explanation. Other providers keep their existing failures. Grok process failures retain their
+cause and delivery classification under a `grok_process_` display code; historical
+Grok entries with the shared adapter prefix are relabelled only while rendering. This does not invent a reset time,
 complete the turn or resend the message. The native
 [error definition](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/sampling/error.rs)
 also distinguishes free-usage exhaustion from temporary throttling; Clawdline
@@ -167,6 +173,24 @@ covered by local contract tests.
 The CLI's persisted per-conversation usage did not include the cancelled turn.
 Missing usage is unknown, never zero, and a recorded CLI cost is not proof of a
 cash charge after subscription offsets. No extra model prompt is sent merely
-to fill that gap. The Session footer stays unknown without a verified native
-plan reading. A separate provider-service quota, when available, identifies its
-own source and observation time; it is not a Session token or cash-cost total.
+to fill that gap. A provider-service quota, when available, identifies its
+account scope and observation time; it is not a Session token or cash-cost total.
+
+
+## Response identity diagnostics
+
+A response whose JSON-RPC ID differs from the active request still fails with an
+uncertain outcome; it cannot complete the turn or cause an automatic resend.
+Grok reports this as `grok_process_unexpected_id` with a localized explanation.
+The metadata summary records only the response ID type and its relation to the
+client's numeric request sequence. Opaque provider ID values, error bodies and
+conversation content are excluded even when raw tracing is disabled. Starting
+a new request clears these diagnostic fields; optional fields preserve older
+readers. Raw wire tracing remains a separate opt-in capability.
+
+A metadata-only initialize/authenticate probe that stayed idle for 210 seconds
+observed no unsolicited responses. This rules out that particular idle probe as
+a reproducer; it does not establish the cause of a mismatched response during a
+model turn. The display and diagnostic fixes do not claim to repair that native
+failure. Local injected response cases verify identity classification and the
+existing mismatch refusal without another paid prompt.

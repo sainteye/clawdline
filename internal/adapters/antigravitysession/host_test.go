@@ -273,6 +273,10 @@ func TestOwnedPeer(t *testing.T) {
 			}
 			f.WriteString("prompt\n")
 			f.Close()
+			if _, err := os.Stat(filepath.Join(dir, "prompt-wrong-id")); err == nil {
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 0, "result": map[string]string{"stopReason": "end_turn"}})
+				continue
+			}
 			if _, err := os.Stat(filepath.Join(dir, "prompt-rate-limited")); err == nil {
 				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32003, "message": "private provider body must not be copied"}})
 				continue
