@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -261,5 +262,63 @@ func TestGrokNeverAdoptsGeminiFullApprovalProfile(t *testing.T) {
 	c, _ := h.lookup(row)
 	if c.client.AlwaysProceedConfigured() {
 		t.Fatal("Grok inherited Gemini's full approval profile")
+	}
+}
+
+func TestGrokRateLimitHasAProviderSpecificFailureWithoutRetry(t *testing.T) {
+	h, row, opts := grokFixture(t)
+	if err := os.WriteFile(filepath.Join(opts.AccountDir, "prompt-rate-limited"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(t.Context(), row, "synthetic coding request"); err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	waitFor(t, func() bool {
+		page, err := h.Transcript(row, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range page.Entries {
+			if e.Role == "error" {
+				text = e.Text
+			}
+		}
+		return text != ""
+	})
+	if text != "grok_turn_rate_limited" {
+		t.Fatalf("rate limit became %q", text)
+	}
+	if got := readFile(t, filepath.Join(opts.AccountDir, "prompts")); got != "prompt\n" {
+		t.Fatalf("prompt was retried: %q", got)
+	}
+	c, err := h.lookup(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.uncertain || c.row.State != session.StateUnknown || c.endedFinished.Load() {
+		t.Fatalf("rate limit invented completion: state=%s uncertain=%v", c.row.State, c.uncertain)
+	}
+}
+
+func TestGrokRateLimitClassificationKeepsProviderAndDeliveryBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		assistant session.Assistant
+		code      int64
+		delivery  antigravityprocess.Delivery
+		want      string
+	}{
+		{session.AssistantGrok, -32003, antigravityprocess.Acknowledged, "grok_turn_rate_limited"},
+		{session.AssistantGrok, -32002, antigravityprocess.Acknowledged, "antigravity_process_rpc_error"},
+		{session.AssistantGrok, -32003, antigravityprocess.Uncertain, "antigravity_process_rpc_error"},
+		{session.AssistantAntigravity, -32003, antigravityprocess.Acknowledged, "antigravity_process_rpc_error"},
+	} {
+		h := &Host{opts: Options{Assistant: tc.assistant}}
+		got := h.turnFailureText(&antigravityprocess.Error{Code: "rpc_error", RPCCode: tc.code, Delivery: tc.delivery})
+		if got != tc.want {
+			t.Fatalf("%s/%d/%s: %q", tc.assistant, tc.code, tc.delivery, got)
+		}
 	}
 }

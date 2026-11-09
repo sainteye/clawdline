@@ -1527,7 +1527,7 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
   let body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") +
     L.richTextHTML(record ? (record as { text: string }).text : e.text)
   if (role === "error" && assistantTurnIncomplete(v.assistant, e.text)) {
-    body = '<p class="turn-error-copy">' + esc(catalogWord(v.assistant === "grok" ? "grok" : "antigravity", "turnIncomplete")) + '</p><p class="turn-error-copy">' +
+    body = '<p class="turn-error-copy">' + esc(v.assistant === "grok" && e.text === "grok_turn_rate_limited" ? nextWord("grokRateLimited") : catalogWord(v.assistant === "grok" ? "grok" : "antigravity", "turnIncomplete")) + '</p><p class="turn-error-copy">' +
       esc(catalogWord("antigravity", "inspectBeforeSending")) + "</p><code>" + esc(e.text) + "</code>"
   }
   if (record) {

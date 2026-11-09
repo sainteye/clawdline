@@ -264,6 +264,10 @@ func TestOwnedPeer(t *testing.T) {
 			}
 			f.WriteString("prompt\n")
 			f.Close()
+			if _, err := os.Stat(filepath.Join(dir, "prompt-rate-limited")); err == nil {
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32003, "message": "private provider body must not be copied"}})
+				continue
+			}
 			if _, err := os.Stat(filepath.Join(dir, "prompt-uncertain")); err == nil {
 				// Keep the process alive with no response. Host shutdown cancels
 				// the accepted call, injecting uncertain delivery without relying

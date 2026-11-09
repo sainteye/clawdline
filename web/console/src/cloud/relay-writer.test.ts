@@ -3042,3 +3042,53 @@ test("end and archive notify the shared list only after the exact execution was 
     assert.deepEqual(receipts, [{machineID: "mac-a", sessionID: "s1", executionGeneration: EXECUTION}])
   }
 })
+
+
+test("a new Grok Session reads full and summary facts before rich-row replay",async()=>{
+ const client=new FakeClient(),target={machineID:"mac-a",sessionID:"owned:acp:grok",executionGeneration:EXECUTION}
+ Object.assign(client,{
+  async infoForGeneration(t:unknown){client.calls.push(["infoForGeneration",t]);return {info:{session:{id:target.sessionID,model:"grok-4.7"}}}},
+  async infoSummaryForGeneration(t:unknown){client.calls.push(["infoSummaryForGeneration",t]);return {info:{session:{id:target.sessionID,model:"grok-4.7"}}}},
+ })
+ const reader=new RelayReader("mac-a",{resolveSession:async()=>target})
+ const writer=new RelayWriter(reader.writeHost)
+ reader.carryWrites({route:writeRoute,answer:(route,method,url,init)=>writer.answer(route,method,url,init)});reader.attach(client)
+ for(const suffix of ["","?parts=summary"]){
+  const reply=await reader.fetch("/v1/sessions/"+encodeURIComponent(target.sessionID)+"/info"+suffix)
+  assert.equal(reply.status,200);assert.equal((await reply.json()).info.session.model,"grok-4.7")
+ }
+ assert.deepEqual(client.calls.map(c=>c[0]),["infoForGeneration","infoSummaryForGeneration"])
+})
+
+test("Session panels reject unresolved or mismatched executions without a legacy fallback", async () => {
+  const sessionID = "owned:acp:grok"
+  for (const destination of [null,
+    { machineID: "other", sessionID, executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID: "other", executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID, executionGeneration: "invalid" }]) {
+    const client = new FakeClient()
+    const reader = new RelayReader("mac-a", { resolveSession: async () => destination })
+    const writer = new RelayWriter(reader.writeHost)
+    reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+    reader.attach(client)
+    for (const panel of ["info", "info?parts=summary", "skills", "git", "git/diff?path=hello.txt"]) {
+      const response = await reader.fetch(`/v1/sessions/${encodeURIComponent(sessionID)}/${panel}`)
+      assert.equal(response.status, 409, panel)
+    }
+    assert.deepEqual(client.calls, [])
+  }
+})
+
+test("closing Info during source resolution sends no read", async () => {
+  const client = new FakeClient(), controller = new AbortController()
+  const reader = new RelayReader("mac-a", { resolveSession: async () => {
+    controller.abort()
+    return { machineID: "mac-a", sessionID: "owned:acp:grok", executionGeneration: EXECUTION }
+  } })
+  const writer = new RelayWriter(reader.writeHost)
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const response = await reader.fetch("/v1/sessions/owned%3Aacp%3Agrok/info?parts=summary", { signal: controller.signal })
+  assert.equal(response.status >= 400, true)
+  assert.deepEqual(client.calls, [])
+})

@@ -119,6 +119,7 @@ export interface CloudWriteClient extends CloudReadClient {
   info(identity: CloudIdentity): Promise<unknown>
   infoSummary(identity: CloudIdentity): Promise<unknown>
   infoForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
+  infoSummaryForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
   skillsForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
   imageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, id: string, signal?: AbortSignal, size?: "thumb"): Promise<unknown>
   readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
@@ -1351,10 +1352,9 @@ export class RelayWriter {
         // The two halves are two reads on the wire, answered on two channels
         // (`info.full`, `info.summary`), because a full answer settled by a
         // summary would be held as complete while missing what the summary
-        // leaves out (`cloudops` `info`). This daemon answers the same body for
-        // both — its own divergence — and the page still asks for the half it
-        // wants, so a machine that does tell them apart is asked correctly.
-        const exact = this.fleetTarget(route.session)
+        // leaves out (`cloudops` `info`). Preserve the requested representation
+        // even when the verified status arrives before its rich Session row.
+        const exact = await this.panelTarget(route.session, init?.signal)
         if (url.searchParams.get("parts") === "remote-permission") {
           const fields = { parts: "remote-permission" }
           if (exact) return this.contentRead(client, exact, "info", fields, init?.signal)
@@ -1363,19 +1363,22 @@ export class RelayWriter {
             undefined, { signal: init?.signal ?? undefined })
         }
         if (exact) {
-          if (!client.infoForGeneration) throw failure("cloud_not_carried", "Pinned Session info is unavailable.", 501)
-          return client.infoForGeneration(exact, init?.signal ?? undefined)
+          const read = url.searchParams.get("parts") === "summary" ? client.infoSummaryForGeneration : client.infoForGeneration
+          if (!read) throw failure("cloud_not_carried", "Pinned Session info is unavailable.", 501)
+          return read.call(client, exact, init?.signal ?? undefined)
         }
         const identity = await this.identity(client, route.session)
         return url.searchParams.get("parts") === "summary" ? client.infoSummary(identity) : client.info(identity)
       }
-      case "skills":
-        if (this.fleetTarget(route.session)) {
+      case "skills": {
+        const exact = await this.panelTarget(route.session, init?.signal)
+        if (exact) {
           if (!client.skillsForGeneration) throw failure("cloud_not_carried", "Pinned Session skills are unavailable.", 501)
-          return client.skillsForGeneration(this.fleetTarget(route.session)!, init?.signal ?? undefined)
+          return client.skillsForGeneration(exact, init?.signal ?? undefined)
         }
         if (!client.skills) throw failure("cloud_not_carried", "This Cloud client cannot read Session skills.", 501)
         return client.skills(await this.identity(client, route.session))
+      }
       case "outputs":
       case "output-file": {
         const fields: Record<string, unknown> = route.op === "outputs" ? {} : {
@@ -1389,14 +1392,16 @@ export class RelayWriter {
         if (!target) throw failure("execution_target_required", "An output read needs an exact Session execution.", 409)
         return this.contentRead(client, target, route.word, fields, init?.signal)
       }
-      case "git":
+      case "git": {
+        const target = await this.panelTarget(route.session, init?.signal)
+        if (target) return this.contentRead(client, target, "git", {}, init?.signal)
         // A read, so nothing is marked written and `sessionOf` leaves it out:
         // asking what a repository has changed changes nothing. The machine's own
         // refusal crosses as its code — `not_a_repo` is the one the panel
         // branches on — because `git-bridge.ts` reads the code and not the
         // sentence (`session/GitPanel.tsx`).
-        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "git", {}, init?.signal)
         return client.git(await this.identity(client, route.session))
+      }
       case "screen":
         // A read, and the lease on the machine's capture: asking is how the
         // page says it is still watching. The answer crosses as the machine
@@ -1411,7 +1416,8 @@ export class RelayWriter {
           throw failure("malformed_read", "a Git diff is read with its changed path", 400)
         }
         const request = this.requestID()
-        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "git-diff", { request, path }, init?.signal)
+        const target = await this.panelTarget(route.session, init?.signal)
+        if (target) return this.contentRead(client, target, "git-diff", { request, path }, init?.signal)
         return client._read(
           await this.identity(client, route.session),
           "git-diff",
@@ -2351,6 +2357,11 @@ export class RelayWriter {
       throw failure("execution_generation_required", "The current Session execution generation is unavailable.", 409)
     }
     return generation
+  }
+
+  /** Detail reads can precede rich-row replay, but still need a verified execution. */
+  private async panelTarget(session: string, signal?: AbortSignal | null): Promise<SessionContentTarget | null> {
+    return this.fleetTarget(session) ?? (this.host.resolveSession ? this.contentTarget(session, signal, true) : null)
   }
 
   private fleetTarget(session: string): { machineID: string; sessionID: string; executionGeneration: string } | null {

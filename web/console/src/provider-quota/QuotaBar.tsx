@@ -29,14 +29,15 @@ function WindowValue({ window: w, now, detail = false }: { window: ProviderQuota
       ? nextWord("quotaResetsIn", { time: reset }) : reset}</span>}
   </span>
 }
-function problemWord(problem: string | undefined): string {
+function problemWord(problem: string | undefined, hasReading = true): string {
   switch (problem) {
+    case "no_reading": return nextWord("quotaNoReading")
     case "reauth_required": return nextWord("quotaReauth")
     case "not_signed_in": return nextWord("quotaNotSignedIn")
     case "rate_limited": return nextWord("quotaRateLimited")
     case "too_old": return nextWord("quotaStale")
     case undefined: case "": return ""
-    default: return nextWord("quotaUnavailable")
+    default: return nextWord(hasReading ? "quotaUnavailable" : "quotaReadUnavailable")
   }
 }
 const mobileQuery = "(max-width: 899px)"
@@ -88,11 +89,12 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
       <div className="quota-providers">
         {shown.map((row) => {
           const compact = compactWindow(row)
+          const reading = compact ? nextWord("quotaUsed", { percent: Math.round(compact.used_percent) }) : nextWord("quotaUnknown")
           return <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
-            data-stale={stale(row) || undefined} aria-label={`${row.label} · ${nextWord("quotaUsed", { percent: Math.round(compact.used_percent) })}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
+            data-stale={stale(row) || undefined} aria-label={`${row.label} · ${reading}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
             onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
             <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
-            <span className="quota-compact-window"><WindowValue window={compact} now={now} /></span>
+            <span className="quota-compact-window">{compact ? <WindowValue window={compact} now={now} /> : <span className="quota-unknown">{reading}</span>}</span>
             {stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
           </button>
         })}
@@ -103,16 +105,17 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
         disabled={polling.pending || offline} onClick={polling.poke}>↻</button>
     </footer>
     <dialog ref={dialog} id="provider-quota-detail" className="quota-dialog" aria-labelledby="quota-dialog-title"
+      onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation() }}
       onCancel={() => setExpanded(false)} onClose={() => { setExpanded(false); opener.current?.focus() }}>
       <div className="quota-dialog-heading"><h2 id="quota-dialog-title">{nextWord("quotaTitle")}</h2>
         <button type="button" onClick={() => setExpanded(false)} aria-label={nextWord("quotaClose")}>×</button></div>
       <p className="quota-caption">{machineName || nextWord("quotaThisMachine")} · {nextWord("quotaAccountScope")}</p>
       {rows.map((row) => <section key={row.id} className="quota-detail-row">
         <h3><Icon id={row.id} />{row.label}{stale(row) && <span className="quota-stale">{nextWord("quotaStale")}</span>}</h3>
-        {row.windows.map((w, i) => <WindowValue key={i} window={w} now={now} detail />)}
+        {row.windows.length ? row.windows.map((w, i) => <WindowValue key={i} window={w} now={now} detail />) : <p className="quota-caption">{nextWord("quotaUnknown")}</p>}
         {row.observed_at !== undefined && <p className="quota-caption">{nextWord("quotaUpdated", { time: new Date(row.observed_at * 1000).toLocaleString() })}</p>}
         <p className="quota-caption">{nextWord(row.source === "claude_statusline" ? "quotaSourceClaude" : row.source === "codex_rollout" ? "quotaSourceCodex" : row.source === "provider_cli" ? "quotaSourceCLI" : "quotaSourceAPI")}</p>
-        {(offline || polling.error || row.problem) && <p className="quota-problem">{offline ? nextWord("quotaOffline") : polling.error ? nextWord("quotaUnavailable") : problemWord(row.problem)}
+        {(offline || polling.error || row.problem) && <p className="quota-problem">{offline ? nextWord("quotaOffline") : polling.error ? nextWord("quotaUnavailable") : problemWord(row.problem, row.windows.length > 0)}
           {row.problem === "reauth_required" && <span> {nextWord("quotaRunCLI", { provider: row.label })}</span>}</p>}
       </section>)}
       <p className="quota-caption">{nextWord("quotaRefreshHint")}</p>

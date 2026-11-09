@@ -2,8 +2,10 @@ package antigravitysession
 
 import (
 	"context"
+	"errors"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -67,4 +69,14 @@ func (h *Host) configureGrok(ctx context.Context, row session.Session, model, ef
 		return h.selectModel(ctx, c, model, nil)
 	}
 	return nil
+}
+
+// Grok defines -32003 as a plan/rate limit. Keep provider bodies private and
+// preserve uncertain delivery for every unacknowledged or unrelated failure.
+func (h *Host) turnFailureText(err error) string {
+	var rpc *antigravityprocess.Error
+	if h.assistant() == session.AssistantGrok && errors.As(err, &rpc) && rpc.Code == "rpc_error" && rpc.RPCCode == -32003 && rpc.Delivery == antigravityprocess.Acknowledged {
+		return "grok_turn_rate_limited"
+	}
+	return err.Error()
 }

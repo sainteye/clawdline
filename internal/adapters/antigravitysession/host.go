@@ -639,7 +639,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			}
 			c.row.State = session.StateUnknown
 			c.uncertain = true
-			c.append(contract.TranscriptEntry{Role: "error", Text: err.Error(), At: time.Now().Unix()})
+			c.append(contract.TranscriptEntry{Role: "error", Text: h.turnFailureText(err), At: time.Now().Unix()})
 			_ = c.saveState()
 			return
 		}

@@ -41,7 +41,7 @@ function refused(code, message) {
 
 function pinnedRead(type, body) {
   return (type === "sessions.list" && typeof body?.request === "string" ||
-    type === "info" && ["full", "remote-permission"].includes(body?.parts) ||
+    type === "info" && ["full", "summary", "remote-permission"].includes(body?.parts) ||
     ["session-codegraph", "native-terminal-screen", "transcript", "skills", "image", "git", "git-diff", "outputs", "output-file", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox"].includes(type)) &&
     (body?.expected_generation !== undefined || type === "sessions.list")
 }
@@ -59,7 +59,7 @@ function pinnedReadName(type, body) {
 
 function basePinnedReadName(type, body) {
   if (type === "sessions.list" && typeof body?.request === "string" && body.request) return "read:" + body.request
-  if (type === "info" && ["full", "remote-permission"].includes(body?.parts)) return "info." + body.parts
+  if (type === "info" && ["full", "summary", "remote-permission"].includes(body?.parts)) return "info." + body.parts
   if (type === "skills") return "skills"
   if (type === "session-codegraph" || type === "native-terminal-screen" || type === "git" || type === "screen" || type === "documents" || type === "outputs") return type
   if ((type === "output-file" || type === "git-diff" || type === "document" || type === "video" || type === "peer-inbox") &&
@@ -937,6 +937,10 @@ export class StatusCloudClient extends CatalogCloudClient {
       answer !== pinnedReadName(type, extra)) {
       return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
     }
+    if (type === "info" && extra.parts === "summary" &&
+      this.machineDescriptor?.(extra.machine_id)?.machine?.info_summary_v1 !== true) {
+      return Promise.reject(refused("cloud_machine_unsupported", "This machine does not support pinned Session summaries yet."))
+    }
     const key = pinnedReplyKey(extra.machine_id, value.session, answer)
     if (this.readWaiters.has(key)) {
       return Promise.reject(refused("cloud_read_busy", "another read owns this Session reply channel"))
@@ -1416,22 +1420,30 @@ export class StatusCloudClient extends CatalogCloudClient {
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */
   infoForGeneration(destination, signal) {
+    return this._infoForGeneration(destination, "full", signal)
+  }
+
+  infoSummaryForGeneration(destination, signal) {
+    return this._infoForGeneration(destination, "summary", signal)
+  }
+
+  _infoForGeneration(destination, parts, signal) {
     const { machineID, sessionID, executionGeneration } = destination
     if (!machineID || !sessionID || !/^[0-9a-f]{32}$/u.test(executionGeneration)) {
       return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
     }
-    const key = JSON.stringify([machineID, sessionID])
+    const key = JSON.stringify([machineID, sessionID, parts])
     const previous = this.pinnedInfoFlights.get(key)
     if (previous?.generation === executionGeneration) return previous.promise
     const run = async () => {
       if (previous) await previous.promise.catch(() => undefined)
       if (signal?.aborted) throw refused("read_aborted", "the Session detail was closed")
-      if (this.readWaiters?.has(machineID + "\u0000" + sessionID + "\u0000info.full")) {
+      if (this.readWaiters?.has(machineID + "\u0000" + sessionID + "\u0000info." + parts)) {
         throw refused("cloud_read_busy", "an unpinned Session info read is already in flight")
       }
       return this._read({ machine: machineID, session: sessionID }, "info", {
-        parts: "full", machine_id: machineID, expected_generation: executionGeneration,
-      }, "info.full", undefined, { signal })
+        parts, machine_id: machineID, expected_generation: executionGeneration,
+      }, "info." + parts, undefined, { signal })
     }
     const promise = run().finally(() => {
       if (this.pinnedInfoFlights.get(key)?.promise === promise) this.pinnedInfoFlights.delete(key)

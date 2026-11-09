@@ -1,4 +1,4 @@
-import type { ProviderQuotaRow } from "@clawdline/contract"
+import type { ProviderQuotaRow, ProviderQuotaWindow } from "@clawdline/contract"
 
 export type QuotaLayout = "desktop" | "mobile"
 export const quotaVisibilityKey = (layout: QuotaLayout) => `${QUOTA_VISIBLE_KEY}.${layout}`
@@ -14,15 +14,17 @@ export function readQuotaVisible(store: ReadStore | null = quotaStorage(), layou
 export function saveQuotaVisible(on: boolean, store: WriteStore | null = quotaStorage(), layout: QuotaLayout = "desktop"): boolean {
   try { if (!store) return false; store.setItem(quotaVisibilityKey(layout), String(on)); return true } catch { return false }
 }
-/** Unknown is not zero. A provider enters the footer only after supplying a number. */
+/** Grok may retain a proven missing reading; an initial provider slot is not evidence. */
 export function visibleQuotaRows(rows: readonly ProviderQuotaRow[]): ProviderQuotaRow[] {
   return rows.flatMap((row) => {
+    if (row.id === "grok" && row.problem === "not_signed_in") return []
     const windows = row.windows.filter((w) => Number.isFinite(w.used_percent) && w.used_percent >= 0 && w.used_percent <= 100)
-    return windows.length ? [{ ...row, windows }] : []
+    const observed = typeof row.observed_at === "number" && Number.isFinite(row.observed_at) && row.observed_at > 0
+    return windows.length || row.id === "grok" && (row.problem === "no_reading" || observed) ? [{ ...row, windows }] : []
   })
 }
 export function tightestWindow(row: ProviderQuotaRow) {
-  return row.windows.reduce((a, b) => b.used_percent > a.used_percent ? b : a)
+  return row.windows.reduce<ProviderQuotaWindow | undefined>((a, b) => !a || b.used_percent > a.used_percent ? b : a, undefined)
 }
 /** The all-models weekly window leads: it is the reading a person plans a week around. */
 const weekly = (name: string) => name === "7d"
@@ -35,7 +37,10 @@ export function compactWindow(row: ProviderQuotaRow) {
   return row.windows.find((w) => weekly(w.name)) ?? tightestWindow(row)
 }
 export function compactQuotaRows(rows: readonly ProviderQuotaRow[], count: number): ProviderQuotaRow[] {
-  return [...rows].sort((a, b) => compactWindow(b).used_percent - compactWindow(a).used_percent).slice(0, count)
+  return [...rows].sort((a, b) => {
+    const left = compactWindow(a), right = compactWindow(b)
+    return left && right ? right.used_percent - left.used_percent : left ? -1 : right ? 1 : 0
+  }).slice(0, count)
 }
 export function quotaStale(row: ProviderQuotaRow, now: number): boolean {
   return row.stale || row.windows.some((w) => w.resets_at !== undefined && w.resets_at <= now)
