@@ -1128,7 +1128,13 @@ func (h *Host) Facts(s session.Session) (Facts, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Effort: c.effort, Efforts: append([]string(nil), c.efforts...), Limits: quotaSnapshot(c.quota, time.Now())}
+	var limits *contract.SessionLimits
+	if h.assistant() == session.AssistantGrok {
+		limits = &contract.SessionLimits{Windows: []contract.SessionLimitWindow{}, UnknownReason: contract.AssistantUnknownReasonNoReading, Detail: "Grok"}
+	} else {
+		limits = quotaSnapshot(c.quota, time.Now())
+	}
+	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Effort: c.effort, Efforts: append([]string(nil), c.efforts...), Limits: limits}
 	f.Protocol = &contract.SessionProtocol{Phase: "not_connected"}
 	if c.client != nil {
 		// Both are an owned metadata-only snapshot. No raw frame can enter it.

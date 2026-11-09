@@ -230,6 +230,9 @@ func unknownQuota(reason contract.AssistantUnknownReason) *contract.SessionLimit
 // The global quota service owns single-flight and refresh cadence. This does not
 // consume a user Session slot, borrow a busy conversation, or write its history.
 func (h *Host) AccountQuota(ctx context.Context) (reading *contract.SessionLimits, err error) {
+	if h.assistant() == session.AssistantGrok {
+		return nil, refusal("usage_unsupported")
+	}
 	h.mu.Lock()
 	if h.closed || h.ctx.Err() != nil {
 		h.mu.Unlock()

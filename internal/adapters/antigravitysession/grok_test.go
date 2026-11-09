@@ -180,3 +180,21 @@ func TestGrokUnsupportedControlsNeverReachTheNativePrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestGrokUnknownQuotaNeverClaimsGeminiUsage(t *testing.T) {
+	h, row, _ := grokFixture(t)
+	facts, err := h.Facts(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Limits == nil || facts.Limits.UnknownReason == "" || len(facts.Limits.Windows) != 0 || facts.Limits.Detail != "Grok" {
+		t.Fatalf("Grok quota crossed providers: %+v", facts.Limits)
+	}
+}
+
+func TestGrokAccountQuotaIsExplicitlyUnsupported(t *testing.T) {
+	h, _, _ := grokFixture(t)
+	if reading, err := h.AccountQuota(context.Background()); err == nil || reading != nil || err.Error() != "antigravity_session_usage_unsupported" {
+		t.Fatalf("unsupported quota claimed a reading: %+v %v", reading, err)
+	}
+}
