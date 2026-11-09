@@ -98,6 +98,7 @@ export default function UsageOverviewPage({ shown }: { shown: boolean }) {
             <button type="button" aria-pressed={metric === "dispatches"} onClick={() => setMetric("dispatches")}>{w("usageTasks")}</button>
           </div><span>{metric === "tokens" ? "Token" : w("usageTaskUnit")}</span></div>
           <DailyChart key={metric} data={data} metric={metric} label={w(metric === "tokens" ? "usageTokens" : "usageTasks")} />
+          <AgentDistribution data={data} />
           <div className="usage-columns">
             <section><h2>{w("usageProjects")}</h2><div className="usage-projects">
               {data.projects.length === 0 && <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p>}
@@ -131,6 +132,25 @@ function Total({ label, value, previous, unit, complete }: { label: string; valu
   const delta = percentageChange(value, previous, complete)
   return <div className="usage-total"><div>{label}</div><div className="usage-number">{compactValue(value)}<small>{unit}</small></div>
     <div className="usage-prior">{w("usagePrevious")} {compactValue(previous)} {unit}{delta && <span>{delta}</span>}</div></div>
+}
+
+function AgentDistribution({ data }: { data: UsageOverview }) {
+  const rows = data.agents
+  const total = rows?.reduce((sum, row) => sum + (row.tokens ?? 0), 0) ?? 0
+  const labels: Record<string, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini", grok: "Grok" }
+  const percent = (value: number) => (value / total).toLocaleString(currentCatalogTag(), { style: "percent", maximumFractionDigits: 1 })
+  return <section className="usage-agents" aria-labelledby="usage-agents-title">
+    <h2 id="usage-agents-title">{w("usageAgents")}</h2>
+    <p className="usage-coverage">{w("usageAgentCaption")}</p>
+    {!rows ? <p className="usage-coverage" role="status">{w("usageAgentUpgrade")}</p> : <>
+      {total > 0 && <div className="usage-agent-composition" aria-hidden="true">{rows.map(row => row.tokens !== null && row.tokens > 0 &&
+        <span key={row.id} data-agent={row.id} style={{ width: `${row.tokens / total * 100}%` }} />)}</div>}
+      <dl className="usage-agent-list">{rows.map(row => <div key={row.id}>
+        <dt><i data-agent={row.id} aria-hidden="true" />{labels[row.id] ?? (row.id === "unknown" ? w("usageAgentUnknown") : row.id)}</dt>
+        <dd>{row.tokens === null ? <span>{w("usageAgentMissing")}</span> : <><strong>{compactValue(row.tokens)} <small>Token</small></strong><span>{total > 0 ? percent(row.tokens) : "—"}</span></>}</dd>
+      </div>)}</dl>
+    </>}
+  </section>
 }
 
 function Composition({ data }: { data: UsageOverview }) {

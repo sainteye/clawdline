@@ -12,6 +12,21 @@ reports them, plan limits with when they reset.
 Board cards and a session's to-dos carry a **Token bill** as well
 ([board.md](board.md)).
 
+## Agent token distribution
+
+**Usage overview** shows a stacked token bar and each agent's token total and share,
+using the selected machine, 7- or 28-day period and Project filter. Claude Code,
+Codex, Gemini and Grok have separate rows. Shares use recorded input, output,
+cache-read and cache-write tokens; they do not compare plan quotas or money.
+Missing records show **No recorded data**, while a measured zero remains zero.
+An older machine without this breakdown asks you to update it.
+
+Gemini's native CLI logs are read through the existing bounded snapshot parser
+under their historical `antigravity` storage identity. Dispatch lineage still
+owns Project attribution; native roots without Project evidence remain unattributed.
+Grok and future agents join the breakdown when their daily token records are available;
+this view does not invent counters for providers without a ledger reader.
+
 ## What the tokens were spent on
 
 ```sh

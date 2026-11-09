@@ -121,3 +121,19 @@
   .usage-placeholder-number { height: 45px; }
   .usage-skeleton .usage-placeholder-caption { height: 58px; }
 }
+
+.usage-agents { margin-top: 24px; padding-block: 24px; border-block: 1px solid var(--line); }
+.usage-agent-composition { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 20px 0; }
+.usage-agents [data-agent] { background: var(--dim); }
+.usage-agents [data-agent="claude"] { background: var(--accent); }
+.usage-agents [data-agent="codex"] { background: #729b99; }
+.usage-agents [data-agent="gemini"] { background: #a1a4cc; }
+.usage-agents [data-agent="grok"] { background: #b19b73; }
+.usage-agent-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; margin: 20px 0 0; font-size: 12px; }
+.usage-agent-list > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-width: 0; }
+.usage-agent-list dt { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; min-width: 0; }
+.usage-agent-list i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.usage-agent-list dd { display: flex; align-items: baseline; justify-content: end; gap: 12px; margin: 0; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.usage-agent-list dd span, .usage-agent-list small { color: var(--dim); font-size: 11px; }
+.usage-agent-list strong { font-weight: 500; white-space: nowrap; }
+@media (max-width: 640px) { .usage-agent-list { grid-template-columns: minmax(0, 1fr); } }

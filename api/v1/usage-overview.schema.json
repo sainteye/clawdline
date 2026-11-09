@@ -239,6 +239,28 @@
         },
         "coverage": {
           "$ref": "#/$defs/UsageOverviewCoverage"
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UsageOverviewAgent"
+          }
+        }
+      }
+    },
+    "UsageOverviewAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "number",
+          "nullable": true
         }
       }
     }

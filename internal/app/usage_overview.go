@@ -84,6 +84,7 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		daily[date] = &contract.UsageOverviewDay{Date: date, Coverage: contract.UsageOverviewCoverageStateMissing}
 	}
 	bars := map[string]float64{}
+	agents := map[string]*float64{"claude": nil, "codex": nil, "gemini": nil, "grok": nil}
 	var currentDurations, previousDurations []float64
 	for _, r := range rows {
 		p := overviewProject(r.Project)
@@ -109,6 +110,18 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		if !at.Before(since) {
 			totals = &out.Totals
 			bars[p.ID] += value
+			id := r.Assistant
+			// The native Gemini driver retains its historical storage identity.
+			if id == "antigravity" {
+				id = "gemini"
+			}
+			if id == "" {
+				id = "unknown"
+			}
+			if agents[id] == nil {
+				agents[id] = new(float64)
+			}
+			*agents[id] += value
 		}
 		if totals.Tokens == nil {
 			totals.Tokens = new(float64)
@@ -171,6 +184,20 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 			return out.Projects[i].ID < out.Projects[j].ID
 		}
 		return out.Projects[i].Tokens > out.Projects[j].Tokens
+	})
+	for id, tokens := range agents {
+		out.Agents = append(out.Agents, contract.UsageOverviewAgent{ID: id, Tokens: tokens})
+	}
+	sort.Slice(out.Agents, func(i, j int) bool {
+		a, b := out.Agents[i], out.Agents[j]
+		if a.Tokens == nil || b.Tokens == nil {
+			if (a.Tokens == nil) != (b.Tokens == nil) {
+				return a.Tokens != nil
+			}
+		} else if *a.Tokens != *b.Tokens {
+			return *a.Tokens > *b.Tokens
+		}
+		return a.ID < b.ID
 	})
 	return out, nil
 }

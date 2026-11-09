@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10864,
+  "englishKeys": 10869,
   "counts": {
-    "negation": 3019,
+    "negation": 3021,
     "state": 1787,
     "permission": 638,
     "deletion": 243,
-    "uncertainty": 411
+    "uncertainty": 412
   },
-  "unionCount": 4780,
+  "unionCount": 4783,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2663,6 +2663,8 @@
       "next.updateSourceCheckout",
       "next.updateSourceDeploy",
       "next.updateStagedApp",
+      "next.usageAgentCaption",
+      "next.usageAgentMissing",
       "next.usageEmpty",
       "next.usageFailed",
       "next.usageMissing",
@@ -6074,6 +6076,7 @@
       "next.toolResultImageUnavailable",
       "next.toolResultSourceClipped",
       "next.updateUnknownVersion",
+      "next.usageAgentUnknown",
       "next.usageNoValue",
       "notifications.push_on_schedule_failureHint",
       "ops.createUnknown",
@@ -10264,6 +10267,9 @@
     "next.updateStagedApp",
     "next.updateStripOpen",
     "next.updateUnknownVersion",
+    "next.usageAgentCaption",
+    "next.usageAgentMissing",
+    "next.usageAgentUnknown",
     "next.usageDurationDefinition",
     "next.usageEmpty",
     "next.usageFailed",

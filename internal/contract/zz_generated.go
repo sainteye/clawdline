@@ -9030,6 +9030,7 @@ type UsageNamedSize struct {
 }
 
 type UsageOverview struct {
+	Agents         []UsageOverviewAgent         `json:"agents,omitempty"`
 	At             int64                        `json:"at"`
 	Coverage       UsageOverviewCoverage        `json:"coverage"`
 	Daily          []UsageOverviewDay           `json:"daily"`
@@ -9045,6 +9046,11 @@ type UsageOverview struct {
 	Timezone       string                       `json:"timezone"`
 	Totals         UsageOverviewTotals          `json:"totals"`
 	Until          int64                        `json:"until"`
+}
+
+type UsageOverviewAgent struct {
+	ID     string   `json:"id"`
+	Tokens *float64 `json:"tokens"`
 }
 
 type UsageOverviewCoverage struct {
