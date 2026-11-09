@@ -19,3 +19,17 @@ export function playbookRunOf(text: string): { id: string; title: string; messag
     return title ? { id, title, message: text.slice(0, at) } : null
   } catch { return null }
 }
+
+/** Match the message emitted by app.DirectTodoSendText, so its native echo settles the card. */
+export function playbookSendText(todoID: string, text: string): string {
+  return text.replace(/[\r\n]+$/, "") + "\n\n(Clawdline to-do " + todoID +
+    ". When it is done: clawdline todo done " + todoID + ")"
+}
+
+/** Keep transport metadata for reconciliation while showing only the person's launch message. */
+export function playbookCardText(text: string, todoID?: string): string {
+  if (!todoID) return text
+  const suffix = playbookSendText(todoID, "")
+  if (!text.endsWith(suffix)) return text
+  return playbookRunOf(text.slice(0, -suffix.length))?.message ?? text
+}

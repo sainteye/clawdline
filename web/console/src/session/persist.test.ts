@@ -265,3 +265,15 @@ test("nothing is kept before the page knows which machine it is talking to", () 
   assert.equal(store.writes, 0, "a card written under the wrong machine is worse than one not kept")
   assert.equal(store.value, null)
 })
+
+
+test("a Playbook card keeps its durable to-do target after reload without sending", () => {
+  const store = memory()
+  const first = page(store)
+  const card = first.cards.add("%fixture", "Launch and its reminder", [], T0, false, undefined, "todo-fixture")
+  const restored = page(store, T0 + 1).cards.all()[0]
+  assert.equal(restored.todoID, "todo-fixture")
+  assert.equal(restored.request, card.request)
+  assert.equal(restored.state, "unknown")
+  assert.equal(restored.absent, false)
+})

@@ -45,11 +45,12 @@ import {
   updateSnippet,
   updatePlaybook,
 } from "./snippets-api.js"
+import { deliverUntilSeen, pendingSends } from "./send.js"
 import { VoiceTextarea } from "../pages/work/VoiceTextarea.js"
 import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { RefusalError } from "@clawdline/core"
-import { createDirectTodoV2, directTodoActionV2 } from "../pages/work/api.js"
-import { playbookTodoText } from "./playbook-run.js"
+import { createDirectTodoV2 } from "../pages/work/api.js"
+import { playbookSendText, playbookTodoText } from "./playbook-run.js"
 import { playbookWord as W } from "../playbook-words.js"
 import { readProjectFile } from "../pages/projects/project-files-api.js"
 import { playbookSourceMatches, playbookSourceText, playbookSourceTitle } from "../playbook-source.js"
@@ -284,9 +285,12 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
     try {
       const text = playbookTodoText(currentPlaybook.id, currentPlaybook.title, launchBody)
       const created = await createDirectTodoV2(row.id, text)
-      await directTodoActionV2(row.id, created.todo.id, "send")
+      const card = pendingSends.add(row.id, playbookSendText(created.todo.id, text), [], Date.now(), false,
+        typeof row.sessionId === "string" ? row.sessionId : undefined, created.todo.id)
       document.dispatchEvent(new CustomEvent("clawdline:playbook-started"))
       onClose()
+      await deliverUntilSeen(card)
+      document.dispatchEvent(new CustomEvent("clawdline:playbook-started"))
     } catch (e) {
       // The machine keeps one Playbook running per Session; nothing was written.
       if (e instanceof RefusalError && e.code === "playbook_running") { setPlaybookError(W("alreadyRunning")); return }

@@ -1,3 +1,33 @@
+/* Keep the decision in view while long work and technical details scroll. */
+#action-confirm {
+  box-sizing: border-box;
+  height: 100%;
+  height: 100dvh;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+#action-confirm-sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+#action-confirm-sheet > h2,
+#action-confirm-sheet > .buttons {
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+}
+
+#action-confirm-sheet > .confirm-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+
 .confirm-sheet[data-kind="end"] .say,
 .confirm-sheet[data-kind="archive"] .say {
   display: grid;

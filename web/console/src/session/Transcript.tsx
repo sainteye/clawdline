@@ -1,3 +1,4 @@
+import { playbookCardText } from "./playbook-run.js"
 import { LazyEntryBody } from "./LazyEntryBody.js"
 import { catalogWord } from "../catalog.js"
 import { assistantLabel, assistantProtocolOwned } from "./antigravity-ui.js"
@@ -914,7 +915,7 @@ function pendingHTML(card: PendingSend): ReactElement {
   const T = L.strings
   const esc = L.escapeHTML
   const n = card.pictures.length
-  let body = L.richTextHTML(card.text)
+  let body = L.richTextHTML(playbookCardText(card.text, card.todoID))
   if (n) {
     body +=
       '<div class="pending-images">' +
