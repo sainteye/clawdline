@@ -1,6 +1,7 @@
 package capacity
 
 const (
+	MaximumClosedSessionReceipts       = 512
 	MaximumStartedSessionRetrySeconds  = 5
 	MaximumStartedSessionFollowSeconds = 60
 	MaximumStartedSessionReads         = 12
@@ -10,6 +11,12 @@ const (
 func consoleBounds() []Entry {
 	return append(append(append(append(append(append(publicAnalyticsUIBounds(), connectionHealthUIBounds()...), servicePerformanceUIBounds()...), supportUIBounds()...), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
 		{
+			Name: ConsoleClosedSessionReceipts, Class: Cache, Unit: Rows,
+			Limit: MaximumClosedSessionReceipts, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumClosedSessionReceipts"},
+		},
+		{
 			Name: ConsoleStartedSessionRetry, Class: Cache, Unit: Seconds,
 			Limit: MaximumStartedSessionRetrySeconds, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
@@ -18,13 +25,13 @@ func consoleBounds() []Entry {
 		{
 			Name: ConsoleStartedSessionReads, Class: Buffer, Unit: Rows,
 			Limit: MaximumStartedSessionReads, AtLimit: Refuse,
-			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumStartedSessionReads"},
 		},
 		{
 			Name: ConsoleStartedSessionFollow, Class: Cache, Unit: Seconds,
 			Limit: MaximumStartedSessionFollowSeconds, AtLimit: Expire,
-			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumStartedSessionFollowSeconds"},
 		},
 		{

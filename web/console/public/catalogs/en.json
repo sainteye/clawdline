@@ -1285,9 +1285,9 @@
   "capacityRow.console.service_performance_timeout_ms.what": "The service performance timeout ms guard for this browser’s API performance view. It bounds independent reads and retained display data.",
   "capacityRow.console.session_notes_safety_seconds.full": "When it passes the page reads them again, so a to-do changed elsewhere can take up to this long to show. Nothing for you to do.",
   "capacityRow.console.session_notes_safety_seconds.what": "How often, at most, an open Session page rereads its to-dos, and its attention notes while that panel is open, besides rereading when you come back to the page. It catches changes the live updates missed without checking constantly.",
-  "capacityRow.console.started_session_follow_seconds.full": "At the deadline, all observation timers, reads and subscriptions stop. The page shows that checks stopped and offers an explicit retry for the same Session.",
+  "capacityRow.console.started_session_follow_seconds.full": "At the deadline, the temporary launch observer releases its timers, reads and subscriptions. Normal list updates and pull to refresh continue independently.",
   "capacityRow.console.started_session_follow_seconds.what": "How long one confirmed-start observation may keep checking, including any read still in flight.",
-  "capacityRow.console.started_session_reads.full": "After this budget is used, automatic checks stop. Only an explicit retry starts another bounded observation; it does not create another Session.",
+  "capacityRow.console.started_session_reads.full": "After this budget is used, the temporary launch observer stops. It never creates another Session; normal list updates and pull to refresh remain available.",
   "capacityRow.console.started_session_reads.what": "The maximum number of Session list checks in one confirmed-start observation, shared across machines and including checks triggered by status events.",
   "capacityRow.console.started_session_retry_seconds.full": "The next check reads a fresh list. It does not open another Session.",
   "capacityRow.console.started_session_retry_seconds.what": "How often a confirmed new Session is checked again while its row is still missing. Each machine has at most one read in flight; other machines continue independently.",
@@ -9042,9 +9042,6 @@
   "next.usageAgentMissing": "No recorded data",
   "next.usageAgentUpgrade": "Update this machine to see agent token distribution.",
   "next.usageAgentUnknown": "Unknown agent",
-  "next.startProgressChecking": "Checking every 5 seconds, for at most 12 checks or 60 seconds. You can cancel waiting at any time.",
-  "next.startProgressStopped": "Automatic checks reached their limit and have stopped. Check again to look for the same Session; this will not open another one.",
-  "next.startProgressRetry": "Check again",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",
@@ -10884,5 +10881,7 @@
   "transparency.card.space-saving-images.how": "Launch instructions suggest thumbnails for layout and colors, labeled multi-image overviews, original-size crops for small text, alignment, edges or suspicious details, and direct original viewing when explicitly requested. Long tool output goes to files with a summary and path. Existing local tools suffice.",
   "transparency.card.space-saving-images.effect": "New executions sample the machine choice independently of the inherited workflow. Existing Sessions and resumes retain their original context. Disabled instructions remain byte-for-byte unchanged. This is guidance, not an image-viewing restriction or proof of savings; no conversation files are deleted or rewritten.",
   "codegraphView.sessionIndexMissing": "This project has no code index yet, so CodeGraph lookups in this conversation are refused and the assistant uses ordinary source search. Build the index once; Clawdline keeps it current afterwards.",
-  "codegraphView.sessionIndexBuilding": "The index is being built. CodeGraph lookups are refused until it finishes."
+  "codegraphView.sessionIndexBuilding": "The index is being built. CodeGraph lookups are refused until it finishes.",
+  "capacityRow.console.closed_session_receipts.full": "A new signed inventory confirms removal. At the memory limit, the oldest receipt is replaced. New executions remain visible; no extra requests are scheduled.",
+  "capacityRow.console.closed_session_receipts.what": "Successful terminal close receipts retained by one browser to fence older list rows."
 }

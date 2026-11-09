@@ -71,15 +71,9 @@ export function StartProgressDialog() {
             {progress.words || nextWord("startProgressHint")}
           </p>
           <div className="start-progress-actions">
-            {progress.retry && <button type="button" className="chip" onClick={() => Start.retry()}>
-              {nextWord("startProgressRetry")}
-            </button>}
             <button ref={action} type="button" className="chip wide" onClick={() => Start.background()}>
               {nextWord(settled ? "startProgressDone" : "startProgressBackground")}
             </button>
-            {!progress.retry && progress.stage !== "asking" && <button type="button" className="chip" onClick={() => Start.dismiss()}>
-              {L.strings.webCancel}
-            </button>}
           </div>
         </>
       )}

@@ -67,16 +67,12 @@ export function CloudSessionSheets({ machineID, machines, source, pending, onCon
       openStarted: (answer, place, finish) => {
         if (!answer.id) return false
         confirmed.current?.(answer, place)
-        const follow = () => {
-          const from = location.hash
-          open(answer.id!, () => {
-            const navigate = finish()
-            return location.hash === from && navigate
-          }, place?.machine || machineID, () => Start.observationStopped(answer.id!, follow))
-          starting = true
-          Start.observing(answer.id!)
-        }
-        follow()
+        const from = location.hash
+        open(answer.id, () => {
+          const navigate = finish()
+          return location.hash === from && navigate
+        }, place?.machine || machineID, () => Start.dismiss())
+        starting = true
         return true
       },
     })

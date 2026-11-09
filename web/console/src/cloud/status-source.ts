@@ -234,7 +234,35 @@ export function statusSource(current: () => StatusClient | null,
     promise?: Promise<DirectList | null> }>()
   const imageSignals = new Map<string, AbortController>()
   const visibleArtifacts = new Map<string, Set<string>>()
-  const readMachine = async (machineID: string, signal: AbortSignal, fresh = false): Promise<MachineSessionProjection> => {
+  // Registered as console.closed_session_receipts. Receipts affect presentation
+  // only; signed snapshots and backend execution authority remain untouched.
+  const closedReceipts = new Map<string, { destination: SessionDestination; pass?: string }>()
+  const closureListeners = new Set<Parameters<SessionProjectionSource["subscribe"]>[0]>()
+  const receiptLimit = 512
+  const withoutClosed = (machineID: string, projection: MachineSessionProjection): MachineSessionProjection => {
+    const signed = statusProjection(current(), machineID)
+    for (const [key, receipt] of closedReceipts) {
+      if (receipt.destination.machineID !== machineID) continue
+      // A different signed pass has caught up with the close. Direct reads
+      // alone cannot clear the fence while an older ss/ replay remains cached.
+      if (signed.kind === "ready" && signed.snapshotGeneration !== receipt.pass &&
+        !signed.rows.some(row => row.destination.sessionID === receipt.destination.sessionID) &&
+        !projection.rows?.some(row => destinationKey(row.destination) === key)) closedReceipts.delete(key)
+    }
+    if (!projection.rows) return projection
+    const rows = projection.rows.filter(row => !closedReceipts.has(destinationKey(row.destination)))
+    // A signed new execution supersedes cached direct rows of the terminal
+    // just closed, even when both observations share one wall-clock second.
+    if (signed.kind === "ready") for (const { destination } of closedReceipts.values()) {
+      if (destination.machineID !== machineID) continue
+      const replacement = signed.rows.find(row => row.destination.sessionID === destination.sessionID &&
+        row.destination.executionGeneration !== destination.executionGeneration && row.freshness === "current")
+      if (replacement && !rows.some(row => destinationKey(row.destination) === destinationKey(replacement.destination)))
+        rows.push(replacement)
+    }
+    return { ...projection, rows }
+  }
+  const readRawMachine = async (machineID: string, signal: AbortSignal, fresh = false): Promise<MachineSessionProjection> => {
     const client = current()
     if (!client || client.ready === false) return { kind: "unavailable", reason: "unknown" }
     if (client !== attemptedClient) {
@@ -244,7 +272,7 @@ export function statusSource(current: () => StatusClient | null,
       directLists.clear()
     }
     const offline = client.machineOffline?.get(machineID)
-    if (offline && Number.isFinite(offline.until)) {
+    if (!fresh && offline && Number.isFinite(offline.until)) {
       const now = client.now?.() ?? Date.now()
       if (now < offline.until) return retainedStatus(statusProjection(client, machineID), "offline", offline.until + 1)
       const expired = statusProjection(client, machineID)
@@ -258,7 +286,7 @@ export function statusSource(current: () => StatusClient | null,
     // "reading this machine again" for as long as it was off.
     const roster = await client.machines().catch(() => null)
     if (signal.aborted) return projection
-    if (roster?.machines.find((entry) => entry.id === machineID)?.freshness === "stale")
+    if (!fresh && roster?.machines.find((entry) => entry.id === machineID)?.freshness === "stale")
       return retainedStatus(projection, "stale")
     // Recovery must ask the machine even when the retained set looks fresh:
     // a push and its old status pass can agree with each other and both be old.
@@ -280,7 +308,7 @@ export function statusSource(current: () => StatusClient | null,
         const started = now
         const reason = projection.kind === "unavailable" ? projection.reason : "stale"
         const failures = cached?.client === client ? cached.failures : 0
-        const promise = client.listPresentationsForMachine(machineID, new AbortController().signal)
+        const promise = client.listPresentationsForMachine(machineID, fresh ? signal : new AbortController().signal)
           .then((reply) => {
             const value = directList(client, machineID, reply, client.now?.() ?? Date.now(),
               statusInventoryIDs(client, machineID, client.now?.() ?? Date.now()), statusProjection(client, machineID))
@@ -381,7 +409,19 @@ export function statusSource(current: () => StatusClient | null,
     if (machine.freshness !== "current") return retainedStatus(projection, "stale")
     return projection
   }
+  const readMachine = async (machineID: string, signal: AbortSignal, fresh = false): Promise<MachineSessionProjection> =>
+    withoutClosed(machineID, await readRawMachine(machineID, signal, fresh))
   return {
+    confirmedClosed(destination) {
+      const key = destinationKey(destination)
+      const pass = statusProjection(current(), destination.machineID).snapshotGeneration
+      closedReceipts.delete(key)
+      closedReceipts.set(key, { destination, pass })
+      while (closedReceipts.size > receiptLimit) closedReceipts.delete(closedReceipts.keys().next().value!)
+      directLists.delete(destination.machineID)
+      for (const listener of closureListeners)
+        listener({ machineID: destination.machineID, sessionID: destination.sessionID, kind: "changed", closed: destination })
+    },
     readMachine,
     async refreshSessionStatus(destination, signal): Promise<void> {
       const client = current()
@@ -498,6 +538,7 @@ export function statusSource(current: () => StatusClient | null,
       return pinnedQuestion(client, destination)
     },
     subscribe(listener) {
+      closureListeners.add(listener)
       let client: StatusClient | null = null
       let stop: (() => void) | undefined
       const transitions = new Map<string, ReturnType<typeof setTimeout>>()
@@ -560,7 +601,7 @@ export function statusSource(current: () => StatusClient | null,
         }
         for (const machineID of machines) listener({ machineID, kind: "changed" })
       })
-      return () => { unwatch?.(); detach() }
+      return () => { closureListeners.delete(listener); unwatch?.(); detach() }
     },
     async readDetail(destination, signal): Promise<SessionContent> {
       const client = current()

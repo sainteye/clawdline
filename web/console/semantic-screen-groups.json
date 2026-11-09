@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10884,
-  "riskKeys": 4789,
-  "nonRiskCount": 6095,
+  "englishContentKeys": 10883,
+  "riskKeys": 4787,
+  "nonRiskCount": 6096,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 428,
+      "count": 430,
       "sources": [
         null
       ],
@@ -547,6 +547,7 @@
         "capacityRow.cloud.terminal_viewer_connections.what",
         "capacityRow.cloud.viewer_events_batch_bytes.what",
         "capacityRow.console.assistant_facts_read_milliseconds.what",
+        "capacityRow.console.closed_session_receipts.what",
         "capacityRow.console.community_share_fetch_seconds.full",
         "capacityRow.console.community_share_response_bytes.full",
         "capacityRow.console.community_share_response_bytes.what",
@@ -597,6 +598,7 @@
         "capacityRow.console.service_performance_refresh_ms.what",
         "capacityRow.console.service_performance_routes.what",
         "capacityRow.console.service_performance_timeout_ms.what",
+        "capacityRow.console.started_session_follow_seconds.full",
         "capacityRow.console.started_session_follow_seconds.what",
         "capacityRow.console.started_session_reads.what",
         "capacityRow.console.status_marker_recovery_wait_seconds.what",
@@ -3767,7 +3769,7 @@
     },
     {
       "name": "next / other",
-      "count": 670,
+      "count": 669,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4254,7 +4256,6 @@
         "next.startProgressHint",
         "next.startProgressOpen",
         "next.startProgressResumeTitle",
-        "next.startProgressRetry",
         "next.startProgressTitle",
         "next.swipeArchiveAction",
         "next.swipeArchiveLabel",

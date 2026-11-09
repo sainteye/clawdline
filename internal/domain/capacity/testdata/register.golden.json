@@ -4875,6 +4875,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.closed_session_receipts",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumClosedSessionReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.community_share_fetch_seconds",
     "Class": "cache",
     "Unit": "seconds",
@@ -5931,7 +5950,6 @@
     "AtLimit": "expire",
     "Deviation": "",
     "Told": [
-      "sender",
       "diagnostics"
     ],
     "EvictedBy": "daemon",
@@ -5951,10 +5969,9 @@
     "AtLimit": "refuse",
     "Deviation": "",
     "Told": [
-      "sender",
       "diagnostics"
     ],
-    "EvictedBy": "person",
+    "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [

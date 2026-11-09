@@ -212,6 +212,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleExecutionRecoveryAttempts: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console opening recovery guard; daemon cannot measure another device's recovery attempts"}
 		},
+		capacity.ConsoleClosedSessionReceipts: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "bounded per-browser terminal close receipts; daemon cannot measure another device's presentation cache"}
+		},
 		capacity.ConsoleStartedSessionRetry: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-confirmed-start browser retry cadence; daemon cannot measure another device's timers"}
 		},

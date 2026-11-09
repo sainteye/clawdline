@@ -1085,3 +1085,101 @@ test("a cold direct list retains the owned backend for ACP Gemini while signed s
   assert.equal(reading.rows?.[0]?.backend, "owned", "fallback must retain owned ACP backend so terminal-only controls stay hidden")
   assert.equal(reading.rows?.[0]?.assistant, "antigravity")
 })
+
+
+test("a confirmed close reaches every list and fences retained and in-flight rows by exact execution", async () => {
+  const { client, row, emit } = clientFixture()
+  const source = statusSource(() => client as never)
+  const signal = new AbortController().signal
+  const events: unknown[] = []
+  const stop = source.subscribe(event => events.push(event))
+  const destination = { machineID, sessionID, executionGeneration }
+  assert.equal((await source.readMachine(machineID, signal)).rows?.length, 1)
+  source.confirmedClosed!(destination)
+  assert.deepEqual(events, [{ machineID, sessionID, kind: "changed", closed: destination }])
+  assert.deepEqual((await source.readMachine(machineID, signal)).rows, [])
+  // A cached direct read and replayed status must both respect the receipt.
+  assert.deepEqual((await source.readMachine(machineID, signal, true)).rows, [])
+  emit({ type: "session_status", identity: { machine: machineID, session: sessionID } })
+  assert.deepEqual((await source.readMachine(machineID, signal)).rows, [])
+  // The same terminal on another machine is unaffected.
+  client.statusSnapshots.set(JSON.stringify(["two", sessionID]), {
+    identity: { machine: "two", session: sessionID }, payload: { ...row, machine_id: "two" }, observedAt: row.projected_at, sequence: 1 })
+  const marker = client.statusSnapshots.get(JSON.stringify([machineID, inventory])) as { payload: unknown }
+  client.statusSnapshots.set(JSON.stringify(["two", inventory]), { identity: { machine: "two", session: inventory },
+    payload: marker.payload, observedAt: row.projected_at, sequence: 2 })
+  client.machines = async () => ({ machines: [{ id: machineID, freshness: "current" }, { id: "two", freshness: "current" }], syncing: false, retryAfterMs: 0 })
+  assert.equal((await source.readMachine("two", signal)).rows?.length, 1)
+  // A genuinely new execution in the same terminal can appear immediately.
+  row.execution_generation = "f".repeat(32)
+  assert.equal((await source.readMachine(machineID, signal)).rows?.[0].destination.executionGeneration, "f".repeat(32))
+  stop()
+})
+
+
+test("pull refresh bypasses direct and offline caches and passes its cancellation to the machine read", async () => {
+  const {client, calls} = clientFixture()
+  const source = statusSource(() => client as never)
+  const abort = new AbortController()
+  await source.readMachine(machineID, abort.signal, true)
+  client.machineOffline.set(machineID, {until: Date.now() + 60_000})
+  const before = calls.filter(call => call.startsWith("sessions.list:")).length
+  await source.readMachine(machineID, abort.signal, true)
+  assert.equal(calls.filter(call => call.startsWith("sessions.list:")).length, before + 1)
+  let readSignal: AbortSignal | undefined
+  client.listPresentationsForMachine = async (_machine: string, signal?: AbortSignal) => {
+    readSignal = signal
+    return {at: Math.floor(Date.now()/1000), complete: true, sessions: []}
+  }
+  await source.readMachine(machineID, abort.signal, true)
+  assert.equal(readSignal, abort.signal)
+  abort.abort()
+  assert.equal(readSignal?.aborted, true)
+})
+
+test("a close receipt fences a direct list that was already in flight", async () => {
+  const {client} = clientFixture()
+  const original = client.listPresentationsForMachine
+  let release!: () => void
+  client.listPresentationsForMachine = async machine => {
+    await new Promise<void>(resolve => {release=resolve})
+    return original(machine)
+  }
+  const source = statusSource(() => client as never)
+  const reading = source.readMachine(machineID, new AbortController().signal, true)
+  await new Promise(resolve => setImmediate(resolve))
+  source.confirmedClosed!({machineID,sessionID,executionGeneration})
+  release()
+  assert.deepEqual((await reading).rows, [])
+})
+
+test("the browser close-receipt cache stays bounded when signed status never catches up", async () => {
+  const {client} = clientFixture()
+  const source = statusSource(() => client as never)
+  source.confirmedClosed!({machineID,sessionID,executionGeneration})
+  for(let i=0;i<511;i++) source.confirmedClosed!({machineID,sessionID:'closed-'+i,executionGeneration})
+  assert.deepEqual((await source.readMachine(machineID,new AbortController().signal)).rows, [])
+  source.confirmedClosed!({machineID,sessionID:'last',executionGeneration})
+  assert.equal((await source.readMachine(machineID,new AbortController().signal)).rows?.length, 1,
+    "at the registered memory limit, the oldest receipt is replaced")
+})
+
+
+test("a signed removal cannot release an older list still returning the closed execution", async () => {
+  const {client} = clientFixture()
+  const original = client.listPresentationsForMachine
+  let release!: () => void
+  client.listPresentationsForMachine = async machine => {
+    await new Promise<void>(resolve => {release=resolve})
+    return original(machine)
+  }
+  const source = statusSource(() => client as never)
+  const reading = source.readMachine(machineID, new AbortController().signal, true)
+  await new Promise(resolve => setImmediate(resolve))
+  source.confirmedClosed!({machineID,sessionID,executionGeneration})
+  const marker = client.statusSnapshots.get(JSON.stringify([machineID,inventory])) as {payload:{snapshot_generation:string;inventory:{sessions:string[]}}}
+  marker.payload.snapshot_generation="b".repeat(32)
+  marker.payload.inventory.sessions=[]
+  release()
+  assert.deepEqual((await reading).rows, [])
+})

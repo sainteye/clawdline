@@ -511,6 +511,7 @@ const (
 	ConsoleRelayFeatureWait           = "console.relay_feature_wait_seconds"
 	ConsoleExecutionRecoveryAttempts  = "console.execution_recovery_attempts"
 	ConsoleStatusGapRetry             = "console.status_gap_retry_seconds"
+	ConsoleClosedSessionReceipts      = "console.closed_session_receipts"
 	ConsoleStartedSessionRetry        = "console.started_session_retry_seconds"
 	ConsoleStartedSessionFollow       = "console.started_session_follow_seconds"
 	ConsoleStartedSessionReads        = "console.started_session_reads"

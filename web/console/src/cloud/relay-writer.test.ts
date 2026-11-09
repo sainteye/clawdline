@@ -198,9 +198,9 @@ function row(session: string, extra: Record<string, unknown> = {}): CloudRow {
   return { id: session, machine: "mac-a", session, identity: { machine: "mac-a", session }, execution_generation: EXECUTION, state: "idle", ...extra }
 }
 
-function seam(client: FakeClient, clock = { t: 1_000 }, fleet = false, featureWaitMs = 5_000) {
+function seam(client: FakeClient, clock = { t: 1_000 }, fleet = false, featureWaitMs = 5_000, onClosed?: (destination: { machineID: string; sessionID: string; executionGeneration: string }) => void) {
   const reader = new RelayReader("mac-a", { now: () => clock.t,
-    featureWaitMs,
+    featureWaitMs, onClosed,
     ...(fleet ? { fleetTarget: () => ({ machineID: "mac-a", sessionID: "s1", executionGeneration: EXECUTION }),
       admitFleetMutation: async () => {} } : {}) })
   const writer = new RelayWriter(reader.writeHost, { now: () => clock.t, requestID: () => "req-1" })
@@ -3024,4 +3024,21 @@ test("an older Cloud daemon still accepts ordinary messages from the new compose
  const res=await reader.fetch("/v1/sessions/s1/send",post({text:"original",conversation:"native-one"},{"Idempotency-Key":"older-send"}))
  assert.equal(res.status,200)
  assert.deepEqual(client.calls.at(-1)?.[3],{request:"older-send",execution_generation:EXECUTION,text:"original",images:[]})
+})
+
+
+test("end and archive notify the shared list only after the exact execution was successfully closed", async () => {
+  for (const action of ["close", "archive"]) {
+    const client = new FakeClient()
+    client.rows = [row("s1")]
+    const receipts: unknown[] = []
+    const { reader } = seam(client, {t: 100_000}, true, 5_000, destination => receipts.push(destination))
+    client.fail._read = refusal("close_blocked", { status: 409, layer: "mac_route" })
+    const request = () => reader.fetch("/v1/sessions/s1/" + action, post({}, { "Idempotency-Key": "receipt-" + action }))
+    assert.equal((await request()).status, 409)
+    assert.deepEqual(receipts, [], "a refusal or unknown outcome is never a confirmed removal")
+    delete client.fail._read
+    assert.equal((await request()).status, 200)
+    assert.deepEqual(receipts, [{machineID: "mac-a", sessionID: "s1", executionGeneration: EXECUTION}])
+  }
 })

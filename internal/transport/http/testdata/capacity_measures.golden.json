@@ -1202,6 +1202,11 @@
     "Note": true
   },
   {
+    "Name": "console.closed_session_receipts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.community_share_fetch_seconds",
     "Known": true,
     "Note": true

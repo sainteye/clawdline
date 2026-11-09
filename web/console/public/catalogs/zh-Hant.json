@@ -1285,9 +1285,9 @@
   "capacityRow.console.service_performance_timeout_ms.what": "此瀏覽器 API 效能頁面的 service performance timeout ms 限制，用來約束獨立讀取與保留的顯示資料。",
   "capacityRow.console.session_notes_safety_seconds.full": "時間到就重讀一次，所以在別處改過的待辦，最多要等這麼久才會顯示。你不用做任何事。",
   "capacityRow.console.session_notes_safety_seconds.what": "打開中的對話頁最久多久重讀一次待辦，以及（在面板打開時）需要注意的提醒；切回這個頁面時也會馬上重讀。這樣能補上即時更新漏掉的變動，又不必一直查。",
-  "capacityRow.console.started_session_follow_seconds.full": "到期後停止這次確認的所有計時器、讀取與訂閱。頁面會明確顯示已停止，並提供手動重查同一個 Session 的按鈕。",
+  "capacityRow.console.started_session_follow_seconds.full": "到達期限後，暫時追蹤新 Session 的計時器、讀取與訂閱會釋放。一般列表更新與下拉重新整理仍各自正常運作。",
   "capacityRow.console.started_session_follow_seconds.what": "一次已確認啟動的 Session 最久可以持續重查多久，包括尚未完成的讀取。",
-  "capacityRow.console.started_session_reads.full": "用完後停止自動確認；只有手動重試才會開始另一輪有上限的確認，不會重複建立 Session。",
+  "capacityRow.console.started_session_reads.full": "用完此讀取額度後，暫時的新 Session 追蹤會停止，不會再次建立 Session；一般列表更新與下拉重新整理仍可使用。",
   "capacityRow.console.started_session_reads.what": "一次啟動確認最多可以讀取幾輪 Session 列表；各機器共用這個額度，狀態事件觸發的讀取也計入。",
   "capacityRow.console.started_session_retry_seconds.full": "下一次會讀取新的列表，不會再開另一個 Session。",
   "capacityRow.console.started_session_retry_seconds.what": "已確認開啟的新 Session 尚未出現在列表時，隔多久再讀一次。每台機器同時最多讀取一次，各機器獨立進行。",
@@ -9042,9 +9042,6 @@
   "next.usageAgentMissing": "尚無資料",
   "next.usageAgentUpgrade": "更新這台機器後即可查看 Agent Token 分佈。",
   "next.usageAgentUnknown": "未知 Agent",
-  "next.startProgressChecking": "每 5 秒確認一次，最多 12 輪或 60 秒；你可以隨時取消等待。",
-  "next.startProgressStopped": "自動確認已達上限，現已停止。按「重新查詢」只會找同一個 Session，不會再開一個。",
-  "next.startProgressRetry": "重新查詢",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",
@@ -10884,5 +10881,7 @@
   "transparency.card.space-saving-images.how": "啟動指示建議用縮圖確認版面與顏色、多圖合成附名稱總覽；小字、對齊、邊緣或可疑細節用原尺寸裁切查看，明確要求仔細看時直接看原圖。長工具輸出存檔，只放摘要與路徑。沿用現有本機工具即可。",
   "transparency.card.space-saving-images.effect": "新啟動的執行各自讀取機器選擇，與繼承的工作流程分開。既有 Session 與恢復對話保留原上下文；關閉時指示位元組不變。這是建議，不是看原圖的限制，也不證明節省效果；不刪除或改寫對話檔。",
   "codegraphView.sessionIndexMissing": "這個專案還沒有程式碼索引，此對話的 CodeGraph 查詢會被拒絕，助理改用一般原始碼搜尋。建立一次索引後，Clawdline 會自動保持更新。",
-  "codegraphView.sessionIndexBuilding": "索引建立中，完成前 CodeGraph 查詢會被拒絕。"
+  "codegraphView.sessionIndexBuilding": "索引建立中，完成前 CodeGraph 查詢會被拒絕。",
+  "capacityRow.console.closed_session_receipts.full": "新的已簽章清單會確認移除。達到記憶體上限時替換最舊結果；新執行仍會顯示，且不會額外排程查詢。",
+  "capacityRow.console.closed_session_receipts.what": "單一瀏覽器暫存的終端關閉成功結果，用於擋住較舊的列表資料。"
 }

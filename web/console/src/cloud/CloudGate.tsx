@@ -758,6 +758,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       strings: () => (config ? catalog(config) : Promise.resolve({})),
       carry: CARRY_TABLE,
       classicStatus: true,
+      onClosed: (destination) => liveSessionSource.confirmedClosed?.(destination),
       onExecutionChanged: (machineID, sessionID) => {
         document.dispatchEvent(new CustomEvent("clawdline:read-execution-changed", { detail: { machineID, sessionID } }))
       },
@@ -772,7 +773,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             return Promise.resolve(live)
           return Promise.resolve(held.reading)
         }
-        return liveSessionSource.readMachine(machineID, new AbortController().signal)
+        return liveSessionSource.readMachine(machineID, new AbortController().signal, fresh)
       },
       listPresentations: async (machineID, expectedCount, expected) => {
         // Reuse the fleet's already verified rows, even if a newer
