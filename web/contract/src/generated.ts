@@ -7370,9 +7370,9 @@ export interface SessionLimits {
   detail?: string
 
   /**
-   * How long this reading was good for: five percent of its shortest live window,
-   * never under fifteen minutes and never over six hours. Null when there is no
-   * reading to age.
+   * How long this reading was good for. Local CLI windows use five percent of the
+   * shortest window, between fifteen minutes and six hours; Grok account readings
+   * use the provider reader cooldown. Null when there is no reading to age.
    */
   freshForSeconds: number | null
 
@@ -7384,8 +7384,9 @@ export interface SessionLimits {
   readAtMs?: number
 
   /**
-   * The reading is older than `freshForSeconds`, so these percentages are a lower
-   * bound and not a current reading.
+   * The reading is older than `freshForSeconds` or the latest provider read failed.
+   * It is historical evidence, not a current reading or a guaranteed lower bound
+   * across resets.
    */
   stale?: boolean
 
@@ -7600,6 +7601,18 @@ export interface SessionProtocol {
   operation?: string
   phase: string
   request_id?: string
+
+  /**
+   * Last response ID type only; no provider ID value or content is retained.
+   * Independent of opt-in raw tracing.
+   */
+  response_id_kind?: string
+
+  /**
+   * Relation to the current numeric request: matching, previous, future or
+   * different. Does not acknowledge or complete a request.
+   */
+  response_id_relation?: string
   rpc_error: number | null
   sequence: number
   started_at?: number

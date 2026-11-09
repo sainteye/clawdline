@@ -18,6 +18,7 @@ export interface StatusLimitReading {
   unknownReason?: string
   /** The sentence naming the file the reading rests on. */
   detail?: string
+  stale?: boolean
 }
 
 /**
@@ -61,10 +62,14 @@ export function statusLimitCells(windows: readonly StatusLimitWindow[], unknown:
  */
 export function statusLimitRow(
   reading: StatusLimitReading | null | undefined,
-  words: { unknown: string; limits: string },
+  words: { unknown: string; limits: string; stale?: string; source?: string },
 ): StatusLimitCell[] {
   const windows = reading?.windows ?? []
-  if (windows.length) return statusLimitCells(windows, words.unknown)
+  if (windows.length) return statusLimitCells(windows, words.unknown).map(cell => {
+    if (reading?.stale && words.stale) cell.value += ` · ${words.stale}`
+    if (words.source) cell.title = words.source
+    return cell
+  })
   if (!reading?.unknownReason) return []
   return [{ name: words.limits, value: words.unknown, level: "", title: reading.detail }]
 }

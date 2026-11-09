@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10932,
-  "riskKeys": 4819,
-  "nonRiskCount": 6113,
+  "englishContentKeys": 10935,
+  "riskKeys": 4821,
+  "nonRiskCount": 6114,
   "groups": [
     {
       "name": "acp / other",
@@ -3783,7 +3783,7 @@
     },
     {
       "name": "next / other",
-      "count": 677,
+      "count": 678,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3886,6 +3886,7 @@
         "next.infoEffortMinimal",
         "next.infoEffortUltra",
         "next.infoEffortXhigh",
+        "next.infoGrokAccountQuota",
         "next.infoReasoningEffort",
         "next.infoResetsInMinutes",
         "next.issueAuthCancel",

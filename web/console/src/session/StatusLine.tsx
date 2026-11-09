@@ -68,8 +68,12 @@ export function StatusLine({
   const drawn = useRef(false)
   if (row) drawn.current = true
   const info = useSessionInfo(row)
-  const reading = row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant)) : null
-  const limitCells = statusLimitRow(reading, { unknown: T.webInfoUnknown, limits: T.webInfoLimits })
+  // Grok is supplied by this pinned Session's machine. Never overlay an
+  // assistant-only reading from a previously selected machine or account.
+  const reading = row?.assistant === "grok" ? info?.limits : row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant)) : null
+  const limitCells = statusLimitRow(reading, { unknown: T.webInfoUnknown, limits: T.webInfoLimits,
+    ...(row?.assistant === "grok" ? { stale: nextWord("quotaStale"), source: nextWord("infoGrokAccountQuota") + (reading?.at ? " " + nextWord("quotaUpdated", { time: L.clock(reading.at) }) : "") } : {}),
+  })
   const deploy = runningDeploy(info)
   const progress = useDeployProgress(deploy)
   const git = useGitStatus(row)

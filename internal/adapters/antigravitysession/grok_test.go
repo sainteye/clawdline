@@ -311,8 +311,8 @@ func TestGrokRateLimitClassificationKeepsProviderAndDeliveryBoundaries(t *testin
 		want      string
 	}{
 		{session.AssistantGrok, -32003, antigravityprocess.Acknowledged, "grok_turn_rate_limited"},
-		{session.AssistantGrok, -32002, antigravityprocess.Acknowledged, "antigravity_process_rpc_error"},
-		{session.AssistantGrok, -32003, antigravityprocess.Uncertain, "antigravity_process_rpc_error"},
+		{session.AssistantGrok, -32002, antigravityprocess.Acknowledged, "grok_process_rpc_error"},
+		{session.AssistantGrok, -32003, antigravityprocess.Uncertain, "grok_process_rpc_error"},
 		{session.AssistantAntigravity, -32003, antigravityprocess.Acknowledged, "antigravity_process_rpc_error"},
 	} {
 		h := &Host{opts: Options{Assistant: tc.assistant}}
@@ -320,5 +320,55 @@ func TestGrokRateLimitClassificationKeepsProviderAndDeliveryBoundaries(t *testin
 		if got != tc.want {
 			t.Fatalf("%s/%d/%s: %q", tc.assistant, tc.code, tc.delivery, got)
 		}
+	}
+}
+
+func TestGrokProcessFailuresKeepTheirCodeAndUncertainDelivery(t *testing.T) {
+	for _, code := range []string{"unexpected_id", "eof", "write_failed"} {
+		e := &antigravityprocess.Error{Code: code, Delivery: antigravityprocess.Uncertain}
+		h := &Host{opts: Options{Assistant: session.AssistantGrok}}
+		if got := h.turnFailureText(e); got != "grok_process_"+code {
+			t.Fatalf("provider crossed: %q", got)
+		}
+		if e.Delivery != antigravityprocess.Uncertain {
+			t.Fatal("display mapping changed delivery")
+		}
+	}
+}
+
+func TestGrokMismatchedCompletionIsNotSuccessOrAnotherPrompt(t *testing.T) {
+	h, row, opts := grokFixture(t)
+	if err := os.WriteFile(filepath.Join(opts.AccountDir, "prompt-wrong-id"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var completed atomic.Int32
+	h.opts.TurnComplete = func(context.Context, session.Session) { completed.Add(1) }
+	if err := h.Send(t.Context(), row, "synthetic coding request"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		page, err := h.Transcript(row, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range page.Entries {
+			if e.Role == "error" {
+				if e.Text != "grok_process_unexpected_id" {
+					t.Fatal(e.Text)
+				}
+				return true
+			}
+		}
+		return false
+	})
+	c, _ := h.lookup(row)
+	c.mu.Lock()
+	uncertain, state, life := c.uncertain, c.row.State, c.client.Lifecycle()
+	c.mu.Unlock()
+	if !uncertain || state != session.StateUnknown || life.Phase != "closed" || life.ResponseIDKind != "number" || life.ResponseIDRelation != "previous" || life.CompletedAt != 0 || completed.Load() != 0 {
+		t.Fatal(uncertain, state, life, completed.Load())
+	}
+	if got := readFile(t, filepath.Join(opts.AccountDir, "prompts")); got != "prompt\n" {
+		t.Fatal("replayed", got)
 	}
 }

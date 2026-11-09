@@ -435,8 +435,8 @@
         "at": { "description": "Unix seconds of the provider record the windows came from. Absent when nothing has been read.", "type": "integer" },
         "readAtMs": { "description": "Unix milliseconds when this daemon took the reading. A client holding readings from several answers keeps the newest by this. Absent for a session with no assistant.", "type": "integer" },
         "ageSeconds": { "description": "How old the provider's record is, in seconds, at the moment this answer was made. Absent when nothing has been read. A percentage is drawn beside its age or it reads as a number from now.", "type": "integer", "nullable": true },
-        "stale": { "description": "The reading is older than `freshForSeconds`, so these percentages are a lower bound and not a current reading.", "type": "boolean" },
-        "freshForSeconds": { "description": "How long this reading was good for: five percent of its shortest live window, never under fifteen minutes and never over six hours. Null when there is no reading to age.", "type": "integer", "nullable": true },
+        "stale": { "description": "The reading is older than `freshForSeconds` or the latest provider read failed. It is historical evidence, not a current reading or a guaranteed lower bound across resets.", "type": "boolean" },
+        "freshForSeconds": { "description": "How long this reading was good for. Local CLI windows use five percent of the shortest window, between fifteen minutes and six hours; Grok account readings use the provider reader cooldown. Null when there is no reading to age.", "type": "integer", "nullable": true },
         "detail": { "description": "The same sentence GET /v1/orchestrator/assistants puts in `detail`: what the windows say and how old they are, or which kind of nothing an empty reading was.", "type": "string" },
         "unknownReason": { "description": "Why there is no reading, when there is none. Absent when windows were read.", "$ref": "orchestrator.schema.json#/$defs/AssistantUnknownReason" },
         "windows": { "type": "array", "items": { "$ref": "#/$defs/SessionLimitWindow" } }
@@ -483,6 +483,14 @@
           "type": "integer"
         },
         "last_received_kind": {
+          "type": "string"
+        },
+        "response_id_kind": {
+          "description": "Last response ID type only; no provider ID value or content is retained. Independent of opt-in raw tracing.",
+          "type": "string"
+        },
+        "response_id_relation": {
+          "description": "Relation to the current numeric request: matching, previous, future or different. Does not acknowledge or complete a request.",
           "type": "string"
         },
         "last_applied_at": {

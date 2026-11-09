@@ -123,48 +123,60 @@ func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 		}
 	}
 	for i, p := range []struct{ id, label string }{{"gemini", "Gemini"}, {"grok", "Grok"}} {
-		var cred credential
-		var problem string
-		source := "provider_api"
-		if p.id == "gemini" && s.gemini != nil {
-			cred.identity = "native"
-			source = "provider_cli"
-		} else if refresh {
-			cred, problem = s.credentials(p.id, now)
-		}
-		s.mu.Lock()
-		v := &s.slots[i]
-		if v.row.ID == "" {
-			v.row = baseRow(p.id, p.label, source)
-		}
-		if refresh && cred.identity != v.identity && !(cred.identity == "" && problem == "unreadable") {
-			v.generation++
-			v.row = baseRow(p.id, p.label, source)
-			v.identity = cred.identity
-			v.next = time.Time{}
-		}
-		if problem != "" {
-			v.row.Problem = problem
-			v.row.Stale = len(v.row.Windows) > 0
-		} else if refresh && !v.busy && !now.Before(v.next) {
-			v.busy = true
-			v.next = now.Add(RefreshSecondsLimit * time.Second)
-			generation := v.generation
-			go s.refresh(i, p.id, cred, generation)
-		}
-		row := v.row
-		row.Windows = append([]Window{}, row.Windows...)
-		if row.ObservedAt != nil && now.Unix()-*row.ObservedAt >= RefreshSecondsLimit {
-			row.Stale = true
-		}
-		if v.busy {
-			out.Updating = true
-		}
+		row, busy := s.provider(now, i, p.id, p.label, refresh)
 		out.Providers = append(out.Providers, row)
-		s.mu.Unlock()
+		out.Updating = out.Updating || busy
 	}
 	return out
 }
+
+// Grok shares the global bar's account cache, cooldown and identity invalidation.
+// A Session read must not refresh another provider or launch an agent.
+func (s *Service) Grok(now time.Time) Row {
+	row, _ := s.provider(now, 1, "grok", "Grok", true)
+	return row
+}
+
+func (s *Service) provider(now time.Time, i int, id, label string, refresh bool) (Row, bool) {
+	var cred credential
+	var problem string
+	source := "provider_api"
+	if id == "gemini" && s.gemini != nil {
+		cred.identity = "native"
+		source = "provider_cli"
+	} else if refresh {
+		cred, problem = s.credentials(id, now)
+	}
+	s.mu.Lock()
+	v := &s.slots[i]
+	if v.row.ID == "" {
+		v.row = baseRow(id, label, source)
+	}
+	if refresh && cred.identity != v.identity && !(cred.identity == "" && problem == "unreadable") {
+		v.generation++
+		v.row = baseRow(id, label, source)
+		v.identity = cred.identity
+		v.next = time.Time{}
+	}
+	if problem != "" {
+		v.row.Problem = problem
+		v.row.Stale = len(v.row.Windows) > 0
+	} else if refresh && !v.busy && !now.Before(v.next) {
+		v.busy = true
+		v.next = now.Add(RefreshSecondsLimit * time.Second)
+		generation := v.generation
+		go s.refresh(i, id, cred, generation)
+	}
+	row := v.row
+	row.Windows = append([]Window{}, row.Windows...)
+	if row.ObservedAt != nil && now.Unix()-*row.ObservedAt >= RefreshSecondsLimit {
+		row.Stale = true
+	}
+	busy := v.busy
+	s.mu.Unlock()
+	return row, busy
+}
+
 func (s *Service) refresh(index int, id string, c credential, generation uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), RequestSecondsLimit*time.Second)
 	defer cancel()

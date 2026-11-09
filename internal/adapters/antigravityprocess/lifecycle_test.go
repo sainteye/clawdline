@@ -157,3 +157,28 @@ func TestLifecycleSummaryWithholdsUnknownStopReasonAndKeepsClosed(t *testing.T) 
 		t.Fatal("late completion reopened a closed worker", got)
 	}
 }
+
+func TestResponseIdentityDiagnosticsNeedNoRawTrace(t *testing.T) {
+	for _, tc := range []struct{ id, kind, relation string }{
+		{`4`, "number", "matching"}, {`3`, "number", "previous"}, {`5`, "number", "future"},
+		{`"4"`, "string", "different"}, {`"private-account-id"`, "string", "different"},
+		{`null`, "null", "different"}, {``, "missing", "different"}, {`{}`, "invalid", "different"},
+	} {
+		c := &Client{}
+		c.requestStarted("4", "session/prompt", false)
+		frame := `{"jsonrpc":"2.0","result":{}}`
+		if tc.id != "" {
+			frame = `{"jsonrpc":"2.0","id":` + tc.id + `,"result":{}}`
+		}
+		c.observe("in", "received", []byte(frame), 0)
+		raw, _ := json.Marshal(c.Lifecycle())
+		var got map[string]any
+		_ = json.Unmarshal(raw, &got)
+		if got["response_id_kind"] != tc.kind || got["response_id_relation"] != tc.relation {
+			t.Fatalf("%s: %s", tc.id, raw)
+		}
+		if strings.Contains(string(raw), "private-account-id") || c.Lifecycle().TraceEnabled || c.Lifecycle().CompletedAt != 0 {
+			t.Fatal("diagnostics leaked contents or completed a turn", string(raw))
+		}
+	}
+}

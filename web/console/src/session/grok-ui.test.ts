@@ -7,7 +7,7 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- Node's test runner resolves the TypeScript source.
-import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantLabel, assistantMenuAdmits, assistantProtocolOwned, assistantRolesAdmit, assistantTurnIncomplete, assistantUnavailable, isAssistant, sessionActionVisibility, type AssistantFacts } from "./antigravity-ui.ts"
+import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantLabel, assistantMenuAdmits, assistantProtocolOwned, assistantRolesAdmit, assistantTurnIncomplete, assistantTurnFailureCode, assistantTurnFailureWord, assistantUnavailable, isAssistant, sessionActionVisibility, type AssistantFacts } from "./antigravity-ui.ts"
 // @ts-expect-error -- Node's test runner resolves the TypeScript source.
 import { startedRow } from "./started-row.ts"
 // @ts-expect-error -- Node's test runner resolves the TypeScript source.
@@ -178,4 +178,17 @@ test("signed and direct Cloud projections preserve Grok identity and owned proto
       assert.equal(assistantComposeAdmits(row.assistant, undefined, row.state, false, assistantProtocolOwned(row)), true, path)
     }
   }
+})
+
+
+test("Grok current and historical transport errors never use Gemini display codes", () => {
+  for (const text of ["antigravity_process_unexpected_id", "grok_process_unexpected_id"]) {
+    assert.equal(assistantTurnFailureCode("grok",text), "grok_process_unexpected_id")
+    assert.equal(assistantTurnFailureWord("grok",text), "grokResponseMismatch")
+  }
+  assert.equal(assistantTurnFailureCode("antigravity","antigravity_process_unexpected_id"),"antigravity_process_unexpected_id")
+  assert.equal(assistantTurnFailureWord("antigravity","antigravity_process_unexpected_id"),null)
+  assert.equal(assistantTurnFailureCode("grok","ordinary antigravity_process_text"),"ordinary antigravity_process_text")
+  assert.equal(assistantTurnFailureWord("grok","grok_process_rpc_error"),"grokRequestFailed")
+  assert.equal(assistantTurnFailureWord("grok","grok_turn_rate_limited"),"grokRateLimited")
 })

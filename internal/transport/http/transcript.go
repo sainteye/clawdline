@@ -691,6 +691,9 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 	if !s.admitPinnedTarget(w, r, id) {
 		return
 	}
+	if item.Assistant == session.AssistantGrok {
+		info.Limits = s.grokSessionLimits(time.Now())
+	}
 	writeJSON(w, contract.SessionInfoReply{Info: info})
 }
 

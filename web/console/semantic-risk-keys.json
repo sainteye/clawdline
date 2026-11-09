@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10932,
+  "englishKeys": 10935,
   "counts": {
-    "negation": 3043,
-    "state": 1801,
+    "negation": 3045,
+    "state": 1803,
     "permission": 639,
     "deletion": 247,
-    "uncertainty": 420
+    "uncertainty": 421
   },
-  "unionCount": 4819,
+  "unionCount": 4821,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2315,6 +2315,8 @@
       "next.gitNoDirectory",
       "next.gitPermissionDenied",
       "next.grokRateLimited",
+      "next.grokRequestFailed",
+      "next.grokResponseMismatch",
       "next.handoverDoneRelayNeeded",
       "next.handoverFailNotConfirmed",
       "next.handoverFailOther",
@@ -4400,6 +4402,8 @@
       "next.fleetUpdateFailed",
       "next.fleetUpdateRolledBack",
       "next.grokRateLimited",
+      "next.grokRequestFailed",
+      "next.grokResponseMismatch",
       "next.handoverDone",
       "next.handoverDoneRelayNeeded",
       "next.handoverFailExpired",
@@ -6085,6 +6089,7 @@
       "next.defaultAntigravityCatalogUnknown",
       "next.devicesRosterFailed",
       "next.fleetUpdateUnknown",
+      "next.infoGrokLimitsUnknown",
       "next.issueSyncErrNotFound",
       "next.linksDeployUnreadable",
       "next.linksGitUnreadable",
@@ -9741,6 +9746,8 @@
     "next.gitNoDirectory",
     "next.gitPermissionDenied",
     "next.grokRateLimited",
+    "next.grokRequestFailed",
+    "next.grokResponseMismatch",
     "next.handoverCodeLabel",
     "next.handoverDone",
     "next.handoverDoneRelayNeeded",
