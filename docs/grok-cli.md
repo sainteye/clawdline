@@ -113,7 +113,8 @@ The provider quota bar retains Grok when a completed provider read reports
 shows unknown without a progress bar or an invented zero. An initial empty slot
 or signed-out account stays hidden. Mobile visibility remains limited to the
 Session list. A native Session limit and a provider-account quota are separate
-readings.
+readings. Closing the quota dialog with Escape preserves the underlying Session
+and returns focus to the button that opened it.
 
 An acknowledged Grok ACP `-32003` becomes `grok_turn_rate_limited`, with a
 localized explanation. Other providers, adjacent codes and unacknowledged

@@ -105,6 +105,7 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
         disabled={polling.pending || offline} onClick={polling.poke}>↻</button>
     </footer>
     <dialog ref={dialog} id="provider-quota-detail" className="quota-dialog" aria-labelledby="quota-dialog-title"
+      onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation() }}
       onCancel={() => setExpanded(false)} onClose={() => { setExpanded(false); opener.current?.focus() }}>
       <div className="quota-dialog-heading"><h2 id="quota-dialog-title">{nextWord("quotaTitle")}</h2>
         <button type="button" onClick={() => setExpanded(false)} aria-label={nextWord("quotaClose")}>×</button></div>
