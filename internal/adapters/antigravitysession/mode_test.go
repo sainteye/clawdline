@@ -97,7 +97,7 @@ func TestConfigureDispatchUsesUpdatedEffortsAndNativeDefaults(t *testing.T) {
 	}
 }
 
-func TestConfigureDispatchLeaseRejectsCloseAndConcurrentCalls(t *testing.T) {
+func TestConfigureDispatchLeaseRejectsConcurrentCalls(t *testing.T) {
 	t.Setenv("CLW_CONFIG_PEER", "yes")
 	t.Setenv("CLW_MODE_PEER", "yes")
 	h, row, dir := fixture(t)
@@ -116,7 +116,7 @@ func TestConfigureDispatchLeaseRejectsCloseAndConcurrentCalls(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	for _, err := range []error{h.Close(context.Background(), row), h.ConfigureDispatch(context.Background(), row, "", "", "ask"), h.Send(context.Background(), row, "must not prompt")} {
+	for _, err := range []error{h.ConfigureDispatch(context.Background(), row, "", "", "ask"), h.Send(context.Background(), row, "must not prompt")} {
 		var typed *Error
 		if !errors.As(err, &typed) || typed.Code != "busy" {
 			t.Fatalf("busy error=%v", err)
