@@ -114,6 +114,7 @@ type Server struct {
 	// receipt refinement. Nil uses the durable store implementation.
 	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
 	antigravitySessions       atomic.Pointer[antigravitysession.Host]
+	grokSessions              atomic.Pointer[antigravitysession.Host]
 	terminals                 []ports.TerminalHost
 	// closes is the Sessions' own closes waiting for their turn to end
 	// (agent_close_schedule.go).

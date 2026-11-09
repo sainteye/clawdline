@@ -260,7 +260,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
 		VerifyPast: func(ctx context.Context, place projects.Place, assistant, id string) (bool, error) {
-			if assistant == projects.AssistantAntigravity {
+			if projects.OwnedAssistant(assistant) {
 				return false, app.StartRefusal{Status: http.StatusConflict, Code: "provider_integration_unavailable",
 					Message: "Antigravity Session identity and interactive readiness have not been verified on this machine."}
 			}
@@ -321,7 +321,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 // past is StartPoints.past(in:assistant:limit:). A Codex index that cannot be
 // asked is an empty list, as it is in the Swift app.
 func (s *Server) past(ctx context.Context, place projects.Place, assistant string, reading startReading, limit int) []projects.Past {
-	if assistant == projects.AssistantAntigravity {
+	if projects.OwnedAssistant(assistant) {
 		return nil // No caller may substitute Claude's history for this provider.
 	}
 	rootTitles := map[string]ownrecords.BoardTitle{}
@@ -406,8 +406,8 @@ func manualConversationTitle(rows []swiftTitle, id, custom string) string {
 }
 
 func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistant, model, persona string) {
-	if assistant == projects.AssistantAntigravity && s.antigravitySessions.Load() == nil {
-		refuseAntigravityFoundation(w)
+	if projects.OwnedAssistant(assistant) && s.ownedHost(session.Assistant(assistant)) == nil {
+		refuseOwnedFoundation(w, assistant)
 		return
 	}
 	if id == projects.MachinePlaceID {
@@ -433,10 +433,15 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No place named that", "")
 		return
 	}
-	if assistant == projects.AssistantAntigravity {
-		made, err := s.openOwnedAntigravity(ctx, starter, place, persona, model, nil)
+	if projects.OwnedAssistant(assistant) {
+		made, err := s.openOwnedAssistant(ctx, starter, place, persona, model, nil, assistant)
 		if err != nil {
-			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Gemini")
+			if ownedAuthRequired(err) {
+				name := ownedLabel(assistant)
+				writePlaceRefusal(w, http.StatusConflict, "assistant_sign_in_required", name+" is installed but not signed in. Sign in on this machine, then retry this Session.", name)
+				return
+			}
+			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), ownedLabel(assistant))
 			return
 		}
 		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Model: model, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
@@ -468,7 +473,7 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 // A known signed-out CLI needs a guided retry before opening its tmux pane.
 // Unknown answers from older CLIs are left to the regular start path.
 func assistantNeedsSignIn(parent context.Context, assistant string) bool {
-	if assistant == projects.AssistantAntigravity {
+	if projects.OwnedAssistant(assistant) {
 		return false // Auth remains unknown; never probe Claude instead.
 	}
 	if assistant == projects.AssistantClaude && (os.Getenv("ANTHROPIC_API_KEY") != "" ||
@@ -516,8 +521,8 @@ func assistantNeedsSignIn(parent context.Context, assistant string) bool {
 }
 
 func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assistant, conversation, persona string) {
-	if assistant == projects.AssistantAntigravity {
-		s.resumeOwnedAntigravity(w, r, id, conversation, persona)
+	if projects.OwnedAssistant(assistant) {
+		s.resumeOwnedAssistant(w, r, id, conversation, persona, assistant)
 		return
 	}
 	release, ok := admitOpening(w, r)
@@ -557,8 +562,8 @@ func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assista
 }
 
 func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant string) {
-	if assistant == projects.AssistantAntigravity && s.antigravitySessions.Load() == nil {
-		refuseAntigravityFoundation(w)
+	if projects.OwnedAssistant(assistant) && s.ownedHost(session.Assistant(assistant)) == nil {
+		refuseOwnedFoundation(w, assistant)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -572,8 +577,8 @@ func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant
 	}
 	// One more than is sent, so the answer can say whether there were more.
 	const limit = 200
-	if assistant == projects.AssistantAntigravity {
-		s.pastOwnedAntigravity(w, r, ctx, place, limit)
+	if projects.OwnedAssistant(assistant) {
+		s.pastOwnedAssistant(w, r, ctx, place, limit, assistant)
 		return
 	}
 	var found []projects.Past
@@ -612,7 +617,11 @@ func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant
 
 // Identity, composer evidence and permission mapping are required before the
 // foundation can open a real Session. Keep every old-provider fallback closed.
-func refuseAntigravityFoundation(w http.ResponseWriter) {
+func refuseOwnedFoundation(w http.ResponseWriter, assistant string) {
+	if assistant == projects.AssistantGrok {
+		writePlaceRefusal(w, http.StatusConflict, "provider_integration_unavailable", "The official Grok Build CLI is missing or its coding protocol has not been verified on this machine.", "Grok")
+		return
+	}
 	const message = "Antigravity Session identity and interactive readiness have not been verified on this machine."
 	writePlaceError(w, http.StatusConflict, contract.PlaceError{
 		Code: "provider_integration_unavailable", Message: message, App: "Antigravity",

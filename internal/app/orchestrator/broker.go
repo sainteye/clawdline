@@ -98,10 +98,12 @@ type Broker struct {
 	// OwnedChildAvailable reads fresh configured Host availability. Open configures
 	// one owned protocol row without sending input; Close stops and joins only
 	// the exact owned/native/CWD binding, idempotently when already stopped.
-	OwnedChildAvailable func(context.Context) bool
-	OpenOwnedChild      func(context.Context, Record, string, string, squadfiles.Files, workflowlaunch.Prepared) (OwnedChild, error)
-	OpenOwnedSession    func(ctx context.Context, cwd, name, model, persona string, addDirs []string) (session.Session, error)
-	CloseOwnedChild     func(context.Context, string, string, string) error
+	OwnedChildAvailable    func(context.Context) bool
+	OwnedProviderAvailable func(context.Context, string) bool
+	OpenOwnedSessionFor    func(ctx context.Context, cwd, name, model, persona string, addDirs []string, assistant string) (session.Session, error)
+	OpenOwnedChild         func(context.Context, Record, string, string, squadfiles.Files, workflowlaunch.Prepared) (OwnedChild, error)
+	OpenOwnedSession       func(ctx context.Context, cwd, name, model, persona string, addDirs []string) (session.Session, error)
+	CloseOwnedChild        func(context.Context, string, string, string) error
 	// TrustClaudeProject records a project folder as one Claude Code may work
 	// in, before a session the person asked for is opened there, so its first
 	// screen is a composer and not the workspace-trust dialog nothing may

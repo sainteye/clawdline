@@ -284,9 +284,9 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 		return Dispatched{}, refuse(http.StatusUnprocessableEntity, "root_session_required",
 			"A callback wakes the session that asked for it; root.session_id names that conversation.")
 	}
-	if req.Root.Assistant != "claude" && req.Root.Assistant != "codex" && req.Root.Assistant != "antigravity" {
+	if req.Root.Assistant != "claude" && req.Root.Assistant != "codex" && req.Root.Assistant != "antigravity" && req.Root.Assistant != "grok" {
 		return Dispatched{}, refuse(http.StatusUnprocessableEntity, "root_assistant_required",
-			"root.assistant must be claude, codex or antigravity.")
+			"root.assistant must be claude, codex, antigravity or grok.")
 	}
 	if req.WorkID != "" && !IsTaskID(req.WorkID) {
 		return bad("work_id must be a lowercase UUID naming a work item, or left out.")

@@ -12,6 +12,8 @@ import (
 // URI names the existing published prompt; tools receive only the capability
 // file path through their environment, never a capability value in the prompt.
 type LaunchContext struct {
+	// PermissionMode is frozen by the daemon before a Grok process starts.
+	PermissionMode      string `json:"permission_mode,omitempty"`
 	URI                 string `json:"uri,omitempty"`
 	Text                string `json:"text,omitempty"`
 	Persona             string `json:"persona,omitempty"`
@@ -25,6 +27,9 @@ type injectedTurn struct {
 }
 
 func (l LaunchContext) validate() error {
+	if l.PermissionMode != "" && l.PermissionMode != "ask" && l.PermissionMode != "full" {
+		return refusal("unsupported_permission")
+	}
 	if l.SquadCapabilityPath != "" && !filepath.IsAbs(l.SquadCapabilityPath) {
 		return refusal("invalid_launch_context")
 	}

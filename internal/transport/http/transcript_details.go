@@ -127,13 +127,13 @@ func compactEntryDetails(row contract.TranscriptEntry, e transcript.Entry, scope
 
 func (s *Server) transcriptEntryDetail(w http.ResponseWriter, r *http.Request, id string, item session.Session, view string) {
 	parts := strings.Split(view, ":")
-	owned := item.Assistant == session.AssistantAntigravity && item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol
+	owned := (item.Assistant == session.AssistantAntigravity || item.Assistant == session.AssistantGrok) && item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol
 	if len(parts) != 3 || parts[0] != "entry-v1" && parts[0] != "entry-v1z" || len(parts[2]) != sha256.Size*2 || !owned && item.Assistant != session.AssistantCodex && item.Assistant != session.AssistantClaude {
 		writeRefusal(w, 400, "invalid_tool_result", "name a stored tool result and representation")
 		return
 	}
 	if owned {
-		if h := s.antigravitySessions.Load(); h != nil {
+		if h := s.ownedHost(item.Assistant); h != nil {
 			if row, err := h.ToolEntry(r.Context(), item, parts[1]+":"+parts[2]); err == nil {
 				if !s.admitPinnedTarget(w, r, id) {
 					return

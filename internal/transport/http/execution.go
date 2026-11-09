@@ -37,7 +37,7 @@ func executionFingerprint(item session.Session, live ownrecords.Live) string {
 	// before a pipe write. Keeping this identity across reconnects also lets a
 	// paired device read saved history without starting the provider.
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol &&
-		item.Assistant == session.AssistantAntigravity && item.ConversationID != "" {
+		(item.Assistant == session.AssistantAntigravity || item.Assistant == session.AssistantGrok) && item.ConversationID != "" {
 		return fmt.Sprintf("acp:%s:%s", item.ID, item.ConversationID)
 	}
 	if item.PID <= 0 || live.ProcessStart.IsZero() || !item.IsAssistant() {

@@ -28,12 +28,16 @@ const (
 	AssistantClaude      = string(session.AssistantClaude)
 	AssistantCodex       = string(session.AssistantCodex)
 	AssistantAntigravity = string(session.AssistantAntigravity)
+	AssistantGrok        = string(session.AssistantGrok)
 )
 
 // KnownAssistant admits exact public provider ids, never executable aliases.
 func KnownAssistant(name string) bool {
 	return session.KnownAssistant(name)
 }
+
+// OwnedAssistant names providers whose launches use daemon-owned protocol pipes.
+func OwnedAssistant(name string) bool { return name == AssistantAntigravity || name == AssistantGrok }
 
 // ModelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never
 // opening with `-`. No string it admits holds a character a shell reads.
@@ -274,6 +278,9 @@ func TOMLString(value string) string {
 // Admit is SessionLaunchPolicy.admit with the capability half left to the
 // caller, which knows what this platform can open.
 func Admit(req LaunchRequest) (Launch, error) {
+	if req.Assistant == AssistantGrok {
+		return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderPermissionUnsupported)
+	}
 	if !usable(req.ProjectRoot) {
 		return Launch{}, errors.Join(ErrInvalidLaunch,
 			errors.New("the launch project root is not a safe absolute path"))

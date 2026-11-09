@@ -219,7 +219,7 @@ func (s *Server) transcriptPageBeforeView(id string, item session.Session, limit
 func (s *Server) transcriptPageBeforeProjection(id string, item session.Session, limit int, before int64, compact, lazy bool, revision ...string) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
-		if h := s.antigravitySessions.Load(); h != nil {
+		if h := s.ownedHost(item.Assistant); h != nil {
 			held := ""
 			if len(revision) > 0 {
 				held = revision[0]
@@ -617,8 +617,8 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		info.Session.NamingAssistant = naming
 	}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
-		if h := s.antigravitySessions.Load(); h != nil {
-			if r.URL.Query().Get("parts") != "summary" {
+		if h := s.ownedHost(item.Assistant); h != nil {
+			if item.Assistant == session.AssistantAntigravity && r.URL.Query().Get("parts") != "summary" {
 				_ = h.RefreshQuota(ctx, item)
 			}
 			if facts, err := h.Facts(item); err == nil {

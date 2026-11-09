@@ -48,3 +48,12 @@ test("every inventory classification is selectable and CodeGraph remains visible
   }
   assert(visible("#stages=turn&scenes=machine").includes("machine-codegraph"))
 })
+
+test("Grok context is independently selectable and excludes Gemini continuation rules", () => {
+  const f = filtersFromHash("#agents=grok&scenes=memory&stages=turn")
+  assert.deepEqual(f.agents, ["grok"])
+  assert.deepEqual(filtersFromHash(filterHash(f)), f)
+  assert(visible("#agents=grok").includes("grok-acp-context"))
+  assert(!visible("#agents=grok").includes("gemini-restart-continue"))
+  assert(!visible("#agents=antigravity").includes("grok-acp-context"))
+})

@@ -253,7 +253,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		return bad("task_id must be a lowercase UUID and match the dispatch")
 	}
 	if !projects.KnownAssistant(d.Assistant) {
-		return bad("assistant must be claude, codex or antigravity")
+		return bad("assistant must be claude, codex, antigravity or grok")
 	}
 	if !usableDir(d.ProjectDir) {
 		return bad("project_dir must be an absolute path to a directory")
@@ -293,9 +293,12 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	default:
 		return bad("permission_mode must be one of: ask, edits, full")
 	}
-	if d.Assistant == projects.AssistantAntigravity && !b.ownedChildAvailable(context.Background()) {
+	if d.Assistant == projects.AssistantGrok && permission == "edits" {
+		return Record{}, refuse(http.StatusUnprocessableEntity, "provider_permission_unsupported", "This provider has no verified edits-only permission mode.")
+	}
+	if projects.OwnedAssistant(d.Assistant) && !b.ownedChildAvailableFor(context.Background(), d.Assistant) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "provider_permission_unsupported",
-			"Antigravity has no verified session-local mapping for this dispatch permission ceiling.")
+			"This coding provider is unavailable or has no verified session-local mapping for this dispatch permission ceiling.")
 	}
 	timeout := timeoutDefault
 	if d.TimeoutMinutes != nil {
@@ -595,7 +598,7 @@ const (
 	rootRequiredMessage = "root.session_id is required for API dispatch so the child can be grouped, closed and " +
 		"reported back to its owner. Resolve this interactive Root with GET /v1/orchestrator/whoami, then resend " +
 		"with its current process-bound conversation id and assistant."
-	rootAssistantMessage = "root.assistant is required when root.session_id names an owner; send claude, codex or antigravity. " +
+	rootAssistantMessage = "root.assistant is required when root.session_id names an owner; send claude, codex, antigravity or grok. " +
 		"The historical Claude fallback exists only in persisted legacy compatibility readers, not ownership decisions."
 	detachedRouteMessage = "POST /v1/orchestrator/tasks creates an owned Child and never accepts root.poll_only. " +
 		"Resolve this interactive Root with GET /v1/orchestrator/whoami and resend with root.session_id plus " +

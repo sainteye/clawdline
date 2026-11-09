@@ -15,6 +15,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/bootid"
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -303,8 +304,8 @@ func (s *Server) resumeConversation(ctx context.Context, reading startReading, t
 		log.Printf("audit place.%s place=%.64s ok=0 why=place_unavailable", t.verb, t.place)
 		return app.Started{}, app.ErrRestorePlaceUnavailable
 	}
-	if t.assistant == string(session.AssistantAntigravity) {
-		h := s.antigravitySessions.Load()
+	if projects.OwnedAssistant(t.assistant) {
+		h := s.ownedHost(session.Assistant(t.assistant))
 		if h == nil {
 			return app.Started{}, app.StartRefusal{Status: http.StatusServiceUnavailable, Code: "provider_foundation_unavailable", Message: "Antigravity ACP session host is not available"}
 		}

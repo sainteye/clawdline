@@ -120,7 +120,11 @@ func startCallback(stdout, stderr io.Writer, b *broker, inv callbackInvocation, 
 			return 2
 		}
 	}
-	assistant := conversationAssistant[name]
+	assistant, identityErr := conversationAssistantFromEnv(getenv, name, conversation)
+	if identityErr != nil {
+		fmt.Fprintln(stderr, identityErr)
+		return 2
+	}
 	if assistant == "" {
 		assistant = "claude"
 		if getenv("CODEX_THREAD_ID") != "" {

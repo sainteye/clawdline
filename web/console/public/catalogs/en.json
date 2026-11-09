@@ -10868,5 +10868,11 @@
   "transparency.card.space-saving-images.how": "Launch instructions suggest thumbnails for layout and colors, labeled multi-image overviews, original-size crops for small text, alignment, edges or suspicious details, and direct original viewing when explicitly requested. Long tool output goes to files with a summary and path. Existing local tools suffice.",
   "transparency.card.space-saving-images.effect": "New executions sample the machine choice independently of the inherited workflow. Existing Sessions and resumes retain their original context. Disabled instructions remain byte-for-byte unchanged. This is guidance, not an image-viewing restriction or proof of savings; no conversation files are deleted or rewritten.",
   "codegraphView.sessionIndexMissing": "This project has no code index yet, so CodeGraph lookups in this conversation are refused and the assistant uses ordinary source search. Build the index once; Clawdline keeps it current afterwards.",
-  "codegraphView.sessionIndexBuilding": "The index is being built. CodeGraph lookups are refused until it finishes."
+  "codegraphView.sessionIndexBuilding": "The index is being built. CodeGraph lookups are refused until it finishes.",
+  "transparency.card.grok-acp-context.condition": "An official Grok Build coding conversation has nonempty launch instructions",
+  "transparency.card.grok-acp-context.effect": "Resume retains the original snapshot. Grok receives no Gemini step-explanation or turn-end prompt. Clawdline never automatically replays an interrupted Grok prompt, and inactivity is an uncertain result rather than success. Skill use still needs its own receipt.",
+  "transparency.card.grok-acp-context.how": "The first real user input carries one ACP inline resource with the original text. Opening a blank Session sends no model input. A private conversation-address file lets native tools identify their own Session; authorization remains separate.",
+  "transparency.card.grok-acp-context.summary": "Captures the selected role and handbook, enabled-skill references, Project memory, Board language, answer-Note rule and selected workflow. CodeGraph guidance follows explicit machine consent or the inherited snapshot.",
+  "transparency.card.grok-acp-context.title": "Grok owned ACP context",
+  "transparency.grok": "Grok Build"
 }

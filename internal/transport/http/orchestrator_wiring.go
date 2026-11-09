@@ -83,6 +83,12 @@ func newBroker(s *Server) *orchestrator.Broker {
 		},
 		OwnedChildAvailable: func(context.Context) bool { return s.antigravitySessions.Load() != nil },
 		OpenOwnedChild:      s.openOwnedAntigravityChild,
+		OwnedProviderAvailable: func(_ context.Context, assistant string) bool {
+			return s.ownedHost(session.Assistant(assistant)) != nil
+		},
+		OpenOwnedSessionFor: func(ctx context.Context, cwd, name, model, persona string, addDirs []string, assistant string) (session.Session, error) {
+			return s.openOwnedAssistant(ctx, s.starter(s.readForStart(ctx)), projects.Place{Path: cwd, Label: name}, persona, model, addDirs, assistant)
+		},
 		OpenOwnedSession: func(ctx context.Context, cwd, name, model, persona string, addDirs []string) (session.Session, error) {
 			place := projects.Place{Path: cwd, Label: name}
 			starter := s.starter(s.readForStart(ctx))
@@ -190,8 +196,8 @@ func newBroker(s *Server) *orchestrator.Broker {
 		// names sessions. A daemon whose identity port is not that host reads
 		// no records, and its notices are resent as before.
 		NoticeRead: func(ctx context.Context, root session.Session, noticeID string) (bool, error) {
-			if root.Backend == session.BackendOwned && root.Binding == session.BindingProtocol && root.Assistant == session.AssistantAntigravity {
-				if h := s.antigravitySessions.Load(); h != nil {
+			if root.Backend == session.BackendOwned && root.Binding == session.BindingProtocol && (root.Assistant == session.AssistantAntigravity || root.Assistant == session.AssistantGrok) {
+				if h := s.ownedHost(root.Assistant); h != nil {
 					return h.NoticeRead(ctx, root, noticeID)
 				}
 				return false, ownedAntigravityUnavailable()

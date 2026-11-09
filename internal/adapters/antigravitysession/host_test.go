@@ -119,6 +119,9 @@ func TestOwnedPeer(t *testing.T) {
 				}
 			}
 		case "authenticate":
+			if os.Getenv("GROK_HOME") != "" {
+				result = map[string]any{"_meta": map[string]any{"auth_mode": "Oidc", "backend_billed": false}}
+			}
 			if _, err := os.Stat(filepath.Join(dir, "auth-error")); err == nil {
 				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32001, "message": "synthetic auth error"}})
 				continue

@@ -28,6 +28,7 @@ var assistants = []Assistant{
 	AssistantClaude,
 	AssistantCodex,
 	AssistantAntigravity,
+	AssistantGrok,
 }
 
 // AllAssistants returns a copy of every assistant kind known to this daemon.

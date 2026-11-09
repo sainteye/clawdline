@@ -307,3 +307,14 @@ and remain accurate. Closing a Session summarizes Playbooks by name and scrolls
 long work inside the confirmation; this adds no provider instructions. The
 reviewed source receipts follow the three message-card files. Website snapshot
 publication remains separate from this source review.
+
+
+Official Grok Build conversations have their own conditional ACP entry and
+provider filter. The first user turn carries the frozen role, shared memory,
+Board language, answer-Note rule and selected workflow. Private native tool
+addresses are separate from authorization and prompt content. Resume retains
+that snapshot without replaying interrupted input. Gemini step-explanation,
+turn-end and restart-continuation instructions are not applied to Grok. An
+inactivity timeout records an uncertain outcome rather than successful work.
+The English and Taiwan Traditional Chinese explanations describe these actual
+provider boundaries; the website must import this reviewed product revision.

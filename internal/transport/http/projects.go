@@ -138,6 +138,7 @@ func installedAssistants() []contract.StartAssistant {
 		}
 	}
 	out = append(out, antigravityStartAssistant(antigravityResolver().Snapshot(context.Background())))
+	out = append(out, grokStartAssistant(grokResolver().Snapshot(context.Background())))
 	return out
 }
 

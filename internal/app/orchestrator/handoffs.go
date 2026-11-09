@@ -69,6 +69,16 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if model == "" && b.DefaultModel != nil {
 		model = b.DefaultModel(assistant)
 	}
+	if assistant == projects.AssistantGrok {
+		if b.OpenOwnedSessionFor == nil {
+			return openedSession{}, errors.New("grok session host unavailable")
+		}
+		row, err := b.OpenOwnedSessionFor(ctx, cwd, name, model, persona, addDirs, assistant)
+		if err != nil {
+			return openedSession{}, err
+		}
+		return openedSession{TerminalID: row.ID, Backend: string(row.Backend), OpenedAt: b.now().Unix()}, nil
+	}
 	if assistant == projects.AssistantAntigravity {
 		if b.OpenOwnedSession == nil {
 			return openedSession{}, errors.New("antigravity session host unavailable")
@@ -433,7 +443,7 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 		assistant = "claude"
 	}
 	if !session.KnownAssistant(assistant) {
-		return Handoff{}, false, badHandoff("assistant must be claude, codex or antigravity.")
+		return Handoff{}, false, badHandoff("assistant must be claude, codex, antigravity or grok.")
 	}
 	model := strings.TrimSpace(req.Model)
 	if model != "" && !modelName(model) {
@@ -825,7 +835,7 @@ func validateAssignment(req RootAssignmentRequest) error {
 		return badAssignment("request_id must be a lowercase UUID.")
 	}
 	if !session.KnownAssistant(req.Assistant) {
-		return badAssignment("assistant must be claude, codex or antigravity.")
+		return badAssignment("assistant must be claude, codex, antigravity or grok.")
 	}
 	if req.Model != "" && req.Model != "default" && !modelName(req.Model) {
 		return badAssignment("model must be \"default\" or a model name.")

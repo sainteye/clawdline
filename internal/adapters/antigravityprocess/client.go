@@ -336,6 +336,23 @@ func (c *Client) AuthenticatePersonal(ctx context.Context) (json.RawMessage, err
 		params = map[string]any{"methodId": "cached_token", "_meta": map[string]bool{"headless": true}}
 	}
 	r, err := c.call(ctx, "authenticate", params)
+	if err == nil && c.opts.Assistant == session.AssistantGrok {
+		// cached_token can fall through inside the native agent. An RPC ack
+		// alone does not prove it stayed on the interactive account path.
+		var proof struct {
+			Meta struct {
+				Mode          string          `json:"auth_mode"`
+				BackendBilled *bool           `json:"backend_billed"`
+				Gate          json.RawMessage `json:"gate"`
+			} `json:"_meta"`
+		}
+		if json.Unmarshal(r, &proof) != nil || proof.Meta.Mode != "Oidc" || proof.Meta.BackendBilled == nil || *proof.Meta.BackendBilled {
+			return nil, failure("auth_mode_unsupported", Acknowledged)
+		}
+		if len(proof.Meta.Gate) > 0 && string(proof.Meta.Gate) != "null" {
+			return nil, failure("account_restricted", Acknowledged)
+		}
+	}
 	if err == nil {
 		c.authenticated = true
 	}

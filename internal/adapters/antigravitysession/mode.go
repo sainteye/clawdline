@@ -95,6 +95,9 @@ func nativeMode(raw json.RawMessage, wanted string) (string, error) {
 // ConfigureDispatch performs metadata-only native selections under one lease.
 // Required ACKs fence each subsequent selection; no prompt or history is written.
 func (h *Host) ConfigureDispatch(ctx context.Context, row session.Session, model, effort, permission string) error {
+	if h.assistant() == session.AssistantGrok {
+		return h.configureGrok(ctx, row, model, effort, permission)
+	}
 	mode := map[string]string{"ask": "default", "edits": "auto_edit", "full": "yolo"}[permission]
 	if mode == "" {
 		return refusal("unsupported_permission")

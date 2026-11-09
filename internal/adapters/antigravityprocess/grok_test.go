@@ -47,7 +47,7 @@ func TestGrokProcessPeer(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			methods := []any{map[string]string{"id": "grok.com"}}
-			if os.Getenv("CLW_XAUTH") == "ready" || os.Getenv("CLW_XAUTH") == "expired" {
+			if os.Getenv("CLW_XAUTH") == "ready" || os.Getenv("CLW_XAUTH") == "expired" || os.Getenv("CLW_XAUTH") == "api" || os.Getenv("CLW_XAUTH") == "unknown" {
 				methods = append(methods, map[string]string{"id": "cached_token"})
 			}
 			result = map[string]any{"protocolVersion": 1, "_meta": map[string]any{"grokShell": true, "agentVersion": "1.0.77"}, "authMethods": methods,
@@ -65,6 +65,13 @@ func TestGrokProcessPeer(t *testing.T) {
 			if os.Getenv("CLW_XAUTH") == "expired" {
 				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": "private native auth failure"}})
 				continue
+			}
+			if os.Getenv("CLW_XAUTH") != "unknown" {
+				mode := "Oidc"
+				if os.Getenv("CLW_XAUTH") == "api" {
+					mode = "ApiKey"
+				}
+				result = map[string]any{"_meta": map[string]any{"auth_mode": mode, "backend_billed": false}}
 			}
 		case "session/new":
 			result = map[string]string{"sessionId": "synthetic-coding-session"}
@@ -150,5 +157,25 @@ func TestGrokAuthenticationFailureCannotOpenOrPrompt(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(dir, "wire"))
 	if strings.Count(string(raw), `"method":"authenticate"`) != 1 || strings.Contains(string(raw), "session/new") || strings.Contains(string(raw), "session/prompt") {
 		t.Fatalf("failed auth retried or allowed work: %s", raw)
+	}
+}
+
+func TestGrokRejectsUnverifiedBillingAuthentication(t *testing.T) {
+	for _, mode := range []string{"api", "unknown"} {
+		t.Run(mode, func(t *testing.T) {
+			c, dir := grokProcess(t, mode, nil)
+			_, err := c.AuthenticatePersonal(context.Background())
+			var typed *Error
+			if !errors.As(err, &typed) || typed.Code != "auth_mode_unsupported" {
+				t.Fatalf("unverified auth accepted: %v", err)
+			}
+			if _, err := c.NewSession(context.Background()); err == nil {
+				t.Fatal("unverified account opened a coding session")
+			}
+			raw, _ := os.ReadFile(filepath.Join(dir, "wire"))
+			if strings.Contains(string(raw), "session/new") || strings.Contains(string(raw), "session/prompt") {
+				t.Fatal("model work followed unverified auth")
+			}
+		})
 	}
 }

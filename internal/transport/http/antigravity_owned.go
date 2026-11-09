@@ -31,10 +31,16 @@ type ownedAntigravityTerminal struct{ server *Server }
 
 func (p ownedAntigravityTerminal) Name() string { return "owned" }
 func (p ownedAntigravityTerminal) Inventory(ctx context.Context) (session.Inventory, error) {
-	if h := p.server.antigravitySessions.Load(); h != nil {
-		return h.Inventory(ctx)
+	inv := session.Inventory{Complete: true, Provenance: "owned", Sessions: []session.Session{}}
+	for _, h := range p.server.ownedHosts() {
+		rows, err := h.Inventory(ctx)
+		if err != nil {
+			return inv, err
+		}
+		inv.Complete = inv.Complete && rows.Complete
+		inv.Sessions = append(inv.Sessions, rows.Sessions...)
 	}
-	return session.Inventory{Complete: true, Provenance: "owned", Sessions: []session.Session{}}, nil
+	return inv, nil
 }
 func (p ownedAntigravityTerminal) Open(ctx context.Context, r ports.OpenRequest) (session.Session, error) {
 	if h := p.server.antigravitySessions.Load(); h != nil {
@@ -46,11 +52,15 @@ func (p ownedAntigravityTerminal) Open(ctx context.Context, r ports.OpenRequest)
 // Prepare role files and shared memory through the same Starter as the other
 // providers. No model input is sent while opening the blank conversation.
 func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, place projects.Place, persona, model string, addDirs []string) (session.Session, error) {
-	prepared, err := starter.PrepareOwnedContext(ctx, place, persona)
+	return s.openOwnedAssistant(ctx, starter, place, persona, model, addDirs, projects.AssistantAntigravity)
+}
+
+func (s *Server) openOwnedAssistant(ctx context.Context, starter app.Starter, place projects.Place, persona, model string, addDirs []string, assistant string) (session.Session, error) {
+	prepared, err := starter.PrepareOwnedContextFor(ctx, place, persona, assistant)
 	if err != nil {
 		return session.Session{}, err
 	}
-	h := s.antigravitySessions.Load()
+	h := s.ownedHost(session.Assistant(assistant))
 	if h == nil {
 		prepared.Workflow.Fail(ctx)
 		if prepared.LaunchID != "" {
@@ -58,7 +68,7 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 		}
 		return session.Session{}, ownedAntigravityUnavailable()
 	}
-	launchCtx := ownedAntigravityContext(place, prepared)
+	launchCtx := ownedContextFor(place, prepared, assistant)
 	if len(addDirs) > 0 {
 		var extra strings.Builder
 		extra.WriteString("\n\nAdditional accessible directories:\n")
@@ -79,16 +89,16 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 		// Opening has already succeeded. A pending receipt is recovered by
 		// the existing inventory observer; never invite a duplicate open.
 		if err := squadfiles.RecordTerminal(prepared.Files, row.ID); err != nil {
-			log.Print("gemini: squad terminal receipt pending")
+			log.Print(ownedLabel(assistant) + ": squad terminal receipt pending")
 		}
 		if err := s.store.RecordSquadTerminal(ctx, prepared.LaunchID, row.ID); err != nil {
-			log.Print("gemini: squad terminal binding pending")
+			log.Print(ownedLabel(assistant) + ": squad terminal binding pending")
 		} else if err := s.store.BindSquadConversation(ctx, prepared.LaunchID, row.ConversationID); err != nil {
-			log.Print("gemini: squad conversation binding pending")
+			log.Print(ownedLabel(assistant) + ": squad conversation binding pending")
 		}
 	}
 	if err := prepared.Workflow.Bind(ctx, row.ID, row.ConversationID); err != nil {
-		log.Print("gemini: workflow binding pending recovery")
+		log.Print(ownedLabel(assistant) + ": workflow binding pending recovery")
 	}
 	return row, nil
 }
@@ -103,14 +113,22 @@ func ownedInstructions(text string) string {
 }
 
 func ownedAntigravityContext(place projects.Place, prepared app.OwnedContext) antigravitysession.LaunchContext {
+	return ownedContextFor(place, prepared, projects.AssistantAntigravity)
+}
+
+func ownedContextFor(place projects.Place, prepared app.OwnedContext, assistant string) antigravitysession.LaunchContext {
 	resource := prepared.Context.PromptPath
 	if resource == "" {
 		// An inline resource can identify the existing Project directory. It
 		// neither creates a Project file nor asks the provider to read one.
 		resource = place.Path
 	}
+	text := prepared.Context.Instructions()
+	if assistant == projects.AssistantAntigravity {
+		text = ownedInstructions(text)
+	}
 	return antigravitysession.LaunchContext{
-		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: ownedInstructions(prepared.Context.Instructions()),
+		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: text,
 		Persona: prepared.Persona, SquadLaunchID: prepared.LaunchID, SquadCapabilityPath: prepared.Files.CapabilityPath,
 		WorkflowLaunchID: prepared.Workflow.ID,
 	}
@@ -120,17 +138,17 @@ func (p ownedAntigravityTerminal) Send(ctx context.Context, s session.Session, t
 	return p.SendProtocol(ctx, s, text, nil)
 }
 func (p ownedAntigravityTerminal) SendProtocol(ctx context.Context, s session.Session, text string, before func() error) error {
-	if h := p.server.antigravitySessions.Load(); h != nil {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
 		return h.SendProtocol(ctx, s, text, before)
 	}
 	return ownedAntigravityUnavailable()
 }
 func (p ownedAntigravityTerminal) OwnsProtocol(s session.Session) bool {
-	h := p.server.antigravitySessions.Load()
+	h := p.server.ownedHost(s.Assistant)
 	return h != nil && h.OwnsProtocol(s)
 }
 func (p ownedAntigravityTerminal) SelectProtocol(ctx context.Context, s session.Session, digit int, expect string, before func() error) error {
-	if h := p.server.antigravitySessions.Load(); h != nil {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
 		return h.SelectProtocol(ctx, s, digit, expect, before)
 	}
 	return ownedAntigravityUnavailable()
@@ -139,7 +157,7 @@ func (p ownedAntigravityTerminal) Interrupt(ctx context.Context, s session.Sessi
 	return p.InterruptProtocol(ctx, s, nil)
 }
 func (p ownedAntigravityTerminal) InterruptProtocol(ctx context.Context, s session.Session, before func() error) error {
-	if h := p.server.antigravitySessions.Load(); h != nil {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
 		return h.InterruptProtocol(ctx, s, before)
 	}
 	return ownedAntigravityUnavailable()
@@ -148,25 +166,25 @@ func (p ownedAntigravityTerminal) Reveal(context.Context, session.Session, bool)
 	return ownedAntigravityUnavailable()
 }
 func (p ownedAntigravityTerminal) NativeTerminalIdentity(ctx context.Context, s session.Session) (string, error) {
-	if h := p.server.antigravitySessions.Load(); h != nil {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
 		return h.NativeTerminalIdentity(ctx, s)
 	}
 	return "", ownedAntigravityUnavailable()
 }
 func (p ownedAntigravityTerminal) Keystroke(ctx context.Context, s session.Session, b []byte) error {
-	if h := p.server.antigravitySessions.Load(); h != nil {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
 		return h.Keystroke(ctx, s, b)
 	}
 	return ownedAntigravityUnavailable()
 }
 func (p ownedAntigravityTerminal) Screen(ctx context.Context, s session.Session, cols int) (string, bool) {
-	if h := p.server.antigravitySessions.Load(); h != nil {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
 		return h.Screen(ctx, s, cols)
 	}
 	return "", false
 }
 func (p ownedAntigravityTerminal) Close(ctx context.Context, s session.Session) error {
-	if h := p.server.antigravitySessions.Load(); h != nil {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
 		return h.Close(ctx, s)
 	}
 	return ownedAntigravityUnavailable()
@@ -256,20 +274,25 @@ func (s *Server) resolveOwnedAntigravityExecutable(ctx context.Context, executab
 
 func (s *Server) availableAssistants() []contract.StartAssistant {
 	rows := installedAssistants()
-	if h := s.antigravitySessions.Load(); h != nil {
-		for n := range rows {
-			if rows[n].ID != "antigravity" {
-				continue
+	for _, assistant := range []session.Assistant{session.AssistantAntigravity, session.AssistantGrok} {
+		if h := s.ownedHost(assistant); h != nil {
+			for n := range rows {
+				if rows[n].ID != string(assistant) {
+					continue
+				}
+				if assistant == session.AssistantGrok && (rows[n].Installed == nil || !*rows[n].Installed || rows[n].Version == "") {
+					continue
+				}
+				installed := true
+				rows[n].Installed = &installed
+				rows[n].IntegrationState = contract.StartIntegrationStateActive
+				rows[n].AuthState = contract.StartAuthStateUnknown
+				count, _ := h.Stats()
+				if count > 0 && assistant == session.AssistantAntigravity {
+					rows[n].AuthState = contract.StartAuthStateReady
+				}
+				rows[n].Capabilities = &contract.StartCapabilities{Roles: true, Queue: true, Start: true, Resume: true, Send: count > 0, Menus: count > 0, Transcript: count > 0}
 			}
-			installed := true
-			rows[n].Installed = &installed
-			rows[n].IntegrationState = contract.StartIntegrationStateActive
-			rows[n].AuthState = contract.StartAuthStateUnknown
-			count, _ := h.Stats()
-			if count > 0 {
-				rows[n].AuthState = contract.StartAuthStateReady
-			}
-			rows[n].Capabilities = &contract.StartCapabilities{Roles: true, Queue: true, Start: true, Resume: true, Send: count > 0, Menus: count > 0, Transcript: count > 0}
 		}
 	}
 	return rows
@@ -278,7 +301,7 @@ func (s *Server) availableAssistants() []contract.StartAssistant {
 // The broker has already published its immutable role snapshot with the task's
 // claims. Reuse it and configure the native worker before its one first input.
 func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.Record, cwd, launchID string, files squadfiles.Files, workflow workflowlaunch.Prepared) (orchestrator.OwnedChild, error) {
-	h := s.antigravitySessions.Load()
+	h := s.ownedHost(session.Assistant(r.Assistant))
 	if h == nil {
 		return orchestrator.OwnedChild{}, ownedAntigravityUnavailable()
 	}
@@ -295,7 +318,7 @@ func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.R
 		return values.GeminiStepExplanations()
 	}}
 	place := projects.Place{Path: cwd, Label: r.Title}
-	prepared, err := starter.OwnedContextFromPublished(ctx, place, r.Persona, launchID, files)
+	prepared, err := starter.OwnedContextFromPublishedFor(ctx, place, r.Persona, launchID, files, r.Assistant)
 	if err != nil {
 		return orchestrator.OwnedChild{}, err
 	}
@@ -303,7 +326,11 @@ func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.R
 	if err != nil {
 		return orchestrator.OwnedChild{}, err
 	}
-	row, err := h.OpenWithContext(ctx, ports.OpenRequest{Cwd: cwd, Name: r.Title}, ownedAntigravityContext(place, prepared))
+	launch := ownedContextFor(place, prepared, r.Assistant)
+	if r.Assistant == projects.AssistantGrok {
+		launch.PermissionMode = r.PermissionMode
+	}
+	row, err := h.OpenWithContext(ctx, ports.OpenRequest{Cwd: cwd, Name: r.Title}, launch)
 	if err != nil {
 		return orchestrator.OwnedChild{}, err
 	}
@@ -317,11 +344,19 @@ func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.R
 }
 
 func (s *Server) stopOwnedAntigravityChild(ctx context.Context, id, native, cwd string) error {
-	h := s.antigravitySessions.Load()
-	if h == nil {
-		return ownedAntigravityUnavailable()
+	for _, assistant := range []session.Assistant{session.AssistantAntigravity, session.AssistantGrok} {
+		h := s.ownedHost(assistant)
+		if h == nil {
+			continue
+		}
+		err := h.Stop(ctx, session.Session{ID: id, Backend: session.BackendOwned, Assistant: assistant, Binding: session.BindingProtocol, ConversationID: native, CWD: cwd})
+		if err == nil {
+			return nil
+		}
+		var local *antigravitysession.Error
+		if !errors.As(err, &local) || (local.Code != "not_found" && local.Code != "identity_changed") {
+			return err
+		}
 	}
-	return h.Stop(ctx, session.Session{ID: id, Backend: session.BackendOwned,
-		Assistant: session.AssistantAntigravity, Binding: session.BindingProtocol,
-		ConversationID: native, CWD: cwd})
+	return ownedAntigravityUnavailable()
 }

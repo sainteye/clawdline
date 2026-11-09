@@ -237,7 +237,10 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		}
 		conversation = v
 		if rootAssistant == "" {
-			rootAssistant = conversationAssistant[name]
+			rootAssistant, err = conversationAssistantFromEnv(env.getenv, name, conversation)
+			if err != nil {
+				return usage("%s", conversationRefusal(err, "--root-assistant"))
+			}
 		}
 	} else if rootAssistant == "" {
 		for _, name := range conversationEnv {
@@ -248,7 +251,10 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 			if v != conversation {
 				continue
 			}
-			assistant := conversationAssistant[name]
+			assistant, err := conversationAssistantFromEnv(env.getenv, name, conversation)
+			if err != nil {
+				return usage("%s", conversationRefusal(err, "--root-assistant"))
+			}
 			if rootAssistant != "" && rootAssistant != assistant {
 				return usage(cliCopy("misc", "dispatch.conversation_ambiguous", "conversation %s matches multiple assistants. Pass --root-assistant claude, codex or antigravity."), conversation)
 			}

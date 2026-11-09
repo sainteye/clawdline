@@ -49,16 +49,23 @@ type Resolver struct {
 	mu           sync.Mutex
 	candidates   []string
 	run          Runner
+	fingerprint  func(string, string) bool
 	signature    string
 	known        bool
 	installation Installation
 }
 
 func NewResolver(candidates []string, run Runner) *Resolver {
+	return NewResolverWithFingerprint(candidates, run, func(_ string, help string) bool { return standaloneHelp(help) })
+}
+
+// NewResolverWithFingerprint reuses the bounded, account-free executable probe
+// with a provider-specific version/help contract.
+func NewResolverWithFingerprint(candidates []string, run Runner, fingerprint func(string, string) bool) *Resolver {
 	if run == nil {
 		run = runProbe
 	}
-	return &Resolver{candidates: append([]string(nil), candidates...), run: run}
+	return &Resolver{candidates: append([]string(nil), candidates...), run: run, fingerprint: fingerprint}
 }
 
 // DefaultCandidates prioritizes the standalone install location over PATH,
@@ -153,7 +160,7 @@ func (r *Resolver) Snapshot(parent context.Context) Installation {
 			result.Reason = "provider_cli_unreadable"
 			continue
 		}
-		if !standaloneHelp(string(help)) {
+		if r.fingerprint == nil || !r.fingerprint(versionText, string(help)) {
 			continue
 		}
 		result = Installation{InstalledKnown: true, Installed: true, Compatible: true, Path: absolute,

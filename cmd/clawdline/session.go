@@ -298,7 +298,10 @@ func conversationFromEnv(getenv func(string) string) (id, name string, err error
 		if v == "" {
 			continue
 		}
-		assistant := conversationAssistant[env]
+		assistant, readErr := conversationAssistantFromEnv(getenv, env, v)
+		if readErr != nil {
+			return "", "", readErr
+		}
 		if _, ok := seen[assistant]; ok {
 			continue
 		}
@@ -318,16 +321,40 @@ func conversationFromEnv(getenv func(string) string) (id, name string, err error
 
 // conversationEnvValue reads only the explicit pointer, never searches for an
 // identity. A record is an address; broker and Squad authorization are unchanged.
+type protocolSessionIdentity struct {
+	Assistant      string `json:"assistant"`
+	ConversationID string `json:"conversation_id"`
+}
+
 func conversationEnvValue(getenv func(string) string, name string) (string, error) {
 	if name != "CLAWDLINE_PROTOCOL_SESSION_FILE" {
 		return strings.TrimSpace(getenv(name)), nil
 	}
-	path := getenv(name)
-	if path == "" {
-		return "", nil
+	record, err := readProtocolSessionIdentity(getenv)
+	return record.ConversationID, err
+}
+
+func conversationAssistantFromEnv(getenv func(string) string, name, conversation string) (string, error) {
+	if name != "CLAWDLINE_PROTOCOL_SESSION_FILE" {
+		return conversationAssistant[name], nil
 	}
-	invalid := func() (string, error) {
-		return "", errors.New(cliCopy("workflow", "session.protocol_identity_invalid", "CLAWDLINE_PROTOCOL_SESSION_FILE must name a readable plain JSON file with assistant antigravity and a nonempty conversation_id"))
+	record, err := readProtocolSessionIdentity(getenv)
+	if err != nil {
+		return "", err
+	}
+	if record.ConversationID != conversation {
+		return "", errors.New("protocol_session_identity_changed")
+	}
+	return record.Assistant, nil
+}
+
+func readProtocolSessionIdentity(getenv func(string) string) (protocolSessionIdentity, error) {
+	path := getenv("CLAWDLINE_PROTOCOL_SESSION_FILE")
+	if path == "" {
+		return protocolSessionIdentity{}, nil
+	}
+	invalid := func() (protocolSessionIdentity, error) {
+		return protocolSessionIdentity{}, errors.New(cliCopy("workflow", "session.protocol_identity_invalid", "CLAWDLINE_PROTOCOL_SESSION_FILE must name a readable plain JSON file with assistant antigravity or grok and a nonempty conversation_id"))
 	}
 	if !filepath.IsAbs(path) {
 		return invalid()
@@ -349,14 +376,11 @@ func conversationEnvValue(getenv func(string) string, name string) (string, erro
 	if err != nil || len(raw) > brokerTokenLimit {
 		return invalid()
 	}
-	var record struct {
-		Assistant      string `json:"assistant"`
-		ConversationID string `json:"conversation_id"`
-	}
-	if json.Unmarshal(raw, &record) != nil || record.Assistant != "antigravity" || strings.TrimSpace(record.ConversationID) == "" {
+	var record protocolSessionIdentity
+	if json.Unmarshal(raw, &record) != nil || (record.Assistant != "antigravity" && record.Assistant != "grok") || strings.TrimSpace(record.ConversationID) == "" {
 		return invalid()
 	}
-	return record.ConversationID, nil
+	return record, nil
 }
 
 // twoConversationsError lists the variables, as NAME=value, of two assistants

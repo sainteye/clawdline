@@ -24,6 +24,13 @@ func (b *Broker) ownedChildAvailable(ctx context.Context) bool {
 	return b.OwnedChildAvailable != nil && b.OpenOwnedChild != nil && b.OwnedChildAvailable(ctx)
 }
 
+func (b *Broker) ownedChildAvailableFor(ctx context.Context, assistant string) bool {
+	if assistant == projects.AssistantAntigravity {
+		return b.ownedChildAvailable(ctx)
+	}
+	return assistant == projects.AssistantGrok && b.OpenOwnedChild != nil && b.OwnedProviderAvailable != nil && b.OwnedProviderAvailable(ctx, assistant)
+}
+
 func childCWD(r Record) string {
 	if r.Worktree != nil {
 		rel, err := filepath.Rel(r.Worktree.Repository, r.ProjectDir)
@@ -36,10 +43,13 @@ func childCWD(r Record) string {
 }
 
 func ownedChildMatches(s session.Session, id, native, cwd string) bool {
+	return ownedChildMatchesFor(s, id, native, cwd, projects.AssistantAntigravity)
+}
+func ownedChildMatchesFor(s session.Session, id, native, cwd, assistant string) bool {
 	return id != "" && native != "" && filepath.IsAbs(cwd) &&
 		strings.HasPrefix(id, "owned:acp:") && s.ID == id &&
 		s.Backend == session.BackendOwned && s.Binding == session.BindingProtocol &&
-		s.Assistant == session.AssistantAntigravity && s.ConversationID == native &&
+		projects.OwnedAssistant(assistant) && string(s.Assistant) == assistant && s.ConversationID == native &&
 		filepath.Clean(s.CWD) == filepath.Clean(cwd)
 }
 
@@ -53,7 +63,7 @@ func (b *Broker) spawnOwnedChild(ctx context.Context, r Record, cwd, secret stri
 		}
 		return r
 	}
-	if !b.ownedChildAvailable(ctx) {
+	if !b.ownedChildAvailableFor(ctx, r.Assistant) {
 		return fail(errors.New("provider_permission_unsupported"))
 	}
 	if r.Model != "" && !modelName(r.Model) {
@@ -125,7 +135,7 @@ func (b *Broker) spawnOwnedChild(ctx context.Context, r Record, cwd, secret stri
 		}
 		return fail(openErr)
 	}
-	if !ownedChildMatches(owned.Row, r.ChildTerminalID, r.ChildConversationID, cwd) {
+	if !ownedChildMatchesFor(owned.Row, r.ChildTerminalID, r.ChildConversationID, cwd, r.Assistant) {
 		return fail(errors.New("owned_child_binding_invalid"))
 	}
 	if prepared.launch.ID != "" {

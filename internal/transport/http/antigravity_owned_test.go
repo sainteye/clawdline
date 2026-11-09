@@ -33,6 +33,10 @@ func TestOwnedHTTPPeer(t *testing.T) {
 	if os.Getenv("CLW_HTTP_PEER") != "yes" {
 		return
 	}
+	peerDir := os.Getenv("GEMINI_HOME")
+	if os.Getenv("GROK_HOME") != "" {
+		peerDir = os.Getenv("GROK_HOME")
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
 	var interruptedPrompt json.RawMessage
@@ -74,12 +78,20 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			if len(req.ID) != 0 || len(interruptedPrompt) == 0 {
 				os.Exit(44)
 			}
-			os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "native-cancel"), []byte(req.Params.SessionID), 0600)
+			os.WriteFile(filepath.Join(peerDir, "native-cancel"), []byte(req.Params.SessionID), 0600)
 			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": interruptedPrompt, "result": map[string]string{"stopReason": "cancelled"}})
 			interruptedPrompt = nil
 			continue
 		case "initialize":
 			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
+			if os.Getenv("GROK_HOME") != "" {
+				result.(map[string]any)["_meta"] = map[string]any{"grokShell": true, "agentVersion": "1.0.77"}
+				result.(map[string]any)["authMethods"] = []any{map[string]string{"id": "cached_token"}}
+			}
+		case "authenticate":
+			if os.Getenv("GROK_HOME") != "" {
+				result = map[string]any{"_meta": map[string]any{"auth_mode": "Oidc", "backend_billed": false}}
+			}
 		case "session/list":
 			result = map[string]any{"sessions": []any{map[string]string{"sessionId": "synthetic-http-native", "cwd": req.Params.CWD, "title": "Saved synthetic conversation"}, map[string]string{"sessionId": "synthetic-old-native", "cwd": req.Params.CWD, "title": "Previous CLI conversation"}, map[string]string{"sessionId": "foreign-cwd", "cwd": "/another/project", "title": "Foreign workspace"}}, "nextCursor": "older-native"}
 			if req.Params.Cursor == "older-native" {
@@ -96,7 +108,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			result = map[string]any{"configOptions": config(), "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 		case "session/set_config_option":
-			f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			f, _ := os.OpenFile(filepath.Join(peerDir, "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			f.WriteString(req.Params.ConfigID + "=" + req.Params.Value + "\n")
 			f.Close()
 			if req.Params.ConfigID == "mode" {
@@ -123,10 +135,10 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			data, _ := json.Marshal(req.Params.Prompt)
 			// Prompt readers use this file as the receipt that the native tool
 			// environment is ready. Publish it atomically after its capability.
-			if err := os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "last-capability-path"), []byte(os.Getenv("CLAWDLINE_SQUAD_CAPABILITY_FILE")), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(peerDir, "last-capability-path"), []byte(os.Getenv("CLAWDLINE_SQUAD_CAPABILITY_FILE")), 0600); err != nil {
 				t.Fatal(err)
 			}
-			promptPath := filepath.Join(os.Getenv("GEMINI_HOME"), "last-prompt.json")
+			promptPath := filepath.Join(peerDir, "last-prompt.json")
 			if err := os.WriteFile(promptPath+".tmp", data, 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -140,7 +152,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 					if !scanner.Scan() {
 						os.Exit(32)
 					}
-					f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "permissions"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+					f, _ := os.OpenFile(filepath.Join(peerDir, "permissions"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 					_, _ = f.Write(append(append([]byte(nil), scanner.Bytes()...), '\n'))
 					_ = f.Close()
 				}
@@ -148,7 +160,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 				break
 			}
 			if len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage" {
-				f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+				f, _ := os.OpenFile(filepath.Join(peerDir, "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 				f.WriteString("usage\n")
 				f.Close()
 				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining\n- **Gemini 4 Argon**\n  - **Gemini 4 Argon Weekly Limit:** 0% remaining (resets Nov 6, 2026, 02:00 UTC)"}}}})
@@ -157,7 +169,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "usage_update", "used": 12, "size": 100}}})
 			reply := "synthetic HTTP reply"
-			if raw, err := os.ReadFile(filepath.Join(os.Getenv("GEMINI_HOME"), "reply-text")); err == nil {
+			if raw, err := os.ReadFile(filepath.Join(peerDir, "reply-text")); err == nil {
 				reply = string(raw)
 			}
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": reply}}}})
@@ -183,6 +195,12 @@ func TestOwnedHTTPPeer(t *testing.T) {
 }
 
 func TestOwnedPermissionUsesExistingHTTPKeyAuthorizationAndMenuWire(t *testing.T) {
+	ownedPermissionHTTPTest(t, session.AssistantAntigravity)
+}
+func TestGrokPermissionUsesExistingAuthorizationAndNativeOffers(t *testing.T) {
+	ownedPermissionHTTPTest(t, session.AssistantGrok)
+}
+func ownedPermissionHTTPTest(t *testing.T, assistant session.Assistant) {
 	t.Setenv("CLW_HTTP_PEER", "yes")
 	t.Setenv("CLW_HTTP_PERMISSION", "yes")
 	s := capacityServer(t)
@@ -197,7 +215,7 @@ func TestOwnedPermissionUsesExistingHTTPKeyAuthorizationAndMenuWire(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := antigravitysession.New(context.Background(), antigravitysession.Options{Executable: exe, AccountDir: dir, Args: []string{"-test.run=^TestOwnedHTTPPeer$"}})
+	h, err := antigravitysession.New(context.Background(), antigravitysession.Options{Assistant: assistant, Executable: exe, AccountDir: dir, Args: []string{"-test.run=^TestOwnedHTTPPeer$"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +224,11 @@ func TestOwnedPermissionUsesExistingHTTPKeyAuthorizationAndMenuWire(t *testing.T
 			t.Error(err)
 		}
 	}()
-	s.antigravitySessions.Store(h)
+	if assistant == session.AssistantGrok {
+		s.grokSessions.Store(h)
+	} else {
+		s.antigravitySessions.Store(h)
+	}
 	s.terminals = []ports.TerminalHost{ownedAntigravityTerminal{s}}
 	s.inventory = app.Inventory{Terminals: s.terminals}
 	row, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})

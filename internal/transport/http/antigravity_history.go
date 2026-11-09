@@ -10,14 +10,18 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Owned history uses the same project and pinned-machine routes as other
 // providers. Saved pages are offline; explicit native pages use metadata only.
 func (s *Server) pastOwnedAntigravity(w http.ResponseWriter, r *http.Request, ctx context.Context, place projects.Place, limit int) {
-	h := s.antigravitySessions.Load()
+	s.pastOwnedAssistant(w, r, ctx, place, limit, projects.AssistantAntigravity)
+}
+func (s *Server) pastOwnedAssistant(w http.ResponseWriter, r *http.Request, ctx context.Context, place projects.Place, limit int, assistant string) {
+	h := s.ownedHost(session.Assistant(assistant))
 	if h == nil {
-		refuseAntigravityFoundation(w)
+		refuseOwnedFoundation(w, assistant)
 		return
 	}
 	cursor := r.URL.Query().Get("cursor")
@@ -36,10 +40,10 @@ func (s *Server) pastOwnedAntigravity(w http.ResponseWriter, r *http.Request, ct
 		next = "native:"
 	}
 	if err != nil {
-		writePlaceRefusal(w, http.StatusServiceUnavailable, "provider_history_unavailable", err.Error(), "Gemini")
+		writePlaceRefusal(w, http.StatusServiceUnavailable, "provider_history_unavailable", err.Error(), ownedLabel(assistant))
 		return
 	}
-	out := contract.PastSessionList{At: time.Now().Unix(), Place: place.ID, Assistant: "antigravity", More: next != "", NextCursor: next, Sessions: []contract.PastSession{}}
+	out := contract.PastSessionList{At: time.Now().Unix(), Place: place.ID, Assistant: assistant, More: next != "", NextCursor: next, Sessions: []contract.PastSession{}}
 	for _, row := range rows {
 		at := int64(0)
 		if !row.At.IsZero() {
@@ -51,9 +55,12 @@ func (s *Server) pastOwnedAntigravity(w http.ResponseWriter, r *http.Request, ct
 }
 
 func (s *Server) resumeOwnedAntigravity(w http.ResponseWriter, r *http.Request, id, conversation, persona string) {
-	h := s.antigravitySessions.Load()
+	s.resumeOwnedAssistant(w, r, id, conversation, persona, projects.AssistantAntigravity)
+}
+func (s *Server) resumeOwnedAssistant(w http.ResponseWriter, r *http.Request, id, conversation, persona, assistant string) {
+	h := s.ownedHost(session.Assistant(assistant))
 	if h == nil {
-		refuseAntigravityFoundation(w)
+		refuseOwnedFoundation(w, assistant)
 		return
 	}
 	release, ok := admitOpening(w, r)
@@ -75,14 +82,14 @@ func (s *Server) resumeOwnedAntigravity(w http.ResponseWriter, r *http.Request, 
 		}
 		if err != nil || !found || json.Unmarshal(original, &snapshot) != nil ||
 			(snapshot.DefinitionID != persona && snapshot.DefinitionID != "clawdline.persona."+persona) {
-			writePlaceRefusal(w, http.StatusConflict, "snapshot_persona_conflict", "A resumed conversation keeps its original role snapshot.", "Gemini")
+			writePlaceRefusal(w, http.StatusConflict, "snapshot_persona_conflict", "A resumed conversation keeps its original role snapshot.", ownedLabel(assistant))
 			return
 		}
 	}
 	row, err := h.Import(ctx, place.Path, conversation)
 	if err != nil {
-		writePlaceRefusal(w, http.StatusConflict, "provider_resume_failed", err.Error(), "Gemini")
+		writePlaceRefusal(w, http.StatusConflict, "provider_resume_failed", err.Error(), ownedLabel(assistant))
 		return
 	}
-	writeJSON(w, contract.PlaceResumed{OK: true, ID: row.ID, Backend: contract.BackendOwned, Assistant: "antigravity", Persona: row.Persona, Place: place.ID, CWD: place.Path, Session: conversation, At: time.Now().Unix()})
+	writeJSON(w, contract.PlaceResumed{OK: true, ID: row.ID, Backend: contract.BackendOwned, Assistant: assistant, Persona: row.Persona, Place: place.ID, CWD: place.Path, Session: conversation, At: time.Now().Unix()})
 }

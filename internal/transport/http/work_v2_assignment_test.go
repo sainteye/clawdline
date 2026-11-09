@@ -437,7 +437,7 @@ func TestAnAgentSeesAndCanRetractItsRecentCompletion(t *testing.T) {
 // assignment record, a blank one from an older console still means Codex, and
 // an assistant this machine cannot open is refused before anything is written.
 func TestANewSessionAssignmentRecordsTheChosenAssistant(t *testing.T) {
-	for _, tc := range []struct{ sent, recorded string }{{"claude", "claude"}, {"codex", "codex"}, {"antigravity", "antigravity"}, {"", "codex"}} {
+	for _, tc := range []struct{ sent, recorded string }{{"claude", "claude"}, {"codex", "codex"}, {"antigravity", "antigravity"}, {"grok", "grok"}, {"", "codex"}} {
 		t.Run("sent="+tc.sent, func(t *testing.T) {
 			s, _, v := workV2AssignmentServer(t, session.StateIdle)
 			// This broker has no terminal to open a Session in, so the
@@ -547,5 +547,11 @@ func TestALandingInAnUnknownProjectIsRefusedByName(t *testing.T) {
 	after, err := s.workV2().Item(context.Background(), v.Item.ID)
 	if err != nil || after.Item.Phase != work.PhaseMerging || after.Item.Version != owned.Item.Version {
 		t.Fatalf("item after refusal: %+v %v", after.Item, err)
+	}
+}
+
+func TestGrokEpicAssignmentKeepsTheChosenProvider(t *testing.T) {
+	if err := (workV2EpicAssignRequest{Mode: "new_session", Assistant: "grok"}).check(); err != nil {
+		t.Fatal(err)
 	}
 }

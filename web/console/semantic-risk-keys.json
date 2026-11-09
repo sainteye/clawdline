@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10868,
+  "englishKeys": 10874,
   "counts": {
-    "negation": 3021,
+    "negation": 3023,
     "state": 1787,
-    "permission": 638,
+    "permission": 639,
     "deletion": 243,
-    "uncertainty": 411
+    "uncertainty": 412
   },
-  "unionCount": 4782,
+  "unionCount": 4784,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2921,6 +2921,8 @@
       "transparency.card.gemini-turn-end.condition",
       "transparency.card.gemini-turn-end.effect",
       "transparency.card.gemini-turn-end.summary",
+      "transparency.card.grok-acp-context.effect",
+      "transparency.card.grok-acp-context.how",
       "transparency.card.investigation.effect",
       "transparency.card.investigation.summary",
       "transparency.card.machine-codegraph.effect",
@@ -5440,6 +5442,7 @@
       "transparency.card.child.condition",
       "transparency.card.child.summary",
       "transparency.card.gate-review.how",
+      "transparency.card.grok-acp-context.how",
       "transparency.card.investigation.how",
       "transparency.card.machine-codegraph.effect",
       "transparency.card.machine-codegraph.how",
@@ -6102,6 +6105,7 @@
       "transparency.card.board.summary",
       "transparency.card.gate-review.effect",
       "transparency.card.gemini-acp-context.effect",
+      "transparency.card.grok-acp-context.effect",
       "transparency.card.machine-codegraph.effect",
       "transparency.card.machine-codegraph.how",
       "transparency.card.machine-codegraph.summary",
@@ -10716,6 +10720,8 @@
     "transparency.card.gemini-turn-end.effect",
     "transparency.card.gemini-turn-end.how",
     "transparency.card.gemini-turn-end.summary",
+    "transparency.card.grok-acp-context.effect",
+    "transparency.card.grok-acp-context.how",
     "transparency.card.handoff.summary",
     "transparency.card.investigation.effect",
     "transparency.card.investigation.how",

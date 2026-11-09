@@ -39,7 +39,7 @@ func (s *Server) sessionTail(item session.Session) (transcript.Page, error) {
 		return s.sessionTailRead(item)
 	}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
-		h := s.antigravitySessions.Load()
+		h := s.ownedHost(item.Assistant)
 		if h == nil {
 			return transcript.Page{}, transcript.ErrNoRecord
 		}

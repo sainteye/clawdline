@@ -818,7 +818,7 @@ included — so the task the child reads is the one that was validated, and it d
 |---|---|
 | `clawdline_protocol` | `1` |
 | `task_id` | the same id |
-| `assistant` | `claude`, `codex`, or `antigravity` when the owned personal CLI is configured |
+| `assistant` | `claude`, `codex`, `antigravity` when its owned personal CLI is configured, or `grok` when official Grok Build is installed |
 | `project_dir` | absolute path to an existing directory |
 | `title` | shown on screen: one line of at most 60 characters saying what will be different. A colon (`:` or `：`), "the user" as the subject, or an opening code-formatted identifier is refused as `bad_task` (`title: …`) |
 | `instructions` | required, at most 16 KiB. They must stand on their own: the child knows nothing else. Carry the facts you already verified, each with its `file:line` or command; an investigation child also gets a stop condition and a turn limit |
@@ -830,7 +830,7 @@ included — so the task the child reads is the one that was validated, and it d
 | `work_id` | optional UUID of the board item this serves |
 | `persona` | optional built-in persona id (`GET /v1/personas`); none by default |
 | `auto_compact_window` | optional, Claude only: the context size in tokens (50000–1000000) the child compacts at, or `null` for none. Absent follows the machine's `claude_auto_compact_window`, which is off unless the person set it. For comparing runs, not for everyday briefs: a compaction may lose detail |
-| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex"\|"antigravity", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
+| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex"\|"antigravity"\|"grok", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
 
 An owned Gemini root uses its daemon-published identity file for its exact native conversation.
 It can name `antigravity` as `root.assistant`. An explicitly configured owned personal CLI also
@@ -839,6 +839,17 @@ Permission `ask`/`edits`/`full` maps to native `default`/`auto_edit`/`yolo` and 
 before the one first input; an explicit model and effort must also be native offers. Cancellation
 and timeout stop the exact worker and retain its history. A possibly written briefing or completion
 notice is not automatically resent. This does not authorize paid APIs or AI Credits.
+
+Official Grok Build workers use `--assistant grok` and the same owned task lifecycle.
+Their native tools resolve `root.assistant=grok` from the daemon-published conversation
+address. `ask` starts supervised; `full` explicitly enables native tool approval.
+`edits` and explicit reasoning effort are refused because no equivalent mapping has
+been verified. Models must be native offers, or omitted for the native default.
+Grok uses its cached interactive account login; API-key or unverified auth is refused.
+Interrupted Grok input is never automatically replayed, including after a daemon
+restart. Inactivity is uncertain, not successful completion. Stopping the owned
+worker does not prove that detached native jobs or external side effects stopped.
+See `docs/grok-cli.md` for the supported surface and validation limits.
 
 
 **Match the worker surface and launch mode to every tool the child must use before dispatching it.**

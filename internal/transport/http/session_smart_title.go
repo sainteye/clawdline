@@ -106,7 +106,7 @@ func (s *Server) firstRequest(item session.Session) (string, error) {
 		return s.firstSessionRequest(item)
 	}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
-		if h := s.antigravitySessions.Load(); h != nil {
+		if h := s.ownedHost(item.Assistant); h != nil {
 			return h.FirstRequest(context.Background(), item)
 		}
 		return "", errors.New("owned session history unavailable")

@@ -209,7 +209,14 @@ func (s *Server) startCoordinator(w http.ResponseWriter, r *http.Request, assist
 		return
 	}
 	starter := s.starter(s.startReadingFrom(st.Seen.Inventory))
-	made, err := starter.Start(ctx, projects.Place{Path: workspace}, assistant, "", "", "")
+	var made app.Started
+	if projects.OwnedAssistant(assistant) {
+		var row session.Session
+		row, err = s.openOwnedAssistant(ctx, starter, projects.Place{Path: workspace}, "", "", nil, assistant)
+		made = app.Started{ID: row.ID, Backend: string(row.Backend)}
+	} else {
+		made, err = starter.Start(ctx, projects.Place{Path: workspace}, assistant, "", "", "")
+	}
 	if err != nil {
 		writeStartRefusal(w, err)
 		return

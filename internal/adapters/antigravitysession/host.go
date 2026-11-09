@@ -232,7 +232,7 @@ func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch 
 	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text(), launchContext: launch}
 	ownedID := "owned:acp:" + rand.Text()
 	identityPath := h.identityPath(ownedID)
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Assistant: h.assistant(), OnWire: h.wireObserver(ownedID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Assistant: h.assistant(), OnWire: h.wireObserver(ownedID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.processArgs(launch), AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -370,6 +370,9 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string, before func() error, direct bool) error {
 	if text == "" {
 		return refusal("empty_text")
+	}
+	if h.assistant() == session.AssistantGrok && grokControlDraft(text) {
+		return refusal("unsupported_command")
 	}
 	c, err := h.lookup(s)
 	if err != nil {

@@ -190,8 +190,8 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	}
 	// A machine that cannot open a child says so here, by name, before
 	// anything exists (capability.go, broker-design #43).
-	if record.Assistant == projects.AssistantAntigravity {
-		if !b.ownedChildAvailable(ctx) {
+	if projects.OwnedAssistant(record.Assistant) {
+		if !b.ownedChildAvailableFor(ctx, record.Assistant) {
 			return Dispatched{}, refuse(http.StatusUnprocessableEntity, "provider_permission_unsupported",
 				"Antigravity owned dispatch is unavailable.")
 		}
@@ -535,7 +535,7 @@ func (b *Broker) resolveRootSession(ctx context.Context, root *RootRef) (session
 	}
 	const tail = " Resend from the Root's own terminal, where the conversation id is read from the environment, or " +
 		"name it: `clawdline dispatch --title <title> --claims <paths> --conversation <conversation id> " +
-		"--root-assistant <claude|codex|antigravity>`. Do not downgrade owned work to detached polling."
+		"--root-assistant <claude|codex|antigravity|grok>`. Do not downgrade owned work to detached polling."
 	if ref.Code == "conversation_ambiguous" {
 		return session.Session{}, refuse(http.StatusConflict, "conversation_ambiguous",
 			"More than one live process of the declared assistant proves root.session_id; no owner was selected."+tail)
@@ -699,7 +699,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if (r.Assistant == projects.AssistantCodex || r.Assistant == projects.AssistantAntigravity) && r.ReasoningEffort == "" && b.DefaultReasoningEffort != nil {
 		r.ReasoningEffort = b.DefaultReasoningEffort(r.Assistant)
 	}
-	if r.Assistant == projects.AssistantAntigravity {
+	if projects.OwnedAssistant(r.Assistant) {
 		return b.spawnOwnedChild(ctx, r, cwd, secret, opened)
 	}
 	preflightPersona := r.Persona
@@ -1329,7 +1329,7 @@ func (b *Broker) composerReady(ctx context.Context, terminalID, assistant string
 		}
 	}
 	if b.Screen == nil {
-		if assistant == projects.AssistantAntigravity {
+		if projects.OwnedAssistant(assistant) {
 			return false, errors.New("provider_state_unknown")
 		}
 		return true, nil
@@ -1359,6 +1359,8 @@ func assistantName(assistant string) string {
 		return "Codex"
 	case projects.AssistantAntigravity:
 		return "Antigravity CLI"
+	case projects.AssistantGrok:
+		return "Grok"
 	}
 	return "an assistant"
 }

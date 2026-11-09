@@ -1100,5 +1100,5 @@ func deadLetter(n *Notice, at time.Time) {
 // Native turns have no terminal composer. Their Host supplies delivery and read
 // receipts, and a possibly written prompt is never automatically replayed.
 func nativeNoticeTarget(row session.Session) bool {
-	return row.Backend == session.BackendOwned && row.Binding == session.BindingProtocol && row.Assistant == session.AssistantAntigravity
+	return row.Backend == session.BackendOwned && row.Binding == session.BindingProtocol && (row.Assistant == session.AssistantAntigravity || row.Assistant == session.AssistantGrok)
 }

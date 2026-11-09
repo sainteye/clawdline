@@ -64,6 +64,9 @@ const composerTail = 20
 
 // ComposerReady reports whether a screen shows an input line ready for text.
 func ComposerReady(screen string, assistant session.Assistant) bool {
+	if assistant == session.AssistantGrok {
+		return false
+	}
 	if assistant == session.AssistantAntigravity {
 		return session.ReadAntigravityScreen(screen, false).Kind == session.AntigravityIdle
 	}
@@ -74,6 +77,9 @@ func ComposerReady(screen string, assistant session.Assistant) bool {
 // Choosing is the same reading from the other side: a caret with no furniture
 // under it is something waiting to be answered, and nothing may be typed at it.
 func Choosing(screen string, assistant session.Assistant) bool {
+	if assistant == session.AssistantGrok {
+		return false
+	}
 	if assistant == session.AssistantAntigravity {
 		return session.ReadAntigravityScreen(screen, false).Kind == session.AntigravityMenu
 	}
@@ -199,6 +205,9 @@ const (
 // draws no frame — and a notice is not held for a composer that was never
 // looked at.
 func ReadComposer(screen string, assistant session.Assistant) ComposerState {
+	if assistant == session.AssistantGrok {
+		return ComposerNone
+	}
 	if assistant == session.AssistantAntigravity {
 		facts := session.ReadAntigravityScreen(screen, false)
 		switch facts.Kind {

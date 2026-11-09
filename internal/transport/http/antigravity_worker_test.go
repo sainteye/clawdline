@@ -62,7 +62,7 @@ func TestOwnedWorkerCallbacksReusePublishedRoleAndNativeSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := orchestrator.Record{Title: place.Label, Persona: "backend", Model: "synthetic-pro", ReasoningEffort: "high", PermissionMode: "edits"}
+	r := orchestrator.Record{Assistant: projects.AssistantAntigravity, Title: place.Label, Persona: "backend", Model: "synthetic-pro", ReasoningEffort: "high", PermissionMode: "edits"}
 	child, err := s.broker.OpenOwnedChild(ctx, r, profile, published.LaunchID, published.Files, workflow)
 	if err != nil {
 		t.Fatal(err)

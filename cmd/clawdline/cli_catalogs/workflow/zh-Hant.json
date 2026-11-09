@@ -20,7 +20,7 @@
   "board.usage_clawdline_board_tracks_project_id_track_todo": "用法：clawdline board tracks [--project id] [--track todo|board|backlog] [--rows] [--json]",
   "handoff.at_most_d_bytes": "，最多 %d 位元組",
   "handoff.check_the_summary_and_print_its_problems_open": "檢查摘要並列出問題，不開啟交接",
-  "handoff.claude_or_codex_default_this_assistant": "claude、codex 或 antigravity（預設為此助理）",
+  "handoff.claude_or_codex_default_this_assistant": "claude、codex、antigravity 或 grok（預設：目前助理）",
   "handoff.clawdline_handoff": "clawdline handoff:",
   "handoff.clawdline_handoff_no_answer_yet_the_handoff_may": "clawdline handoff：尚無回應；交接仍可能開啟。請用 GET /v1/orchestrator/handoffs/%s 查詢\n",
   "handoff.clawdline_handoff_no_conversation_id_pass_conversation": "clawdline handoff：沒有對話 ID；請傳入 --conversation",
@@ -36,7 +36,7 @@
   "handoff.the_receiver_s_model": "接收者的模型",
   "handoff.the_receiver_s_tab_title_at_most_200": "接收者的分頁標題，最多 200 個字元",
   "handoff.this_assistant_s_conversation_id_default_from_the": "此助理的對話 ID（預設從環境變數取得）",
-  "handoff.usage_clawdline_handoff_summary_file_title_t_assistant": "用法：clawdline handoff --summary <file> [--title t] [--assistant claude|codex|antigravity] [--model m] [--conversation id] [--port n]",
+  "handoff.usage_clawdline_handoff_summary_file_title_t_assistant": "用法：clawdline handoff --summary <file> [--title t] [--assistant claude|codex|antigravity|grok] [--model m] [--conversation id] [--port n]",
   "report.clawdline_report": "clawdline report:",
   "report.clawdline_report_a_note_names_s_which_this": "clawdline report：註記指向 %s，但此回合的 commit 未修改該檔案\n",
   "report.clawdline_report_could_not_open_it_v_open": "clawdline report：無法開啟（%v）；請使用下方位址\n",
@@ -105,5 +105,5 @@
   "sessions.terminal_assistant_state_work_task_label_cwd": "終端機\t助理\t狀態\t工作\t任務\t標籤\t目錄",
   "sessions.the_daemon_s_port_default_clawdline_next_port": "daemon 的連接埠（預設 CLAWDLINE_NEXT_PORT，否則 7727）",
   "sessions.usage_clawdline_sessions_json_port_n": "用法：clawdline sessions [--json] [--port n]",
-  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE 必須指向可讀取的一般 JSON 檔案，assistant 為 antigravity，且 conversation_id 不得為空"
+  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE 必須指向可讀取的一般 JSON 檔案，assistant 為 antigravity 或 grok，且 conversation_id 不得為空"
 }

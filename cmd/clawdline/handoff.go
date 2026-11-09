@@ -30,7 +30,7 @@ func handoffCommand(args []string) {
 	var o handoffOptions
 	fs.StringVar(&o.summary, "summary", "", cliCopy("workflow", "handoff.the_milestone_summary_to_hand_over_markdown", "the milestone summary to hand over (Markdown)"))
 	fs.StringVar(&o.title, "title", "", cliCopy("workflow", "handoff.the_receiver_s_tab_title_at_most_200", "the receiver's tab title, at most 200 characters"))
-	fs.StringVar(&o.assistant, "assistant", "", cliCopy("workflow", "handoff.claude_or_codex_default_this_assistant", "claude, codex or antigravity (default: this assistant)"))
+	fs.StringVar(&o.assistant, "assistant", "", cliCopy("workflow", "handoff.claude_or_codex_default_this_assistant", "claude, codex, antigravity or grok (default: this assistant)"))
 	fs.StringVar(&o.model, "model", "", cliCopy("workflow", "handoff.the_receiver_s_model", "the receiver's model"))
 	fs.StringVar(&o.conversation, "conversation", "", cliCopy("workflow", "handoff.this_assistant_s_conversation_id_default_from_the", "this assistant's conversation id (default: from the environment)"))
 	fs.BoolVar(&o.check, "check", false, cliCopy("workflow", "handoff.check_the_summary_and_print_its_problems_open", "check the summary and print its problems; open nothing"))
@@ -50,7 +50,7 @@ func handoffCommand(args []string) {
 }
 
 func handoffUsage() {
-	fmt.Fprintln(os.Stderr, cliCopy("workflow", "handoff.usage_clawdline_handoff_summary_file_title_t_assistant", "usage: clawdline handoff --summary <file> [--title t] [--assistant claude|codex|antigravity] [--model m] [--conversation id] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("workflow", "handoff.usage_clawdline_handoff_summary_file_title_t_assistant", "usage: clawdline handoff --summary <file> [--title t] [--assistant claude|codex|antigravity|grok] [--model m] [--conversation id] [--port n]"))
 	fmt.Fprintln(os.Stderr, cliCopy("workflow", "handoff.clawdline_handoff_summary_file_check", "       clawdline handoff --summary <file> --check"))
 	fmt.Fprintln(os.Stderr, cliCopy("workflow", "handoff.hands_this_session_s_line_of_work_to", "  hands this Session's line of work to a fresh Session at a milestone; the summary has the sections"))
 	fmt.Fprintln(os.Stderr, "  "+strings.Join(orchestrator.MilestoneSections, ", ")+fmt.Sprintf(cliCopy("workflow", "handoff.at_most_d_bytes", ", at most %d bytes"), orchestrator.MilestoneSummaryLimit))
@@ -119,7 +119,11 @@ func openMilestoneHandoff(stdout, stderr io.Writer, b *broker, o handoffOptions,
 	}
 	assistant := o.assistant
 	if assistant == "" {
-		assistant = conversationAssistant[envName]
+		assistant, err = conversationAssistantFromEnv(getenv, envName, from)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
 	}
 	project, err := toplevel()
 	if err != nil {

@@ -717,7 +717,7 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 |---|---|
 | `clawdline_protocol` | `1` |
 | `task_id` | 同一個 id |
-| `assistant` | `claude`、`codex`；已明確設定個人 CLI 時也支援 `antigravity` |
+| `assistant` | `claude`、`codex`；已明確設定個人 CLI 時支援 `antigravity`，安裝官方 Grok Build 時支援 `grok` |
 | `project_dir` | 一個已經存在的目錄的絕對路徑 |
 | `title` | 顯示在畫面上：一行、最多 60 字元，說完成後什麼會不一樣。冒號（`:` 或 `：`）、以 "the user" 當主詞、或用 code 格式的識別字開頭，會以 `bad_task`（`title: …`）拒絕 |
 | `instructions` | 必填，最多 16 KiB。內容必須自己就講得清楚：除此之外 child 什麼都不知道。寫進你已經查證過的事實，每一條附 `file:line` 或指令；調查 child 還要有停止條件與 turn 上限 |
@@ -729,7 +729,7 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `work_id` | 選填，這個 task 所服務的看板項目的 UUID |
 | `persona` | 選填，內建角色的 id（`GET /v1/personas`）；預設沒有 |
 | `auto_compact_window` | 選填，只限 Claude：child 在 context 到多少 token（50000–1000000）時壓縮，或 `null` 表示不壓縮。不寫就跟著這台機器的 `claude_auto_compact_window`，使用者沒設就是關閉。用來比較兩次執行，不是每份 brief 都要寫：壓縮可能漏掉細節 |
-| `root` | **必填**：`{"session_id": "<你的 conversation id>", "assistant": "claude"\|"codex"\|"antigravity", "project_dir": "<與外層 project_dir 相同的絕對 repository 路徑>", "label": "…"}`。有角色範圍的 root 需要 `root.project_dir`，daemon 才能驗證 Project 範圍。 |
+| `root` | **必填**：`{"session_id": "<你的 conversation id>", "assistant": "claude"\|"codex"\|"antigravity"\|"grok", "project_dir": "<與外層 project_dir 相同的絕對 repository 路徑>", "label": "…"}`。有角色範圍的 root 需要 `root.project_dir`，daemon 才能驗證 Project 範圍。 |
 
 原生 Gemini root 透過 daemon 發布的身分檔取得自己的原生 conversation，可用 `antigravity`
 作為 `root.assistant`。明確設定的個人 CLI 也支援 `--assistant antigravity` worker，沿用同一套
@@ -737,6 +737,14 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 必須收到原生確認後才送出唯一的首次輸入；指定的模型與推理強度也必須是原生提供的選項。
 取消或逾時會停止該 worker 並保留歷史。可能已寫入的任務輸入或完成通知不會自動重送。
 這不授權付費 API 或 AI Credits。
+
+官方 Grok Build worker 使用 `--assistant grok`，沿用相同的自有任務生命週期。
+原生工具從 daemon 發布的對話位址讀取 `root.assistant=grok`。`ask` 以需確認模式啟動；
+`full` 明確啟用原生工具自動核准。`edits` 與明確指定推理強度尚無已驗證的對應方式，
+因此會被拒絕。模型必須是原生提供的選項，或省略以保留原生預設。Grok 使用已快取的
+互動登入帳號；API 金鑰或無法驗證的認證會被拒絕。Grok 中斷輸入不會自動重播，
+daemon 重啟後也一樣；無活動只代表結果不確定，不代表完成。停止自有 worker 並不
+證明原生脫離程序的工作或外部副作用已停止。支援範圍與驗證限制見 `docs/grok-cli.md`。
 
 
 **派工前，要讓 worker surface 與啟動模式符合 child 必須使用的每一項工具。** brief 必須列出必要工具，

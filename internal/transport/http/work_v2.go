@@ -1434,10 +1434,10 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 	switch assistant {
 	case "":
 		assistant = "codex"
-	case "codex", "claude", "antigravity":
+	case "codex", "claude", "antigravity", "grok":
 	default:
 		return app.WorkV2View{}, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assistant",
-			Message: "A new Session is opened with codex, claude or antigravity."}
+			Message: "A new Session is opened with codex, claude, antigravity or grok."}
 	}
 	if model == "" {
 		model = "default"

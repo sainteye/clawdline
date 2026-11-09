@@ -343,7 +343,14 @@ func serve() {
 	if sessionsErr != nil {
 		log.Print("antigravity: owned_session_start_failed")
 	}
+	stopGrokSessions, grokErr := srv.StartGrokSessions(cloudCtx)
+	if grokErr != nil {
+		log.Print("grok: owned_session_start_failed")
+	}
 	stopAntigravityAll := func() {
+		if stopGrokSessions != nil {
+			stopGrokSessions()
+		}
 		if stopAntigravitySessions != nil {
 			stopAntigravitySessions()
 		}

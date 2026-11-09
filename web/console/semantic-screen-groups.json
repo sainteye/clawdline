@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10868,
-  "riskKeys": 4782,
-  "nonRiskCount": 6086,
+  "englishContentKeys": 10874,
+  "riskKeys": 4784,
+  "nonRiskCount": 6090,
   "groups": [
     {
       "name": "acp / other",
@@ -6265,7 +6265,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 152,
+      "count": 156,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6331,6 +6331,9 @@
         "transparency.card.gemini-auto-name.title",
         "transparency.card.gemini-restart-continue.title",
         "transparency.card.gemini-turn-end.title",
+        "transparency.card.grok-acp-context.condition",
+        "transparency.card.grok-acp-context.summary",
+        "transparency.card.grok-acp-context.title",
         "transparency.card.handoff.condition",
         "transparency.card.handoff.effect",
         "transparency.card.handoff.how",
@@ -6396,6 +6399,7 @@
         "transparency.finish",
         "transparency.fresh",
         "transparency.general",
+        "transparency.grok",
         "transparency.handoff",
         "transparency.how",
         "transparency.intro",

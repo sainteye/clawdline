@@ -48,11 +48,21 @@ func TestItemStepCancelSendsTheReasonItWasGiven(t *testing.T) {
 	} {
 		raw, _ := json.Marshal(args)
 		cmd := exec.Command(os.Args[0], "-test.run=^TestItemStepCancelHelperProcess$")
-		cmd.Env = append(os.Environ(), stepCancelHelper+"=1", stepCancelHelper+"_ARGS="+string(raw),
+		for _, entry := range os.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			identity := false
+			for _, candidate := range conversationEnv {
+				identity = identity || name == candidate
+			}
+			if !identity {
+				cmd.Env = append(cmd.Env, entry)
+			}
+		}
+		cmd.Env = append(cmd.Env, stepCancelHelper+"=1", stepCancelHelper+"_ARGS="+string(raw),
 			"CLAWDLINE_NEXT_DIR="+state, "CLAWDLINE_NEXT_PORT="+strings.TrimPrefix(server.URL, "http://127.0.0.1:"),
 			"CLAUDE_CODE_SESSION_ID="+thinConversation)
 		out, err := cmd.CombinedOutput()
-		if strings.Contains(string(out), "--reason") {
+		if err != nil || strings.Contains(string(out), "--reason") {
 			t.Fatalf("%v was refused for its reason: %s (%v)", args, out, err)
 		}
 	}

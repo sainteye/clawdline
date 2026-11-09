@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -143,5 +144,39 @@ func TestGrokNativeToolsReceiveGrokIdentity(t *testing.T) {
 	}
 	if json.Unmarshal(raw, &identity) != nil || identity.Assistant != "grok" || identity.Conversation != row.ConversationID {
 		t.Fatalf("native tools received a different provider or conversation: %s", raw)
+	}
+}
+
+func TestGrokPermissionIsAnExplicitNativeLaunchCeiling(t *testing.T) {
+	if !reflect.DeepEqual(grokArgs("ask"), []string{"--permission-mode", "default", "agent", "--no-leader", "stdio"}) ||
+		!reflect.DeepEqual(grokArgs("full"), []string{"agent", "--no-leader", "--always-approve", "stdio"}) {
+		t.Fatal("native permission argv changed")
+	}
+	h, row, _ := grokFixture(t)
+	if err := h.ConfigureDispatch(t.Context(), row, "", "", "full"); err == nil {
+		t.Fatal("ask session was widened after launch")
+	}
+	if err := h.ConfigureDispatch(t.Context(), row, "", "", "edits"); err == nil {
+		t.Fatal("edits silently became Auto")
+	}
+	if err := h.ConfigureDispatch(t.Context(), row, "", "", "ask"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGrokUnsupportedControlsNeverReachTheNativePrompt(t *testing.T) {
+	h, row, opts := grokFixture(t)
+	for _, text := range []string{"/", "/help", "/effort high", "/always-approve", "! rm synthetic"} {
+		if err := h.Send(t.Context(), row, text); err == nil {
+			t.Fatalf("control accepted: %q", text)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(opts.AccountDir, "prompts")); !os.IsNotExist(err) {
+		t.Fatal("control wrote a native prompt")
+	}
+	for _, text := range []string{"Review the program", "/workspace/source.go", "/README.md", "/model offered-model"} {
+		if grokControlDraft(text) {
+			t.Fatalf("ordinary input blocked: %q", text)
+		}
 	}
 }
