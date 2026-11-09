@@ -359,6 +359,18 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 	if err != nil {
 		return err
 	}
+	command := strings.TrimSpace(text)
+	if command == "/usage" || command == "/quota" || strings.HasPrefix(command, "/usage ") || strings.HasPrefix(command, "/quota ") {
+		if command != "/usage" && command != "/quota" {
+			return refusal("unsupported_command")
+		}
+		if before != nil {
+			if err := before(); err != nil {
+				return err
+			}
+		}
+		return h.RefreshQuota(ctx, s)
+	}
 	if !direct && !configCommand(text) {
 		c.mu.Lock()
 		// Only a running turn ends and sends the queue. Opening, a model or

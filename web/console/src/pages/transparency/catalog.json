@@ -2426,7 +2426,7 @@
         },
         {
           "path": "internal/adapters/antigravityprocess/client.go",
-          "line": 597
+          "line": 639
         },
         {
           "path": "internal/adapters/antigravitysession/host.go",
@@ -3123,12 +3123,13 @@
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "8824ced0905afb195c556273b4c500e338a32ac57d0ed3707fc14420bc5cb772",
-    "internal/adapters/antigravityprocess/client.go": "0c8fa880b527794a15e75569e5f6a42f8080d07dcad8f1da747ecf6383a36fa2",
+    "internal/adapters/antigravityprocess/cli_usage.go": "3be8b9a54a83d71b87dd5ee046757a07cfbec6fe95530dff1fbee38b96bce1e8",
+    "internal/adapters/antigravityprocess/client.go": "911c8af6b41b529791e8abd4687bd0bad215fbb665e744b487bc31597f5dc08a",
     "internal/adapters/antigravityprocess/lifecycle.go": "768ce986d86e580eb8698acd0880c7a4a44129d69a868a2efb469eb4bf911a3e",
     "internal/adapters/antigravitysession/context.go": "42dbfd6dc6a872566bc2c49d72d69eccf72af7bcc9c33c78c2245041003b5914",
     "internal/adapters/antigravitysession/continue.go": "eac15d888cab9085556c68776c46ff66abce3baa8fdb85456c13e0c4bc271850",
     "internal/adapters/antigravitysession/history.go": "c59fdddba4c37be31c83295ab337592d7fe9bc881b9e2b98b55ed3833aa73104",
-    "internal/adapters/antigravitysession/host.go": "55af52fe825a8cb2f8b2826e93b529f993e35ac1d035fdad980d54178ef6cb7d",
+    "internal/adapters/antigravitysession/host.go": "250ddb1f2bf4914e786cff3e98a4c4d763fd842df6948c4b7ac72960f7ead398",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/antigravitysession/turnend.go": "2bec19ee5b20e6a243e0de868af862de25dd50534bf8648049143acbfe4d75a6",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",

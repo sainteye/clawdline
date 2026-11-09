@@ -79,7 +79,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			interruptedPrompt = nil
 			continue
 		case "initialize":
-			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
+			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": "antigravity-acp", "version": "1.4.1"}, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
 		case "session/list":
 			result = map[string]any{"sessions": []any{map[string]string{"sessionId": "synthetic-http-native", "cwd": req.Params.CWD, "title": "Saved synthetic conversation"}, map[string]string{"sessionId": "synthetic-old-native", "cwd": req.Params.CWD, "title": "Previous CLI conversation"}, map[string]string{"sessionId": "foreign-cwd", "cwd": "/another/project", "title": "Foreign workspace"}}, "nextCursor": "older-native"}
 			if req.Params.Cursor == "older-native" {

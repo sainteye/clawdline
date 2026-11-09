@@ -272,6 +272,46 @@ func TestNewConversationSelectsYoloWithoutChangingExistingMode(t *testing.T) {
 	assertConfigWrites(t, dir, "mode=yolo\n")
 }
 
+func TestResumeReappliesOnlyExplicitGlobalMaximum(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		t.Run(map[bool]string{false: "review", true: "full"}[full], func(t *testing.T) {
+			t.Setenv("CLW_CONFIG_PEER", "yes")
+			t.Setenv("CLW_MODE_PEER", "native-1.5")
+			h, row, opts := persistentFixture(t)
+			if full {
+				if err := os.WriteFile(filepath.Join(opts.AccountDir, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"},"toolPermission":"always-proceed"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			stopHost(t, h)
+			opts.NewSessionMode = "yolo"
+			h = reopenHost(t, opts)
+			resumed, err := h.Resume(context.Background(), row.CWD, row.ConversationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resumed.ID != row.ID || resumed.ConversationID != row.ConversationID {
+				t.Fatal("resume replaced identity", resumed)
+			}
+			c, err := h.lookup(resumed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := nativeMode(c.client.ConfigOptions(), "accept-edits")
+			want := "default"
+			writes := ""
+			if full {
+				want = "accept-edits"
+				writes = "mode=accept-edits\n"
+			}
+			if err != nil || current != want {
+				t.Fatal("restored mode", current, err, "want", want)
+			}
+			assertConfigWrites(t, opts.AccountDir, writes)
+		})
+	}
+}
+
 func TestNewConversationNeverClaimsUnacknowledgedYolo(t *testing.T) {
 	for _, variant := range []string{"malformed", "wrong-ack", "missing-ack"} {
 		t.Run(variant, func(t *testing.T) {

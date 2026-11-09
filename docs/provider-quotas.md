@@ -29,15 +29,20 @@ the saved browser preference.
 | --- | --- | --- |
 | Claude Code | Existing `limits.Reader`: status-line `rate-limits.json`; when that has no fresh window, Claude Code's own `get_usage` control request | No credential access or login change: Claude Code reads and refreshes its own sign-in |
 | Codex | Existing `limits.Reader`: quota keys in recent rollouts | No credential access or login change |
-| Gemini | Configured native ACP profile: fixed `/usage` command, five-hour and weekly Gemini windows | Reuses the selected personal OAuth profile with AI Credits off; does not borrow user conversations |
+| Gemini | Public CLI: fixed `--settings '{"useG1Credits":false}' --print /usage`; legacy ACP 1.4.1: fixed `/usage` command | Native CLI owns the default personal sign-in; Clawdline checks its explicit personal/no-Credits policy and does not borrow user conversations |
 | Legacy Gemini CLI (without native configuration) | Existing `~/.gemini/oauth_creds.json`; `loadCodeAssist`, then `retrieveUserQuota` | Reads the saved access token; login remains owned by that CLI |
 | Grok CLI | Existing `$GROK_HOME/auth.json` or `~/.grok/auth.json`; CLI billing credits, optionally its monthly view | Uses the xAI issuer entry; an expired token requires running Grok CLI |
 
 These are quota metadata reads, never model generations or chat prompts. The implementation does
 not copy CLI credentials, generate model output, redeem credits or switch accounts.
-The native Gemini reader opens and closes a temporary ACP connection for the fixed
-metadata command, with no user Session slot or transcript entry. Its existing
-process owner observes daemon shutdown and cleanup failures. The native report may list a separate
+The public Gemini CLI answers the fixed print-mode command directly. Its
+tab-separated numeric report is parsed without creating an ACP Session or sending
+`session/prompt`. Only the default public CLI configurations are supported;
+custom account/profile arguments return unknown rather than querying a different
+account. The legacy ACP reader opens a temporary connection only for the captured
+`antigravity-acp` 1.4.1 runtime; other runtimes refuse the prompt-based probe before
+writing. Both readers observe daemon shutdown and the existing output/time budgets.
+The native report may list a separate
 **Gemini 4 Argon** weekly bucket alongside the general Gemini group. Both the
 Session limits and account footer retain this bucket as **Argon 7d**, with its own
 percentage and reset time. A healthy general Gemini balance does not imply Argon

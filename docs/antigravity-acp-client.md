@@ -151,11 +151,42 @@ strings. A current permission mode is valid when the provider offers it; the
 client does not add a separate fixed-name allowlist. Owners still validate each
 selection against the current offer and require its acknowledgement.
 
-The global quota footer uses the configured native profile's fixed `/usage`
-metadata command and reads Gemini five-hour and weekly windows plus a separately
+The global quota footer uses the public CLI's fixed `--print /usage` report
+(with `--settings '{"useG1Credits":false}'`) and reads Gemini five-hour and weekly windows plus a separately
 reported Gemini 4 Argon weekly bucket (`Argon 7d`). The general Gemini balance
 cannot substitute for that model-specific bucket. It does not
 infer plan eligibility from the quota or substitute another model group's quota.
+
+### Public CLI 1.5 compatibility
+
+An observed 1.5 ACP connection treated `/usage` as ordinary model input: it
+emitted model thoughts and tool calls, then exceeded the quota reader's deadline.
+An advertised TUI command is not evidence that ACP implements it. The documented
+[print-mode command](https://antigravity.google/docs/cli/headless/)
+instead answers directly, as four tab-separated fields: group, limit, percentage
+remaining and RFC 3339 reset time. Public quota reads use that entry point with
+the CLI's default personal sign-in, an empty scratch working directory, filtered
+environment, discarded stderr, existing output/time budgets and no retries.
+Custom ACP profile/argument configurations fail closed instead of substituting
+the default account. Legacy prompt-based usage is restricted to the captured
+`antigravity-acp` 1.4.1 identity. Unknown or newer ACP identities cannot receive
+an automatic `/usage` prompt.
+
+The legacy Clawdline profile's `toolPermission` value is not an acknowledged
+public-CLI permission grant. Native CLI settings are loaded from its own
+settings file; a legacy `GEMINI_HOME` policy file is insufficient.
+When that local policy explicitly requests `always-proceed`, the process owner
+supplies the native `--dangerously-skip-permissions` flag described in the
+[ACP permissions documentation](https://antigravity.google/docs/ide/extensions/acp#permissions).
+Without that policy it adds no approval override. Conflicting flags and a policy
+changed after process startup refuse before a subsequent operation. On native
+load/resume the provider can return `default` even after the original connection
+acknowledged `accept-edits`; under the explicit global full policy, the host
+reselects and verifies its configured mode before publishing the resumed worker.
+Ordinary review-mode conversations retain the provider's restored mode. Native
+and owned conversation identities and history remain the same; no prompt is replayed.
+The fixed `/usage` and `/quota` send actions also route to the metadata reader
+before queuing or resuming a model turn; they do not append a chat entry.
 
 ## Wire and failure contract
 
