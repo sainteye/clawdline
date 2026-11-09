@@ -175,8 +175,9 @@ continue; a page containing only excluded background conversations still offers 
 If a read fails, **Retry** keeps the sessions already loaded and retries the same page. A read
 failure does not mean a conversation was deleted. Resuming checks the selected conversation
 directly rather than listing the project's entire history again. Provider subprocesses retain
-their two-process concurrency cap, eight-second per-response timeout and twenty-second total
-deadline; retries happen only when requested.
+their two-process concurrency cap and twenty-second total deadline shared by initialization
+and the provider response. A valid response taking more than eight seconds is accepted while
+that total budget remains; retries happen only when requested.
 
 **Check:** the sheet says **Started. Waiting for it to appear…** and the new
 session shows up in the list. With several machines on a Cloud account, **Machine** chooses

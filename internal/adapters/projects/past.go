@@ -549,8 +549,9 @@ func codexRequest(ctx context.Context, exe, method string, params map[string]any
 		return err
 	}
 	await := func(id int) ([]byte, error) {
-		deadline := time.NewTimer(8 * time.Second)
-		defer deadline.Stop()
+		// Initialization and the provider read share the request's total budget.
+		// A healthy thread/list can take longer than eight seconds; a second,
+		// shorter timer would discard its reply before that budget expires.
 		for {
 			select {
 			case line, ok := <-lines:
@@ -570,8 +571,6 @@ func codexRequest(ctx context.Context, exe, method string, params map[string]any
 					}
 					return line, nil
 				}
-			case <-deadline.C:
-				return nil, errors.Join(ErrCodexUnavailable, errors.New("codex app-server did not answer"))
 			case <-ctx.Done():
 				return nil, errors.Join(ErrCodexUnavailable, ctx.Err())
 			}
