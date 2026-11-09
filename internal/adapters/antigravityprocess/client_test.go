@@ -142,6 +142,21 @@ func TestACPProcess(t *testing.T) {
 				result = map[string]any{"configOptions": []any{map[string]string{"id": "thinking_level", "type": "select", "currentValue": "low"}}}
 			}
 		case "session/prompt":
+			if strings.HasPrefix(mode, "permission-unmatched") {
+				for _, alien := range []any{"4", "synthetic-private-response"} {
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "id": alien, "result": map[string]string{"stopReason": "end_turn"}})
+				}
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "synthetic-alien-error", "error": map[string]any{"code": -32003, "message": "synthetic private body"}})
+				if mode == "permission-unmatched-invalid" {
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "synthetic-invalid-result", "result": "invalid scalar"})
+					continue
+				}
+				if mode == "permission-unmatched-held" {
+					interruptedPrompt = append(json.RawMessage(nil), id...)
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic progress"}}}})
+					continue
+				}
+			}
 			if mode == "prompt-rpc-error" {
 				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32800, "message": "synthetic private cancellation"}})
 				continue
@@ -237,7 +252,7 @@ func TestACPProcess(t *testing.T) {
 			wire.Write(append(line, '\n'))
 			wire.Sync()
 			valid := strings.Contains(string(line), `"outcome":"cancelled"`) && !strings.Contains(string(line), "optionId")
-			if mode == "permission-select" {
+			if mode == "permission-select" || mode == "permission-unmatched" {
 				valid = strings.Contains(string(line), `"outcome":"selected"`) && strings.Contains(string(line), `"optionId":"reject-exact"`)
 			}
 			if mode == "permission-allow" {

@@ -7619,6 +7619,13 @@ export interface SessionProtocol {
   stop_reason?: string
   trace_enabled: boolean
   trace_error?: string
+
+  /**
+   * Count of valid string-ID replies discarded during the current Grok prompt.
+   * Numeric mismatches remain failures. Does not acknowledge completion and retains
+   * no provider IDs or content.
+   */
+  unmatched_responses?: number
   unrecognized: number
 }
 

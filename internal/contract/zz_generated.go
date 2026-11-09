@@ -6430,7 +6430,12 @@ type SessionProtocol struct {
 	StopReason         string `json:"stop_reason,omitempty"`
 	TraceEnabled       bool   `json:"trace_enabled"`
 	TraceError         string `json:"trace_error,omitempty"`
-	Unrecognized       int64  `json:"unrecognized"`
+
+	// Count of valid string-ID replies discarded during the current Grok prompt.
+	// Numeric mismatches remain failures. Does not acknowledge completion and retains
+	// no provider IDs or content.
+	UnmatchedResponses int64 `json:"unmatched_responses,omitempty"`
+	Unrecognized       int64 `json:"unrecognized"`
 }
 
 type SessionRecord struct {

@@ -179,18 +179,28 @@ account scope and observation time; it is not a Session token or cash-cost total
 
 ## Response identity diagnostics
 
-A response whose JSON-RPC ID differs from the active request still fails with an
-uncertain outcome; it cannot complete the turn or cause an automatic resend.
-Grok reports this as `grok_process_unexpected_id` with a localized explanation.
-The metadata summary records only the response ID type and its relation to the
-client's numeric request sequence. Opaque provider ID values, error bodies and
-conversation content are excluded even when raw tracing is disabled. Starting
-a new request clears these diagnostic fields; optional fields preserve older
-readers. Raw wire tracing remains a separate opt-in capability.
+Client requests use numeric JSON-RPC IDs. During an active Grok prompt, a valid
+response with a string ID belongs to a different namespace and is discarded
+before it can reach the prompt, change configuration or close metadata capture.
+A string such as `"4"` is never coerced to the numeric ID `4`. Such a response
+cannot complete a turn, acknowledge a request or cause an automatic resend. The
+client continues waiting for the exact numeric prompt response. Its existing
+cancellation and inactivity handling still apply if that response never arrives.
+Numeric mismatches, invalid response envelopes, control RPC mismatches and other
+providers retain their existing refusal behavior. Matching RPC errors still
+reach the caller with their original delivery classification.
 
-A metadata-only initialize/authenticate probe that stayed idle for 210 seconds
-observed no unsolicited responses. This rules out that particular idle probe as
-a reproducer; it does not establish the cause of a mismatched response during a
-model turn. The display and diagnostic fixes do not claim to repair that native
-failure. Local injected response cases verify identity classification and the
-existing mismatch refusal without another paid prompt.
+The optional `unmatched_responses` metadata counter records discarded responses
+for the current request without retaining their IDs, error bodies or content.
+The existing response ID type/relation fields describe the last received
+response; a later matching response can replace those fields. Starting another
+request clears the counter and identity fields. Raw wire tracing remains a
+separate opt-in capability.
+
+An observed native failure involved a numeric prompt ID and a different string
+response ID, after a pending permission request. The exact alien ID and response
+body were not retained, so this does not establish why Grok emitted it or prove
+that every native interruption has been repaired. Local peer tests reproduce
+premature termination before the routing correction and verify exact completion,
+permission selection, cancellation, malformed responses and unchanged numeric-ID
+refusals afterward. No additional paid model prompt was used for these tests.

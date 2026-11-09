@@ -1041,6 +1041,12 @@ func (c *Client) readLoop() {
 			c.observe("in", "applied", frame, 0)
 			continue
 		}
+		if skipped, err := c.skipUnmatchedGrokResponse(frame, m); err != nil {
+			c.shutdown(err)
+			return
+		} else if skipped {
+			continue
+		}
 		// The reply is the metadata boundary. Clear it here in wire order,
 		// before handing the response to the waiting caller.
 		c.observeConfig(m["result"])

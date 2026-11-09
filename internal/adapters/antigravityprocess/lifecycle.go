@@ -10,6 +10,7 @@ import (
 // Lifecycle describes protocol evidence, not whether the model is using CPU.
 // Only the matching prompt response ends a turn. Silence and text never do.
 type Lifecycle struct {
+	UnmatchedResponses uint64 `json:"unmatched_responses,omitempty"`
 	ResponseIDKind     string `json:"response_id_kind,omitempty"`
 	ResponseIDRelation string `json:"response_id_relation,omitempty"`
 	Phase              string `json:"phase"`
@@ -141,6 +142,7 @@ func (c *Client) requestStarted(id, method string, metadata bool) {
 		l.Operation = "usage"
 	}
 	l.ResponseIDKind, l.ResponseIDRelation = "", ""
+	l.UnmatchedResponses = 0
 	l.StartedAt, l.CancelRequestedAt = time.Now().UnixNano(), 0
 	l.CompletedAt, l.StopReason, l.RPCError = 0, "", nil
 }

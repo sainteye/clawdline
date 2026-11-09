@@ -407,3 +407,19 @@ confirmed no change to context injection, role snapshots, permissions or native
 turn completion. ID mismatch still fails uncertain and never resends the input.
 The source receipt tracks UI and read-path changes, not successful native
 inference or website deployment.
+
+## Grok string-ID response routing (2026-11-09)
+
+The shared ACP reader now discards valid string-ID responses during an active
+Grok prompt before metadata or completion handling. Client request IDs remain
+numeric; numeric mismatches, malformed replies and control RPCs retain their
+existing refusal behavior. A discarded response cannot finish or replay work.
+The optional diagnostic counter retains no provider IDs or content.
+
+Review of both English and Taiwan Traditional Chinese `grok-acp-context` and
+`gemini-acp-context` explanations confirms that launch resources, frozen roles,
+workflow selection, native permission choices and no-resend semantics remain
+unchanged. No instruction text or applicability changed, so those bilingual
+explanations remain accurate. The new routing helper is registered as reviewed
+source. Native interruption origin and live-model acceptance remain unproved;
+this receipt does not establish website publication or successful inference.

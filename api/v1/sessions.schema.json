@@ -485,6 +485,10 @@
         "last_received_kind": {
           "type": "string"
         },
+        "unmatched_responses": {
+          "description": "Count of valid string-ID replies discarded during the current Grok prompt. Numeric mismatches remain failures. Does not acknowledge completion and retains no provider IDs or content.",
+          "type": "integer"
+        },
         "response_id_kind": {
           "description": "Last response ID type only; no provider ID value or content is retained. Independent of opt-in raw tracing.",
           "type": "string"
