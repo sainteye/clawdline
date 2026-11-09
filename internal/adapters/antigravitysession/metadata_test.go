@@ -40,6 +40,34 @@ func TestNativeConfigInvalidSnapshotsPreservePreviousState(t *testing.T) {
 // retained. The Gemini and other-model group values deliberately disagree.
 const syntheticQuota = "### Session Usage\n- **Session total:** data not available yet\n\n### Quota Limits\n- **Gemini Models**\n  *(Models within this group: Gemini Flash, Gemini Pro)*\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining (resets Oct 30, 2026, 08:29 UTC)"
 
+func TestPublicCLIQuotaUsesNumericReport(t *testing.T) {
+	text := "Gemini Models\tWeekly Limit Remaining\t73%\t2031-01-02T03:04:05Z\nGemini Models\tFive Hour Limit Remaining\t100%\t2030-06-10T14:15:16Z\nClaude and GPT models\tWeekly Limit Remaining\t1%\t2032-01-02T03:04:05Z\nGemini 4 Argon\tGemini 4 Argon Weekly Limit\t0%\t2033-01-02T03:04:05Z\n"
+	q := parseQuota(text, time.Date(2030, 6, 10, 8, 0, 0, 0, time.UTC))
+	if q.UnknownReason != "" || len(q.Windows) != 3 {
+		t.Fatalf("quota=%+v", q)
+	}
+	want := map[string]float64{"7d": 27, "5h": 0, "Argon 7d": 100}
+	for _, w := range q.Windows {
+		if w.UsedPercent != want[w.Name] || w.Hit != (w.Name == "Argon 7d") || w.ResetsAt == 0 {
+			t.Fatalf("window=%+v", w)
+		}
+		if w.Name == "5h" && w.ResetsAt != time.Date(2030, 6, 10, 14, 15, 16, 0, time.UTC).Unix() {
+			t.Fatal("reset seconds lost", w)
+		}
+	}
+	for _, invalid := range []string{
+		text + "Gemini Models\tWeekly Limit Remaining\t91%\t2031-01-02T03:04:05Z\n",
+		"Gemini Models\tWeekly Limit Remaining\tunknown\t2031-01-02T03:04:05Z\n",
+		"Gemini Models\tWeekly Limit Remaining\t101%\t2031-01-02T03:04:05Z\n",
+		"Gemini Models\tWeekly Limit Remaining\t99%\ttomorrow\n",
+		"Gemini Models\tGemini 4 Argon Weekly Limit\t99%\t2031-01-02T03:04:05Z\n",
+	} {
+		if bad := parseQuota(invalid, time.Now()); len(bad.Windows) != 0 || bad.UnknownReason == "" {
+			t.Fatalf("invalid report became quota: %+v", bad)
+		}
+	}
+}
+
 func TestQuotaUsesOnlyNativeGeminiNumericWindow(t *testing.T) {
 	at := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
 	q := parseQuota(syntheticQuota, at)

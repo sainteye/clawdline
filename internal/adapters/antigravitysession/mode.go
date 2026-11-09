@@ -9,7 +9,7 @@ import (
 )
 
 // A startup default must be offered and acknowledged before publishing the row.
-// Resume never calls this: a saved conversation retains its native permissions.
+// Resume reapplies it only under an explicit global full-approval policy.
 func selectInitialMode(ctx context.Context, client *antigravityprocess.Client, created json.RawMessage, wanted string) error {
 	if wanted == "" {
 		return nil
