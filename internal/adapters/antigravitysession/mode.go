@@ -20,6 +20,14 @@ func selectInitialMode(ctx context.Context, client *antigravityprocess.Client, c
 	if json.Unmarshal(created, &result) != nil {
 		return refusal("permission_unavailable")
 	}
+	// Legacy ACP represents full approval as yolo. The public CLI separates
+	// edit mode from tool approval; accept-edits is full only alongside its
+	// explicitly configured always-proceed tool policy.
+	if wanted == "yolo" && client.AlwaysProceedConfigured() {
+		if _, err := nativeMode(result.Options, wanted); err != nil {
+			wanted = "accept-edits"
+		}
+	}
 	current, err := nativeMode(result.Options, wanted)
 	if err != nil {
 		return err
@@ -111,6 +119,16 @@ func (h *Host) ConfigureDispatch(ctx context.Context, row session.Session, model
 		return err
 	}
 	defer done()
+	alwaysProceed := client.AlwaysProceedConfigured()
+	if alwaysProceed && permission != "full" {
+		// A native global override cannot be reduced by an edit-mode picker.
+		return refusal("permission_unavailable")
+	}
+	if permission == "full" && alwaysProceed {
+		if _, err := nativeMode(client.ConfigOptions(), mode); err != nil {
+			mode = "accept-edits"
+		}
+	}
 	check := func(id, value string) error {
 		h.mu.Lock()
 		defer h.mu.Unlock()

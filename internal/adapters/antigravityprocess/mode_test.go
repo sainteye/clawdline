@@ -42,3 +42,29 @@ func TestModeConfigUsesNativeCheckedChannel(t *testing.T) {
 		t.Fatal("unsafe mode reached peer", got)
 	}
 }
+
+func TestAlwaysProceedNeedsExplicitValidNativePolicy(t *testing.T) {
+	const limit = 4096
+	dir := t.TempDir()
+	c := &Client{opts: Options{AccountDir: dir, MaxFrameBytes: limit}}
+	if c.AlwaysProceedConfigured() {
+		t.Fatal("missing profile claimed full tool approval")
+	}
+	for _, tc := range []struct {
+		body string
+		full bool
+	}{
+		{`{"toolPermission":"always-proceed"}`, true},
+		{`{"agentMode":"accept-edits"}`, false},
+		{`{"toolPermission":"request-review"}`, false},
+		{`{"toolPermission":true}`, false},
+		{`{"toolPermission":"always-proceed","toolPermission":"request-review"}`, false},
+		{`{`, false},
+		{strings.Repeat(" ", limit+1), false},
+	} {
+		settings(t, dir, tc.body)
+		if got := c.AlwaysProceedConfigured(); got != tc.full {
+			t.Fatalf("explicit native policy result=%v, want %v", got, tc.full)
+		}
+	}
+}

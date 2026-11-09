@@ -590,10 +590,29 @@ runtime and the official registry's ACP 1.4.3 runtime offer only `default`,
 `-32602`. The standalone CLI's Auto mode is therefore not established for this
 ACP integration. After that finding, the person explicitly chose YOLO for new
 conversations.
-Production blank-session startup selects the offered `yolo` mode and requires
+Production blank-session startup prefers `yolo` when it is offered and requires
 the native acknowledgement before publishing the conversation. Existing active
 and resumed conversations are not reconfigured. There is no account setting
 change and YOLO is never described as the standalone Auto mode.
+The public ACP 1.5.0 advertises `default`, `accept-edits` and `plan`, with no
+`yolo`. Its execution mode is separate from its tool policy. Maximum tool approval
+is `toolPermission: "always-proceed"`, also exposed as
+`--dangerously-skip-permissions`; `accept-edits` selects automatic file editing.
+On the person's explicit maximum-permission preference, use that combination,
+`enableTerminalSandbox: false` and `allowNonWorkspaceAccess: true` in the native
+profile. These affect the AGY profile, not the operating system's permissions.
+See the official [agent settings](https://antigravity.google/docs/agent-settings)
+and [ACP flags](https://antigravity.google/docs/ide/extensions/acp/).
+
+Startup maps its legacy full-permission preference to an offered `accept-edits`
+mode only when the profile explicitly has `always-proceed`. It validates the
+native current mode and its acknowledgement; it never silently uses a
+request-review profile. Explicit full dispatch uses the same combination. A
+request for lower dispatch permissions is refused while the native global
+always-proceed override is active, because an execution-mode change cannot
+remove that override. Missing, malformed or unoffered mode metadata still fails.
+Existing legacy `yolo` mode negotiation remains supported.
+
 A third completed diagnostic selected YOLO on the installed 1.4.1 runtime and
 received `currentValue=yolo`; the personal OAuth profile and disabled AI Credits
 setting were unchanged. These three diagnostics used eleven metadata requests.

@@ -3123,7 +3123,7 @@
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "8824ced0905afb195c556273b4c500e338a32ac57d0ed3707fc14420bc5cb772",
-    "internal/adapters/antigravityprocess/client.go": "4e176891ed7a33f5798d0ecdc21fa8354d266c5841e71e59aaa4cd8c72da2174",
+    "internal/adapters/antigravityprocess/client.go": "0c8fa880b527794a15e75569e5f6a42f8080d07dcad8f1da747ecf6383a36fa2",
     "internal/adapters/antigravityprocess/lifecycle.go": "768ce986d86e580eb8698acd0880c7a4a44129d69a868a2efb469eb4bf911a3e",
     "internal/adapters/antigravitysession/context.go": "42dbfd6dc6a872566bc2c49d72d69eccf72af7bcc9c33c78c2245041003b5914",
     "internal/adapters/antigravitysession/continue.go": "eac15d888cab9085556c68776c46ff66abce3baa8fdb85456c13e0c4bc271850",

@@ -19,6 +19,9 @@ func syntheticModeOption(current string) any {
 	if os.Getenv("CLW_MODE_PEER") == "unoffered" {
 		values = values[:1]
 	}
+	if os.Getenv("CLW_MODE_PEER") == "native-1.5" {
+		values = []any{map[string]string{"value": "default"}, map[string]string{"value": "accept-edits"}, map[string]string{"value": "plan"}}
+	}
 	if os.Getenv("CLW_MODE_PEER") == "malformed" {
 		return map[string]any{"id": "mode", "type": "select", "currentValue": false}
 	}
@@ -270,7 +273,7 @@ func TestNewConversationSelectsYoloWithoutChangingExistingMode(t *testing.T) {
 }
 
 func TestNewConversationNeverClaimsUnacknowledgedYolo(t *testing.T) {
-	for _, variant := range []string{"unoffered", "wrong-ack", "missing-ack"} {
+	for _, variant := range []string{"malformed", "wrong-ack", "missing-ack"} {
 		t.Run(variant, func(t *testing.T) {
 			t.Setenv("CLW_CONFIG_PEER", "yes")
 			t.Setenv("CLW_MODE_PEER", variant)
@@ -290,5 +293,58 @@ func TestNativeModeAcceptsAnOfferedCurrentModeWithoutANameAllowlist(t *testing.T
 	raw := json.RawMessage(`[{"id":"mode","type":"select","currentValue":"future mode","options":[{"value":"future mode"},{"value":"yolo"}]}]`)
 	if current, err := nativeMode(raw, "yolo"); err != nil || current != "future mode" {
 		t.Fatalf("current=%q err=%v", current, err)
+	}
+}
+
+func TestNewConversationUsesModernMaximumOnlyWithAlwaysProceed(t *testing.T) {
+	for _, tc := range []struct {
+		name, offer, policy string
+		succeeds            bool
+	}{
+		{"modern-full", "native-1.5", "always-proceed", true},
+		{"modern-review", "native-1.5", "request-review", false},
+		{"modern-unset", "native-1.5", "", false},
+		{"no-edit-mode", "unoffered", "always-proceed", false},
+		{"malformed-offer", "malformed", "always-proceed", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLW_CONFIG_PEER", "yes")
+			t.Setenv("CLW_MODE_PEER", tc.offer)
+			h, _, dir := fixture(t)
+			settings, _ := json.Marshal(map[string]any{"useG1Credits": false, "auth": map[string]string{"type": "oauth-personal"}, "toolPermission": tc.policy})
+			if err := os.WriteFile(filepath.Join(dir, "antigravity-acp", "settings.json"), settings, 0600); err != nil {
+				t.Fatal(err)
+			}
+			h.opts.NewSessionMode = "yolo"
+			row, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+			if !tc.succeeds {
+				if err == nil {
+					t.Fatal("maximum permission claimed without an available native combination")
+				}
+				assertConfigWrites(t, dir, "")
+				return
+			}
+			if err != nil {
+				t.Fatalf("modern maximum permission could not start: %v", err)
+			}
+			c, err := h.lookup(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode, err := nativeMode(c.client.ConfigOptions(), "accept-edits"); err != nil || mode != "accept-edits" {
+				t.Fatalf("native mode=%q err=%v", mode, err)
+			}
+			assertConfigWrites(t, dir, "mode=accept-edits\n")
+			if err := h.ConfigureDispatch(context.Background(), row, "", "", "full"); err != nil {
+				t.Fatalf("explicit full policy rejected: %v", err)
+			}
+			assertConfigWrites(t, dir, "mode=accept-edits\nmode=accept-edits\n")
+			for _, permission := range []string{"ask", "edits"} {
+				if err := h.ConfigureDispatch(context.Background(), row, "", "", permission); err == nil {
+					t.Fatal("always-proceed was mislabeled as a lower permission")
+				}
+			}
+			assertConfigWrites(t, dir, "mode=accept-edits\nmode=accept-edits\n")
+		})
 	}
 }
