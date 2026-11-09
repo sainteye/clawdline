@@ -242,6 +242,23 @@ Notice payloads cannot supply Markdown, HTML, CSS, actions, URLs or translated c
 choose their own wording and styling from the validated kind/state and escape every displayed
 field. The envelope's `body` is only the model-readable and legacy-client fallback.
 
+### Coordination notices
+
+Pause and wake requests use the same `<clawdline-notice>` wrapper with
+`protocol: "clawdline.coordination"`, version 1, and kind `pause` or `wake`.
+Their closed key set is `protocol`, `version`, `kind`, `request_id`, `body`,
+`requester_session_id`, `reason` and `wake_condition`. Both IDs must be UUIDs;
+body, reason and wake condition must be nonempty strings. Stored notices with
+only the first five keys remain readable as cards, with escaped body text
+under technical details.
+The reader does not infer structured fields from the English fallback body.
+
+The console chooses a localized pause/resume title and receipt explanation,
+shows the reason and wake condition, and folds identifiers under technical
+details. Fields are inert escaped text, never actions or Markdown. A pause
+notice does not establish a safe-point receipt; a wake notice does not grant
+a resource lease. Merely rendering either card acknowledges nothing.
+
 ## Adding or changing a type
 
 A message-type change is complete only when all of these move together:

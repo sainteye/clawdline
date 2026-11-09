@@ -71,6 +71,7 @@ import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
 import "./notice-leftovers.css"
+import "./coordination-notice.css"
 import { VideoCards } from "./VideoCards.js"
 import { ToolResult } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
@@ -1577,7 +1578,22 @@ function noticeHTML(v: View, e: Entry, at: number): ReactElement {
     (paths || []).map((p) => '<li><code class="notice-path">' + esc(String(p)) + "</code></li>").join("") +
     "</ul>"
 
-  if (n.kind === "task_finished") {
+  if (n.kind === "pause" || n.kind === "wake") {
+    const pausing = n.kind === "pause"
+    title = nextWord(pausing ? "noticePause" : "noticeWake")
+    detail = '<div class="notice-meta">' + esc(nextWord(pausing ? "noticePauseSay" : "noticeWakeSay")) + "</div>"
+    if (n.reason && n.wake_condition) {
+      detail += '<div class="notice-task">' + esc(n.reason) + '</div><div class="notice-meta">' +
+        esc(nextWord("noticeWakeCondition", { condition: n.wake_condition })) + "</div>"
+    }
+    detail += '<details class="notice-coordination-details"><summary>' + esc(nextWord("transcriptTechnicalDetails")) + "</summary>"
+    // Older notices have no typed reason or condition. Keep the original
+    // instructions under details instead of parsing their English prose.
+    if (!n.reason || !n.wake_condition) detail += '<div class="notice-coordination-body">' + esc(e.text) + "</div>"
+    if (n.requester_session_id) detail += '<div class="notice-meta">' + esc(nextWord("noticeRequester", { session: n.requester_session_id })) + "</div>"
+    if (n.request_id) detail += '<code class="notice-path">' + esc(n.request_id) + "</code>"
+    detail += "</details>"
+  } else if (n.kind === "task_finished" || n.kind === "task_stalled") {
     const states: Record<string, [string, string]> = {
       success: [T.webNoticeCompleted, "success"],
       failure: [T.webNoticeFailed, "failure"],

@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -255,5 +256,29 @@ func TestUnstartedPauseNotificationRecoversWithoutAnotherModelTurn(t *testing.T)
 	}
 	if n := b.RecoverEffects(ctx); n != 0 || len(*lines) != 1 {
 		t.Fatalf("duplicate recovery %d, lines %v", n, *lines)
+	}
+}
+
+func TestPauseWireCarriesCardFieldsWithoutChangingReceiptInstructions(t *testing.T) {
+	req := pauseRequest()
+	row := store.PauseRow{ID: req.ID, Requester: req.Requester, Reason: req.Reason, WakeCondition: req.WakeCondition}
+	for _, kind := range []string{"pause", "wake"} {
+		wire := pauseWire(row, kind)
+		raw := strings.TrimSuffix(strings.TrimPrefix(wire, "<clawdline-notice>"), "</clawdline-notice>")
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+			t.Fatal(err)
+		}
+		if len(fields) != 8 || fields["protocol"] != "clawdline.coordination" || fields["version"] != float64(1) || fields["kind"] != kind || fields["request_id"] != req.ID || fields["requester_session_id"] != req.Requester || fields["reason"] != req.Reason || fields["wake_condition"] != req.WakeCondition {
+			t.Fatalf("wire lost card fields: %s", wire)
+		}
+		body, _ := fields["body"].(string)
+		command := "clawdline coordination observed "
+		if kind == "wake" {
+			command = "clawdline coordination resumed "
+		}
+		if !strings.Contains(body, command+req.ID) {
+			t.Fatalf("missing receiver instruction: %s", body)
+		}
 	}
 }
