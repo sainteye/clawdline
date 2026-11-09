@@ -62,6 +62,7 @@ test("mobile compact window prefers Gemini all-models 7d over specific model Arg
     source: "provider_cli",
   }
   const chosen = compactWindow(gemini)
+  assert.ok(chosen)
   assert.equal(chosen.name, "7d")
   assert.equal(chosen.used_percent, 12)
 })
@@ -76,8 +77,8 @@ test("mobile compact window falls back to tightest window when 7d is absent", ()
     stale: false,
     source: "provider_cli",
   }
-  assert.equal(compactWindow(gemini).name, "5h")
-  assert.equal(compactWindow(gemini).used_percent, 45)
+  assert.equal(compactWindow(gemini)?.name, "5h")
+  assert.equal(compactWindow(gemini)?.used_percent, 45)
 })
 
 test("mobile compact window prefers 7d even when 5h is tighter", () => {
@@ -91,7 +92,22 @@ test("mobile compact window prefers 7d even when 5h is tighter", () => {
     stale: false,
     source: "claude_statusline",
   }
-  assert.equal(compactWindow(claude).name, "7d")
-  assert.equal(compactWindow(claude).used_percent, 38)
+  assert.equal(compactWindow(claude)?.name, "7d")
+  assert.equal(compactWindow(claude)?.used_percent, 38)
 })
 
+
+
+test("Grok with a proven missing reading stays visible without an invented window", () => {
+  const missing: ProviderQuotaRow = {...row("grok",0), windows:[], problem:"no_reading"}
+  assert.deepEqual(visibleQuotaRows([missing]),[missing])
+  assert.equal(compactWindow(missing),undefined)
+  assert.deepEqual(compactQuotaRows([missing,row("codex",0)],2).map(r=>r.id),["codex","grok"])
+  for (const problem of [undefined,"not_signed_in","unreadable","invalid_response","reauth_required","rate_limited","unavailable"]) {
+    assert.deepEqual(visibleQuotaRows([{...missing,problem}]),[],String(problem))
+  }
+  assert.deepEqual(visibleQuotaRows([{...missing,observed_at:100,problem:"unavailable",stale:true}]).map(r=>r.id),["grok"])
+  assert.deepEqual(visibleQuotaRows([{...row("grok",20),problem:"not_signed_in"}]),[])
+  assert.equal(visibleQuotaRows([row("grok",0)])[0].windows[0].used_percent,0)
+  assert.deepEqual(visibleQuotaRows([{...missing,id:"gemini"}]),[])
+})

@@ -721,6 +721,7 @@ test("CodeGraph and Terminal reads cross the real pinned client on relay and car
   const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"])
   const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   for (const [word, body, writeWord] of [
+    ["info", { info: {session:{model:"grok-4.7"}} }, "send"],
     ["session-codegraph", { state: "index_missing", nodes: [], links: [] }, "session-codegraph-build"],
     ["native-terminal-screen", { text: "Select a model", execution_generation: genA, frame: "fixture" }, "native-terminal-input"],
   ]) {
@@ -731,7 +732,7 @@ test("CodeGraph and Terminal reads cross the real pinned client on relay and car
           deviceID: "viewer", devicePrivateKey: keys.privateKey, nextSequence: async () => sequence++ })
         client.ready = true
         client.allowWrites = false
-        client.machineDescriptor = () => null
+        client.machineDescriptor = () => ({machine:{info_summary_v1:true}})
         client._unsupportedRefusal = () => null
         client._offlineRefusal = () => null
         client._outboundMachinePairing = async () => ({ keyID: "key", masterKey })
@@ -744,7 +745,7 @@ test("CodeGraph and Terminal reads cross the real pinned client on relay and car
         client._carrierFor = () => transport === "carrier" ? { open: true, send: published } : null
         const controller = new AbortController()
         const result = client.readForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
-          word, {}, controller.signal)
+          word, word === "info" ? {parts:"summary"} : {}, controller.signal)
         try {
           const envelope = await Promise.race([publication, result.then(() => assert.fail("read settled before publication"))])
           const fields = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
@@ -755,11 +756,12 @@ test("CodeGraph and Terminal reads cross the real pinned client on relay and car
           assert.equal(fields.session, "s")
           assert.equal(fields.expected_generation, genA)
           assert.equal(client.allowWrites, false)
-          const key = "m\u0000s\u0000" + word
+          const read = word === "info" ? "info.summary" : word
+          const key = "m\u0000s\u0000" + read
           assert.ok(client.readWaiters.has(key))
           assert.ok(client.pinnedReadProofs.has(key))
           client._applySnapshot({ kind: "transcript", machine: "m", session: "s" }, {
-            read: word, machine_id: "m", session_id: "s", expected_generation: genA,
+            read, machine_id: "m", session_id: "s", expected_generation: genA,
             seq: envelope.seq, body,
           }, { seq: 50, ts: Date.now() }, false)
           assert.deepEqual(await result, body)
@@ -864,7 +866,7 @@ test("original detail panels retain their read names on the exact r/ target", as
   client._read = (...args) => { calls.push(args); return Promise.resolve({}) }
   const target = { machineID: "m", sessionID: "s", executionGeneration: genA }
   for (const [word, fields, answer] of [
-    ["info", {parts:"full"}, "info.full"], ["info", {parts:"remote-permission"}, "info.remote-permission"],
+    ["info", {parts:"full"}, "info.full"], ["info", {parts:"summary"}, "info.summary"], ["info", {parts:"remote-permission"}, "info.remote-permission"],
     ["git", {}, "git"], ["git-diff", { request: "diff-1", path: "README.md" }, "read:diff-1"],
     ["outputs", {}, "outputs"], ["output-file", { request: "file-1", id: "a".repeat(64), offset: "0", revision: "", size: "thumb" }, "read:file-1"],
     ["screen", {}, "screen"], ["agent", { agent: "a", limit: 100 }, "agent:a"],
@@ -880,7 +882,7 @@ test("original detail panels retain their read names on the exact r/ target", as
     assert.deepEqual(sent[2], { ...fields, machine_id: "m", expected_generation: genA })
     assert.equal(sent[3], answer)
   }
-  assert.equal(calls.length, 13)
+  assert.equal(calls.length, 14)
   await assert.rejects(() => client.readForGeneration(target, "send", { request: "write-1" }),
     { code: "read_only_channel" })
   await assert.rejects(() => client.readForGeneration({ ...target, executionGeneration: "" }, "git"),
@@ -1799,4 +1801,32 @@ test("negotiated pinned reads preserve the reply proof and abort without fallbac
  client._readRepresentation=async()=>{calls++;controller.abort();throw Object.assign(new Error("cancelled"),{code:"cloud_read_timeout"})}
  await assert.rejects(client._read({machine:"m",session:"s"},"skills",{},"skills",123,{signal:controller.signal}),error=>error.code==="cloud_read_timeout")
  assert.equal(calls,1)
+})
+
+
+test("pinned Info full and summary use separate flights and preserve their own parts", async () => {
+  const client=Object.create(StatusCloudClient.prototype)
+  client.pinnedInfoFlights=new Map();client.readWaiters=new Map()
+  const calls=[], release=[]
+  client._read=(...args)=>{calls.push(args);return new Promise(resolve=>release.push(resolve))}
+  const destination={machineID:"m",sessionID:"s",executionGeneration:genA}
+  const full=client.infoForGeneration(destination)
+  const summary=client.infoSummaryForGeneration(destination)
+  assert.equal(calls.length,2)
+  assert.deepEqual(calls.map(c=>[c[2].parts,c[3]]),[["full","info.full"],["summary","info.summary"]])
+  release[1]({info:{session:{model:"grok-4.7"}}});await summary
+  assert.equal(client.pinnedInfoFlights.size,1)
+  release[0]({info:{models:[]}});await full
+  assert.equal(client.pinnedInfoFlights.size,0)
+  client.readWaiters.set("m\u0000s\u0000info.summary",{})
+  await assert.rejects(()=>client.infoSummaryForGeneration(destination),{code:"cloud_read_busy"})
+})
+
+
+test("an older machine cannot silently answer an unadvertised pinned summary",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.machineDescriptor=()=>({machine:{read_content_v1:true}})
+ client.readWaiters=new Map();client.pinnedReadProofs=new Map()
+ await assert.rejects(()=>client.readForGeneration({machineID:"m",sessionID:"s",executionGeneration:genA},"info",{parts:"summary"}),{code:"cloud_machine_unsupported"})
+ assert.equal(client.readWaiters.size,0);assert.equal(client.pinnedReadProofs.size,0)
 })

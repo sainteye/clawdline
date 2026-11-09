@@ -44,6 +44,8 @@ unmetered: native usage and extra-credit policy still belong to the account.
   They do not type into a TUI or fall back to Gemini.
 - Model selection accepts current native offers only. Omit a model to retain
   the native default. `grok-build` is a product label, not an invented model ID.
+  Session Info shows those offers without an arbitrary-model input. Missing
+  native token usage or plan quota is reported as unreported.
 - Native tool permissions use the existing live permission endpoint and exact
   option IDs. The current Session, operation fence and authorization are
   checked again before writing a reply; expired offers are not replayed.
@@ -96,6 +98,39 @@ History is stored in a Grok-specific state directory, and persisted records,
 lookup and restore require the actual provider identity. Existing Gemini
 records retain their previous format and are not migrated into Grok history.
 The shared implementation's historical package names do not select a provider.
+
+## Session facts and provider quota
+
+Cloud Info, skills and Git reads can resolve a verified machine, Session and
+execution before its rich Session row arrives. They retain execution checks and
+the request's cancellation signal; an unresolved destination is refused. Full
+Info and summary use separate reply channels and cannot complete one another.
+Pinned summaries require the machine's additive `info_summary_v1` capability;
+an older machine is refused rather than read through an unpinned fallback.
+
+The provider quota bar retains Grok when a completed provider read reports
+`no_reading`, or an earlier observation exists. With no valid percentage it
+shows unknown without a progress bar or an invented zero. An initial empty slot
+or signed-out account stays hidden. Mobile visibility remains limited to the
+Session list. A native Session limit and a provider-account quota are separate
+readings.
+
+An acknowledged Grok ACP `-32003` becomes `grok_turn_rate_limited`, with a
+localized explanation. Other providers, adjacent codes and unacknowledged
+delivery keep their existing failures. This does not invent a reset time,
+complete the turn or resend the message. The native
+[error definition](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/sampling/error.rs)
+also distinguishes free-usage exhaustion from temporary throttling; Clawdline
+does not publish private provider error bodies.
+
+For an active subscription that is not recognized, the
+[official FAQ](https://docs.x.ai/grok/faq) recommends checking the account,
+updating and signing in again, then contacting product support if it persists.
+`grok update --check` checks the CLI version without installing. An auth display
+tier is not proof of current entitlement: the native
+[subscription check](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/agent/subscription_check.rs)
+queries the live subscription separately from the token. Neither a successful
+sign-in nor a paid tier proves that a later model request succeeded.
 
 ## Source investigation and validation
 

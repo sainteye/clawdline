@@ -161,8 +161,10 @@ func TestDescriptorAdvertisesPinnedReadOnlyDetailOnlyWhenWired(t *testing.T) {
 		publisher.ReadContentV1 = wired
 		publisher.firstPass(context.Background())
 		machine := out.payload(t, "orch/mac-01")["machine"].(map[string]any)
-		if got, present := machine["read_content_v1"]; present != wired || wired && got != true {
-			t.Fatalf("wired=%v machine=%v", wired, machine)
+		for _, capability := range []string{"read_content_v1", "info_summary_v1"} {
+			if got, present := machine[capability]; present != wired || wired && got != true {
+				t.Fatalf("wired=%v capability=%s machine=%v", wired, capability, machine)
+			}
 		}
 	}
 }

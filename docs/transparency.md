@@ -367,3 +367,19 @@ Traditional Chinese explanations remain unchanged. Reviewing the two language
 catalogs found no change to `transparency.*` or rotation request values; only the
 shared source-file receipt changes. Public website snapshot publication remains
 separate from this local source review.
+
+## Grok Session facts and missing quota (2026-11-09)
+
+Info and its related reads now resolve a verified Session execution before the
+rich row arrives. Full and summary remain distinct pinned reads. Grok model
+controls accept native offers; absent usage and quota are explained without
+inventing a percentage. An acknowledged native rate limit has a provider-specific
+display code and does not replay the failed input or create completion.
+
+The changed shared files also contain producers registered by the Grok context,
+Gemini context and restart, CodeGraph, and Session rotation cards. Their English
+and Taiwan Traditional Chinese explanations and original excerpts were reviewed
+against the diff: launch instructions, applicability, permission ceilings and
+continuation semantics are unchanged. The new strings are UI explanations, not
+provider instructions. Refreshing the source receipt does not establish website
+publication or successful provider inference.

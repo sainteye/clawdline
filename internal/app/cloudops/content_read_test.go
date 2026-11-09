@@ -155,6 +155,7 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 		name string
 	}{
 		{map[string]any{"type": "info", "session": pane, "parts": "full", "expected_generation": pinnedGeneration}, "info.full"},
+		{map[string]any{"type": "info", "session": pane, "parts": "summary", "expected_generation": pinnedGeneration}, "info.summary"},
 		{map[string]any{"type": "info", "session": pane, "parts": "remote-permission", "expected_generation": pinnedGeneration}, "info.remote-permission"},
 		{map[string]any{"type": "skills", "session": pane, "expected_generation": pinnedGeneration}, "skills"},
 		{map[string]any{"type": "transcript", "session": pane, "limit": 100, "expected_generation": pinnedGeneration}, "transcript"},
@@ -175,7 +176,7 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 		if got := r.last().Header; got["X-Clawdline-Target-Machine"] != "mac-01" || got["X-Clawdline-Execution-Generation"] != pinnedGeneration {
 			t.Fatalf("pinned target headers: %v", got)
 		}
-		if input.name == "info.remote-permission" && r.last().Query["parts"] != "remote-permission" {
+		if strings.HasPrefix(input.name, "info.") && r.last().Query["parts"] != strings.TrimPrefix(input.name, "info.") {
 			t.Fatal("explicit permission inspection became routine info")
 		}
 		if input.name == "transcript.before.12345" && r.last().Query["before"] != "12345" {
@@ -326,7 +327,7 @@ func TestReadContentRailRejectsUnpinnedAndUnauthorizedRequests(t *testing.T) {
 		{"skills missing generation", map[string]any{"type": "skills", "session": pane}, true, true, "execution_target_required"},
 		{"missing cap", map[string]any{"type": "transcript", "session": pane, "limit": 10, "expected_generation": pinnedGeneration}, false, true, "read_transcript_required"},
 		{"missing bridge", map[string]any{"type": "info", "session": pane, "parts": "full", "expected_generation": pinnedGeneration}, true, false, "read_transcript_unavailable"},
-		{"summary", map[string]any{"type": "info", "session": pane, "parts": "summary", "expected_generation": pinnedGeneration}, true, true, "read_only_channel"},
+		{"summary missing cap", map[string]any{"type": "info", "session": pane, "parts": "summary", "expected_generation": pinnedGeneration}, false, true, "read_transcript_required"},
 		{"wrong machine", map[string]any{"type": "info", "machine_id": "elsewhere", "session": pane, "parts": "full", "expected_generation": pinnedGeneration}, true, true, "wrong_machine"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

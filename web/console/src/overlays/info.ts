@@ -336,7 +336,7 @@ function modelsHTML(models: SessionModel[], current: string): string {
   if (pending && !models.some((m) => m.command === pending)) {
     chips += '<button type="button" class="m" data-pending="1" disabled>' + esc(pending) + "</button>"
   }
-  const other = data?.session.assistant === "antigravity" ? "" :
+  const other = (data?.session.assistant === "antigravity" || data?.session.assistant === "grok") ? "" :
     '<form class="other" data-other="1">' +
     '<input type="text" name="model" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" ' +
     'placeholder="' + esc(T.webInfoModelOther) + '" aria-label="' + esc(T.webInfoModelOther) + '"' + (can ? "" : " disabled") + ">" +
@@ -474,7 +474,7 @@ function contextHTML(c: Facts["context"]): string {
 }
 
 function usageHTML(u: Facts["usage"]): string {
-  if (!u) return note(T.webInfoNoUsage)
+  if (!u) return note(data?.session.assistant === "grok" ? nextWord("infoGrokUsageUnknown") : T.webInfoNoUsage)
   const cells: [unknown, string][] = [
     [u.input, T.webInfoInput], [u.output, T.webInfoOutput],
     [u.cacheRead, T.webInfoCacheRead], [u.cacheWrite, T.webInfoCacheWrite],
@@ -503,7 +503,7 @@ function limitsHTML(limits: SessionLimits): string {
   // that sentence for a bare "unknown" is what leaves a person with no status
   // line configured — the only thing Claude Code ever hands its 5h and 7d
   // percentages to — with nowhere to read why the corner is blank.
-  if (!limits.windows.length) return note(data?.session.assistant === "antigravity" ? T.webInfoUnknown : limits.detail || T.webInfoUnknown)
+  if (!limits.windows.length) return note(data?.session.assistant === "grok" ? nextWord("infoGrokLimitsUnknown") : data?.session.assistant === "antigravity" ? T.webInfoUnknown : limits.detail || T.webInfoUnknown)
   return limits.windows
     .map((window) => {
       const pct = Math.max(0, Math.min(100, Math.round(window.usedPercent)))
@@ -605,6 +605,9 @@ function html(d: Facts): string {
   if (d.protocol) {
     const protocolWord = (key: string) => catalogWord("acp", key).replaceAll("{assistant}", assistantLabel(s.assistant))
     out += sec(++i, protocolWord("title"), "", protocolStateHTML(d.protocol, protocolWord, esc, L.clock))
+    if (s.assistant === "grok" && d.protocol.operation === "prompt" && d.protocol.phase === "request_failed" && d.protocol.rpc_error === -32003) {
+      out += note(nextWord("grokRateLimited"))
+    }
   }
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
