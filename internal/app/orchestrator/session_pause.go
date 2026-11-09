@@ -29,7 +29,8 @@ func pauseWire(p store.PauseRow, kind string) string {
 		text = "Resume request " + p.ID + ": the wake condition is ready. Run `clawdline coordination resumed " + p.ID + "`, then acquire the required lease or confirm the wait is released before work."
 	}
 	encoded, _ := json.Marshal(map[string]any{"protocol": "clawdline.coordination", "version": 1,
-		"kind": kind, "request_id": p.ID, "body": text})
+		"kind": kind, "request_id": p.ID, "body": text,
+		"requester_session_id": p.Requester, "reason": p.Reason, "wake_condition": p.WakeCondition})
 	return "<clawdline-notice>" + string(encoded) + "</clawdline-notice>"
 }
 

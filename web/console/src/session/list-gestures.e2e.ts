@@ -70,6 +70,7 @@ type ReadingScenario =
   | "callback-owner"
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
+let fixtureLanguage = "zh-Hant"
 const callbackReason = "Go tests for a long command whose complete name cannot fit on a phone"
 let inlineDecisionFixture = false
 let inlineDecisionAnswers = 0
@@ -403,10 +404,10 @@ function json(res: ServerResponse, status: number, body: unknown) {
 /** The document with its words written in, as `page.go` writes them. */
 function document(): string {
   const html = readFileSync(join(dist, "index.html"), "utf8")
-  const words = JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
-  words.lang = "zh-Hant"
+  const words = fixtureLanguage === "en" ? {} : JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
+  words.lang = fixtureLanguage
   words.dir = "ltr"
-  const slot = "<script>localStorage.setItem('ui_language','zh-Hant');window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
+  const slot = "<script>localStorage.setItem('ui_language'," + JSON.stringify(fixtureLanguage) + ");window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
   return html.replace("<!-- clawdline:strings -->", slot).replace("<!-- clawdline:cloud -->", "")
 }
 
@@ -415,7 +416,7 @@ function daemon(): Server {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
     if (path === "/v1/strings") {
-      return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+      return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", fixtureLanguage + ".json"), "utf8")))
     }
     if (path === "/v1/sessions") {
       listReads++
@@ -4174,4 +4175,68 @@ test("a phone names a pending callback and clears it when its result arrives", (
       })`)
       assert.equal((await read()).idle, true)
     } finally { readingScenario = "normal"; callbackDone = false; pushSessions() }
+  }))
+
+// The same typed rows served by transcriptEntry, rendered by the full Session.
+// Stored body-only coordination and current cards must both stay inert.
+test("coordination notices use localized cards on phone and desktop", () =>
+  inTab(async (tab) => {
+    const request = "a7000000-0000-4000-8000-000000000001"
+    const reason = "Prepare restart <img src=x onerror=alert(1)>"
+    const condition = "lease:" + "a".repeat(180)
+    try {
+      for (const language of ["en", "zh-Hant"]) {
+        for (const size of ["phone", "desktop"] as const) {
+          if (size === "desktop") await tab.desktop()
+          else await tab.phoneWidth(390)
+          playbookEcho = [
+            { role: "notice", text: "Model-only receiver instructions", at: 1, notice: {kind:"pause", request_id:request, requester_session_id:request, reason, wake_condition:condition} },
+            { role: "notice", text: "Model-only receiver instructions", at: 2, notice: {kind:"wake", request_id:request, requester_session_id:request, reason:"Maintenance complete", wake_condition:"wait:ready"} },
+            { role: "notice", text: "Legacy receiver instructions <script>bad()</script> `clawdline coordination safe`", at: 3, notice: {kind:"pause", request_id:request} },
+            { role: "notice", text: "task finished", at: 4, notice: {kind:"task_finished", task:{id:"fixture-task", title:"Existing completion"}, state:"success"} },
+            { role: "notice", text: "task stalled", at: 5, notice: {kind:"task_stalled", task:{id:"fixture-stalled", title:"Stalled completion"}, state:"failure"} },
+          ]
+          fixtureLanguage = language
+          await list(tab)
+          await tab.run(`document.querySelector('#rows > li.row[data-id="${SAFE}"]').click()`)
+          await tab.run(`new Promise((resolve, reject) => {
+            const deadline = Date.now()+8000
+            const read=()=>{if(document.querySelectorAll('.entry.clawdline-notice').length===5)return resolve(true);if(Date.now()>deadline)return reject(new Error('missing coordination cards'));setTimeout(read,25)};read()
+          })`)
+          const result = await tab.run(`(() => {
+            const cards=[...document.querySelectorAll('.entry.clawdline-notice')]
+            return {titles:cards.map(c=>c.querySelector('.notice-title')?.textContent),
+              text:cards.map(c=>c.textContent), details:cards.map(c=>c.querySelector('details')?.open),
+              unsafe:cards.some(c=>!!c.querySelector('img,script,a,button')),
+              fits:document.documentElement.scrollWidth<=innerWidth && cards.every(c=>c.scrollWidth<=c.clientWidth+1),
+              person:document.querySelectorAll('.entry[data-role="user"]').length}
+          })()`)
+          assert.equal(result.titles[0], language === "en" ? "Pause requested" : "暫停請求")
+          assert.equal(result.titles[1], language === "en" ? "Resume requested" : "喚醒請求")
+          assert.ok(result.text[0].includes(reason) && result.text[0].includes(condition))
+          assert.ok(!result.text[0].includes("Model-only"))
+          assert.ok(result.text[2].includes("Legacy receiver instructions <script>bad()</script>"))
+          assert.ok(result.text[3].includes("Existing completion"))
+          assert.ok(result.text[4].includes("Stalled completion"))
+          assert.deepEqual(result.details.slice(0,3), [false,false,false])
+          assert.equal(result.unsafe, false)
+          assert.equal(result.fits, true)
+          assert.equal(result.person, 0)
+          // Keep the review picture readable; the hostile and long values
+          // above have already exercised escaping and phone wrapping.
+          playbookEcho = playbookEcho.slice(0,2).map((row, index) => ({...row, notice: {
+            ...(row.notice as Row),
+            reason: language === "en" ? (index ? "The service update is ready." : "A service update needs a brief pause.") : (index ? "服務更新已完成。" : "服務更新需要短暫暫停。"),
+            wake_condition: language === "en" ? "The console and existing Sessions are verified." : "控制台與原有 Session 保留已驗證。",
+          }}))
+          await list(tab)
+          await tab.run(`document.querySelector('#rows > li.row[data-id="${SAFE}"]').click()`)
+          await tab.run(`new Promise((resolve, reject) => {
+            const deadline=Date.now()+8000
+            const read=()=>{if(document.querySelectorAll('.entry.clawdline-notice').length===2)return resolve(true);if(Date.now()>deadline)return reject(new Error('missing preview cards'));setTimeout(read,25)};read()
+          })`)
+          await tab.shot("coordination-notices-"+language+"-"+size)
+        }
+      }
+    } finally { playbookEcho=[]; fixtureLanguage="zh-Hant" }
   }))

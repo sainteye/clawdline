@@ -318,3 +318,10 @@ active. Review of both language versions of the owned-ACP context explanation
 confirms that this changes permission negotiation, not injected instructions,
 profile identity, AI-credit policy or model input. The source receipt follows
 the native-policy reader. Real native startup acceptance used metadata only.
+
+Coordination notice cards were reviewed against the unchanged pause/wake
+receiver instructions in `session_pause.go` and both language versions of the
+notice explanation. The wire now also carries the requester conversation ID,
+reason and wake condition as inert fields for display. Cards neither run the
+receipt commands nor change delivery, safe-point or lease semantics. Stored
+body-only notices keep the original instructions under technical details.

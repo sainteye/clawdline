@@ -96,6 +96,9 @@ var sessionFields = map[string]string{
 	"handover#BrokerHandoff.receiver_session":    conversation,
 	"handover#BrokerHandoffRequest.from_session": conversation,
 
+	// The requester of a coordination notice is the durable conversation.
+	"transcript#TranscriptNotice.requester_session_id": conversation,
+
 	// The known exceptions. Each one holds a terminal id, or either, under a
 	// session's name.
 	"orchestrator#BrokerMessageRequest.from_session": "either: the sender names itself by terminal or conversation (W1 messages route); retire when the messages route takes conversation ids",
