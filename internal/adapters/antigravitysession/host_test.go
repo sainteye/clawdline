@@ -141,6 +141,15 @@ func TestOwnedPeer(t *testing.T) {
 			}
 		case "session/load", "session/resume":
 			nativeID = req.Params.SessionID
+			if _, err := os.Stat(filepath.Join(dir, "hold-restore")); err == nil {
+				_ = os.WriteFile(filepath.Join(dir, "restore-held"), []byte(nativeID), 0600)
+				for {
+					if _, err := os.Stat(filepath.Join(dir, "release-restore")); err == nil {
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}
 			if req.Method == "session/load" {
 				if raw, err := os.ReadFile(filepath.Join(dir, nativeID+"-context-replay")); err == nil {
 					notify(map[string]any{"sessionUpdate": "user_message_chunk", "content": map[string]string{"type": "text", "text": string(raw)}})

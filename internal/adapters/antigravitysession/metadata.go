@@ -18,22 +18,48 @@ import (
 // beginMetadata shares the sender's single in-flight operation, without
 // manufacturing a working model turn. Shutdown owns cancellation and joins jobs.
 func (h *Host) beginMetadata(c *conversation) (*antigravityprocess.Client, func(), error) {
+	client, _, done, err := h.beginMetadataOp(h.ctx, c, true, false)
+	return client, done, err
+}
+
+func (h *Host) beginMetadataOp(ctx context.Context, c *conversation, requireClient, waitOnStop bool) (*antigravityprocess.Client, context.Context, func(), error) {
+	if ctx == nil || ctx.Err() != nil {
+		return nil, nil, nil, refusal("cancelled")
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.closed || h.ctx.Err() != nil {
-		return nil, nil, refusal("closed")
+		return nil, nil, nil, refusal("closed")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.hidden || c.client == nil {
-		return nil, nil, refusal("closed")
+	if c.hidden || (requireClient && c.client == nil) {
+		return nil, nil, nil, refusal("closed")
 	}
-	if c.busy || c.row.State != session.StateIdle {
-		return nil, nil, refusal("busy")
+	if c.busy || c.stopping || c.row.State != session.StateIdle {
+		return nil, nil, nil, refusal("busy")
+	}
+	opCtx, opCancel := context.WithCancel(ctx)
+	var opDone chan struct{}
+	if waitOnStop {
+		opDone = make(chan struct{})
 	}
 	c.busy = true
+	c.opCancel = opCancel
+	c.opDone = opDone
 	h.jobs.Add(1)
-	return c.client, func() { c.mu.Lock(); c.busy = false; c.mu.Unlock(); h.jobs.Done() }, nil
+	return c.client, opCtx, func() {
+		opCancel()
+		c.mu.Lock()
+		c.busy = false
+		c.opCancel = nil
+		c.opDone = nil
+		c.mu.Unlock()
+		if opDone != nil {
+			close(opDone)
+		}
+		h.jobs.Done()
+	}, nil
 }
 
 func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string, before func() error) error {
@@ -43,7 +69,7 @@ func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string,
 	if structured {
 		return h.selectConfig(ctx, c, "model", modelID, before)
 	}
-	client, done, err := h.beginMetadata(c)
+	client, opCtx, done, err := h.beginMetadataOp(ctx, c, true, true)
 	if err != nil {
 		return err
 	}
@@ -57,7 +83,7 @@ func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string,
 	if !offered {
 		return refusal("model_not_offered")
 	}
-	if err := client.SetModelChecked(ctx, modelID, before); err != nil {
+	if err := client.SetModelChecked(opCtx, modelID, before); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -67,7 +93,7 @@ func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string,
 }
 
 func (h *Host) selectConfig(ctx context.Context, c *conversation, id, value string, before func() error) error {
-	client, done, err := h.beginMetadata(c)
+	client, opCtx, done, err := h.beginMetadataOp(ctx, c, true, true)
 	if err != nil {
 		return err
 	}
@@ -98,7 +124,7 @@ func (h *Host) selectConfig(ctx context.Context, c *conversation, id, value stri
 	if err := validate(); err != nil {
 		return err
 	}
-	return client.SetConfigOptionChecked(ctx, id, value, func() error {
+	return client.SetConfigOptionChecked(opCtx, id, value, func() error {
 		if before != nil {
 			if err := before(); err != nil {
 				return err
@@ -205,35 +231,39 @@ func (h *Host) RefreshQuota(ctx context.Context, s session.Session) error {
 		return err
 	}
 	if antigravityprocess.PublicCLI(h.opts.Args) {
-		_, done, err := h.beginMetadata(c)
+		_, opCtx, done, err := h.beginMetadataOp(ctx, c, false, true)
 		if err != nil {
 			return err
 		}
 		defer done()
-		reading, err := h.AccountQuota(ctx)
+		reading, err := h.AccountQuota(opCtx)
 		if err != nil {
 			reading = unknownQuota(contract.AssistantUnknownReasonUnreadable)
 		}
 		c.mu.Lock()
-		c.quota = reading
+		if !c.hidden && !c.stopping && opCtx.Err() == nil {
+			c.quota = reading
+		}
 		c.mu.Unlock()
 		return err
 	}
 	if _, err = h.Resume(ctx, s.CWD, s.ConversationID); err != nil {
 		return err
 	}
-	client, done, err := h.beginMetadata(c)
+	client, opCtx, done, err := h.beginMetadataOp(ctx, c, true, true)
 	if err != nil {
 		return err
 	}
 	defer done()
-	text, err := client.Usage(ctx)
+	text, err := client.Usage(opCtx)
 	reading := unknownQuota(contract.AssistantUnknownReasonUnreadable)
 	if err == nil {
 		reading = parseQuota(text, time.Now())
 	}
 	c.mu.Lock()
-	c.quota = reading
+	if !c.hidden && !c.stopping && opCtx.Err() == nil {
+		c.quota = reading
+	}
 	c.mu.Unlock()
 	return err
 }

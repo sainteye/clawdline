@@ -117,7 +117,7 @@ func (h *Host) ConfigureDispatch(ctx context.Context, row session.Session, model
 	if _, err = h.Resume(ctx, row.CWD, row.ConversationID); err != nil {
 		return err
 	}
-	client, done, err := h.beginMetadata(c)
+	client, opCtx, done, err := h.beginMetadataOp(ctx, c, true, true)
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func (h *Host) ConfigureDispatch(ctx context.Context, row session.Session, model
 			return err
 		}
 		var selectionErr error
-		err := client.SetConfigOptionChecked(ctx, id, value, func() error { return check(id, value) }, func(raw json.RawMessage) (applyErr error) {
+		err := client.SetConfigOptionChecked(opCtx, id, value, func() error { return check(id, value) }, func(raw json.RawMessage) (applyErr error) {
 			// Return the typed dispatch refusal to this caller after the wire ACK;
 			// missing mode support must not terminate an ordinary conversation.
 			defer func() { selectionErr = applyErr; applyErr = nil }()

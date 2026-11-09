@@ -4,7 +4,10 @@ package antigravitysession
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
@@ -118,4 +121,135 @@ func TestCloseFailedIntentLeavesWorkerVisibleAndAllowsRetry(t *testing.T) {
 	if err := h.Close(context.Background(), row); err != nil || client.Err() == nil {
 		t.Fatal("close could not retry after persistence recovered", err)
 	}
+}
+
+func TestCloseCancelsInFlightRestoreAndPublicQuotaWithoutResurrectingWorker(t *testing.T) {
+	t.Run("restore", func(t *testing.T) {
+		h, row, opts := persistentFixture(t)
+		stopHost(t, h)
+		h = reopenHost(t, opts)
+		hold := filepath.Join(opts.AccountDir, "hold-restore")
+		held := filepath.Join(opts.AccountDir, "restore-held")
+		release := filepath.Join(opts.AccountDir, "release-restore")
+		if err := os.WriteFile(hold, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		resumeErr := make(chan error, 1)
+		go func() {
+			_, err := h.Resume(context.Background(), row.CWD, row.ConversationID)
+			resumeErr <- err
+		}()
+		waitFor(t, func() bool {
+			_, err := os.Stat(held)
+			return err == nil
+		})
+		closeDone := make(chan error, 1)
+		go func() {
+			closeDone <- h.Close(context.Background(), row)
+		}()
+		select {
+		case err := <-closeDone:
+			if err != nil {
+				t.Fatal("close during restore failed", err)
+			}
+		case <-time.After(2 * time.Second):
+			_ = os.WriteFile(release, nil, 0600)
+			t.Fatal("close did not cancel in-flight restore")
+		}
+		select {
+		case err := <-resumeErr:
+			if err == nil {
+				t.Fatal("cancelled restore still succeeded")
+			}
+		case <-time.After(time.Second):
+			_ = os.WriteFile(release, nil, 0600)
+			<-resumeErr
+			t.Fatal("close returned without cancelling in-flight restore")
+		}
+		inv, err := h.Inventory(context.Background())
+		if err != nil || len(inv.Sessions) != 0 {
+			t.Fatal("closed conversation reappeared after restore", inv, err)
+		}
+		if processes, _ := h.Stats(); processes != 0 {
+			t.Fatal("cancelled restore kept staging process", processes)
+		}
+		_ = os.Remove(hold)
+		_ = os.Remove(held)
+		_ = os.Remove(release)
+		resumed, err := h.Resume(context.Background(), row.CWD, row.ConversationID)
+		if err != nil || resumed.ID != row.ID || resumed.PID <= 0 {
+			t.Fatal("explicit later resume failed after close", resumed, err)
+		}
+	})
+
+	t.Run("public-quota", func(t *testing.T) {
+		t.Setenv("CLW_SESSION_PEER", "yes")
+		t.Setenv("CLW_RESTORE_PEER", "yes")
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("CLW_NATIVE_TEST_EXE", exe)
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "antigravity-acp"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cli := filepath.Join(dir, "cli")
+		body := "#!/bin/sh\nif [ \"$1\" = acp ]; then exec \"$CLW_NATIVE_TEST_EXE\" '-test.run=^TestOwnedPeer$'; fi\nif [ -f \"$GEMINI_HOME/hold-quota\" ]; then\n  printf 'held\\n' > \"$GEMINI_HOME/quota-held\"\n  while [ ! -f \"$GEMINI_HOME/release-quota\" ]; do sleep 0.01; done\nfi\nprintf 'Gemini Models\\tWeekly Limit Remaining\\t64%%\\t2031-01-02T03:04:05Z\\n'\n"
+		if err := os.WriteFile(cli, []byte(body), 0700); err != nil {
+			t.Fatal(err)
+		}
+		opts := Options{Executable: cli, Args: []string{"acp", "--app-data-dir", "antigravity-acp"}, AccountDir: dir, StateDir: filepath.Join(dir, "state")}
+		h := reopenHost(t, opts)
+		row, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stopHost(t, h)
+		h = reopenHost(t, opts)
+		if err := h.Send(context.Background(), row, "/usage"); err != nil {
+			t.Fatal("reopened conversation refused public quota read without live worker", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "hold-quota"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		quotaErr := make(chan error, 1)
+		go func() {
+			quotaErr <- h.RefreshQuota(context.Background(), row)
+		}()
+		waitFor(t, func() bool {
+			_, err := os.Stat(filepath.Join(dir, "quota-held"))
+			return err == nil
+		})
+		closeDone := make(chan error, 1)
+		go func() {
+			closeDone <- h.Close(context.Background(), row)
+		}()
+		select {
+		case err := <-closeDone:
+			if err != nil {
+				t.Fatal("close during public quota read failed", err)
+			}
+		case <-time.After(2 * time.Second):
+			_ = os.WriteFile(filepath.Join(dir, "release-quota"), nil, 0600)
+			t.Fatal("close did not cancel in-flight public quota read")
+		}
+		select {
+		case err := <-quotaErr:
+			if err == nil {
+				t.Fatal("cancelled quota read succeeded")
+			}
+		case <-time.After(time.Second):
+			_ = os.WriteFile(filepath.Join(dir, "release-quota"), nil, 0600)
+			<-quotaErr
+			t.Fatal("close returned without cancelling in-flight quota read")
+		}
+		inv, err := h.Inventory(context.Background())
+		if err != nil || len(inv.Sessions) != 0 {
+			t.Fatal("closed conversation remained visible after quota read", inv, err)
+		}
+	})
 }

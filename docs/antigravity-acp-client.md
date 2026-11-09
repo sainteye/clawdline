@@ -503,8 +503,11 @@ and capability address instead of publishing a second snapshot. `Host.Stop`
 terminates and joins only the exact owned/native/workspace process, including
 an active turn, and retains its history. A wrong native identity is refused;
 a stopped conversation needs explicit resume. User close uses the same exact-worker
-stop, including an active prompt or metadata operation, after the existing HTTP
-closeability version and force confirmation checks. It retains the owned/native
+stop, including an active prompt, in-flight restore or metadata operation, after the existing HTTP
+closeability version and force confirmation checks. Closing during restore cancels
+the staging process without republishing the closed conversation; public quota
+reads work on reopened history without starting a persistent worker and are
+cancelled on close. It retains the owned/native
 identity and transcript; a failed durable close intent leaves the worker visible
 and running. Local notice evidence is read only after a clean acknowledged turn,
 never from a pipe echo or an uncertain turn, and it launches no process.

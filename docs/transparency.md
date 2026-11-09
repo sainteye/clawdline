@@ -352,7 +352,9 @@ continuation semantics are unchanged. Source locations and review receipts follo
 the changed files; website snapshot publication remains a separate acceptance.
 
 An explicitly confirmed user close now stops the exact owned Gemini worker even
-during a model or metadata call. The close intent is persisted before stopping;
+during a model, in-flight restore or metadata call, and cancels the staging or
+quota process so a closed conversation does not reappear when restore unwinds.
+The close intent is persisted before stopping;
 history and native identity remain available for explicit resume. The existing
 HTTP closeability version and force confirmation remain required. Both language
 versions of the ACP context and restart-continuation cards were reviewed again:

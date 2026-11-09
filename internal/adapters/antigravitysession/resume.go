@@ -83,7 +83,11 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		h.mu.Unlock()
 		return session.Session{}, refusal("unavailable")
 	}
+	opCtx, opCancel := context.WithCancel(ctx)
+	opDone := make(chan struct{})
 	c.busy = true
+	c.opCancel = opCancel
+	c.opDone = opDone
 	h.opening = true
 	h.jobs.Add(1)
 	oldClient := c.client
@@ -94,12 +98,16 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	h.mu.Unlock()
 	defer h.jobs.Done()
 	defer func() {
+		opCancel()
 		h.mu.Lock()
 		h.opening = false
 		c.mu.Lock()
 		c.busy = false
+		c.opCancel = nil
+		c.opDone = nil
 		c.mu.Unlock()
 		h.mu.Unlock()
+		close(opDone)
 	}()
 	if oldClient != nil {
 		if err := oldClient.Close(); err != nil {
@@ -133,6 +141,8 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	if err != nil {
 		return session.Session{}, err
 	}
+	stopStage := context.AfterFunc(opCtx, func() { _ = client.Close() })
+	defer stopStage()
 	stage.mu.Lock()
 	stage.client = client
 	stage.mu.Unlock()
@@ -145,15 +155,15 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 			}
 		}
 	}()
-	if _, err = client.Initialize(ctx); err != nil {
+	if _, err = client.Initialize(opCtx); err != nil {
 		return session.Session{}, err
 	}
-	if _, err = client.AuthenticatePersonal(ctx); err != nil {
+	if _, err = client.AuthenticatePersonal(opCtx); err != nil {
 		return session.Session{}, err
 	}
 	native := client
 	if importing {
-		title, err := findNativeIdentity(ctx, native, cwd, conversationID)
+		title, err := findNativeIdentity(opCtx, native, cwd, conversationID)
 		if err != nil {
 			return session.Session{}, err
 		}
@@ -172,9 +182,9 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	stage.mu.Unlock()
 	var metadata json.RawMessage
 	if needsLoad {
-		metadata, err = native.LoadSession(ctx, conversationID)
+		metadata, err = native.LoadSession(opCtx, conversationID)
 	} else {
-		metadata, err = native.ResumeSession(ctx, conversationID)
+		metadata, err = native.ResumeSession(opCtx, conversationID)
 	}
 	if err != nil {
 		return session.Session{}, err
@@ -182,7 +192,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	// Public ACP restores its default mode, not the mode selected before the
 	// worker stopped. Reapply only the explicit global full-approval policy.
 	if client.AlwaysProceedConfigured() {
-		if err := selectInitialMode(ctx, client, metadata, h.opts.NewSessionMode); err != nil {
+		if err := selectInitialMode(opCtx, client, metadata, h.opts.NewSessionMode); err != nil {
 			return session.Session{}, err
 		}
 	}
@@ -198,11 +208,14 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.closed || h.ctx.Err() != nil || ctx.Err() != nil {
+	if h.closed || h.ctx.Err() != nil || opCtx.Err() != nil {
 		return session.Session{}, refusal("closed")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.stopping || !stopStage() {
+		return session.Session{}, refusal("closed")
+	}
 	stage.row.PID = client.PID()
 	stage.autoNameAttempted = c.autoNameAttempted
 	stage.row.Rungs.Thread = c.row.Rungs.Thread

@@ -37,6 +37,8 @@ func (h *Host) Stop(ctx context.Context, row session.Session) error {
 		c.row.State = session.StateUnknown
 	}
 	client := c.client
+	opCancel := c.opCancel
+	opDone := c.opDone
 	err = c.saveState()
 	if err != nil {
 		// No native side effect precedes a failed durable close intent.
@@ -50,9 +52,16 @@ func (h *Host) Stop(ctx context.Context, row session.Session) error {
 	c.mu.Unlock()
 	h.mu.Unlock()
 	defer h.jobs.Done()
-	// Never hold a conversation lock while joining the client's reader.
+	// Never hold a conversation lock while joining the client's reader or
+	// waiting for an in-flight restore or metadata operation to unwind.
+	if opCancel != nil {
+		opCancel()
+	}
 	if client != nil {
 		err = errors.Join(err, client.Close())
+	}
+	if opDone != nil {
+		<-opDone
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

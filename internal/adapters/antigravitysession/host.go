@@ -83,6 +83,8 @@ type conversation struct {
 	bytes        int
 	busy         bool
 	stopping     bool
+	opCancel     context.CancelFunc
+	opDone       chan struct{}
 	textIndex    int
 	writeGate    chan struct{}
 	lastActivity atomic.Int64
@@ -336,7 +338,10 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 			continue
 		}
 		row := c.row
-		if c.permission != nil && c.permission.Active() {
+		if c.permission != nil && !c.permission.Active() {
+			c.permission = nil
+		}
+		if c.permission != nil {
 			row.Menu = permissionMenu(c.permission)
 			row.State = session.StateWaiting
 			row.Line = session.MenuRevision(*row.Menu)
