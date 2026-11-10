@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/ports"
@@ -154,7 +155,7 @@ func TestGeminiAutomaticNamingRespectsOffAndManualTitles(t *testing.T) {
 			s.firstSessionRequest = func(session.Session) (string, error) { return "First request", nil }
 			// Invoke the callback synchronously with a live context. Shutdown
 			// cancellation must not hide an incorrectly admitted naming turn.
-			s.automaticGeminiTitle(t.Context(), row)
+			s.automaticOwnedTitle(t.Context(), row)
 			if calls.Load() != 0 {
 				t.Fatal("off/manual conversation spent a model turn")
 			}
@@ -261,7 +262,7 @@ func TestGeminiAutomaticNamingOffDuringTurnPreventsPublication(t *testing.T) {
 			return "", ctx.Err()
 		}
 	}
-	go func() { defer close(done); s.automaticGeminiTitle(t.Context(), row) }()
+	go func() { defer close(done); s.automaticOwnedTitle(t.Context(), row) }()
 	select {
 	case <-called:
 	case <-time.After(time.Second):
@@ -311,5 +312,55 @@ func TestGeminiAutomaticNamingResolvesSessionModelToAntigravity(t *testing.T) {
 	inv, _ := h.Inventory(t.Context())
 	if len(inv.Sessions) != 1 || inv.Sessions[0].Rungs.Thread != "Antigravity generated title" {
 		t.Fatalf("session was not automatically named: %+v", inv.Sessions)
+	}
+}
+
+// A Grok Session is named by the same producer callback as Gemini; before the
+// Grok host carried the callbacks, its title stayed empty forever.
+func TestGrokAutomaticNamingRunsAfterItsTurn(t *testing.T) {
+	t.Setenv("CLW_HTTP_PEER", "yes")
+	s := capacityServer(t)
+	s.icons = &icon.Registry{}
+	s.broker = newBroker(s)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	h, err := antigravitysession.New(t.Context(), s.grokHostOptions(exe, dir, []string{"-test.run=^TestOwnedHTTPPeer$"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.Shutdown() })
+	s.grokSessions.Store(h)
+	if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"codex_auto_name": true}); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	s.nameSession = func(ctx context.Context, text, assistant string) (string, error) {
+		calls.Add(1)
+		if !strings.Contains(text, "Build a calendar") {
+			return "", context.Canceled
+		}
+		return "Calendar reminders", nil
+	}
+	row, err := h.Open(t.Context(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(t.Context(), row, "Build a calendar"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		inv, _ := h.Inventory(t.Context())
+		if len(inv.Sessions) == 1 && inv.Sessions[0].Rungs.Thread == "Calendar reminders" {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	inv, _ := h.Inventory(t.Context())
+	if calls.Load() != 1 || len(inv.Sessions) != 1 || inv.Sessions[0].Rungs.Thread != "Calendar reminders" {
+		t.Fatalf("Grok automatic naming did not run: calls=%d", calls.Load())
 	}
 }

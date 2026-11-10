@@ -231,7 +231,7 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	if err := s.resolveOwnedAntigravityExecutable(ctx, &cfg.Executable, &cfg.Args); err != nil {
 		return nil, err
 	}
-	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", RawTrace: cfg.RawTrace, TurnComplete: s.automaticGeminiTitle, PromptAccepted: s.automaticGeminiTitle})
+	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", RawTrace: cfg.RawTrace, TurnComplete: s.automaticOwnedTitle, PromptAccepted: s.automaticOwnedTitle})
 	if err != nil {
 		return nil, err
 	}

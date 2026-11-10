@@ -2,13 +2,13 @@
   "version": 1,
   "englishKeys": 10957,
   "counts": {
-    "negation": 3053,
+    "negation": 3054,
     "state": 1809,
     "permission": 643,
     "deletion": 247,
     "uncertainty": 421
   },
-  "unionCount": 4831,
+  "unionCount": 4832,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2939,6 +2939,7 @@
       "transparency.card.gemini-acp-context.how",
       "transparency.card.gemini-auto-name.condition",
       "transparency.card.gemini-auto-name.effect",
+      "transparency.card.gemini-auto-name.summary",
       "transparency.card.gemini-restart-continue.condition",
       "transparency.card.gemini-restart-continue.effect",
       "transparency.card.gemini-turn-end.condition",
@@ -10819,6 +10820,7 @@
     "transparency.card.gemini-auto-name.condition",
     "transparency.card.gemini-auto-name.effect",
     "transparency.card.gemini-auto-name.how",
+    "transparency.card.gemini-auto-name.summary",
     "transparency.card.gemini-restart-continue.condition",
     "transparency.card.gemini-restart-continue.effect",
     "transparency.card.gemini-restart-continue.how",

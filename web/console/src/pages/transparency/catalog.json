@@ -2876,6 +2876,7 @@
       "scope": "conditional",
       "agents": [
         "antigravity",
+        "grok",
         "claude",
         "codex"
       ],
@@ -2899,6 +2900,10 @@
           "line": 1
         },
         {
+          "path": "internal/transport/http/grok_owned.go",
+          "line": 85
+        },
+        {
           "path": "internal/adapters/planner/planner.go",
           "line": 264
         }
@@ -2920,6 +2925,7 @@
       "locations": [
         "Settings → Auto-name new sessions",
         "<state>/antigravity-sessions/conversations.sqlite",
+        "<state>/grok-sessions/conversations.sqlite",
         "Configured local Session, Claude Code, Codex or Gemini naming CLI"
       ]
     },
@@ -3288,18 +3294,18 @@
     "internal/transport/http/antigravity_history.go": "af3efe40f4214a0df012df5ff47904df2e228bfde3011f7ca72cb92bfd5a45ce",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
-    "internal/transport/http/antigravity_owned.go": "9ef74376a886d7b13e5f2eba428abb6f57283343f7efe3aa4e1da2588154f7c7",
+    "internal/transport/http/antigravity_owned.go": "ac1eeba43612da781b0a597dce5dfcb17badcb66727e7dd15b7f8444438e81d2",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
     "internal/transport/http/codegraph.go": "c2f88e6495724bd5e48254669f62274e72d613e2c4757c32e0fbae909c65954c",
     "internal/transport/http/codegraph_guidance.go": "3930ce9a7e35315b21e765e93b784c36963c70a30358488ce0352c3b68217464",
     "internal/transport/http/coordinator.go": "21ae3a467eb3601187e6773ceef73c6edc6f80ba96dd537864782018ae31b7a6",
-    "internal/transport/http/grok_owned.go": "21f5a5ef92e0b9556b3792e50d88e9238da4051be943777d31e2904d7a4d66c7",
+    "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "b3c637185ee7d4a40fbd9820734d439d11c2ae87460c646ef54a7e4afc60a6b2",
     "internal/transport/http/integration_settings.go": "bd8e1338d9d1383e6a4096f7cac005e0a5109ea926aa0d574d1c9cffa7b11962",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
-    "internal/transport/http/session_auto_title.go": "822c692eb3b08e8b87063b598897508c21870aea57e627e5b069536972dbb211",
+    "internal/transport/http/session_auto_title.go": "9d269ca8d986662ac80cdcb9fc76ea7b898c246b766e40d3c77576b0501e17fd",
     "internal/transport/http/session_naming_context.go": "524e877e5147fe959956900d90056febb7ef2038363f40864ed1b6cede839cb6",
     "internal/transport/http/session_rotation.go": "f2bf1a2bf22ab8dfcccf89e39112d519fe8bb3f8c864e070ae7db6bf495dfa4c",
     "internal/transport/http/start.go": "e3a0a58b592deccdd7428a544acf593866fe758c4f079415c6be2d6e7231978c",
@@ -3332,7 +3338,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "78a02b8c07e6bc381e9cbafca91bb126f4b3818ac2951870605f5926c9baf5b3",
-    "zh-Hant": "653fda906297311842e3a44b31997960835d0b96cf277bc1ab32b550c8bee707"
+    "en": "528af9ff059d226dce5531cc2aa623274c37d36cdf612059c6ea89abe63ad921",
+    "zh-Hant": "e22292688570661c4dea245356b87988805f3476284a2f4bc2dc5dc480dfda4f"
   }
 }

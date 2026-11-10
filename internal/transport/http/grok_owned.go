@@ -60,8 +60,7 @@ func (s *Server) StartGrokSessions(ctx context.Context) (func(), error) {
 	if !installation.Compatible {
 		return func() {}, nil
 	}
-	h, err := antigravitysession.New(ctx, antigravitysession.Options{Assistant: session.AssistantGrok,
-		Executable: installation.Path, AccountDir: grok.AccountDir(), StateDir: filepath.Join(s.cfg.Dir, "grok-sessions")})
+	h, err := antigravitysession.New(ctx, s.grokHostOptions(installation.Path, grok.AccountDir(), nil))
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +77,15 @@ func (s *Server) StartGrokSessions(ctx context.Context) (func(), error) {
 			s.grokSessions.CompareAndSwap(h, nil)
 		})
 	}, nil
+}
+
+// grokHostOptions is the one place a Grok host is configured, so tests and the
+// daemon share its naming callbacks. Without them a Grok Session never asked
+// for an automatic title.
+func (s *Server) grokHostOptions(executable, accountDir string, args []string) antigravitysession.Options {
+	return antigravitysession.Options{Assistant: session.AssistantGrok, Executable: executable, AccountDir: accountDir,
+		Args: args, StateDir: filepath.Join(s.cfg.Dir, "grok-sessions"),
+		TurnComplete: s.automaticOwnedTitle, PromptAccepted: s.automaticOwnedTitle}
 }
 
 func ownedLabel(assistant string) string {

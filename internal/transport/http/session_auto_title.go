@@ -10,9 +10,9 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-// A producer callback, never a list/read side effect. It reuses the existing
+// A producer callback for Gemini and Grok Sessions, never a list/read side effect. It reuses the existing
 // opt-in, selected namer, context scrubber, deadlines and small-turn capacity.
-func (s *Server) automaticGeminiTitle(ctx context.Context, item session.Session) {
+func (s *Server) automaticOwnedTitle(ctx context.Context, item session.Session) {
 	values, err := s.settingsFile().Read()
 	if err != nil || ctx.Err() != nil {
 		return
@@ -23,7 +23,7 @@ func (s *Server) automaticGeminiTitle(ctx context.Context, item session.Session)
 			enabled = true
 		}
 	}
-	if !enabled || item.Backend != session.BackendOwned || item.Assistant != session.AssistantAntigravity || item.Binding != session.BindingProtocol || item.ConversationID == "" {
+	if !enabled || item.Backend != session.BackendOwned || (item.Assistant != session.AssistantAntigravity && item.Assistant != session.AssistantGrok) || item.Binding != session.BindingProtocol || item.ConversationID == "" {
 		return
 	}
 	// The host has already persisted its native turn. Its naming job must not
@@ -57,7 +57,7 @@ func (s *Server) automaticGeminiTitle(ctx context.Context, item session.Session)
 	if err != nil {
 		return
 	}
-	h := s.antigravitySessions.Load()
+	h := s.ownedHost(item.Assistant)
 	if h == nil {
 		return
 	}

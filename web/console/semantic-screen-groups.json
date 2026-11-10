@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 10957,
-  "riskKeys": 4831,
-  "nonRiskCount": 6126,
+  "riskKeys": 4832,
+  "nonRiskCount": 6125,
   "groups": [
     {
       "name": "acp / other",
@@ -6293,7 +6293,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 159,
+      "count": 158,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6355,7 +6355,6 @@
         "transparency.card.gemini-acp-context.condition",
         "transparency.card.gemini-acp-context.summary",
         "transparency.card.gemini-acp-context.title",
-        "transparency.card.gemini-auto-name.summary",
         "transparency.card.gemini-auto-name.title",
         "transparency.card.gemini-restart-continue.title",
         "transparency.card.gemini-turn-end.title",
