@@ -817,15 +817,15 @@
   {
     "Register": "daemon",
     "Name": "artifacts.output_sessions",
-    "Class": "buffer",
+    "Class": "cache",
     "Unit": "rows",
     "Limit": 256,
     "WarnAt": 0,
-    "AtLimit": "refuse",
+    "AtLimit": "evict_oldest",
     "Deviation": "",
     "Told": [
       "diagnostics",
-      "sender"
+      "log"
     ],
     "EvictedBy": "daemon",
     "Projects": false,
@@ -837,15 +837,15 @@
   {
     "Register": "daemon",
     "Name": "artifacts.output_store_bytes",
-    "Class": "buffer",
+    "Class": "cache",
     "Unit": "bytes",
     "Limit": 67108864,
     "WarnAt": 0,
-    "AtLimit": "refuse",
+    "AtLimit": "evict_oldest",
     "Deviation": "",
     "Told": [
       "diagnostics",
-      "sender"
+      "log"
     ],
     "EvictedBy": "daemon",
     "Projects": false,

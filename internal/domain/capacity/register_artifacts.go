@@ -7,8 +7,10 @@ func artifactsBounds() []Entry {
 		{Name: "artifacts.output_files", Class: Buffer, Unit: Rows, Limit: 200, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumFiles"}},
 		{Name: "artifacts.output_index_bytes", Class: Buffer, Unit: Bytes, Limit: 2097152, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumIndexBytes"}},
 		{Name: "artifacts.output_path_bytes", Class: Buffer, Unit: Bytes, Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumPathBytes"}},
-		{Name: "artifacts.output_sessions", Class: Buffer, Unit: Rows, Limit: 256, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumSessions"}},
-		{Name: "artifacts.output_store_bytes", Class: Buffer, Unit: Bytes, Limit: 67108864, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumStoreBytes"}},
+		// Conversation indexes are re-derivable from native transcripts, so the
+		// least recently used one is let go instead of refusing every new one.
+		{Name: "artifacts.output_sessions", Class: Cache, Unit: Rows, Limit: 256, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Log}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumSessions"}},
+		{Name: "artifacts.output_store_bytes", Class: Cache, Unit: Bytes, Limit: 67108864, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Log}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumStoreBytes"}},
 		{Name: "artifacts.video_bytes", Class: Buffer, Unit: Bytes, Limit: 32 * 1024 * 1024, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/documents.MaximumVideoBytes"}},
 		{Name: "artifacts.video_chunk_bytes", Class: Buffer, Unit: Bytes, Limit: 512 * 1024, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

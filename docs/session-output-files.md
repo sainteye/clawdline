@@ -90,9 +90,14 @@ are released when the panel/preview leaves its Session.
 
 The capacity register contains the per-conversation 200-file index, 2 MiB index
 byte cap, 4096-byte path cap, 256 retained conversation indexes and 64 MiB total
-index storage. New records are refused at capacity; existing records are never
-evicted to hide overflow. Indexes are retained until explicitly managed by the
-machine owner; this first version does not automatically prune output history.
+index storage. A conversation at its 200-file cap refuses new records; its
+existing records are never evicted to hide overflow. The store-wide caps let the
+least recently used conversation index go instead (every listing rewrites its
+index, so modification time is last use) and log how many went. The first
+version refused there too and, with no pruning tool, a machine that reached 256
+conversations in eleven days refused every later Session's outputs, including
+listing them. A dropped index costs that conversation its explicitly published
+rows; native receipts are found again from the transcript when it is next listed.
 The file transfer reuses the registered 32 MiB video byte budget and 512 KiB
 sequential chunk budget. Thumbnail decoding reuses the registered report image
 side and pixel budgets and the existing thumbnail dimensions.

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/documents"
 )
@@ -221,5 +222,38 @@ func TestMalformedNativeRowsMakeCoverageIncomplete(t *testing.T) {
 	got, err := s.List(context.Background(), "a", cwd, record, "codex")
 	if err != nil || got.Coverage != "record_incomplete" {
 		t.Fatalf("corrupt native rows were an empty success: %+v %v", got, err)
+	}
+}
+
+func TestAFullStoreLetsTheLeastRecentlyUsedConversationGo(t *testing.T) {
+	s, cwd, path := fixture(t)
+	if err := os.MkdirAll(s.Dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	for i := 0; i < MaximumSessions; i++ {
+		key := "old-" + intText(int64(i))
+		if err := s.save(index{Version: 1, Key: key, Files: []File{}}); err != nil {
+			t.Fatal(err)
+		}
+		at := old.Add(time.Duration(i) * time.Second)
+		os.Chtimes(s.path(key), at, at)
+	}
+	f, err := s.Register("new", cwd, path, "published", "published", 1, -1)
+	if err != nil {
+		t.Fatalf("a full store refused a new conversation: %v", err)
+	}
+	if _, err := os.Stat(s.path("old-0")); !os.IsNotExist(err) {
+		t.Fatalf("the least recently used conversation index was kept: %v", err)
+	}
+	if _, err := os.Stat(s.path("old-1")); err != nil {
+		t.Fatalf("more than one conversation index was let go: %v", err)
+	}
+	if _, err = s.Read(context.Background(), "new", f.ID, 0, ""); err != nil {
+		t.Fatalf("new record unreadable: %v", err)
+	}
+	listed, err := s.List(context.Background(), "another", cwd, "", "other")
+	if err != nil || listed.Partial {
+		t.Fatalf("a new conversation could not be listed in a full store: %+v %v", listed, err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -110,6 +111,7 @@ func (s *Store) save(out index) error {
 	}
 	total := int64(len(b))
 	count := 1
+	var others []os.FileInfo
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".json") && filepath.Join(s.Dir, entry.Name()) != s.path(out.Key) {
 			i, e := entry.Info()
@@ -118,7 +120,27 @@ func (s *Store) save(out index) error {
 			}
 			total += i.Size()
 			count++
+			others = append(others, i)
 		}
+	}
+	// Every listing rewrites its index, so modification time is last use. The
+	// least recently used conversation is let go rather than refusing every
+	// new one forever: native receipts are found again from the transcript.
+	sort.Slice(others, func(i, j int) bool { return others[i].ModTime().Before(others[j].ModTime()) })
+	evicted := 0
+	for _, old := range others {
+		if total <= MaximumStoreBytes && count <= MaximumSessions {
+			break
+		}
+		if err := os.Remove(filepath.Join(s.Dir, old.Name())); err != nil && !os.IsNotExist(err) {
+			return ErrUnavailable
+		}
+		total -= old.Size()
+		count--
+		evicted++
+	}
+	if evicted > 0 {
+		log.Printf("session outputs: let go of %d least recently used conversation indexes to stay within %d indexes and %d bytes", evicted, MaximumSessions, MaximumStoreBytes)
 	}
 	if total > MaximumStoreBytes || count > MaximumSessions {
 		return ErrFull
