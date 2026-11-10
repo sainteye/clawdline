@@ -731,13 +731,90 @@ func codexMenu(tail []tailLine, lines []string) (Menu, bool) {
 	if len(options) < 2 || (!askedOver(lines, tail[first].offset) && pickerQuestion == "" && !codexApprovalKeyLine(tail)) {
 		return Menu{}, false
 	}
+	// Codex draws a row as a table — `1. Allow   Run the tool and continue` —
+	// and the words right of the gap are the row's description, not its name.
+	for i := range options {
+		options[i].Label, options[i].Detail = secondColumn(options[i].Label, "")
+	}
 	menu := Menu{Options: options, Selected: firstSelected(options), Numbered: true}
 	// The title is also the receipt for a bare /model command: Codex opens a
 	// picker without writing that command as a conversation turn.
 	if pickerQuestion != "" {
 		menu.Question = pickerQuestion
+	} else {
+		menu.Question = codexQuestion(lines, tail[first].offset, codexApprovalKeyLine(tail))
 	}
 	return menu, true
+}
+
+// codexQuestion is what a Codex approval asks, read up from its first row.
+//
+// The tool approval (an MCP elicitation form) draws `Field 1/1`, then its
+// question, the call's parameters a blank row under it, and its rows; that
+// header closes the question off. The command approval draws its question, the
+// environment and the whole command, then two blank rows before its rows, and
+// two blank rows over the question part it from the turn that ran into it —
+// read only when its key line proved the picker is the approval. Paragraphs
+// keep their blank row and lines keep their breaks: a command is said as it
+// was drawn. On 2026-11-10 a phone showed a tool approval as four buttons and
+// no question, because neither was read (both were left empty here).
+func codexQuestion(lines []string, row int, approval bool) string {
+	var parts []string
+	blanks := 0
+	started := false
+	closed := false
+	for index, reach := row-1, 24; index >= 0 && reach > 0; index, reach = index-1, reach-1 {
+		raw := lines[index]
+		text := trimSpaces(raw)
+		if isCodexFieldHeader(text) {
+			closed = true
+			break
+		}
+		if isTurnMarker(raw) || isTurnGutter(raw) || hasCaret(raw) || isBoxRule(raw) {
+			closed = approval
+			break
+		}
+		if text == "" {
+			blanks++
+			// The command approval's two blank rows under its command are padding.
+			if started && blanks > 1 {
+				closed = approval
+				break
+			}
+			if !started && blanks > 2 {
+				break
+			}
+			continue
+		}
+		if started && blanks == 1 {
+			parts = append([]string{""}, parts...)
+		}
+		blanks = 0
+		started = true
+		parts = append([]string{text}, parts...)
+	}
+	if !closed {
+		return ""
+	}
+	return trimSpacesAndNewlines(strings.Join(parts, "\n"))
+}
+
+// isCodexFieldHeader is the `Field 1/2` line over an elicitation form's question.
+func isCodexFieldHeader(text string) bool {
+	rest, ok := strings.CutPrefix(text, "Field ")
+	if !ok {
+		return false
+	}
+	a, b, ok := strings.Cut(rest, "/")
+	if !ok || a == "" || b == "" {
+		return false
+	}
+	for _, c := range a + b {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // wrappedRow is a line an option's words went on to because the row was wider
