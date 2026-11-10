@@ -87,10 +87,8 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		daily[date] = &contract.UsageOverviewDay{Date: date, Coverage: contract.UsageOverviewCoverageStateMissing}
 	}
 	bars := map[string]float64{}
-	type agentSum struct{ tokens, weighted float64 }
-	barAgents := map[string]map[string]*agentSum{}
+	barAgents := map[string]map[string]float64{}
 	agents := map[string]*float64{"claude": nil, "codex": nil, "gemini": nil, "grok": nil}
-	weighted := map[string]*float64{}
 	var currentDurations, previousDurations []float64
 	for _, r := range rows {
 		p := overviewProject(r.Project)
@@ -128,19 +126,10 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 				agents[id] = new(float64)
 			}
 			*agents[id] += value
-			cost := weightedTokens(id, r.Input, r.CacheRead, r.CacheWrite, r.Output)
-			if weighted[id] == nil {
-				weighted[id] = new(float64)
-			}
-			*weighted[id] += cost
 			if barAgents[p.ID] == nil {
-				barAgents[p.ID] = map[string]*agentSum{}
+				barAgents[p.ID] = map[string]float64{}
 			}
-			if barAgents[p.ID][id] == nil {
-				barAgents[p.ID][id] = &agentSum{}
-			}
-			barAgents[p.ID][id].tokens += value
-			barAgents[p.ID][id].weighted += cost
+			barAgents[p.ID][id] += value
 		}
 		if totals.Tokens == nil {
 			totals.Tokens = new(float64)
@@ -199,7 +188,7 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 	for id, tokens := range bars {
 		row := contract.UsageOverviewProject{ID: id, Name: options[id].Name, Tokens: tokens, Agents: []contract.UsageOverviewProjectAgent{}}
 		for agent, sum := range barAgents[id] {
-			row.Agents = append(row.Agents, contract.UsageOverviewProjectAgent{ID: agent, Tokens: sum.tokens, Weighted: sum.weighted})
+			row.Agents = append(row.Agents, contract.UsageOverviewProjectAgent{ID: agent, Tokens: sum})
 		}
 		sort.Slice(row.Agents, func(i, j int) bool {
 			if row.Agents[i].Tokens == row.Agents[j].Tokens {
@@ -216,11 +205,8 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		return out.Projects[i].Tokens > out.Projects[j].Tokens
 	})
 	for id, tokens := range agents {
-		out.Agents = append(out.Agents, contract.UsageOverviewAgent{ID: id, Tokens: tokens, Weighted: weighted[id]})
-		out.QuotaWeights = append(out.QuotaWeights, quotaWeightOf(id))
-		out.QuotaWeights[len(out.QuotaWeights)-1].ID = id
+		out.Agents = append(out.Agents, contract.UsageOverviewAgent{ID: id, Tokens: tokens})
 	}
-	sort.Slice(out.QuotaWeights, func(i, j int) bool { return out.QuotaWeights[i].ID < out.QuotaWeights[j].ID })
 	sort.Slice(out.Agents, func(i, j int) bool {
 		a, b := out.Agents[i], out.Agents[j]
 		if a.Tokens == nil || b.Tokens == nil {

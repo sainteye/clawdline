@@ -9,7 +9,7 @@ import { currentCatalogTag } from "../../catalog.js"
 import { onMachineChanged } from "../../cloud/machine-switch.js"
 import { scheduleFleet } from "../../cloud/schedule-machines.js"
 import { readUsageOverview, UsageReadError, type UsageOverview } from "./api.js"
-import { compactValue, dateRange, comparisonComplete, dailyValue, lineSegments, percentageChange, quotaAgents, quotaRows, sampleLabel, selectedDay, shortDate, UsageRequestScope, type UsageMetric } from "./model.js"
+import { compactValue, dateRange, comparisonComplete, dailyValue, lineSegments, percentageChange, sampleLabel, selectedDay, shortDate, UsageRequestScope, type UsageMetric } from "./model.js"
 import { usageWord as w } from "./words.js"
 import "./usage.css"
 
@@ -143,56 +143,27 @@ function AgentDistribution({ data }: { data: UsageOverview }) {
 const agentLabels: Record<string, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini", grok: "Grok" }
 function agentLabel(id: string) { return agentLabels[id] ?? (id === "unknown" ? w("usageAgentUnknown") : id) }
 
-/** Token mode stacks each project's bar by agent; quota mode compares projects within one agent's allowance. */
+/** Each project's token bar is stacked by agent, so one agent's share never hides inside another's. */
 function ProjectUsage({ data, options }: { data: UsageOverview; options: ReturnType<typeof usageProjectOptions> }) {
-  const [measure, setMeasure] = useState<"tokens" | "quota">("tokens")
-  const agents = quotaAgents(data)
-  const [picked, setPicked] = useState("")
-  const agent = agents.some(row => row.id === picked) ? picked : agents[0]?.id ?? ""
-  const weight = data.quota_weights?.find(row => row.id === agent)
-  const supported = data.quota_weights !== undefined
-  const mark = (id: string) => {
-    const icon = options.find(option => option.id === id)?.icon
-    return <span className="usage-project-mark" aria-hidden="true">{icon ? <Mark icon={icon as SessionRow["icon"]} cellPx={3} /> : <span className="project-picker-placeholder">▦</span>}</span>
-  }
-  const name = (id: string, fallback: string) => id === "unattributed" ? w("usageUnattributed") : fallback
   const max = Math.max(1, ...data.projects.map(p => p.tokens))
-  const rows = quotaRows(data, agent)
-  const maxShare = Math.max(0, ...rows.map(row => row.share))
-  const percent = (value: number) => value.toLocaleString(currentCatalogTag(), { style: "percent", maximumFractionDigits: value < 0.01 ? 2 : 1 })
-  return <section>
-    <div className="usage-projects-head"><h2>{w("usageProjects")}</h2>
-      <div className="usage-switch" role="group" aria-label={w("usageProjectsMeasure")}>
-        <button type="button" aria-pressed={measure === "tokens"} onClick={() => setMeasure("tokens")}>{w("usageMeasureTokens")}</button>
-        <button type="button" aria-pressed={measure === "quota"} onClick={() => setMeasure("quota")}>{w("usageMeasureQuota")}</button>
-      </div></div>
-    {measure === "quota" && supported && agents.length > 1 && <div className="usage-switch usage-quota-agents" role="group" aria-label={w("usageQuotaAgent")}>
-      {agents.map(row => <button key={row.id} type="button" aria-pressed={row.id === agent} onClick={() => setPicked(row.id)}><i data-agent={row.id} aria-hidden="true" />{agentLabel(row.id)}</button>)}
-    </div>}
-    {measure === "quota" && supported && weight && <p className="usage-coverage">{w("usageQuotaCaption", { agent: agentLabel(agent), cacheRead: weight.cache_read, output: weight.output })}</p>}
+  const present = [...new Set(data.projects.flatMap(p => (p.agents ?? []).filter(part => part.tokens > 0).map(part => part.id)))]
+  return <section><h2>{w("usageProjects")}</h2>
+    {present.length > 1 && <ul className="usage-project-legend" aria-hidden="true">{present.map(id => <li key={id}><i data-agent={id} />{agentLabel(id)}</li>)}</ul>}
     <div className="usage-projects">
-      {measure === "tokens" && <>
-        {data.projects.length === 0 && <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p>}
-        {data.projects.map(row => {
-          const split = (row.agents ?? []).filter(part => part.tokens > 0)
-          const detail = split.map(part => `${agentLabel(part.id)} ${compactValue(part.tokens)}`).join(" · ")
-          return <div key={row.id} className="usage-project-row" title={detail || undefined}>
-            {mark(row.id)}
-            <span className="usage-project-name">{name(row.id, row.name)}{detail && <span className="sr-only">{`: ${detail}`}</span>}</span>
-            <div className="usage-track" aria-hidden="true"><div className="usage-track-fill" style={{ width: `${row.tokens / max * 100}%` }}>
-              {split.length > 0 ? split.map(part => <span key={part.id} data-agent={part.id} style={{ width: `${part.tokens / row.tokens * 100}%` }} />) : <span />}
-            </div></div>
-            <span>{compactValue(row.tokens)}</span>
-          </div>
-        })}
-      </>}
-      {measure === "quota" && (!supported ? <p>{w("usageQuotaUpgrade")}</p> : rows.length === 0 ? <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p> :
-        rows.map(row => <div key={row.id} className="usage-project-row">
-          {mark(row.id)}
-          <span className="usage-project-name">{name(row.id, row.name)}</span>
-          <div className="usage-track" aria-hidden="true"><div className="usage-track-fill" style={{ width: `${row.share / maxShare * 100}%` }}><span data-agent={agent} /></div></div>
-          <span>{percent(row.share)}</span>
-        </div>))}
+      {data.projects.length === 0 && <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p>}
+      {data.projects.map(row => {
+        const icon = options.find(option => option.id === row.id)?.icon
+        const split = (row.agents ?? []).filter(part => part.tokens > 0)
+        const detail = split.map(part => `${agentLabel(part.id)} ${compactValue(part.tokens)}`).join(" · ")
+        return <div key={row.id} className="usage-project-row" title={detail || undefined}>
+          <span className="usage-project-mark" aria-hidden="true">{icon ? <Mark icon={icon as SessionRow["icon"]} cellPx={3} /> : <span className="project-picker-placeholder">▦</span>}</span>
+          <span className="usage-project-name">{row.id === "unattributed" ? w("usageUnattributed") : row.name}{detail && <span className="sr-only">{`: ${detail}`}</span>}</span>
+          <div className="usage-track" aria-hidden="true"><div className="usage-track-fill" style={{ width: `${row.tokens / max * 100}%` }}>
+            {split.length > 0 ? split.map(part => <span key={part.id} data-agent={part.id} style={{ width: `${part.tokens / row.tokens * 100}%` }} />) : <span />}
+          </div></div>
+          <span>{compactValue(row.tokens)}</span>
+        </div>
+      })}
     </div>
   </section>
 }

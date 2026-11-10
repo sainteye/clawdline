@@ -254,12 +254,6 @@
           "items": {
             "$ref": "#/$defs/UsageOverviewAgent"
           }
-        },
-        "quota_weights": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/UsageOverviewQuotaWeight"
-          }
         }
       }
     },
@@ -276,10 +270,6 @@
         "tokens": {
           "type": "number",
           "nullable": true
-        },
-        "weighted": {
-          "type": "number",
-          "nullable": true
         }
       }
     },
@@ -288,45 +278,13 @@
       "additionalProperties": false,
       "required": [
         "id",
-        "tokens",
-        "weighted"
+        "tokens"
       ],
       "properties": {
         "id": {
           "type": "string"
         },
         "tokens": {
-          "type": "number"
-        },
-        "weighted": {
-          "type": "number"
-        }
-      }
-    },
-    "UsageOverviewQuotaWeight": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "input",
-        "cache_read",
-        "cache_write",
-        "output"
-      ],
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "input": {
-          "type": "number"
-        },
-        "cache_read": {
-          "type": "number"
-        },
-        "cache_write": {
-          "type": "number"
-        },
-        "output": {
           "type": "number"
         }
       }

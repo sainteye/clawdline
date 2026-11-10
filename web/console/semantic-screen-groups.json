@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10958,
-  "riskKeys": 4828,
-  "nonRiskCount": 6130,
+  "englishContentKeys": 10952,
+  "riskKeys": 4827,
+  "nonRiskCount": 6125,
   "groups": [
     {
       "name": "acp / other",
@@ -3783,7 +3783,7 @@
     },
     {
       "name": "next / other",
-      "count": 686,
+      "count": 681,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4435,8 +4435,6 @@
         "next.usageInProgress",
         "next.usageInput",
         "next.usageLoading",
-        "next.usageMeasureQuota",
-        "next.usageMeasureTokens",
         "next.usageMinutes",
         "next.usageOffline",
         "next.usageOutput",
@@ -4446,9 +4444,6 @@
         "next.usagePrevious",
         "next.usageProject",
         "next.usageProjects",
-        "next.usageProjectsMeasure",
-        "next.usageQuotaAgent",
-        "next.usageQuotaUpgrade",
         "next.usageReadCoverage",
         "next.usageRefresh",
         "next.usageRetry",

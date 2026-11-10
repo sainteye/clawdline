@@ -392,9 +392,8 @@ func TestUsagePassDiscoversNativeGeminiAndReplacesSnapshots(t *testing.T) {
 }
 
 // A Session that runs past midnight is still the one the person asks about:
-// today's tokens are counted, each project is split by assistant, and the
-// allowance estimate weights the parts of each assistant separately.
-func TestOverviewCountsTodayAndSplitsProjectsByAgentWithQuotaWeights(t *testing.T) {
+// today's tokens are counted, and each project is split by assistant.
+func TestOverviewCountsTodayAndSplitsProjectsByAgent(t *testing.T) {
 	old := time.Local
 	time.Local = time.UTC
 	t.Cleanup(func() { time.Local = old })
@@ -427,32 +426,22 @@ func TestOverviewCountsTodayAndSplitsProjectsByAgentWithQuotaWeights(t *testing.
 	if got.Daily[0].Date != "2026-11-04" || got.Daily[0].InProgress {
 		t.Fatalf("window start %+v", got.Daily[0])
 	}
-	byID := map[string]map[string][2]float64{}
+	byID := map[string]map[string]float64{}
 	for _, p := range got.Projects {
 		sum := 0.0
-		byID[p.ID] = map[string][2]float64{}
+		byID[p.ID] = map[string]float64{}
 		for _, a := range p.Agents {
 			sum += a.Tokens
-			byID[p.ID][a.ID] = [2]float64{a.Tokens, a.Weighted}
+			byID[p.ID][a.ID] = a.Tokens
 		}
 		if sum != p.Tokens {
 			t.Fatalf("project %s agents %v != %v", p.ID, sum, p.Tokens)
 		}
 	}
-	a := byID[overviewProject("p-a").ID]
-	// Codex: input 1, cache read 0.1, output 8; Claude: cache write 1.25, output 5.
-	if a["codex"] != [2]float64{3330, 300 + 300 + 240} || a["claude"] != [2]float64{122, 10 + 10 + 10 + 20} {
+	if a := byID[overviewProject("p-a").ID]; a["codex"] != 3330 || a["claude"] != 122 || len(a) != 2 {
 		t.Fatalf("project a %+v", a)
 	}
-	for _, agent := range got.Agents {
-		if agent.ID == "codex" && (agent.Weighted == nil || *agent.Weighted != 840+50) {
-			t.Fatalf("codex weighted %+v", agent)
-		}
-		if agent.ID == "grok" && agent.Weighted != nil {
-			t.Fatalf("an agent without rows has no measured weight %+v", agent)
-		}
-	}
-	if len(got.QuotaWeights) != len(got.Agents) {
-		t.Fatalf("weights %+v", got.QuotaWeights)
+	if b := byID[overviewProject("p-b").ID]; b["codex"] != 50 || len(b) != 1 {
+		t.Fatalf("project b %+v", b)
 	}
 }

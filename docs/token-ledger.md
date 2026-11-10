@@ -541,15 +541,11 @@ primitive readings. Project identities are opaque hashes of canonical repository
 paths; unattributed readings remain visible. API list prices are not shown as
 subscription spending.
 
-Each project row carries its readings by agent. The quota-weight measure
-multiplies each primitive part by its agent's published API price ratio relative
-to uncached input. The ratios live in `internal/app/usage_quota_weights.go` and
-are returned as `quota_weights`. For Codex, cache reads weigh 0.1 and output
-weighs 8. The page then shows each project's share of one agent's weighted
-total. Shares from different agents are never added, because each agent has its
-own allowance. Neither vendor publishes how plan limits are charged, so this is
-an estimate. It is not the account's weekly percentage, which covers every
-machine and resets on the vendor's schedule.
+Each project row carries its token readings by agent, and its bar is stacked
+by agent. A quota-weighted measure was shipped briefly in `d459bb41b` and then
+removed. Neither vendor publishes how plan limits are charged, so the weights
+could only estimate them. Plain token counts kept separate by agent were
+simpler to read.
 
 Dispatched work belongs to its source repository, including its native
 subagents. Overview attribution joins the recorded task id, the broker's child

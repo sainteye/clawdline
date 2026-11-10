@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node runs source tests with type stripping.
-import { compactValue, dateRange, comparisonComplete, dailyValue, lineSegments, percentageChange, quotaAgents, quotaRows, sampleLabel, selectedDay, shortDate, UsageRequestScope } from "./model.ts"
+import { compactValue, dateRange, comparisonComplete, dailyValue, lineSegments, percentageChange, sampleLabel, selectedDay, shortDate, UsageRequestScope } from "./model.ts"
 // @ts-expect-error -- Node runs source tests with type stripping.
 import { readUsageOverview, UsageReadError, type UsageOverview, type UsageOverviewDay } from "./api.ts"
 
@@ -140,21 +140,4 @@ test("usage project choices come from configured projects rather than Session hi
   assert.deepEqual(usageProjectOptions(options, places), [{ id, label: "Configured project", icon: places[0].icon }])
   assert.deepEqual(usageProjectOptions(options, []), [])
   assert.deepEqual(usageProjectOptions([], places), [])
-})
-
-test("quota-weighted project shares stay within one agent and ignore machines without weights", () => {
-  const data = {
-    agents: [{ id: "claude", tokens: 300, weighted: 100 }, { id: "codex", tokens: 900, weighted: 400 }, { id: "grok", tokens: null, weighted: null }],
-    projects: [
-      { id: "a", name: "a", tokens: 700, agents: [{ id: "codex", tokens: 600, weighted: 300 }, { id: "claude", tokens: 100, weighted: 10 }] },
-      { id: "b", name: "b", tokens: 500, agents: [{ id: "codex", tokens: 300, weighted: 100 }, { id: "claude", tokens: 200, weighted: 90 }] },
-    ],
-  } as unknown as UsageOverview
-  assert.deepEqual(quotaAgents(data).map(row => row.id), ["codex", "claude"])
-  assert.deepEqual(quotaRows(data, "codex"), [{ id: "a", name: "a", share: 0.75 }, { id: "b", name: "b", share: 0.25 }])
-  assert.deepEqual(quotaRows(data, "claude").map(row => [row.id, row.share]), [["b", 0.9], ["a", 0.1]])
-  assert.deepEqual(quotaRows(data, "grok"), [])
-  const old = { agents: [{ id: "codex", tokens: 900 }], projects: [{ id: "a", name: "a", tokens: 900 }] } as unknown as UsageOverview
-  assert.deepEqual(quotaAgents(old), [])
-  assert.deepEqual(quotaRows(old, "codex"), [])
 })

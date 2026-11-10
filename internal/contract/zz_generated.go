@@ -9067,7 +9067,6 @@ type UsageOverview struct {
 	Project        string                       `json:"project"`
 	ProjectOptions []UsageOverviewProjectOption `json:"project_options"`
 	Projects       []UsageOverviewProject       `json:"projects"`
-	QuotaWeights   []UsageOverviewQuotaWeight   `json:"quota_weights,omitempty"`
 	Since          int64                        `json:"since"`
 	Timezone       string                       `json:"timezone"`
 	Totals         UsageOverviewTotals          `json:"totals"`
@@ -9075,9 +9074,8 @@ type UsageOverview struct {
 }
 
 type UsageOverviewAgent struct {
-	ID       string   `json:"id"`
-	Tokens   *float64 `json:"tokens"`
-	Weighted *float64 `json:"weighted"`
+	ID     string   `json:"id"`
+	Tokens *float64 `json:"tokens"`
 }
 
 type UsageOverviewCoverage struct {
@@ -9125,22 +9123,13 @@ type UsageOverviewProject struct {
 }
 
 type UsageOverviewProjectAgent struct {
-	ID       string  `json:"id"`
-	Tokens   float64 `json:"tokens"`
-	Weighted float64 `json:"weighted"`
+	ID     string  `json:"id"`
+	Tokens float64 `json:"tokens"`
 }
 
 type UsageOverviewProjectOption struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-}
-
-type UsageOverviewQuotaWeight struct {
-	CacheRead  float64 `json:"cache_read"`
-	CacheWrite float64 `json:"cache_write"`
-	ID         string  `json:"id"`
-	Input      float64 `json:"input"`
-	Output     float64 `json:"output"`
 }
 
 type UsageOverviewTotals struct {

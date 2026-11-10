@@ -10974,7 +10974,6 @@ export interface UsageOverview {
   project: string
   project_options: UsageOverviewProjectOption[]
   projects: UsageOverviewProject[]
-  quota_weights?: UsageOverviewQuotaWeight[]
   since: number
   timezone: string
   totals: UsageOverviewTotals
@@ -10984,7 +10983,6 @@ export interface UsageOverview {
 export interface UsageOverviewAgent {
   id: string
   tokens: number | null
-  weighted: number | null
 }
 
 export interface UsageOverviewCoverage {
@@ -11030,20 +11028,11 @@ export interface UsageOverviewProject {
 export interface UsageOverviewProjectAgent {
   id: string
   tokens: number
-  weighted: number
 }
 
 export interface UsageOverviewProjectOption {
   id: string
   name: string
-}
-
-export interface UsageOverviewQuotaWeight {
-  cache_read: number
-  cache_write: number
-  id: string
-  input: number
-  output: number
 }
 
 export interface UsageOverviewTotals {
