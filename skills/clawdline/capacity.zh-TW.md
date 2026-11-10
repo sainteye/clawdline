@@ -1,6 +1,6 @@
 # 此 build 的容量契約
 
-此表直接由 `internal/domain/capacity.Register()` 產生，列的是預設上限。執行時覆寫只能降低上限；操作前請讀目標機器的即時容量狀態。缺少讀數或容量已滿時，依目前指南與具型別拒絕停止或處理，勿把預設值當成可用餘額。`GET /v1/capacity` 需要已配對裝置；`GET /v1/diagnostics` 需要本機金鑰。
+此表直接由 `internal/domain/capacity.Register()` 產生，列的是預設上限。執行時覆寫只能降低上限，所以預設值不代表還有餘額。Agent 動作前不需要先讀容量：直接送出請求，依它回的具型別拒絕處理。帶 `retry_after` 的回應是容量答覆，等那麼久再送同一筆請求；其他代碼見 `clawdline guide refusals`。`GET /v1/capacity`（需已配對裝置）與 `GET /v1/diagnostics`（需本機金鑰）是給人看即時狀態的；Agent 憑證在那裡被拒是正常的，不是停止工作的理由。
 
 | 名稱 | 預設上限 | 單位 | 達上限時 | 告知管道 | 偏離既定規則 |
 | --- | ---: | --- | --- | --- | --- |

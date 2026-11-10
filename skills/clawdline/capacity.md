@@ -1,6 +1,6 @@
 # Capacity contract in this build
 
-Generated directly from `internal/domain/capacity.Register()`; these are default bounds. A runtime override may only lower one. Read the target machine's live capacity state before an action. If a reading is missing or capacity is full, follow the current guide and typed refusal; a default bound is not available room. `GET /v1/capacity` needs a paired device; `GET /v1/diagnostics` needs the machine key.
+Generated directly from `internal/domain/capacity.Register()`; these are default bounds. A runtime override may only lower one, so a default bound is not available room. An Agent does not read capacity before acting: send the request and handle the typed refusal it answers. A `retry_after` is a capacity answer: wait that long, then send the same request; other codes are in `clawdline guide refusals`. `GET /v1/capacity` (a paired device) and `GET /v1/diagnostics` (the machine key) show live state to a person; an Agent's credential is refused there, and that refusal is not a reason to stop the work.
 
 | Name | Default bound | Unit | At limit | Told through | Current deviation |
 | --- | ---: | --- | --- | --- | --- |

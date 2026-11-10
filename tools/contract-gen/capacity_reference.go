@@ -11,15 +11,16 @@ import (
 
 // renderCapacityReference keeps the Agent's default-bound reference in the
 // binary synchronized with the register. A running machine may lower a bound
-// through an override, so the live capacity view wins for the next action.
+// through an override; an Agent learns that from the typed refusal, because
+// the live capacity view refuses an Agent's credential.
 func renderCapacityReference(traditionalChinese bool) []byte {
 	rows := capacity.Register()
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	var b bytes.Buffer
 	if traditionalChinese {
-		b.WriteString("# 此 build 的容量契約\n\n此表直接由 `internal/domain/capacity.Register()` 產生，列的是預設上限。執行時覆寫只能降低上限；操作前請讀目標機器的即時容量狀態。缺少讀數或容量已滿時，依目前指南與具型別拒絕停止或處理，勿把預設值當成可用餘額。`GET /v1/capacity` 需要已配對裝置；`GET /v1/diagnostics` 需要本機金鑰。\n\n| 名稱 | 預設上限 | 單位 | 達上限時 | 告知管道 | 偏離既定規則 |\n| --- | ---: | --- | --- | --- | --- |\n")
+		b.WriteString("# 此 build 的容量契約\n\n此表直接由 `internal/domain/capacity.Register()` 產生，列的是預設上限。執行時覆寫只能降低上限，所以預設值不代表還有餘額。Agent 動作前不需要先讀容量：直接送出請求，依它回的具型別拒絕處理。帶 `retry_after` 的回應是容量答覆，等那麼久再送同一筆請求；其他代碼見 `clawdline guide refusals`。`GET /v1/capacity`（需已配對裝置）與 `GET /v1/diagnostics`（需本機金鑰）是給人看即時狀態的；Agent 憑證在那裡被拒是正常的，不是停止工作的理由。\n\n| 名稱 | 預設上限 | 單位 | 達上限時 | 告知管道 | 偏離既定規則 |\n| --- | ---: | --- | --- | --- | --- |\n")
 	} else {
-		b.WriteString("# Capacity contract in this build\n\nGenerated directly from `internal/domain/capacity.Register()`; these are default bounds. A runtime override may only lower one. Read the target machine's live capacity state before an action. If a reading is missing or capacity is full, follow the current guide and typed refusal; a default bound is not available room. `GET /v1/capacity` needs a paired device; `GET /v1/diagnostics` needs the machine key.\n\n| Name | Default bound | Unit | At limit | Told through | Current deviation |\n| --- | ---: | --- | --- | --- | --- |\n")
+		b.WriteString("# Capacity contract in this build\n\nGenerated directly from `internal/domain/capacity.Register()`; these are default bounds. A runtime override may only lower one, so a default bound is not available room. An Agent does not read capacity before acting: send the request and handle the typed refusal it answers. A `retry_after` is a capacity answer: wait that long, then send the same request; other codes are in `clawdline guide refusals`. `GET /v1/capacity` (a paired device) and `GET /v1/diagnostics` (the machine key) show live state to a person; an Agent's credential is refused there, and that refusal is not a reason to stop the work.\n\n| Name | Default bound | Unit | At limit | Told through | Current deviation |\n| --- | ---: | --- | --- | --- | --- |\n")
 	}
 	for _, row := range rows {
 		channels := make([]string, len(row.Told))
