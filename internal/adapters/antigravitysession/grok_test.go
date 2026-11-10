@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -370,5 +371,42 @@ func TestGrokMismatchedCompletionIsNotSuccessOrAnotherPrompt(t *testing.T) {
 	}
 	if got := readFile(t, filepath.Join(opts.AccountDir, "prompts")); got != "prompt\n" {
 		t.Fatal("replayed", got)
+	}
+}
+
+// A Grok Read of a photo carries the base64 image twice in one frame. A
+// 394 KB JPEG ended a real turn with grok_process_frame_too_large at 1 MiB.
+func TestGrokPhotoReadDoesNotEndTheTurn(t *testing.T) {
+	h, row, opts := grokFixture(t)
+	const photo = 2 << 20
+	if err := os.WriteFile(filepath.Join(opts.AccountDir, "prompt-image-read"), []byte(strconv.Itoa(photo)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(opts.AccountDir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var completed atomic.Int32
+	h.opts.TurnComplete = func(context.Context, session.Session) { completed.Add(1) }
+	if err := h.Send(t.Context(), row, "look at the synthetic photo"); err != nil {
+		t.Fatal(err)
+	}
+	read := false
+	waitFor(t, func() bool {
+		// The console's lazy page keeps the full body behind a reference.
+		page, err := h.TranscriptPage(t.Context(), row, 100, 0, "", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read = false
+		for _, e := range page.Entries {
+			if e.Role == "error" {
+				t.Fatalf("photo read ended the turn: %s", e.Text)
+			}
+			read = read || e.Role == "tool" && e.Activity != nil && e.Activity.ResultKnown && e.Detail != nil && e.Detail.TextBytes > photo
+		}
+		return completed.Load() == 1
+	})
+	if !read {
+		t.Fatal("photo read result was not retained")
 	}
 }

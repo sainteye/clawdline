@@ -24,7 +24,7 @@
     "Name": "antigravity.acp_frame_bytes",
     "Class": "buffer",
     "Unit": "bytes",
-    "Limit": 1048576,
+    "Limit": 8388608,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",

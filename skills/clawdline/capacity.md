@@ -5,7 +5,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | Name | Default bound | Unit | At limit | Told through | Current deviation |
 | --- | ---: | --- | --- | --- | --- |
 | `antigravity.acp_call_seconds` | 45 | `seconds` | `refuse` | `diagnostics, sender` | — |
-| `antigravity.acp_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_frame_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.acp_trace_bytes` | 16777216 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `antigravity.acp_trace_connections` | 1 | `rows` | `refuse` | `diagnostics` | — |
 | `antigravity.acp_trace_queue_bytes` | 16777216 | `bytes` | `refuse` | `diagnostics` | — |

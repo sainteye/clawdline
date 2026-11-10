@@ -4,7 +4,9 @@ package antigravitysession
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -302,6 +304,15 @@ func TestOwnedPeer(t *testing.T) {
 				time.Sleep(time.Millisecond)
 			}
 			notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "read-1", "title": "Read synthetic file", "kind": "read", "status": "in_progress"})
+			if raw, err := os.ReadFile(filepath.Join(dir, "prompt-image-read")); err == nil {
+				// Grok reports an image read twice in one frame: the rawOutput
+				// JSON text and the renderable image block, both base64.
+				size, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+				data := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xff}, size))
+				output, _ := json.Marshal(map[string]any{"ImageContent": map[string]string{"data": data, "mime_type": "image/jpeg"}})
+				notify(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "read-1", "status": "completed", "rawOutput": string(output),
+					"content": []any{map[string]any{"type": "content", "content": map[string]string{"type": "image", "data": data, "mimeType": "image/jpeg"}}}})
+			}
 			notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic reply"}})
 			reason := "end_turn"
 			if raw, err := os.ReadFile(filepath.Join(dir, "prompt-stop-reason")); err == nil {
