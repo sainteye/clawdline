@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { failureSentence } from "../../refusals/refusal-text.js"
 import { HourlyVisitChart } from "./HourlyVisitChart.js"
-import { demoVisits, readVisits, VISIT_BOUNDS, type VisitGroup, type Visits } from "./visits.js"
+import { demoVisits, readVisits, visitDailyAccounts, visitHourlyValues, VISIT_BOUNDS, type VisitGroup, type Visits } from "./visits.js"
 import type { Say } from "./words.js"
 
 export function VisitsOverview({ apiOrigin, demo, refreshToken, say, locale }: { apiOrigin: string; demo: boolean; refreshToken: string; say: Say; locale: string }) {
@@ -27,7 +27,11 @@ export function VisitsOverview({ apiOrigin, demo, refreshToken, say, locale }: {
       <p className="adm-fine">{say("visitsHourlyNote")}</p>
       {state.data.hourly===undefined?<p className="adm-fine" role="status">{say("visitsHourlyUnavailable")}</p>:<div className="adm-visit-charts">{([
         ["visitsViews","views"], ["visitsMembers","member_accounts"], ["visitsDuration","duration"], ["visitsRequests","requests"],
-      ] as const).map(([title,metric])=><HourlyVisitChart key={metric} title={say(title)} metric={metric} hours={state.data.hourly!} say={say} locale={locale}/>)}</div>}
+      ] as const).map(([title,metric])=>{
+        const daily=metric==="member_accounts"?visitDailyAccounts(state.data):null
+        return <HourlyVisitChart key={metric} title={say(title)} unit={daily?"day":"hour"} zone={daily?.zone} duration={metric==="duration"} points={daily?.points??visitHourlyValues(state.data.hourly!,metric)}
+          summary={metric==="member_accounts"?say("visitsPeriodAccounts",{n:format(state.data.member_accounts)}):undefined} say={say} locale={locale}/>
+      })}</div>}
       <section className="adm-panel"><h3 className="adm-h3">{say("visitsPages")}</h3><div className="adm-table-wrap"><table className="adm-table"><thead><tr><th>{say("visitsPage")}</th><th className="num">{say("visitsViews")}</th><th className="num">{say("visitsDuration")}</th></tr></thead><tbody>{state.data.pages.map(r=><tr key={r.key}><th scope="row"><a href={"https://clawdline.com"+r.key+(r.key==="/"?"":"/")} target="_blank" rel="noreferrer">{r.key}</a></th><td className="num">{format(r.views)}</td><td className="num">{r.views?seconds(r.active_ms/r.views):"—"}</td></tr>)}</tbody></table></div>{!state.data.pages.length?<p>{say("visitsEmpty")}</p>:null}<nav className="adm-visit-pager" aria-label={say("visitsPages")}><button className="adm-btn adm-btn-small" disabled={pagesPage<=1} onClick={()=>setPagesPage(p=>p-1)}>{say("visitsPrevious")}</button><span>{say("visitsPagePagination",{page:pagesPage,total:format(state.data.pages_total)})}</span><button className="adm-btn adm-btn-small" disabled={!state.data.pages_more} onClick={()=>setPagesPage(p=>p+1)}>{say("visitsNext")}</button></nav></section>
       <div className="adm-visit-groups">{group(say("visitsSources"),state.data.sources)}{group(say("visitsCampaigns"),state.data.campaigns)}{group(say("visitsDevices"),state.data.devices)}{group(say("visitsAgents"),state.data.agents)}{group(say("visitsCountries"),state.data.countries,true)}</div>
       <p className="adm-fine">{say("visitsUnits")}</p>

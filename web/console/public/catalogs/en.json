@@ -349,7 +349,7 @@
   "admin.visitsHourly": "Hourly · UTC",
   "admin.visitsHourlyEmpty": "No hourly measurements yet.",
   "admin.visitsHourlyHelp": "Use the left and right arrow keys to inspect each hour.",
-  "admin.visitsHourlyNote": "The first and current hours may be incomplete. Accounts are distinct within each hour; average active time uses that hour’s page views. Hours without page views have no average.",
+  "admin.visitsHourlyNote": "The first and current hours may be incomplete. For today, accounts are distinct within each UTC hour; for longer periods, within each Taipei calendar day, whose first and last days may be partial. Average active time uses that hour’s page views. Hours without page views have no average.",
   "admin.visitsHourlyUnavailable": "Hourly measurements are not available from the Cloud API yet.",
   "admin.visitsIntro": "Public website and documentation · UTC, including today. Page views are not unique visitors.",
   "admin.visitsLoading": "Loading website visits…",
@@ -10957,5 +10957,12 @@
   "capacityRow.console.voice_prepare_milliseconds.what": "How long one browser audio preparation attempt may keep the voice row waiting before recovery is offered.",
   "next.voiceRecordingLimit": "Recording storage is full. Kept audio may be incomplete.",
   "next.voiceIncomplete": "Microphone off. The received recording may be incomplete.",
-  "capacityRow.console.voice_read_milliseconds.full": "After 120 seconds, the recording remains retryable. A host request still running is shared by Retry; the browser does not create overlapping transcription requests."
+  "capacityRow.console.voice_read_milliseconds.full": "After 120 seconds, the recording remains retryable. A host request still running is shared by Retry; the browser does not create overlapping transcription requests.",
+  "admin.visitsDaily": "Daily · UTC",
+  "admin.visitsDay": "Day (UTC)",
+  "admin.visitsDailyHelp": "Use the left and right arrow keys to inspect each day.",
+  "admin.visitsPeriodAccounts": "Distinct accounts in this period: {n}",
+  "admin.visitsDailyTaipei": "Daily · Taipei time",
+  "admin.visitsDayTaipei": "Day (Taipei time)",
+  "admin.visitsTaipeiTime": "Taipei time"
 }
