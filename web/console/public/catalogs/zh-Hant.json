@@ -349,7 +349,7 @@
   "admin.visitsHourly": "每小時 · UTC",
   "admin.visitsHourlyEmpty": "目前還沒有每小時資料。",
   "admin.visitsHourlyHelp": "使用左右方向鍵查看每小時數值。",
-  "admin.visitsHourlyNote": "開始收集與目前所在的小時可能不完整。帳號數按每小時去重；平均有效停留以該小時的瀏覽次數計算，沒有瀏覽時不顯示平均值。",
+  "admin.visitsHourlyNote": "開始收集與目前所在的小時可能不完整。帳號數在「今日」按每小時去重，較長期間按每日去重；平均有效停留以該小時的瀏覽次數計算，沒有瀏覽時不顯示平均值。",
   "admin.visitsHourlyUnavailable": "Cloud API 尚未提供每小時資料。",
   "admin.visitsIntro": "官網與公開文件 · UTC，包含今日。瀏覽次數不等於不重複訪客人數。",
   "admin.visitsLoading": "正在讀取網站到訪統計…",
@@ -10957,5 +10957,9 @@
   "capacityRow.console.voice_prepare_milliseconds.what": "瀏覽器處理一段音訊時，可等待多久才顯示恢復操作。",
   "next.voiceRecordingLimit": "錄音暫存已滿，保留的音訊可能不完整。",
   "next.voiceIncomplete": "麥克風已關閉，已收到的錄音可能不完整。",
-  "capacityRow.console.voice_read_milliseconds.full": "等待 120 秒後仍保留錄音；若機器還在處理，重試會沿用該次請求，不重複送出同時執行的轉文字工作。"
+  "capacityRow.console.voice_read_milliseconds.full": "等待 120 秒後仍保留錄音；若機器還在處理，重試會沿用該次請求，不重複送出同時執行的轉文字工作。",
+  "admin.visitsDaily": "每日 · UTC",
+  "admin.visitsDay": "日期（UTC）",
+  "admin.visitsDailyHelp": "使用左右方向鍵查看每日數值。",
+  "admin.visitsPeriodAccounts": "本期間不重複帳號：{n}"
 }

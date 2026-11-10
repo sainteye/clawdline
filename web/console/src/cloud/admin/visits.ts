@@ -5,7 +5,8 @@ export interface Visits {
   schema: string; generated_at: string; started_at: string; timezone: "UTC"; days: number; from: string; until: string;
   views: number; member_views: number; member_accounts: number; active_ms: number; requests: number; previous_views: number | null;
   hourly?: VisitHour[];
-  daily: { day: string; views: number; requests: number }[];
+  /** member_accounts is distinct within each UTC day; an earlier API omits it. */
+  daily: { day: string; views: number; requests: number; member_accounts?: number }[];
   pages: VisitGroup[]; pages_more: boolean; pages_total: number; pages_page: number; sources: VisitGroup[]; campaigns: VisitGroup[]; devices: VisitGroup[]; agents: VisitGroup[]; countries: VisitGroup[];
   members_total: number; page: number; page_size: number; retention_days: number;
   members: { account_id: string; account_name: string | null; path: string; at: string; active_ms: number }[];
@@ -30,7 +31,7 @@ export function parseVisits(value: unknown): Visits {
   if (s.pages.some(r=>!visitPath(r.key)) || s.sources.some(r=>!["direct","reddit","github","google","bing","hackernews","producthunt","x","other"].includes(r.key)) ||
     s.campaigns.some(r=>!["none","launch","reddit-launch"].includes(r.key)) || s.devices.some(r=>!["desktop","mobile","tablet","unknown"].includes(r.key)) ||
     s.agents.some(r=>!["browser","crawler","ai","unknown"].includes(r.key)) || s.countries.some(r=>r.key!=="unknown"&&!/^[A-Z]{2}$/.test(r.key))) fail()
-  if (!Array.isArray(s.daily) || s.daily.length>VISIT_BOUNDS.days || s.daily.some(r=>!r || !/^\d{4}-\d{2}-\d{2}$/.test(r.day) || !stamp(r.day) || !count(r.views) || !count(r.requests)) || new Set(s.daily.map(r=>r.day)).size!==s.daily.length) fail()
+  if (!Array.isArray(s.daily) || s.daily.length>VISIT_BOUNDS.days || s.daily.some(r=>!r || !/^\d{4}-\d{2}-\d{2}$/.test(r.day) || !stamp(r.day) || !count(r.views) || !count(r.requests) || (r.member_accounts!==undefined && (!count(r.member_accounts) || r.member_accounts>r.views || r.member_accounts>s.member_accounts))) || new Set(s.daily.map(r=>r.day)).size!==s.daily.length) fail()
   if (s.hourly !== undefined) {
     const first = Math.max(Date.parse(s.from), Math.floor(Date.parse(s.started_at)/3600000)*3600000)
     const last = Math.min(Date.parse(s.until)-1, Date.parse(s.generated_at))
@@ -71,7 +72,7 @@ export function demoVisits(days = 30, page = 1, now = new Date()): Visits {
   })
   const daily=Array.from({length:days},(_,i)=>{
     const day=new Date(+from+i*86400000).toISOString().slice(0,10), rows=hourly.filter(h=>h.hour.startsWith(day))
-    return {day,views:rows.reduce((n,r)=>n+r.views,0),requests:rows.reduce((n,r)=>n+r.requests,0)}
+    return {day,views:rows.reduce((n,r)=>n+r.views,0),requests:rows.reduce((n,r)=>n+r.requests,0),member_accounts:Math.min(rows.reduce((n,r)=>n+r.member_accounts,0),3)}
   })
   const views=hourly.reduce((n,r)=>n+r.views,0), requests=hourly.reduce((n,r)=>n+r.requests,0), active_ms=hourly.reduce((n,r)=>n+r.active_ms,0)
   return {schema:"clawdline.public-analytics.v1",generated_at:now.toISOString(),started_at:new Date(+from-90*86400000).toISOString(),timezone:"UTC",days,from:from.toISOString(),until:until.toISOString(),
@@ -82,6 +83,12 @@ export function demoVisits(days = 30, page = 1, now = new Date()): Visits {
 }
 
 export type VisitMetric = "views" | "requests" | "member_accounts" | "duration"
-export function visitHourlyValues(hours: VisitHour[], metric: VisitMetric): {hour:string;value:number|null}[] {
-  return hours.map(h=>({hour:h.hour,value:metric==="duration"?(h.views?h.active_ms/h.views/1000:null):h[metric]}))
+export interface VisitPoint { at: string; value: number | null }
+export function visitHourlyValues(hours: VisitHour[], metric: VisitMetric): VisitPoint[] {
+  return hours.map(h=>({at:h.hour,value:metric==="duration"?(h.views?h.active_ms/h.views/1000:null):h[metric]}))
+}
+/** Accounts deduplicated per UTC day, or null when the report has none so the caller keeps hourly rows. */
+export function visitDailyAccounts(data: Visits): VisitPoint[] | null {
+  if (data.days===1 || !data.daily.length || data.daily.some(d=>d.member_accounts===undefined)) return null
+  return data.daily.map(d=>({at:d.day+"T00:00:00Z",value:d.member_accounts!}))
 }
