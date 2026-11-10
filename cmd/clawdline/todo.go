@@ -15,7 +15,10 @@ import (
 // under that Session. `add` is for when the person asked the Session to track
 // its work there — never on the Session's own initiative — and each row is
 // shown to the person as added by the Session. `list` is the Agent's read of
-// the same list, and `done` completes one of its rows. Sending and deleting a
+// the same list, and `done` completes one of its rows. `take` is the turn
+// boundary's: with the person's session_todo_auto_take setting on, a Session
+// whose own work is done and that is not waiting for the person takes their
+// next unsent row and works on it in the same turn. Sending and deleting a
 // row stay the person's; this command has neither.
 //
 // The conversation is found the way `session report` finds it.
@@ -48,7 +51,7 @@ func todoCommand(args []string) {
 		if fs.NArg() != 0 {
 			todoUsage()
 		}
-	case "done":
+	case "done", "take":
 		if fs.NArg() != 1 {
 			todoUsage()
 		}
@@ -67,6 +70,7 @@ func todoUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.usage_clawdline_todo_add_conversati.9360a66e", "usage: clawdline todo add [--conversation id] [--key k] [--port n] <text> [text…]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.clawdline_todo_list_conversation_id.e632425b", "       clawdline todo list [--conversation id] [--port n]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.clawdline_todo_done_conversation_id.16fcbcb0", "       clawdline todo done [--conversation id] [--key k] [--port n] <to-do id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.take_usage", "       clawdline todo take [--conversation id] [--key k] [--port n] <to-do id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.add_writes_this_session_s_own_to_do.c46fb2f1", "  add writes this Session's own to-dos, one per argument or one per non-empty stdin line,"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.and_only_when_the_person_asked_for.832bfe30", "  and only when the person asked for them; all are added or none are"))
 	os.Exit(2)
@@ -144,6 +148,13 @@ func sessionTodo(stdout, stderr io.Writer, b *broker, op string, args []string, 
 			return 2
 		}
 		method, path, body = http.MethodPost, base+"/"+url.PathEscape(id)+"/complete", map[string]any{}
+	case "take":
+		id := strings.TrimSpace(args[0])
+		if id == "" {
+			fmt.Fprintf(stderr, cliCopy("misc", "todo.take_needs_id", "clawdline %s: name the to-do id to take\n"), name)
+			return 2
+		}
+		method, path, body = http.MethodPost, base+"/"+url.PathEscape(id)+"/take", map[string]any{}
 	default:
 		fmt.Fprintf(stderr, cliCopy("misc", "todo.clawdline_todo_no_such_action_q.a8c18ff2", "clawdline todo: no such action %q\n"), op)
 		return 2

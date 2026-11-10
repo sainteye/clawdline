@@ -1217,6 +1217,43 @@
       ]
     },
     {
+      "id": "todo-auto-take",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "todo"
+      ],
+      "sources": [
+        {
+          "path": "skills/clawdline/guide.md",
+          "line": 1731
+        },
+        {
+          "path": "internal/app/work_v2_todos.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "**Taking the person's next to-do at the turn boundary.** Only when your turn-boundary to-do read\n",
+        "answers `\"auto_take\": true` has the person turned this on (Settings → Workflow); `false`, an absent\n",
+        "field, or `auto_take_unknown` means leave every row for the person to send. With it on, and **only\n",
+        "when all of these hold**: your current work is done and verified; you are not waiting for the\n",
+        "person — you did not just ask a question, offer choices, or need a decision or approval from them;\n",
+        "and no to-do you took earlier is still open. Then take the oldest row in `direct_todos` that the\n",
+        "person wrote (its `created_by` is not this conversation) and that has no `sent_at`, `taken_at` or\n",
+        "`completed_at`:"
+      ],
+      "locations": [
+        "clawdline todo take <to-do id>"
+      ]
+    },
+    {
       "id": "notice",
       "scope": "conditional",
       "agents": [
@@ -3203,7 +3240,7 @@
     "internal/adapters/codegraph/source-types.json": "287697b047382abca0e03a1dfa07ae8c0848e8efc8c991a7eec0cf10a0367731",
     "internal/adapters/codegraph/view.go": "06e470cce95ba9f95553d4f618e53df5157479832f5ec50dfa2617ebe55c9289",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
-    "internal/adapters/nextconfig/nextconfig.go": "dd30381acc96a14c20bfa640abae5ae3210bc4a5b9e187544e78453348e7b31b",
+    "internal/adapters/nextconfig/nextconfig.go": "b74c66c7a74346d996e7dd37fb96800aa8f10054148cd99f56b1d75b65d6177b",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/projects/antigravity_context.go": "19c5395961fc715ddac5265b6ccae80338577a6551246ee4ddd5b939de919d04",
@@ -3234,7 +3271,7 @@
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
-    "internal/app/work_v2_todos.go": "2cd59124ffeb0adeae7d91e90484dd168930f406d5c7e3d5fc2a672d1e55060d",
+    "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
     "internal/domain/codegraphguidance/guidance.go": "74bf68bbbef40bf934c4b21a520207905f4c7c04e4998e6f0694ff0ea8e3fb41",
     "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
@@ -3271,8 +3308,8 @@
     "internal/transport/http/workflow_launch.go": "56f3e18bba4f2f657f0342239b3e621696e22d4e31eae5dfebb9458ca54a6dd7",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "183b9bdf039ab028fb9f9b958c5461608e1a864442f667252a8fd6d63d43dfaf",
-    "skills/clawdline/guide.md": "e6ddebfa334b0457d230d06e29a0176bc034f601b4f27da2cdff6032d56b0875",
-    "skills/clawdline/guide.zh-TW.md": "6a58311e85256e5ab9e3b8960cf80c2e74716a6e182cd9ade8e841e07dc67da0",
+    "skills/clawdline/guide.md": "9d728c0a5096cae73b30892632f01e4266049fb732e229e1283e179dc8002ee6",
+    "skills/clawdline/guide.zh-TW.md": "4c461295fb6e0a871c364e8c09eac4701e3b1185e43e8eb7785b843bca0a7fad",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
@@ -3295,7 +3332,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "56667b534a56dce2558c700ec23fb198e95cf09450427cd21ed9ada283ff9374",
-    "zh-Hant": "c2a4d32093ad535dc3c0d4ce32f9c7672d2b7cd1d61caae857214091e9520319"
+    "en": "78a02b8c07e6bc381e9cbafca91bb126f4b3818ac2951870605f5926c9baf5b3",
+    "zh-Hant": "653fda906297311842e3a44b31997960835d0b96cf277bc1ab32b550c8bee707"
   }
 }

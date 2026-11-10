@@ -282,5 +282,7 @@
   "project.devstack_description": "  devstack [directory]  the servers Clawdline reads from this Project's .devstack.json, each port's state and its Link address",
   "project.devstack_usage": "       clawdline project devstack [--json] [directory]",
   "project.devstack_failed": "clawdline project devstack: %v\n",
-  "project.devstack_flag_json": "print the matching stacks as JSON"
+  "project.devstack_flag_json": "print the matching stacks as JSON",
+  "todo.take_usage": "       clawdline todo take [--conversation id] [--key k] [--port n] <to-do id>",
+  "todo.take_needs_id": "clawdline %s: name the to-do id to take\n"
 }

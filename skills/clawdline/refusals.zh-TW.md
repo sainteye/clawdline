@@ -279,6 +279,7 @@
 | `target_session_unavailable` | `internal/transport/http/human_interventions.go` |
 | `title_not_saved` | `internal/transport/http/actions.go`, `internal/transport/http/session_smart_title.go` |
 | `title_required` | `internal/domain/work/v2.go` |
+| `todo_auto_take_off` | `internal/transport/http/work_v2_agent.go` |
 | `too_large` | `internal/transport/http/actions.go`, `internal/transport/http/voice.go` |
 | `tool_image_unavailable` | `internal/transport/http/transcript_tools.go` |
 | `tool_result_stale` | `internal/transport/http/transcript_details.go`, `internal/transport/http/transcript_tools.go` |

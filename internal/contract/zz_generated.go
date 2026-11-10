@@ -7241,6 +7241,7 @@ type SettingsSnapshot struct {
 	// com.googlecode.iterm2. Empty is every app.
 	ScopeApp             *string `json:"scope_app"`
 	SessionAutoDiscovery *bool   `json:"session_auto_discovery"`
+	SessionTodoAutoTake  *bool   `json:"session_todo_auto_take"`
 
 	// The Cloud device id the macOS app's own tab paired as, recorded by the setup
 	// wizard from the invitation it handed the app. Empty or absent is not known.
@@ -10301,6 +10302,10 @@ type WorkflowSettingsRequest struct {
 	// field.
 	ItermIntegration     *bool `json:"iterm_integration"`
 	SessionAutoDiscovery *bool `json:"session_auto_discovery"`
+
+	// Whether a root Session takes the person's oldest unsent to-do at its turn
+	// boundary once its own work is done.
+	SessionTodoAutoTake *bool `json:"session_todo_auto_take"`
 }
 
 type WorkflowSettingsSnapshot struct {
@@ -10314,6 +10319,11 @@ type WorkflowSettingsSnapshot struct {
 	// field.
 	ItermIntegration     *bool `json:"iterm_integration"`
 	SessionAutoDiscovery bool  `json:"session_auto_discovery"`
+
+	// Whether a root Session that finished its work and is not waiting for the person
+	// takes the person's oldest unsent to-do at its turn boundary (clawdline todo
+	// take). False by default; a daemon before this setting omits the field.
+	SessionTodoAutoTake *bool `json:"session_todo_auto_take"`
 }
 
 type WorkflowStage struct {

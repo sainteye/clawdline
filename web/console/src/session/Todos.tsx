@@ -24,7 +24,7 @@ import { openWorkItem } from "../pages/work/new-item.js"
 import { useReferenceImage } from "../pages/work/useReferenceImage.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
-import { todoSend } from "./todo-send.js"
+import { todoReceiptState, todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { useInterventions } from "./Interventions.js"
@@ -451,9 +451,11 @@ function DirectTodo({ todo, conversation, busy, onEdit, onAction }: { todo: Dire
     const timer = window.setTimeout(() => setNow(Math.floor(Date.now() / 1000)), Math.max(0, send.until - now) * 1000 + 250)
     return () => window.clearTimeout(timer)
   }, [send.kind, send.kind === "wait" ? send.until : 0, now])
-  const receipt = todo.read_at ? { mark: "✓✓", words: catalogWord("literal", "9e5c6601f40b"), state: "read" }
-    : todo.sent_at ? { mark: "✓", words: catalogWord("literal", "246e7ec1af00"), state: "sent" }
-      : { mark: "", words: catalogWord("literal", "ecd46b6ac930"), state: "unsent" }
+  const state = todoReceiptState(todo)
+  const receipt = state === "taken" ? { mark: "✓✓", words: workWord("todoTakenBySession"), state }
+    : state === "read" ? { mark: "✓✓", words: catalogWord("literal", "9e5c6601f40b"), state }
+    : state === "sent" ? { mark: "✓", words: catalogWord("literal", "246e7ec1af00"), state }
+      : { mark: "", words: catalogWord("literal", "ecd46b6ac930"), state }
   return <article className={`session-direct-todo${completed ? " completed" : ""}`} data-author={own ? "session" : "person"}>
     {completed
       ? <button className="session-todo-check completed" type="button" disabled={busy} aria-label={catalogWord("inline", "5959a1a7afc2")}

@@ -39,7 +39,7 @@ var browserSettings = map[string]bool{
 	"orchestrator_agent_notify": true, "orchestrator_enabled": true,
 	"orchestrator_max_children": true, "orchestrator_permission": true,
 	"orchestrator_notify_root": true, "orchestrator_child_linger": true,
-	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true,
+	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true,
 	"setup_mode": true, "setup_completed_at": true, "setup_app_device": true, "setup_skipped": true,
 }
 
@@ -292,11 +292,13 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 
 		integration, _ := v.Bool("iterm_integration")
+		autoTake := v.SessionTodoAutoTake()
 		return contract.WorkflowSettingsSnapshot{
 			ItermIntegration:       &integration,
 			DispatchFullPermission: v.DispatchPermission() == "full",
 			SessionAutoDiscovery:   v.SessionAutoDiscovery(),
 			GeminiStepExplanations: v.GeminiStepExplanations(),
+			SessionTodoAutoTake:    &autoTake,
 		}, nil
 	}
 	switch r.Method {
@@ -320,7 +322,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for name := range body {
-			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" {
+			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" && name != "session_todo_auto_take" {
 				writeRawRefusal(w, http.StatusBadRequest, "bad_request", "not a workflow setting key: "+name)
 				return
 			}

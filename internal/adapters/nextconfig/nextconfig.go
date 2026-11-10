@@ -85,6 +85,14 @@ func (v Values) GeminiStepExplanations() bool {
 	return !set || on
 }
 
+// SessionTodoAutoTake lets a root Session take the person's oldest unsent
+// to-do at its turn boundary once its own work is done. Off unless set: off is
+// the behaviour before the setting existed.
+func (v Values) SessionTodoAutoTake() bool {
+	on, _ := v.Bool("session_todo_auto_take")
+	return on
+}
+
 // DispatchPermission follows the existing machine preference; absent means full.
 func (v Values) DispatchPermission() string {
 	mode, _ := v.String("orchestrator_permission")
@@ -502,6 +510,7 @@ var Settables = []Settable{
 	{Name: "update_auto_apply", Kind: "bool"},
 	{Name: "follow_target", Kind: "bool"},
 	{Name: "gemini_step_explanations", Kind: "bool"},
+	{Name: "session_todo_auto_take", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
 	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"session", "claude", "codex", "antigravity", "auto"},
 		Refusal: "invalid_assistant", Because: "session, claude, codex, antigravity or auto"},

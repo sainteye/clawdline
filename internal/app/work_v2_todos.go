@@ -362,6 +362,85 @@ func (w *WorkSystemV2) CompleteDirectTodo(ctx context.Context, id, session, acto
 	return out, mapWorkV2Error(err)
 }
 
+// TakeDirectTodo records that a root Session took one of the person's unsent
+// to-dos at its own turn boundary, under the session_todo_auto_take setting
+// the caller has already checked. Nothing is typed into the terminal: the
+// Session asked for the row and works on it in the turn it is already in.
+//
+// Only the next row may be taken — the oldest open, unsent row the person
+// wrote — and only while no earlier taken row is still open, so a Session
+// works the person's list one row at a time and in their order. A row the
+// person already sent is a message the Session has; a row the Session wrote
+// is already its own. Taking the same row again answers it unchanged.
+func (w *WorkSystemV2) TakeDirectTodo(ctx context.Context, id, session string, file TodoV2Filer) (work.DirectTodoV2, error) {
+	var out work.DirectTodoV2
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.DirectTodo(id)
+		if err != nil {
+			return err
+		}
+		if prev.SessionID != session {
+			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
+		}
+		if !prev.TakenAt.IsZero() && prev.CompletedAt.IsZero() {
+			out = prev
+			return fileTodo(tx, file, out)
+		}
+		switch {
+		case !prev.CompletedAt.IsZero():
+			return work.RefuseV2("todo_completed", "That to-do is already complete; nothing was taken.")
+		case prev.CreatedBy == session:
+			return work.RefuseV2("todo_session_created", "This Session wrote that to-do itself; it is already its own work and needs no take.")
+		case !prev.SentAt.IsZero():
+			return work.RefuseV2("todo_already_sent", "The person already sent that to-do to this Session as a message; work on it from there.")
+		}
+		open, err := tx.OpenDirectTodos(session)
+		if err != nil {
+			return err
+		}
+		for _, td := range open {
+			if !td.TakenAt.IsZero() {
+				return work.RefuseV2Raw("todo_take_pending",
+					"This Session still has taken to-do "+td.ID+" open; finish it with clawdline todo done "+td.ID+" before taking another.")
+			}
+		}
+		for _, td := range open {
+			if td.CreatedBy == session || !td.SentAt.IsZero() {
+				continue
+			}
+			if td.ID != prev.ID {
+				return work.RefuseV2Raw("todo_not_next",
+					"Take the person's to-dos oldest first; the next one is "+td.ID+".")
+			}
+			break
+		}
+		now := time.Unix(w.now().Unix(), 0)
+		next := prev
+		next.TakenAt = now
+		if next.ReadAt.IsZero() {
+			next.ReadAt = now
+		}
+		if err := tx.PutDirectTodo(prev, next); err != nil {
+			return err
+		}
+		next.Version++
+		out = next
+		return fileTodo(tx, file, out)
+	})
+	return out, mapWorkV2Error(err)
+}
+
+// fileTodo completes a to-do write's receipt with its answer, when it has one.
+func fileTodo(tx *store.WorkV2Tx, file TodoV2Filer, td work.DirectTodoV2) error {
+	if file == nil {
+		return nil
+	}
+	if k, ans, ok := file(td); ok {
+		return tx.CompleteReceipt(k, ans)
+	}
+	return nil
+}
+
 func (w *WorkSystemV2) ReopenDirectTodo(ctx context.Context, id, session string, file TodoV2Filer) (work.DirectTodoV2, error) {
 	var out work.DirectTodoV2
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {

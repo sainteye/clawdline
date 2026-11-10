@@ -311,6 +311,8 @@ export interface DirectTodoV2 {
   completed_by?: string
   /** Who wrote the row: the person's actor, or the Session's own conversation id. */
   created_by?: string
+  /** When the Session took this row at its own turn boundary (session_todo_auto_take); absent if never. */
+  taken_at?: number | null
   version: number
   images?: WorkV2Image[]
 }

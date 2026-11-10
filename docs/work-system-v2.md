@@ -981,6 +981,25 @@ Cloud `work.v2.todo-action` operation is carried to the same route. Measured on 
 this line, a Session received an ordinary message with no id, did the work, deployed and reported
 its turn, and the row stayed open because nothing told it which row it had finished.
 
+**A Session may take the next row at its own turn boundary (2026-11-10).** The Workflow setting
+`session_todo_auto_take` is off by default, and off is exactly the behaviour before it existed: a
+person's row waits for Send. Turned on, the root Session's to-do read answers `auto_take: true`, and
+the guide lets the Session — only when its own work is done and verified, it is not waiting for the
+person, and no row it took is still open — take the oldest open row the person wrote that has no
+`sent_at` (`POST …/agent/session-todos/<conversation>/<id>/take`, `clawdline todo take`). The take
+stores `taken_at` (and `read_at` if it was unset), types nothing, and the row shows "Taken by
+Session". Only the next row is accepted (`todo_not_next`), one at a time (`todo_take_pending`);
+a sent row, a Session-written row, a completed row and the setting being off are refused
+(`todo_already_sent`, `todo_session_created`, `todo_completed`, `todo_auto_take_off`). Children are
+refused as for `todo add`.
+
+Why the turn boundary and not idle detection: a screen that reads idle looks the same whether the
+Session finished, just asked the person a question, or is mid-discussion with them, and typing a
+row into either of the last two breaks the person's thread. Only the Session knows whether it is
+waiting for the person, so it decides. The cost, accepted on purpose: a Session that is already
+idle when a row is added takes it only after the person next talks to it. Whether a Session follows
+the rule is observable from `taken_at`, not enforced.
+
 **The turn receipt reminds.** `POST /v1/orchestrator/sessions/<terminal>/complete` (`clawdline
 session report`) records the receipt first and then also answers `open_todos`: the Session's direct
 to-dos with `sent_at` or `read_at` set and no `completed_at`, oldest first, at most 20

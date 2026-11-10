@@ -1497,6 +1497,24 @@ turn 之前**先執行 `clawdline todo done <id>`（用那一行的 id）——�
 還是開著。還沒做完的就讓它開著。`clawdline session report` 會在 stderr 列出所有送給這個 Session、
 還沒勾掉的待辦（§7）。
 
+**在 turn 邊界接手使用者的下一筆待辦。** 只有 turn 邊界讀到的待辦回應是 `"auto_take": true`，才代表
+使用者開了這個設定（設定 → 工作流程）；`false`、沒有這個欄位，或出現 `auto_take_unknown`，都要把每一列
+留給使用者自己送。設定開著時，**必須以下條件全部成立**：目前的工作已做完並驗證；你沒有在等使用者——
+你剛才沒有提問、沒有給選項、也不需要他做決定或核准；而且你先前接手的待辦都已完成。這時接手
+`direct_todos` 裡最舊的一列：由使用者寫的（`created_by` 不是這個 conversation），而且沒有 `sent_at`、
+`taken_at` 或 `completed_at`：
+
+```
+clawdline todo take <to-do id>
+```
+
+它是帶 `{}` 與 Idempotency-Key 的 `POST /v1/work/v2/agent/session-todos/<conversation id>/<to-do id>/take`，
+不會在你的 terminal 打任何字。在同一個 turn 裡把這一列當成使用者送來的交辦去做，驗證完成後，在回報之前
+執行 `clawdline todo done <id>`。一次只接手一列。拒絕代碼：`todo_auto_take_off`（設定沒開；留著那一列）、
+`todo_not_next`（會指出應該接手哪一列）、`todo_take_pending`（先完成它指出的那一列）、
+`todo_already_sent`（使用者已經用訊息送出）、`todo_session_created`（你自己的待辦不需要接手）、
+`todo_completed`。
+
 **使用者要求時，寫你自己的待辦。** 只有在使用者明確要求這個 Session 把工作記成 Clawdline 待辦——
 或交給它一份多項清單並說要在那裡追蹤——才寫進這個 Session 自己的清單：
 

@@ -1728,6 +1728,27 @@ report the turn — otherwise the row stays open on the person's list although t
 One that is not finished stays open. `clawdline session report` lists on stderr every to-do that was
 sent to this Session and is still not checked off (§7).
 
+**Taking the person's next to-do at the turn boundary.** Only when your turn-boundary to-do read
+answers `"auto_take": true` has the person turned this on (Settings → Workflow); `false`, an absent
+field, or `auto_take_unknown` means leave every row for the person to send. With it on, and **only
+when all of these hold**: your current work is done and verified; you are not waiting for the
+person — you did not just ask a question, offer choices, or need a decision or approval from them;
+and no to-do you took earlier is still open. Then take the oldest row in `direct_todos` that the
+person wrote (its `created_by` is not this conversation) and that has no `sent_at`, `taken_at` or
+`completed_at`:
+
+```
+clawdline todo take <to-do id>
+```
+
+It is `POST /v1/work/v2/agent/session-todos/<conversation id>/<to-do id>/take` with `{}` and an
+Idempotency-Key, and nothing is typed into your terminal. Work on the row in this same turn as if
+the person had sent it, and once it is verified run `clawdline todo done <id>` before you report.
+Take one row at a time. Refusals: `todo_auto_take_off` (the setting is off; leave the row),
+`todo_not_next` (names the row to take instead), `todo_take_pending` (finish the named row first),
+`todo_already_sent` (the person sent it as a message), `todo_session_created` (your own row needs
+no take), `todo_completed`.
+
 **Your own to-dos, when the person asks.** Only when the person explicitly asks this Session to
 record its work as Clawdline to-dos — or hands it a list of several items and says to track them
 there — write them to this Session's own list:

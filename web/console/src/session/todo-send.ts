@@ -24,3 +24,15 @@ export function todoSend(todo: { completed_at?: number | null; sent_at: number |
   const until = (todo.sent_at ?? 0) + DIRECT_TODO_RESEND_AFTER_SECONDS
   return now < until ? { kind: "wait", label: catalogWord("literal", "3aa8e038c09d"), until } : { kind: "again", label: catalogWord("literal", "3aa8e038c09d") }
 }
+
+/**
+ * Which receipt an open direct to-do shows. A row the Session took itself at
+ * its turn boundary (`taken_at`, the session_todo_auto_take setting) is read,
+ * and says the Session moved it, because the person never sent it.
+ */
+export function todoReceiptState(todo: { sent_at: number | null; read_at: number | null; taken_at?: number | null }): "taken" | "read" | "sent" | "unsent" {
+  if (todo.taken_at) return "taken"
+  if (todo.read_at) return "read"
+  if (todo.sent_at) return "sent"
+  return "unsent"
+}

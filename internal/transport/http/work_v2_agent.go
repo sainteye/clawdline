@@ -396,11 +396,16 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			answer := map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
 				"direct_todos": out, "truncated": truncated || itemTruncated || recentTruncated}
 			s.addUnacknowledgedCompletions(r.Context(), answer, sessionID)
+			s.addTodoAutoTake(answer)
 			writeJSON(w, answer)
 			return
 		}
 		if len(parts) == 2 && r.Method == http.MethodPost {
 			s.agentAddSessionTodos(w, r, sessionID)
+			return
+		}
+		if len(parts) == 4 && parts[3] == "take" && r.Method == http.MethodPost {
+			s.agentTakeSessionTodo(w, r, sessionID, parts[2])
 			return
 		}
 		if len(parts) == 4 && parts[3] == "complete" && r.Method == http.MethodPost {
@@ -478,6 +483,78 @@ func (s *Server) addUnacknowledgedCompletions(ctx context.Context, answer map[st
 		})
 	}
 	answer["unacknowledged_completions"] = list
+}
+
+// addTodoAutoTake says on a root's to-do answer whether the person turned on
+// session_todo_auto_take. Off is the behaviour before the setting existed, so
+// a settings file that cannot be read answers off and says it is unknown.
+func (s *Server) addTodoAutoTake(answer map[string]any) {
+	v, err := s.settingsFile().Read()
+	if err != nil {
+		answer["auto_take"] = false
+		answer["auto_take_unknown"] = true
+		return
+	}
+	answer["auto_take"] = v.SessionTodoAutoTake()
+}
+
+// agentTakeSessionTodo is POST
+// /v1/work/v2/agent/session-todos/<conversation>/<id>/take: a root Session,
+// at its own turn boundary, taking the person's next unsent to-do because the
+// person turned on session_todo_auto_take. Nothing is typed into the
+// terminal. With the setting off every take is refused and nothing changes.
+func (s *Server) agentTakeSessionTodo(w http.ResponseWriter, r *http.Request, conversation, id string) {
+	var body struct{}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	v, err := s.settingsFile().Read()
+	if err != nil || !v.SessionTodoAutoTake() {
+		writeRefusal(w, http.StatusConflict, "todo_auto_take_off",
+			"The person has not turned on taking to-dos at the turn boundary; leave this one for them to send.")
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, conversation, raw)
+	if !ok {
+		return
+	}
+	release := func() { _ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k) }
+	if s.broker == nil {
+		release()
+		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved",
+			"This daemon has no broker to say which Session owns that conversation; nothing was taken.")
+		return
+	}
+	if _, err := s.broker.LiveRootSession(r.Context(), conversation); err != nil {
+		release()
+		if ref, typed := err.(orchestrator.Refusal); typed {
+			if ref.RawMessage {
+				writeRawRefusal(w, ref.Status, ref.Code, ref.Message)
+			} else {
+				writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			}
+			return
+		}
+		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved",
+			"Which Session owns that conversation could not be read; nothing was taken.")
+		return
+	}
+	var answer []byte
+	_, err = s.workV2().TakeDirectTodo(r.Context(), id, conversation,
+		func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			// Its pictures are on the to-do read, as every row's are; no
+			// second read is made inside the write.
+			answer = directTodoAnswer(td, nil)
+			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+		})
+	if err != nil {
+		release()
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
 }
 
 // agentAddSessionTodos is POST /v1/work/v2/agent/session-todos/<conversation>:

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10936,
-  "riskKeys": 4821,
-  "nonRiskCount": 6115,
+  "englishContentKeys": 10948,
+  "riskKeys": 4826,
+  "nonRiskCount": 6122,
   "groups": [
     {
       "name": "acp / other",
@@ -6290,7 +6290,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 156,
+      "count": 159,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6410,6 +6410,9 @@
         "transparency.card.space-saving-images.how",
         "transparency.card.space-saving-images.summary",
         "transparency.card.space-saving-images.title",
+        "transparency.card.todo-auto-take.condition",
+        "transparency.card.todo-auto-take.how",
+        "transparency.card.todo-auto-take.title",
         "transparency.card.tool-library.condition",
         "transparency.card.tool-library.how",
         "transparency.card.tool-library.title",
@@ -6945,7 +6948,7 @@
     },
     {
       "name": "work / todo",
-      "count": 10,
+      "count": 11,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -6959,7 +6962,8 @@
         "work.todoEscalated",
         "work.todoHandedOff",
         "work.todoIncorporated",
-        "work.todoSave"
+        "work.todoSave",
+        "work.todoTakenBySession"
       ]
     },
     {
@@ -7052,7 +7056,7 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 15,
+      "count": 18,
       "sources": [
         null
       ],
@@ -7070,6 +7074,9 @@
         "workflowSettings.retry",
         "workflowSettings.session_auto_discoveryOn",
         "workflowSettings.session_auto_discoveryTitle",
+        "workflowSettings.session_todo_auto_takeOff",
+        "workflowSettings.session_todo_auto_takeTitle",
+        "workflowSettings.session_todo_auto_takeUpdateRequired",
         "workflowSettings.whenOff",
         "workflowSettings.whenOn"
       ]

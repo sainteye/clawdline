@@ -26,15 +26,18 @@ type directTodoV2Wire struct {
 	CompletedBy string `json:"completed_by,omitempty"`
 	// CreatedBy is who wrote the row: the person's actor, or the Session's own
 	// conversation id when the Session added it on the person's request.
-	CreatedBy string            `json:"created_by"`
-	Version   int64             `json:"version"`
-	Images    []workV2ImageWire `json:"images,omitempty"`
+	CreatedBy string `json:"created_by"`
+	// TakenAt is when the Session took this row at its own turn boundary,
+	// under the session_todo_auto_take setting; absent when it never did.
+	TakenAt *int64            `json:"taken_at,omitempty"`
+	Version int64             `json:"version"`
+	Images  []workV2ImageWire `json:"images,omitempty"`
 }
 
 func directTodoWire(td work.DirectTodoV2, images []work.DirectTodoImageV2) directTodoV2Wire {
 	out := directTodoV2Wire{ID: td.ID, Text: td.Text, CreatedAt: td.CreatedAt.Unix(), SentAt: optionalUnix(td.SentAt),
 		ReadAt: optionalUnix(td.ReadAt), CompletedAt: optionalUnix(td.CompletedAt), CompletedBy: td.CompletedBy,
-		CreatedBy: td.CreatedBy, Version: td.Version}
+		CreatedBy: td.CreatedBy, TakenAt: optionalUnix(td.TakenAt), Version: td.Version}
 	for _, image := range images {
 		out.Images = append(out.Images, workV2ImageWire{ID: image.ID, Title: image.Title, MediaType: image.MediaType,
 			ByteCount: image.ByteCount, Width: image.Width, Height: image.Height, Position: image.Position,

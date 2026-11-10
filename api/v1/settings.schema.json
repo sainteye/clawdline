@@ -18,6 +18,7 @@
         "space_saving_images": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
+        "session_todo_auto_take": { "type": "boolean", "nullable": true },
         "exists": {
           "description": "False before anything has been written. Every key then has the shell's default.",
           "type": "boolean"
@@ -618,6 +619,11 @@
           "type": "boolean",
           "default": true,
           "description": "Whether Gemini (Antigravity) explains its plan and progress step-by-step in the user's language. True by default."
+        },
+        "session_todo_auto_take": {
+          "type": "boolean",
+          "nullable": true,
+          "description": "Whether a root Session that finished its work and is not waiting for the person takes the person's oldest unsent to-do at its turn boundary (clawdline todo take). False by default; a daemon before this setting omits the field."
         }
       },
       "required": [
@@ -643,6 +649,11 @@
           "type": "boolean",
           "nullable": true,
           "description": "Whether Gemini (Antigravity) explains its plan and progress step-by-step in the user's language."
+        },
+        "session_todo_auto_take": {
+          "type": "boolean",
+          "nullable": true,
+          "description": "Whether a root Session takes the person's oldest unsent to-do at its turn boundary once its own work is done."
         }
       }
     }

@@ -8789,6 +8789,7 @@ export interface SettingsSnapshot {
    */
   scope_app: string | null
   session_auto_discovery: boolean | null
+  session_todo_auto_take: boolean | null
 
   /**
    * The Cloud device id the macOS app's own tab paired as, recorded by the setup
@@ -12352,6 +12353,12 @@ export interface WorkflowSettingsRequest {
    */
   iterm_integration: boolean | null
   session_auto_discovery: boolean | null
+
+  /**
+   * Whether a root Session takes the person's oldest unsent to-do at its turn
+   * boundary once its own work is done.
+   */
+  session_todo_auto_take: boolean | null
 }
 
 export interface WorkflowSettingsSnapshot {
@@ -12369,6 +12376,13 @@ export interface WorkflowSettingsSnapshot {
    */
   iterm_integration: boolean | null
   session_auto_discovery: boolean
+
+  /**
+   * Whether a root Session that finished its work and is not waiting for the person
+   * takes the person's oldest unsent to-do at its turn boundary (clawdline todo
+   * take). False by default; a daemon before this setting omits the field.
+   */
+  session_todo_auto_take: boolean | null
 }
 
 export interface WorkflowStage {

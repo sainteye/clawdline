@@ -282,5 +282,7 @@
   "project.devstack_description": "  devstack [directory]  Clawdline 從這個 Project 的 .devstack.json 讀到的伺服器、各 port 的狀態與 Link 網址",
   "project.devstack_usage": "       clawdline project devstack [--json] [directory]",
   "project.devstack_failed": "clawdline project devstack：%v\n",
-  "project.devstack_flag_json": "以 JSON 印出相符的 stack"
+  "project.devstack_flag_json": "以 JSON 印出相符的 stack",
+  "todo.take_usage": "       clawdline todo take [--conversation id] [--key k] [--port n] <to-do id>",
+  "todo.take_needs_id": "clawdline %s：請指定要接手的 to-do id\n"
 }

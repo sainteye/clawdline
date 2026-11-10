@@ -676,7 +676,7 @@
 .session-todo-edit:focus-visible, .session-todo-delete:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .session-todo-edit:disabled, .session-todo-delete:disabled { opacity: .4; cursor: default; }
 .session-todo-receipt { color: var(--faint); }
-.session-todo-receipt[data-state="read"] { color: var(--accent); }
+.session-todo-receipt[data-state="read"], .session-todo-receipt[data-state="taken"] { color: var(--accent); }
 .session-todo-author {
     display: inline-block; margin-right: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px;
     color: var(--faint);

@@ -117,3 +117,19 @@ func TestTodoLinesTakesOneRowPerNonEmptyLine(t *testing.T) {
 		t.Fatalf("rows = %q", rows)
 	}
 }
+
+// `todo take` is one keyed POST to the row's take route, and nothing else.
+func TestTodoTakeUsesTheAgentTakeRoute(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, `{"ok":true}` })
+	env := envOf(map[string]string{"CODEX_THREAD_ID": thinConversation})
+	var out, errs bytes.Buffer
+	if code := sessionTodo(&out, &errs, b, "take", []string{"todo-id-2"}, "", "", env); code != 0 {
+		t.Fatalf("take exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 1 || seen[0].Method != "POST" ||
+		seen[0].EscapedPath != "/v1/work/v2/agent/session-todos/"+thinConversation+"/todo-id-2/take" ||
+		seen[0].Key == "" || string(seen[0].Body) != "{}" {
+		t.Fatalf("take = %+v", seen)
+	}
+}

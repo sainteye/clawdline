@@ -242,6 +242,17 @@ func openWorkV2(db *sql.DB) error {
 	if _, err := db.Exec(workV2IssueLinkSchema); err != nil {
 		return err
 	}
+	// taken_at: a root Session took the person's unsent to-do at its own turn
+	// boundary (the session_todo_auto_take setting). Older rows were never taken.
+	hasTaken, err := hasColumn(db, "session_direct_todos", "taken_at")
+	if err != nil {
+		return err
+	}
+	if !hasTaken {
+		if _, err := db.Exec(`ALTER TABLE session_direct_todos ADD COLUMN taken_at INTEGER`); err != nil {
+			return err
+		}
+	}
 	has, err := hasColumn(db, "work_v2_items", "user_action")
 	if err != nil {
 		return err
@@ -1930,9 +1941,9 @@ func queryWorkV2Steps(ctx context.Context, q interface {
 func scanDirectTodoV2(sc scanner) (work.DirectTodoV2, error) {
 	var td work.DirectTodoV2
 	var created int64
-	var sent, read, completed sql.NullInt64
+	var sent, read, completed, taken sql.NullInt64
 	err := sc.Scan(&td.ID, &td.SessionID, &td.Text, &td.CreatedBy, &created, &sent, &read, &completed,
-		&td.CompletedBy, &td.Version)
+		&td.CompletedBy, &td.Version, &taken)
 	if err == sql.ErrNoRows {
 		return td, errors.New("no such direct todo")
 	}
@@ -1949,10 +1960,13 @@ func scanDirectTodoV2(sc scanner) (work.DirectTodoV2, error) {
 	if completed.Valid {
 		td.CompletedAt = time.Unix(completed.Int64, 0)
 	}
+	if taken.Valid {
+		td.TakenAt = time.Unix(taken.Int64, 0)
+	}
 	return td, nil
 }
 
-const directTodoV2Columns = `id,session_id,text,created_by,created_at,sent_at,read_at,completed_at,completed_by,version`
+const directTodoV2Columns = `id,session_id,text,created_by,created_at,sent_at,read_at,completed_at,completed_by,version,taken_at`
 
 func (t *WorkV2Tx) CreateDirectTodo(td work.DirectTodoV2) error {
 	return t.CreateDirectTodos([]work.DirectTodoV2{td})
@@ -2104,6 +2118,27 @@ func (t *WorkV2Tx) DirectTodo(id string) (work.DirectTodoV2, error) {
     FROM session_direct_todos WHERE id=?`, id))
 }
 
+// OpenDirectTodos is every to-do this Session has not completed, oldest
+// first, read inside the transaction that is about to take one. The Session's
+// open rows are bounded by its direct to-do capacity.
+func (t *WorkV2Tx) OpenDirectTodos(session string) ([]work.DirectTodoV2, error) {
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+directTodoV2Columns+` FROM session_direct_todos
+    WHERE session_id=? AND completed_at IS NULL ORDER BY created_at,rowid`, session)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []work.DirectTodoV2
+	for rows.Next() {
+		td, err := scanDirectTodoV2(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, td)
+	}
+	return out, rows.Err()
+}
+
 // OpenDirectTodoTexts is the text of every to-do this Session has not
 // completed, read inside the transaction that is about to add or reopen one.
 func (t *WorkV2Tx) OpenDirectTodoTexts(session string) ([]string, error) {
@@ -2126,8 +2161,9 @@ func (t *WorkV2Tx) OpenDirectTodoTexts(session string) ([]string, error) {
 
 func (t *WorkV2Tx) PutDirectTodo(prev, next work.DirectTodoV2) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE session_direct_todos SET text=?,created_by=?,sent_at=?,read_at=?,completed_at=?,
-    completed_by=?,version=version+1 WHERE id=? AND version=?`, next.Text, next.CreatedBy,
-		zeroOrUnix(next.SentAt), zeroOrUnix(next.ReadAt), zeroOrUnix(next.CompletedAt), next.CompletedBy, prev.ID, prev.Version)
+    completed_by=?,taken_at=?,version=version+1 WHERE id=? AND version=?`, next.Text, next.CreatedBy,
+		zeroOrUnix(next.SentAt), zeroOrUnix(next.ReadAt), zeroOrUnix(next.CompletedAt), next.CompletedBy,
+		zeroOrUnix(next.TakenAt), prev.ID, prev.Version)
 	if err != nil {
 		return err
 	}

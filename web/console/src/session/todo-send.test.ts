@@ -2,7 +2,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { DIRECT_TODO_RESEND_AFTER_SECONDS, todoSend } from "./todo-send.ts"
+import { DIRECT_TODO_RESEND_AFTER_SECONDS, todoReceiptState, todoSend } from "./todo-send.ts"
 
 const at = 1_790_000_000
 
@@ -29,4 +29,12 @@ test("the window matches the daemon's", async () => {
   // The constant moved out of work_v2.go in db161b26.
   const app = readFileSync(new URL("../../../../internal/app/work_v2_todos.go", import.meta.url), "utf8")
   assert.equal(DIRECT_TODO_RESEND_AFTER_SECONDS, 120)
+})
+
+test("a row the Session took shows that, ahead of its read mark; other rows keep theirs", () => {
+  assert.equal(todoReceiptState({ sent_at: null, read_at: 5, taken_at: 5 }), "taken")
+  assert.equal(todoReceiptState({ sent_at: null, read_at: 5, taken_at: null }), "read")
+  assert.equal(todoReceiptState({ sent_at: 4, read_at: 5 }), "read")
+  assert.equal(todoReceiptState({ sent_at: 4, read_at: null }), "sent")
+  assert.equal(todoReceiptState({ sent_at: null, read_at: null }), "unsent")
 })

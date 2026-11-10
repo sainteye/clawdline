@@ -344,6 +344,9 @@ type DirectTodoV2 struct {
 	CompletedAt time.Time
 	CompletedBy string
 	Version     int64
+	// TakenAt is when the Session took this unsent to-do of the person's at
+	// its own turn boundary, under the session_todo_auto_take setting.
+	TakenAt time.Time
 }
 
 func (t DirectTodoV2) Open() bool { return t.CompletedAt.IsZero() }
