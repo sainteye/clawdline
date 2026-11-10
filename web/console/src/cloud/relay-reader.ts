@@ -2043,7 +2043,7 @@ export class RelayReader {
         const status = client.statusSnapshots?.get(JSON.stringify([this.machine, target.sessionID])) as
           | { payload?: { snapshot_generation?: unknown; execution_generation?: unknown;
             machine_id?: unknown; session_id?: unknown; state?: unknown; assistant?: unknown; backend?: unknown;
-            parent_session_id?: unknown;
+            parent_session_id?: unknown; last_movement_at?: unknown; last_reply_at?: unknown;
             source?: { freshness?: unknown; observed_at?: unknown } } } | undefined
         const data = status?.payload
         const signedRow = data?.machine_id === this.machine && data.session_id === target.sessionID &&
@@ -2070,6 +2070,7 @@ export class RelayReader {
           backend: (signedRow ? data?.backend : presentation.projection?.backend) ??
             (presentation.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined),
           state: signedRow ? data?.state : presentation.status?.state ?? "unknown",
+          ...(signedRow ? statusActivity(data) : {}),
           source: signedRow ? data?.source : { freshness: presentation.projection?.freshness === "current" ? "current" : "unverified",
             observed_at: (presentation.projection?.observedAt ?? this.now()) / 1000 } })
         held.add(key)
@@ -2083,7 +2084,7 @@ export class RelayReader {
       const status = client.statusSnapshots?.get(JSON.stringify([this.machine, target.sessionID])) as
         | { payload?: { snapshot_generation?: unknown; execution_generation?: unknown;
           machine_id?: unknown; session_id?: unknown; state?: unknown; assistant?: unknown; backend?: unknown;
-          parent_session_id?: unknown;
+          parent_session_id?: unknown; last_movement_at?: unknown; last_reply_at?: unknown;
           source?: { freshness?: unknown; observed_at?: unknown } } } | undefined
       const data = status?.payload
       if (presentation?.title && data?.machine_id === this.machine && data.session_id === target.sessionID &&
@@ -2099,7 +2100,8 @@ export class RelayReader {
           parent_session_id: typeof data.parent_session_id === "string" ? data.parent_session_id : undefined,
           label: presentation.title, cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
           assistant: data.assistant ?? presentation.assistant, backend: data.backend ??
-            (presentation.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined), state: data.state, source: data.source })
+            (presentation.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined), state: data.state, source: data.source,
+          ...statusActivity(data) })
       }
     }
     this.askForOpenedRow(client, machineRows)
@@ -3414,6 +3416,20 @@ function historyCursor(value: string | null | undefined): number {
 }
 
 /** A row with the fields that move on every reading taken out, as one comparable string. */
+/**
+ * The activity a row drawn from its signed ss/ status carries: the status's
+ * `last_movement_at` and `last_reply_at` (machine seconds) as the row's
+ * `activity`, or nothing when the status has no movement time. Without it a
+ * row recovered from the pinned list never moved when an answer landed, so an
+ * open conversation waited for the held transcript's 30-second reuse bound.
+ */
+export function statusActivity(data: { last_movement_at?: unknown; last_reply_at?: unknown } | undefined): { activity?: { known: true; at: number; reply_at?: number } } {
+  const at = Number(data?.last_movement_at)
+  if (!Number.isSafeInteger(at) || at <= 0) return {}
+  const reply = Number(data?.last_reply_at)
+  return { activity: { known: true, at, ...(Number.isSafeInteger(reply) && reply > 0 ? { reply_at: reply } : {}) } }
+}
+
 function keyOf(row: CloudRow): string {
   const copy = structuredClone(row) as Record<string, unknown>
   for (const path of FRESHNESS_ONLY) remove(copy, path)

@@ -36,9 +36,15 @@ type SessionStatus struct {
 		ObservedAt int64  `json:"observed_at"`
 		Freshness  string `json:"freshness"`
 	} `json:"source"`
-	InventoryComplete    bool   `json:"inventory_complete"`
-	ProjectedAt          int64  `json:"projected_at"`
-	LastMovementAt       int64  `json:"last_movement_at,omitempty"`
+	InventoryComplete bool  `json:"inventory_complete"`
+	ProjectedAt       int64 `json:"projected_at"`
+	LastMovementAt    int64 `json:"last_movement_at,omitempty"`
+	// LastReplyAt is the row's activity.reply_at: the newest person message
+	// or assistant answer, a time and nothing of its words. Unlike
+	// LastMovementAt it is not coalesced, so an open conversation on a
+	// status-only page moves when an answer lands while the row still says
+	// working.
+	LastReplyAt          int64  `json:"last_reply_at,omitempty"`
 	NoProgressAfterMS    int64  `json:"no_progress_after_ms"`
 	NoMovement           *bool  `json:"no_movement,omitempty"`
 	WaitingForReply      bool   `json:"waiting_for_reply,omitempty"`
@@ -90,6 +96,9 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	if activity, ok := row["activity"].(map[string]any); ok && activity["known"] == true {
 		if v, ok := activity["at"].(float64); ok && v > 0 {
 			out.LastMovementAt = int64(v)
+		}
+		if v, ok := activity["reply_at"].(float64); ok && v > 0 {
+			out.LastReplyAt = int64(v)
 		}
 	}
 	if out.Source.Freshness == "current" && out.LastMovementAt > 0 && at >= out.LastMovementAt {
@@ -174,14 +183,6 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 // statusRowKey is where the publisher remembers one status row. It is
 // namespaced because the same Session's full s/ row is remembered under the
 // bare terminal id (publishSessions), and the two must not evict each other.
-// replyAt is the row's newest reply time (session.Activity.ReplyAt), or nil.
-func replyAt(row map[string]any) any {
-	if activity, ok := row["activity"].(map[string]any); ok {
-		return activity["reply_at"]
-	}
-	return nil
-}
-
 func statusRowKey(id string) string { return "ss/" + id }
 
 // statusMarkerKey is where the status inventory marker is remembered.
@@ -306,11 +307,6 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 			// ticked from the phone never woke the list and the card kept
 			// it empty. Hashed into the id here, never sent on ss/.
 			"menu": row["menu"],
-			// An answer can land while the row still says working, and an
-			// open conversation re-reads only when its row moves. The reply
-			// time is not volatile, so it wakes the list on its own pass while
-			// the activity clock still waits for the window.
-			"reply_at": replyAt(row),
 		}
 		displays = append(displays, display)
 		steadyDisplays = append(steadyDisplays, volatileFree(display))

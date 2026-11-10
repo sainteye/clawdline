@@ -163,11 +163,12 @@ func TestHalfAnHourOfTenSessionsSendsOnlyTheStatusRowsThatChanged(t *testing.T) 
 	}
 }
 
-// A phone on the status path refetches its pinned list only when the marker's
-// presentation moves. A Codex answer can land while the row still says
-// working, so the reply time is in the presentation's steady half: the clock
-// alone waits for the window, the answer wakes the list on its own pass.
-func TestAReplyWakesThePinnedListAtOnce(t *testing.T) {
+// A status-only page draws an open Session from its ss/ row, and a Codex
+// answer can land while that row still says working. The row's reply time is
+// stated on the pass that read it, while the activity clock alone waits for
+// the window; neither moves the marker's presentation, so an answer costs no
+// pinned list read.
+func TestAReplyIsStatedOnTheStatusRowAtOnce(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(5000, 0)
 	fleet := []statusSession{{id: "%10", working: true, state: "working", verb: "Thinking", activity: 100, reply: 90}}
@@ -175,19 +176,27 @@ func TestAReplyWakesThePinnedListAtOnce(t *testing.T) {
 	out := &collector{}
 	p := drivenPublisher(out, &body, &now)
 	p.firstPass(ctx)
-	marker := "ss/mac-01/" + InventorySessionID
-	step := func(second int, change func(*statusSession)) int {
+	row, marker := "ss/mac-01/%2510", "ss/mac-01/"+InventorySessionID
+	step := func(second int, change func(*statusSession)) (rows, markers int) {
 		out.reset()
 		now = now.Add(5 * time.Second)
 		change(&fleet[0])
 		body = statusScan(second, fleet)
 		p.Pass(ctx)
-		return countPrefix(out.channels(), marker)
+		names := out.channels()
+		return countPrefix(names, row) - countPrefix(names, marker), countPrefix(names, marker)
 	}
-	if n := step(5, func(s *statusSession) { s.activity = 105 }); n != 0 {
-		t.Errorf("a tool row 5 s after the last marker moved the marker: %d", n)
+	if rows, markers := step(5, func(s *statusSession) { s.activity = 105 }); rows+markers != 0 {
+		t.Errorf("a tool row 5 s after the last send went out: rows=%d markers=%d", rows, markers)
 	}
-	if n := step(10, func(s *statusSession) { s.activity = 110; s.reply = 110 }); n != 1 {
-		t.Errorf("the answer 10 s after the last marker did not move it: %d", n)
+	rows, markers := step(10, func(s *statusSession) { s.activity = 110; s.reply = 110 })
+	if rows != 1 {
+		t.Fatalf("the answer 10 s after the last send was held: rows=%d", rows)
+	}
+	if markers != 0 {
+		t.Errorf("the answer moved the marker, which makes every viewer read the pinned list again: %d", markers)
+	}
+	if got := out.payload(t, row)["last_reply_at"]; got != float64(110) {
+		t.Errorf("the status row does not carry the reply: %v", got)
 	}
 }

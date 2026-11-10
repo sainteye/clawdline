@@ -2,6 +2,7 @@ package transcript
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -285,4 +286,47 @@ func TestOnlyAReplyMovesReplyAt(t *testing.T) {
 			}
 		}
 	}
+}
+
+func claudeLine(stamp, body string) string {
+	return `{"type":"assistant","timestamp":"` + stamp + `","message":{"role":"assistant","content":[` + body + `]}}` + "\n"
+}
+
+// A Claude reading parses only what was appended since the last one: a long
+// tool-only stretch keeps the last reply time, a row half written on one pass
+// is read whole on the next, and a record that shrank is read again.
+func TestReplyAtFollowsOnlyWhatWasAppended(t *testing.T) {
+	h, home := claudeHost(t)
+	s := claudeSession("/w", "c7000001-0000-4000-8000-000000000001")
+	path := ClaudePath(home, "/w", s.ConversationID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reply := func(stamp string) string { return claudeLine(stamp, `{"type":"text","text":"done"}`) }
+	tool := func(stamp string) string {
+		return claudeLine(stamp, `{"type":"tool_use","id":"t","name":"Bash","input":{"command":"ls"}}`)
+	}
+	body := reply("2026-11-10T08:00:00.100Z")
+	check := func(name, wantAt, wantReply string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := h.LastActivity(context.Background(), s)
+		if wantAt != "" && got.At.UTC().Format(time.RFC3339) != wantAt || got.ReplyAt.UTC().Format(time.RFC3339) != wantReply {
+			t.Fatalf("%s: at=%v reply=%v, want at=%s reply=%s", name, got.At.UTC(), got.ReplyAt.UTC(), wantAt, wantReply)
+		}
+	}
+	check("the first reply", "2026-11-10T08:00:00Z", "2026-11-10T08:00:00Z")
+	for i := 1; i <= 3; i++ {
+		body += tool(fmt.Sprintf("2026-11-10T08:00:%02d.100Z", i*10))
+		check(fmt.Sprintf("tool row %d", i), fmt.Sprintf("2026-11-10T08:00:%02dZ", i*10), "2026-11-10T08:00:00Z")
+	}
+	half := reply("2026-11-10T08:01:00.100Z")
+	body += half[:len(half)/2]
+	check("a reply half written", "", "2026-11-10T08:00:00Z")
+	body += half[len(half)/2:]
+	check("the reply finished", "2026-11-10T08:01:00Z", "2026-11-10T08:01:00Z")
+	body = tool("2026-11-10T09:00:00.100Z")
+	check("a record that shrank", "2026-11-10T09:00:00Z", "0001-01-01T00:00:00Z")
 }

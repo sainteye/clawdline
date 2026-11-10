@@ -3,6 +3,7 @@ package transcript
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -81,8 +82,11 @@ type movementReading struct {
 	// found.
 	at      time.Time
 	replyAt time.Time
-	read    bool
-	block   session.ProviderBlock
+	// replyEnd is the byte offset just past the last complete row the reply
+	// reading has parsed, so the next reading parses only what follows it.
+	replyEnd int64
+	read     bool
+	block    session.ProviderBlock
 }
 
 // NewMovements is an empty cache at the register row's default limit.
@@ -204,7 +208,7 @@ func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Acti
 	if s.Assistant == session.AssistantCodex {
 		prev.block = codexProviderBlock(data)
 	}
-	prev.replyAt = lastReplyAt(data, s.Assistant)
+	prev.replyAt, prev.replyEnd = h.readReplyAt(path, s.Assistant, prev)
 	prev.size, prev.mod, prev.at, prev.read = st.Size(), st.ModTime(), at, ok
 	h.movements.put(key, prev)
 	if !ok {
@@ -219,6 +223,55 @@ func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Acti
 		}
 	}
 	return session.Activity{At: at, ReplyAt: prev.replyAt, Evidence: session.EvidenceTranscript, ProviderBlock: prev.block}
+}
+
+// readReplyAt answers the record's newest reply time and where the rows it
+// parsed end. A record that only grew since the last reading is parsed from
+// that reading's last complete row, and keeps the last reply time when what
+// was appended holds none: on a long tool-only stretch a Claude reading used to
+// decode the whole 512 KB tail on every pass the record moved. A record that
+// shrank, was replaced, grew past the tail, or was never read is parsed from
+// the tail's start. A row half written last time begins at the old end and is
+// read whole now.
+func (h *Host) readReplyAt(path string, assistant session.Assistant, prev movementReading) (time.Time, int64) {
+	f, err := os.Open(path)
+	if err != nil {
+		return time.Time{}, 0
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return time.Time{}, 0
+	}
+	size := st.Size()
+	from := max(size-activityTail, 0)
+	incremental := prev.read && prev.replyEnd > 0 && prev.replyEnd <= size && size-prev.replyEnd <= activityTail && prev.size <= size
+	if incremental {
+		// The old end must still be a row boundary; a record rewritten in
+		// place is parsed from the tail's start instead.
+		var before [1]byte
+		if _, err := f.ReadAt(before[:], prev.replyEnd-1); err == nil && before[0] == '\n' {
+			from = prev.replyEnd
+		} else {
+			incremental = false
+		}
+	}
+	buf := make([]byte, size-from)
+	n, err := f.ReadAt(buf, from)
+	if err != nil && err != io.EOF {
+		return time.Time{}, 0
+	}
+	buf = buf[:n]
+	end := from + int64(bytes.LastIndexByte(buf, '\n')+1)
+	if incremental && end == from {
+		// Nothing complete was appended: the old answer and end stand.
+		return prev.replyAt, prev.replyEnd
+	}
+	at := lastReplyAt(buf[:end-from], assistant)
+	if at.IsZero() && incremental {
+		at = prev.replyAt
+	}
+	return at, end
 }
 
 // lastReplyAt is the time of the newest entry in the end of a record that a

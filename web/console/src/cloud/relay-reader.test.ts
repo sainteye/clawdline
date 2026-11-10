@@ -10,7 +10,7 @@ import { documentIdentityForSession } from "../legacy/js/net/document-links.js"
 // @ts-expect-error -- Node runs the source test with type stripping.
 import { arrangeSessions } from "../session/order.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { RelayReader, headerReadDiagnostics, ROW_RESTATE_MS, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
+import { RelayReader, headerReadDiagnostics, statusActivity, ROW_RESTATE_MS, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { acceptSnapshot } from "../../../core/src/fleet-accept.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
@@ -2569,4 +2569,44 @@ test("Project dev stacks preserve the machine reply with writes off and reject f
   assert.equal(foreign.status, 409)
   assert.equal((await foreign.json()).error, "cloud_project_machine_mismatch")
   assert.equal(client.reads.length, 0)
+})
+
+test("a row drawn from its signed status moves when an answer lands", () => {
+  // A Codex answer can land while the status still says working; the row's
+  // reply time is what tells the open conversation to read again.
+  assert.deepEqual(statusActivity({ last_movement_at: 110, last_reply_at: 110 }), { activity: { known: true, at: 110, reply_at: 110 } })
+  assert.deepEqual(statusActivity({ last_movement_at: 105 }), { activity: { known: true, at: 105 } })
+  assert.notDeepEqual(statusActivity({ last_movement_at: 110, last_reply_at: 110 }), statusActivity({ last_movement_at: 110, last_reply_at: 90 }))
+  assert.deepEqual(statusActivity({}), {})
+  assert.deepEqual(statusActivity({ last_movement_at: "soon" }), {})
+  assert.deepEqual(statusActivity(undefined), {})
+})
+
+test("an open Session recovered from the pinned list moves when its status says an answer landed", async () => {
+  const client = new FakeClient()
+  const now = 1_000_000
+  const execution = "a".repeat(32)
+  const destination = { machineID: "mac-a", sessionID: "s1", executionGeneration: execution }
+  const projection = { destination, assistant: "codex" as const, state: "working", freshness: "current" as const, observedAt: now }
+  const status = (reply: number) => ({ payload: { machine_id: "mac-a", session_id: "s1",
+    execution_generation: execution, snapshot_generation: execution, state: "working", assistant: "codex",
+    last_movement_at: reply, last_reply_at: reply, source: { freshness: "current", observed_at: now / 1000 } } })
+  const statuses = new Map<string, unknown>([
+    [JSON.stringify(["mac-a", SESSION_INVENTORY_ID]), { payload: { at: now / 1000, complete: true,
+      snapshot_generation: execution, inventory: { version: 1, sessions: ["s1"] } } }],
+    [JSON.stringify(["mac-a", "s1"]), status(990)],
+  ])
+  client.statusSnapshots = statuses
+  const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now, fleetTarget: () => destination,
+    // No rich s/ row is held: the row is the pinned list's, which carries no activity.
+    listPresentations: async () => [{ destination, title: "Fixture Session", assistant: "codex",
+      status: { state: "working" }, projection }],
+  })
+  reader.attach(client)
+  const drawn = async () => (await reader.snapshot()).sessions[0] as { activity?: { at?: number; reply_at?: number }; state?: string }
+  assert.deepEqual((await drawn()).activity, { known: true, at: 990, reply_at: 990 })
+  statuses.set(JSON.stringify(["mac-a", "s1"]), status(1000))
+  const moved = await drawn()
+  assert.equal(moved.state, "working", "the answer lands while the row still says working")
+  assert.equal(moved.activity?.reply_at, 1000)
 })
