@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { appendedReadFrom, FOLLOW_FAST_MS, FOLLOW_LATER_MS, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace, olderTranscriptPage, readOlderRecovering, nativeHistoryChanged, readableTranscriptHistory } from "./transcript-follow.ts"
+import { appendedReadFrom, followingNow, FOLLOW_FAST_MS, FOLLOW_LATER_MS, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace, olderTranscriptPage, readOlderRecovering, nativeHistoryChanged, readableTranscriptHistory } from "./transcript-follow.ts"
 // @ts-expect-error -- a `.ts` path, for node.
 import { SharedTranscripts } from "./transcript-share.ts"
 
@@ -146,4 +146,16 @@ test("a row a whole read already showed is not shown twice when the appended rea
   const held = page(["a", "b"], 100)
   const joined = joinAppended(held, page(["b", "c"], 160))!
   assert.deepEqual(joined.entries.map((e) => e.text), ["a", "b", "c"])
+})
+
+test("a Session still working long after the send is read every 4 s by what was appended, not every 30 s", () => {
+  // A Codex turn often runs past the follow window; its answer used to wait
+  // for the row to move or the 30-second whole read, while reopening showed it.
+  const sent = 1_000_000
+  const late = sent + FOLLOW_WINDOW_MS + 60_000
+  assert.equal(transcriptPace({ following: true, newestSendAt: sent, now: late, rowTimed: true, working: true }), FOLLOW_LATER_MS)
+  assert.equal(transcriptPace({ following: false, newestSendAt: 0, now: late, rowTimed: true, working: true }), FOLLOW_LATER_MS)
+  assert.equal(transcriptPace({ following: false, newestSendAt: 0, now: late, rowTimed: true, working: false }), SAFETY_MS)
+  assert.ok(followingNow({ following: false, newestSendAt: 0, now: late, working: true }), "a working Session's timed reads are appended reads")
+  assert.ok(!followingNow({ following: false, newestSendAt: 0, now: late, working: false }))
 })

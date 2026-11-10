@@ -470,9 +470,12 @@ export const CLOUD_SHELL_BYTES = 64 * 1024
 /**
  * The longest an answer is reused with nothing on its row moving at all. A
  * Swift Mac puts `transcript_signature` on the row and the page re-reads when
- * it changes; the Go daemon does not compute one yet (docs/records/cloud-wire-implementation-2026-09.md
- * §16.6), so a row can stay still while its transcript grows. This is the
- * bound on how stale that can make the page.
+ * it changes; the Go daemon does not compute one (docs/records/cloud-wire-implementation-2026-09.md
+ * §16.6). It puts `activity.reply_at` on the row instead, which moves when a
+ * message or an answer lands and is sent without the activity clock's
+ * coalescing, so an answer moves the row. Tool rows alone can still leave the
+ * row still while the transcript grows; this is the bound on how stale that
+ * can make the page.
  */
 export const TRANSCRIPT_MAX_REUSE_MS = 30_000
 

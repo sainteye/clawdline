@@ -20,6 +20,9 @@
  *   then every `FOLLOW_LATER_MS`, for at most `FOLLOW_WINDOW_MS`
  *   after the newest send, then back to the safety pace; the card's own states
  *   and lifetime are `pending.ts`'s and do not change.
+ * - **Working.** While the row says `working`, every `FOLLOW_LATER_MS`, by
+ *   what was appended: a turn that outlasts the send window still ends in an
+ *   answer somebody is waiting for.
  * - **No row time.** A row with no `activity.at` cannot say when it grew, so
  *   it is read on the old 4-second pace.
  * - **Failure.** A failed read waits `BACKOFF.firstMs`, doubling, up to
@@ -99,13 +102,24 @@ export const BACKOFF = { firstMs: 2_000, maxMs: 30_000 }
 export const MERGED_ROWS_LIMIT = 1_000
 
 /** The pace of the pane's own timer. */
-export function transcriptPace(o: { following: boolean; newestSendAt: number; now: number; rowTimed: boolean }): number {
-  if (followingNow(o)) return o.now - o.newestSendAt < FOLLOW_FAST_MS ? FOLLOW_MS : FOLLOW_LATER_MS
+export function transcriptPace(o: { following: boolean; newestSendAt: number; now: number; rowTimed: boolean; working?: boolean }): number {
+  if (insideSendWindow(o)) return o.now - o.newestSendAt < FOLLOW_FAST_MS ? FOLLOW_MS : FOLLOW_LATER_MS
+  // A turn that outlasts the send window is still one a person is waiting on.
+  // Its answer used to wait for the row to move — a whole machine scan, and on
+  // Cloud the row's coalescing window — or for the 30-second whole read, while
+  // reopening the Session showed it at once. Appended reads of a working
+  // Session are a stat and the new bytes, and on Cloud an unmoved row reuses
+  // the held answer, so this pace costs no envelopes there.
+  if (o.working) return FOLLOW_LATER_MS
   return o.rowTimed ? SAFETY_MS : BLIND_MS
 }
 
-/** Whether the pane is inside the window after its newest send. */
-export function followingNow(o: { following: boolean; newestSendAt: number; now: number }): boolean {
+/** Whether the pane's timed reads are appended reads: inside the window after its newest send, or while the Session works. */
+export function followingNow(o: { following: boolean; newestSendAt: number; now: number; working?: boolean }): boolean {
+  return insideSendWindow(o) || !!o.working
+}
+
+function insideSendWindow(o: { following: boolean; newestSendAt: number; now: number }): boolean {
   return o.following && o.now - o.newestSendAt < FOLLOW_WINDOW_MS
 }
 

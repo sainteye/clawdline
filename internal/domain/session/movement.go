@@ -78,6 +78,12 @@ type Activity struct {
 	ProviderBlock ProviderBlock
 	// At is when the record last grew. Meaningful only when Known.
 	At time.Time
+	// ReplyAt is the newest conversation entry a reader of the transcript is
+	// waiting for: a person's message, an assistant's words, a relayed
+	// message or an error that ended a turn. Tool calls move At but not this,
+	// so a working Session's tool chatter can be coalesced while a reply that
+	// lands is news at once. Zero when the read tail holds no such entry.
+	ReplyAt time.Time
 	// Reason is empty when there is a time, and otherwise which kind of
 	// nothing there is instead.
 	Reason ActivityReason
