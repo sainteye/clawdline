@@ -49,15 +49,24 @@ test("refuses malformed hourly sequences, future hours, forged counts, and incon
 })
 
 test("longer periods chart accounts distinct within each UTC day, and an earlier API keeps the hourly series",()=>{
- const data=demoVisits(7,1,new Date("2026-11-03T10:00:00Z"))
+ const data=demoVisits(7,1,new Date("2026-11-03T10:00:00Z"));delete data.member_days
  for(const d of data.daily)d.member_accounts=0
  data.daily[data.daily.length-1].member_accounts=2
- const points=visitDailyAccounts(parseVisits(data))!
- assert.equal(points.length,7);assert.deepEqual(points.at(-1),{at:"2026-11-03T00:00:00Z",value:2})
+ const utc=visitDailyAccounts(parseVisits(data))!
+ assert.equal(utc.zone,"UTC");assert.equal(utc.points.length,7);assert.deepEqual(utc.points.at(-1),{at:"2026-11-03T00:00:00Z",value:2})
  assert.equal(visitDailyAccounts(parseVisits(demoVisits(1,1,new Date("2026-11-03T23:00:00Z")))),null)
- const older=demoVisits(7);for(const d of older.daily)delete d.member_accounts
+ const older=demoVisits(7);delete older.member_days;for(const d of older.daily)delete d.member_accounts
  assert.equal(visitDailyAccounts(parseVisits(older)),null)
  for(const mutate of [(s:ReturnType<typeof demoVisits>)=>{s.daily[0].member_accounts=s.daily[0].views+1},(s:ReturnType<typeof demoVisits>)=>{s.daily.at(-2)!.member_accounts=s.member_accounts+1},(s:ReturnType<typeof demoVisits>)=>{s.daily[0].member_accounts=-1}]){
   const s=demoVisits(7,1,new Date("2026-11-03T10:00:00Z"));mutate(s);assert.throws(()=>parseVisits(s),/invalid_analytics_report/)
+ }
+})
+
+test("longer periods prefer Taipei calendar days, so two accounts on one Taipei day show as two",()=>{
+ const data=demoVisits(7,1,new Date("2026-11-03T10:00:00Z"))
+ data.member_days={timezone:"Asia/Taipei",rows:[{day:"2026-11-02",member_accounts:1},{day:"2026-11-03",member_accounts:2}]}
+ assert.deepEqual(visitDailyAccounts(parseVisits(data)),{zone:"Asia/Taipei",points:[{at:"2026-11-02T00:00:00+08:00",value:1},{at:"2026-11-03T00:00:00+08:00",value:2}]})
+ for(const mutate of [(m:NonNullable<ReturnType<typeof demoVisits>["member_days"]>)=>{(m as {timezone:string}).timezone="UTC"},(m:NonNullable<ReturnType<typeof demoVisits>["member_days"]>)=>{m.rows[1].day="2026-11-05"},(m:NonNullable<ReturnType<typeof demoVisits>["member_days"]>)=>{m.rows[1].member_accounts=data.member_accounts+1}]){
+  const s=demoVisits(7,1,new Date("2026-11-03T10:00:00Z"));s.member_days={timezone:"Asia/Taipei",rows:[{day:"2026-11-02",member_accounts:1},{day:"2026-11-03",member_accounts:2}]};mutate(s.member_days);assert.throws(()=>parseVisits(s),/invalid_analytics_report/)
  }
 })

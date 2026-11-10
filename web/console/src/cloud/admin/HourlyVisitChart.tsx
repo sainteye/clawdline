@@ -1,14 +1,14 @@
 import { useId, useState } from "react"
-import type { VisitPoint } from "./visits.js"
+import type { VisitPoint, VisitZone } from "./visits.js"
 import type { Say } from "./words.js"
 
-/** One UTC line per metric. `unit` says whether each point is an hour or a whole day. */
-export function HourlyVisitChart({ title, points, unit, duration = false, summary, say, locale }: { title: string; points: VisitPoint[]; unit: "hour" | "day"; duration?: boolean; summary?: string; say: Say; locale: string }) {
+/** One line per metric. `unit` says whether each point is an hour or a whole day; `zone` is the calendar its days and hours follow. */
+export function HourlyVisitChart({ title, points, unit, zone = "UTC", duration = false, summary, say, locale }: { title: string; points: VisitPoint[]; unit: "hour" | "day"; zone?: VisitZone; duration?: boolean; summary?: string; say: Say; locale: string }) {
   const id=useId(), [selected,setSelected]=useState<number|null>(null)
   const number=new Intl.NumberFormat(locale,{maximumFractionDigits:1})
   const value=(v:number|null)=>v===null?"—":duration?say("visitsSeconds",{n:number.format(v)}):number.format(v)
-  const dateTime=new Intl.DateTimeFormat(locale,unit==="day"?{timeZone:"UTC",month:"2-digit",day:"2-digit"}:{timeZone:"UTC",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"})
-  const time=(at:string)=>dateTime.format(new Date(at))
+  const dateTime=new Intl.DateTimeFormat(locale,unit==="day"?{timeZone:zone,month:"2-digit",day:"2-digit"}:{timeZone:zone,month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"})
+  const time=(at:string)=>dateTime.format(new Date(at)), suffix=zone==="UTC"?"UTC":say("visitsTaipeiTime")
   const max=Math.max(1,...points.flatMap(p=>p.value===null?[]:[p.value]))
   const W=600, H=150, left=6, right=W-6, top=18, bottom=H-8
   const x=(i:number)=>points.length===1?W/2:left+i*(right-left)/(points.length-1)
@@ -21,10 +21,10 @@ export function HourlyVisitChart({ title, points, unit, duration = false, summar
   }
   const index=points.length?Math.min(selected??points.length-1,points.length-1):0, active=points[index]
   return <figure className="adm-panel adm-chart" aria-labelledby={id}>
-    <figcaption className="adm-chart-head"><span id={id} className="adm-chart-title">{title}</span><span className="adm-chart-range">{say(unit==="day"?"visitsDaily":"visitsHourly")}</span></figcaption>
+    <figcaption className="adm-chart-head"><span id={id} className="adm-chart-title">{title}</span><span className="adm-chart-range">{unit==="day"?zone==="UTC"?say("visitsDaily"):say("visitsDailyTaipei"):say("visitsHourly")}</span></figcaption>
     {summary?<p className="adm-chart-summary">{summary}</p>:null}
     {!points.length?<p className="adm-fine">{say("visitsHourlyEmpty")}</p>:<>
-      <div className="adm-chart-legend"><span>{time(active.at)} UTC · {value(active.value)}</span></div>
+      <div className="adm-chart-legend"><span>{time(active.at)} {suffix} · {value(active.value)}</span></div>
       <div className="adm-chart-body">
         <span className="adm-chart-max" aria-hidden="true">{value(max)}</span>
         <svg className="adm-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`${title} · ${say(unit==="day"?"visitsDailyHelp":"visitsHourlyHelp")}`} tabIndex={0}
@@ -40,8 +40,8 @@ export function HourlyVisitChart({ title, points, unit, duration = false, summar
       </div>
       <div className="adm-chart-scale" aria-hidden="true"><span>{time(points[0].at)}</span><span>{time(points[points.length-1].at)}</span></div>
       <details className="adm-details"><summary>{say("chartTable")}</summary><div className="adm-table-wrap"><table className="adm-table adm-table-days">
-        <thead><tr><th scope="col">{say(unit==="day"?"visitsDay":"visitsHour")}</th><th scope="col" className="num">{title}</th></tr></thead>
-        <tbody>{[...points].reverse().map(p=><tr key={p.at}><td>{time(p.at)} UTC</td><td className="num">{value(p.value)}</td></tr>)}</tbody>
+        <thead><tr><th scope="col">{unit==="day"?zone==="UTC"?say("visitsDay"):say("visitsDayTaipei"):say("visitsHour")}</th><th scope="col" className="num">{title}</th></tr></thead>
+        <tbody>{[...points].reverse().map(p=><tr key={p.at}><td>{time(p.at)} {suffix}</td><td className="num">{value(p.value)}</td></tr>)}</tbody>
       </table></div></details>
     </>}
   </figure>

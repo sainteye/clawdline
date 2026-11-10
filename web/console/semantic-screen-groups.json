@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10961,
+  "englishContentKeys": 10964,
   "riskKeys": 4831,
-  "nonRiskCount": 6130,
+  "nonRiskCount": 6133,
   "groups": [
     {
       "name": "acp / other",
@@ -26,7 +26,7 @@
     },
     {
       "name": "admin / other",
-      "count": 266,
+      "count": 269,
       "sources": [
         "src/cloud/admin/words.ts"
       ],
@@ -263,7 +263,9 @@
         "admin.visitsCrawler",
         "admin.visitsDaily",
         "admin.visitsDailyHelp",
+        "admin.visitsDailyTaipei",
         "admin.visitsDay",
+        "admin.visitsDayTaipei",
         "admin.visitsDays",
         "admin.visitsDesktop",
         "admin.visitsDevices",
@@ -289,6 +291,7 @@
         "admin.visitsSeconds",
         "admin.visitsSources",
         "admin.visitsTablet",
+        "admin.visitsTaipeiTime",
         "admin.visitsTime",
         "admin.visitsTitle",
         "admin.visitsToday",

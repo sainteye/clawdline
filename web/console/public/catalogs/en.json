@@ -349,7 +349,7 @@
   "admin.visitsHourly": "Hourly · UTC",
   "admin.visitsHourlyEmpty": "No hourly measurements yet.",
   "admin.visitsHourlyHelp": "Use the left and right arrow keys to inspect each hour.",
-  "admin.visitsHourlyNote": "The first and current hours may be incomplete. For today, accounts are distinct within each hour; for longer periods, within each day. Average active time uses that hour’s page views. Hours without page views have no average.",
+  "admin.visitsHourlyNote": "The first and current hours may be incomplete. For today, accounts are distinct within each UTC hour; for longer periods, within each Taipei calendar day, whose first and last days may be partial. Average active time uses that hour’s page views. Hours without page views have no average.",
   "admin.visitsHourlyUnavailable": "Hourly measurements are not available from the Cloud API yet.",
   "admin.visitsIntro": "Public website and documentation · UTC, including today. Page views are not unique visitors.",
   "admin.visitsLoading": "Loading website visits…",
@@ -10961,5 +10961,8 @@
   "admin.visitsDaily": "Daily · UTC",
   "admin.visitsDay": "Day (UTC)",
   "admin.visitsDailyHelp": "Use the left and right arrow keys to inspect each day.",
-  "admin.visitsPeriodAccounts": "Distinct accounts in this period: {n}"
+  "admin.visitsPeriodAccounts": "Distinct accounts in this period: {n}",
+  "admin.visitsDailyTaipei": "Daily · Taipei time",
+  "admin.visitsDayTaipei": "Day (Taipei time)",
+  "admin.visitsTaipeiTime": "Taipei time"
 }
