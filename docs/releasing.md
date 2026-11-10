@@ -348,6 +348,7 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.17.0 publication and taking to-dos at the turn boundary](records/release-v2.17.0-acceptance.md).
 - [v2.16.0 publication, Grok coding Sessions and the concurrent manifest fetch](records/release-v2.16.0-acceptance.md).
 - [v2.15.1 publication after GitHub download failures and the Gemini CLI help fix](records/release-v2.15.1-acceptance.md).
 - [v2.15.0 publication, several Skills per role and live Skill-use screens](records/release-v2.15.0-acceptance.md).
