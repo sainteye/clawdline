@@ -9067,6 +9067,7 @@ type UsageOverview struct {
 	Project        string                       `json:"project"`
 	ProjectOptions []UsageOverviewProjectOption `json:"project_options"`
 	Projects       []UsageOverviewProject       `json:"projects"`
+	QuotaWeights   []UsageOverviewQuotaWeight   `json:"quota_weights,omitempty"`
 	Since          int64                        `json:"since"`
 	Timezone       string                       `json:"timezone"`
 	Totals         UsageOverviewTotals          `json:"totals"`
@@ -9074,8 +9075,9 @@ type UsageOverview struct {
 }
 
 type UsageOverviewAgent struct {
-	ID     string   `json:"id"`
-	Tokens *float64 `json:"tokens"`
+	ID       string   `json:"id"`
+	Tokens   *float64 `json:"tokens"`
+	Weighted *float64 `json:"weighted"`
 }
 
 type UsageOverviewCoverage struct {
@@ -9104,6 +9106,7 @@ type UsageOverviewDay struct {
 	Dispatches            int64                      `json:"dispatches"`
 	DurationMedianSeconds *float64                   `json:"duration_median_seconds"`
 	DurationSamples       int64                      `json:"duration_samples"`
+	InProgress            bool                       `json:"in_progress,omitempty"`
 	Tokens                *float64                   `json:"tokens"`
 }
 
@@ -9115,14 +9118,29 @@ type UsageOverviewParts struct {
 }
 
 type UsageOverviewProject struct {
-	ID     string  `json:"id"`
-	Name   string  `json:"name"`
-	Tokens float64 `json:"tokens"`
+	Agents []UsageOverviewProjectAgent `json:"agents,omitempty"`
+	ID     string                      `json:"id"`
+	Name   string                      `json:"name"`
+	Tokens float64                     `json:"tokens"`
+}
+
+type UsageOverviewProjectAgent struct {
+	ID       string  `json:"id"`
+	Tokens   float64 `json:"tokens"`
+	Weighted float64 `json:"weighted"`
 }
 
 type UsageOverviewProjectOption struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type UsageOverviewQuotaWeight struct {
+	CacheRead  float64 `json:"cache_read"`
+	CacheWrite float64 `json:"cache_write"`
+	ID         string  `json:"id"`
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
 }
 
 type UsageOverviewTotals struct {

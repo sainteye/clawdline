@@ -58,7 +58,7 @@ func TestOverviewConservesProjectsPartsAndCompletionTaskCohorts(t *testing.T) {
 	if len(got.Daily) != 7 || len(got.PreviousDaily) != 7 || got.Daily[0].Tokens != nil || got.Daily[0].Coverage != "missing" {
 		t.Fatalf("days %+v", got.Daily)
 	}
-	if got.Totals.Dispatches != 1 || got.Totals.DurationSamples != 1 || got.Totals.DurationMedianSeconds == nil || *got.Totals.DurationMedianSeconds != 86400 || got.Daily[5].Dispatches != 1 || got.Daily[5].DurationSamples != 0 || got.Daily[6].DurationSamples != 1 {
+	if got.Totals.Dispatches != 1 || got.Totals.DurationSamples != 1 || got.Totals.DurationMedianSeconds == nil || *got.Totals.DurationMedianSeconds != 86400 || got.Daily[4].Dispatches != 1 || got.Daily[4].DurationSamples != 0 || got.Daily[5].DurationSamples != 1 || got.Daily[5].InProgress || !got.Daily[6].InProgress {
 		t.Fatalf("cohorts %+v %+v", got.Totals, got.Daily)
 	}
 	if got.Coverage.State != "partial" || got.Coverage.SessionsRead != 3 || got.Coverage.SessionsTotal != 4 {
@@ -101,7 +101,7 @@ func TestOverviewCompleteCalendarWindowsRespectDST(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Until-got.Since != 7*86400-3600 || got.Daily[0].Date != "2026-03-03" || got.Daily[6].Date != "2026-03-09" || got.Totals.Tokens != nil || got.Coverage.State != "missing" {
+	if got.Until-got.Since != 7*86400-3600 || got.Daily[0].Date != "2026-03-04" || got.Daily[6].Date != "2026-03-10" || got.Totals.Tokens != nil || got.Coverage.State != "missing" {
 		t.Fatalf("DST %+v", got)
 	}
 	long, err := h.u.Overview(context.Background(), 28, "")
@@ -189,7 +189,7 @@ func TestOverviewIncludesWorkCreatedBeforeTheWindowAndCompletedInsideIt(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Totals.Dispatches != 0 || got.Totals.DurationSamples != 1 || got.Daily[6].DurationSamples != 1 || got.Totals.DurationMedianSeconds == nil || *got.Totals.DurationMedianSeconds != 3600 {
+	if got.Totals.Dispatches != 0 || got.Totals.DurationSamples != 1 || got.Daily[5].DurationSamples != 1 || got.Totals.DurationMedianSeconds == nil || *got.Totals.DurationMedianSeconds != 3600 {
 		t.Fatalf("completion cohort: %+v", got)
 	}
 }
@@ -212,8 +212,8 @@ func TestOverviewCountsAgentDispatchesWithoutBackgroundCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Totals.Dispatches != 1 || got.Totals.DurationSamples != 1 || got.Daily[6].Dispatches != 1 || got.Daily[6].DurationSamples != 1 {
-		t.Fatalf("background callbacks are not agent dispatches: totals=%+v day=%+v", got.Totals, got.Daily[6])
+	if got.Totals.Dispatches != 1 || got.Totals.DurationSamples != 1 || got.Daily[5].Dispatches != 1 || got.Daily[5].DurationSamples != 1 {
+		t.Fatalf("background callbacks are not agent dispatches: totals=%+v day=%+v", got.Totals, got.Daily[5])
 	}
 }
 
@@ -266,7 +266,7 @@ func TestOverviewReturnsHistoricalWorktreeUsageToItsSourceProject(t *testing.T) 
 	if err != nil || unknown.Totals.Tokens == nil || *unknown.Totals.Tokens != 20 || *unknown.PreviousTotals.Tokens != 10 {
 		t.Fatalf("unattributed: %+v, %v", unknown, err)
 	}
-	if *source.Totals.Tokens+*unknown.Totals.Tokens != *all.Totals.Tokens || *source.Daily[6].Tokens != 60 {
+	if *source.Totals.Tokens+*unknown.Totals.Tokens != *all.Totals.Tokens || *source.Daily[5].Tokens != 60 {
 		t.Fatal("project filtering changed the included tokens")
 	}
 }
@@ -388,5 +388,71 @@ func TestUsagePassDiscoversNativeGeminiAndReplacesSnapshots(t *testing.T) {
 	got, err := h.u.Overview(context.Background(), 7, "")
 	if err != nil || got.Totals.Tokens == nil || *got.Totals.Tokens != 20 {
 		t.Fatalf("appended snapshot %+v %v", got, err)
+	}
+}
+
+// A Session that runs past midnight is still the one the person asks about:
+// today's tokens are counted, each project is split by assistant, and the
+// allowance estimate weights the parts of each assistant separately.
+func TestOverviewCountsTodayAndSplitsProjectsByAgentWithQuotaWeights(t *testing.T) {
+	old := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = old })
+	h := newUsageHarness(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 10, 14, 0, 0, 0, time.UTC)
+	h.u.Now = func() time.Time { return now }
+	for _, r := range []store.UsageRow{
+		{Assistant: "codex", Conversation: "night", TaskID: "a", ReadAt: now, State: json.RawMessage(`{"daily_version":1,"daily":{"2026-11-09":{"input":100,"cache_read":1000,"output":10},"2026-11-10":{"input":200,"cache_read":2000,"output":20}}}`)},
+		{Assistant: "claude", Conversation: "day", TaskID: "a", ReadAt: now, State: json.RawMessage(`{"daily_version":1,"daily":{"2026-11-10":{"input":10,"cache_read":100,"cache_write_5m":8,"output":4}}}`)},
+		{Assistant: "codex", Conversation: "other", TaskID: "b", ReadAt: now, State: json.RawMessage(`{"daily_version":1,"daily":{"2026-11-10":{"input":50}}}`)},
+	} {
+		if err := h.store.SaveUsageRow(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"a", "b"} {
+		if err := h.store.SaveBrokerTask(ctx, store.BrokerRow{ID: id, Project: "p-" + id, Assistant: "claude", CreatedAt: now, UpdatedAt: now, Record: json.RawMessage(`{}`)}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := h.u.Overview(ctx, 7, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := got.Daily[len(got.Daily)-1]
+	if last.Date != "2026-11-10" || !last.InProgress || last.Tokens == nil || *last.Tokens != 2220+122+50 {
+		t.Fatalf("today %+v", last)
+	}
+	if got.Daily[0].Date != "2026-11-04" || got.Daily[0].InProgress {
+		t.Fatalf("window start %+v", got.Daily[0])
+	}
+	byID := map[string]map[string][2]float64{}
+	for _, p := range got.Projects {
+		sum := 0.0
+		byID[p.ID] = map[string][2]float64{}
+		for _, a := range p.Agents {
+			sum += a.Tokens
+			byID[p.ID][a.ID] = [2]float64{a.Tokens, a.Weighted}
+		}
+		if sum != p.Tokens {
+			t.Fatalf("project %s agents %v != %v", p.ID, sum, p.Tokens)
+		}
+	}
+	a := byID[overviewProject("p-a").ID]
+	// Codex: input 1, cache read 0.1, output 8; Claude: cache write 1.25, output 5.
+	if a["codex"] != [2]float64{3330, 300 + 300 + 240} || a["claude"] != [2]float64{122, 10 + 10 + 10 + 20} {
+		t.Fatalf("project a %+v", a)
+	}
+	for _, agent := range got.Agents {
+		if agent.ID == "codex" && (agent.Weighted == nil || *agent.Weighted != 840+50) {
+			t.Fatalf("codex weighted %+v", agent)
+		}
+		if agent.ID == "grok" && agent.Weighted != nil {
+			t.Fatalf("an agent without rows has no measured weight %+v", agent)
+		}
+	}
+	if len(got.QuotaWeights) != len(got.Agents) {
+		t.Fatalf("weights %+v", got.QuotaWeights)
 	}
 }

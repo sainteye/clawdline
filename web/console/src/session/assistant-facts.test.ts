@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- Node's strip-types runner needs the source extension.
-import { AssistantFactsRequest, type AssistantFactsReading } from "./assistant-facts.ts"
+import { AssistantFactsRequest, knowQueue, type AssistantFactsReading } from "./assistant-facts.ts"
 
 const at = 2000
 const ready = { at, assistants: [{ id: "antigravity", installed: true, integrationState: "active", authState: "ready",
@@ -60,4 +60,19 @@ test("an unanswered transport that ignores cancellation reaches an error instead
   t.mock.timers.tick(15_000)
   await pending
   assert.equal(readings.at(-1)?.kind, "error")
+})
+
+test("a machine's queue capability outlives its reading's freshness but not its machine or execution", () => {
+  const queues = (on: boolean): AssistantFactsReading => ({ kind: "ready", assistants: [{ id: "grok", capabilities: { queue: on } } as never] })
+  let known = knowQueue(null, "alpha:a", { kind: "loading", assistants: [] }, "grok")
+  assert.equal(known.queues, false, "nothing read yet keeps the browser queue")
+  known = knowQueue(known, "alpha:a", queues(true), "grok")
+  assert.equal(known.queues, true)
+  known = knowQueue(known, "alpha:a", { kind: "stale", assistants: [] }, "grok")
+  assert.equal(known.queues, true, "an expired reading does not send the next message back into the browser")
+  known = knowQueue(known, "alpha:a", { kind: "loading", assistants: [] }, "grok")
+  assert.equal(known.queues, true, "a re-read in flight keeps what was known")
+  assert.equal(knowQueue(known, "beta:a", { kind: "loading", assistants: [] }, "grok").queues, false, "another machine starts unknown")
+  assert.equal(knowQueue(known, "alpha:a", queues(false), "grok").queues, false, "a ready reading without the capability withdraws it")
+  assert.equal(knowQueue(null, "alpha:a", queues(true), "antigravity").queues, false, "another assistant's facts do not count")
 })

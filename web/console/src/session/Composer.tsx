@@ -4,7 +4,7 @@ import type { AssistantFactsReading } from "./assistant-facts.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
 import type { AssistantSkill, SessionRow } from "@clawdline/contract"
-import { antigravitySlashDraft, assistantComposeAdmits, assistantQueuesInput, assistantProtocolOwned, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
 import { currentCatalogTag, catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
@@ -101,11 +101,14 @@ export function Composer({
   toolIdentity = "",
   remote,
   assistantFacts,
+  assistantQueues = false,
   assistantReadiness,
 }: {
   /** Fresh readiness for the selected machine's provider, supplied by the Session host. */
   assistantFacts?: AssistantFacts
   assistantReadiness?: AssistantFactsReading["kind"]
+  /** The machine takes a message sent during an owned turn (`capabilities.queue`), as last read. */
+  assistantQueues?: boolean
   row: SessionRow | null
   onDid: () => void
   /** After a delivered send; nothing when left out (`Detail`'s `onSent`). */
@@ -642,7 +645,7 @@ export function Composer({
     // A machine that queues a running conversation's input itself takes the
     // message now, as Claude Code and Codex do; an older one leaves it in
     // this browser until the turn ends.
-    if (protocolOwned && row && !assistantQueuesInput(assistantFacts) &&
+    if (protocolOwned && row && !assistantQueues &&
       ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {
       if (!nextMessages.add(row.id, said, pictures, Date.now(),typeof row.sessionId==="string"?row.sessionId:undefined)) {

@@ -512,7 +512,11 @@ frozen under another version.
 
 The Usage overview page reads `/v1/usage/overview` locally and `usage.overview`
 through Cloud for the explicitly selected machine. It shows the last 7 or 28
-complete local calendar days and the preceding equal period. Today is excluded.
+local calendar days ending with today, and the preceding equal period. Today is
+marked `in_progress`. It was once excluded, and a Codex Session that ran past
+midnight then showed only its first evening: 472M of its 1,483M tokens on
+2026-11-09/10. Because today is partial, comparisons stay suppressed unless both
+periods are complete.
 Dispatch counts exclude background command callbacks and follow agent-task creation dates; successful-task elapsed medians follow
 completion dates and measure spawned-to-finished time, with sample counts.
 
@@ -536,6 +540,16 @@ period is incomplete. Project bars and token composition conserve the included
 primitive readings. Project identities are opaque hashes of canonical repository
 paths; unattributed readings remain visible. API list prices are not shown as
 subscription spending.
+
+Each project row carries its readings by agent. The quota-weight measure
+multiplies each primitive part by its agent's published API price ratio relative
+to uncached input. The ratios live in `internal/app/usage_quota_weights.go` and
+are returned as `quota_weights`. For Codex, cache reads weigh 0.1 and output
+weighs 8. The page then shows each project's share of one agent's weighted
+total. Shares from different agents are never added, because each agent has its
+own allowance. Neither vendor publishes how plan limits are charged, so this is
+an estimate. It is not the account's weekly percentage, which covers every
+machine and resets on the vendor's schedule.
 
 Dispatched work belongs to its source repository, including its native
 subagents. Overview attribution joins the recorded task id, the broker's child

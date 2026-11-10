@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10948,
+  "englishKeys": 10958,
   "counts": {
-    "negation": 3050,
-    "state": 1806,
+    "negation": 3052,
+    "state": 1807,
     "permission": 639,
     "deletion": 247,
     "uncertainty": 421
   },
-  "unionCount": 4826,
+  "unionCount": 4828,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2519,6 +2519,7 @@
       "next.sendEnterUnknown",
       "next.sendInterrupted",
       "next.sendKeptWords",
+      "next.sendQueuedHeld",
       "next.sendUnknown",
       "next.sendUnsubmitted",
       "next.sessionCountNotStarted",
@@ -2684,6 +2685,7 @@
       "next.usageEmpty",
       "next.usageFailed",
       "next.usageMissing",
+      "next.usageQuotaCaption",
       "next.voiceInstallPromptLater",
       "next.voiceInstallPromptNoBinary",
       "next.voiceInstallPromptNoModel",
@@ -4512,6 +4514,7 @@
       "next.sendInterrupted",
       "next.sendKeptWords",
       "next.sendQueueFull",
+      "next.sendQueuedHeld",
       "next.sendQueuedHere",
       "next.sessionNotStartedShort",
       "next.sessionStateFilterAttentionHint",
@@ -10067,6 +10070,7 @@
     "next.sendInterrupted",
     "next.sendKeptWords",
     "next.sendQueueFull",
+    "next.sendQueuedHeld",
     "next.sendQueuedHere",
     "next.sendUnknown",
     "next.sendUnsubmitted",
@@ -10362,6 +10366,7 @@
     "next.usageFailed",
     "next.usageMissing",
     "next.usageNoValue",
+    "next.usageQuotaCaption",
     "next.voiceDiscard",
     "next.voiceIncomplete",
     "next.voiceInstallPromptDone",

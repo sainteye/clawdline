@@ -10974,6 +10974,7 @@ export interface UsageOverview {
   project: string
   project_options: UsageOverviewProjectOption[]
   projects: UsageOverviewProject[]
+  quota_weights?: UsageOverviewQuotaWeight[]
   since: number
   timezone: string
   totals: UsageOverviewTotals
@@ -10983,6 +10984,7 @@ export interface UsageOverview {
 export interface UsageOverviewAgent {
   id: string
   tokens: number | null
+  weighted: number | null
 }
 
 export interface UsageOverviewCoverage {
@@ -11007,6 +11009,7 @@ export interface UsageOverviewDay {
   dispatches: number
   duration_median_seconds: number | null
   duration_samples: number
+  in_progress?: boolean
   tokens: number | null
 }
 
@@ -11018,14 +11021,29 @@ export interface UsageOverviewParts {
 }
 
 export interface UsageOverviewProject {
+  agents?: UsageOverviewProjectAgent[]
   id: string
   name: string
   tokens: number
 }
 
+export interface UsageOverviewProjectAgent {
+  id: string
+  tokens: number
+  weighted: number
+}
+
 export interface UsageOverviewProjectOption {
   id: string
   name: string
+}
+
+export interface UsageOverviewQuotaWeight {
+  cache_read: number
+  cache_write: number
+  id: string
+  input: number
+  output: number
 }
 
 export interface UsageOverviewTotals {

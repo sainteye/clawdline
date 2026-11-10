@@ -57,6 +57,14 @@
 .usage-project-row > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .usage-track { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
 .usage-track > div { height: 100%; background: var(--accent); border-radius: 4px; }
+.usage-track > .usage-track-fill { display: flex; background: transparent; overflow: hidden; }
+.usage-track-fill > span { height: 100%; flex: none; background: var(--accent); }
+.usage-track-fill > span:only-child { width: 100%; }
+.usage-projects-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.usage-projects-head h2 { margin: 0; }
+.usage-quota-agents { margin-top: 14px; flex-wrap: wrap; }
+.usage-quota-agents button { display: inline-flex; align-items: center; gap: 6px; }
+.usage-quota-agents i { width: 8px; height: 8px; border-radius: 2px; }
 .usage-composition { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 26px 0; }
 .usage-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; font-size: 12px; margin: 0; }
 .usage-parts > div { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -124,11 +132,11 @@
 
 .usage-agents { margin-top: 24px; padding-block: 24px; border-block: 1px solid var(--line); }
 .usage-agent-composition { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 20px 0; }
-.usage-agents [data-agent] { background: var(--dim); }
-.usage-agents [data-agent="claude"] { background: var(--accent); }
-.usage-agents [data-agent="codex"] { background: #729b99; }
-.usage-agents [data-agent="gemini"] { background: #a1a4cc; }
-.usage-agents [data-agent="grok"] { background: #b19b73; }
+.usage-agents [data-agent], .usage-page .usage-projects [data-agent], .usage-quota-agents [data-agent] { background: var(--dim); }
+.usage-agents [data-agent="claude"], .usage-page .usage-projects [data-agent="claude"], .usage-quota-agents [data-agent="claude"] { background: var(--accent); }
+.usage-agents [data-agent="codex"], .usage-page .usage-projects [data-agent="codex"], .usage-quota-agents [data-agent="codex"] { background: #729b99; }
+.usage-agents [data-agent="gemini"], .usage-page .usage-projects [data-agent="gemini"], .usage-quota-agents [data-agent="gemini"] { background: #a1a4cc; }
+.usage-agents [data-agent="grok"], .usage-page .usage-projects [data-agent="grok"], .usage-quota-agents [data-agent="grok"] { background: #b19b73; }
 .usage-agent-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; margin: 20px 0 0; font-size: 12px; }
 .usage-agent-list > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-width: 0; }
 .usage-agent-list dt { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; min-width: 0; }

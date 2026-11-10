@@ -75,3 +75,19 @@ export function dateRange(first: string | undefined, last: string | undefined, l
   if (first === last) return format.format(utcDate(first))
   return `${format.format(utcDate(first))} – ${format.format(utcDate(last))}`
 }
+
+/** Agents with measured quota-weighted usage, largest first; empty on a machine without weights. */
+export function quotaAgents(data: UsageOverview): { id: string; weighted: number }[] {
+  return (data.agents ?? []).flatMap(agent => agent.weighted !== null && agent.weighted !== undefined && agent.weighted > 0 ? [{ id: agent.id, weighted: agent.weighted }] : [])
+    .sort((a, b) => b.weighted - a.weighted || a.id.localeCompare(b.id))
+}
+
+/** Each project's share of one agent's weighted usage. Shares of different agents never mix. */
+export function quotaRows(data: UsageOverview, agent: string): { id: string; name: string; share: number }[] {
+  const total = quotaAgents(data).find(row => row.id === agent)?.weighted ?? 0
+  if (total <= 0) return []
+  return data.projects.flatMap(project => {
+    const weighted = project.agents?.find(row => row.id === agent)?.weighted ?? 0
+    return weighted > 0 ? [{ id: project.id, name: project.name, share: weighted / total }] : []
+  }).sort((a, b) => b.share - a.share || a.id.localeCompare(b.id))
+}

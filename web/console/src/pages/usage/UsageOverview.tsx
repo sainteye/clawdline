@@ -9,7 +9,7 @@ import { currentCatalogTag } from "../../catalog.js"
 import { onMachineChanged } from "../../cloud/machine-switch.js"
 import { scheduleFleet } from "../../cloud/schedule-machines.js"
 import { readUsageOverview, UsageReadError, type UsageOverview } from "./api.js"
-import { compactValue, dateRange, comparisonComplete, dailyValue, lineSegments, percentageChange, sampleLabel, selectedDay, shortDate, UsageRequestScope, type UsageMetric } from "./model.js"
+import { compactValue, dateRange, comparisonComplete, dailyValue, lineSegments, percentageChange, quotaAgents, quotaRows, sampleLabel, selectedDay, shortDate, UsageRequestScope, type UsageMetric } from "./model.js"
 import { usageWord as w } from "./words.js"
 import "./usage.css"
 
@@ -100,20 +100,7 @@ export default function UsageOverviewPage({ shown }: { shown: boolean }) {
           <DailyChart key={metric} data={data} metric={metric} label={w(metric === "tokens" ? "usageTokens" : "usageTasks")} />
           <AgentDistribution data={data} />
           <div className="usage-columns">
-            <section><h2>{w("usageProjects")}</h2><div className="usage-projects">
-              {data.projects.length === 0 && <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p>}
-              {data.projects.map(row => {
-                const icon = pickerOptions.find(option => option.id === row.id)?.icon
-                return <div key={row.id} className="usage-project-row">
-                  <span className="usage-project-mark" aria-hidden="true">{icon
-                    ? <Mark icon={icon as SessionRow["icon"]} cellPx={3} />
-                    : <span className="project-picker-placeholder">▦</span>}</span>
-                  <span className="usage-project-name">{row.id === "unattributed" ? w("usageUnattributed") : row.name}</span>
-                  <div className="usage-track" aria-hidden="true"><div style={{ width: `${row.tokens / Math.max(1, ...data.projects.map(p => p.tokens)) * 100}%` }} /></div>
-                  <span>{compactValue(row.tokens)}</span>
-                </div>
-              })}
-            </div></section>
+            <ProjectUsage data={data} options={pickerOptions} />
             <Composition data={data} />
           </div>
           <section className="usage-duration"><div className="usage-chart-head"><div><h2>{w("usageDuration")}</h2><p>{w("usageDurationCaption", { count: data.totals.duration_samples })}</p><p>{w("usageDurationDefinition")}</p></div>
@@ -150,6 +137,63 @@ function AgentDistribution({ data }: { data: UsageOverview }) {
         <dd>{row.tokens === null ? <span>{w("usageAgentMissing")}</span> : <><strong>{compactValue(row.tokens)} <small>Token</small></strong><span>{total > 0 ? percent(row.tokens) : "—"}</span></>}</dd>
       </div>)}</dl>
     </>}
+  </section>
+}
+
+const agentLabels: Record<string, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini", grok: "Grok" }
+function agentLabel(id: string) { return agentLabels[id] ?? (id === "unknown" ? w("usageAgentUnknown") : id) }
+
+/** Token mode stacks each project's bar by agent; quota mode compares projects within one agent's allowance. */
+function ProjectUsage({ data, options }: { data: UsageOverview; options: ReturnType<typeof usageProjectOptions> }) {
+  const [measure, setMeasure] = useState<"tokens" | "quota">("tokens")
+  const agents = quotaAgents(data)
+  const [picked, setPicked] = useState("")
+  const agent = agents.some(row => row.id === picked) ? picked : agents[0]?.id ?? ""
+  const weight = data.quota_weights?.find(row => row.id === agent)
+  const supported = data.quota_weights !== undefined
+  const mark = (id: string) => {
+    const icon = options.find(option => option.id === id)?.icon
+    return <span className="usage-project-mark" aria-hidden="true">{icon ? <Mark icon={icon as SessionRow["icon"]} cellPx={3} /> : <span className="project-picker-placeholder">▦</span>}</span>
+  }
+  const name = (id: string, fallback: string) => id === "unattributed" ? w("usageUnattributed") : fallback
+  const max = Math.max(1, ...data.projects.map(p => p.tokens))
+  const rows = quotaRows(data, agent)
+  const maxShare = Math.max(0, ...rows.map(row => row.share))
+  const percent = (value: number) => value.toLocaleString(currentCatalogTag(), { style: "percent", maximumFractionDigits: value < 0.01 ? 2 : 1 })
+  return <section>
+    <div className="usage-projects-head"><h2>{w("usageProjects")}</h2>
+      <div className="usage-switch" role="group" aria-label={w("usageProjectsMeasure")}>
+        <button type="button" aria-pressed={measure === "tokens"} onClick={() => setMeasure("tokens")}>{w("usageMeasureTokens")}</button>
+        <button type="button" aria-pressed={measure === "quota"} onClick={() => setMeasure("quota")}>{w("usageMeasureQuota")}</button>
+      </div></div>
+    {measure === "quota" && supported && agents.length > 1 && <div className="usage-switch usage-quota-agents" role="group" aria-label={w("usageQuotaAgent")}>
+      {agents.map(row => <button key={row.id} type="button" aria-pressed={row.id === agent} onClick={() => setPicked(row.id)}><i data-agent={row.id} aria-hidden="true" />{agentLabel(row.id)}</button>)}
+    </div>}
+    {measure === "quota" && supported && weight && <p className="usage-coverage">{w("usageQuotaCaption", { agent: agentLabel(agent), cacheRead: weight.cache_read, output: weight.output })}</p>}
+    <div className="usage-projects">
+      {measure === "tokens" && <>
+        {data.projects.length === 0 && <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p>}
+        {data.projects.map(row => {
+          const split = (row.agents ?? []).filter(part => part.tokens > 0)
+          const detail = split.map(part => `${agentLabel(part.id)} ${compactValue(part.tokens)}`).join(" · ")
+          return <div key={row.id} className="usage-project-row" title={detail || undefined}>
+            {mark(row.id)}
+            <span className="usage-project-name">{name(row.id, row.name)}{detail && <span className="sr-only">{`: ${detail}`}</span>}</span>
+            <div className="usage-track" aria-hidden="true"><div className="usage-track-fill" style={{ width: `${row.tokens / max * 100}%` }}>
+              {split.length > 0 ? split.map(part => <span key={part.id} data-agent={part.id} style={{ width: `${part.tokens / row.tokens * 100}%` }} />) : <span />}
+            </div></div>
+            <span>{compactValue(row.tokens)}</span>
+          </div>
+        })}
+      </>}
+      {measure === "quota" && (!supported ? <p>{w("usageQuotaUpgrade")}</p> : rows.length === 0 ? <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p> :
+        rows.map(row => <div key={row.id} className="usage-project-row">
+          {mark(row.id)}
+          <span className="usage-project-name">{name(row.id, row.name)}</span>
+          <div className="usage-track" aria-hidden="true"><div className="usage-track-fill" style={{ width: `${row.share / maxShare * 100}%` }}><span data-agent={agent} /></div></div>
+          <span>{percent(row.share)}</span>
+        </div>))}
+    </div>
   </section>
 }
 
@@ -191,7 +235,7 @@ export function DailyChart({ data, metric, label }: { data: UsageOverview; metri
   const valueLabel = (value: number | null) => value === null ? w("usageNoValue") : `${value.toLocaleString(locale, { maximumFractionDigits: 2 })} ${unit}`
   const day = data.daily[currentIndex]
   const priorDay = data.previous_daily[currentIndex]
-  const pair = `${w("usageCurrent")} ${day ? dateRange(day.date, day.date, locale) : ""}: ${valueLabel(values[currentIndex] ?? null)} · ${w("usagePrevious")} ${priorDay ? dateRange(priorDay.date, priorDay.date, locale) : ""}: ${valueLabel(previous[currentIndex] ?? null)}${metric === "duration" ? ` · ${samples(day?.duration_samples ?? 0)} / ${samples(priorDay?.duration_samples ?? 0)}` : ""}`
+  const pair = `${w("usageCurrent")} ${day ? dateRange(day.date, day.date, locale) : ""}${day?.in_progress ? ` (${w("usageToday")}, ${w("usageInProgress")})` : ""}: ${valueLabel(values[currentIndex] ?? null)} · ${w("usagePrevious")} ${priorDay ? dateRange(priorDay.date, priorDay.date, locale) : ""}: ${valueLabel(previous[currentIndex] ?? null)}${metric === "duration" ? ` · ${samples(day?.duration_samples ?? 0)} / ${samples(priorDay?.duration_samples ?? 0)}` : ""}`
   return <div className="usage-chart" ref={host}>
     <div className="usage-legend"><span><i />{w("usageCurrent")}</span><span><i />{w("usagePrevious")}</span><span>{unit}</span></div>
     <div className="usage-chart-control" tabIndex={0} role="slider" aria-valuemin={1} aria-valuemax={Math.max(1, values.length)} aria-valuenow={currentIndex + 1} aria-valuetext={pair} aria-label={label} aria-describedby={`${id}-help ${id}-value`}
@@ -200,7 +244,7 @@ export function DailyChart({ data, metric, label }: { data: UsageOverview; metri
       onPointerMove={event => { if (event.pointerType === "mouse" || event.buttons) { const rect = event.currentTarget.getBoundingClientRect(); setIndex(Math.max(0, Math.min(values.length - 1, Math.round(((event.clientX - rect.left) * width / rect.width - 54) / (width - 78) * (values.length - 1))))) } }}>
       <svg viewBox={`0 0 ${width} 210`} aria-hidden="true">
         {[0, 1, 2, 3].map(tick => { const y = 174 - tick * 50; return <g key={tick}><line className="usage-grid" x1="54" x2={width - 24} y1={y} y2={y} /><text x="0" y={y + 4}>{compactValue(maximum * tick / 3)}</text></g> })}
-        {data.daily.map((day, i) => (i === 0 || i === values.length - 1 || i % Math.ceil(values.length / (width < 500 ? 4 : 7)) === 0) && <text key={day.date} x={54 + i * (width - 78) / Math.max(1, values.length - 1)} y="202" textAnchor="middle">{shortDate(day.date, locale)}</text>)}
+        {data.daily.map((day, i) => (i === 0 || i === values.length - 1 || i % Math.ceil(values.length / (width < 500 ? 4 : 7)) === 0) && <text key={day.date} x={54 + i * (width - 78) / Math.max(1, values.length - 1)} y="202" textAnchor="middle">{day.in_progress ? w("usageToday") : shortDate(day.date, locale)}</text>)}
         {lineSegments(previous, maximum, width).map((d, i) => <path key={`p${i}`} d={d} className="usage-line usage-line-prior" />)}
         {lineSegments(values, maximum, width).map((d, i) => <path key={`c${i}`} d={d} className="usage-line" />)}
         {[{ series: previous, prior: true }, { series: values, prior: false }].map(({ series, prior }) => series.map((value, i) => value !== null && <circle key={`${prior}-${i}`} className={prior ? "usage-dot usage-dot-prior" : "usage-dot"} cx={54 + i * (width - 78) / Math.max(1, values.length - 1)} cy={174 - value / maximum * 150} r={i === currentIndex ? 4.5 : 2} />))}

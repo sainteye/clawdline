@@ -17,6 +17,7 @@ const now = () => Math.floor(Date.now() / 1000)
 let mode = "ready", language = "en", fixtureSequence = 0
 let sends: string[] = [], inventoryReads: string[] = [], interrupts: { path: string; key: string }[] = []
 let queueReady = false
+let queueCapability = false, queueEnded = false, fixtureAssistant = "antigravity"
 let nativeEffortOverride = false
 let selectedModel = "synthetic-flash", selectedEffort = "high", modelWrites: string[] = [], fullInfoReads = 0
 const streams = new Set<ServerResponse>()
@@ -24,17 +25,17 @@ function snapshot() {
   return { at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: ++fixtureSequence }, emptyAuthoritative: true,
     epoch: 1, generation: fixtureSequence, source: { freshness: "current", observed_at: now(), provenance: "fixture" } },
     sessions: ["alpha", "beta"].map((machine, index) => ({ id: "fixture-" + machine, label: "Antigravity synthetic " + machine,
-      machine, backend: mode.startsWith("owned-protocol") ? "owned" : "tmux", assistant: "antigravity", isClaude: true, identity: mode.startsWith("owned-protocol") ? "protocol" : "launch_hook", line: "synthetic menu revision", cwd: "/work/fixture", sessionId: "conversation-" + machine,
-      execution_generation: (index ? "b" : "a").repeat(32), state: mode === "owned-protocol-queue" && !queueReady ? "working" : mode.includes("menu") ? "waiting" : mode === "owned-protocol-interrupted" ? "unknown" : "idle", work_state: "ready", evidence: "process",
+      machine, backend: mode.startsWith("owned-protocol") ? "owned" : "tmux", assistant: fixtureAssistant, isClaude: true, identity: mode.startsWith("owned-protocol") ? "protocol" : "launch_hook", line: "synthetic menu revision", cwd: "/work/fixture", sessionId: "conversation-" + machine,
+      execution_generation: (index ? "b" : "a").repeat(32), state: mode === "owned-protocol-queue" && queueEnded ? "unknown" : mode === "owned-protocol-queue" && !queueReady ? "working" : mode.includes("menu") ? "waiting" : mode === "owned-protocol-interrupted" ? "unknown" : "idle", work_state: "ready", evidence: "process",
       source: { freshness: (mode === "stale-state" || mode === "async-unknown") ? "stale" : "current", observed_at: now(), provenance: "fixture" },
       activity: { known: true, at: now() },
       ...(mode.includes("menu") ? { menu: { question: "Allow synthetic command?", options: [{ n: 1, label: "Allow once", can: true }],
         ...(mode === "unverified-menu" ? { source: "transcript" } : {}) } } : {}) })) }
 }
 function inventory(machine: string) {
-  const facts = { id: "antigravity", label: "Gemini", installed: mode !== "missing", availability: "unknown",
+  const facts = { id: fixtureAssistant, label: fixtureAssistant === "grok" ? "Grok" : "Gemini", installed: mode !== "missing", availability: "unknown",
     integrationState: "active", authState: mode === "required" || mode === "bootstrap" ? "required" : "ready",
-    capabilities: { start: mode !== "required", resume: true, transcript: true, send: mode !== "no-send" && machine !== "beta", menus: true } }
+    capabilities: { start: mode !== "required", resume: true, transcript: true, send: mode !== "no-send" && machine !== "beta", menus: true, ...(queueCapability ? { queue: true } : {}) } }
   return { at: mode === "stale" ? 0 : now(), places: [{ id: "fixture-place", label: "Fixture", path: "/work/fixture", at: now() }],
     assistants: mode === "old" ? [{ id: "claude", label: "Claude" }, { id: "codex", label: "Codex" }] : [facts] }
 }
@@ -53,7 +54,8 @@ function document(file = "index.html"): string {
 function daemon(): Server {
  return createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://fixture"), path = url.pathname
-  if (path === "/fixture") { if (url.searchParams.has("queueReady")) { queueReady = url.searchParams.get("queueReady") === "1"; for (const stream of streams) stream.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
+  if (path === "/fixture") { if (url.searchParams.has("queueEnded")) queueEnded = url.searchParams.get("queueEnded") === "1"
+    if (url.searchParams.has("queueReady")) { queueReady = url.searchParams.get("queueReady") === "1"; for (const stream of streams) stream.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
      mode = url.searchParams.get("mode") || "ready"; for (const stream of streams) stream.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n"); return json(res, 200, {}) }
   if (path === "/v1/sessions") return json(res, 200, snapshot())
   if (path === "/v1/usage/items/fixture-work" || path === "/v1/usage/sessions/conversation-alpha" || path === "/v1/usage/sessions/conversation-beta") return json(res, 503, { error: { code: "fixture_unavailable", message: "Synthetic usage is unavailable" } })
@@ -555,6 +557,49 @@ for (const lang of ["en", "zh-Hant"]) test(`phone ${lang}: long tool labels stay
   await tab.until("queued input is accepted",s=>!s.text.includes(lang==="en"?"Queued in this browser":"已在此瀏覽器排隊"))
   assert.equal(sends.length,1)
  } finally {await tab.close()}
+})
+
+test("a machine that queues takes a message sent during an owned Grok turn instead of this browser", {timeout:30000}, async()=>{
+ mode="owned-protocol-queue";language="en";queueReady=false;queueEnded=false;queueCapability=true;fixtureAssistant="grok";sends=[]
+ const tab=await Tab.open(browser,390,844,true)
+ try {
+  await tab.go("/#session=fixture-alpha")
+  await tab.run(`localStorage.removeItem('clawdline.session.cards')`)
+  await tab.go("/?machineQueue=1#session=fixture-alpha")
+  await tab.until("busy owned composer opens",s=>s.message)
+  await tab.draft("Synthetic machine-queued input")
+  await tab.until("busy owned composer can send",s=>s.send)
+  await new Promise(done=>setTimeout(done,500))
+  await tab.run(`document.querySelector('#composer button.send').click()`)
+  await tab.until("the machine was asked to take it",()=>sends.length===1)
+  const seen=await tab.until("no browser queue card",s=>!s.text.includes("Queued in this browser"))
+  assert.ok(!seen.text.includes("Gemini finishes"))
+ } finally {queueCapability=false;fixtureAssistant="antigravity";await tab.close()}
+})
+
+for (const lang of ["en", "zh-Hant"]) test(`phone ${lang}: a Grok turn that did not finish holds the queued card with Send now`, {timeout:30000}, async()=>{
+ mode="owned-protocol-queue";language=lang;queueReady=false;queueEnded=false;queueCapability=false;fixtureAssistant="grok";sends=[]
+ const queued=lang==="en"?"It will send when Grok finishes":"Grok 完成目前回合"
+ const held=lang==="en"?"Grok's turn did not finish":"Grok 這一回合沒有正常結束"
+ const tab=await Tab.open(browser,390,844,true)
+ try {
+  await tab.go("/#session=fixture-alpha")
+  await tab.run(`localStorage.removeItem('clawdline.session.cards')`)
+  await tab.go("/?heldCase="+lang+"#session=fixture-alpha")
+  await tab.until("busy owned composer opens",s=>s.message)
+  await tab.draft("Synthetic held input")
+  await tab.until("busy owned composer allows queueing",s=>s.send)
+  await tab.run(`document.querySelector('#composer button.send').click()`)
+  await tab.until("queued card names Grok",s=>s.text.includes(queued))
+  assert.equal(sends.length,0)
+  await tab.run(`fetch('/fixture?mode=owned-protocol-queue&queueEnded=1')`)
+  await tab.until("held card explains and offers sending",s=>s.text.includes(held))
+  await new Promise(done=>setTimeout(done,600))
+  assert.equal(sends.length,0,"a turn that did not finish never sends the queued message by itself")
+  await tab.shot("grok-queued-held-"+lang)
+  await tab.run(`document.querySelector('[data-pending-send-queued]').click()`)
+  await tab.until("send now posts it once",()=>sends.length===1)
+ } finally {queueEnded=false;fixtureAssistant="antigravity";await tab.close()}
 })
 
 for (const lang of ["en", "zh-Hant"]) test(`owned Gemini session actions menu (${lang}) offers Stop current work (Esc) and skips hidden terminal rows`, { timeout: 30000 }, async () => {
