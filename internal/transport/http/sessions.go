@@ -1139,6 +1139,9 @@ func wireActivity(a session.Activity) *contract.SessionActivity {
 	if a.Known() {
 		out.Known = true
 		out.At = a.At.Unix()
+		if !a.ReplyAt.IsZero() {
+			out.ReplyAt = a.ReplyAt.Unix()
+		}
 		return out
 	}
 	out.UnknownReason = contract.ActivityUnknownReason(a.Unknown())

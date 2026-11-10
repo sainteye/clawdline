@@ -5931,7 +5931,14 @@ type SessionActivity struct {
 	// state, never as a very old time. Of the two ways to be wrong about a row nobody
 	// could read, only `it has been quiet for a week` hides the row somebody has to
 	// act on.
-	Known         bool                  `json:"known"`
+	Known bool `json:"known"`
+
+	// Unix seconds: the newest conversation entry a reader is waiting for (a person's
+	// message, an assistant's words, a relayed message, or an error that ended a
+	// turn). Tool calls move `at` but not this. A change to it is news at once: Cloud
+	// does not coalesce it with `at`, and an open conversation reads when it moves.
+	// Absent when unknown or when the read tail holds no such entry.
+	ReplyAt       int64                 `json:"reply_at,omitempty"`
 	UnknownReason ActivityUnknownReason `json:"unknown_reason,omitempty"`
 }
 

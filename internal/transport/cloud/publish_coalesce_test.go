@@ -14,6 +14,7 @@ import (
 type workingRow struct {
 	id, state, verb string
 	activity        int64
+	reply           int64
 	tokens          int
 	agents          int
 }
@@ -27,10 +28,14 @@ func (r workingRow) row(clock int) map[string]any {
 	if r.state != "working" {
 		line = ""
 	}
+	activity := map[string]any{"at": r.activity, "known": true, "evidence": "transcript"}
+	if r.reply > 0 {
+		activity["reply_at"] = r.reply
+	}
 	return map[string]any{
 		"id": r.id, "assistant": "claude", "tty": "tty" + r.id[1:], "backend": "tmux",
 		"state": r.state, "work_state": "working", "line": line, "working_since": 1000,
-		"activity": map[string]any{"at": r.activity, "known": true, "evidence": "transcript"},
+		"activity": activity,
 		"agents":   agents, "agents_reading": map[string]any{"state": "complete"},
 		"source": map[string]any{"freshness": "current", "observed_at": 1000 + clock, "provenance": "tmux"},
 	}
@@ -199,5 +204,37 @@ func TestAnHourOfWorkingRowsIsCoalesced(t *testing.T) {
 	}
 	if after >= before {
 		t.Errorf("coalescing saved nothing: %d before, %d after", before, after)
+	}
+}
+
+// A reply is what a phone with the conversation open is waiting for. The
+// activity time alone waits for the row's window; the same row with a new
+// reply time leaves on the pass that read it, so the open page re-reads the
+// conversation instead of waiting up to the window for the answer.
+func TestAReplyIsNotHeldWithTheActivityTime(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(5000, 0)
+	row := workingRow{id: "%7", state: "working", verb: "Thinking", activity: 100, reply: 90}
+	body := scanOf(0, []workingRow{row})
+	out := &collector{}
+	p := drivenPublisher(out, &body, &now)
+	p.firstPass(ctx)
+	step := func(seconds int, change func(*workingRow)) int {
+		out.reset()
+		now = now.Add(5 * time.Second)
+		change(&row)
+		body = scanOf(seconds, []workingRow{row})
+		p.Pass(ctx)
+		return countPrefix(out.channels(), "s/mac-01/%257")
+	}
+	if n := step(5, func(r *workingRow) { r.activity = 105 }); n != 0 {
+		t.Errorf("a tool row 5 s after the last send went out: %d", n)
+	}
+	if n := step(10, func(r *workingRow) { r.activity = 110; r.reply = 110 }); n != 1 {
+		t.Fatalf("the answer 10 s after the last send was held: %d", n)
+	}
+	sent := out.payload(t, "s/mac-01/%257")["session"].(map[string]any)
+	if sent["activity"].(map[string]any)["reply_at"] != float64(110) {
+		t.Errorf("the row sent does not carry the reply: %v", sent["activity"])
 	}
 }

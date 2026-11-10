@@ -111,6 +111,7 @@
       "required": ["known"],
       "properties": {
         "at": { "description": "Unix seconds: when the record last grew. Present only when `known`.", "type": "integer" },
+        "reply_at": { "description": "Unix seconds: the newest conversation entry a reader is waiting for (a person's message, an assistant's words, a relayed message, or an error that ended a turn). Tool calls move `at` but not this. A change to it is news at once: Cloud does not coalesce it with `at`, and an open conversation reads when it moves. Absent when unknown or when the read tail holds no such entry.", "type": "integer" },
         "detail": { "description": "This machine's own sentence about the answer, for a reader deciding whether to wait, fix this machine or stop asking.", "type": "string" },
         "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },
         "known": { "description": "Whether there is a time. False is a real answer and carries `unknown_reason`: a client must draw it as unknown and order it ahead of every known time inside its state, never as a very old time. Of the two ways to be wrong about a row nobody could read, only `it has been quiet for a week` hides the row somebody has to act on.", "type": "boolean" },

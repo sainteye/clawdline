@@ -1322,6 +1322,9 @@ func (p *Publisher) volatileEvery() time.Duration {
 const SessionRowVolatileSecondsLimit = 15
 
 // volatileSessionRowFields are the row paths volatileFree removes.
+// `activity.reply_at` is deliberately not one: it moves only when a person's
+// message or an assistant's words land, and an open conversation on a phone
+// waits for exactly that (TestAReplyIsNotHeldWithTheActivityTime).
 var volatileSessionRowFields = [][]string{
 	{"activity", "at"},
 	{"agents"},

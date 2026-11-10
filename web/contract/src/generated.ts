@@ -6995,6 +6995,15 @@ export interface SessionActivity {
    * has to act on.
    */
   known: boolean
+
+  /**
+   * Unix seconds: the newest conversation entry a reader is waiting for (a person's
+   * message, an assistant's words, a relayed message, or an error that ended a
+   * turn). Tool calls move `at` but not this. A change to it is news at once: Cloud
+   * does not coalesce it with `at`, and an open conversation reads when it moves.
+   * Absent when unknown or when the read tail holds no such entry.
+   */
+  reply_at?: number
   unknown_reason?: ActivityUnknownReason
 }
 

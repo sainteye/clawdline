@@ -79,9 +79,10 @@ type movementReading struct {
 	identity string
 	// at is the newest record's own timestamp, and read whether that was
 	// found.
-	at    time.Time
-	read  bool
-	block session.ProviderBlock
+	at      time.Time
+	replyAt time.Time
+	read    bool
+	block   session.ProviderBlock
 }
 
 // NewMovements is an empty cache at the register row's default limit.
@@ -194,7 +195,7 @@ func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Acti
 	key := s.ConversationID
 	prev, had := h.movements.get(key)
 	if had && prev.read && prev.size == st.Size() && prev.mod.Equal(st.ModTime()) {
-		return session.Activity{At: prev.at, Evidence: session.EvidenceTranscript, ProviderBlock: prev.block}
+		return session.Activity{At: prev.at, ReplyAt: prev.replyAt, Evidence: session.EvidenceTranscript, ProviderBlock: prev.block}
 	}
 
 	data, _, _ := tailData(path, activityTail)
@@ -203,6 +204,7 @@ func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Acti
 	if s.Assistant == session.AssistantCodex {
 		prev.block = codexProviderBlock(data)
 	}
+	prev.replyAt = lastReplyAt(data, s.Assistant)
 	prev.size, prev.mod, prev.at, prev.read = st.Size(), st.ModTime(), at, ok
 	h.movements.put(key, prev)
 	if !ok {
@@ -216,7 +218,49 @@ func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Acti
 			Detail: "no turn this reading could read carried a time of its own",
 		}
 	}
-	return session.Activity{At: at, Evidence: session.EvidenceTranscript, ProviderBlock: prev.block}
+	return session.Activity{At: at, ReplyAt: prev.replyAt, Evidence: session.EvidenceTranscript, ProviderBlock: prev.block}
+}
+
+// lastReplyAt is the time of the newest entry in the end of a record that a
+// person reading the conversation waits for (session.Activity.ReplyAt). It
+// parses the same rows a transcript read parses, newest first, and stops at
+// the first one; tool calls are stepped over. A half-written last row does not
+// decode and is stepped over too.
+func lastReplyAt(data []byte, assistant session.Assistant) time.Time {
+	for end := len(data); end > 0; {
+		start := bytes.LastIndexByte(data[:end], '\n') + 1
+		line := data[start:end]
+		end = start - 1
+		if len(line) == 0 {
+			continue
+		}
+		var entries []Entry
+		switch assistant {
+		case session.AssistantCodex:
+			if !codexInterestingLine(line) {
+				continue
+			}
+			entries = codexEntries(line)
+		case session.AssistantClaude:
+			entries = claudeEntries(line, false)
+		default:
+			return time.Time{}
+		}
+		for i := len(entries) - 1; i >= 0; i-- {
+			if e := entries[i]; e.At > 0 && replyKind(e.Kind) {
+				return time.Unix(e.At, 0)
+			}
+		}
+	}
+	return time.Time{}
+}
+
+func replyKind(kind string) bool {
+	switch kind {
+	case KindUser, KindAssistant, KindAgent, KindPeer, KindMessage, KindNotice, KindError:
+		return true
+	}
+	return false
 }
 
 // Only native turn lifecycle events decide this reading. Error prose quoted

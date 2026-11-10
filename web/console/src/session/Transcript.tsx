@@ -237,8 +237,8 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   const agentRow = agentId ? session?.agents?.find((agent) => agent.id === agentId) : undefined
   const agentTimed = !!agentRow && agentRow.at > 0
   const pace = agentId ? (agentTimed ? SAFETY_MS : AGENT_POLL_MS)
-    : transcriptPace({ following, newestSendAt, now: Date.now(), rowTimed: typeof session?.activity?.at === "number" })
-  fast.current = !agentId && followingNow({ following, newestSendAt, now: Date.now() })
+    : transcriptPace({ following, newestSendAt, now: Date.now(), rowTimed: typeof session?.activity?.at === "number", working: session?.state === "working" })
+  fast.current = !agentId && followingNow({ following, newestSendAt, now: Date.now(), working: session?.state === "working" })
   const poll = usePoll<TranscriptPage>(read, pace, agentId ? {} : { backoff: BACKOFF })
   const { error } = poll
   const data = restartedPage ?? poll.data
@@ -247,7 +247,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   // change, because the row's time is in whole seconds.
   const rowMoved = agentId
     ? agentRow && agentTimed ? `${agentRow.at}:${agentRow.state}` : ""
-    : `${session?.activity?.at ?? ""}:${session?.state ?? ""}`
+    : `${session?.activity?.at ?? ""}:${session?.activity?.reply_at ?? ""}:${session?.state ?? ""}`
   const rowSeen = useRef(rowMoved)
   const { poke } = poll
   useEffect(() => {

@@ -180,7 +180,7 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 | `dispatch` 刻意拒絕 | 中 | hosted console 只送 `{task}`，本機 broker 要 materialized 的 `task.json`＋id＋secret，沒有 pinned wire shape，所以回 `cloud_dispatch_unpinned` 409（照舊版）。**從手機派工＝沒有** |
 | entitlements、推播、`ctlr/` 回覆軌、交接通道 | 中 | 都沒動 |
 | `sessions.snapshot` 與刪除屏障 | 低 | `/v1/sessions` 的 `scan.complete` 一直是 false，所以不發清單標記，代價是**消失的 session 不會從 console 上消失**（2026-09-25：`sessions.snapshot` 已由 `Publisher.Snapshot` 回答，見 `records/cloud-wire-implementation-2026-09.md` §16.6） |
-| `t/` 沒有主動推播 | 低 | transcript 即時更新在舊版靠 `transcript_signature` 變動觸發，Go 版還沒算那個簽章 |
+| `t/` 沒有主動推播 | 低 | transcript 即時更新在舊版靠 `transcript_signature` 變動觸發，Go 版不算那個簽章；2026-11-10 起改由列上的 `activity.reply_at`（新訊息或回答落地才變、不受 Cloud 15 秒合併）叫醒開著的對話 |
 | Cloud 狀態沒有進契約 | 低 | `/v1/cloud/status` 的形狀沒進 `api/v1/`，設定頁自己寫型別 |
 
 **兩個 app 同時接同一個 Cloud 帳號要小心**：`docs/remote.md` 設計原則 3 說 Go 版要有自己的裝置身分，

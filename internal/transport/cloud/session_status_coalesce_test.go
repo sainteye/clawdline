@@ -20,6 +20,7 @@ type statusSession struct {
 	working  bool
 	verb     string
 	activity int64
+	reply    int64
 	tokens   int
 	agents   int
 	state    string
@@ -37,6 +38,9 @@ func (s statusSession) row(clock int) map[string]any {
 		"activity":             map[string]any{"at": s.activity, "known": true, "evidence": "transcript"},
 		"agents":               agents, "agents_reading": map[string]any{"state": "complete"},
 		"source": map[string]any{"freshness": "current", "observed_at": 1000 + clock, "provenance": "tmux"},
+	}
+	if s.reply > 0 {
+		row["activity"].(map[string]any)["reply_at"] = s.reply
 	}
 	if s.working {
 		row["work_state"] = "working"
@@ -156,5 +160,34 @@ func TestHalfAnHourOfTenSessionsSendsOnlyTheStatusRowsThatChanged(t *testing.T) 
 	}
 	if perSessionHour > 150 {
 		t.Errorf("%.0f status frames per Session-hour is not well below the 486 measured before this change", perSessionHour)
+	}
+}
+
+// A phone on the status path refetches its pinned list only when the marker's
+// presentation moves. A Codex answer can land while the row still says
+// working, so the reply time is in the presentation's steady half: the clock
+// alone waits for the window, the answer wakes the list on its own pass.
+func TestAReplyWakesThePinnedListAtOnce(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(5000, 0)
+	fleet := []statusSession{{id: "%10", working: true, state: "working", verb: "Thinking", activity: 100, reply: 90}}
+	body := statusScan(0, fleet)
+	out := &collector{}
+	p := drivenPublisher(out, &body, &now)
+	p.firstPass(ctx)
+	marker := "ss/mac-01/" + InventorySessionID
+	step := func(second int, change func(*statusSession)) int {
+		out.reset()
+		now = now.Add(5 * time.Second)
+		change(&fleet[0])
+		body = statusScan(second, fleet)
+		p.Pass(ctx)
+		return countPrefix(out.channels(), marker)
+	}
+	if n := step(5, func(s *statusSession) { s.activity = 105 }); n != 0 {
+		t.Errorf("a tool row 5 s after the last marker moved the marker: %d", n)
+	}
+	if n := step(10, func(s *statusSession) { s.activity = 110; s.reply = 110 }); n != 1 {
+		t.Errorf("the answer 10 s after the last marker did not move it: %d", n)
 	}
 }

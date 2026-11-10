@@ -174,6 +174,14 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 // statusRowKey is where the publisher remembers one status row. It is
 // namespaced because the same Session's full s/ row is remembered under the
 // bare terminal id (publishSessions), and the two must not evict each other.
+// replyAt is the row's newest reply time (session.Activity.ReplyAt), or nil.
+func replyAt(row map[string]any) any {
+	if activity, ok := row["activity"].(map[string]any); ok {
+		return activity["reply_at"]
+	}
+	return nil
+}
+
 func statusRowKey(id string) string { return "ss/" + id }
 
 // statusMarkerKey is where the status inventory marker is remembered.
@@ -298,6 +306,11 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 			// ticked from the phone never woke the list and the card kept
 			// it empty. Hashed into the id here, never sent on ss/.
 			"menu": row["menu"],
+			// An answer can land while the row still says working, and an
+			// open conversation re-reads only when its row moves. The reply
+			// time is not volatile, so it wakes the list on its own pass while
+			// the activity clock still waits for the window.
+			"reply_at": replyAt(row),
 		}
 		displays = append(displays, display)
 		steadyDisplays = append(steadyDisplays, volatileFree(display))

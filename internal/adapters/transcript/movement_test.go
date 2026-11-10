@@ -246,3 +246,43 @@ func TestATruncatedLastRecordIsSteppedOver(t *testing.T) {
 		t.Fatalf("read the truncated value: %v", got.At.UTC())
 	}
 }
+
+// A working Codex turn appends tool rows on nearly every pass; only the row a
+// reader is waiting for moves ReplyAt, so Cloud can coalesce the rest and
+// still send the answer at once.
+func TestOnlyAReplyMovesReplyAt(t *testing.T) {
+	h, home := claudeHost(t)
+	id := "c6000005-0000-4000-8000-000000000005"
+	path := filepath.Join(home, ".codex", "sessions", "rollout-"+id+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	item := func(stamp, body string) string {
+		return `{"timestamp":"` + stamp + `","type":"event_msg","payload":{"type":"item_completed","item":` + body + `}}` + "\n"
+	}
+	user := item("2026-11-10T08:00:00.100Z", `{"type":"UserMessage","content":[{"type":"Text","text":"check it"}]}`)
+	tool := item("2026-11-10T08:00:30.100Z", `{"type":"CommandExecution","command":"ls","parsed_cmd":[{"type":"list_files","cmd":"ls"}]}`)
+	chatter := `{"timestamp":"2026-11-10T08:01:00.100Z","type":"event_msg","payload":{"type":"token_count","info":null}}` + "\n"
+	reply := item("2026-11-10T08:02:00.100Z", `{"type":"AgentMessage","content":[{"type":"Text","text":"done"}]}`)
+	row := session.Session{Assistant: session.AssistantCodex, ConversationID: id}
+	for _, tc := range []struct {
+		name, body string
+		at, reply  string
+	}{
+		{"the person's message", user, "2026-11-10T08:00:00Z", "2026-11-10T08:00:00Z"},
+		{"a tool row", user + tool, "2026-11-10T08:00:30Z", "2026-11-10T08:00:00Z"},
+		{"metadata", user + tool + chatter, "2026-11-10T08:01:00Z", "2026-11-10T08:00:00Z"},
+		{"the answer", user + tool + chatter + reply, "2026-11-10T08:02:00Z", "2026-11-10T08:02:00Z"},
+		{"a half-written row after it", user + tool + chatter + reply + `{"timestamp":"2026-11-10T08:03:00.1`, "2026-11-10T08:02:00Z", "2026-11-10T08:02:00Z"},
+	} {
+		if err := os.WriteFile(path, []byte(tc.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 { // the cached answer carries the same reply time
+			got := h.LastActivity(context.Background(), row)
+			if got.At.UTC().Truncate(time.Second).Format(time.RFC3339) != tc.at || got.ReplyAt.UTC().Format(time.RFC3339) != tc.reply {
+				t.Fatalf("%s: at=%v reply=%v, want at=%s reply=%s", tc.name, got.At, got.ReplyAt, tc.at, tc.reply)
+			}
+		}
+	}
+}
