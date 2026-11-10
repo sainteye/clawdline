@@ -3838,11 +3838,11 @@
       "console_route": "POST /v1/settings/workflow",
       "console_seam": "writer",
       "local": {"method": "POST", "device": true},
-      "example": {"changes": {"dispatch_full_permission": false, "session_auto_discovery": true, "iterm_integration": false, "session_todo_auto_take": true}, "request": "req-write", "session": "__clawdline_machine__"},
+      "example": {"changes": {"dispatch_full_permission": false, "session_auto_discovery": true, "iterm_integration": false, "session_todo_auto_take": true, "grok_full_permission": false}, "request": "req-write", "session": "__clawdline_machine__"},
       "shapes": [
-        {"body": ["changes", "request", "session"], "path": "/v1/settings/workflow", "local_body": ["dispatch_full_permission", "iterm_integration", "session_auto_discovery", "session_todo_auto_take"]}
+        {"body": ["changes", "request", "session"], "path": "/v1/settings/workflow", "local_body": ["dispatch_full_permission", "grok_full_permission", "iterm_integration", "session_auto_discovery", "session_todo_auto_take"]}
       ],
-      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 4, "properties": {"iterm_integration": {"type": "bool", "nullable": true}, "dispatch_full_permission": {"type": "bool", "nullable": true}, "session_auto_discovery": {"type": "bool", "nullable": true}, "session_todo_auto_take": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/workflow", "body": {"object": "changes"}}}
+      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 5, "properties": {"iterm_integration": {"type": "bool", "nullable": true}, "grok_full_permission": {"type": "bool", "nullable": true}, "dispatch_full_permission": {"type": "bool", "nullable": true}, "session_auto_discovery": {"type": "bool", "nullable": true}, "session_todo_auto_take": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/workflow", "body": {"object": "changes"}}}
     }
   ]
 }

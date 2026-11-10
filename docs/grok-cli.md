@@ -52,8 +52,15 @@ unmetered: native usage and extra-credit policy still belong to the account.
 - Dispatch uses `assistant: "grok"`, the existing task/worktree lifecycle,
   private native address and separate actor capability. The worker is bound
   before its first briefing. Duplicate dispatch keeps the existing task.
-- The ordinary Session starts with explicit supervised permissions. A dispatch
-  `ask` does the same; explicit `full` uses Grok's `--always-approve`.
+- The ordinary Session starts with explicit supervised permissions
+  (`--permission-mode default`, which overrides `permission_mode` in Grok's own
+  config). The Workflow setting `grok_full_permission` (Settings, "Grok full
+  permission"; off by default) starts every new ordinary Grok Session on that
+  machine with `--always-approve` instead, Grok's highest mode, where only its
+  deny rules and hooks still stop a call. The choice is frozen into the
+  Session's launch context: a running Session keeps its mode, and the setting
+  cannot widen it. A dispatch `ask` stays supervised; explicit `full` uses
+  `--always-approve`.
   `--no-leader` keeps each process owned by its daemon lifecycle.
 - An `edits` ceiling is refused. Grok's Auto mode is not assumed equivalent to
   allowing edits alone. Explicit reasoning effort is also refused until its

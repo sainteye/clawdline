@@ -4647,7 +4647,7 @@ func genDecodeWorkflowSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"dispatch_full_permission": genRule{kind: "bool", nullable: true}, "iterm_integration": genRule{kind: "bool", nullable: true}, "session_auto_discovery": genRule{kind: "bool", nullable: true}, "session_todo_auto_take": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 4}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"dispatch_full_permission": genRule{kind: "bool", nullable: true}, "grok_full_permission": genRule{kind: "bool", nullable: true}, "iterm_integration": genRule{kind: "bool", nullable: true}, "session_auto_discovery": genRule{kind: "bool", nullable: true}, "session_todo_auto_take": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 5}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

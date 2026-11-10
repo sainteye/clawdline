@@ -85,6 +85,14 @@ func (v Values) GeminiStepExplanations() bool {
 	return !set || on
 }
 
+// GrokFullPermission starts every new Grok Session on this machine with
+// Grok's always-approve mode instead of asking for each tool call. Off unless
+// set: Grok Sessions asked before the setting existed.
+func (v Values) GrokFullPermission() bool {
+	on, _ := v.Bool("grok_full_permission")
+	return on
+}
+
 // SessionTodoAutoTake lets a root Session take the person's oldest unsent
 // to-do at its turn boundary once its own work is done. Off unless set: off is
 // the behaviour before the setting existed.
@@ -511,6 +519,7 @@ var Settables = []Settable{
 	{Name: "follow_target", Kind: "bool"},
 	{Name: "gemini_step_explanations", Kind: "bool"},
 	{Name: "session_todo_auto_take", Kind: "bool"},
+	{Name: "grok_full_permission", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
 	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"session", "claude", "codex", "antigravity", "auto"},
 		Refusal: "invalid_assistant", Because: "session, claude, codex, antigravity or auto"},

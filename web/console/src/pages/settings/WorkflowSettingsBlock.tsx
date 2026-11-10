@@ -42,12 +42,12 @@ export function WorkflowSettingsBlock({ shown }: { shown: boolean }) {
   return <div className="block settings-workflow" aria-busy={busy}>
     <b>{word("tab")}</b>
     <p className="say">{word("introWithITerm")}</p>
-    {(["dispatch_full_permission", "session_auto_discovery", "iterm_integration", "gemini_step_explanations", "session_todo_auto_take"] as const).map(key => {
+    {(["dispatch_full_permission", "session_auto_discovery", "iterm_integration", "gemini_step_explanations", "grok_full_permission", "session_todo_auto_take"] as const).map(key => {
       const id = "workflow-" + key
       const title = word(key + "Title")
       const expanded = open === key
       // A daemon from before this setting omits it: say so instead of drawing a switch that cannot be read.
-      const unsupported = snapshot !== null && (key === "iterm_integration" || key === "session_todo_auto_take") && typeof snapshot[key] !== "boolean"
+      const unsupported = snapshot !== null && (key === "iterm_integration" || key === "session_todo_auto_take" || key === "grok_full_permission") && typeof snapshot[key] !== "boolean"
       return <div className="workflow-setting" key={key}>
         <div className="workflow-setting-row">
           <div className="workflow-setting-label">
@@ -57,7 +57,7 @@ export function WorkflowSettingsBlock({ shown }: { shown: boolean }) {
               <span aria-hidden="true">ⓘ</span>
             </button>
           </div>
-          {unsupported ? <span className="say" role="status">{word(key === "iterm_integration" ? "itermUpdateRequired" : "session_todo_auto_takeUpdateRequired")}</span> : <Switch labelledBy={id + "-title"} describedBy={expanded ? id + "-help" : undefined}
+          {unsupported ? <span className="say" role="status">{word(key === "iterm_integration" ? "itermUpdateRequired" : key + "UpdateRequired")}</span> : <Switch labelledBy={id + "-title"} describedBy={expanded ? id + "-help" : undefined}
             on={snapshot?.[key] === true} disabled={!snapshot || busy}
             stateText={snapshot ? word(snapshot[key] ? "on" : "off") : word("loading")}
             onToggle={() => void toggle(key)} />}

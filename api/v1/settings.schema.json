@@ -19,6 +19,7 @@
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "session_todo_auto_take": { "type": "boolean", "nullable": true },
+        "grok_full_permission": { "type": "boolean", "nullable": true },
         "exists": {
           "description": "False before anything has been written. Every key then has the shell's default.",
           "type": "boolean"
@@ -624,6 +625,11 @@
           "type": "boolean",
           "nullable": true,
           "description": "Whether a root Session that finished its work and is not waiting for the person takes the person's oldest unsent to-do at its turn boundary (clawdline todo take). False by default; a daemon before this setting omits the field."
+        },
+        "grok_full_permission": {
+          "type": "boolean",
+          "nullable": true,
+          "description": "Whether every new Grok Session on this machine starts in Grok's always-approve mode, running tools without asking. False by default; a daemon before this setting omits the field."
         }
       },
       "required": [
@@ -654,6 +660,11 @@
           "type": "boolean",
           "nullable": true,
           "description": "Whether a root Session takes the person's oldest unsent to-do at its turn boundary once its own work is done."
+        },
+        "grok_full_permission": {
+          "type": "boolean",
+          "nullable": true,
+          "description": "Whether every new Grok Session on this machine starts in Grok's always-approve mode."
         }
       }
     }

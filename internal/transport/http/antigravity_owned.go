@@ -69,6 +69,11 @@ func (s *Server) openOwnedAssistant(ctx context.Context, starter app.Starter, pl
 		return session.Session{}, ownedAntigravityUnavailable()
 	}
 	launchCtx := ownedContextFor(place, prepared, assistant)
+	if assistant == projects.AssistantGrok && s.grokFullPermission() {
+		// Frozen into this Session's launch context: a later change to the
+		// setting applies to new Sessions, not to one already running.
+		launchCtx.PermissionMode = "full"
+	}
 	if len(addDirs) > 0 {
 		var extra strings.Builder
 		extra.WriteString("\n\nAdditional accessible directories:\n")
@@ -359,4 +364,11 @@ func (s *Server) stopOwnedAntigravityChild(ctx context.Context, id, native, cwd 
 		}
 	}
 	return ownedAntigravityUnavailable()
+}
+
+// grokFullPermission reads the person's machine setting. An unreadable
+// settings file keeps the supervised default rather than granting more.
+func (s *Server) grokFullPermission() bool {
+	values, err := s.settingsFile().Read()
+	return err == nil && values.GrokFullPermission()
 }

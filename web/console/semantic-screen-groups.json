@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10952,
-  "riskKeys": 4827,
-  "nonRiskCount": 6125,
+  "englishContentKeys": 10957,
+  "riskKeys": 4831,
+  "nonRiskCount": 6126,
   "groups": [
     {
       "name": "acp / other",
@@ -7059,7 +7059,7 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 18,
+      "count": 19,
       "sources": [
         null
       ],
@@ -7068,6 +7068,7 @@
         "workflowSettings.gemini_step_explanationsOff",
         "workflowSettings.gemini_step_explanationsScope",
         "workflowSettings.gemini_step_explanationsTitle",
+        "workflowSettings.grok_full_permissionUpdateRequired",
         "workflowSettings.intro",
         "workflowSettings.introWithITerm",
         "workflowSettings.iterm_integrationTitle",

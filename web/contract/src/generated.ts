@@ -8588,6 +8588,7 @@ export interface SettingsSnapshot {
    */
   follow_target: boolean | null
   gemini_step_explanations: boolean | null
+  grok_full_permission: boolean | null
 
   /**
    * The file's `hotkey`, or null when the file does not carry one as a string. Null
@@ -12355,6 +12356,12 @@ export interface WorkflowSettingsRequest {
   gemini_step_explanations: boolean | null
 
   /**
+   * Whether every new Grok Session on this machine starts in Grok's always-approve
+   * mode.
+   */
+  grok_full_permission: boolean | null
+
+  /**
    * Explicit opt-in to iTerm2 access. False by default; older daemons omit this
    * field.
    */
@@ -12376,6 +12383,13 @@ export interface WorkflowSettingsSnapshot {
    * user's language. True by default.
    */
   gemini_step_explanations: boolean
+
+  /**
+   * Whether every new Grok Session on this machine starts in Grok's always-approve
+   * mode, running tools without asking. False by default; a daemon before this
+   * setting omits the field.
+   */
+  grok_full_permission: boolean | null
 
   /**
    * Explicit opt-in to iTerm2 access. False by default; older daemons omit this

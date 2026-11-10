@@ -7115,6 +7115,7 @@ type SettingsSnapshot struct {
 	// Whether the terminal selects the tab the bar points at.
 	FollowTarget           *bool `json:"follow_target"`
 	GeminiStepExplanations *bool `json:"gemini_step_explanations"`
+	GrokFullPermission     *bool `json:"grok_full_permission"`
 
 	// The file's `hotkey`, or null when the file does not carry one as a string. Null
 	// means the default, option+space, which the Swift app used to own and no longer
@@ -10305,6 +10306,10 @@ type WorkflowSettingsRequest struct {
 	// user's language.
 	GeminiStepExplanations *bool `json:"gemini_step_explanations"`
 
+	// Whether every new Grok Session on this machine starts in Grok's always-approve
+	// mode.
+	GrokFullPermission *bool `json:"grok_full_permission"`
+
 	// Explicit opt-in to iTerm2 access. False by default; older daemons omit this
 	// field.
 	ItermIntegration     *bool `json:"iterm_integration"`
@@ -10321,6 +10326,11 @@ type WorkflowSettingsSnapshot struct {
 	// Whether Gemini (Antigravity) explains its plan and progress step-by-step in the
 	// user's language. True by default.
 	GeminiStepExplanations bool `json:"gemini_step_explanations"`
+
+	// Whether every new Grok Session on this machine starts in Grok's always-approve
+	// mode, running tools without asking. False by default; a daemon before this
+	// setting omits the field.
+	GrokFullPermission *bool `json:"grok_full_permission"`
 
 	// Explicit opt-in to iTerm2 access. False by default; older daemons omit this
 	// field.
