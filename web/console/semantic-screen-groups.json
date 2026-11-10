@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10950,
-  "riskKeys": 4827,
-  "nonRiskCount": 6123,
+  "englishContentKeys": 10958,
+  "riskKeys": 4828,
+  "nonRiskCount": 6130,
   "groups": [
     {
       "name": "acp / other",
@@ -3783,7 +3783,7 @@
     },
     {
       "name": "next / other",
-      "count": 679,
+      "count": 686,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4432,8 +4432,11 @@
         "next.usageDays",
         "next.usageDuration",
         "next.usageDurationCaption",
+        "next.usageInProgress",
         "next.usageInput",
         "next.usageLoading",
+        "next.usageMeasureQuota",
+        "next.usageMeasureTokens",
         "next.usageMinutes",
         "next.usageOffline",
         "next.usageOutput",
@@ -4443,6 +4446,9 @@
         "next.usagePrevious",
         "next.usageProject",
         "next.usageProjects",
+        "next.usageProjectsMeasure",
+        "next.usageQuotaAgent",
+        "next.usageQuotaUpgrade",
         "next.usageReadCoverage",
         "next.usageRefresh",
         "next.usageRetry",
@@ -4451,6 +4457,7 @@
         "next.usageTaskUnit",
         "next.usageTasks",
         "next.usageThisMachine",
+        "next.usageToday",
         "next.usageTokenIncludesCache",
         "next.usageTokens",
         "next.usageUnattributed",

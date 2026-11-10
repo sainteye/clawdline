@@ -33,7 +33,10 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		return contract.UsageOverview{}, ErrUsageOverviewDays
 	}
 	now := u.now().In(time.Local)
-	until := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	// The window ends with today, which is still in progress: a Session
+	// running now is the one the person is asking about.
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	until := today.AddDate(0, 0, 1)
 	since := until.AddDate(0, 0, -days)
 	previous := since.AddDate(0, 0, -days)
 	out := contract.UsageOverview{At: now.Unix(), Days: int64(days), Timezone: time.Local.String(), Since: since.Unix(), Until: until.Unix(), PreviousSince: previous.Unix(), PreviousUntil: since.Unix(), Project: project,
@@ -84,7 +87,10 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		daily[date] = &contract.UsageOverviewDay{Date: date, Coverage: contract.UsageOverviewCoverageStateMissing}
 	}
 	bars := map[string]float64{}
+	type agentSum struct{ tokens, weighted float64 }
+	barAgents := map[string]map[string]*agentSum{}
 	agents := map[string]*float64{"claude": nil, "codex": nil, "gemini": nil, "grok": nil}
+	weighted := map[string]*float64{}
 	var currentDurations, previousDurations []float64
 	for _, r := range rows {
 		p := overviewProject(r.Project)
@@ -122,6 +128,19 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 				agents[id] = new(float64)
 			}
 			*agents[id] += value
+			cost := weightedTokens(id, r.Input, r.CacheRead, r.CacheWrite, r.Output)
+			if weighted[id] == nil {
+				weighted[id] = new(float64)
+			}
+			*weighted[id] += cost
+			if barAgents[p.ID] == nil {
+				barAgents[p.ID] = map[string]*agentSum{}
+			}
+			if barAgents[p.ID][id] == nil {
+				barAgents[p.ID][id] = &agentSum{}
+			}
+			barAgents[p.ID][id].tokens += value
+			barAgents[p.ID][id].weighted += cost
 		}
 		if totals.Tokens == nil {
 			totals.Tokens = new(float64)
@@ -166,6 +185,7 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		d := daily[date]
 		d.DurationSamples = int64(len(durations[date]))
 		d.DurationMedianSeconds = overviewMedian(durations[date])
+		d.InProgress = at.Equal(today)
 		if at.Before(since) {
 			out.PreviousDaily = append(out.PreviousDaily, *d)
 		} else {
@@ -177,7 +197,17 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 	out.PreviousTotals.DurationSamples = int64(len(previousDurations))
 	out.PreviousTotals.DurationMedianSeconds = overviewMedian(previousDurations)
 	for id, tokens := range bars {
-		out.Projects = append(out.Projects, contract.UsageOverviewProject{ID: id, Name: options[id].Name, Tokens: tokens})
+		row := contract.UsageOverviewProject{ID: id, Name: options[id].Name, Tokens: tokens, Agents: []contract.UsageOverviewProjectAgent{}}
+		for agent, sum := range barAgents[id] {
+			row.Agents = append(row.Agents, contract.UsageOverviewProjectAgent{ID: agent, Tokens: sum.tokens, Weighted: sum.weighted})
+		}
+		sort.Slice(row.Agents, func(i, j int) bool {
+			if row.Agents[i].Tokens == row.Agents[j].Tokens {
+				return row.Agents[i].ID < row.Agents[j].ID
+			}
+			return row.Agents[i].Tokens > row.Agents[j].Tokens
+		})
+		out.Projects = append(out.Projects, row)
 	}
 	sort.Slice(out.Projects, func(i, j int) bool {
 		if out.Projects[i].Tokens == out.Projects[j].Tokens {
@@ -186,8 +216,11 @@ func (u *UsageLedger) Overview(ctx context.Context, days int, project string) (c
 		return out.Projects[i].Tokens > out.Projects[j].Tokens
 	})
 	for id, tokens := range agents {
-		out.Agents = append(out.Agents, contract.UsageOverviewAgent{ID: id, Tokens: tokens})
+		out.Agents = append(out.Agents, contract.UsageOverviewAgent{ID: id, Tokens: tokens, Weighted: weighted[id]})
+		out.QuotaWeights = append(out.QuotaWeights, quotaWeightOf(id))
+		out.QuotaWeights[len(out.QuotaWeights)-1].ID = id
 	}
+	sort.Slice(out.QuotaWeights, func(i, j int) bool { return out.QuotaWeights[i].ID < out.QuotaWeights[j].ID })
 	sort.Slice(out.Agents, func(i, j int) bool {
 		a, b := out.Agents[i], out.Agents[j]
 		if a.Tokens == nil || b.Tokens == nil {

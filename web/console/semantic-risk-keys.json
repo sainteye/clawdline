@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10950,
+  "englishKeys": 10958,
   "counts": {
-    "negation": 3051,
+    "negation": 3052,
     "state": 1807,
     "permission": 639,
     "deletion": 247,
     "uncertainty": 421
   },
-  "unionCount": 4827,
+  "unionCount": 4828,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2685,6 +2685,7 @@
       "next.usageEmpty",
       "next.usageFailed",
       "next.usageMissing",
+      "next.usageQuotaCaption",
       "next.voiceInstallPromptLater",
       "next.voiceInstallPromptNoBinary",
       "next.voiceInstallPromptNoModel",
@@ -10365,6 +10366,7 @@
     "next.usageFailed",
     "next.usageMissing",
     "next.usageNoValue",
+    "next.usageQuotaCaption",
     "next.voiceDiscard",
     "next.voiceIncomplete",
     "next.voiceInstallPromptDone",
