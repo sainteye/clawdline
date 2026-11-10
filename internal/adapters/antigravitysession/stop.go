@@ -68,5 +68,6 @@ func (h *Host) Stop(ctx context.Context, row session.Session) error {
 	c.client = nil
 	c.row.PID = 0
 	c.stopping = false
+	err = errors.Join(err, c.settleUnreportedTools())
 	return errors.Join(err, c.saveState())
 }

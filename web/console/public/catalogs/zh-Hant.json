@@ -407,6 +407,7 @@
   "antigravity.toolFailed": "失敗",
   "antigravity.toolPending": "等待中",
   "antigravity.toolRunning": "執行中",
+  "antigravity.toolUnreported": "未回報結果",
   "antigravity.turnIncomplete": "這個 Antigravity 回合未正常完成。",
   "antigravity.unknown": "尚未確認這台機器上的 {assistant} 是否可用。",
   "antigravity.unknownAuth": "尚不確定 {assistant} 的登入狀態。請在這台機器的 CLI 中確認。",

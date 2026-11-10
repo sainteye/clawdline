@@ -129,6 +129,14 @@ func (s *historyStore) restore(profile string) (map[string]*conversation, error)
 	if rows.Err() != nil {
 		return nil, refusal("history_unavailable")
 	}
+	rows.Close()
+	// No process survives a daemon restart, so no tool from before it can
+	// still report. The single history connection is free once rows closed.
+	for _, c := range out {
+		if err := c.settleUnreportedTools(); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
 }
 

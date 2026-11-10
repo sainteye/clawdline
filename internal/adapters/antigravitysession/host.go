@@ -349,10 +349,13 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 		if c.client != nil && c.client.Err() != nil {
 			row.Menu = nil
 			row.State = session.StateUnknown
-			if !c.uncertain {
+			// Shutdown closes every process itself; Shutdown already saved
+			// what was running. A process it closed did not die mid-turn.
+			if !c.uncertain && !h.closed {
 				c.uncertain = true
 				c.row.State = session.StateUnknown
 				_ = c.saveState()
+				_ = c.settleUnreportedTools()
 			}
 		}
 		c.mu.Unlock()

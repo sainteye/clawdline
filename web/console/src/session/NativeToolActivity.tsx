@@ -47,7 +47,7 @@ type NativeToolLabels = { toolLabel: string; countLabel: (count: number) => stri
 export function NativeToolCard({ entry, sessionID, expanded = false, toolLabel, assistant }: { entry: TranscriptEntry; sessionID?: string; expanded?: boolean; toolLabel: string; assistant?: string }) {
   const [open, setOpen] = useState(expanded)
   const activity = entry.activity
-  const statuses: Record<string, string> = { completed: "toolCompleted", inProgress: "toolRunning", in_progress: "toolRunning", pending: "toolPending", failed: "toolFailed", cancelled: "toolCancelled" }
+  const statuses: Record<string, string> = { completed: "toolCompleted", inProgress: "toolRunning", in_progress: "toolRunning", pending: "toolPending", failed: "toolFailed", cancelled: "toolCancelled", unreported: "toolUnreported" }
   const status = activity?.status ? (statuses[activity.status] ? catalogWord("antigravity", statuses[activity.status]) : activity.status) : ""
   const agent = activity?.agentID
   const title = nativeToolTitle(entry, assistant)

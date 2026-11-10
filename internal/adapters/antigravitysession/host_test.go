@@ -198,6 +198,14 @@ func TestOwnedPeer(t *testing.T) {
 		case "session/set_model":
 			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
+			if os.Getenv("CLW_BACKGROUND_TOOL_PEER") == "yes" {
+				// The 2026-11-10 shape: a shell command keeps running in the
+				// background and the turn ends with it still in_progress.
+				notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "bg-1", "title": "Deploy in the background", "kind": "execute", "status": "in_progress"})
+				notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "I will report when it finishes."}})
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]string{"stopReason": "end_turn"}})
+				continue
+			}
 			if os.Getenv("CLW_WATCHDOG_TOOL_PEER") == "yes" {
 				interruptTurns++
 				if interruptTurns == 1 {
