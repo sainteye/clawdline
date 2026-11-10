@@ -146,6 +146,12 @@ export function resend(token: string): Promise<void> {
   return sender.resend(token)
 }
 
+/** A held queued card's "send now": claimed once, then sent under its original request. */
+export async function sendQueued(token: string): Promise<void> {
+  const card = pendingSends.startQueued(token, Date.now())
+  if (card) await deliverUntilSeen(card)
+}
+
 /** A `send_unsubmitted` card's "press Enter" (`Sender.enter`): the machine presses it only at the card's words. */
 export function enter(token: string): Promise<void> {
   return sender.enter(token)

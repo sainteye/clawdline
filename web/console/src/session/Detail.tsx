@@ -4,7 +4,7 @@ import { outputSessionKey, readOutputs } from "./output-files-api.js"
 import { OutputFiles } from "./OutputFiles.js"
 import { WorkflowProfileHeader } from "./workflow-profile-header.js"
 import { assistantStateCurrent, assistantProtocolOwned, sessionActionVisibility } from "./antigravity-ui.js"
-import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
+import { assistantFactsMachine, useAssistantFacts, useAssistantQueues } from "./assistant-facts.js"
 import { catalogWord, currentCatalogTag } from "../catalog.js"
 import type { Icon, ScanSource, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
 import {
@@ -135,8 +135,15 @@ export function Detail({
   scanSources?: readonly ScanSource[]
 }) {
   const T = L.strings
-  const readiness = useAssistantFacts(assistantFactsMachine(row), row?.execution_generation, row?.source?.observed_at, row?.assistant === "antigravity" && !assistantProtocolOwned(row) && assistantStateCurrent(row))
+  // An owned conversation reads the machine's inventory too, only for its
+  // queue capability: one read per machine and execution, not one per native
+  // observation, because that capability does not follow the screen.
+  const owned = assistantProtocolOwned(row)
+  const readiness = useAssistantFacts(assistantFactsMachine(row), row?.execution_generation, owned ? 0 : row?.source?.observed_at,
+    owned || (row?.assistant === "antigravity" && assistantStateCurrent(row)))
   const assistantFacts = readiness.assistants.find(facts => facts.id === row?.assistant)
+  const assistantQueues = useAssistantQueues(JSON.stringify([assistantFactsMachine(row), row?.execution_generation ?? ""]),
+    readiness, row?.assistant) && owned
   const [agentId, setAgentId] = useState<string | null>(null)
   const [suggestedDraft, setSuggestedDraft] = useState<{ target: InterventionTarget; text: string; id: number } | null>(null)
   const suggestedDraftSerial = useRef(0)
@@ -458,7 +465,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       </div>
       <OutputFiles row={row} machine={readerMachine} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />

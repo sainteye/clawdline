@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10948,
-  "riskKeys": 4826,
-  "nonRiskCount": 6122,
+  "englishContentKeys": 10950,
+  "riskKeys": 4827,
+  "nonRiskCount": 6123,
   "groups": [
     {
       "name": "acp / other",
@@ -4582,7 +4582,7 @@
     },
     {
       "name": "next / send",
-      "count": 10,
+      "count": 11,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4596,7 +4596,8 @@
         "next.sendEntering",
         "next.sendLook",
         "next.sendLookTip",
-        "next.sendLooking"
+        "next.sendLooking",
+        "next.sendQueuedNow"
       ]
     },
     {

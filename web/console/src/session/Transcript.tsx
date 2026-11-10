@@ -52,7 +52,7 @@ import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { outcomeOf, sitsUnsubmitted, waitsOnQuestion } from "./outcome.js"
 import { INTERRUPTED } from "./persist.js"
-import { enter, look, pendingSends, resend } from "./send.js"
+import { enter, look, pendingSends, resend, sendQueued } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import { elapsedWords } from "./working-clock.js"
 import "./pending.css"
@@ -613,7 +613,11 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   ) : null
   if (skeleton) return <Skeleton />
   // Newest end: the bottom, or the top when the transcript reads newest first.
-  const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(pendingHTML)
+  // A queued card waits for the turn to end idle. A turn that ended any other
+  // way never sends it, so the card says so and offers sending it by hand.
+  const queueHeld = session?.state === "unknown"
+  const queueWho = assistantLabel(session?.assistant)
+  const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(card => pendingHTML(card, queueWho, queueHeld))
   const live = working ? <WorkingLine key="working" line={session?.line ?? ""} /> : null
   const heavy = heavyWork ? <HeavyWorkLine key="heavy" reason={heavyWork.reason} startedAt={heavyWork.started_at} /> : null
   // The working line is newer than any card: the turn it stands for is the
@@ -912,7 +916,7 @@ function technicalDetails(detail: string): ReactElement | null {
  * that may have gone — nothing answered, or the answer was lost — says it does
  * not know, beside "look" (F3).
  */
-function pendingHTML(card: PendingSend): ReactElement {
+function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false): ReactElement {
   const T = L.strings
   const esc = L.escapeHTML
   const n = card.pictures.length
@@ -937,8 +941,13 @@ function pendingHTML(card: PendingSend): ReactElement {
   // pictures cannot go with them and the same words under a new request would
   // be the message twice.
   const partial = card.partial ? '<span class="pending-partial">' + esc(nextWord("sendKeptWords")) + "</span>" : ""
-  if (card.state === "queued") {
-    body += '<div class="pending-state" role="status"><span>' + esc(nextWord("sendQueuedHere")) + '</span>' + partial + dismiss + '</div>'
+  if (card.state === "queued" && queueHeld) {
+    const now = card.partial ? "" : '<button type="button" class="go" data-pending-send-queued="' + esc(card.token) + '">' +
+      esc(nextWord("sendQueuedNow")) + "</button>"
+    body += '<div class="pending-state" role="alert"><span>' + esc(nextWord("sendQueuedHeld", { assistant })) + '</span>' +
+      partial + now + dismiss + '</div>'
+  } else if (card.state === "queued") {
+    body += '<div class="pending-state" role="status"><span>' + esc(nextWord("sendQueuedHere", { assistant })) + '</span>' + partial + dismiss + '</div>'
   } else if (card.state === "failed") {
     body +=
       '<div class="pending-state" role="alert"><span>' +
@@ -1084,6 +1093,11 @@ function pendingAction(ev: MouseEvent<HTMLElement>) {
   const entered = target.closest?.("[data-pending-enter]")
   if (entered) {
     void enter(entered.getAttribute("data-pending-enter") ?? "")
+    return
+  }
+  const queued = target.closest?.("[data-pending-send-queued]")
+  if (queued) {
+    void sendQueued(queued.getAttribute("data-pending-send-queued") ?? "")
     return
   }
   const retry = target.closest?.("[data-pending-retry]")

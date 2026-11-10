@@ -5,7 +5,7 @@ import { onMachineChanged } from "../cloud/machine-switch.ts"
 // @ts-expect-error -- Node's strip-types runner needs the source extension.
 import { STATUS_FRESH_MS } from "../cloud/status-projection.ts"
 // @ts-expect-error -- Node's strip-types runner needs the source extension.
-import { ANTIGRAVITY_STATE_FRESH_MS, type AssistantFacts } from "./antigravity-ui.ts"
+import { ANTIGRAVITY_STATE_FRESH_MS, assistantQueuesInput, type AssistantFacts } from "./antigravity-ui.ts"
 
 export type AssistantFactsReading = { kind: "loading" | "error" | "stale" | "unknown" | "ready"; assistants: AssistantFacts[]; expiresAt?: number }
 const empty = (kind: AssistantFactsReading["kind"]): AssistantFactsReading => ({ kind, assistants: [] })
@@ -94,4 +94,25 @@ export function useAssistantFacts(machine = "", execution = "", observedAt = 0, 
     if (enabled && observedAt && Date.now() >= validUntil.current) refresh.current?.()
   }, [key, observedAt, enabled])
   return enabled && held?.key === key ? held.reading : empty("loading")
+}
+
+export type QueueKnowledge = { key: string; queues: boolean }
+
+/**
+ * Whether the machine takes a message sent while an owned turn runs. The
+ * capability belongs to the daemon, not to the native screen's freshness, so
+ * the last ready reading for the same machine and execution stays true after
+ * that reading expires; a new key starts from false (the browser queue).
+ */
+export function knowQueue(previous: QueueKnowledge | null, key: string, reading: AssistantFactsReading,
+  assistant: string | undefined): QueueKnowledge {
+  const known = previous?.key === key ? previous.queues : false
+  if (reading.kind !== "ready") return { key, queues: known }
+  return { key, queues: assistantQueuesInput(reading.assistants.find(facts => facts.id === assistant)) }
+}
+
+export function useAssistantQueues(key: string, reading: AssistantFactsReading, assistant: string | undefined): boolean {
+  const held = useRef<QueueKnowledge | null>(null)
+  held.current = knowQueue(held.current, key, reading, assistant)
+  return held.current.queues
 }
