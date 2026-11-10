@@ -566,3 +566,83 @@ func TestFirstRequestSurvivesViewEvictionAndReopen(t *testing.T) {
 		t.Fatal("history read started a provider")
 	}
 }
+
+// On 2026-11-10 a Gemini turn ended while its deploy command was still
+// in_progress in the background; the daemon then restarted and closed the
+// process. The command could no longer report, yet the phone showed it as
+// running for good and the finished conversation came back as unknown.
+func TestBackgroundToolStopsRunningWhenItsProcessCloses(t *testing.T) {
+	t.Setenv("CLW_BACKGROUND_TOOL_PEER", "yes")
+	h, row, opts := persistentFixture(t)
+	if err := h.Send(context.Background(), row, "deploy"); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+	status := func(h *Host) string {
+		t.Helper()
+		p, err := h.Transcript(row, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range p.Entries {
+			if e.Activity != nil && e.Activity.ToolCallID == "bg-1" {
+				return e.Activity.Status
+			}
+		}
+		t.Fatalf("background tool missing: %+v", p.Entries)
+		return ""
+	}
+	if got := status(h); got != "inProgress" {
+		t.Fatalf("a background command is still running while its process lives: %q", got)
+	}
+	stopHost(t, h)
+	h = reopenHost(t, opts)
+	if got := status(h); got != ToolStatusUnreported {
+		t.Fatalf("a tool whose process closed is shown as %q", got)
+	}
+	inv, err := h.Inventory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range inv.Sessions {
+		if s.ID == row.ID && s.State != session.StateIdle {
+			t.Fatalf("a turn that ended normally came back as %q", s.State)
+		}
+	}
+}
+
+// Shutdown closes every process before it forgets the rows. An inventory read
+// in that window saw a closed client and saved a finished conversation as
+// uncertain, so it came back as unknown after the 2026-11-10 restart.
+func TestShutdownClosingAProcessIsNotAnUncertainTurn(t *testing.T) {
+	h, row, opts := persistentFixture(t)
+	if err := os.WriteFile(filepath.Join(opts.AccountDir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "first"); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+	c, err := h.lookup(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.mu.Lock()
+	h.closed = true
+	h.mu.Unlock()
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Inventory(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	uncertain := c.uncertain
+	c.mu.Unlock()
+	if uncertain {
+		t.Fatal("closing the process during shutdown marked a finished turn uncertain")
+	}
+}

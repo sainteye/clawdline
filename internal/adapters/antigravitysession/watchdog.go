@@ -1,6 +1,11 @@
 package antigravitysession
 
-import "github.com/sainteye/clawdline/internal/adapters/antigravityacp"
+import (
+	"encoding/json"
+
+	"github.com/sainteye/clawdline/internal/adapters/antigravityacp"
+	"github.com/sainteye/clawdline/internal/contract"
+)
 
 // trackActiveTool is called under c.mu, before either durable or memory
 // projection. Transcript eviction must not turn a live tool into inactivity.
@@ -95,3 +100,80 @@ func (c *conversation) cancelActiveTools() error {
 	}
 	return nil
 }
+
+func toolStillRunning(e contract.TranscriptEntry) bool {
+	if e.Role != "tool" || e.Activity == nil {
+		return false
+	}
+	switch e.Activity.Status {
+	case "pending", "in_progress", "inProgress":
+		return true
+	}
+	return false
+}
+
+// settleUnreportedTools is called under c.mu once nothing can report for this
+// generation any more: its process closed, or the daemon started without it.
+// A tool can stay in_progress after end_turn while it runs in the background,
+// so a finished turn alone is no reason to settle it. The revision changes so
+// viewers reread the rows; the activity clock does not, since nothing new
+// happened in the conversation.
+func (c *conversation) settleUnreportedTools() error {
+	settle := func(e *contract.TranscriptEntry) bool {
+		if !toolStillRunning(*e) {
+			return false
+		}
+		e.Activity.Status = ToolStatusUnreported
+		return true
+	}
+	if c.store == nil {
+		changed := false
+		for i := range c.entries {
+			changed = settle(&c.entries[i]) || changed
+		}
+		if changed {
+			c.revision++
+		}
+		return nil
+	}
+	rows, err := c.store.db.Query(`SELECT ordinal,tool_id,body FROM entries WHERE id=? AND generation=? AND tool_id<>''
+	 AND json_extract(CAST(body AS TEXT),'$.activity.status') IN ('pending','in_progress','inProgress')`, c.row.ID, c.generation)
+	if err != nil {
+		return refusal("history_unavailable")
+	}
+	type found struct {
+		ordinal int64
+		tool    string
+		entry   contract.TranscriptEntry
+	}
+	var open []found
+	for rows.Next() {
+		var f found
+		var raw []byte
+		if rows.Scan(&f.ordinal, &f.tool, &raw) != nil || json.Unmarshal(raw, &f.entry) != nil {
+			rows.Close()
+			return refusal("history_unavailable")
+		}
+		if settle(&f.entry) {
+			open = append(open, f)
+		}
+	}
+	if rows.Close() != nil || rows.Err() != nil {
+		return refusal("history_unavailable")
+	}
+	if len(open) == 0 {
+		return nil
+	}
+	c.revision++
+	for _, f := range open {
+		if err := c.saveEntry(f.ordinal, f.tool, f.entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ToolStatusUnreported is the status of a tool whose Gemini process closed
+// before the tool reported a result. It says only that no result can arrive;
+// it does not claim the command stopped, failed or was cancelled.
+const ToolStatusUnreported = "unreported"

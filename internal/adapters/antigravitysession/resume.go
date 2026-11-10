@@ -264,6 +264,13 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	c.textOrdinal = 0
 	c.textIndex = -1
 	c.textRole = ""
+	if needsLoad {
+		// A replay reports what the closed process last said; the new
+		// process is not running any tool that never reported.
+		if err := c.settleUnreportedTools(); err != nil {
+			return session.Session{}, err
+		}
+	}
 	if importing {
 		h.rows[c.row.ID] = c
 	}

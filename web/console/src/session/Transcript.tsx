@@ -1835,7 +1835,7 @@ function activityCardHTML(v: View, e: Entry, at: number) {
   const activity = activityOf(e) || ({} as Partial<TranscriptActivity>)
   const kind = activity.kind === "explored" ? "explored" : "called"
   const title = kind === "called" ? String(activity.title || e.text || e.tool || "") : ""
-  const statusKeys: Record<string, string> = { completed: "toolCompleted", inProgress: "toolRunning", in_progress: "toolRunning", pending: "toolPending", failed: "toolFailed", cancelled: "toolCancelled" }
+  const statusKeys: Record<string, string> = { completed: "toolCompleted", inProgress: "toolRunning", in_progress: "toolRunning", pending: "toolPending", failed: "toolFailed", cancelled: "toolCancelled", unreported: "toolUnreported" }
   const status = activity.status && statusKeys[activity.status] ? catalogWord("antigravity", statusKeys[activity.status]) : activity.status
   const meta = [status, durationText(activity.durationMs)].filter((value) => !!value)
   const actions = kind === "explored" ? activityActionsHTML(activity.actions || []) : ""

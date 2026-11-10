@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10964,
+  "englishKeys": 10965,
   "counts": {
-    "negation": 3054,
+    "negation": 3055,
     "state": 1809,
     "permission": 643,
     "deletion": 247,
     "uncertainty": 421
   },
-  "unionCount": 4832,
+  "unionCount": 4833,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -92,6 +92,7 @@
       "antigravity.integrationMissing",
       "antigravity.missing",
       "antigravity.modelUnavailable",
+      "antigravity.toolUnreported",
       "antigravity.turnIncomplete",
       "antigravity.unknown",
       "antigravity.unsupported",
@@ -6322,6 +6323,7 @@
     "antigravity.toolFailed",
     "antigravity.toolPending",
     "antigravity.toolRunning",
+    "antigravity.toolUnreported",
     "antigravity.turnIncomplete",
     "antigravity.unknown",
     "antigravity.unknownAuth",

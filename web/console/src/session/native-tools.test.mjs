@@ -53,3 +53,12 @@ test("delegated roles are visible without inventing child completion or executin
  const empty=renderToStaticMarkup(React.createElement(NativeToolCard,{...labels,entry:{...row,activity:{...row.activity,resultKnown:true}},expanded:true}))
  assert.match(empty,/native interface supplied an empty text result/)
 })
+
+test("a tool whose process closed before it reported is no longer shown as running",()=>{
+ const row=(status)=>({role:"tool",tool:"execute",text:"./deploy web",activity:{kind:"called",actions:[],durationMs:-1,status}})
+ const running=renderToStaticMarkup(React.createElement(NativeToolCard,{...labels,entry:row("inProgress")}))
+ assert.match(running,/data-live="1"/);assert.match(running,/running/)
+ const ended=renderToStaticMarkup(React.createElement(NativeToolCard,{...labels,entry:row("unreported")}))
+ assert.doesNotMatch(ended,/data-live|running/)
+ assert.match(ended,/no result reported/)
+})
