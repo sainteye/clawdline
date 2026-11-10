@@ -376,9 +376,11 @@ func TestGrokMismatchedCompletionIsNotSuccessOrAnotherPrompt(t *testing.T) {
 
 // A Grok Read of a photo carries the base64 image twice in one frame. A
 // 394 KB JPEG ended a real turn with grok_process_frame_too_large at 1 MiB.
+// The picture is dropped while the line is read, so its size does not matter
+// and the transcript keeps no base64.
 func TestGrokPhotoReadDoesNotEndTheTurn(t *testing.T) {
 	h, row, opts := grokFixture(t)
-	const photo = 2 << 20
+	const photo = 12 << 20
 	if err := os.WriteFile(filepath.Join(opts.AccountDir, "prompt-image-read"), []byte(strconv.Itoa(photo)), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +404,7 @@ func TestGrokPhotoReadDoesNotEndTheTurn(t *testing.T) {
 			if e.Role == "error" {
 				t.Fatalf("photo read ended the turn: %s", e.Text)
 			}
-			read = read || e.Role == "tool" && e.Activity != nil && e.Activity.ResultKnown && e.Detail != nil && e.Detail.TextBytes > photo
+			read = read || e.Role == "tool" && e.Activity != nil && e.Activity.ResultKnown && strings.Contains(e.Activity.Result, "base64 characters]") && e.Detail == nil
 		}
 		return completed.Load() == 1
 	})

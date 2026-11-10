@@ -4,7 +4,6 @@
 package antigravityprocess
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -968,15 +967,16 @@ func (c *Client) writeUnlocked(b []byte) error {
 
 func (c *Client) readLoop() {
 	defer close(c.readDone)
-	scanner := bufio.NewScanner(c.out)
-	scanner.Buffer(make([]byte, 0), c.opts.MaxFrameBytes+1)
-	for scanner.Scan() {
-		frame := append(json.RawMessage(nil), scanner.Bytes()...)
-		c.observe("in", "received", frame, 0)
-		if len(frame) > c.opts.MaxFrameBytes {
-			c.shutdown(failure("frame_too_large", Uncertain))
-			return
+	reader := newFrameReader(c.out, c.opts.MaxFrameBytes)
+	var readErr error
+	for {
+		raw, err := reader.next()
+		if err != nil {
+			readErr = err
+			break
 		}
+		frame := append(json.RawMessage(nil), raw...)
+		c.observe("in", "received", frame, 0)
 		m, err := object(frame)
 		if err != nil || !equalString(m["jsonrpc"], "2.0") {
 			c.shutdown(failure("invalid_frame", Uncertain))
@@ -1081,9 +1081,9 @@ func (c *Client) readLoop() {
 		}
 	}
 	code := "eof"
-	if scanner.Err() != nil {
+	if readErr != io.EOF {
 		code = "read_failed"
-		if scanner.Err() == bufio.ErrTooLong {
+		if readErr == errFrameTooLong {
 			code = "frame_too_large"
 		}
 	}
