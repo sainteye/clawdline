@@ -9053,6 +9053,7 @@
   "next.infoGrokAccountQuota": "這台機器的 Grok 帳號額度，由各 Session 共用。",
   "next.grokResponseMismatch": "Grok Build 傳回的回覆不符合目前要求，Clawdline 無法確認這個回合已完成。",
   "next.grokRequestFailed": "Grok Build 對這次要求傳回錯誤，Clawdline 無法確認這個回合已完成。",
+  "next.toolResultOutput": "輸出",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

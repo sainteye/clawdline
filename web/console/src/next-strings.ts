@@ -228,6 +228,7 @@ const words = {
     toolResultImageAlt: "Stored tool screenshot",
     toolResultOriginal: "Load original image",
 
+    toolResultOutput: "Output",
     toolResultRaw: "Stored native output",
     toolResultExpand: "Read full text",
     toolResultLoading: "Reading stored result…",
@@ -2671,6 +2672,7 @@ const words = {
     toolResultImageAlt: "工具紀錄所存截圖",
     toolResultOriginal: "讀取原圖",
 
+    toolResultOutput: "輸出",
     toolResultRaw: "查看原生紀錄所存回傳",
     toolResultExpand: "讀取完整文字",
     toolResultLoading: "正在讀取所存結果…",

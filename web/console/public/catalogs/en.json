@@ -9053,6 +9053,7 @@
   "next.infoGrokAccountQuota": "Grok account quota, shared by Sessions on this machine.",
   "next.grokResponseMismatch": "Grok Build returned a response that did not match the current request. Clawdline could not confirm that this turn finished.",
   "next.grokRequestFailed": "Grok Build returned an error for this request. Clawdline could not confirm that this turn finished.",
+  "next.toolResultOutput": "Output",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

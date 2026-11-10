@@ -11,6 +11,8 @@
 .activity-readable .activity-title { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
 .activity-readable .activity-meta { margin-left: auto; }
 .tool-result { min-width: 0; }
+.tool-output-fold > summary { cursor: pointer; color: var(--dim); font-size: 12px; padding: 4px 11px 8px; }
+.tool-output-fold[open] > summary { padding-bottom: 4px; }
 .tool-result-body { padding: 4px 11px 11px; }
 .tool-result-loading { display: flex; align-items: center; gap: 6px; color: var(--dim); }
 .tool-result-read { min-height: 32px; }

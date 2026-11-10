@@ -73,7 +73,7 @@ import "./history.css"
 import "./notice-leftovers.css"
 import "./coordination-notice.css"
 import { VideoCards } from "./VideoCards.js"
-import { ToolResult } from "./ToolResult.js"
+import { ToolOutput, ToolResult, foldsToolOutput } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
 import { NativeToolRun, nativeRunLength } from "./NativeToolActivity.js"
 import { ToolRow, ToolRunToggle } from "./ToolPresentation.js"
@@ -1833,9 +1833,11 @@ function activityCardHTML(v: View, e: Entry, at: number) {
           {title && <span className="activity-title">{title}</span>}
           <span className="activity-meta">{meta.join(" · ")}</span></header>
         {actions && <ul dangerouslySetInnerHTML={{ __html: actions }} />}
-        {kind === "called" && (activity.toolResult
-          ? <ToolResult key={(v.sessionID || "") + activity.toolResult.reference} sessionID={v.sessionID} result={activity.toolResult} />
-          : activity.result ? <pre className="activity-result">{activity.result}</pre> : null)}
+        {kind === "called" && (activity.toolResult || activity.result) && <ToolOutput fold={foldsToolOutput(activity.status)}>
+          {activity.toolResult
+            ? <ToolResult key={(v.sessionID || "") + activity.toolResult.reference} sessionID={v.sessionID} result={activity.toolResult} />
+            : <pre className="activity-result">{activity.result}</pre>}
+        </ToolOutput>}
       </section></div>
     </div>
   )

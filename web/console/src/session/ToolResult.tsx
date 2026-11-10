@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { TranscriptToolResult } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { failureParts, failureSentence } from "../refusals/refusal-text.js"
@@ -109,4 +109,19 @@ export function ToolResult({ sessionID, result }: { sessionID?: string; result: 
       {sessionID && <StoredResult sessionID={sessionID} result={result} representation="raw" />}
     </div>
   </div>
+}
+
+/**
+ * Whether a call's output starts folded: every call but one that failed or was
+ * cancelled, whose error is the thing worth seeing. The card's header still
+ * names the call, its status and its duration.
+ */
+export function foldsToolOutput(status: string | undefined): boolean {
+  return status !== "failed" && status !== "cancelled"
+}
+
+/** A call's output, behind one "Output" row when folded. */
+export function ToolOutput({ fold, children }: { fold: boolean; children: ReactNode }) {
+  if (!fold) return <>{children}</>
+  return <details className="tool-output-fold"><summary>{nextWord("toolResultOutput")}</summary>{children}</details>
 }

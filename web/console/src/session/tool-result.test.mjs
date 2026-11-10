@@ -6,10 +6,10 @@ import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-const { outputFiles } = await build({stdin:{contents:'export { ToolResult, storedImageFailure } from "./ToolResult.tsx"; export { RefusalError } from "../../../core/src/refusal.ts"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const { outputFiles } = await build({stdin:{contents:'export { ToolResult, ToolOutput, foldsToolOutput, storedImageFailure } from "./ToolResult.tsx"; export { RefusalError } from "../../../core/src/refusal.ts"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled = {exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {ToolResult} = compiled.exports
+const {ToolResult, ToolOutput, foldsToolOutput} = compiled.exports
 const result = {reference:"0:"+"a".repeat(64),preview:"<script>unsafe</script>\nsecond",textBytes:34,rawBytes:100,images:0,unknownBlocks:0,sourceTruncated:false}
 test("short text renders inline and no detail or image is fetched by the initial render",()=>{
  const prior=globalThis.fetch
@@ -43,4 +43,19 @@ test("missing stored image bytes cannot be repaired by retrying, while transport
  for (const [status,code] of [[503,"tool_image_unavailable"],[503,"cloud_read_busy"],[409,"stale_cursor"],[403,"forbidden"]]) {
   assert.equal(failure(status,code).unavailable,false)
  }
+})
+
+// A tool's output folds behind one "Output" row unless the call failed: a
+// computer-use call returned a dozen lines of accessibility-tree diff on every
+// step, and a phone conversation became mostly tool output (2026-11-10).
+test("a finished call's output starts folded and a failed call's stays open",()=>{
+ for (const status of ["completed","inProgress",undefined]) assert.equal(foldsToolOutput(status),true,String(status))
+ for (const status of ["failed","cancelled"]) assert.equal(foldsToolOutput(status),false,status)
+ const folded=renderToStaticMarkup(React.createElement(ToolOutput,{fold:true},React.createElement(ToolResult,{sessionID:"s",result})))
+ assert.match(folded,/<details class="tool-output-fold"><summary>Output<\/summary>/)
+ assert.doesNotMatch(folded,/open=""/)
+ assert.match(folded,/&lt;script&gt;unsafe/)
+ const open=renderToStaticMarkup(React.createElement(ToolOutput,{fold:false},React.createElement(ToolResult,{sessionID:"s",result})))
+ assert.doesNotMatch(open,/tool-output-fold/)
+ assert.match(open,/&lt;script&gt;unsafe/)
 })

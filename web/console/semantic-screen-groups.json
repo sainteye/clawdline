@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10935,
+  "englishContentKeys": 10936,
   "riskKeys": 4821,
-  "nonRiskCount": 6114,
+  "nonRiskCount": 6115,
   "groups": [
     {
       "name": "acp / other",
@@ -3783,7 +3783,7 @@
     },
     {
       "name": "next / other",
-      "count": 678,
+      "count": 679,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4349,6 +4349,7 @@
         "next.toolResultNext",
         "next.toolResultOriginal",
         "next.toolResultOther",
+        "next.toolResultOutput",
         "next.toolResultPreviewImage",
         "next.toolResultPrevious",
         "next.toolResultRaw",
