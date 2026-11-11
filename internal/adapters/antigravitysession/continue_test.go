@@ -170,7 +170,36 @@ func TestATurnWhoseHostContextIsCancelledFirstIsStillWoken(t *testing.T) {
 			t.Fatalf("a restart was shown as a failed turn: %q", e.Text)
 		}
 	}
+	// The synthetic worker answers a prompt once released.
+	if err := os.WriteFile(filepath.Join(opts.AccountDir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if n := h.ContinueInterrupted(context.Background()); n != 1 {
 		t.Fatalf("woke %d conversations, want 1", n)
+	}
+	// The count is taken before sending; prove the continuation reached the
+	// worker, as the conversation's last user message, exactly once.
+	waitFor(t, func() bool { return readFile(t, prompts) == "prompt\nprompt\n" })
+	idleHost(t, h, row)
+	page, err = h.Transcript(row, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := ""
+	for _, e := range page.Entries {
+		if e.Role == "user" {
+			last = e.Text
+		}
+	}
+	if last != ContinueText {
+		t.Fatalf("last user message = %q, want the continuation", last)
+	}
+	stopHost(t, h)
+	h = reopenHost(t, opts)
+	if n := h.ContinueInterrupted(context.Background()); n != 0 {
+		t.Fatalf("the continuation was sent again (%d)", n)
+	}
+	if got := readFile(t, prompts); got != "prompt\nprompt\n" {
+		t.Fatalf("prompts after a second restart = %q", got)
 	}
 }
