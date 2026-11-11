@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { COPILOT_TOOLS, SCREEN_READ_ATTEMPTS, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, COPILOT_TOOLS, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -23,7 +23,7 @@ const PAINTED =
 
 interface Call { path: string; init?: RequestInit }
 
-function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?: number } = {}) {
+function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?: number; transcripts?: Record<string, unknown> } = {}) {
   const calls: Call[] = []
   const sleeps: number[] = []
   const reads: Record<string, number> = {}
@@ -33,6 +33,12 @@ function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?
       if (path === "/v1/sessions") {
         if (opts.sessionsStatus) return Response.json({ error: { code: "unauthorized", message: "sign in again" } }, { status: opts.sessionsStatus })
         return Response.json({ sessions: ROWS, at: 1 })
+      }
+      if (path.startsWith("/v1/transcript?")) {
+        const id = new URLSearchParams(path.split("?")[1]).get("session") ?? ""
+        const t = opts.transcripts?.[id]
+        if (!t) return Response.json({ error: { code: "no_transcript", message: "no transcript for this session" } }, { status: 404 })
+        return Response.json(t)
       }
       const m = /^\/v1\/sessions\/([^/]+)\/(screen|send)$/.exec(path)
       if (m && m[2] === "screen") {
@@ -112,6 +118,7 @@ test("an ambiguous name is put back to the person, not guessed", async () => {
   assert.match(out.error, /2 個 Sessions/)
   assert.match(out.error, /Fix the flaky test/)
   assert.match(out.error, /Fix the login test/)
+  assert.deepEqual(out.candidates, [{ id: "%7", label: "Fix the flaky test" }, { id: "%9", label: "Fix the login test" }])
   assert.deepEqual(calls.map((c) => c.path), ["/v1/sessions"])
 })
 
@@ -156,7 +163,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
   assert.equal(ev.session.audio.output.voice, "alloy")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_sessions", "get_session_screen", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_sessions", "get_session_activity", "get_session_screen", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -168,4 +175,78 @@ test("a tool's answer goes back as its call's output and asks for the spoken rep
 
 test("plain text keeps CJK and drops OSC titles", () => {
   assert.equal(plainScreenText("\x1b]0;title\x07測試 \x1b[32m通過\x1b[0m  "), "測試 通過")
+})
+
+// Entries in the shape `GET /v1/transcript?session=` answers.
+const TRANSCRIPT = {
+  id: "%7",
+  entries: [
+    { at: "1", role: "user", text: "Make the flaky login test pass and push it." },
+    { at: "2", role: "assistant", text: "The test fails because the session cookie expires mid-run." },
+    { at: "3", role: "tool", tool: "Bash", text: "go test ./internal/auth -run TestLogin -count=20 " + "x".repeat(400) },
+    { at: "4", role: "tool", text: "\x1b[32mok\x1b[0m  github.com/example/auth 1.2s" },
+    { at: "5", role: "assistant", text: "Twenty runs pass now. Should I push to main?" },
+  ],
+}
+
+test("get_session_activity explains a Session from its transcript, goal first and newest last", async () => {
+  const { deps, calls } = fakeMachine({}, { transcripts: { "%7": TRANSCRIPT } })
+  const { output, logs } = await runCopilotTool("get_session_activity", '{"session_id":"flaky"}', deps)
+  const out = JSON.parse(output)
+  assert.deepEqual(calls.map((c) => c.path).slice(0, 2), ["/v1/sessions", "/v1/transcript?session=%257"])
+  assert.equal(out.label, "Fix the flaky test")
+  assert.equal(out.state, "waiting")
+  assert.deepEqual(out.recent_activity.map((e: { role: string }) => e.role), ["user", "assistant", "tool", "tool", "assistant"])
+  assert.equal(out.recent_activity[0].text, "Make the flaky login test pass and push it.")
+  assert.equal(out.recent_activity.at(-1).text, "Twenty runs pass now. Should I push to main?")
+  assert.equal(out.recent_activity[2].tool, "Bash")
+  assert.ok(out.recent_activity[2].text.length <= 163, "a command is clipped")
+  assert.equal(out.recent_activity[3].text, "ok github.com/example/auth 1.2s")
+  assert.ok(logs.some((l) => l.text.includes("5 筆")))
+})
+
+test("get_session_activity says why when the machine has no transcript", async () => {
+  const { deps } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("get_session_activity", '{"session_id":"%2"}', deps)).output)
+  assert.match(out.error, /HTTP 404/)
+  assert.match(out.error, /no transcript for this session/)
+})
+
+test("a long transcript keeps the newest turns within budget and still names the goal", () => {
+  const entries = [{ role: "user", text: "GOAL" }, ...Array.from({ length: 59 }, (_, i) => ({ role: "assistant", text: `step ${i} ` + "y".repeat(590) }))]
+  const kept = activityOf(entries)
+  const chars = kept.reduce((n: number, e: { text: string }) => n + e.text.length, 0)
+  assert.equal(kept[0].text, "GOAL")
+  assert.match(kept.at(-1)?.text ?? "", /^step 58 /)
+  assert.ok(chars <= ACTIVITY_TOTAL_CHARS + 10, String(chars))
+  assert.ok(kept.length < entries.length)
+})
+
+test("a waiting Session's activity carries the question on its screen", async () => {
+  const { deps, calls } = fakeMachine(
+    { "%7": [{ pending: true }, { pending: false, readable: true, text: "Push to main?\n\x1b[1m❯ 1. Yes\x1b[0m\n  2. No\n" }] },
+    { transcripts: { "%7": TRANSCRIPT } },
+  )
+  const out = JSON.parse((await runCopilotTool("get_session_activity", '{"session_id":"%7"}', deps)).output)
+  assert.equal(out.waiting_screen_text, "Push to main?\n❯ 1. Yes\n  2. No")
+  assert.equal(calls.filter((c) => c.path.endsWith("/screen")).length, 2)
+})
+
+test("a working Session's activity does not read its screen", async () => {
+  const { deps, calls } = fakeMachine({}, { transcripts: { "%9": { entries: [{ role: "user", text: "go" }] } } })
+  const out = JSON.parse((await runCopilotTool("get_session_activity", '{"session_id":"%9"}', deps)).output)
+  assert.equal(out.waiting_screen_text, undefined)
+  assert.equal(calls.some((c) => c.path.endsWith("/screen")), false)
+})
+
+test("a long report keeps its conclusion", () => {
+  const [kept] = activityOf([{ role: "assistant", text: "start " + "z".repeat(2000) + " CONCLUSION" }])
+  assert.match(kept.text, /^start /)
+  assert.match(kept.text, / CONCLUSION$/)
+})
+
+test("a pane id without its sign is that pane, not a position in the list", async () => {
+  const { deps } = fakeMachine({ "%2": [{ pending: false, readable: true, text: "two" }], "%7": [{ pending: false, readable: true, text: "seven" }] })
+  assert.equal(JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"7"}', deps)).output).session_id, "%7")
+  assert.match(JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"3"}', deps)).output).error, /找不到/)
 })
