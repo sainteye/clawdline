@@ -3,9 +3,11 @@ package planner
 import (
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The pairs are from the 2026-11-11 measurement: what Whisper wrote, and what
@@ -61,7 +63,7 @@ func TestPolishRunsOneToolLessClaudeTurnAndKeepsTheTranscriptInert(t *testing.T)
 			return []byte(`{"structured_output":{"text":"好，那就先這樣，我等一下再看。"}}`), nil
 		},
 	}
-	got, err := p.Polish(context.Background(), "好那就先這樣把我等一下再看。", []string{"Clawdline"}, PolishPunctuation, "claude")
+	got, err := p.Polish(context.Background(), "好那就先這樣把我等一下再看。", []string{"Clawdline"}, PolishPunctuation, "Hant", "claude")
 	if err != nil || got != "好，那就先這樣，我等一下再看。" {
 		t.Fatalf("got %q, %v", got, err)
 	}
@@ -85,7 +87,7 @@ func TestPolishDiscardsAnUnfaithfulAnswer(t *testing.T) {
 			return []byte(`{"structured_output":{"text":"好的，我知道了。"}}`), nil
 		},
 	}
-	_, err := p.Polish(context.Background(), "你先不要動那個檔案我還在改等我改完了再跟你講", nil, PolishTidy, "claude")
+	_, err := p.Polish(context.Background(), "你先不要動那個檔案我還在改等我改完了再跟你講", nil, PolishTidy, "Hant", "claude")
 	if !errors.Is(err, ErrPolishUnfaithful) {
 		t.Fatalf("err %v", err)
 	}
@@ -93,10 +95,76 @@ func TestPolishDiscardsAnUnfaithfulAnswer(t *testing.T) {
 
 func TestPolishRefusesWithoutTheChosenAssistant(t *testing.T) {
 	p := Planner{LookPath: func(string) (string, error) { return "", errors.New("absent") }, Home: t.TempDir()}
-	if _, err := p.Polish(context.Background(), "好", nil, PolishTidy, "codex"); !errors.Is(err, ErrNoPlanner) {
+	if _, err := p.Polish(context.Background(), "好", nil, PolishTidy, "", "codex"); !errors.Is(err, ErrNoPlanner) {
 		t.Fatalf("err %v", err)
 	}
-	if _, err := p.Polish(context.Background(), strings.Repeat("字", MaxPolishRunes+1), nil, PolishTidy, "claude"); !errors.Is(err, ErrPolishTooLong) {
+	if _, err := p.Polish(context.Background(), strings.Repeat("字", MaxPolishRunes+1), nil, PolishTidy, "", "claude"); !errors.Is(err, ErrPolishTooLong) {
 		t.Fatalf("err %v", err)
+	}
+}
+
+// The prompt keeps the script the transcript is already in. A Simplified
+// speaker's cleanup used to be told to write Traditional Chinese, and then
+// either converted silently or refused as unfaithful.
+func TestPolishPromptKeepsTheTranscriptsScript(t *testing.T) {
+	for script, want := range map[string]string{
+		"Hant": "Traditional characters", "Hans": "Simplified characters", "": "do not convert",
+		"Latn": "do not convert",
+	} {
+		got := PolishPrompt(PolishTidy, script)
+		if !strings.Contains(got, want) || strings.Contains(got, "%") {
+			t.Errorf("%q: %s", script, got)
+		}
+		for _, other := range []string{"Traditional characters", "Simplified characters"} {
+			if other != want && strings.Contains(got, other) {
+				t.Errorf("%q also says %s", script, other)
+			}
+		}
+	}
+}
+
+func TestPolishThatOutlastsItsBoundIsATimeout(t *testing.T) {
+	p := Planner{
+		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
+		Timeout:  20 * time.Millisecond,
+		Run: func(ctx context.Context, _ string, _ []string, _, _ string, _ []string) ([]byte, error) {
+			<-ctx.Done()
+			return nil, &ExitError{Err: ctx.Err()}
+		},
+	}
+	for _, assistant := range []string{"claude", "codex"} {
+		if _, err := p.Polish(context.Background(), "好那就先這樣", nil, PolishTidy, "Hant", assistant); !errors.Is(err, ErrPolishTimeout) {
+			t.Errorf("%s: err %v", assistant, err)
+		}
+	}
+}
+
+func TestPolishRunsOneSandboxedCodexTurn(t *testing.T) {
+	var gotArgs []string
+	var gotStdin string
+	p := Planner{
+		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
+		Home:     t.TempDir(),
+		Run: func(_ context.Context, executable string, args []string, stdin, dir string, _ []string) ([]byte, error) {
+			if executable != "/bin/codex" {
+				t.Fatalf("ran %s", executable)
+			}
+			gotArgs, gotStdin = args, stdin
+			out := args[slices.Index(args, "-o")+1]
+			return nil, os.WriteFile(out, []byte(`{"text":"好，那就先這樣，我等一下再看。"}`), 0o600)
+		},
+	}
+	got, err := p.Polish(context.Background(), "好那就先這樣把我等一下再看。", nil, PolishPunctuation, "Hant", "codex")
+	if err != nil || got != "好，那就先這樣，我等一下再看。" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	for _, pair := range [][2]string{{"-m", polishCodexModel}, {"--sandbox", "read-only"}, {"--disable", "shell_tool"}} {
+		i := slices.Index(gotArgs, pair[0])
+		if i < 0 || gotArgs[i+1] != pair[1] {
+			t.Errorf("args lack %s %s: %v", pair[0], pair[1], gotArgs)
+		}
+	}
+	if !strings.Contains(gotStdin, "Traditional characters") || !strings.Contains(gotStdin, "<transcript>\n好那就先這樣把我等一下再看。\n</transcript>") {
+		t.Errorf("stdin %q", gotStdin)
 	}
 }

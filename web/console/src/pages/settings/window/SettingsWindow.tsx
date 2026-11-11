@@ -31,6 +31,7 @@ import {
 } from "../cloud.js"
 import { directLocalNetworkShown } from "../direct-local.js"
 import { DEFAULTS, reading, supportsITermIntegration, type SettingKey } from "./defaults.js"
+import { cleanVocabulary, validTerm, VOICE_VOCABULARY_RUNES, VOICE_VOCABULARY_TERMS } from "./vocabulary.js"
 import { installVoiceModel, readVoiceLanguage, readVoiceSetup } from "../voice.js"
 import {
   APP_EVENT,
@@ -73,9 +74,6 @@ type Draft = Partial<Record<SettingKey, string | number | boolean>>
 // The native input bar is paused; keep its controls for when it returns.
 const INPUT_BAR_ENABLED = false
 const VOICE_ENABLED = true
-/** `nextconfig.MaxVoiceVocabularyTerms` and `MaxVoiceVocabularyRunes`. */
-const VOICE_VOCABULARY_TERMS = 200
-const VOICE_VOCABULARY_RUNES = 64
 const HOOKS_ENABLED = false
 
 
@@ -759,7 +757,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
     const assistant = String(now("voice_polish_assistant")) === "codex" ? "codex" : "claude"
     const installed = voiceSetupState?.polish_assistants ?? []
     const level = String(now("voice_polish_level")) === "punctuation" ? "punctuation" : "tidy"
-    const custom = Array.isArray(now("voice_vocabulary")) ? [...(now("voice_vocabulary") as readonly string[])] : []
+    const custom = cleanVocabulary(now("voice_vocabulary"))
     const projectsOn = !!now("voice_vocabulary_projects")
     const projects = voiceSetupState?.vocabulary_projects ?? []
     const builtin = voiceSetupState?.vocabulary_builtin ?? []
@@ -767,8 +765,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
       const term = voiceTerm.trim()
       if (!term) return
       if (custom.length >= VOICE_VOCABULARY_TERMS) { setVoiceTermSaid(W.voiceVocabularyFull); return }
-      if ([...term].length > VOICE_VOCABULARY_RUNES || /[\u0000-\u001f\u007f]/.test(term) ||
-        custom.some((known) => known.toLowerCase() === term.toLowerCase())) {
+      if (!validTerm(term) || custom.some((known) => known.toLowerCase() === term.toLowerCase())) {
         setVoiceTermSaid(W.voiceVocabularyInvalid)
         return
       }

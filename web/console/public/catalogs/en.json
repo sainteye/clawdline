@@ -9753,7 +9753,7 @@
   "settings.voicePolishExampleFixedText": "Can you check why the build failed? I think the config file was not loaded.",
   "settings.voicePolishModel": "Model",
   "settings.voicePolishClaude": "Claude Haiku (Claude Code)",
-  "settings.voicePolishCodex": "Codex small model (slower, about 7 s)",
+  "settings.voicePolishCodex": "Codex small model (slower, about 5–8 s)",
   "settings.voicePolishMissing": "{assistant} is not installed on this machine, so each transcript is used as Whisper wrote it.",
   "settings.voicePolishLevel": "Cleanup",
   "settings.voicePolishPunctuation": "Punctuation only",

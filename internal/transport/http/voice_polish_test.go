@@ -46,16 +46,16 @@ func polishServer(t *testing.T, settings map[string]any) *Server {
 }
 
 type polishCall struct {
-	text, level, assistant string
-	terms                  []string
+	text, level, script, assistant string
+	terms                          []string
 }
 
 func usePolisher(t *testing.T, answer func(polishCall) (string, error)) *[]polishCall {
 	t.Helper()
 	calls := &[]polishCall{}
 	was := voicePolisher
-	voicePolisher = func(_ context.Context, text string, terms []string, level, assistant string) (string, error) {
-		c := polishCall{text, level, assistant, terms}
+	voicePolisher = func(_ context.Context, text string, terms []string, level, script, assistant string) (string, error) {
+		c := polishCall{text, level, script, assistant, terms}
 		*calls = append(*calls, c)
 		return answer(c)
 	}
@@ -153,5 +153,26 @@ func TestSpokenNameLeavesOutGeneratedFolderNames(t *testing.T) {
 		if got := spokenName(name); got != want {
 			t.Errorf("%s: %v, want %v", name, got, want)
 		}
+	}
+}
+
+// The queue slot is Whisper's. While one cleanup turn is still running, the
+// queue already counts that recording as gone.
+func TestVoiceCleanupDoesNotHoldTheTranscriptionSlot(t *testing.T) {
+	queued := -1
+	usePolisher(t, func(polishCall) (string, error) {
+		voiceQueued.Lock()
+		queued = voiceQueued.n
+		voiceQueued.Unlock()
+		return heard, nil
+	})
+	transcribeOnce(t, polishServer(t, map[string]any{"voice_polish": true}), "slot")
+	if queued != 0 {
+		t.Fatalf("%d recordings were still queued while cleanup ran", queued)
+	}
+	voiceQueued.Lock()
+	defer voiceQueued.Unlock()
+	if voiceQueued.n != 0 {
+		t.Fatalf("the slot was handed back twice or not at all: %d", voiceQueued.n)
 	}
 }

@@ -765,8 +765,10 @@ export function Composer({
       {dictated && <div className="voice-polish" data-status={dictated.status === "applied" ? "applied" : "fallback"} role="status">
         <span className="voice-polish-tag">{polishWord(dictated)}</span>
         {dictated.raw && <button type="button" onClick={() => {
+          // Read and written the way appendMsg writes dictation in: as
+          // innerText, so the line breaks of a multi-line draft survive.
           const el = msg.current
-          const next = el ? swapDictation(el.textContent ?? "", dictated) : null
+          const next = el ? swapDictation(rawText(), dictated) : null
           if (!el || !next) { setDictated(null); return }
           el.textContent = next.text
           changed()

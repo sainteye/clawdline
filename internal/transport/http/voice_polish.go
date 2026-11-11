@@ -33,8 +33,8 @@ const voiceProjectTermLimit = 40
 
 // voicePolisher runs one cleanup turn. A variable so a test can answer without
 // an assistant installed.
-var voicePolisher = func(ctx context.Context, text string, terms []string, level, assistant string) (string, error) {
-	return planner.New().Polish(ctx, text, terms, level, assistant)
+var voicePolisher = func(ctx context.Context, text string, terms []string, level, script, assistant string) (string, error) {
+	return planner.New().Polish(ctx, text, terms, level, script, assistant)
 }
 
 // voicePolishAvailable is which assistants could clean up a transcript here.
@@ -153,13 +153,13 @@ func (s *Server) vocabulary(o voiceOptions) []string {
 // polishTranscript is the cleanup step. It never fails the transcription: the
 // answer is either the cleaned text with the original beside it, or the
 // original with the reason it was kept.
-func polishTranscript(ctx context.Context, o voiceOptions, text string, terms []string) (string, string, *contract.VoicePolish) {
+func polishTranscript(ctx context.Context, o voiceOptions, text, script string, terms []string) (string, string, *contract.VoicePolish) {
 	if !o.polish || strings.TrimSpace(text) == "" {
 		return text, "", nil
 	}
 	started := time.Now()
 	all := append(append([]string{}, whisper.AlwaysExpected...), terms...)
-	cleaned, err := voicePolisher(ctx, text, all, o.level, o.assistant)
+	cleaned, err := voicePolisher(ctx, text, all, o.level, script, o.assistant)
 	result := &contract.VoicePolish{Assistant: o.assistant, Ms: time.Since(started).Milliseconds()}
 	switch {
 	case err == nil && cleaned == text:
