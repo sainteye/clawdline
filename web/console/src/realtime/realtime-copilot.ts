@@ -10,6 +10,7 @@ import { adjustEvent, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnap
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { openOnThisPage } from './copilot-open.js'
+import { nextWord } from '../next-strings.js'
 
 export interface CopilotLogItem {
   id: string
@@ -122,6 +123,11 @@ if (typeof window !== 'undefined') {
   }
 }
 
+/** The language the console is shown in, which the copilot speaks (`<html lang>`). */
+function consoleLanguage(): string {
+  return typeof document === 'undefined' ? '' : document.documentElement.lang || ''
+}
+
 export class RealtimeCopilotClient {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
@@ -187,7 +193,7 @@ export class RealtimeCopilotClient {
         res = await fetch('/v1/voice/copilot-briefing', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}' })
       } catch {
         // refusal-ok: the briefing is optional; an unreachable one leaves the call going and the copilot reads the Sessions itself.
-        this.addLog('error', '讀不到機器的匯報（連線失敗）')
+        this.addLog('error', nextWord('copilotLogBriefingUnreachable'))
         return null
       }
       const body = (await res.json().catch(() => null)) as { briefing?: unknown; pending?: unknown; retry_after_ms?: unknown; error?: { code?: unknown } } | null
@@ -197,7 +203,7 @@ export class RealtimeCopilotClient {
       }
       if (res.ok && typeof body?.briefing === 'string' && body.briefing.trim()) return body.briefing
       const code = typeof body?.error?.code === 'string' ? body.error.code : `HTTP ${res.status}`
-      if (code !== 'copilot_briefing_off') this.addLog('error', `機器的匯報沒有整理成功（${code}），副駕駛會自己讀 Session`)
+      if (code !== 'copilot_briefing_off') this.addLog('error', nextWord('copilotLogBriefingFailed', { code }))
       return null
     }
     return null
@@ -209,7 +215,7 @@ export class RealtimeCopilotClient {
     this.call.options = { ...this.call.options, briefing: text }
     // Only the instructions and speed: the call has spoken by now, and its voice is fixed.
     this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
-    this.addLog('info', '機器整理好的現況匯報已交給副駕駛')
+    this.addLog('info', nextWord('copilotLogBriefingSent'))
   }
   private model = 'gpt-realtime-mini'
 
@@ -231,7 +237,7 @@ export class RealtimeCopilotClient {
   }
 
   private addLog(level: 'info' | 'tool' | 'error', text: string) {
-    const time = new Date().toLocaleTimeString('zh-TW', { hour12: false })
+    const time = new Date().toLocaleTimeString(consoleLanguage() || undefined, { hour12: false })
     const item: CopilotLogItem = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: time,
@@ -257,8 +263,8 @@ export class RealtimeCopilotClient {
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
     this.updateState({ status: 'connecting', error: undefined, toolCallLog: undefined, remembered: this.memory.length })
-    this.addLog('info', '正在向機器要通話憑證，並請求麥克風權限...')
-    if (meterRefused) this.addLog('info', `光球無法跟著音量動：${meterRefused}`)
+    this.addLog('info', nextWord('copilotLogStarting'))
+    if (meterRefused) this.addLog('info', nextWord('copilotLogNoMeter', { reason: meterRefused }))
 
     try {
       // 0. The machine mints a short-lived client secret with its own key; the
@@ -274,8 +280,8 @@ export class RealtimeCopilotClient {
         const code = grant?.error?.code ?? `HTTP ${opened.status}`
         // refusal-ok: only a missing key has an action here (Settings); every other refusal is shown with its own code and the machine's sentence.
         throw new Error(code === 'copilot_key_missing'
-          ? '這台機器還沒設定 OpenAI API Key：請到「設定 › 語音副駕駛」填入。'
-          : `機器沒有開出通話憑證（${code}）${grant?.error?.message ? '：' + grant.error.message : ''}`)
+          ? nextWord('copilotErrorKeyMissing')
+          : grant?.error?.message ? nextWord('copilotErrorNoPassDetail', { code, message: grant.error.message }) : nextWord('copilotErrorNoPass', { code }))
       }
       this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
@@ -285,7 +291,7 @@ export class RealtimeCopilotClient {
       // 1. Get microphone audio stream
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const inputRefused = meterRefused ? null : this.meter.attachInput(this.mediaStream)
-      if (inputRefused) this.addLog('info', `光球無法跟著你的音量動：${inputRefused}`)
+      if (inputRefused) this.addLog('info', nextWord('copilotLogNoInputMeter', { reason: inputRefused }))
 
       // 2. Setup RTCPeerConnection
       this.pc = new RTCPeerConnection()
@@ -297,7 +303,7 @@ export class RealtimeCopilotClient {
         if (this.audioEl && event.streams[0]) {
           this.audioEl.srcObject = event.streams[0]
           const outputRefused = meterRefused ? null : this.meter.attachOutput(event.streams[0])
-          if (outputRefused) this.addLog('info', `光球無法跟著副駕駛的音量動：${outputRefused}`)
+          if (outputRefused) this.addLog('info', nextWord('copilotLogNoOutputMeter', { reason: outputRefused }))
         }
       }
 
@@ -329,19 +335,20 @@ export class RealtimeCopilotClient {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(`OpenAI Realtime 連線失敗 (${response.status}): ${errorText}`)
+        throw new Error(nextWord('copilotErrorRealtime', { status: response.status, detail: errorText }))
       }
 
       const answerSdp = await response.text()
       await this.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
 
       this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
-      this.addLog('info', 'WebRTC 連線建立成功，全雙工語音通話已就緒')
+      this.addLog('info', nextWord('copilotLogConnected'))
     } catch (err) {
+      // refusal-ok: every error thrown above already names the machine's code and sentence; it is shown whole.
       this.disconnect()
       const msg = err instanceof Error ? err.message : String(err)
       this.updateState({ status: 'error', error: msg })
-      this.addLog('error', `連線發生錯誤: ${msg}`)
+      this.addLog('error', nextWord('copilotLogConnectFailed', { message: msg }))
     }
   }
 
@@ -361,7 +368,7 @@ export class RealtimeCopilotClient {
 
     dc.onerror = (err) => {
       console.error('DataChannel error:', err)
-      this.updateState({ status: 'error', error: '語音資料通道發生錯誤' })
+      this.updateState({ status: 'error', error: nextWord('copilotErrorChannel') })
     }
 
     dc.onclose = () => {
@@ -374,18 +381,18 @@ export class RealtimeCopilotClient {
   private async sendSessionConfiguration() {
     if (!this.dc || this.dc.readyState !== 'open') return
 
-    this.addLog('info', '正在讀取 Session 快照並傳送副駕駛設定...')
+    this.addLog('info', nextWord('copilotLogConfiguring'))
     // Waits for the snapshot at most SNAPSHOT_WAIT_MS: a slow machine must not hold the call's first words.
     const snapshot = await Promise.race([this.snapshot,
       new Promise<string>((resolve) => setTimeout(() => resolve(''), SNAPSHOT_WAIT_MS))])
     if (!this.dc || this.dc.readyState !== 'open') return
-    this.addLog(snapshot ? 'info' : 'error', snapshot ? '已附上 Session 快照，第一句就能直接問' : 'Session 快照沒有及時讀到，副駕駛會改用工具查詢')
+    this.addLog(snapshot ? 'info' : 'error', nextWord(snapshot ? 'copilotLogSnapshot' : 'copilotLogNoSnapshot'))
     const section = memorySection(this.memory, nowSeconds())
-    if (section) this.addLog('info', `已載入之前通話的 ${this.memory.length} 句對話`)
-    this.call = { ...this.call, memory: section, snapshot }
+    if (section) this.addLog('info', nextWord('copilotLogMemory', { count: this.memory.length }))
+    this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
-    this.dc.send(JSON.stringify(greetingEvent(!!section)))
-    this.addLog('info', '已送出開場問候要求')
+    this.dc.send(JSON.stringify(greetingEvent(!!section, consoleLanguage())))
+    this.addLog('info', nextWord('copilotLogGreeting'))
   }
 
   // Both spellings of the output events are handled: GA names them
@@ -393,11 +400,11 @@ export class RealtimeCopilotClient {
   private async handleRealtimeEvent(event: any) {
     switch (event.type) {
       case 'session.updated':
-        this.addLog('info', `副駕駛配置已生效（${Array.isArray(event.session?.tools) ? event.session.tools.length : 0} 個工具）`)
+        this.addLog('info', nextWord('copilotLogConfigured', { count: Array.isArray(event.session?.tools) ? event.session.tools.length : 0 }))
         break
       case 'error': {
-        const msg = event.error?.message || event.error?.code || '未知錯誤'
-        this.addLog('error', `OpenAI 回報錯誤：${msg}`)
+        const msg = event.error?.message || event.error?.code || nextWord('copilotLogUnknownError')
+        this.addLog('error', nextWord('copilotLogOpenAIError', { message: msg }))
         break
       }
       case 'input_audio_buffer.speech_started':
@@ -428,7 +435,7 @@ export class RealtimeCopilotClient {
         if (event.transcript) {
           this.updateState({ lastTranscript: event.transcript })
           this.keep('user', event.transcript)
-          this.addLog('info', `語音轉文字識別結果：「${event.transcript}」`)
+          this.addLog('info', nextWord('copilotLogHeard', { text: event.transcript }))
         }
         break
       case 'response.done': {
@@ -457,11 +464,11 @@ export class RealtimeCopilotClient {
     this.memory = []
     writeMemory([])
     this.updateState({ remembered: 0 })
-    this.addLog('info', '已清除之前的通話紀錄')
+    this.addLog('info', nextWord('copilotLogForgot'))
   }
 
   private async handleToolCall(event: { call_id: string; name: string; arguments: string }) {
-    this.updateState({ toolCallLog: `正在執行工具：${event.name}...`, speakingState: 'thinking' })
+    this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: event.name }), speakingState: 'thinking' })
     const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
@@ -512,7 +519,7 @@ export class RealtimeCopilotClient {
     }
     this.meter.close()
 
-    this.addLog('info', '語音通話已結束並關閉媒體流')
+    this.addLog('info', nextWord('copilotLogEnded'))
 
     this.updateState({
       status: 'disconnected',

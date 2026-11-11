@@ -3,6 +3,7 @@ package antigravitysession
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"regexp"
 	"sort"
@@ -62,38 +63,75 @@ func (h *Host) beginMetadataOp(ctx context.Context, c *conversation, requireClie
 	}, nil
 }
 
+func (h *Host) acquireConfigOp(ctx context.Context, c *conversation) (*antigravityprocess.Client, context.Context, func(), error) {
+	for {
+		client, opCtx, done, err := h.beginMetadataOp(ctx, c, true, true)
+		if err == nil {
+			return client, opCtx, done, nil
+		}
+		var typed *Error
+		if !errors.As(err, &typed) || typed.Code != "busy" {
+			return nil, nil, nil, err
+		}
+		c.mu.Lock()
+		idle := c.row.State == session.StateIdle && !c.stopping
+		opDone := c.opDone
+		c.mu.Unlock()
+		if !idle || opDone == nil {
+			return nil, nil, nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, nil, nil, refusal("cancelled")
+		case <-h.ctx.Done():
+			return nil, nil, nil, refusal("closed")
+		case <-opDone:
+		}
+	}
+}
+
 func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string, before func() error) error {
 	c.mu.Lock()
 	structured := c.structuredConfig
+	models := c.models
+	efforts := c.efforts
 	c.mu.Unlock()
-	if structured {
-		return h.selectConfig(ctx, c, "model", modelID, before)
+	targetModel, targetEffort, ok := resolveModelChoice(modelID, models, efforts)
+	if !ok {
+		return refusal("model_not_offered")
 	}
-	client, opCtx, done, err := h.beginMetadataOp(ctx, c, true, true)
+	if structured {
+		if err := h.selectConfig(ctx, c, "model", targetModel, before); err != nil {
+			return err
+		}
+		if targetEffort != "" {
+			c.mu.Lock()
+			effortConfigID := c.effortConfigID()
+			c.mu.Unlock()
+			if effortConfigID != "" {
+				if err := h.selectConfig(ctx, c, effortConfigID, targetEffort, nil); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	client, opCtx, done, err := h.acquireConfigOp(ctx, c)
 	if err != nil {
 		return err
 	}
 	defer done()
-	c.mu.Lock()
-	offered := false
-	for _, m := range c.models {
-		offered = offered || m.ID == modelID
-	}
-	c.mu.Unlock()
-	if !offered {
-		return refusal("model_not_offered")
-	}
-	if err := client.SetModelChecked(opCtx, modelID, before); err != nil {
+	if err := client.SetModelChecked(opCtx, targetModel, before); err != nil {
 		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.model = modelID // Ack selects the next turn; it does not execute a model.
-	return c.rememberChoice("model", modelID)
+	c.model = targetModel // Ack selects the next turn; it does not execute a model.
+	return c.rememberChoice("model", targetModel)
 }
 
 func (h *Host) selectConfig(ctx context.Context, c *conversation, id, value string, before func() error) error {
-	client, opCtx, done, err := h.beginMetadataOp(ctx, c, true, true)
+	client, opCtx, done, err := h.acquireConfigOp(ctx, c)
 	if err != nil {
 		return err
 	}
