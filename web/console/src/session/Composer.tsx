@@ -48,6 +48,9 @@ import { commandCatalog } from "../legacy/command-catalog.js"
 import { nativeTerminalAvailable, nativeTerminalCommand } from "./native-terminal-command.js"
 import { droppedFiles, droppedReferences, nativeDroppedPaths } from "./file-drop.js"
 import { resumeCommandQuery } from "./resume-command.js"
+import { realtimeCopilot } from "../realtime/realtime-copilot.js"
+import { RealtimeCopilotModal } from "../realtime/RealtimeCopilotModal.js"
+import "../realtime/realtime.css"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -210,6 +213,14 @@ export function Composer({
     matches: [],
     selected: 0,
   })
+  const [copilotOpen, setCopilotOpen] = useState(false)
+  const [copilotActive, setCopilotActive] = useState(false)
+
+  useEffect(() => {
+    return realtimeCopilot.subscribe((s) => {
+      setCopilotActive(s.status === "connected" || s.status === "connecting")
+    })
+  }, [])
   // Retain only the last displayed rows for the exit picture. Selection logic
   // still uses `skills`, which is cleared immediately when the picker closes.
   const skillPicture = useRef(skills)
@@ -859,6 +870,19 @@ export function Composer({
             <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
           </svg>
         </button>
+        <button
+          className={`voice-phone${copilotActive ? " in-call" : ""}`}
+          id="voice-phone"
+          type="button"
+          aria-label={copilotActive ? "語音副駕駛通話中" : "開啟語音副駕駛"}
+          title={copilotActive ? "語音副駕駛通話中" : "開啟語音副駕駛"}
+          onClick={() => setCopilotOpen(true)}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <svg className="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
+          </svg>
+        </button>
         {/* Uncontrolled: React renders no children here, so it never rewrites
             what is being typed. Only the attributes follow state, and React
             writes an attribute only when it changes — the same reason the
@@ -1014,6 +1038,7 @@ export function Composer({
         </>
       )}
     </dialog>
+    <RealtimeCopilotModal open={copilotOpen} onClose={() => setCopilotOpen(false)} />
     </>
   )
 }
