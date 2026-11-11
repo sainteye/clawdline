@@ -1,0 +1,147 @@
+// Package copilot holds the voice copilot's settings as this machine keeps
+// them: the OpenAI key that never leaves the machine, the Realtime model, how
+// patiently the copilot waits for the person to finish, and the person's own
+// extra instructions.
+//
+// The key is written, never read back: every answer carries only whether one
+// is set and its last four characters. A phone starts a call with a short-lived
+// client secret the machine mints from it (internal/transport/http/copilot.go).
+package copilot
+
+import (
+	"errors"
+	"strings"
+	"unicode/utf8"
+)
+
+// The limits a settings change is held to. Each is registered in
+// internal/domain/capacity (register_console.go).
+const (
+	// MaxKeyBytes bounds a pasted OpenAI key; real keys are well under it.
+	MaxKeyBytes = 400
+	// MaxExtraInstructionsRunes bounds the person's own instructions, which
+	// ride in every response's input.
+	MaxExtraInstructionsRunes = 2000
+	// ClientSecretSeconds is how long a minted client secret can open a call.
+	ClientSecretSeconds = 600
+)
+
+// Models a call may use, cheapest first; the first is the default.
+var Models = []string{"gpt-realtime-mini", "gpt-realtime"}
+
+// Eagerness is semantic_vad's patience; "low" waits longest and is the default.
+var Eagerness = []string{"low", "auto", "high"}
+
+// BriefingAssistants are the CLIs the machine can run to prepare a briefing.
+var BriefingAssistants = []string{"claude", "codex"}
+
+// Settings is the stored file. Key is never sent in any answer.
+type Settings struct {
+	Key               string `json:"openai_key,omitempty"`
+	Model             string `json:"model,omitempty"`
+	Eagerness         string `json:"eagerness,omitempty"`
+	ExtraInstructions string `json:"extra_instructions,omitempty"`
+	BriefingAssistant string `json:"briefing_assistant,omitempty"`
+	// BriefingOff turns the machine's prepared briefing off; on unless set.
+	BriefingOff bool `json:"briefing_off,omitempty"`
+}
+
+// Effective fills every unset choice with its default.
+func (s Settings) Effective() Settings {
+	if !contains(Models, s.Model) {
+		s.Model = Models[0]
+	}
+	if !contains(Eagerness, s.Eagerness) {
+		s.Eagerness = Eagerness[0]
+	}
+	if !contains(BriefingAssistants, s.BriefingAssistant) {
+		s.BriefingAssistant = BriefingAssistants[0]
+	}
+	return s
+}
+
+// KeyHint is what an answer may say about the key: its last four characters.
+func (s Settings) KeyHint() string {
+	k := strings.TrimSpace(s.Key)
+	if len(k) < 8 {
+		return ""
+	}
+	return k[len(k)-4:]
+}
+
+// Change is one settings write; a nil field is left as it is.
+type Change struct {
+	Key               *string `json:"openai_key"`
+	Model             *string `json:"model"`
+	Eagerness         *string `json:"eagerness"`
+	ExtraInstructions *string `json:"extra_instructions"`
+	BriefingAssistant *string `json:"briefing_assistant"`
+	Briefing          *bool   `json:"briefing"`
+}
+
+// Errors a change is refused with; each is the refusal's code.
+var (
+	ErrBadKey          = errors.New("copilot_bad_key")
+	ErrBadModel        = errors.New("copilot_bad_model")
+	ErrBadEagerness    = errors.New("copilot_bad_eagerness")
+	ErrBadInstructions = errors.New("copilot_bad_instructions")
+	ErrBadAssistant    = errors.New("copilot_bad_assistant")
+)
+
+// Apply returns the settings with the change made, or why it is refused.
+// An empty key removes the stored one.
+func Apply(original Settings, c Change) (Settings, error) {
+	s, err := apply(original, c)
+	if err != nil {
+		return original, err
+	}
+	return s, nil
+}
+
+func apply(s Settings, c Change) (Settings, error) {
+	if c.Key != nil {
+		k := strings.TrimSpace(*c.Key)
+		if k != "" && (len(k) > MaxKeyBytes || !strings.HasPrefix(k, "sk-") || strings.ContainsAny(k, " \t\r\n\x00")) {
+			return s, ErrBadKey
+		}
+		s.Key = k
+	}
+	if c.Model != nil {
+		if !contains(Models, *c.Model) {
+			return s, ErrBadModel
+		}
+		s.Model = *c.Model
+	}
+	if c.Eagerness != nil {
+		if !contains(Eagerness, *c.Eagerness) {
+			return s, ErrBadEagerness
+		}
+		s.Eagerness = *c.Eagerness
+	}
+	if c.ExtraInstructions != nil {
+		v := strings.TrimSpace(*c.ExtraInstructions)
+		if utf8.RuneCountInString(v) > MaxExtraInstructionsRunes || strings.ContainsRune(v, 0) || !utf8.ValidString(v) {
+			return s, ErrBadInstructions
+		}
+		s.ExtraInstructions = v
+	}
+	if c.BriefingAssistant != nil {
+		if !contains(BriefingAssistants, *c.BriefingAssistant) {
+			return s, ErrBadAssistant
+		}
+		s.BriefingAssistant = *c.BriefingAssistant
+	}
+	if c.Briefing != nil {
+		s.BriefingOff = !*c.Briefing
+	}
+	return s, nil
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}

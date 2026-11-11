@@ -257,6 +257,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.community_share_fetch_seconds` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `console.community_share_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
+| `console.copilot_list_transcript_reads` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_memory_turns` | 24 | `rows` | `evict_oldest` | `sender, diagnostics` | — |
+| `console.copilot_recap_pages` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.direct_history_hours` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.execution_recovery_attempts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -646,6 +650,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `usage.work_cursor_queue` | 1024 | `rows` | `refuse` | `diagnostics, log` | — |
 | `usage.work_cursor_rows` | 50000 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `usage.work_units_per_answer` | 500 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `voice.copilot_briefing_characters` | 2500 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_briefing_input_characters` | 60000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_briefing_timeout_milliseconds` | 90000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_extra_instructions_characters` | 2000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_key_bytes` | 400 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `voice.polish_characters` | 4000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.polish_terms` | 240 | `rows` | `refuse` | `diagnostics` | — |

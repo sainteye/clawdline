@@ -310,6 +310,10 @@ export type WriteRoute =
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
   | { op: "voice-settings"; word: Carried<"voice-settings"> }
   | { op: "voice-settings-update"; word: Carried<"voice-settings-update"> }
+  | { op: "copilot-settings"; word: Carried<"copilot-settings"> }
+  | { op: "copilot-settings-update"; word: Carried<"copilot-settings-update"> }
+  | { op: "copilot-session"; word: Carried<"copilot-session"> }
+  | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "notification-rules"; word: Carried<"notification-rules"> }
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
@@ -501,6 +505,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "doctor",
   "default-models",
   "voice-settings",
+  "copilot-settings",
   "notification-rules",
   "work-gate-settings",
   "workflow-settings",
@@ -583,6 +588,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     if (head === "settings" && a === "voice" && segments.length === 2) {
       return { op: "voice-settings", word: "voice-settings" }
+    }
+    if (head === "settings" && a === "copilot" && segments.length === 2) {
+      return { op: "copilot-settings", word: "copilot-settings" }
     }
     if (head === "notification-rules" && segments.length === 1) return { op: "notification-rules", word: "notification-rules" }
     if (head === "settings" && a === "work-gates" && segments.length === 2) {
@@ -762,6 +770,15 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   if (head === "settings" && a === "voice" && segments.length === 2) {
     return { op: "voice-settings-update", word: "voice-settings-update" }
+  }
+  if (head === "settings" && a === "copilot" && segments.length === 2) {
+    return { op: "copilot-settings-update", word: "copilot-settings-update" }
+  }
+  if (head === "voice" && a === "copilot-session" && segments.length === 2) {
+    return { op: "copilot-session", word: "copilot-session" }
+  }
+  if (head === "voice" && a === "copilot-briefing" && segments.length === 2) {
+    return { op: "copilot-briefing", word: "copilot-briefing" }
   }
   if (head === "notification-rules" && segments.length === 1) return { op: "notification-rules-update", word: "notification-rules-update" }
   if (head === "update" && a === "apply" && segments.length === 2) {
@@ -1017,6 +1034,10 @@ function spellingOf(route: WriteRoute): Spelling {
     case "default-models-update":
     case "voice-settings":
     case "voice-settings-update":
+    case "copilot-settings":
+    case "copilot-settings-update":
+    case "copilot-session":
+    case "copilot-briefing":
     case "notification-rules":
     case "notification-rules-update":
     case "work-gate-settings":
@@ -1614,6 +1635,7 @@ export class RelayWriter {
       case "capacity":
       case "default-models":
       case "voice-settings":
+      case "copilot-settings":
       case "notification-rules":
       case "work-gate-settings":
       case "integration-settings":
@@ -1949,6 +1971,7 @@ export class RelayWriter {
           { project: route.project, worktree: route.worktree }, "action")
       }
       case "default-models-update":
+      case "copilot-settings-update":
       case "voice-settings-update": {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
@@ -1958,6 +1981,15 @@ export class RelayWriter {
       case "notification-rules-update": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "copilot-session":
+      case "copilot-briefing": {
+        // A machine command with no body: the call start's client secret, or
+        // the briefing the machine prepares from its own Sessions.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        }
+        return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "update-apply": {
         // The press installs the newest release of the machine's channel and

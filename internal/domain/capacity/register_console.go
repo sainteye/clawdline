@@ -130,6 +130,34 @@ func consoleBounds() []Entry {
 			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
 		},
 		{
+			// MEMORY_TURNS in realtime/copilot-memory.ts: the lines of earlier
+			// voice copilot calls this browser keeps for the next call. The
+			// oldest is dropped; none older than three days is kept.
+			Name: "console.copilot_memory_turns", Class: UserInput, Unit: Rows,
+			Limit: 24, AtLimit: EvictOldest, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// LIST_LATEST_READS in realtime/copilot-tools.ts: how many busy
+			// Sessions' newest words one Session list carries, one transcript
+			// read each. Further Sessions are listed without them.
+			Name: "console.copilot_list_transcript_reads", Class: Buffer, Unit: Rows,
+			Limit: 6, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// RECAP_PAGES in realtime/copilot-tools.ts: how far back a Session
+			// recap pages; a longer Session is recapped from its recent part
+			// and the answer says so.
+			Name: "console.copilot_recap_pages", Class: Buffer, Unit: Rows,
+			Limit: 5, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// SCREEN_READ_ATTEMPTS in realtime/copilot-tools.ts: how many times
+			// a pending screen capture is read again before the copilot says it
+			// timed out.
+			Name: "console.copilot_screen_reads", Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// Both opened-detail readers share one automatic recovery per
 			// user opening (SessionExecutionRecovery). At the limit the
 			// existing failure and manual recovery action remain visible.

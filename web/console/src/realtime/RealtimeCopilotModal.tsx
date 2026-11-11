@@ -3,8 +3,6 @@ import { nextWord } from '../next-strings.js'
 import { formatUSD } from './copilot-cost.js'
 import {
   realtimeCopilot,
-  getStoredOpenAIKey,
-  setStoredOpenAIKey,
   type RealtimeCopilotState,
 } from './realtime-copilot.js'
 
@@ -17,8 +15,6 @@ interface Props {
 
 export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimize }) => {
   const [copilotState, setCopilotState] = useState<RealtimeCopilotState>(realtimeCopilot.getState())
-  const [apiKey, setApiKey] = useState(getStoredOpenAIKey())
-  const [tempKey, setTempKey] = useState('')
   const [showLogs, setShowLogs] = useState(false)
 
   useEffect(() => {
@@ -27,23 +23,17 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
     })
   }, [])
 
-  useEffect(() => {
-    if (open) {
-      const stored = getStoredOpenAIKey()
-      if (stored) {
-        setApiKey(stored)
-      }
-    }
-  }, [open])
 
   if (!open) return null
 
   const handleStartCall = () => {
-    if (!apiKey.trim()) {
-      return
-    }
-    setStoredOpenAIKey(apiKey)
-    void realtimeCopilot.start(apiKey)
+    void realtimeCopilot.start()
+  }
+
+  const openSettings = () => {
+    onClose()
+    const row = document.querySelector<HTMLButtonElement>('#sidebar [data-page-to="settings"]')
+    if (row && !row.disabled) row.click()
   }
 
   const handleHangup = () => {
@@ -177,79 +167,18 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           </div>
         )}
 
-        {/* Missing API Key Reminder Dialog */}
-        {!isConnected && !apiKey && (
-          <div className="realtime-key-reminder-box" role="alert">
-            <div className="reminder-header">
-              <span className="reminder-icon">🔑</span>
-              <h4 className="reminder-title">尚未配置 OpenAI API 金鑰</h4>
-            </div>
-            <p className="reminder-desc">
-              語音副駕駛需要 OpenAI Realtime API 金鑰以建立全雙工語音通話。您可前往「設定 &gt; 語音」完成設定，或直接在下方填入：
-            </p>
-            <div className="reminder-input-wrap">
-              <input
-                id="openai-key-input"
-                type="password"
-                placeholder="sk-..."
-                value={tempKey}
-                onChange={(e) => setTempKey(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                className="realtime-save-start-btn"
-                disabled={!tempKey.trim()}
-                onClick={() => {
-                  const val = tempKey.trim()
-                  if (!val) return
-                  setStoredOpenAIKey(val)
-                  setApiKey(val)
-                  void realtimeCopilot.start(val)
-                }}
-              >
-                儲存並開始通話
-              </button>
-            </div>
-            <div className="reminder-footer">
-              <button
-                type="button"
-                className="reminder-settings-link"
-                onClick={() => {
-                  onClose()
-                  const row = document.querySelector<HTMLButtonElement>('#sidebar [data-page-to="settings"]')
-                  if (row && !row.disabled) row.click()
-                }}
-              >
-                前往「設定 &gt; 語音」設定金鑰 →
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Key configured indicator */}
-        {!isConnected && apiKey && (
+        {copilotState.error && copilotState.error.includes('語音副駕駛') && !isConnected ? (
           <div className="realtime-key-status-row">
-            <span className="realtime-key-ready">✓ 已載入 OpenAI API 金鑰</span>
-            <button
-              type="button"
-              className="key-edit-link"
-              onClick={() => {
-                onClose()
-                const row = document.querySelector<HTMLButtonElement>('#sidebar [data-page-to="settings"]')
-                if (row && !row.disabled) row.click()
-              }}
-            >
-              前往設定
+            <button type="button" className="key-edit-link" onClick={openSettings}>
+              前往「設定 › 語音副駕駛」
             </button>
           </div>
-        )}
+        ) : null}
 
         {/* Bottom Call Controls */}
         <div className="realtime-actions">
           {!isConnected && !isConnecting ? (
-            apiKey ? (
+            (
               <button
                 type="button"
                 className="realtime-start-call-btn"
@@ -260,7 +189,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
                 </svg>
                 開始語音通話
               </button>
-            ) : null
+            )
           ) : (
             <button
               type="button"

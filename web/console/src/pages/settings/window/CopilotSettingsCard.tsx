@@ -1,0 +1,143 @@
+import { useCallback, useEffect, useState } from "react"
+import { asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
+import { onMachineChanged } from "../../../cloud/machine-switch.js"
+import { NeedsUpdate } from "../../../machine/NeedsUpdate.js"
+import { nextWord } from "../../../next-strings.js"
+import { COPILOT_INSTRUCTIONS, COPILOT_TOOLS } from "../../../realtime/copilot-tools.js"
+import { getStoredOpenAIKey, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
+import { readCopilotSettings, writeCopilotSettings, type CopilotSettingsChange, type CopilotSettingsSnapshot } from "../api.js"
+import { Chip, PopUp, Row, Switch } from "./controls.js"
+import { settingsFailureSentence } from "./failure.js"
+
+/**
+ * Settings › Voice copilot (docs/voice.md, "Voice copilot"): everything the
+ * call is given, kept on the machine. The OpenAI key is written and never
+ * read back; the instructions and tool descriptions are shown as they are sent.
+ */
+export function CopilotSettingsCard({ shown }: { shown: boolean }) {
+  const [snapshot, setSnapshot] = useState<CopilotSettingsSnapshot | null>(null)
+  const [failure, setFailure] = useState("")
+  const [said, setSaid] = useState("")
+  const [outdated, setOutdated] = useState<MachineNeedsUpdate | null>(null)
+  const [key, setKey] = useState("")
+  const [extra, setExtra] = useState("")
+  const [onDevice, setOnDevice] = useState(getStoredOpenAIKey)
+
+  const read = useCallback(() => {
+    void readCopilotSettings().then(
+      (answer) => { setSnapshot(answer); setExtra(answer.extra_instructions ?? ""); setFailure(""); setOutdated(null) },
+      (error: unknown) => {
+        setSnapshot(null)
+        const update = asMachineNeedsUpdate(error)
+        if (update) { setOutdated(update); return }
+        setFailure(settingsFailureSentence(error))
+      },
+    )
+  }, [])
+
+  useEffect(() => { if (shown) { read(); setOnDevice(getStoredOpenAIKey()); setSaid("") } }, [shown, read])
+  useEffect(() => (shown ? onMachineChanged(read) : undefined), [shown, read])
+
+  const change = (c: CopilotSettingsChange, done?: string): Promise<void> => {
+    setFailure("")
+    setSaid("")
+    return writeCopilotSettings(c).then(
+      (answer) => { setSnapshot(answer); if (done) setSaid(done) },
+      (error: unknown) => { setFailure(settingsFailureSentence(error)); throw error },
+    )
+  }
+
+  if (outdated) return <NeedsUpdate update={outdated} className="sw-said" />
+  if (!snapshot) return failure ? <p className="sw-said" role="alert">{failure}</p> : null
+
+  const max = snapshot.max_extra_instructions || 2000
+  const saveKey = (value: string) => {
+    void change({ openai_key: value.trim() }, nextWord(value.trim() ? "copilotKeySaved" : "copilotKeyRemoved")).then(() => {
+      setKey("")
+      // A key this browser kept from before now lives on the machine only.
+      if (value.trim() && value.trim() === getStoredOpenAIKey()) { setStoredOpenAIKey(""); setOnDevice("") }
+    }, () => undefined)
+  }
+
+  return (
+    <section className="sw-voice-card" aria-labelledby="sw-voice-copilot">
+      <h3 className="sw-voice-head" id="sw-voice-copilot">{nextWord("copilotSettingsTitle")}</h3>
+      <p className="sw-hint">{nextWord("copilotSettingsHint")}</p>
+
+      <Row label={nextWord("copilotKeyLabel")} first>
+        <span className="sw-copilot-key-state" role="status">
+          {snapshot.key_set ? nextWord("copilotKeySet", { hint: snapshot.key_hint || "…" }) : nextWord("copilotKeyUnset")}
+        </span>
+      </Row>
+      <div className="sw-voice-key-input-row">
+        <input id="sw-copilot-key" type="password" className="sw-voice-key-input" placeholder="sk-..."
+          aria-label={nextWord("copilotKeyLabel")} value={key} autoComplete="off" spellCheck={false}
+          onChange={(e) => setKey(e.target.value)} />
+        <Chip disabled={!key.trim()} onClick={() => saveKey(key)}>{nextWord("copilotKeySave")}</Chip>
+        {snapshot.key_set ? <Chip onClick={() => saveKey("")}>{nextWord("copilotKeyRemove")}</Chip> : null}
+      </div>
+      {!snapshot.key_set && onDevice ? (
+        <p className="sw-hint">
+          {nextWord("copilotKeyOnDevice")}{" "}
+          <Chip onClick={() => saveKey(onDevice)}>{nextWord("copilotKeyMove")}</Chip>
+        </p>
+      ) : null}
+
+      <Row label={nextWord("copilotModelLabel")} hint={nextWord("copilotModelHint")}>
+        <PopUp label={nextWord("copilotModelLabel")} value={snapshot.model}
+          options={snapshot.models.map((m) => ({ value: m, label: m }))}
+          onPick={(picked) => { void change({ model: picked }).catch(() => undefined) }} />
+      </Row>
+
+      <Row label={nextWord("copilotEagernessLabel")} hint={nextWord("copilotEagernessHint")}>
+        <PopUp label={nextWord("copilotEagernessLabel")} value={snapshot.eagerness}
+          options={[
+            { value: "low", label: nextWord("copilotEagernessLow") },
+            { value: "auto", label: nextWord("copilotEagernessAuto") },
+            { value: "high", label: nextWord("copilotEagernessHigh") },
+          ]}
+          onPick={(picked) => { void change({ eagerness: picked }).catch(() => undefined) }} />
+      </Row>
+
+      <Row label={nextWord("copilotBriefingLabel")} hint={nextWord("copilotBriefingHint")}>
+        <Switch label={nextWord("copilotBriefingLabel")} on={snapshot.briefing}
+          onChange={(on) => { void change({ briefing: on }).catch(() => undefined) }} />
+      </Row>
+      <Row label={nextWord("copilotBriefingAssistantLabel")}>
+        <PopUp label={nextWord("copilotBriefingAssistantLabel")} value={snapshot.briefing_assistant} disabled={!snapshot.briefing}
+          options={[
+            { value: "claude", label: nextWord("copilotBriefingClaude") },
+            { value: "codex", label: nextWord("copilotBriefingCodex") },
+          ]}
+          onPick={(picked) => { void change({ briefing_assistant: picked }).catch(() => undefined) }} />
+      </Row>
+
+      <label className="sw-copilot-extra-label" htmlFor="sw-copilot-extra">{nextWord("copilotExtraLabel")}</label>
+      <p className="sw-hint">{nextWord("copilotExtraHint")}</p>
+      <textarea id="sw-copilot-extra" className="sw-copilot-extra" rows={4} maxLength={max} value={extra}
+        onChange={(e) => setExtra(e.target.value)} />
+      <div className="sw-voice-key-input-row">
+        <span className="sw-hint">{extra.length} / {max}</span>
+        <Chip disabled={extra === snapshot.extra_instructions} onClick={() => { void change({ extra_instructions: extra }, nextWord("copilotExtraSaved")).catch(() => undefined) }}>
+          {nextWord("copilotExtraSave")}
+        </Chip>
+      </div>
+
+      <details className="sw-copilot-source">
+        <summary>{nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
+        <p className="sw-hint">{nextWord("copilotSourceHint")}</p>
+        <h4>{nextWord("copilotSourceInstructions")}</h4>
+        <pre className="sw-copilot-pre">{COPILOT_INSTRUCTIONS}</pre>
+        <h4>{nextWord("copilotSourceTools")}</h4>
+        <ul className="sw-copilot-tools">
+          {COPILOT_TOOLS.map((tool) => (
+            <li key={tool.name}><code>{tool.name}</code><span>{tool.description}</span></li>
+          ))}
+        </ul>
+      </details>
+
+      {said ? <p className="sw-said sw-voice-saved" role="status">{said}</p> : null}
+      {failure ? <p className="sw-said" role="alert">{failure}</p> : null}
+    </section>
+  )
+}

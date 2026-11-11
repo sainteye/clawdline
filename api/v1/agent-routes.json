@@ -523,6 +523,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/settings/copilot",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/settings/notifications",
       "guide": "connect"
     },
@@ -679,6 +684,16 @@
     {
       "method": "*",
       "pattern": "/v1/voice",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/voice/copilot-briefing",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/voice/copilot-session",
       "guide": "connect"
     },
     {

@@ -41,6 +41,18 @@ export const CARRIED = {
   "coordination.leases": "GET /v1/orchestrator/leases",
   "coordination.pauses": "GET /v1/orchestrator/pauses",
   "coordination.waits": "GET /v1/orchestrator/waits",
+  // The voice copilot's prepared briefing (`realtime/realtime-copilot.ts`): the
+  // machine reads its own Sessions and has the chosen assistant write one
+  // spoken briefing, a machine command with no body.
+  "copilot-briefing": "POST /v1/voice/copilot-briefing",
+  // The voice copilot's call start (`realtime/realtime-copilot.ts`): a Realtime
+  // client secret minted with the machine's key, a machine command with no
+  // body.
+  "copilot-session": "POST /v1/voice/copilot-session",
+  // Settings › Voice copilot (`pages/settings/CopilotBlock.tsx`): the choices
+  // and whether an OpenAI key is set, never the key.
+  "copilot-settings": "GET /v1/settings/copilot",
+  "copilot-settings-update": "POST /v1/settings/copilot",
   "default-models": "GET /v1/settings/default-models",
   "default-models-update": "POST /v1/settings/default-models",
   // A page's own failures, delivered by the copied client with nobody pressing

@@ -366,7 +366,12 @@ test("one word, one list, and every route names a word the table carries", () =>
   }
   // The Devices page's directly signed-in group, read and revoked from Cloud (pages/devices/MachineAccess.tsx).
   for (const word of ["direct-devices", "direct-device-revoke"] as const) assert.match(CARRIED[word], /^MachineAccess\.tsx /)
-  assert.equal(Object.keys(CARRIED).length, 215)
+  // The voice copilot: its Settings card, a call's client secret and the machine's briefing.
+  assert.equal(CARRIED["copilot-settings"], "GET /v1/settings/copilot")
+  assert.equal(CARRIED["copilot-settings-update"], "POST /v1/settings/copilot")
+  assert.equal(CARRIED["copilot-session"], "POST /v1/voice/copilot-session")
+  assert.equal(CARRIED["copilot-briefing"], "POST /v1/voice/copilot-briefing")
+  assert.equal(Object.keys(CARRIED).length, 219)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

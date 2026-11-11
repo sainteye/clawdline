@@ -602,6 +602,12 @@ go to the voice-input machine chosen under **Devices**.
 <kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text in
 it.
 
+The phone button in the Session list's toolbar, between the list and terminal tabs and the
+microphone, opens the voice copilot: a voice call that reports on the Sessions, answers what one
+of them completed, and can shrink to a draggable bubble while you read a Session. Its key, model,
+patience and extra instructions are under Settings › Voice copilot; [voice.md](voice.md#voice-copilot)
+has the whole of it.
+
 **It stops on its own when you are done talking** — a pause of a couple of seconds fixes a
 sentence, a longer silence ends the session, so a paragraph said in one go needs one keystroke
 rather than two. Pausing does not stop it: the recogniser settles a sentence at every pause and
