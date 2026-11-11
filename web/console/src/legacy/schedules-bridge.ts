@@ -203,6 +203,8 @@ export interface SchedulePlace {
 export interface ScheduleAssistant {
   id: string
   label?: string
+  /** This daemon takes `archive_codex_conversation` for this assistant; absent on an older one. */
+  scheduleArchive?: boolean
 }
 export interface SchedulePlaces {
   places?: SchedulePlace[]

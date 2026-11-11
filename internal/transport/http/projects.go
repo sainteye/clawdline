@@ -134,7 +134,9 @@ func installedAssistants() []contract.StartAssistant {
 	for _, a := range []struct{ id, label string }{{"claude", "Claude Code"}, {"codex", "Codex"}} {
 		if found(a.id) {
 			out = append(out, contract.StartAssistant{ID: a.id, Label: a.label,
-				Availability: contract.StartAvailabilityUnknown})
+				Availability: contract.StartAvailabilityUnknown,
+				// A Codex schedule's runs can leave Codex's list (docs/schedules.md).
+				ScheduleArchive: a.id == projects.AssistantCodex})
 		}
 	}
 	out = append(out, antigravityStartAssistant(antigravityResolver().Snapshot(context.Background())))

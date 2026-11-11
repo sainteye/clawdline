@@ -730,11 +730,9 @@ const Schedule = (() => {
   let enabled = true
   let notify = true
   // archive_codex_conversation: on for a new schedule; an edited one shows
-  // what its file says, and a file without the key is off.
+  // what its file says, and a file without the key is off — also one moved
+  // from a machine that never had the field, so a move does not turn it on.
   let archiveCodex = true
-  // Whether the daemon that answered the edited schedule knows the field. A
-  // save to one that does not never names it (it would be an unknown field).
-  let archiveKnown = false
   let creating = false
   let editingId: string | null = null
   let loadingEdit = false
@@ -864,6 +862,8 @@ const Schedule = (() => {
   }
 
   function drawWith(): void {
+    // The archive switch follows the assistant and what its machine takes.
+    drawFlags()
     const row = el("schedule-with")
     row.innerHTML = ""
     const choices = assistants.slice()
@@ -887,7 +887,6 @@ const Schedule = (() => {
         chosenEffort = kept?.effort || ""
         drawWith()
         drawModel()
-        drawFlags()
       }
       row.appendChild(chip)
     })
@@ -1055,6 +1054,11 @@ const Schedule = (() => {
     paint()
   }
 
+  /** Whether the machine the form writes to takes archive_codex_conversation (its `/v1/places` says). */
+  function archiveSupported(): boolean {
+    return assistants.some((a) => a.id === "codex" && a.scheduleArchive === true)
+  }
+
   function checkChip(on: boolean, label: string): HTMLButtonElement {
     const chip = document.createElement("button")
     chip.type = "button"
@@ -1086,7 +1090,7 @@ const Schedule = (() => {
       drawFlags()
     }
     row.appendChild(notifyChip)
-    if (chosenAssistant === "codex") {
+    if (chosenAssistant === "codex" && archiveSupported()) {
       const archiveChip = checkChip(archiveCodex, nextWord("scheduleArchiveCodex"))
       archiveChip.title = nextWord("scheduleArchiveCodexHint")
       archiveChip.onclick = () => {
@@ -1264,7 +1268,6 @@ const Schedule = (() => {
     enabled = true
     notify = true
     archiveCodex = true
-    archiveKnown = false
     el<HTMLInputElement>("schedule-title").value = ""
     el<HTMLInputElement>("schedule-at").value = ""
     el<HTMLTextAreaElement>("schedule-instructions").value = ""
@@ -1385,7 +1388,6 @@ const Schedule = (() => {
     enabled = record.enabled !== false
     closeTab = record.close_tab && CLOSE_VALUES.indexOf(record.close_tab) >= 0 ? record.close_tab : "on_success"
     notify = record.notify_on_failure !== false
-    archiveKnown = typeof record.archive_codex_conversation === "boolean"
     archiveCodex = record.archive_codex_conversation === true
     storedPermission = typeof task.permission_mode === "string" ? task.permission_mode : ""
     chosenPermission = PERMISSIONS.some(([value]) => value === storedPermission) ? storedPermission : ""
@@ -1549,10 +1551,9 @@ const Schedule = (() => {
     // stored one off. No key keeps what the file has, and a daemon older than
     // the field still takes a schedule that never had one.
     if (chosenPermission || (editing && storedPermission)) payload.permission_mode = chosenPermission
-    // A Codex schedule names its archive choice when the daemon is known to
-    // read it, and a new one only when it is turned off: a create without
-    // the key is already on.
-    if (chosenAssistant === "codex" && (editing ? archiveKnown : !archiveCodex)) {
+    // Named whenever the machine the form writes to takes it, and never to
+    // one that would refuse it as an unknown field and would not archive.
+    if (chosenAssistant === "codex" && archiveSupported()) {
       payload.archive_codex_conversation = archiveCodex
     }
 
