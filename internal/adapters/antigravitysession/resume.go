@@ -62,12 +62,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		return session.Session{}, refusal("not_found")
 	}
 	c.mu.Lock()
-	if c.busy || c.stopping {
-		c.mu.Unlock()
-		h.mu.Unlock()
-		return session.Session{}, refusal("busy")
-	}
-	if c.client != nil && c.client.Err() == nil && !c.uncertain {
+	if !c.stopping && c.client != nil && c.client.Err() == nil && !c.uncertain {
 		var err error
 		if c.hidden {
 			c.hidden = false
@@ -77,6 +72,11 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		c.mu.Unlock()
 		h.mu.Unlock()
 		return row, err
+	}
+	if c.busy || c.stopping {
+		c.mu.Unlock()
+		h.mu.Unlock()
+		return session.Session{}, refusal("busy")
 	}
 	if h.opening {
 		c.mu.Unlock()

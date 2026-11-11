@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
@@ -108,5 +109,77 @@ func TestADisconnectedSessionWithoutItsOwnOfferUsesTheAccountOffer(t *testing.T)
 	}
 	if own, _ := h.Facts(first); own.Model != "synthetic-flash" {
 		t.Fatalf("its own offer was replaced: %+v", own)
+	}
+}
+
+func TestCompoundModelSlugResolvesBaseAndEffort(t *testing.T) {
+	t.Setenv("CLW_CONFIG_PEER", "yes")
+	h, row, opts := persistentFixture(t)
+	_ = row
+
+	opened, err := h.OpenWithModel(context.Background(), ports.OpenRequest{Cwd: opts.AccountDir}, LaunchContext{}, "synthetic-pro-high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, err := h.Facts(opened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Model != "synthetic-pro" || facts.Effort != "high" {
+		t.Fatalf("compound initial model not applied: model=%q effort=%q", facts.Model, facts.Effort)
+	}
+
+	if err := h.Send(context.Background(), opened, "/model synthetic-pro-medium"); err != nil {
+		t.Fatal(err)
+	}
+	facts, err = h.Facts(opened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Model != "synthetic-pro" || facts.Effort != "medium" {
+		t.Fatalf("compound /model switch not applied: model=%q effort=%q", facts.Model, facts.Effort)
+	}
+
+	if err := h.Send(context.Background(), opened, "/model not-a-real-model"); err == nil {
+		t.Fatal("accepted unoffered model")
+	}
+}
+
+func TestSelectModelWaitsForConcurrentMetadataOp(t *testing.T) {
+	t.Setenv("CLW_CONFIG_PEER", "yes")
+	h, row, _ := persistentFixture(t)
+	c, err := h.lookup(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Begin a background metadata operation holding c.busy
+	_, _, done, err := h.beginMetadataOp(context.Background(), c, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Resume on an active healthy session must succeed even when c.busy is true
+	if _, err := h.Resume(context.Background(), row.CWD, row.ConversationID); err != nil {
+		t.Fatalf("Resume failed while metadata op in progress: %v", err)
+	}
+
+	// Release the metadata op after a short sleep
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		done()
+	}()
+
+	// Send /model concurrently; it should wait for opDone and succeed rather than failing with busy
+	if err := h.Send(context.Background(), row, "/model synthetic-pro"); err != nil {
+		t.Fatalf("Send /model failed during concurrent metadata op: %v", err)
+	}
+
+	facts, err := h.Facts(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Model != "synthetic-pro" {
+		t.Fatalf("model not switched: %q", facts.Model)
 	}
 }

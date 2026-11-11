@@ -55,7 +55,24 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 	return s.openOwnedAssistant(ctx, starter, place, persona, model, addDirs, projects.AssistantAntigravity)
 }
 
+func hasKnownEffortSuffix(model string) bool {
+	for _, e := range []string{"low", "medium", "high", "xhigh", "max"} {
+		if strings.HasSuffix(model, "-"+e) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) openOwnedAssistant(ctx context.Context, starter app.Starter, place projects.Place, persona, model string, addDirs []string, assistant string) (session.Session, error) {
+	if model == "" && starter.DefaultModel != nil {
+		model = starter.DefaultModel(assistant)
+	}
+	if starter.DefaultReasoningEffort != nil {
+		if effort := starter.DefaultReasoningEffort(assistant); effort != "" && model != "" && !hasKnownEffortSuffix(model) {
+			model = model + "-" + effort
+		}
+	}
 	prepared, err := starter.PrepareOwnedContextFor(ctx, place, persona, assistant)
 	if err != nil {
 		return session.Session{}, err
