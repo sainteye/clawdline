@@ -1279,7 +1279,7 @@ export class RelayWriter {
       }
       case "end": {
         const body = await bodyOf(init)
-        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word)
+        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init))
         // What the page last read of this session's close gates. The Go daemon
         // carries it and does not compare it yet (cloudops `Divergences`); a
         // Swift Mac refuses a close against a reading that has moved.

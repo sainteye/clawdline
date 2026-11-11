@@ -100,6 +100,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - answer_session_question：替使用者回答某個 Session 在等的問題（選項選單）。
 - get_session_notes：讀 Session 留給使用者的便條紙。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
+- close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）就照實說原因，不要再試。
 - send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
 - session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
@@ -294,6 +295,16 @@ export const COPILOT_TOOLS = [
   },
   {
     type: 'function',
+    name: 'close_session',
+    description: '關閉一個已經完成的 Session。只在使用者明確要求關閉、而且你已經問過「確定要關閉某某嗎」並得到肯定回答之後呼叫。機器判斷還不能安全關閉時不會關，會回報原因。',
+    parameters: {
+      type: 'object',
+      properties: { session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱' } },
+      required: ['session_id'],
+    },
+  },
+  {
+    type: 'function',
     name: 'send_message_to_session',
     description: '將使用者確認過的文字指令或訊息直接鍵入指定 Session 的終端機輸入框。',
     parameters: {
@@ -439,6 +450,10 @@ export interface CopilotSessionRow {
   choices?: { n: number; label: string }[]
   /** Unresolved notes the Session's agents left for the person (`attention_count`). */
   notes?: number
+  /** Whether the machine says the Session can be closed now, and the reading that says so. */
+  closeable?: string
+  closeVersion?: string
+  closeReasons?: string[]
   /** The conversation the notes belong to (`sessionId`). */
   conversation?: string
 }
@@ -469,6 +484,14 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
         if (typeof disposition.receiptAt === 'number') row.delivered_at = disposition.receiptAt
       }
       if (typeof s.attention_count === 'number' && s.attention_count > 0) row.notes = s.attention_count
+      const close = s.closeability as { state?: unknown; version?: unknown; reasons?: unknown } | undefined
+      if (close && typeof close === 'object') {
+        row.closeable = str(close.state)
+        if (str(close.version)) row.closeVersion = str(close.version)
+        if (Array.isArray(close.reasons)) {
+          row.closeReasons = close.reasons.map((r) => (r && typeof r === 'object' ? str((r as { code?: unknown }).code) : str(r))).filter(Boolean)
+        }
+      }
       if (str(s.sessionId)) row.conversation = str(s.sessionId)
       const menu = s.menu as { question?: unknown; options?: unknown } | undefined
       if (menu && typeof menu === 'object') {
@@ -563,10 +586,42 @@ export const LIST_LATEST_READS = 6
 export const LIST_LATEST_CHARS = 300
 export const LIST_GOAL_CHARS = 200
 
-function minutesSince(at: number | undefined, now: number): number | undefined {
-  if (!at || !now || at > now) return undefined
-  return Math.round((now - at) / 60)
+/**
+ * When something happened, as a person says it: 剛剛, 12 分鐘前, 3 小時前,
+ * 昨天 18:20, 11/9 14:30. Prepared here so the copilot never reads out a
+ * count of minutes (2026-11-12: "1440 分鐘").
+ */
+export function whenPhrase(at: number | undefined, now: number, zone?: string): string | undefined {
+  if (!at || !now || at > now + 60) return undefined
+  const seconds = Math.max(0, now - at)
+  if (seconds < 90) return '剛剛'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} 分鐘前`
+  const parts = (t: number) => {
+    const f = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    const o = Object.fromEntries(f.formatToParts(new Date(t * 1000)).map((p) => [p.type, p.value]))
+    return { day: `${o.year}-${o.month}-${o.day}`, month: Number(o.month), date: Number(o.day), clock: `${o.hour}:${o.minute}` }
+  }
+  const then = parts(at), today = parts(now), yesterday = parts(now - 86400)
+  if (then.day === today.day) return `${Math.round(minutes / 60)} 小時前`
+  if (then.day === yesterday.day) return `昨天 ${then.clock}`
+  return `${then.month}/${then.date} ${then.clock}`
 }
+
+/** How long something has gone on, as a person says it: 25 分鐘, 1 小時 20 分, 2 天 3 小時. */
+export function durationPhrase(seconds: number): string {
+  const minutes = Math.max(0, Math.round(seconds / 60))
+  if (minutes < 60) return `${minutes} 分鐘`
+  const hours = Math.floor(minutes / 60), rest = minutes % 60
+  if (hours < 24) return rest ? `${hours} 小時 ${rest} 分` : `${hours} 小時`
+  const days = Math.floor(hours / 24), h = hours % 24
+  return h ? `${days} 天 ${h} 小時` : `${days} 天`
+}
+
+function workingFor(since: number | undefined, now: number): string | undefined {
+  return since && now && since <= now ? durationPhrase(now - since) : undefined
+}
+
 
 /** The newest thing the assistant said, as a status line. */
 export function latestOf(entries: unknown): string {
@@ -660,11 +715,11 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     })),
     working: working.map((r) => ({
       ...brief(r),
-      ...(minutesSince(r.working_since, now) !== undefined ? { working_minutes: minutesSince(r.working_since, now) } : {}),
+      ...(workingFor(r.working_since, now) ? { working_for: workingFor(r.working_since, now) } : {}),
       ...progressFields(latest.get(r.id)),
     })),
-    done: done.map((r) => ({ ...brief(r), ...(minutesSince(r.last_activity_at, now) !== undefined ? { minutes_ago: minutesSince(r.last_activity_at, now) } : {}) })),
-    idle: idle.map((r) => ({ ...brief(r), ...(minutesSince(r.last_activity_at, now) !== undefined ? { minutes_ago: minutesSince(r.last_activity_at, now) } : {}) })),
+    done: done.map((r) => ({ ...brief(r), ...(whenPhrase(r.last_activity_at, now) ? { last_active: whenPhrase(r.last_activity_at, now) } : {}) })),
+    idle: idle.map((r) => ({ ...brief(r), ...(whenPhrase(r.last_activity_at, now) ? { last_active: whenPhrase(r.last_activity_at, now) } : {}) })),
   }
   logs.push({ level: 'info', text: `成功讀取 Sessions 清單：${out.summary}` })
   return out
@@ -944,9 +999,9 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
     state: row.state,
     work_state: row.work_state,
     ...(row.delivered ? { delivered_summary: row.delivered } : {}),
-    ...(minutesSince(row.delivered_at, now) !== undefined ? { delivered_minutes_ago: minutesSince(row.delivered_at, now) } : {}),
+    ...(whenPhrase(row.delivered_at, now) ? { delivered_when: whenPhrase(row.delivered_at, now) } : {}),
     ...(lastReply ? { last_reply: lastReply } : {}),
-    ...(minutesSince(row.working_since, now) !== undefined && row.state === 'working' ? { working_minutes: minutesSince(row.working_since, now) } : {}),
+    ...(workingFor(row.working_since, now) && row.state === 'working' ? { working_for: workingFor(row.working_since, now) } : {}),
     ...(row.question ? { question: row.question } : {}),
     ...(row.choices?.length ? { options: row.choices.map((c) => `${c.n}. ${c.label}`) } : row.options?.length ? { options: row.options } : {}),
     ...(row.notes ? { notes: row.notes } : {}),
@@ -1263,6 +1318,53 @@ export function adjustEvent(memory: string, snapshot: string, options: CallOptio
     audio: { output: { speed: full.session.audio.output.speed } } } }
 }
 
+/** What a close refusal's reason codes mean to a person. */
+const CLOSE_REASONS: Record<string, string> = {
+  terminal_working: '它還在工作',
+  session_identity_unbound: '機器還認不出它是哪個對話',
+}
+
+async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  }
+  const { row } = found
+  const said = (codes: string[]) => codes.map((c) => CLOSE_REASONS[c] ?? c)
+  // A close is never forced from a call: what the machine says is still owed stays owed.
+  if (row.closeable !== 'safe') {
+    const error = `「${row.label}」現在還不能安全關閉${row.closeReasons?.length ? `：${said(row.closeReasons).join('、')}` : ''}`
+    logs.push({ level: 'error', text: error })
+    return { error, reasons: row.closeReasons ?? [] }
+  }
+  const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
+    body: JSON.stringify({ force: false, ...(row.closeVersion ? { expected_closeability_version: row.closeVersion } : {}) }),
+  })
+  if (!res.ok) {
+    let reasons: string[] = []
+    try {
+      const body = (await res.clone().json()) as { error?: { code?: unknown; reasons?: unknown } }
+      if (Array.isArray(body.error?.reasons)) reasons = body.error.reasons.map((r) => (r && typeof r === 'object' ? str((r as { code?: unknown }).code) : str(r))).filter(Boolean)
+    } catch {
+      // refusal-ok: a refusal without reasons is still said by its HTTP status and message below.
+    }
+    const detail = await refusalText(res)
+    const error = `沒有關閉「${row.label}」（HTTP ${res.status}${reasons.length ? `：${said(reasons).join('、')}` : detail ? `：${detail}` : ''}）`
+    logs.push({ level: 'error', text: error })
+    return { error, reasons }
+  }
+  logs.push({ level: 'info', text: `已關閉「${row.label}」` })
+  return { closed: true, label: row.label }
+}
+
 async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   if (!deps.briefing) {
     logs.push({ level: 'error', text: '這通電話沒有機器整理的匯報' })
@@ -1303,6 +1405,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
     else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
     else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
+    else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id))
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))
     else {
       result = { error: `未知的工具：${name}` }

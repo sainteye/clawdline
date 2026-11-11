@@ -2,18 +2,20 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
 const ROWS = [
   { id: "owned:acp:AAAA", label: "Refactor the billing page", assistant: "antigravity", state: "working", work_state: "working", cwd: "/x", working_since: 1_000_000, line: "Working… (10m)" },
   { id: "%2", label: "Prepare screenshots", assistant: "codex", state: "idle", work_state: "unknown", cwd: "/y", activity: { at: 1_000_300, known: true },
+    closeability: { state: "safe", version: "cl1_abc", reasons: [] },
     disposition: { evidence: "authenticated_session_delivery", receiptAt: 1_000_000, scope: "session", title: "Captured six feature screenshots; \x1b[1mabc123\x1b[0m is on main." } },
   { id: "%7", label: "Fix the flaky test", assistant: "claude", state: "waiting", work_state: "waiting", cwd: "/z",
     sessionId: "conversation-of-the-flaky-test", attention_count: 2,
     menu: { question: "\x1b[1mPush to main?\x1b[0m", options: [{ n: 1, label: "Yes", can: true, selected: true }, { n: 2, label: "No", can: true, selected: false }] } },
-  { id: "%9", label: "Fix the login test", assistant: "claude", state: "working", work_state: "working", cwd: "/z" },
+  { id: "%9", label: "Fix the login test", assistant: "claude", state: "working", work_state: "working", cwd: "/z",
+    closeability: { state: "blocked", version: "cl1_def", reasons: [{ code: "terminal_working" }] } },
 ]
 
 // A capture as the daemon sends it: SGR colour runs and trailing blank rows.
@@ -53,7 +55,7 @@ function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?
         return Response.json({ screen: answers[Math.min(n, answers.length - 1)] })
       }
       if (m && m[2] === "send") return Response.json({ ok: true })
-      if (/^\/v1\/sessions\/[^/]+\/key$/.test(path)) return Response.json({ ok: true })
+      if (/^\/v1\/sessions\/[^/]+\/(key|close)$/.test(path)) return Response.json({ ok: true })
       if (path.startsWith("/v1/work/v2/human-interventions/")) return Response.json(opts.notes ?? { ok: true, rows: [], pruned_resolved: 0 })
       return new Response("", { status: 404 })
     },
@@ -77,10 +79,10 @@ test("list_sessions sorts Sessions by what they need and says what the busy ones
   assert.deepEqual(out.needs_you[0].options, ["1. Yes", "2. No"])
   assert.equal(out.needs_you[0].latest, "Twenty runs pass now. Should I push to main?")
   assert.deepEqual(out.working.map((r: { id: string }) => r.id), ["owned:acp:AAAA", "%9"])
-  assert.equal(out.working[0].working_minutes, 10)
+  assert.equal(out.working[0].working_for, "10 分鐘")
   assert.equal(out.working[0].latest, "Rewrote the invoice table; running the page tests.")
   assert.equal(out.working[1].latest, undefined, "an unreadable transcript leaves the row without a latest line")
-  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", delivered: "Captured six feature screenshots; abc123 is on main.", minutes_ago: 5 }])
+  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", delivered: "Captured six feature screenshots; abc123 is on main.", last_active: "5 分鐘前" }])
   const reads = calls.filter((c) => c.path.startsWith("/v1/transcript?"))
   assert.equal(reads.length, 3)
   for (const c of reads) assert.equal((c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
@@ -183,7 +185,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "set_speaking_speed", "set_answer_length", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "set_speaking_speed", "set_answer_length", "close_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -282,7 +284,7 @@ test("get_session_summary gives the Session's own delivery words and its last re
   const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"codex"}', deps)).output)
   assert.equal(out.label, "Prepare screenshots")
   assert.equal(out.delivered_summary, "Captured six feature screenshots; abc123 is on main.")
-  assert.equal(out.delivered_minutes_ago, 10)
+  assert.equal(out.delivered_when, "10 分鐘前")
   assert.equal(out.last_reply, "Done: six screenshots are in docs/shots and pushed.")
   assert.deepEqual(calls.map((c) => c.path), ["/v1/sessions", "/v1/transcript?session=%252"])
   assert.equal((calls[1].init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
@@ -560,4 +562,34 @@ test("an in-call change sends the instructions and speed, never the voice", () =
   assert.equal("voice" in ev.session.audio.output, false)
   assert.ok(ev.session.instructions.includes(LONG_RULE))
   assert.equal("tools" in ev.session, false)
+})
+
+test("times are said in words a person uses, never as a count of minutes", () => {
+  const zone = "Asia/Taipei"
+  const now = Date.UTC(2026, 10, 12, 6, 0, 0) / 1000 // 14:00 in Taipei
+  assert.equal(whenPhrase(now - 30, now, zone), "剛剛")
+  assert.equal(whenPhrase(now - 12 * 60, now, zone), "12 分鐘前")
+  assert.equal(whenPhrase(now - 3 * 3600, now, zone), "3 小時前")
+  assert.equal(whenPhrase(Date.UTC(2026, 10, 11, 10, 20) / 1000, now, zone), "昨天 18:20")
+  assert.equal(whenPhrase(Date.UTC(2026, 10, 9, 6, 30) / 1000, now, zone), "11/9 14:30")
+  assert.equal(durationPhrase(25 * 60), "25 分鐘")
+  assert.equal(durationPhrase(80 * 60), "1 小時 20 分")
+  assert.equal(durationPhrase(2 * 86400 + 3 * 3600), "2 天 3 小時")
+})
+
+test("a finished Session is closed on request, never forced, at the reading that said it was safe", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("close_session", '{"session_id":"codex"}', deps)).output)
+  assert.deepEqual(out, { closed: true, label: "Prepare screenshots" })
+  const close = calls.at(-1)!
+  assert.equal(close.path, "/v1/sessions/%252/close")
+  assert.deepEqual(JSON.parse(String(close.init?.body)), { force: false, expected_closeability_version: "cl1_abc" })
+  assert.equal((close.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
+})
+
+test("a Session that is still working is not closed, and the copilot is told why", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("close_session", '{"session_id":"%9"}', deps)).output)
+  assert.match(out.error, /還不能安全關閉：它還在工作/)
+  assert.equal(calls.some((c) => c.path.endsWith("/close")), false)
 })

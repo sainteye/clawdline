@@ -3215,3 +3215,24 @@ test("the copilot answers another Session's question while one Session is open, 
     { "Idempotency-Key": "press-copilot-2", "X-Clawdline-Unopened-Read": "1" }))
   assert.equal(unknown.status, 409, "a Session the machine cannot verify is not pressed")
 })
+
+test("the copilot closes another Session while one Session is open, at that Session's current execution", async () => {
+  const other = "f".repeat(32)
+  const client = new FakeClient()
+  client.rows = [row("s1"), row("s2")]
+  client.descriptors.set("mac-a", GO_DAEMON)
+  const reader = new RelayReader("mac-a", {
+    fleetTarget: () => ({ machineID: "mac-a", sessionID: "s1", executionGeneration: EXECUTION }),
+    admitFleetMutation: async () => {},
+    resolveSession: async (machine, session) => machine === "mac-a" && session === "s2"
+      ? { machineID: "mac-a", sessionID: "s2", executionGeneration: other } : null,
+  })
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "req-1" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  assert.equal((await reader.fetch("/v1/sessions/s2/close", post({ force: false }, { "Idempotency-Key": "close-copilot-0" }))).status, 409)
+  await reader.fetch("/v1/sessions/s2/close", post({ force: false }, { "Idempotency-Key": "close-copilot-1", "X-Clawdline-Unopened-Read": "1" }))
+  const sent = client.calls.find((c) => c[2] === "end")
+  assert.deepEqual(sent?.[1], { machine: "mac-a", session: "s2" })
+  assert.equal((sent?.[3] as { execution_generation?: string })?.execution_generation, other)
+})

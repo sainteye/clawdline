@@ -117,7 +117,12 @@ Session is idle: such a question is prose, not a menu, so the Session's state do
 `send_message_to_session`. `answer_session_question` presses one option of a waiting Session's
 question only after the person names it; the press carries the question's fingerprint, so the
 machine refuses it if the screen asks something else by then. Over Cloud it resolves that
-Session's current execution as a newly started Session's is. `get_session_notes` reads the unresolved
+Session's current execution as a newly started Session's is. `close_session` closes a Session the person named and confirmed, only when its row's
+closeability is `safe`, with `force: false` and that reading's version; a Session still working
+or owing a landing is not closed and the copilot says why. Over Cloud the close resolves that
+Session's current execution as `answer_session_question` does. Times reach the copilot already
+said as a person says them (剛剛, 12 分鐘前, 3 小時前, 昨天 18:20, 11/9 14:30; 1 小時 20 分 for a
+duration), in the briefing's input too, never as a count of minutes. `get_session_notes` reads the unresolved
 notes agents left for the person (secret handoffs excepted) and does not reply to them. `open_session` opens the
 Session on the page the call runs in, whichever browser that is: the local console opens it as a
 press in the list would, and on Cloud the reading machine's current execution of it is resolved
