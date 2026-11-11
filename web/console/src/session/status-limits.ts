@@ -19,6 +19,40 @@ export interface StatusLimitReading {
   /** The sentence naming the file the reading rests on. */
   detail?: string
   stale?: boolean
+  /** A spent window whose turns are charged to the account's credits. */
+  creditsInUse?: boolean
+  creditBalance?: number
+}
+
+/** The words of the credits cell; without them no credits cell is drawn. */
+export interface StatusCreditWords {
+  name: string
+  inUse: string
+  balance: (balance: string) => string
+  explain: string
+}
+
+/** A balance as a person reads money-like counts: whole units, grouped. */
+export function creditBalanceText(balance: number | undefined, locale?: string): string | null {
+  if (typeof balance !== "number" || !Number.isFinite(balance)) return null
+  return Math.round(balance).toLocaleString(locale)
+}
+
+/**
+ * The cell that says this Session's turns are being charged to credits. A
+ * spent window alone reads as "this assistant has stopped"; Codex keeps
+ * answering on a Pro account's credits, and a person who is not told spends
+ * them without knowing.
+ */
+export function statusCreditCell(reading: StatusLimitReading | null | undefined, words: StatusCreditWords | undefined, locale?: string): StatusLimitCell | null {
+  if (!reading?.creditsInUse || !words) return null
+  const balance = creditBalanceText(reading.creditBalance, locale)
+  return {
+    name: words.name,
+    value: balance ? `${words.inUse} · ${balance}` : words.inUse,
+    level: "bad",
+    title: balance ? `${words.explain} ${words.balance(balance)}` : words.explain,
+  }
 }
 
 /**
@@ -62,14 +96,19 @@ export function statusLimitCells(windows: readonly StatusLimitWindow[], unknown:
  */
 export function statusLimitRow(
   reading: StatusLimitReading | null | undefined,
-  words: { unknown: string; limits: string; stale?: string; source?: string },
+  words: { unknown: string; limits: string; stale?: string; source?: string; credits?: StatusCreditWords },
+  locale?: string,
 ): StatusLimitCell[] {
   const windows = reading?.windows ?? []
-  if (windows.length) return statusLimitCells(windows, words.unknown).map(cell => {
-    if (reading?.stale && words.stale) cell.value += ` · ${words.stale}`
-    if (words.source) cell.title = words.source
-    return cell
-  })
+  if (windows.length) {
+    const cells = statusLimitCells(windows, words.unknown).map(cell => {
+      if (reading?.stale && words.stale) cell.value += ` · ${words.stale}`
+      if (words.source) cell.title = words.source
+      return cell
+    })
+    const credits = statusCreditCell(reading, words.credits, locale)
+    return credits ? [...cells, credits] : cells
+  }
   if (!reading?.unknownReason) return []
   return [{ name: words.limits, value: words.unknown, level: "", title: reading.detail }]
 }

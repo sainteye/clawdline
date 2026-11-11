@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10967,
+  "englishContentKeys": 10972,
   "riskKeys": 4834,
-  "nonRiskCount": 6133,
+  "nonRiskCount": 6138,
   "groups": [
     {
       "name": "acp / other",
@@ -3790,7 +3790,7 @@
     },
     {
       "name": "next / other",
-      "count": 681,
+      "count": 686,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4101,6 +4101,11 @@
         "next.providerWork",
         "next.pushCloudReached",
         "next.quotaClose",
+        "next.quotaCreditBalance",
+        "next.quotaCredits",
+        "next.quotaCreditsExplain",
+        "next.quotaCreditsInUse",
+        "next.quotaCreditsInUseLong",
         "next.quotaDetails",
         "next.quotaMonthly",
         "next.quotaMore",

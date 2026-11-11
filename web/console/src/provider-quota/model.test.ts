@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 // @ts-expect-error -- Node tests load the TypeScript source.
-import { compactQuotaRows, compactWindow, quotaCountdown, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
+import { compactQuotaRows, compactWindow, quotaCountdown, quotaCreditBalance, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
 import type { ProviderQuotaRow } from "@clawdline/contract"
 const row = (id: ProviderQuotaRow["id"], percent: number): ProviderQuotaRow => ({ id, label: id, windows: [{ name: "7d", used_percent: percent }], stale: false, source: "provider_api" })
 test("providers with no number stay hidden while a real zero stays visible", () => {
@@ -110,4 +110,12 @@ test("Grok with a proven missing reading stays visible without an invented windo
   assert.deepEqual(visibleQuotaRows([{...row("grok",20),problem:"not_signed_in"}]),[])
   assert.equal(visibleQuotaRows([row("grok",0)])[0].windows[0].used_percent,0)
   assert.deepEqual(visibleQuotaRows([{...missing,id:"gemini"}]),[])
+})
+
+test("a credits balance is shown only while credits are in use", () => {
+  const spent: ProviderQuotaRow = { ...row("codex", 100), credits_in_use: true, credit_balance: 44718.8322 }
+  assert.equal(quotaCreditBalance(spent, "en-US"), "44,719")
+  assert.equal(quotaCreditBalance({ ...spent, credits_in_use: false }, "en-US"), null)
+  assert.equal(quotaCreditBalance({ ...spent, credit_balance: undefined }, "en-US"), null)
+  assert.equal(quotaCreditBalance({ ...spent, credit_balance: Number.NaN }, "en-US"), null)
 })

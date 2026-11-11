@@ -440,6 +440,8 @@
         "freshForSeconds": { "description": "How long this reading was good for. Local CLI windows use five percent of the shortest window, between fifteen minutes and six hours; Grok account readings use the provider reader cooldown. Null when there is no reading to age.", "type": "integer", "nullable": true },
         "detail": { "description": "The same sentence GET /v1/orchestrator/assistants puts in `detail`: what the windows say and how old they are, or which kind of nothing an empty reading was.", "type": "string" },
         "unknownReason": { "description": "Why there is no reading, when there is none. Absent when windows were read.", "$ref": "orchestrator.schema.json#/$defs/AssistantUnknownReason" },
+        "creditsInUse": { "description": "A live window is spent and the account still has credits, so the assistant keeps answering and each turn is charged to the credits balance instead of the plan. Codex only. Absent when the plan is not spent or nothing says credits remain.", "type": "boolean" },
+        "creditBalance": { "description": "The credits balance the newest provider record named, only while `creditsInUse`. Absent when the provider did not say.", "type": "number" },
         "windows": { "type": "array", "items": { "$ref": "#/$defs/SessionLimitWindow" } }
       }
     },

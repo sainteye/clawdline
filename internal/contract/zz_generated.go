@@ -5036,13 +5036,21 @@ type ProposalDiagnostics struct {
 // Credentials and account identifiers are never included. A provider with no
 // windows is omitted from the footer.
 type ProviderQuotaRow struct {
-	ID         string                `json:"id"`
-	Label      string                `json:"label"`
-	ObservedAt int64                 `json:"observed_at,omitempty"`
-	Problem    string                `json:"problem,omitempty"`
-	Source     string                `json:"source"`
-	Stale      bool                  `json:"stale"`
-	Windows    []ProviderQuotaWindow `json:"windows"`
+	// The credits balance the newest provider record named, only while credits_in_use.
+	// Absent when the provider did not say.
+	CreditBalance float64 `json:"credit_balance,omitempty"`
+
+	// A live window is spent and the account still has credits: the provider keeps
+	// answering and charges each turn to the credits balance. Codex only; absent
+	// otherwise.
+	CreditsInUse bool                  `json:"credits_in_use,omitempty"`
+	ID           string                `json:"id"`
+	Label        string                `json:"label"`
+	ObservedAt   int64                 `json:"observed_at,omitempty"`
+	Problem      string                `json:"problem,omitempty"`
+	Source       string                `json:"source"`
+	Stale        bool                  `json:"stale"`
+	Windows      []ProviderQuotaWindow `json:"windows"`
 }
 
 // GET /v1/provider-quotas. Current machine only; file observations for Claude
@@ -6242,6 +6250,15 @@ type SessionLimits struct {
 	// Unix seconds of the provider record the windows came from. Absent when nothing
 	// has been read.
 	At int64 `json:"at,omitempty"`
+
+	// The credits balance the newest provider record named, only while `creditsInUse`.
+	// Absent when the provider did not say.
+	CreditBalance float64 `json:"creditBalance,omitempty"`
+
+	// A live window is spent and the account still has credits, so the assistant keeps
+	// answering and each turn is charged to the credits balance instead of the plan.
+	// Codex only. Absent when the plan is not spent or nothing says credits remain.
+	CreditsInUse bool `json:"creditsInUse,omitempty"`
 
 	// The same sentence GET /v1/orchestrator/assistants puts in `detail`: what the
 	// windows say and how old they are, or which kind of nothing an empty reading was.

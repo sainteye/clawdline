@@ -138,3 +138,6 @@
 .info-sheet .devstack-offer {
   margin-top: 10px;
 }
+
+/* Credits in use: the plan is spent and each turn is charged to credits. */
+.credits-in-use b { color: var(--bad); }

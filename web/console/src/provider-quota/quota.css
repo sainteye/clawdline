@@ -43,6 +43,10 @@
 .quota-detail-row .quota-window progress { width: 100px; }
 .quota-caption, .quota-problem { font-size: 12px; margin: 7px 0; }
 .quota-problem { color: var(--warn); }
+/* Credits in use is money being spent, so it reads apart from a plain 100%. */
+.quota-credits { flex-shrink: 0; padding: 1px 6px; border: 1px solid var(--bad); border-radius: 999px; color: var(--bad); font-size: 10px; line-height: 1.4; }
+.quota-credits-note { font-size: 12px; margin: 7px 0; color: var(--dim); line-height: 1.5; }
+.quota-credits-note b { color: var(--bad); }
 @media (max-width: 1300px) {
   .quota-provider-name { display: none; }
 }

@@ -33,6 +33,10 @@ type Row struct {
 	Stale      bool     `json:"stale"`
 	Source     string   `json:"source"`
 	Problem    string   `json:"problem,omitempty"`
+	// CreditsInUse and CreditBalance are limits.Quota's: a spent Codex window
+	// whose turns are charged to the account's credits.
+	CreditsInUse  bool     `json:"credits_in_use,omitempty"`
+	CreditBalance *float64 `json:"credit_balance,omitempty"`
 }
 type Snapshot struct {
 	At        int64 `json:"at"`
@@ -119,6 +123,7 @@ func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 			if q.Reason != "" {
 				row.Problem = string(q.Reason)
 			}
+			row.CreditsInUse, row.CreditBalance = q.CreditsInUse, q.CreditBalance
 			out.Providers = append(out.Providers, row)
 		}
 	}

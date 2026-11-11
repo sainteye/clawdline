@@ -5884,6 +5884,18 @@ export interface ProposalDiagnostics {
  * windows is omitted from the footer.
  */
 export interface ProviderQuotaRow {
+  /**
+   * The credits balance the newest provider record named, only while
+   * credits_in_use. Absent when the provider did not say.
+   */
+  credit_balance?: number
+
+  /**
+   * A live window is spent and the account still has credits: the provider keeps
+   * answering and charges each turn to the credits balance. Codex only; absent
+   * otherwise.
+   */
+  credits_in_use?: boolean
   id: string
   label: string
   observed_at?: number
@@ -7388,6 +7400,20 @@ export interface SessionLimits {
    * has been read.
    */
   at?: number
+
+  /**
+   * The credits balance the newest provider record named, only while
+   * `creditsInUse`. Absent when the provider did not say.
+   */
+  creditBalance?: number
+
+  /**
+   * A live window is spent and the account still has credits, so the assistant
+   * keeps answering and each turn is charged to the credits balance instead of the
+   * plan. Codex only. Absent when the plan is not spent or nothing says credits
+   * remain.
+   */
+  creditsInUse?: boolean
 
   /**
    * The same sentence GET /v1/orchestrator/assistants puts in `detail`: what the
