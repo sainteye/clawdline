@@ -426,6 +426,14 @@ func TestPublicUsageCommandNeverBecomesModelInput(t *testing.T) {
 	}
 }
 
+// AGY 1.5.5 names its reasoning option thought_level; earlier releases thinking_level.
+func syntheticEffortID() string {
+	if id := os.Getenv("CLW_EFFORT_ID"); id != "" {
+		return id
+	}
+	return "thinking_level"
+}
+
 func syntheticConfigOptions(model, effort string, efforts []string) []any {
 	values := []any{}
 	for _, v := range efforts {
@@ -433,7 +441,7 @@ func syntheticConfigOptions(model, effort string, efforts []string) []any {
 	}
 	return []any{
 		map[string]any{"id": "model", "type": "select", "currentValue": model, "options": []any{map[string]string{"value": "synthetic-flash", "name": "Synthetic Flash"}, map[string]string{"value": "synthetic-pro", "name": "Synthetic Pro"}}},
-		map[string]any{"id": "thinking_level", "type": "select", "category": "thought_level", "currentValue": effort, "options": values},
+		map[string]any{"id": syntheticEffortID(), "type": "select", "category": "thought_level", "currentValue": effort, "options": values},
 	}
 }
 

@@ -92,7 +92,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	h.jobs.Add(1)
 	oldClient := c.client
 	c.client = nil
-	stage := &conversation{store: c.store, profile: c.profile, row: c.row, generation: c.generation, revision: c.revision, ordinal: c.ordinal, tools: map[string]int{}, textIndex: -1, staging: true, launchContext: c.launchContext, injected: c.injected}
+	stage := &conversation{store: c.store, profile: c.profile, row: c.row, generation: c.generation, revision: c.revision, ordinal: c.ordinal, tools: map[string]int{}, textIndex: -1, staging: true, launchContext: c.launchContext, injected: c.injected, chosenModel: c.chosenModel, chosenEffort: c.chosenEffort}
 	needsLoad := importing || c.uncertain || c.store == nil || (oldClient != nil && oldClient.Err() != nil)
 	c.mu.Unlock()
 	h.mu.Unlock()
@@ -196,6 +196,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 			return session.Session{}, err
 		}
 	}
+	metadata = reapplyChoices(opCtx, client, metadata, stage.chosenModel, stage.chosenEffort)
 	relay.Lock()
 	defer relay.Unlock()
 	stage.mu.Lock()

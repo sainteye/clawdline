@@ -87,9 +87,9 @@ func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string,
 		return err
 	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.model = modelID // Ack selects the next turn; it does not execute a model.
-	c.mu.Unlock()
-	return nil
+	return c.rememberChoice("model", modelID)
 }
 
 func (h *Host) selectConfig(ctx context.Context, c *conversation, id, value string, before func() error) error {
@@ -134,7 +134,10 @@ func (h *Host) selectConfig(ctx context.Context, c *conversation, id, value stri
 	}, func(raw json.RawMessage) error {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		return c.readMetadata(raw, false)
+		if err := c.readMetadata(raw, false); err != nil {
+			return err
+		}
+		return c.rememberChoice(id, value)
 	})
 }
 
@@ -171,7 +174,7 @@ func (c *conversation) readMetadata(raw json.RawMessage, allowLegacy bool) error
 	if string(result.ConfigOptions) == "null" || json.Unmarshal(result.ConfigOptions, &options) != nil {
 		return refusal("invalid_config")
 	}
-	var model, effort string
+	var model, effort, effortID string
 	models := []contract.SessionModel{}
 	var efforts []string
 	seen := map[string]bool{}
@@ -182,13 +185,17 @@ func (c *conversation) readMetadata(raw json.RawMessage, allowLegacy bool) error
 		if json.Unmarshal(rawOption, &key) != nil {
 			return refusal("invalid_config")
 		}
-		if key.ID != "model" && key.ID != "thinking_level" {
+		if key.ID != "model" && !isEffortConfig(key.ID) {
 			continue
 		}
-		if seen[key.ID] {
+		category := key.ID
+		if isEffortConfig(key.ID) {
+			category, effortID = "effort", key.ID
+		}
+		if seen[category] {
 			return refusal("invalid_config")
 		}
-		seen[key.ID] = true
+		seen[category] = true
 		var option struct {
 			Type         string `json:"type"`
 			CurrentValue string `json:"currentValue"`
@@ -219,7 +226,32 @@ func (c *conversation) readMetadata(raw json.RawMessage, allowLegacy bool) error
 		}
 	}
 	c.model, c.models, c.effort, c.efforts, c.structuredConfig = model, models, effort, efforts, true
+	if effortID != "" {
+		c.effortID = effortID
+	}
 	return nil
+}
+
+func isEffortConfig(id string) bool { return id == "thinking_level" || id == "thought_level" }
+
+// effortConfigID is called under c.mu.
+func (c *conversation) effortConfigID() string {
+	if c.effortID != "" {
+		return c.effortID
+	}
+	return "thinking_level"
+}
+
+// rememberChoice is called under c.mu after the runtime acknowledged value.
+func (c *conversation) rememberChoice(id, value string) error {
+	if id == "model" {
+		c.chosenModel = value
+	} else if isEffortConfig(id) {
+		c.chosenEffort = value
+	} else {
+		return nil
+	}
+	return c.saveState()
 }
 
 // RefreshQuota performs one metadata read under the existing Session metadata

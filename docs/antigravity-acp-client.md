@@ -641,6 +641,23 @@ console sends directly only when it is present and keeps the browser queue
 above for older machines. The user turn appears in the transcript when the
 queued prompt is written, so another device sees it only then.
 
+**Model and effort across a reload (2026-11-11).** A captured AGY 1.5.5
+conversation acknowledged `model=gemini-3.8-flash` at 10:59:43; after the daemon
+restarted, the next process's `session/load` reported `currentValue` back at the
+default `gemini-4-argon`, and the restart continuation ran on it. The same
+capture names the reasoning option `thought_level`, where earlier releases used
+`thinking_level`; Clawdline only read the latter, so effort was neither shown nor
+selectable. The Host now records the person's acknowledged model and effort
+(`chosen_model`, `chosen_effort`) and, after load or resume and the mode
+reapplication, selects each again when it is still offered and differs from the
+reported value. A refused write is logged and leaves the runtime's value, so the
+Session still opens and shows what will run. Either effort option ID is accepted
+and the one the runtime reported is used for writes. The last acknowledged
+structured offer is saved too (`known_config`), so a Session whose process is not
+running still offers its choices; selecting one resumes the process first and is
+validated against the live offer. Conversations chosen before this change have no
+recorded choice and keep the runtime default until the person selects again.
+
 A zero-model diagnostic on 2026-10-26 found that both the installed ACP 1.4.1
 runtime and the official registry's ACP 1.4.3 runtime offer only `default`,
 `auto_edit` and `yolo`. ACP 1.4.1 rejects a `mode=auto` selection with JSON-RPC

@@ -449,3 +449,7 @@ instructions sent that way. With step explanations on, later prompts end with a
 one-sentence `<clawdline_reminder>`. Replay restores the original input only on an
 exact match of either form. Grok keeps the embedded resource. Both language
 explanations of the Gemini context and workflow cards were revised to match.
+
+The Gemini Host's saved model and effort choices, their reapplication after a
+load, and the saved last offer change configuration writes only. They add no
+model input, so the Gemini context explanations in both languages are unchanged.

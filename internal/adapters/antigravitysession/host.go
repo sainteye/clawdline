@@ -93,17 +93,24 @@ type conversation struct {
 	// replyEnded says the latest live step was assistant text closed by a
 	// usage_update, with nothing after it. endedFinished says the watchdog
 	// ended the turn for either reason, as a finished reply, not an error.
-	endMarked         bool
-	replyEnded        bool
-	lastKind          string
-	endedFinished     atomic.Bool
-	activeTools       map[string]string // active tool ID -> native kind
-	activeToolBytes   int
-	model             string
-	models            []contract.SessionModel
-	effort            string
-	efforts           []string
-	structuredConfig  bool
+	endMarked        bool
+	replyEnded       bool
+	lastKind         string
+	endedFinished    atomic.Bool
+	activeTools      map[string]string // active tool ID -> native kind
+	activeToolBytes  int
+	model            string
+	models           []contract.SessionModel
+	effort           string
+	efforts          []string
+	structuredConfig bool
+	// effortID is the native configOption that carries reasoning effort:
+	// thinking_level up to AGY 1.5.0, thought_level in AGY 1.5.5.
+	effortID string
+	// chosenModel and chosenEffort are the person's acknowledged selections.
+	// AGY 1.5 restores its defaults on load, so resume applies them again.
+	chosenModel       string
+	chosenEffort      string
 	quota             *contract.SessionLimits
 	contextKnown      bool
 	context           antigravityacp.ContextUsage
@@ -426,7 +433,10 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 		return h.selectModel(ctx, c, strings.TrimSpace(strings.TrimPrefix(text, "/model ")), before)
 	}
 	if text == "/effort" || strings.HasPrefix(text, "/effort ") {
-		return h.selectConfig(ctx, c, "thinking_level", strings.TrimSpace(strings.TrimPrefix(text, "/effort ")), before)
+		c.mu.Lock()
+		id := c.effortConfigID()
+		c.mu.Unlock()
+		return h.selectConfig(ctx, c, id, strings.TrimSpace(strings.TrimPrefix(text, "/effort ")), before)
 	}
 	h.mu.Lock()
 	if h.closed || h.ctx.Err() != nil {

@@ -79,6 +79,13 @@ offered by the CLI, **Reasoning effort**. Model and reasoning are separate
 settings. An older native response that only supplies model variants keeps those
 variants as model choices rather than inventing an effort control.
 
+The Gemini CLI goes back to its default model and reasoning effort whenever it
+reloads a conversation, for example after Clawdline restarts. Clawdline remembers
+the model and effort you chose and selects them again before the next message.
+A choice the CLI no longer offers is left out, and the sheet shows what will
+actually run. While a conversation is not connected, the sheet still offers the
+choices the CLI last reported; choosing one reconnects first.
+
 Quota is the native account reading, with its observation age and reset time
 when available. Missing data is unknown, not zero usage. Context occupancy is
 the current context reading, not a bill or a currency estimate.
