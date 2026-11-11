@@ -106,7 +106,9 @@ func TestGeminiRoleStartBindsTheExistingActorAndKeepsOriginalResumeRole(t *testi
 		Text     string
 		Resource struct{ Text string }
 	}
-	if json.Unmarshal(data, &prompt) != nil || len(prompt) != 2 || !strings.Contains(prompt[0].Resource.Text, "golang-concurrency") || prompt[1].Text != "original user input" {
+	// AGY 1.5 keeps only a link to an embedded resource, so the role travels
+	// in the prompt's own text, before the person's unchanged input.
+	if json.Unmarshal(data, &prompt) != nil || len(prompt) != 1 || !strings.HasPrefix(prompt[0].Text, "<clawdline_instructions>\n") || !strings.Contains(prompt[0].Text, "golang-concurrency") || !strings.HasSuffix(prompt[0].Text, "\n</clawdline_instructions>\n\noriginal user input") {
 		t.Fatalf("role/skill or original input missing: %s", data)
 	}
 	data, err = os.ReadFile(filepath.Join(profile, "last-capability-path"))

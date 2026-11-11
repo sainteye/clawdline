@@ -171,7 +171,10 @@ func (h *Host) ConfigureDispatch(ctx context.Context, row session.Session, model
 		}
 		return refusal("effort_not_offered")
 	}
-	for _, selection := range []struct{ id, value string }{{"mode", mode}, {"model", model}, {"thinking_level", effort}} {
+	c.mu.Lock()
+	effortID := c.effortConfigID()
+	c.mu.Unlock()
+	for _, selection := range []struct{ id, value string }{{"mode", mode}, {"model", model}, {effortID, effort}} {
 		if selection.value == "" {
 			continue
 		}
@@ -207,10 +210,10 @@ func (h *Host) ConfigureDispatch(ctx context.Context, row session.Session, model
 			if err := c.readMetadata(raw, false); err != nil {
 				return err
 			}
-			if (id == "model" && c.model != value) || (id == "thinking_level" && c.effort != value) {
+			if (id == "model" && c.model != value) || (isEffortConfig(id) && c.effort != value) {
 				return refusal("config_not_acknowledged")
 			}
-			return nil
+			return c.rememberChoice(id, value)
 		})
 		if err != nil {
 			return err

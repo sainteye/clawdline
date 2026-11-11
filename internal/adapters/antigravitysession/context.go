@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"path/filepath"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravityacp"
 )
@@ -20,6 +21,22 @@ type LaunchContext struct {
 	SquadLaunchID       string `json:"squad_launch_id,omitempty"`
 	SquadCapabilityPath string `json:"squad_capability_path,omitempty"`
 	WorkflowLaunchID    string `json:"workflow_launch_id,omitempty"`
+	// Reminder is a short sentence appended to every later prompt. Empty means none.
+	Reminder string `json:"reminder,omitempty"`
+}
+
+// AGY 1.5 replays an embedded resource as a bare resource_link, and its model
+// was measured not to follow instructions sent that way. Gemini receives the
+// launch context inside the first prompt's own text instead.
+func inlineContext(context, text string) string {
+	return "<clawdline_instructions>\n" + context + "\n</clawdline_instructions>\n\n" + text
+}
+
+func withReminder(text, reminder string) string {
+	if reminder == "" {
+		return text
+	}
+	return text + "\n\n<clawdline_reminder>" + reminder + "</clawdline_reminder>"
 }
 
 type injectedTurn struct {
@@ -52,15 +69,21 @@ func (l LaunchContext) validate() error {
 // Split chunks, changed formatting or other unknown shapes remain untouched;
 // matching a later similar message would erase unrelated history.
 func (c *conversation) cleanReplayContext(u *antigravityacp.SessionUpdate) {
-	if !c.replaying || u.Kind != "user_message_chunk" || c.replaySawUser {
+	if !c.replaying || u.Kind != "user_message_chunk" {
 		return
 	}
+	first := !c.replaySawUser
 	c.replaySawUser = true
-	if c.injected == nil || c.launchContext.Text == "" {
+	if suffix := withReminder("", c.launchContext.Reminder); suffix != "" && strings.HasSuffix(u.Text, suffix) {
+		u.Text = strings.TrimSuffix(u.Text, suffix)
 		return
 	}
-	want := "Embedded resource (" + c.launchContext.URI + "):\n" + c.launchContext.Text + " " + c.injected.OriginalText
-	if u.Text == want {
-		u.Text = c.injected.OriginalText
+	if !first || c.injected == nil || c.launchContext.Text == "" {
+		return
+	}
+	original := c.injected.OriginalText
+	legacy := "Embedded resource (" + c.launchContext.URI + "):\n" + c.launchContext.Text + " " + original
+	if u.Text == legacy || u.Text == inlineContext(c.launchContext.Text, original) {
+		u.Text = original
 	}
 }

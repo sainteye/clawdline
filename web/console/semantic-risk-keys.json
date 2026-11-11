@@ -5,7 +5,7 @@
     "negation": 3056,
     "state": 1810,
     "permission": 643,
-    "deletion": 247,
+    "deletion": 248,
     "uncertainty": 421
   },
   "unionCount": 4834,
@@ -5765,6 +5765,7 @@
       "template.da1cebd6b045",
       "template.ddd756350b15",
       "template.f7068e40108f",
+      "transparency.card.gemini-acp-context.effect",
       "transparency.card.machine-codegraph.effect",
       "transparency.card.space-saving-images.effect",
       "verify.remove",

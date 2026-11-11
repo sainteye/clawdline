@@ -98,6 +98,18 @@ func RestoreAntigravityContext(document []byte, digest string) (AntigravityConte
 	return c, nil
 }
 
+// TurnReminder is the short step-explanation reminder sent with every prompt
+// after the first, or empty when step explanations are off.
+func (c AntigravityContext) TurnReminder() string {
+	if !c.ShouldExplainSteps() {
+		return ""
+	}
+	if c.Language != "" {
+		return fmt.Sprintf("Keep explaining in the language identified by BCP 47 tag %q: say what you are about to do before each tool, and report what you found after it.", c.Language)
+	}
+	return "Keep explaining: say what you are about to do before each tool, and report what you found after it."
+}
+
 // Instructions joins the immutable role, language and shared Project memory.
 func (c AntigravityContext) Instructions() string {
 	if !c.ShouldExplainSteps() && c.Prompt == "" && c.Language == "" && c.Memory == "" && c.WorkflowInstructions == "" {
