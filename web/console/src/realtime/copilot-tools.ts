@@ -155,13 +155,14 @@ export const COPILOT_TOOLS = [
  * are refused with an `error` event, which left the call talking without its
  * tools or its instructions.
  */
-export function sessionUpdateEvent(): Record<string, unknown> {
+export function sessionUpdateEvent(memory = ''): Record<string, unknown> {
   return {
     type: 'session.update',
     session: {
       type: 'realtime',
       output_modalities: ['audio'],
-      instructions: COPILOT_INSTRUCTIONS,
+      // What was said in earlier calls on this browser (`copilot-memory.ts`).
+      instructions: memory ? `${COPILOT_INSTRUCTIONS}\n\n${memory}` : COPILOT_INSTRUCTIONS,
       audio: {
         input: {
           transcription: { model: 'whisper-1' },
@@ -178,13 +179,19 @@ export function sessionUpdateEvent(): Record<string, unknown> {
   }
 }
 
-export function greetingEvent(): Record<string, unknown> {
+/**
+ * The call's first words. With nothing remembered it introduces itself once;
+ * with an earlier call remembered it picks up from there instead of saying
+ * the same introduction again.
+ */
+export function greetingEvent(remembered = false): Record<string, unknown> {
   return {
     type: 'response.create',
     response: {
       output_modalities: ['audio'],
-      instructions:
-        '用一句繁體中文問候，說你可以回報這台電腦上各個 Session 的狀況。不要超過一句。',
+      instructions: remembered
+        ? '這不是第一次通話。不要自我介紹、不要說你能做什麼。用一句很短的繁體中文打招呼；如果之前的通話裡有還沒講完或使用者在意的事，就用半句提起它。'
+        : '用一句繁體中文問候，說你可以回報這台電腦上各個 Session 的狀況。不要超過一句。',
     },
   }
 }

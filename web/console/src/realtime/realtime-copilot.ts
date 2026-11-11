@@ -5,6 +5,8 @@
  */
 
 import { greetingEvent, runCopilotTool, sessionUpdateEvent, toolReplyEvents } from './copilot-tools.js'
+import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
+import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 
 export interface CopilotLogItem {
   id: string
@@ -21,11 +23,38 @@ export interface RealtimeCopilotState {
   error?: string
   toolCallLog?: string
   logs: CopilotLogItem[]
+  /** This call's running cost, kept after it ends until the next one starts. */
+  cost?: CallCost
+  /** How many earlier turns this browser remembers (`copilot-memory.ts`). */
+  remembered: number
 }
 
 export type RealtimeListener = (state: RealtimeCopilotState) => void
 
 const API_KEY_STORAGE_KEY = 'clawdline.openai.apikey'
+const MEMORY_STORAGE_KEY = 'clawdline.copilot.memory'
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000)
+}
+
+function readMemory(): MemoryTurn[] {
+  try {
+    return current(parseMemory(localStorage.getItem(MEMORY_STORAGE_KEY)), nowSeconds())
+  } catch {
+    // refusal-ok: a browser that keeps no site data starts every call fresh.
+    return []
+  }
+}
+
+function writeMemory(turns: MemoryTurn[]): void {
+  try {
+    if (turns.length) localStorage.setItem(MEMORY_STORAGE_KEY, JSON.stringify(turns))
+    else localStorage.removeItem(MEMORY_STORAGE_KEY)
+  } catch {
+    // refusal-ok: memory is a convenience; the call works without it.
+  }
+}
 
 export function captureCopilotKey(scope: Pick<Window, 'location' | 'history'>): void {
   try {
@@ -97,7 +126,10 @@ export class RealtimeCopilotClient {
     status: 'disconnected',
     speakingState: 'idle',
     logs: [],
+    remembered: readMemory().length,
   }
+  private memory: MemoryTurn[] = readMemory()
+  private model = 'gpt-realtime-mini'
 
   subscribe(listener: RealtimeListener): () => void {
     this.listeners.add(listener)
@@ -140,7 +172,8 @@ export class RealtimeCopilotClient {
     }
 
     setStoredOpenAIKey(apiKey)
-    this.updateState({ status: 'connecting', error: undefined, toolCallLog: undefined })
+    this.memory = readMemory()
+    this.updateState({ status: 'connecting', error: undefined, toolCallLog: undefined, remembered: this.memory.length })
     this.addLog('info', '正在請求麥克風權限並建立 WebRTC 連線...')
 
     try {
@@ -185,8 +218,10 @@ export class RealtimeCopilotClient {
         },
       })
 
+      this.model = model
       if (!response.ok && response.status === 404) {
         // Fallback to gpt-realtime if mini is unavailable
+        this.model = 'gpt-realtime'
         response = await fetch(`${baseUrl}?model=gpt-realtime`, {
           method: 'POST',
           body: offer.sdp,
@@ -205,7 +240,7 @@ export class RealtimeCopilotClient {
       const answerSdp = await response.text()
       await this.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
 
-      this.updateState({ status: 'connected', speakingState: 'listening' })
+      this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
       this.addLog('info', 'WebRTC 連線建立成功，全雙工語音通話已就緒')
     } catch (err) {
       this.disconnect()
@@ -245,8 +280,10 @@ export class RealtimeCopilotClient {
     if (!this.dc || this.dc.readyState !== 'open') return
 
     this.addLog('info', '正在向 OpenAI 傳送副駕駛系統配置與工具定義...')
-    this.dc.send(JSON.stringify(sessionUpdateEvent()))
-    this.dc.send(JSON.stringify(greetingEvent()))
+    const section = memorySection(this.memory, nowSeconds())
+    if (section) this.addLog('info', `已載入之前通話的 ${this.memory.length} 句對話`)
+    this.dc.send(JSON.stringify(sessionUpdateEvent(section)))
+    this.dc.send(JSON.stringify(greetingEvent(!!section)))
     this.addLog('info', '已送出開場問候要求')
   }
 
@@ -289,13 +326,37 @@ export class RealtimeCopilotClient {
       case 'conversation.item.input_audio_transcription.completed':
         if (event.transcript) {
           this.updateState({ lastTranscript: event.transcript })
+          this.keep('user', event.transcript)
           this.addLog('info', `語音轉文字識別結果：「${event.transcript}」`)
         }
         break
+      case 'response.done': {
+        const spoken = this.state.lastAssistantSpeech
+        if (spoken) this.keep('assistant', spoken)
+        if (event.response?.usage) {
+          const cost = addUsage(this.state.cost ?? emptyCost(this.model), event.response.usage)
+          this.updateState({ cost })
+        }
+        break
+      }
       case 'response.function_call_arguments.done':
         await this.handleToolCall(event)
         break
     }
+  }
+
+  private keep(role: MemoryTurn['role'], text: string) {
+    this.memory = remember(this.memory, role, text, nowSeconds())
+    writeMemory(this.memory)
+    this.updateState({ remembered: this.memory.length })
+  }
+
+  /** Forget every earlier call on this browser. */
+  forgetMemory() {
+    this.memory = []
+    writeMemory([])
+    this.updateState({ remembered: 0 })
+    this.addLog('info', '已清除之前的通話紀錄')
   }
 
   private async handleToolCall(event: { call_id: string; name: string; arguments: string }) {
