@@ -37,6 +37,11 @@ var Eagerness = []string{"low", "auto", "high"}
 // once it has spoken, so the choice applies from the next call.
 var Voices = []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"}
 
+// Speeds are Realtime's playback rates offered, slowest first; "0.9", a
+// little slower than OpenAI's 1.0, is the default, because a report read out
+// at full speed was too fast to follow (2026-11-12).
+var Speeds = []string{"0.8", "0.9", "1.0", "1.1"}
+
 // BriefingAssistants are the CLIs the machine can run to prepare a briefing.
 var BriefingAssistants = []string{"claude", "codex"}
 
@@ -46,6 +51,7 @@ type Settings struct {
 	Model             string `json:"model,omitempty"`
 	Eagerness         string `json:"eagerness,omitempty"`
 	Voice             string `json:"voice,omitempty"`
+	Speed             string `json:"speed,omitempty"`
 	ExtraInstructions string `json:"extra_instructions,omitempty"`
 	BriefingAssistant string `json:"briefing_assistant,omitempty"`
 	// BriefingOff turns the machine's prepared briefing off; on unless set.
@@ -62,6 +68,9 @@ func (s Settings) Effective() Settings {
 	}
 	if !contains(Voices, s.Voice) {
 		s.Voice = Voices[0]
+	}
+	if !contains(Speeds, s.Speed) {
+		s.Speed = Speeds[1]
 	}
 	if !contains(BriefingAssistants, s.BriefingAssistant) {
 		s.BriefingAssistant = BriefingAssistants[0]
@@ -84,6 +93,7 @@ type Change struct {
 	Model             *string `json:"model"`
 	Eagerness         *string `json:"eagerness"`
 	Voice             *string `json:"voice"`
+	Speed             *string `json:"speed"`
 	ExtraInstructions *string `json:"extra_instructions"`
 	BriefingAssistant *string `json:"briefing_assistant"`
 	Briefing          *bool   `json:"briefing"`
@@ -95,6 +105,7 @@ var (
 	ErrBadModel        = errors.New("copilot_bad_model")
 	ErrBadEagerness    = errors.New("copilot_bad_eagerness")
 	ErrBadVoice        = errors.New("copilot_bad_voice")
+	ErrBadSpeed        = errors.New("copilot_bad_speed")
 	ErrBadInstructions = errors.New("copilot_bad_instructions")
 	ErrBadAssistant    = errors.New("copilot_bad_assistant")
 )
@@ -134,6 +145,12 @@ func apply(s Settings, c Change) (Settings, error) {
 			return s, ErrBadVoice
 		}
 		s.Voice = *c.Voice
+	}
+	if c.Speed != nil {
+		if !contains(Speeds, *c.Speed) {
+			return s, ErrBadSpeed
+		}
+		s.Speed = *c.Speed
 	}
 	if c.ExtraInstructions != nil {
 		v := strings.TrimSpace(*c.ExtraInstructions)

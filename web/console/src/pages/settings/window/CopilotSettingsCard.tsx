@@ -114,6 +114,17 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
       </Row>
       {previewSaid ? <p className="sw-hint" role="status">{previewSaid}</p> : null}
 
+      <Row label={nextWord("copilotSpeedLabel")} hint={nextWord("copilotSpeedHint")}>
+        <PopUp label={nextWord("copilotSpeedLabel")} value={snapshot.speed}
+          options={[
+            { value: "0.8", label: nextWord("copilotSpeedSlow") },
+            { value: "0.9", label: nextWord("copilotSpeedCalm") },
+            { value: "1.0", label: nextWord("copilotSpeedNormal") },
+            { value: "1.1", label: nextWord("copilotSpeedQuick") },
+          ]}
+          onPick={(picked) => { void change({ speed: picked }).catch(() => undefined) }} />
+      </Row>
+
       <Row label={nextWord("copilotEagernessLabel")} hint={nextWord("copilotEagernessHint")}>
         <PopUp label={nextWord("copilotEagernessLabel")} value={snapshot.eagerness}
           options={[

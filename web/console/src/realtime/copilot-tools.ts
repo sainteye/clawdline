@@ -53,6 +53,10 @@ export interface ToolResult {
 /** Realtime's output voices, the recommended first (internal/domain/copilot.Voices). */
 export const VOICES = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse']
 
+/** The playback rates the machine offers (internal/domain/copilot.Speeds), and the default. */
+export const SPEEDS = ['0.8', '0.9', '1.0', '1.1']
+export const DEFAULT_SPEED = 0.9
+
 /** semantic_vad's eagerness settings, most patient first. */
 export const EAGERNESS = ['low', 'auto', 'high']
 
@@ -73,8 +77,10 @@ export const REPLY_CHARS = 8000
 
 export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
 
-【說話方式：短】
-- 每次回覆最多三句，能一句講完就一句。這是語音，不是文章。（例外：整體匯報、總結經過、解釋最後一則回覆，見下面各段。）
+【說話方式】
+- 一般問答要短：最多三句，能一句講完就一句。這是語音，不是文章。
+- 例外：使用者要 Session 的狀況、進度、匯報或「在做什麼」時，不受三句限制。一定要逐一講完每個相關的 Session，每個兩到三句（目標、最近完成什麼、現在在做什麼），不可以只報數量就停下來。
+- 講話放慢、口氣從容：一句講完停一下再講下一句，數字和名稱講清楚，不要連珠炮。（例外：整體匯報、總結經過、解釋最後一則回覆，見下面各段。）
 - 不要開場白（不說「好的」「我來查看」「請稍等」），不要重複使用者的問題，不要在結尾問「還需要什麼嗎」「要不要看畫面」。
 - 呼叫工具前不要先講話，拿到結果再直接講重點。
 - 不要唸 Session ID、路徑、指令、雜湊值。用 Session 的名稱稱呼它。
@@ -110,7 +116,8 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 
 【回報清單】
 - 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」
-- 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用半句說在做什麼（依 latest），例如「雲端配對在補加密命令」。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
+- 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用兩到三句講：它的目標（goal）、最近完成了什麼（recent）、現在正在做什麼（latest）。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
+- 使用者要「工作中的 Session 的狀況」時，這一段可以長，寧可講清楚也不要一句帶過；一個 Session 講完停一下再講下一個。
 
 【總結一個 Session 的經過（get_session_recap）】
 - 用一段自然的口語講，像同事口頭跟你交接：先一句說這個 Session 主要在做什麼，再照時間順序講它完成了哪幾件事（合併相近的，最多講五件），最後一句說現在的狀態、還有沒有要使用者處理的。
@@ -288,6 +295,8 @@ export interface CallOptions {
   eagerness?: string
   /** The Realtime output voice; marin unless the machine says otherwise. */
   voice?: string
+  /** The playback rate as the machine keeps it ("0.9" unless set). */
+  speed?: string
   /** The person's own extra instructions from Settings › Voice copilot. */
   extra?: string
   /** The machine's prepared briefing, once it has arrived. */
@@ -323,7 +332,10 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
           // patient of `semantic_vad`'s eagerness settings.
           turn_detection: { type: 'semantic_vad', eagerness: EAGERNESS.includes(options.eagerness ?? '') ? options.eagerness : 'low', create_response: true, interrupt_response: true },
         },
-        output: { voice: VOICES.includes(options.voice ?? '') ? options.voice : VOICES[0] },
+        output: {
+          voice: VOICES.includes(options.voice ?? '') ? options.voice : VOICES[0],
+          speed: SPEEDS.includes(options.speed ?? '') ? Number(options.speed) : DEFAULT_SPEED,
+        },
       },
       tools: COPILOT_TOOLS,
       tool_choice: 'auto',
@@ -511,7 +523,8 @@ function countBy(rows: readonly CopilotSessionRow[]): Record<string, number> {
 
 /** How many Sessions' latest words a list carries: each is one transcript read. */
 export const LIST_LATEST_READS = 6
-export const LIST_LATEST_CHARS = 140
+export const LIST_LATEST_CHARS = 300
+export const LIST_GOAL_CHARS = 200
 
 function minutesSince(at: number | undefined, now: number): number | undefined {
   if (!at || !now || at > now) return undefined
@@ -528,14 +541,51 @@ export function latestOf(entries: unknown): string {
   return ''
 }
 
-async function latestWords(deps: ToolDeps, row: CopilotSessionRow): Promise<string> {
+/** What a busy Session's row says about its work, from its newest transcript page. */
+export interface Progress {
+  latest: string
+  goal?: string
+  recent?: string[]
+}
+
+/** The goal (the person's newest ask), the last two delivery summaries and the newest reply of one page. */
+export function progressOf(entries: unknown): Progress {
+  const list = Array.isArray(entries) ? entries : []
+  const out: Progress = { latest: latestOf(list) }
+  const recent: string[] = []
+  for (const raw of list) {
+    const e = raw as Record<string, unknown> | null
+    if (!e) continue
+    if (e.role === 'user') {
+      const words = personWords(str(e.text))
+      if (words) out.goal = clip(plainScreenText(words), LIST_GOAL_CHARS)
+    } else if (e.role === 'tool') {
+      const m = REPORT_COMMAND.exec(str(e.text))
+      const summary = m ? (m[1] ?? m[2] ?? '').replace(/\\(.)/g, '$1') : ''
+      if (summary.trim()) recent.push(clip(summary, LIST_GOAL_CHARS))
+    }
+  }
+  if (recent.length) out.recent = recent.slice(-2)
+  return out
+}
+
+async function latestWords(deps: ToolDeps, row: CopilotSessionRow): Promise<Progress> {
   try {
     const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
-    if (!res.ok) return ''
-    return latestOf(((await res.json()) as { entries?: unknown })?.entries)
+    if (!res.ok) return { latest: '' }
+    return progressOf(((await res.json()) as { entries?: unknown })?.entries)
   } catch {
-    // refusal-ok: one Session's unreadable transcript leaves its row without a latest line, not the list without rows.
-    return ''
+    // refusal-ok: one Session's unreadable transcript leaves its row without its progress, not the list without rows.
+    return { latest: '' }
+  }
+}
+
+function progressFields(p: Progress | undefined): Record<string, unknown> {
+  if (!p) return {}
+  return {
+    ...(p.goal ? { goal: p.goal } : {}),
+    ...(p.recent?.length ? { recent: p.recent } : {}),
+    ...(p.latest ? { latest: p.latest } : {}),
   }
 }
 
@@ -556,7 +606,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const done = rows.filter((r) => !waits(r) && r.state !== 'working' && r.work_state === 'milestone_complete')
   const idle = rows.filter((r) => !needs.includes(r) && !working.includes(r) && !done.includes(r))
   const wanted = [...needs, ...working].slice(0, LIST_LATEST_READS)
-  const latest = new Map<string, string>()
+  const latest = new Map<string, Progress>()
   await Promise.all(wanted.map(async (r) => latest.set(r.id, await latestWords(deps, r))))
   const brief = (r: CopilotSessionRow) => ({
     id: r.id, label: r.label, assistant: r.assistant,
@@ -569,12 +619,12 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
       ...brief(r),
       ...(r.question ? { question: r.question } : {}),
       ...(r.choices?.length ? { options: r.choices.map((c) => `${c.n}. ${c.label}`) } : r.options?.length ? { options: r.options } : {}),
-      ...(latest.get(r.id) ? { latest: latest.get(r.id) } : {}),
+      ...progressFields(latest.get(r.id)),
     })),
     working: working.map((r) => ({
       ...brief(r),
       ...(minutesSince(r.working_since, now) !== undefined ? { working_minutes: minutesSince(r.working_since, now) } : {}),
-      ...(latest.get(r.id) ? { latest: latest.get(r.id) } : {}),
+      ...progressFields(latest.get(r.id)),
     })),
     done: done.map((r) => ({ ...brief(r), ...(minutesSince(r.last_activity_at, now) !== undefined ? { minutes_ago: minutesSince(r.last_activity_at, now) } : {}) })),
     idle: idle.map((r) => ({ ...brief(r), ...(minutesSince(r.last_activity_at, now) !== undefined ? { minutes_ago: minutesSince(r.last_activity_at, now) } : {}) })),

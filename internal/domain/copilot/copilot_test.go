@@ -13,7 +13,7 @@ var testKey = "sk-" + "proj-abcdefghijklmnopWXYZ"
 
 func TestUnsetChoicesTakeTheirDefaults(t *testing.T) {
 	e := Settings{}.Effective()
-	if e.Model != "gpt-realtime-mini" || e.Eagerness != "low" || e.Voice != "marin" || e.BriefingAssistant != "claude" || e.BriefingOff {
+	if e.Model != "gpt-realtime-mini" || e.Eagerness != "low" || e.Voice != "marin" || e.Speed != "0.9" || e.BriefingAssistant != "claude" || e.BriefingOff {
 		t.Fatalf("defaults: %+v", e)
 	}
 	if (Settings{Model: "gpt-5"}).Effective().Model != "gpt-realtime-mini" {
@@ -48,6 +48,7 @@ func TestAChangeOutsideWhatIsOfferedIsRefusedAndChangesNothing(t *testing.T) {
 		"model":               {Change{Model: ptr("gpt-4o")}, ErrBadModel},
 		"eagerness":           {Change{Eagerness: ptr("medium")}, ErrBadEagerness},
 		"voice":               {Change{Voice: ptr("fable")}, ErrBadVoice},
+		"speed":               {Change{Speed: ptr("2.0")}, ErrBadSpeed},
 		"instructions":        {Change{ExtraInstructions: ptr(strings.Repeat("字", MaxExtraInstructionsRunes+1))}, ErrBadInstructions},
 		"briefing assistant":  {Change{BriefingAssistant: ptr("gemini")}, ErrBadAssistant},
 	} {

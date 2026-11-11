@@ -129,6 +129,14 @@ beginning and end) with the person's ask it answers, and the instructions have t
 explain it at length: the problem, each cause in plain words, the proposed fix, and what the
 person is asked to decide with each choice's cost.
 
+**Speed and length.** `audio.output.speed` is the machine's choice of 0.8, 0.9 (the default),
+1.0 or 1.1; it slows the generated audio, and the instructions also ask for a pause between
+sentences. Ordinary answers stay at three sentences; a report on Sessions goes through each one in
+two or three (its goal, what it delivered recently, what it is doing now), from each busy row's
+`goal` (the person's newest ask), `recent` (its last two delivery summaries) and `latest`. On
+2026-11-12 "how are the working Sessions" was answered "four Sessions are working" and nothing
+else until that exception was stated first.
+
 **The voice.** One of Realtime's ten voices, `marin` unless chosen otherwise; a call cannot change
 its voice once it has spoken, so a new choice applies from the next call. **Listen** plays one line
 in it over a receive-only connection, with no microphone. Over Cloud the copilot is opened inside one

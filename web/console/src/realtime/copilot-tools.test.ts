@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, choiceOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -502,4 +502,24 @@ test("a Session's notes are read for the person, without resolved, withdrawn or 
   const list = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
   assert.equal(list.needs_you[0].notes, 2)
   assert.deepEqual(list.needs_you[0].options, ["1. Yes", "2. No"])
+})
+
+test("a busy Session's row says its goal, its last two deliveries and its newest reply", () => {
+  const p = progressOf([
+    { role: "user", text: "Make the login test pass." },
+    { role: "tool", text: 'clawdline session report --summary "First fix pushed."' },
+    { role: "tool", text: 'clawdline session report --summary "Twenty runs pass."' },
+    { role: "user", text: "<clawdline-notice>{}</clawdline-notice>" },
+    { role: "user", text: "Now push it to main." },
+    { role: "tool", text: "clawdline session report --summary 'Pushed to main.'" },
+    { role: "assistant", text: "Pushed; watching CI." },
+  ])
+  assert.deepEqual(p, { latest: "Pushed; watching CI.", goal: "Now push it to main.", recent: ["Twenty runs pass.", "Pushed to main."] })
+})
+
+test("a call speaks at the machine's speed, a little slower than OpenAI's unless set", () => {
+  const speedOf = (speed?: string) => (sessionUpdateEvent("", "", { speed }) as { session: { audio: { output: { speed: number } } } }).session.audio.output.speed
+  assert.equal(speedOf(undefined), 0.9)
+  assert.equal(speedOf("0.8"), 0.8)
+  assert.equal(speedOf("3"), 0.9)
 })
