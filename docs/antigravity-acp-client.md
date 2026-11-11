@@ -641,6 +641,20 @@ console sends directly only when it is present and keeps the browser queue
 above for older machines. The user turn appears in the transcript when the
 queued prompt is written, so another device sees it only then.
 
+**A restart that kills the worker first (2026-11-11).** A dev install stopped
+the daemon at 11:59:24 while a Gemini turn sent at 11:55:18 was still running.
+The turn ended as `antigravity_process_cancelled`, its record had no
+`interrupted_by_shutdown` mark, and the next start sent no continuation. On a
+signal the daemon cancelled `cloudCtx`, from which the owned host's context and
+workers derive, before it called `Host.Shutdown`; the worker died first, the
+turn's own failure path cleared its busy state, and Shutdown no longer saw a
+running turn. Earlier restarts had continued only because Shutdown won that
+race. The signal path now stops the owned Gemini and Grok hosts before the Cloud
+context, and a Gemini turn that fails while its host's context is already
+cancelled is marked interrupted instead of recording a failure, unless the
+person stopped or closed it. A reproducer cancelling the host context before
+Shutdown failed with that exact error before the change.
+
 **Model and effort across a reload (2026-11-11).** A captured AGY 1.5.5
 conversation acknowledged `model=gemini-3.8-flash` at 10:59:43; after the daemon
 restarted, the next process's `session/load` reported `currentValue` back at the

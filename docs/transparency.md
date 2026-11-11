@@ -461,3 +461,9 @@ explanations in both languages are unchanged.
 The Session info sheet now lists model and reasoning choices before the CodeGraph
 section and moves the native connection state to the end. The CodeGraph guidance
 it shows and the preference it saves are unchanged in both languages.
+
+A Gemini turn whose worker dies because the host is already closing is now
+marked for the existing restart continuation instead of recorded as a failed
+turn, and the daemon stops the owned hosts before the Cloud context on a signal.
+The continuation's text, condition and single delivery are unchanged, so the
+`gemini-restart-continue` explanations in both languages still apply.

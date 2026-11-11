@@ -679,6 +679,14 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			}
 			c.row.State = session.StateUnknown
 			c.uncertain = true
+			// The host is closing: the daemon may cancel its context before
+			// Shutdown runs, killing the worker under this turn. That is a
+			// restart, not a failure; the next start wakes it (continue.go).
+			if h.ctx.Err() != nil && h.assistant() != session.AssistantGrok && !c.stopping && !c.hidden {
+				c.interrupted = true
+				_ = c.saveState()
+				return
+			}
 			c.append(contract.TranscriptEntry{Role: "error", Text: h.turnFailureText(err), At: time.Now().Unix()})
 			_ = c.saveState()
 			return
