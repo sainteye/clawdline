@@ -100,6 +100,11 @@ sending the words without it. One ACP frame is bounded by `MaxFrameBytes`; a
 message whose pictures exceed it is refused as `frame_too_large` before writing.
 The user turn in the transcript records how many pictures it carried.
 
+In the other direction, `clawdline image send` from a Grok Session binds the
+pictures to that Session's next reply, through the same owned-history address
+Gemini uses. Before 2026-11-11 only Gemini's host was asked for that address,
+so a Grok Session was answered `409 session_has_no_record`.
+
 ## Completion, interruption and recovery
 
 Only the native prompt result completes an ordinary turn. Text, usage messages,

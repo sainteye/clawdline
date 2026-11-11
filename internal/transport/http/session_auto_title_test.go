@@ -119,7 +119,7 @@ func sendAutomaticFixture(t *testing.T, s *Server, row session.Session, text str
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for {
-		h := s.antigravitySessions.Load()
+		h := s.ownedHost(row.Assistant)
 		err := h.Send(t.Context(), row, text)
 		if err == nil {
 			// A message sent during a turn is queued; wait until it is written.

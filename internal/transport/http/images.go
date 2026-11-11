@@ -174,8 +174,8 @@ func (s *Server) imagesRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		outputCWD, outputConversation = item.CWD, outputKey(item)
 		record, offset, ok := "", int64(0), false
-		if ownedGeminiImages(item) {
-			if h := s.antigravitySessions.Load(); h != nil {
+		if ownedProtocolImages(item) {
+			if h := s.ownedHost(item.Assistant); h != nil {
 				record, offset, err = h.ImageAddress(ctx, item)
 				ok = err == nil
 			}
