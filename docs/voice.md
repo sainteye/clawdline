@@ -117,7 +117,15 @@ Session is idle: such a question is prose, not a menu, so the Session's state do
 `send_message_to_session`. `answer_session_question` presses one option of a waiting Session's
 question only after the person names it; the press carries the question's fingerprint, so the
 machine refuses it if the screen asks something else by then. Over Cloud it resolves that
-Session's current execution as a newly started Session's is. `close_session` closes a Session the person named and confirmed, only when its row's
+Session's current execution as a newly started Session's is. **Writes go to the Session under discussion.** `send_message_to_session`,
+`answer_session_question` and `close_session` accept only a Session's id or its whole name (never
+an assistant type or part of a name, which the read tools accept), and require `session_label`, the
+name the copilot said aloud, which must be that Session's. The call remembers the Session it last
+read, opened or acted on; a write to another one is refused until the person confirms the switch
+(`switch_confirmed`). On 2026-11-12 a message went to the wrong Session; replayed against this
+machine's Sessions, the copilot asked to send to an unrelated one when the named Session had been
+closed, and after the rule "a Session not in the list is said to be missing, never replaced" it
+said so instead. `close_session` closes a Session the person named and confirmed, only when its row's
 closeability is `safe`, with `force: false` and that reading's version; a Session still working
 or owing a landing is not closed and the copilot says why. Over Cloud the close resolves that
 Session's current execution as `answer_session_question` does. Times reach the copilot already

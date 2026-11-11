@@ -165,8 +165,9 @@ test("an unreadable screen is said to be unreadable, not empty", async () => {
 
 test("send_message_to_session posts the text under an idempotency key", async () => {
   const { deps, calls } = fakeMachine({})
-  const out = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"codex","message":"run the tests"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"%2","session_label":"Prepare screenshots","message":"run the tests"}', deps)).output)
   assert.equal(out.success, true)
+  assert.equal(out.sent_to, "Prepare screenshots")
   const post = calls.at(-1)!
   assert.equal(post.path, "/v1/sessions/%252/send")
   assert.equal(post.init?.method, "POST")
@@ -458,7 +459,7 @@ import { menuFingerprint } from "../session/fingerprint.ts"
 
 test("a chosen option is pressed with the fingerprint of the question it answers", async () => {
   const { deps, calls } = fakeMachine({})
-  const out = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"flaky","choice":"1"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%7","session_label":"Fix the flaky test","choice":"1"}', deps)).output)
   assert.equal(out.answered, true)
   assert.equal(out.chose, "1. Yes")
   const press = calls.at(-1)!
@@ -471,10 +472,10 @@ test("a chosen option is pressed with the fingerprint of the question it answers
 
 test("a choice that names no single option presses nothing", async () => {
   const { deps, calls } = fakeMachine({})
-  const out = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%7","choice":"maybe"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%7","session_label":"Fix the flaky test","choice":"maybe"}', deps)).output)
   assert.match(out.error, /1\. Yes、2\. No/)
   assert.equal(calls.some((c) => c.path.endsWith("/key")), false)
-  const idle = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%2","choice":"1"}', deps)).output)
+  const idle = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%2","session_label":"Prepare screenshots","choice":"1"}', deps)).output)
   assert.match(idle.error, /沒有在等問題的答案/)
 })
 
@@ -579,7 +580,7 @@ test("times are said in words a person uses, never as a count of minutes", () =>
 
 test("a finished Session is closed on request, never forced, at the reading that said it was safe", async () => {
   const { deps, calls } = fakeMachine({})
-  const out = JSON.parse((await runCopilotTool("close_session", '{"session_id":"codex"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool("close_session", '{"session_id":"%2","session_label":"Prepare screenshots"}', deps)).output)
   assert.deepEqual(out, { closed: true, label: "Prepare screenshots" })
   const close = calls.at(-1)!
   assert.equal(close.path, "/v1/sessions/%252/close")
@@ -589,7 +590,46 @@ test("a finished Session is closed on request, never forced, at the reading that
 
 test("a Session that is still working is not closed, and the copilot is told why", async () => {
   const { deps, calls } = fakeMachine({})
-  const out = JSON.parse((await runCopilotTool("close_session", '{"session_id":"%9"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool("close_session", '{"session_id":"%9","session_label":"Fix the login test"}', deps)).output)
   assert.match(out.error, /還不能安全關閉：它還在工作/)
   assert.equal(calls.some((c) => c.path.endsWith("/close")), false)
+})
+
+function focused(deps: ToolDeps, id?: string) {
+  let focus = id
+  deps.focus = { get: () => focus, set: (next) => { focus = next } }
+  return () => focus
+}
+
+test("a write never goes to a Session named by its assistant or part of its name", async () => {
+  const { deps, calls } = fakeMachine({})
+  for (const name of ["codex", "flaky", "claude"]) {
+    const out = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: name, session_label: name, message: "hi" }), deps)).output)
+    assert.match(out.error, /不是一個明確的 Session/, name)
+    assert.ok(out.candidates.length > 0)
+  }
+  assert.equal(calls.some((c) => c.path.endsWith("/send")), false)
+})
+
+test("a write whose said name is another Session's is refused", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"%9","session_label":"Fix the flaky test","message":"push it"}', deps)).output)
+  assert.match(out.error, /「Fix the flaky test」，但 id 對到的是「Fix the login test」/)
+  assert.equal(calls.some((c) => c.path.endsWith("/send")), false)
+})
+
+test("a write goes to the Session under discussion unless the person confirmed a switch", async () => {
+  const { deps, calls } = fakeMachine({ "%7": [{ pending: false, readable: true, text: "Push to main?" }] })
+  const focus = focused(deps)
+  await runCopilotTool("get_session_screen", '{"session_id":"%7"}', deps)
+  assert.equal(focus(), "%7", "reading a Session puts it under discussion")
+  const other = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"%9","session_label":"Fix the login test","message":"push it"}', deps)).output)
+  assert.match(other.error, /目前在討論的不是「Fix the login test」/)
+  assert.equal(calls.some((c) => c.path.endsWith("/send")), false)
+  const same = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"%7","session_label":"Fix the flaky test","message":"push it"}', deps)).output)
+  assert.equal(same.sent_to, "Fix the flaky test")
+  const switched = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"%9","session_label":"Fix the login test","message":"push it","switch_confirmed":true}', deps)).output)
+  assert.equal(switched.sent_to, "Fix the login test")
+  assert.equal(focus(), "%9", "the Session a message went to is now the one under discussion")
+  assert.deepEqual(calls.filter((c) => c.path.endsWith("/send")).map((c) => c.path), ["/v1/sessions/%257/send", "/v1/sessions/%259/send"])
 })

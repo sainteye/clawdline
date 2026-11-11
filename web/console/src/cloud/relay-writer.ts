@@ -1260,7 +1260,7 @@ export class RelayWriter {
         const body = await bodyOf(init)
         const text = typeof body.text === "string" ? body.text : ""
         const images = Array.isArray(body.images) ? body.images.filter((x): x is string => typeof x === "string") : []
-        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word)
+        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init))
         // F2: use the card's current request, so an unanswered attempt keeps
         // its receipt. A confirmed terminal failure may use a new request
         // after the person checks for a turn and accepts duplicate risk.

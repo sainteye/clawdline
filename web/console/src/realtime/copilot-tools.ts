@@ -43,6 +43,8 @@ export interface ToolDeps {
   briefing?: () => Promise<string | null>
   /** Opens one Session on the page the call runs in; true once it is on screen. */
   openSession?: (id: string) => Promise<boolean>
+  /** The Session this call is talking about: the last one a tool read, opened or acted on. */
+  focus?: { get(): string | undefined; set(id: string): void }
   /** This call's speed and answer length now, and a way to change them for this call and the next. */
   delivery?: () => { speed: string; brief: boolean }
   adjust?: (change: { speed?: string; brief?: boolean }) => Promise<{ saved: boolean }>
@@ -101,7 +103,13 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - get_session_notes：讀 Session 留給使用者的便條紙。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）就照實說原因，不要再試。
-- send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
+- send_message_to_session：替使用者把文字送進某個 Session。
+【送出、回答、關閉之前：一定要對準正在討論的那個 Session】
+- 這三個動作只能用 list_sessions 的 id 或完整名稱，並且在 session_label 填你跟使用者講的那個 Session 名稱。
+- 預設對象就是使用者目前正在跟你討論的那個 Session；不要因為名稱相近或助理種類相同就換成別的。
+- 使用者說的 Session 在清單裡找不到（例如已經關掉了），就直接說「找不到某某，它可能已經關閉了」，絕對不要改挑另一個 Session 來送。
+- 送出前一定先講「要送到『Session 名稱』：『內容』，對嗎？」，使用者說好才送；回答問題、關閉也一樣先講出 Session 名稱。
+- 工具說「目前在討論的不是這個」時，要先問使用者是不是要改到那個 Session，確認後才帶 switch_confirmed: true 再呼叫。
 - session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
@@ -256,8 +264,10 @@ export const COPILOT_TOOLS = [
       properties: {
         session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱' },
         choice: { type: 'string', description: '使用者選的選項：編號（例如 "1"）或選項文字' },
+        session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
+        switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
       },
-      required: ['session_id', 'choice'],
+      required: ['session_id', 'choice', 'session_label'],
     },
   },
   {
@@ -299,8 +309,12 @@ export const COPILOT_TOOLS = [
     description: '關閉一個已經完成的 Session。只在使用者明確要求關閉、而且你已經問過「確定要關閉某某嗎」並得到肯定回答之後呼叫。機器判斷還不能安全關閉時不會關，會回報原因。',
     parameters: {
       type: 'object',
-      properties: { session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱' } },
-      required: ['session_id'],
+      properties: {
+        session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 完整名稱' },
+        session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
+        switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
+      },
+      required: ['session_id', 'session_label'],
     },
   },
   {
@@ -312,8 +326,10 @@ export const COPILOT_TOOLS = [
       properties: {
         session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱' },
         message: { type: 'string', description: '要傳送給該 Session 的文字內容' },
+        session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
+        switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
       },
-      required: ['session_id', 'message'],
+      required: ['session_id', 'message', 'session_label'],
     },
   },
 ] as const
@@ -755,6 +771,7 @@ async function sessionScreen(deps: ToolDeps, logs: ToolLog[], wanted: string): P
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
   }
   const { row } = found
+  deps.focus?.set(row.id)
   const screen = await readScreen(deps, row)
   if ('error' in screen) {
     logs.push({ level: 'error', text: screen.error })
@@ -928,6 +945,7 @@ async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
   }
   const { row } = found
+  deps.focus?.set(row.id)
   const recap = await readRecap(deps, row.id)
   if ('error' in recap) {
     const error = `無法讀取「${row.label}」的工作紀錄 (HTTP ${recap.status})：${recap.error}`
@@ -977,6 +995,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
   }
   const { row } = found
+  deps.focus?.set(row.id)
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
   let lastReply = ''
   try {
@@ -1083,6 +1102,7 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
   }
   const { row } = found
+  deps.focus?.set(row.id)
   const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
   if (!res.ok) {
     const why = await refusalText(res)
@@ -1121,24 +1141,67 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
   }
 }
 
-async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, message: string): Promise<unknown> {
+/**
+ * The one Session a write names: its id (or a pane id without its sign) or
+ * its whole name, never an assistant type or part of a name, which read
+ * tools accept. A message once went to the wrong Session (2026-11-12).
+ */
+export function resolveForWrite(rows: readonly CopilotSessionRow[], wanted: string): { row: CopilotSessionRow } | { error: string; candidates: { id: string; label: string }[] } {
+  const w = wanted.trim()
+  const candidates = rows.map((r) => ({ id: r.id, label: r.label }))
+  const byId = rows.find((r) => r.id === w) ?? (/^\d+$/.test(w) ? rows.find((r) => r.id === `%${w}`) : undefined)
+  if (byId) return { row: byId }
+  const byName = rows.filter((r) => r.label.trim().toLowerCase() === w.toLowerCase())
+  if (byName.length === 1) return { row: byName[0] }
+  return { error: `「${w}」不是一個明確的 Session；送出、回答或關閉要用清單裡的 id 或完整名稱`, candidates }
+}
+
+function sameName(a: string, b: string): boolean {
+  // Spaces, quotes and the corner brackets 「」『』 a name may be said with.
+  const n = (x: string) => x.replace(/[\s\u300c-\u300f"'`]/g, '').toLowerCase()
+  const x = n(a), y = n(b)
+  return !!x && !!y && (x === y || (Math.min(x.length, y.length) >= 4 && (x.includes(y) || y.includes(x))))
+}
+
+/**
+ * Whether a write may go to `row`: the name the copilot said must be this
+ * Session's, and a Session other than the one under discussion needs the
+ * person to have confirmed the switch.
+ */
+export function writeGuard(deps: ToolDeps, row: CopilotSessionRow, said: string, switchConfirmed: boolean): string | null {
+  if (!said.trim()) return '沒有說要送到哪個 Session：session_label 要填你跟使用者講的那個名稱'
+  if (!sameName(said, row.label)) return `你說的是「${said}」，但 id 對到的是「${row.label}」，兩者不一致；沒有執行。請用清單確認正確的 id`
+  const focus = deps.focus?.get()
+  if (focus && focus !== row.id && !switchConfirmed) {
+    return `目前在討論的不是「${row.label}」。先跟使用者確認要改到「${row.label}」，確認後再呼叫並把 switch_confirmed 設為 true`
+  }
+  return null
+}
+
+async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, message: string, said = '', switchConfirmed = false): Promise<unknown> {
   if (!message.trim()) return { error: '沒有要送出的內容' }
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates }
   }
   const { row } = found
+  const refused = writeGuard(deps, row, said, switchConfirmed)
+  if (refused) {
+    logs.push({ level: 'error', text: refused })
+    return { error: refused }
+  }
   const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/send`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(),
+      [UNOPENED_READ_HEADER]: '1',
     },
     body: JSON.stringify({ text: message }),
   })
@@ -1148,8 +1211,9 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: error })
     return { error }
   }
+  deps.focus?.set(row.id)
   logs.push({ level: 'info', text: `已送出訊息至「${row.label}」` })
-  return { success: true, label: row.label }
+  return { success: true, sent_to: row.label }
 }
 
 async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
@@ -1164,6 +1228,7 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
   }
   const { row } = found
+  deps.focus?.set(row.id)
   if (!deps.openSession) return { error: '這個畫面不能由副駕駛切換 Session' }
   const opened = await deps.openSession(row.id)
   if (!opened) {
@@ -1191,18 +1256,23 @@ export function choiceOf(choices: { n: number; label: string }[], spoken: string
   return { error: `「${spoken}」對不到唯一的選項；選項是：${choices.map((c) => `${c.n}. ${c.label}`).join('、')}` }
 }
 
-async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, spoken: string): Promise<unknown> {
+async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, spoken: string, said = '', switchConfirmed = false): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates }
   }
   const { row } = found
+  const refused = writeGuard(deps, row, said, switchConfirmed)
+  if (refused) {
+    logs.push({ level: 'error', text: refused })
+    return { error: refused }
+  }
   if (!row.menu || !row.choices?.length) {
     logs.push({ level: 'error', text: `「${row.label}」現在沒有在等問題的答案` })
     return { error: `「${row.label}」現在沒有在等問題的答案` }
@@ -1324,22 +1394,27 @@ const CLOSE_REASONS: Record<string, string> = {
   session_identity_unbound: '機器還認不出它是哪個對話',
 }
 
-async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, said = '', switchConfirmed = false): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates }
   }
   const { row } = found
-  const said = (codes: string[]) => codes.map((c) => CLOSE_REASONS[c] ?? c)
+  const refused = writeGuard(deps, row, said, switchConfirmed)
+  if (refused) {
+    logs.push({ level: 'error', text: refused })
+    return { error: refused }
+  }
+  const meaning = (codes: string[]) => codes.map((c) => CLOSE_REASONS[c] ?? c)
   // A close is never forced from a call: what the machine says is still owed stays owed.
   if (row.closeable !== 'safe') {
-    const error = `「${row.label}」現在還不能安全關閉${row.closeReasons?.length ? `：${said(row.closeReasons).join('、')}` : ''}`
+    const error = `「${row.label}」現在還不能安全關閉${row.closeReasons?.length ? `：${meaning(row.closeReasons).join('、')}` : ''}`
     logs.push({ level: 'error', text: error })
     return { error, reasons: row.closeReasons ?? [] }
   }
@@ -1357,7 +1432,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
       // refusal-ok: a refusal without reasons is still said by its HTTP status and message below.
     }
     const detail = await refusalText(res)
-    const error = `沒有關閉「${row.label}」（HTTP ${res.status}${reasons.length ? `：${said(reasons).join('、')}` : detail ? `：${detail}` : ''}）`
+    const error = `沒有關閉「${row.label}」（HTTP ${res.status}${reasons.length ? `：${meaning(reasons).join('、')}` : detail ? `：${detail}` : ''}）`
     logs.push({ level: 'error', text: error })
     return { error, reasons }
   }
@@ -1401,12 +1476,12 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
-    else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice))
+    else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true)
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
     else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
     else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
-    else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id))
-    else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))
+    else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true)
+    else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message), str(args.session_label), args.switch_confirmed === true)
     else {
       result = { error: `未知的工具：${name}` }
       logs.push({ level: 'error', text: `未知的工具請求：${name}` })

@@ -143,12 +143,15 @@ export class RealtimeCopilotClient {
   /** What this call's session.update says, kept so a later update can resend it whole. */
   private call: { memory: string; snapshot: string; options: CallOptions } = { memory: '', snapshot: '', options: {} }
   private briefing: Promise<string | null> = Promise.resolve(null)
+  /** The Session this call is talking about (`ToolDeps.focus`); a new call starts with none. */
+  private focus: string | undefined
   private toolDeps(): ToolDeps {
     return {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       briefing: () => this.briefing,
       openSession: (id) => openOnThisPage(id),
+      focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
       adjust: (change) => this.adjust(change),
     }
@@ -249,6 +252,7 @@ export class RealtimeCopilotClient {
     const meterRefused = this.meter.open()
 
     this.memory = readMemory()
+    this.focus = undefined
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
