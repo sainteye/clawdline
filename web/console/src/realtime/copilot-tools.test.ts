@@ -7,9 +7,10 @@ import { ACTIVITY_TOTAL_CHARS, COPILOT_TOOLS, SCREEN_READ_ATTEMPTS, activityOf, 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
 const ROWS = [
-  { id: "owned:acp:AAAA", label: "Refactor the billing page", assistant: "antigravity", state: "working", work_state: "working", cwd: "/x" },
-  { id: "%2", label: "Prepare screenshots", assistant: "codex", state: "idle", work_state: "unknown", cwd: "/y" },
-  { id: "%7", label: "Fix the flaky test", assistant: "claude", state: "waiting", work_state: "waiting", cwd: "/z" },
+  { id: "owned:acp:AAAA", label: "Refactor the billing page", assistant: "antigravity", state: "working", work_state: "working", cwd: "/x", working_since: 1_000_000, line: "Working… (10m)" },
+  { id: "%2", label: "Prepare screenshots", assistant: "codex", state: "idle", work_state: "unknown", cwd: "/y", activity: { at: 1_000_300, known: true } },
+  { id: "%7", label: "Fix the flaky test", assistant: "claude", state: "waiting", work_state: "waiting", cwd: "/z",
+    menu: { question: "\x1b[1mPush to main?\x1b[0m", options: [{ n: 1, label: "Yes", can: true, selected: true }, { n: 2, label: "No", can: true, selected: false }] } },
   { id: "%9", label: "Fix the login test", assistant: "claude", state: "working", work_state: "working", cwd: "/z" },
 ]
 
@@ -58,15 +59,27 @@ function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?
   return { deps, calls, sleeps }
 }
 
-test("list_sessions reports every row by name and counts them by state", async () => {
-  const { deps, calls } = fakeMachine({})
-  const { output, logs } = await runCopilotTool("list_sessions", "{}", deps)
+test("list_sessions sorts Sessions by what they need and says what the busy ones are doing", async () => {
+  const { deps, calls } = fakeMachine({}, { transcripts: {
+    "owned:acp:AAAA": { entries: [{ role: "user", text: "go" }, { role: "assistant", text: "Rewrote the invoice table; running the page tests." }] },
+    "%7": { entries: [{ role: "assistant", text: "Twenty runs pass now. Should I push to main?" }] },
+  } })
+  deps.now = () => 1_000_600
+  const { output } = await runCopilotTool("list_sessions", "{}", deps)
   const out = JSON.parse(output)
-  assert.deepEqual(calls.map((c) => c.path), ["/v1/sessions"])
-  assert.equal(out.count, 4)
-  assert.deepEqual(out.by_state, { working: 2, idle: 1, waiting: 1 })
-  assert.deepEqual(out.sessions[1], { id: "%2", label: "Prepare screenshots", assistant: "codex", state: "idle", work_state: "unknown" })
-  assert.ok(logs.some((l) => l.level === "info" && l.text.includes("共 4 個")))
+  assert.equal(out.summary, "4 個 Session：1 個等你回應、2 個工作中、0 個已完成、1 個閒置")
+  assert.deepEqual(out.needs_you.map((r: { id: string }) => r.id), ["%7"])
+  assert.equal(out.needs_you[0].question, "Push to main?")
+  assert.deepEqual(out.needs_you[0].options, ["Yes", "No"])
+  assert.equal(out.needs_you[0].latest, "Twenty runs pass now. Should I push to main?")
+  assert.deepEqual(out.working.map((r: { id: string }) => r.id), ["owned:acp:AAAA", "%9"])
+  assert.equal(out.working[0].working_minutes, 10)
+  assert.equal(out.working[0].latest, "Rewrote the invoice table; running the page tests.")
+  assert.equal(out.working[1].latest, undefined, "an unreadable transcript leaves the row without a latest line")
+  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", minutes_ago: 5 }])
+  const reads = calls.filter((c) => c.path.startsWith("/v1/transcript?"))
+  assert.equal(reads.length, 3)
+  for (const c of reads) assert.equal((c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
 })
 
 test("list_sessions says why when the machine refuses", async () => {
@@ -86,6 +99,7 @@ test("get_session_screen waits out the first pending read and hands over the wor
   const { output } = await runCopilotTool("get_session_screen", JSON.stringify({ session_id: "codex" }), deps)
   const out = JSON.parse(output)
   assert.deepEqual(calls.map((c) => c.path), ["/v1/sessions", "/v1/sessions/%252/screen", "/v1/sessions/%252/screen"])
+  for (const c of calls.slice(1)) assert.equal((c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
   assert.equal(sleeps.length, 1)
   assert.equal(out.session_id, "%2")
   assert.equal(out.label, "Prepare screenshots")
@@ -200,6 +214,7 @@ test("get_session_activity explains a Session from its transcript, goal first an
   assert.equal(out.recent_activity[0].text, "Make the flaky login test pass and push it.")
   assert.equal(out.recent_activity.at(-1).text, "Twenty runs pass now. Should I push to main?")
   assert.equal(out.recent_activity[2].tool, "Bash")
+  assert.equal(out.last_report, "Twenty runs pass now. Should I push to main?")
   assert.ok(out.recent_activity[2].text.length <= 163, "a command is clipped")
   assert.equal(out.recent_activity[3].text, "ok github.com/example/auth 1.2s")
   assert.ok(logs.some((l) => l.text.includes("5 筆")))

@@ -39,6 +39,8 @@ import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-
 import { authenticatedRefusalKey } from "./refusal-client.js"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { machineCommands } from "./machine-commands.ts"
+// @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
+import { isUnopenedRead } from "./unopened-read.ts"
 
 // One admitted request may wait behind one turn, and each turn may try two
 // 30-second CLIs. Ten seconds leaves the relay enough room to deliver either
@@ -1419,6 +1421,11 @@ export class RelayWriter {
         // wrote it — a first read is `pending` with no `text` — except that
         // the copied client names a tmux screen `on-demand`, which is what
         // keeps the panel asking at the machine's floor (`screen`).
+        if (isUnopenedRead(init)) {
+          const target = await this.contentTarget(route.session, null, true)
+          if (!target) throw failure("execution_target_required", "This screen read needs an exact Session execution.", 409)
+          return this.contentRead(client, target, "screen", {}, init?.signal)
+        }
         if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "screen", {}, init?.signal)
         return client.screen(await this.identity(client, route.session))
       case "git-diff": {
