@@ -120,7 +120,9 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
   // The access section names one machine: the one picked, else the first paired one.
   const [accessID, setAccessID] = useState<string | null>(null)
   const paired = rows?.filter((m) => m.pairing !== "not_paired") ?? []
-  const accessMachine = paired.find((m) => m.id === accessID) ?? paired[0] ?? null
+  // Picked here, else the machine the header names, else the first paired one.
+  const headerID = manager?.headerMachine?.() ?? null
+  const accessMachine = paired.find((m) => m.id === accessID) ?? paired.find((m) => m.id === headerID) ?? paired[0] ?? null
   const accessSource = useMemo(() => manager && accessMachine ? cloudAccessSource(manager, accessMachine.id, nameOf(accessMachine)) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [manager, accessMachine?.id, accessMachine ? nameOf(accessMachine) : ""])
@@ -129,12 +131,15 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
     <div className="account-machines" data-tick={tick}>
       {accessSource && (
         <MachineAccess source={accessSource} picker={paired.length > 1 ? (
-          <label className="access-picker">
-            <span className="am-label">{nextWord("accessMachineLabel")}</span>
-            <select value={accessMachine!.id} onChange={(e) => setAccessID(e.target.value)}>
-              {paired.map((m) => <option key={m.id} value={m.id}>{nameOf(m)}</option>)}
-            </select>
-          </label>
+          <div className="access-chips" role="radiogroup" aria-label={nextWord("accessMachineLabel")}>
+            {paired.map((m) => (
+              <button key={m.id} type="button" role="radio" aria-checked={m.id === accessMachine!.id}
+                className={m.id === accessMachine!.id ? "on" : ""} onClick={() => setAccessID(m.id)}>
+                <span className="am-icon"><MachinePlatformIcon platform={m.kind ?? ""} /></span>
+                <span>{nameOf(m)}</span>
+              </button>
+            ))}
+          </div>
         ) : undefined} />
       )}
       {told && <p className="am-told" role="status">{told}</p>}

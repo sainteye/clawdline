@@ -99,7 +99,8 @@ function Group({ title, note, loaded, revoke }: { title: NextWord; note: NextWor
       <p className="am-sub access-group-note">{nextWord(note)}</p>
       {loaded === null ? <p className="am-say" role="status">{nextWord("msDevicesLoading")}</p>
         : "error" in loaded ? <p className="am-say" role="status">{loaded.error === "forbidden" || loaded.error === "http_403"
-          ? nextWord("accessNotOwnerList") : nextWord("accessGroupUnreadable", { code: loaded.error })}</p>
+          ? nextWord("accessNotOwnerList") : loaded.error === "machine_needs_update" ? nextWord("accessListNeedsUpdate")
+            : nextWord("accessGroupUnreadable", { code: loaded.error })}</p>
           : loaded.rows.length === 0 ? <p className="am-say">{nextWord("accessGroupEmpty")}</p>
             : (
               <ul className="am-card">

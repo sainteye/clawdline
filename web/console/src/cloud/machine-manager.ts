@@ -32,6 +32,8 @@ export interface MachineManager {
   ask?(machine: string, word: string, body: Record<string, unknown>, kind: "action" | "read"): Promise<Record<string, unknown>>
   /** True when this browser is an invited browser rather than an account device. */
   invited?(): boolean
+  /** The machine the header has chosen, or null for "All machines". */
+  headerMachine?(): string | null
 }
 
 let installed: MachineManager | null = null

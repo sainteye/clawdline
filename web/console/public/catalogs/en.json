@@ -9164,6 +9164,7 @@
   "next.accessListTitleHere": "Devices that can use this machine",
   "next.copilotCall": "Call the voice copilot",
   "next.copilotInCall": "Voice copilot call in progress",
+  "next.accessListNeedsUpdate": "This machine needs an update before it can show this list.",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

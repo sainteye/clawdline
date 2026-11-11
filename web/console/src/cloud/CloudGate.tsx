@@ -354,6 +354,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   }, [problemKey])
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
   const [fleetScope, setFleetScope] = useState(() => location.hash === "#all-machines" || !!destinationFromFragment(location.hash))
+  // The machine the header names, for pages that act on one machine (the Devices page's access
+  // section). "All machines" names none.
+  const headerMachine = useRef<string | null>(null)
+  headerMachine.current = fleetScope ? null : chosen?.id ?? null
   const fleetScopeRef = useRef(fleetScope)
   fleetScopeRef.current = fleetScope
   const [fleetTarget, setFleetTarget] = useState<SessionDestination | null>(() => destinationFromFragment(location.hash))
@@ -1190,6 +1194,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         return await request.call(client.current, crypto.randomUUID(), machine, word, body, kind, 30_000) as Record<string, unknown>
       },
       invited: () => Boolean((session.current as { invited?: unknown } | null)?.invited),
+      headerMachine: () => headerMachine.current,
       pair: (id) => {
         if (id === null) { openPairingRef.current(null); return }
         const known = machinesRef.current?.find((m) => m.id === id)

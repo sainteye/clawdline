@@ -84,3 +84,9 @@ test("the local account group leaves out invited browsers and refused rows", asy
   const rows = await localAccessSource("Studio", true, null, read).account()
   assert.deepEqual(rows.map((r) => r.id), ["a"])
 })
+
+test("an older machine's lists say it needs an update rather than an error code", async () => {
+  const html = render(cloudAccessSource(manager({ serves: () => false }), "mac_old", "Old"))
+  assert.ok(html.includes("invUnavailable"))
+  await assert.rejects(cloudAccessSource(manager({ serves: () => false }), "mac_old", "Old").invited(), (e) => e.message === "machine_needs_update")
+})

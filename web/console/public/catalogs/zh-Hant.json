@@ -9164,6 +9164,7 @@
   "next.accessListTitleHere": "可以使用這台機器的裝置",
   "next.copilotCall": "打給語音副駕駛",
   "next.copilotInCall": "語音副駕駛通話中",
+  "next.accessListNeedsUpdate": "這台機器需要更新，才能顯示這份清單。",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

@@ -210,9 +210,11 @@
 .machine-access { margin: 6px 0 22px; }
 .machine-access .inv-link { margin: 0; padding: 10px 12px; border-radius: 10px; background: #0c0c10; color: var(--ink);
   font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
-.access-picker { display: grid; gap: 6px; }
-.access-picker select { min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid #3a3a42;
-  background: var(--am-panel); color: var(--ink); font-size: 14px; }
+.access-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.access-chips button { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
+  border: 1px solid #2a2a30; border-radius: 999px; background: var(--am-panel); color: var(--dim); font-size: 14px; cursor: pointer; }
+.access-chips button.on { border-color: var(--accent); color: var(--ink); }
+.access-chips .am-icon { width: 22px; height: 22px; border-radius: 6px; background: none; }
 .access-group { display: grid; gap: 6px; margin-top: 12px; }
 .access-group-title { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; }
 .access-group-note { margin: 0 0 4px; }
