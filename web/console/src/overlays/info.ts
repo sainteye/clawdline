@@ -614,15 +614,22 @@ function html(d: Facts): string {
   out += workflowInfoHTML(d.workflow)
   let i = 0
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
-  if (d.protocol) {
-    const protocolWord = (key: string) => catalogWord("acp", key).replaceAll("{assistant}", assistantLabel(s.assistant))
-    out += sec(++i, protocolWord("title"), "", protocolStateHTML(d.protocol, protocolWord, esc, L.clock))
-    if (s.assistant === "grok" && d.protocol.operation === "prompt" && d.protocol.phase === "request_failed" && d.protocol.rpc_error === -32003) {
-      out += note(nextWord("grokRateLimited"))
-    }
+  // A refusal the person must act on stays beside the status; the protocol
+  // receipt itself is diagnostic and goes last.
+  if (s.assistant === "grok" && d.protocol?.operation === "prompt" && d.protocol.phase === "request_failed" && d.protocol.rpc_error === -32003) {
+    out += note(nextWord("grokRateLimited"))
   }
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
+  // Read-only pairings get no buttons rather than dead ones.
+  if (host.writable() && (models.length || s.assistant === "codex")) {
+    out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
+  } else if (host.writable() && (s.assistant === "antigravity" || s.assistant === "grok")) {
+    out += sec(++i, T.webInfoSwitchModel, "", note(catalogWord("antigravity", "modelUnavailable")))
+  }
+  if (s.assistant === "codex" || s.assistant === "claude" || s.assistant === "antigravity") {
+    out += sec(++i, nextWord("infoReasoningEffort"), "", s.assistant === "antigravity" ? geminiEffortHTML(d) : reasoningEffortHTML(s.assistant, s.effort, nextWord, esc))
+  }
   if (codegraphEnabled && s.cwd) {
     const row = forId ? byId(forId) : null
     const g=d.codegraph_guidance
@@ -636,15 +643,6 @@ function html(d: Facts): string {
     const hint = codegraphIndexHint(codegraphIndex)
     out += sec(++i, graphWord("title"), "", (hint.note ? note(graphWord(hint.note)) : "") +
       '<button type="button" class="chip" data-codegraph-open>' + esc(graphWord(hint.action)) + '</button>' + choice)
-  }
-  // Read-only pairings get no buttons rather than dead ones.
-  if (host.writable() && (models.length || s.assistant === "codex")) {
-    out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
-  } else if (host.writable() && (s.assistant === "antigravity" || s.assistant === "grok")) {
-    out += sec(++i, T.webInfoSwitchModel, "", note(catalogWord("antigravity", "modelUnavailable")))
-  }
-  if (s.assistant === "codex" || s.assistant === "claude" || s.assistant === "antigravity") {
-    out += sec(++i, nextWord("infoReasoningEffort"), "", s.assistant === "antigravity" ? geminiEffortHTML(d) : reasoningEffortHTML(s.assistant, s.effort, nextWord, esc))
   }
   out += sec(++i, nextWord("infoContext"), "", contextHTML(d.context))
   out += sec(++i, T.webInfoUsage, "", usageHTML(u))
@@ -662,6 +660,10 @@ function html(d: Facts): string {
     // place.
     const when = d.linksObservedAt ? esc(fill(T.webInfoAsOf, { when: L.clock(d.linksObservedAt) })) : ""
     out += sec(++i, T.webLinks, when, linksHTML(d.links || [], d))
+  }
+  if (d.protocol) {
+    const protocolWord = (key: string) => catalogWord("acp", key).replaceAll("{assistant}", assistantLabel(s.assistant))
+    out += sec(++i, protocolWord("title"), "", protocolStateHTML(d.protocol, protocolWord, esc, L.clock))
   }
   return out
 }
