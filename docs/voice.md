@@ -163,3 +163,6 @@ The bounds are registered as `voice.copilot_key_bytes`,
 `voice.copilot_briefing_reply_characters`, `console.copilot_reply_characters`,
 `console.copilot_memory_turns`, `console.copilot_list_transcript_reads`,
 `console.copilot_recap_pages` and `console.copilot_screen_reads`.
+
+A demo film of a call, recorded from the built console in English and Traditional Chinese, is
+[the voice copilot demo](copilot-demo.md).
