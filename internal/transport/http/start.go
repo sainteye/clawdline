@@ -434,6 +434,14 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 		return
 	}
 	if projects.OwnedAssistant(assistant) {
+		if model == "" && starter.DefaultModel != nil {
+			model = starter.DefaultModel(assistant)
+		}
+		if starter.DefaultReasoningEffort != nil {
+			if effort := starter.DefaultReasoningEffort(assistant); effort != "" && model != "" && !hasKnownEffortSuffix(model) {
+				model = model + "-" + effort
+			}
+		}
 		made, err := s.openOwnedAssistant(ctx, starter, place, persona, model, nil, assistant)
 		if err != nil {
 			if ownedAuthRequired(err) {
