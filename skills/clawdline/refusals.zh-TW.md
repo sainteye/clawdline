@@ -203,6 +203,7 @@
 | `persona_suggester_out_of_quota` | `internal/transport/http/work_v2_persona_suggestion.go` |
 | `persona_suggestion_failed` | `internal/transport/http/work_v2_persona_suggestion.go` |
 | `phase_not_editable` | `internal/transport/http/work_v2.go` |
+| `pinned_unreadable` | `internal/transport/http/cloud_browser_invite.go` |
 | `plan_failed` | `internal/transport/http/intent.go` |
 | `policy_changed` | `internal/transport/http/dispatch_policy_settings.go` |
 | `policy_unreadable` | `internal/transport/http/dispatch_policy_settings.go` |

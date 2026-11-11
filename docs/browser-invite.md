@@ -5,8 +5,10 @@ read and operate permission, for 8 hours, 7 days, or until revoked. It exists fo
 owner uses but does not trust with their account: a cloud computer reached over remote desktop,
 where typing works but copying text out does not.
 
-The owner starts it on a device already paired with the machine (Cloud's **Devices** page, the
-machine's menu) or in the machine's own Local console. The device shows a code such as
+The owner starts it on a device already paired with the machine: Cloud's **Devices** page → the
+machine → **Name and access** (`web/console/src/pages/devices/BrowserInvites.tsx`). The machine's
+own local routes below do the same for a script on the machine; the Local console has no screen
+for it yet. The device shows a code such as
 `K7M4Q-9X2FTB`. The owner opens `app.clawdline.com/join` in the new browser and types it. Both
 screens then show the same six digits; the owner compares them and approves on the inviting device.
 
@@ -34,11 +36,12 @@ M is the machine, P an inviting device, B the invited browser, C Cloud. Initiato
    `{invite_id, expires_at}` (milliseconds, ten minutes). M shows `invite_id-secret`.
 2. **Join.** B parses the code (`ParseInviteCode`: case, spaces and dashes ignored; O→0, I/L→1),
    generates a non-extractable Ed25519 device key, computes CPace `Ya` with
-   `PRS = secret`, `CI = lv_cat("clawdline browser invite v1", machine_id)`,
+   `PRS = secret`, `CI = lv_cat("clawdline browser invite v1")`,
    `sid = "clawdline-invite:" + invite_id`, `ADa = "clawdline browser invite v1 browser"`, and calls
    `POST /v1/pairing/browser-invites/{id}/join {browser_message, device_public_key}`. C locks the
    invitation to B, records a pending device id, and answers `{join_token, device_id, machine_id,
-   machine_name, expiry}`.
+   machine_name, expiry}`. The machine id is not a CPace input, because B sends its message before
+   C names the machine and C is not trusted to; it is bound inside both sealed messages instead.
 3. **Answer.** M polls (`.../poll`, status `joined`), computes `Yb` with
    `ADb = "clawdline browser invite v1 machine"` and the ISK, and calls `.../answer {machine_message}`.
 4. **Confirm.** B polls with its join token, computes the ISK, derives keys
@@ -85,7 +88,11 @@ Statuses: `waiting`, `joined`, `confirmed`, `admitted`, `claimed`, `denied`, `ex
 spent or unknown invitation answers `409` or `404`, which the machine reads as
 `ErrInviteUnusable`.
 
-An invited session may mint relay tokens and revoke itself, and nothing else on the account API.
+An invited session may mint relay tokens, read `GET /v1/machines` (only its machine) and
+`GET /v1/devices` (only itself), read `GET /v1/pairing/browser-invites/session` and revoke itself
+(`POST …/session/revoke`), and nothing else on the account API. The console boots it from that
+session route, and only after this browser adopted an invitation (`clawdline.invited-device`), so
+an account browser makes no extra request.
 Its relay token names the one machine; the relay refuses every other channel.
 
 ## This machine's routes and words

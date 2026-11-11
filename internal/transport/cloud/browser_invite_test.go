@@ -100,7 +100,7 @@ func (c *inviteCloud) join(t *testing.T, typed string) *inviteBrowser {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prs, ci, sid := domaincloud.InviteCPaceInputs(id, secret, "mac_test")
+	prs, ci, sid := domaincloud.InviteCPaceInputs(id, secret)
 	party, err := domaincloud.NewCPaceParty(rand.Reader, prs, ci, sid, domaincloud.InviteBrowserAD, true)
 	if err != nil {
 		t.Fatal(err)
@@ -309,6 +309,10 @@ func TestRevokingAnInvitedBrowserRefusesItHereAndTellsCloud(t *testing.T) {
 	}
 	if refused, _ := pinned.Refused("dev_invited"); !refused || len(c.revoked) != 1 {
 		t.Fatalf("refused=%v cloud=%v", refused, c.revoked)
+	}
+	listed, err := invites.InvitedBrowsers()
+	if err != nil || len(listed) != 1 || listed[0].DeviceID != "dev_invited" || listed[0].Active || listed[0].RevokedAt == 0 {
+		t.Fatalf("invited browsers after revoke: %+v %v", listed, err)
 	}
 	// An account device is not the invitation page's to throw out.
 	plain := freshInvitePin(t, "dev_account")

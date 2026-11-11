@@ -1183,6 +1183,13 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       },
       rename: async (machine, name) => (await renameRef.current(machine, name)) ?? busy,
       forget: async (machine) => (await forgetRef.current(machine)) ?? busy,
+      serves: (machine, word) => client.current?.machineDescriptor?.(machine)?.machine?.commands?.includes(word) === true,
+      ask: async (machine, word, body, kind) => {
+        const request = client.current?._machineRequestAs
+        if (!request) throw Object.assign(new Error("machine_unavailable"), { code: "machine_unavailable" })
+        return await request.call(client.current, crypto.randomUUID(), machine, word, body, kind, 30_000) as Record<string, unknown>
+      },
+      invited: () => Boolean((session.current as { invited?: unknown } | null)?.invited),
       pair: (id) => {
         if (id === null) { openPairingRef.current(null); return }
         const known = machinesRef.current?.find((m) => m.id === id)

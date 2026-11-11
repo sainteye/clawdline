@@ -15,6 +15,7 @@ import { MachinePlatformIcon } from "../../cloud/MachinePlatformIcon.js"
 import { sessionsFact } from "../../cloud/unpaired-rows.js"
 import { machineSeenWord } from "../../cloud/machine-seen.js"
 import { OwnerDiagnostics } from "../../cloud/health-owner/OwnerDiagnostics.js"
+import { BrowserInvites } from "./BrowserInvites.js"
 import "./account-machines.css"
 
 /**
@@ -482,8 +483,11 @@ function AccessTab({ machine, manager, onForget }: { machine: Row; manager: Mach
         )}
         {said && <p className="am-say" role="status">{said}</p>}
       </section>
+      <BrowserInvites machineID={machine.id} machineName={name} manager={manager} />
       <ViewerDevices manager={manager} />
-      <button type="button" className="am-danger am-wide" onClick={onForget}>{nextWord("msForget")}</button>
+      {manager.invited?.() !== true && (
+        <button type="button" className="am-danger am-wide" onClick={onForget}>{nextWord("msForget")}</button>
+      )}
     </div>
   )
 }

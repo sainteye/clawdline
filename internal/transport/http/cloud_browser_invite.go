@@ -23,7 +23,7 @@ const maxBrowserInviteBody = 1 << 10
 
 // cloudBrowserInvitesRoute starts and lists browser invitations.
 //
-//	GET  /v1/cloud/browser-invites   {"invites":[…]}: live ones, then recent finished ones
+//	GET  /v1/cloud/browser-invites   {"invites":[…],"browsers":[…]}: live and recent invitations, and every invited browser
 //	POST /v1/cloud/browser-invites   {"expiry":"8h"|"7d"|"never"} → one invitation with its code
 //
 // This machine's own token only: the answer carries the code that admits a
@@ -39,7 +39,13 @@ func (s *Server) cloudBrowserInvitesRoute(w http.ResponseWriter, r *http.Request
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
-		writeJSON(w, map[string]any{"invites": invites.List()})
+		browsers, err := invites.InvitedBrowsers()
+		if err != nil {
+			writeAuthRefusal(w, http.StatusServiceUnavailable, "pinned_unreadable",
+				"This machine could not read its paired devices.")
+			return
+		}
+		writeJSON(w, map[string]any{"invites": invites.List(), "browsers": browsers})
 	case http.MethodPost:
 		var body struct {
 			Expiry string `json:"expiry"`

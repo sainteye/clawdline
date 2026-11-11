@@ -138,9 +138,16 @@ export type CloudUpdate =
   | { state: "revoked"; error?: CloudFailure }
   | { state: "reconnecting" }
 
+/** A browser a machine admitted by invitation (docs/browser-invite.md): its one machine. */
+export interface InvitedBrowser { machineID: string; machineName: string; expiresAt: string | null }
+
 export interface CloudSession {
   readonly account: string | null
   readonly deviceID: string | null
+  /** Set when this browser is an invited browser rather than an account device. */
+  readonly invited?: InvitedBrowser | null
+  /** Keep what a browser invitation handed over (`cloud/browser-invite.ts`). */
+  adoptInvitedBrowser?(result: import("./browser-invite.js").JoinResult): Promise<void>
   signInURL(): string
   now(): number
   startPairing(): Promise<PendingPairing>
@@ -184,7 +191,7 @@ export type RecoverableCloudSession = CloudSession & RecoverySession
 
 /** What `ensureSession` comes to when it does not throw (`cloud-boot.js`). */
 export type EnsuredSession =
-  | { state: "ready"; accountID: string; deviceID: string }
+  | { state: "ready"; accountID: string; deviceID: string; invited?: InvitedBrowser }
   | { state: "sign_in"; url: string }
   | { state: "device_limit_reached"; tier: string; limit: number | null; message: string }
 

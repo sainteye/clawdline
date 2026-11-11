@@ -36,7 +36,7 @@ type inviteVector struct {
 
 func computeInviteVector(t *testing.T, v inviteVector) inviteVector {
 	t.Helper()
-	prs, ci, sid := InviteCPaceInputs(v.InviteID, v.Secret, v.MachineID)
+	prs, ci, sid := InviteCPaceInputs(v.InviteID, v.Secret)
 	b, err := NewCPacePartyWithScalar(unhex(t, v.BrowserScalar), prs, ci, sid, InviteBrowserAD, true)
 	if err != nil {
 		t.Fatal(err)
@@ -134,10 +134,10 @@ func TestInviteCodesParseAsPeopleTypeThem(t *testing.T) {
 	}
 }
 
-func TestAWrongSecretOrMachineGivesADifferentComparisonCode(t *testing.T) {
-	run := func(secretB, secretM, machineB, machineM string) (InviteKeys, InviteKeys) {
-		prsB, ciB, sidB := InviteCPaceInputs("K7M4Q", secretB, machineB)
-		prsM, ciM, sidM := InviteCPaceInputs("K7M4Q", secretM, machineM)
+func TestAWrongSecretGivesADifferentComparisonCode(t *testing.T) {
+	run := func(secretB, secretM string) (InviteKeys, InviteKeys) {
+		prsB, ciB, sidB := InviteCPaceInputs("K7M4Q", secretB)
+		prsM, ciM, sidM := InviteCPaceInputs("K7M4Q", secretM)
 		b, _ := NewCPaceParty(rand.Reader, prsB, ciB, sidB, InviteBrowserAD, true)
 		m, _ := NewCPaceParty(rand.Reader, prsM, ciM, sidM, InviteMachineAD, false)
 		ib, _ := b.Finish(m.Message(), InviteMachineAD)
@@ -146,14 +146,11 @@ func TestAWrongSecretOrMachineGivesADifferentComparisonCode(t *testing.T) {
 		km, _ := DeriveInviteKeys(im, "K7M4Q")
 		return kb, km
 	}
-	if kb, km := run("9X2FTB", "9X2FTB", "mac_a", "mac_a"); kb.Code != km.Code || !bytes.Equal(kb.Handover, km.Handover) {
-		t.Fatal("the same secret and machine disagreed")
+	if kb, km := run("9X2FTB", "9X2FTB"); kb.Code != km.Code || !bytes.Equal(kb.Handover, km.Handover) {
+		t.Fatal("the same secret disagreed")
 	}
-	if kb, km := run("9X2FTB", "9X2FTC", "mac_a", "mac_a"); bytes.Equal(kb.Handover, km.Handover) {
+	if kb, km := run("9X2FTB", "9X2FTC"); bytes.Equal(kb.Handover, km.Handover) {
 		t.Fatal("different secrets agreed on a handover key")
-	}
-	if kb, km := run("9X2FTB", "9X2FTB", "mac_a", "mac_b"); bytes.Equal(kb.Handover, km.Handover) {
-		t.Fatal("different machines agreed on a handover key")
 	}
 }
 

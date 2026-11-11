@@ -140,10 +140,12 @@ var (
 	InviteMachineAD = []byte("clawdline browser invite v1 machine")
 )
 
-// InviteCPaceInputs returns PRS, CI and sid. The machine id is in CI so that
-// a code relayed to a different machine produces a different key.
-func InviteCPaceInputs(id, secret, machineID string) (prs, ci, sid []byte) {
-	return []byte(secret), CPaceLVCat([]byte("clawdline browser invite v1"), []byte(machineID)),
+// InviteCPaceInputs returns PRS, CI and sid. The machine id is not among
+// them: the browser must send its message before Cloud tells it which machine
+// it is joining, and Cloud is not trusted to say so. The id is bound instead
+// inside both sealed messages, which each end checks.
+func InviteCPaceInputs(id, secret string) (prs, ci, sid []byte) {
+	return []byte(secret), CPaceLVCat([]byte("clawdline browser invite v1")),
 		[]byte("clawdline-invite:" + id)
 }
 

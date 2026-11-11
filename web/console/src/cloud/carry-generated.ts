@@ -25,6 +25,15 @@ export const CARRIED = {
   "archived-sessions": "GET /v1/sessions/archived",
   board: "GET /v1/board?project=&item=",
   "board-command": "POST /v1/board",
+  "browser-invite-cancel": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-decide": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-list": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-revoke": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  // Browser invitations (docs/browser-invite.md): the machine sheet's Name and
+  // access tab asks these directly through the copied client's machine request;
+  // no console route stands for them.
+  "browser-invite-start": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-status": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",
@@ -297,12 +306,6 @@ export const CARRIED = {
  * done instead (the row's `console_sentence`).
  */
 export const DEFERRED = {
-  "browser-invite-cancel": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
-  "browser-invite-decide": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
-  "browser-invite-list": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
-  "browser-invite-revoke": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
-  "browser-invite-start": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
-  "browser-invite-status": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
   // `key` and `answer` are one command under two names on the wire. This
   // console sends a waiting card's press as `answer`, because only that
   // spelling carries `expect`, the fingerprint of the question the press was

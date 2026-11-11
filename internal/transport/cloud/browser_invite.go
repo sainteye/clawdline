@@ -208,6 +208,41 @@ func (b *BrowserInvites) List() []BrowserInviteView {
 	return append(out, b.history...)
 }
 
+// InvitedBrowser is one browser an invitation admitted, as the owner's list
+// shows it. Nothing secret: ids, a name, a fingerprint and times.
+type InvitedBrowser struct {
+	DeviceID    string `json:"device_id"`
+	Name        string `json:"name,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	PairedAt    int64  `json:"paired_at"`
+	// ExpiresAt is Unix seconds; 0 is never.
+	ExpiresAt int64 `json:"expires_at"`
+	// Active is false once it expired or was revoked.
+	Active    bool  `json:"active"`
+	RevokedAt int64 `json:"revoked_at,omitempty"`
+}
+
+// InvitedBrowsers lists every invited browser this machine pinned, newest
+// first. An unreadable pin file is an error, never an empty list.
+func (b *BrowserInvites) InvitedBrowsers() ([]InvitedBrowser, error) {
+	if b == nil || b.Pinned == nil {
+		return nil, ErrPairingUnavailable
+	}
+	rows, err := b.Pinned.Devices()
+	if err != nil {
+		return nil, err
+	}
+	out := []InvitedBrowser{}
+	for _, row := range rows {
+		if !row.Invited {
+			continue
+		}
+		out = append(out, InvitedBrowser{DeviceID: row.DeviceID, Name: row.Name, Fingerprint: row.Fingerprint,
+			PairedAt: row.PairedAt, ExpiresAt: row.ExpiresAt, Active: row.Active(), RevokedAt: row.RevokedAt})
+	}
+	return out, nil
+}
+
 // Counts is how many invitations are live and how many finished ones are
 // kept, for the capacity register.
 func (b *BrowserInvites) Counts() (live, kept int) {
@@ -330,7 +365,7 @@ func (b *BrowserInvites) run(ctx context.Context, inv *browserInvite) {
 		b.end(inv, fmt.Errorf("the browser's CPace message is not base64"))
 		return
 	}
-	prs, ci, sid := domaincloud.InviteCPaceInputs(id, inv.secret, b.MachineID)
+	prs, ci, sid := domaincloud.InviteCPaceInputs(id, inv.secret)
 	party, err := domaincloud.NewCPaceParty(b.random(), prs, ci, sid, domaincloud.InviteMachineAD, false)
 	if err != nil {
 		b.end(inv, err)
