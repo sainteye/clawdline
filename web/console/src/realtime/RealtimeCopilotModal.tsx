@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { nextWord } from '../next-strings.js'
+import { BRAND_MARK } from '../brand-mark.js'
 import { formatUSD } from './copilot-cost.js'
 import { CopilotOrb } from './CopilotOrb.js'
 import {
@@ -111,7 +112,10 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
             )}
             {copilotState.lastAssistantSpeech && (
               <div className="realtime-bubble assistant">
-                <span className="bubble-label">副駕駛：</span>
+                <svg className="bubble-mark" viewBox="0 0 16 11" role="img" aria-label="Clawdline" shapeRendering="crispEdges">
+                  {BRAND_MARK.cells.flatMap((row, y) => row.map((color, x) => color &&
+                    <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={color} />))}
+                </svg>
                 {copilotState.lastAssistantSpeech}
               </div>
             )}

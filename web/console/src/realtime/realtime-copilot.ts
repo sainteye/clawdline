@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { adjustEvent, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { openOnThisPage } from './copilot-open.js'
@@ -149,6 +149,26 @@ export class RealtimeCopilotClient {
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       briefing: () => this.briefing,
       openSession: (id) => openOnThisPage(id),
+      delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
+      adjust: (change) => this.adjust(change),
+    }
+  }
+
+  /** Changes this call's speed or answer length now, and saves it on the machine for the next calls. */
+  private async adjust(change: { speed?: string; brief?: boolean }): Promise<{ saved: boolean }> {
+    this.call.options = { ...this.call.options, ...change }
+    if (this.dc && this.dc.readyState === 'open') {
+      this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    }
+    try {
+      const res = await fetch('/v1/settings/copilot', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify(change),
+      })
+      return { saved: res.ok }
+    } catch {
+      // refusal-ok: the change applies to this call either way; the copilot says it was not kept for the next one.
+      return { saved: false }
     }
   }
 
@@ -184,7 +204,8 @@ export class RealtimeCopilotClient {
   private sendBriefing(text: string) {
     if (!this.dc || this.dc.readyState !== 'open') return
     this.call.options = { ...this.call.options, briefing: text }
-    this.dc.send(JSON.stringify(sessionUpdateEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    // Only the instructions and speed: the call has spoken by now, and its voice is fixed.
+    this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
     this.addLog('info', '機器整理好的現況匯報已交給副駕駛')
   }
   private model = 'gpt-realtime-mini'

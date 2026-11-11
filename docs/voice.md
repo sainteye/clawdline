@@ -138,6 +138,13 @@ two or three (its goal, what it delivered recently, what it is doing now), from 
 2026-11-12 "how are the working Sessions" was answered "four Sessions are working" and nothing
 else until that exception was stated first.
 
+**Changing them in the call.** `set_speaking_speed` (one step slower or faster, normal, or a rate)
+and `set_answer_length` apply at once with a `session.update` carrying only the rebuilt
+instructions and `audio.output.speed`, and save the choice on the machine for the next calls. On
+2026-11-12 a call that had already spoken accepted speed 0.8 and the long-answer instructions, and a
+resent unchanged voice was accepted too; the briefing's later update now also sends only the
+instructions and speed.
+
 **The voice.** One of Realtime's ten voices, `marin` unless chosen otherwise; a call cannot change
 its voice once it has spoken, so a new choice applies from the next call. **Listen** plays one line
 in it over a receive-only connection, with no microphone. Over Cloud the copilot is opened inside one
