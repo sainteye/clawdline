@@ -13,8 +13,11 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-func ownedGeminiImages(row session.Session) bool {
-	return row.Backend == session.BackendOwned && row.Binding == session.BindingProtocol && row.Assistant == session.AssistantAntigravity
+// ownedProtocolImages is a Gemini or Grok Session whose history this daemon
+// keeps: its pictures are bound to the next reply in that history.
+func ownedProtocolImages(row session.Session) bool {
+	return row.Backend == session.BackendOwned && row.Binding == session.BindingProtocol &&
+		(row.Assistant == session.AssistantAntigravity || row.Assistant == session.AssistantGrok)
 }
 
 // Keep artifact liveness dynamic at the shared HTTP projection boundary. Stored
