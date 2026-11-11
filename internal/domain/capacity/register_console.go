@@ -158,6 +158,20 @@ func consoleBounds() []Entry {
 			Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
 		{
+			// ORB_MAX_FPS in realtime/copilot-orb.ts: how many times a second
+			// the voice copilot's cloud orb is drawn. A display's extra frames
+			// are skipped; nothing is drawn while the page is hidden.
+			Name: "console.copilot_orb_frames_per_second", Class: Buffer, Unit: Rows,
+			Limit: 30, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// ORB_MAX_PIXEL_RATIO in realtime/copilot-orb.ts: the most device
+			// pixels per CSS pixel the orb's canvas is drawn at; a denser screen
+			// is drawn at this ratio and scaled.
+			Name: "console.copilot_orb_pixel_ratio", Class: Buffer, Unit: Multipliers,
+			Limit: 2, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// Both opened-detail readers share one automatic recovery per
 			// user opening (SessionExecutionRecovery). At the limit the
 			// existing failure and manual recovery action remain visible.

@@ -113,97 +113,107 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px 0 16px;
-  gap: 16px;
+  padding: 4px 0 12px;
+  gap: 4px;
 }
 
 .realtime-orb {
+  --orb-size: 250px;
+  --orb-swell: 1;
+  --orb-glow: 0.3;
+  --orb-bright: 1;
   position: relative;
-  width: 76px;
-  height: 76px;
+  width: var(--orb-size);
+  height: var(--orb-size);
+  max-width: 100%;
+}
+/* A short screen keeps room for the transcript and the buttons. */
+@media (max-height: 700px) {
+  .realtime-orb { --orb-size: 196px; }
+}
+
+.orb-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.orb-css .orb-canvas { display: none; }
+
+/* Without WebGL: the same blue cloud, in layered CSS. */
+.orb-css-stage {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-
-.orb-core {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--line);
-  transition: all 0.3s ease;
-  z-index: 2;
-}
-
-.orb-ring {
+.orb-halo {
   position: absolute;
+  inset: 4%;
   border-radius: 50%;
-  pointer-events: none;
-  border: 1.5px solid transparent;
-  transition: all 0.3s ease;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.55) 0%, rgba(59, 130, 246, 0.18) 45%, rgba(59, 130, 246, 0) 70%);
+  filter: blur(10px);
+  opacity: var(--orb-glow);
+}
+.orb-ball {
+  position: relative;
+  width: 81.6%;
+  height: 81.6%;
+  border-radius: 50%;
+  overflow: hidden;
+  transform: scale(var(--orb-swell));
+  filter: brightness(calc(0.94 + (var(--orb-bright) - 1) * 0.6));
+  background: radial-gradient(circle at 50% 135%, #f5faff 0%, #a8d4ff 24%, #4f94f8 52%, #2160e8 76%, #1b3f9e 100%);
+  box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.18), 0 24px 80px rgba(59, 130, 246, 0.32);
+}
+.orb-cloud { position: absolute; opacity: 0.62; animation: orb-spin 18s linear infinite; }
+.orb-cloud-1 {
+  inset: -28%;
+  background:
+    radial-gradient(circle at 30% 38%, rgba(255, 255, 255, 0.95) 0, rgba(255, 255, 255, 0) 21%),
+    radial-gradient(circle at 70% 62%, rgba(255, 255, 255, 0.8) 0, rgba(255, 255, 255, 0) 19%),
+    radial-gradient(circle at 58% 26%, rgba(224, 242, 254, 0.85) 0, rgba(224, 242, 254, 0) 15%);
+  filter: blur(12px);
+}
+.orb-cloud-2 {
+  inset: -18%;
+  background:
+    radial-gradient(circle at 64% 34%, rgba(255, 255, 255, 0.85) 0, rgba(255, 255, 255, 0) 18%),
+    radial-gradient(circle at 34% 70%, rgba(219, 234, 254, 0.9) 0, rgba(219, 234, 254, 0) 22%),
+    radial-gradient(circle at 80% 78%, rgba(191, 219, 254, 0.7) 0, rgba(191, 219, 254, 0) 14%);
+  filter: blur(14px);
+  opacity: 0.5;
+  animation-name: orb-spin-back;
+  animation-duration: 26s;
+}
+.orb-cloud-3 {
+  inset: -10%;
+  background: radial-gradient(ellipse 40% 18% at 45% 55%, rgba(255, 255, 255, 0.75) 0, rgba(255, 255, 255, 0) 100%);
+  filter: blur(9px);
+  animation-duration: 11s;
+}
+.orb-gloss {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.55) 0, rgba(255, 255, 255, 0) 34%);
+  box-shadow: inset 0 -22px 44px rgba(30, 58, 138, 0.5), inset 0 8px 24px rgba(255, 255, 255, 0.18);
+}
+.orb-idle .orb-cloud { animation-play-state: paused; }
+.orb-thinking .orb-cloud-1 { animation-duration: 9s; }
+.orb-thinking .orb-cloud-2 { animation-duration: 13s; }
+.orb-speaking .orb-cloud-1 { animation-duration: 5s; }
+.orb-speaking .orb-cloud-2 { animation-duration: 7s; }
+.orb-speaking .orb-cloud-3 { animation-duration: 3.2s; }
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+@keyframes orb-spin-back { to { transform: rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .orb-cloud { animation: none; }
+  .orb-ball { transform: none; }
 }
 
-.ring-1 {
-  width: 62px;
-  height: 62px;
-}
-
-.ring-2 {
-  width: 76px;
-  height: 76px;
-}
-
-/* Orb States */
-.orb-idle .orb-core {
-  background: var(--line);
-}
-
-.orb-connecting .orb-core {
-  background: var(--accent);
-  animation: pulse-core 1.2s infinite ease-in-out;
-}
-
-.orb-listening .orb-core {
-  background: #10b981;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
-}
-
-.orb-listening .ring-1 {
-  border-color: rgba(16, 185, 129, 0.5);
-  animation: ripple 1.6s infinite ease-out;
-}
-
-.orb-thinking .orb-core {
-  background: #f59e0b;
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.4);
-  animation: pulse-core 1s infinite alternate;
-}
-
-.orb-speaking .orb-core {
-  background: #3b82f6;
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
-  animation: pulse-core 0.8s infinite ease-in-out;
-}
-
-.orb-speaking .ring-1 {
-  border-color: rgba(59, 130, 246, 0.6);
-  animation: ripple 1.2s infinite ease-out;
-}
-
-.orb-speaking .ring-2 {
-  border-color: rgba(59, 130, 246, 0.3);
-  animation: ripple 1.2s 0.4s infinite ease-out;
-}
-
-@keyframes pulse-core {
-  0% { transform: scale(0.92); opacity: 0.8; }
-  100% { transform: scale(1.08); opacity: 1; }
-}
-
-@keyframes ripple {
-  0% { transform: scale(0.8); opacity: 1; }
-  100% { transform: scale(1.4); opacity: 0; }
-}
 
 .realtime-status-label {
   font-size: 13.5px;
@@ -570,8 +580,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
   color: #fff;
-  background: #10b981;
+  /* The sheet's cloud orb, small: a blue sphere with a turning cloud. */
+  background: radial-gradient(circle at 50% 115%, #f5faff 0%, #a8d4ff 28%, #4f94f8 58%, #2160e8 82%, #1b3f9e 100%);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   cursor: grab;
   touch-action: none;
@@ -580,13 +593,24 @@
   -webkit-tap-highlight-color: transparent;
 }
 .copilot-bubble.dragging .copilot-bubble-body { cursor: grabbing; transform: scale(1.06); }
-.copilot-bubble-body svg { width: 26px; height: 26px; pointer-events: none; }
+.copilot-bubble-body::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  background:
+    radial-gradient(circle at 32% 38%, rgba(255, 255, 255, 0.9) 0, rgba(255, 255, 255, 0) 24%),
+    radial-gradient(circle at 70% 64%, rgba(255, 255, 255, 0.75) 0, rgba(255, 255, 255, 0) 22%);
+  filter: blur(5px);
+  animation: orb-spin 14s linear infinite;
+  pointer-events: none;
+}
+.copilot-bubble-body svg { position: relative; width: 26px; height: 26px; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.55)); }
 .copilot-bubble-body:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.copilot-bubble-body.state-listening { background: #10b981; }
-.copilot-bubble-body.state-idle { background: #10b981; }
-.copilot-bubble-body.state-thinking { background: #f59e0b; }
-.copilot-bubble-body.state-speaking { background: #3b82f6; animation: bubble-speak 1.2s infinite ease-in-out; }
-.copilot-bubble-body.state-connecting { background: var(--accent); animation: bubble-speak 1.2s infinite ease-in-out; }
+.copilot-bubble-body.state-idle::before { animation-play-state: paused; }
+.copilot-bubble-body.state-thinking::before { animation-duration: 7s; }
+.copilot-bubble-body.state-speaking::before { animation-duration: 3.5s; }
+.copilot-bubble-body.state-speaking { animation: bubble-speak 1.2s infinite ease-in-out; }
+.copilot-bubble-body.state-connecting { animation: bubble-speak 1.2s infinite ease-in-out; }
 @keyframes bubble-speak {
   0%, 100% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 0 rgba(59, 130, 246, 0.45); }
   50% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 8px rgba(59, 130, 246, 0); }
@@ -613,7 +637,8 @@
 .copilot-bubble-hangup:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .copilot-bubble { transition: none; }
-  .copilot-bubble-body.state-speaking, .copilot-bubble-body.state-connecting { animation: none; }
+  .copilot-bubble-body.state-speaking, .copilot-bubble-body.state-connecting,
+  .copilot-bubble-body::before { animation: none; }
 }
 
 /* This call's cost and what the copilot remembers. */
