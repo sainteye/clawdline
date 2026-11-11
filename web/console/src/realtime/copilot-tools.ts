@@ -52,7 +52,10 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的隨身全雙工語音�
 
 【你可以讀取哪些資料】
 1. list_sessions：讀取當前電腦上所有的工作階段（Sessions），包含 Session ID、名稱（label）、助理種類（assistant）與工作狀態（working 表示正在工作、idle 表示閒置、waiting 表示在等使用者回應）。
-2. get_session_screen：讀取指定 Session 當前終端機螢幕的最新文字輸出內容（包含指令輸出、程式碼改動、測試結果或錯誤報告）。session_id 可以填清單裡的 id，也可以填名稱或助理種類（例如 codex）。
+2. get_session_activity：讀取指定 Session 內部的工作紀錄（使用者交代了什麼、AI 助理說了什麼、最近執行了哪些工具與指令）。要解釋「它在做什麼、做到哪、卡在哪」時優先用這個。
+3. get_session_screen：讀取指定 Session 當前終端機螢幕的最新文字輸出內容（包含指令輸出、測試結果、等待確認的選單）。
+上面兩個工具的 session_id 一律填 list_sessions 回傳的 id，原樣照填（包含開頭的 % 符號），請依使用者說的名稱或編號從清單裡找出對應的那一列；還沒查過清單就先呼叫 list_sessions。不要用助理種類（claude、codex）代替 id，除非只有一個那種助理的 Session。
+- 工具回傳 error 並附上 candidates 時，依使用者原本說的話從 candidates 挑出正確的 id 立刻重新呼叫；只有真的分不出來時才唸出 candidates 的名稱請使用者選，不要自己編名稱。
 
 【你可以執行什麼操作】
 1. 語音摘要回報：主動從 Sessions 清單或終端螢幕中提煉重點，以簡明扼要、條理清晰的繁體中文口頭向使用者回報。
@@ -61,7 +64,11 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的隨身全雙工語音�
 【核心原則：主動呼叫工具】
 - 當使用者詢問「進度如何」、「現在在跑什麼」、「幫我看 session」、「有什麼任務」時，你必須【立刻主動調用 list_sessions 或 get_session_screen 工具】，絕對不要只在口頭上回答或反問！
 - 回報清單時，先說總數與幾個正在工作、幾個閒置、幾個在等回應，再依序用名稱介紹正在工作與等待中的任務，最後詢問要不要看某個任務的畫面。
-- 如果使用者指定看某個任務（例如「看第一個」、「看 codex」、「看測試那個」），立刻調用 get_session_screen 讀取最新終端輸出，並用口語解說：它正在做什麼、最近的結果、有沒有錯誤或在等使用者決定。
+- 如果使用者指定看某個任務（例如「看第一個」、「看 codex」、「看測試那個」），立刻調用 get_session_activity 讀取它的工作紀錄，必要時再用 get_session_screen 看終端畫面，並用口語解說：
+  1. 這個任務的目標（使用者最初交代什麼）；
+  2. 它最近做了哪些事、得到什麼結果（例如改了什麼、測試是否通過、部署到哪）；
+  3. 現在的狀態：還在工作、已完成，或卡住、出錯、在等使用者決定。state 為 waiting 時，從 waiting_screen_text 與最後幾則紀錄找出它在問什麼、有哪些選項，直接講給使用者聽；真的看不出來才說看不出它在等什麼，不要反問使用者它在等什麼。
+  依據紀錄內容具體說明，不要只說「在工作中」，也不要逐字唸指令或路徑。
 - 工具回傳 error 時，照實告訴使用者讀不到以及原因，不要編造畫面內容。
 - 全程使用台灣繁體中文（zh-Hant-TW），語氣專業自然，適合語音聆聽，不要唸出 Session ID、哈希值或長串代碼符號。`
 
@@ -72,6 +79,22 @@ export const COPILOT_TOOLS = [
     description:
       '查詢目前這台電腦上所有運作中或閒置的 Sessions 清單與狀態。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先主動呼叫此工具。',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function',
+    name: 'get_session_activity',
+    description:
+      '讀取特定 Session 內部的近期工作紀錄：使用者的交代、AI 助理的說明與回報、最近執行的工具與指令。用來解釋這個 Session 在做什麼、進度與結果。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
+        },
+      },
+      required: ['session_id'],
+    },
   },
   {
     type: 'function',
@@ -222,11 +245,17 @@ async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[] } |
 export function resolveSession(
   rows: readonly CopilotSessionRow[],
   wanted: string,
-): { row: CopilotSessionRow } | { error: string } {
+): { row: CopilotSessionRow } | { error: string; candidates?: { id: string; label: string }[] } {
   const w = wanted.trim()
   if (!w) return { error: '沒有指定要看哪一個 Session' }
   const byId = rows.find((r) => r.id === w)
   if (byId) return { row: byId }
+  // A tmux pane id said or typed without its sign: "2" for "%2". Never a
+  // position in the list, which changes as Sessions start and stop.
+  if (/^\d+$/.test(w)) {
+    const pane = rows.find((r) => r.id === `%${w}`)
+    if (pane) return { row: pane }
+  }
   const lower = w.toLowerCase()
   const tiers = [
     rows.filter((r) => r.label.toLowerCase() === lower || r.assistant.toLowerCase() === lower),
@@ -235,7 +264,10 @@ export function resolveSession(
   for (const hits of tiers) {
     if (hits.length === 1) return { row: hits[0] }
     if (hits.length > 1) {
-      return { error: `「${w}」對應到 ${hits.length} 個 Sessions：${hits.map((r) => r.label).join('、')}，請使用者指定是哪一個` }
+      return {
+        error: `「${w}」對應到 ${hits.length} 個 Sessions：${hits.map((r) => r.label).join('、')}`,
+        candidates: hits.map((r) => ({ id: r.id, label: r.label })),
+      }
     }
   }
   return { error: `找不到名為「${w}」的 Session` }
@@ -260,6 +292,24 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   return { count: read.rows.length, by_state: countBy(read.rows), sessions: read.rows }
 }
 
+/** A screen's text once its capture has arrived, or why it could not be had. */
+async function readScreen(deps: ToolDeps, row: CopilotSessionRow): Promise<{ text: string; attempt: number } | { error: string }> {
+  const path = `/v1/sessions/${encodeURIComponent(row.id)}/screen`
+  for (let attempt = 1; attempt <= SCREEN_READ_ATTEMPTS; attempt++) {
+    const res = await deps.fetch(path)
+    if (!res.ok) {
+      const why = await refusalText(res)
+      return { error: `無法讀取「${row.label}」的畫面 (HTTP ${res.status})${why ? `：${why}` : ''}` }
+    }
+    const data = (await res.json()) as { screen?: { text?: unknown; pending?: unknown } }
+    const screen = data?.screen ?? {}
+    if (typeof screen.text === 'string') return { text: screen.text, attempt }
+    if (screen.pending !== true) return { error: `「${row.label}」的終端畫面目前無法讀取` }
+    if (attempt < SCREEN_READ_ATTEMPTS) await deps.sleep(SCREEN_READ_INTERVAL_MS)
+  }
+  return { error: `「${row.label}」的畫面擷取逾時，請稍後再試` }
+}
+
 async function sessionScreen(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
@@ -269,45 +319,127 @@ async function sessionScreen(deps: ToolDeps, logs: ToolLog[], wanted: string): P
   const found = resolveSession(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, sessions: read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
   }
   const { row } = found
-  const path = `/v1/sessions/${encodeURIComponent(row.id)}/screen`
-  for (let attempt = 1; attempt <= SCREEN_READ_ATTEMPTS; attempt++) {
-    const res = await deps.fetch(path)
-    if (!res.ok) {
-      const why = await refusalText(res)
-      const error = `無法讀取「${row.label}」的畫面 (HTTP ${res.status})${why ? `：${why}` : ''}`
-      logs.push({ level: 'error', text: error })
-      return { error }
-    }
-    const data = (await res.json()) as { screen?: { text?: unknown; pending?: unknown; readable?: unknown } }
-    const screen = data?.screen ?? {}
-    if (typeof screen.text === 'string') {
-      const tail = screenTail(screen.text)
-      logs.push({
-        level: 'info',
-        text: `成功讀取「${row.label}」畫面（第 ${attempt} 次讀取，提供最後 ${tail ? tail.split('\n').length : 0} 行）`,
-      })
-      return {
-        session_id: row.id,
-        label: row.label,
-        assistant: row.assistant,
-        state: row.state,
-        recent_screen_text: tail,
-        ...(tail ? {} : { note: '終端畫面目前是空白的' }),
-      }
-    }
-    if (screen.pending !== true) {
-      const error = `「${row.label}」的終端畫面目前無法讀取`
-      logs.push({ level: 'error', text: error })
-      return { error }
-    }
-    if (attempt < SCREEN_READ_ATTEMPTS) await deps.sleep(SCREEN_READ_INTERVAL_MS)
+  const screen = await readScreen(deps, row)
+  if ('error' in screen) {
+    logs.push({ level: 'error', text: screen.error })
+    return { error: screen.error }
   }
-  const error = `「${row.label}」的畫面擷取逾時，請稍後再試`
-  logs.push({ level: 'error', text: error })
-  return { error }
+  const tail = screenTail(screen.text)
+  logs.push({
+    level: 'info',
+    text: `成功讀取「${row.label}」畫面（第 ${screen.attempt} 次讀取，提供最後 ${tail ? tail.split('\n').length : 0} 行）`,
+  })
+  return {
+    session_id: row.id,
+    label: row.label,
+    assistant: row.assistant,
+    state: row.state,
+    recent_screen_text: tail,
+    ...(tail ? {} : { note: '終端畫面目前是空白的' }),
+  }
+}
+
+/** How much of a Session's transcript the model is given. */
+export const ACTIVITY_ENTRIES = 60
+export const ACTIVITY_TEXT_CHARS = 600
+export const ACTIVITY_TOOL_CHARS = 160
+export const ACTIVITY_TOTAL_CHARS = 9000
+
+export interface ActivityEntry {
+  role: string
+  text: string
+  tool?: string
+}
+
+/** Words over the budget lose their middle: a report's conclusion is at its end. */
+function clip(text: string, n: number): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  if (t.length <= n) return t
+  const head = Math.ceil(n / 2)
+  return t.slice(0, head) + ' … ' + t.slice(t.length - (n - head))
+}
+
+/** The rows of a waiting Session's screen that carry its question. */
+export const WAITING_SCREEN_LINES = 15
+
+/**
+ * The recent turns of a transcript, newest last, within a character budget.
+ *
+ * What a person says and what the assistant reports keep more of their words
+ * than a tool line: a command is evidence of what was done, its full text is
+ * not something to read aloud. The first user message that is still in the
+ * window stays even when the budget runs out, because it is the goal.
+ */
+export function activityOf(entries: unknown): ActivityEntry[] {
+  if (!Array.isArray(entries)) return []
+  const rows: ActivityEntry[] = []
+  for (const e of entries.slice(-ACTIVITY_ENTRIES)) {
+    if (!e || typeof e !== 'object') continue
+    const r = e as Record<string, unknown>
+    const role = str(r.role)
+    const text = plainScreenText(str(r.text))
+    if (!role || !text.trim()) continue
+    const tool = str(r.tool)
+    rows.push({
+      role,
+      text: clip(text, role === 'tool' ? ACTIVITY_TOOL_CHARS : ACTIVITY_TEXT_CHARS),
+      ...(tool ? { tool } : {}),
+    })
+  }
+  const kept: ActivityEntry[] = []
+  let used = 0
+  for (let i = rows.length - 1; i >= 0; i--) {
+    used += rows[i].text.length + 16
+    if (used > ACTIVITY_TOTAL_CHARS) break
+    kept.unshift(rows[i])
+  }
+  const firstUser = rows.find((r) => r.role === 'user')
+  if (firstUser && !kept.includes(firstUser)) kept.unshift(firstUser)
+  return kept
+}
+
+async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  }
+  const { row } = found
+  const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`)
+  if (!res.ok) {
+    const why = await refusalText(res)
+    const error = `無法讀取「${row.label}」的工作紀錄 (HTTP ${res.status})${why ? `：${why}` : ''}`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  const data = (await res.json()) as { entries?: unknown }
+  const activity = activityOf(data?.entries)
+  logs.push({ level: 'info', text: `成功讀取「${row.label}」工作紀錄（${activity.length} 筆）` })
+  // A Session that waits on the person shows its question on the screen (an
+  // approval menu, a choice), not in its transcript.
+  let waiting: { waiting_screen_text?: string } = {}
+  if (row.state === 'waiting' || row.work_state === 'waiting') {
+    const screen = await readScreen(deps, row)
+    if (!('error' in screen)) waiting = { waiting_screen_text: screenTail(screen.text, WAITING_SCREEN_LINES) }
+  }
+  return {
+    session_id: row.id,
+    label: row.label,
+    assistant: row.assistant,
+    state: row.state,
+    work_state: row.work_state,
+    recent_activity: activity,
+    ...waiting,
+    ...(activity.length ? {} : { note: '這個 Session 目前沒有可讀的工作紀錄，可改用 get_session_screen 看終端畫面' }),
+  }
 }
 
 async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, message: string): Promise<unknown> {
@@ -320,7 +452,7 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
   const found = resolveSession(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
   }
   const { row } = found
   const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/send`, {
@@ -355,6 +487,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
   let result: unknown
   try {
     if (name === 'list_sessions') result = await listSessions(deps, logs)
+    else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))
     else {
