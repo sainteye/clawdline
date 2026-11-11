@@ -10929,7 +10929,6 @@
   "transparency.card.grok-acp-context.summary": "保存所選角色與團隊手冊、已啟用技能入口、專案記憶、看板語言、回覆便條規則與所選工作流程。CodeGraph 指引沿用明確機器同意或繼承快照。",
   "transparency.card.grok-acp-context.title": "Grok 自有 ACP 對話內容",
   "transparency.grok": "Grok Build",
-  "grok.imagesUnavailable": "此整合目前尚未提供 Grok 圖片輸入。",
   "http.7a512054f936f703": "此整合目前尚未提供 Grok 圖片輸入。",
   "capacityRow.console.started_session_follow_seconds.full": "到達期限後，暫時追蹤新 Session 的計時器、讀取與訂閱會釋放。一般列表更新與下拉重新整理仍各自正常運作。",
   "capacityRow.console.started_session_retry_seconds.full": "下一次會讀取新的列表，不會再開另一個 Session。",

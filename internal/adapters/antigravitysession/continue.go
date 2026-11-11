@@ -63,7 +63,7 @@ func (h *Host) ContinueInterrupted(ctx context.Context) int {
 		defer h.jobs.Done()
 		defer h.continuing.Store(false)
 		for _, row := range rows {
-			if err := h.sendProtocol(ctx, row, ContinueText, nil, true); err != nil {
+			if err := h.sendProtocol(ctx, row, ContinueText, nil, nil, true); err != nil {
 				log.Printf("antigravity: continue_after_restart_failed %s", errorCode(err))
 			}
 		}

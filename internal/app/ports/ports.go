@@ -214,6 +214,13 @@ type ProtocolSessionHost interface {
 	SendProtocol(context.Context, session.Session, string, func() error) error
 }
 
+// ProtocolPictureHost sends text and kept picture files as one native prompt
+// whose pictures are protocol image blocks, never typed paths.
+type ProtocolPictureHost interface {
+	ProtocolSessionHost
+	SendProtocolPictures(context.Context, session.Session, string, []string, func() error) error
+}
+
 // ProtocolMenuHost selects an exact live native offer under the ordinary
 // operation authorization and terminal lane, without a terminal screen.
 type ProtocolMenuHost interface {

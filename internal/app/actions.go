@@ -586,15 +586,22 @@ func (a Actions) SendWithPictures(ctx context.Context, id, text string, images [
 	if err != nil {
 		return session.Session{}, err
 	}
-	if s.Assistant == session.AssistantGrok {
-		return s, beforeTheFirstByte(Refusal{Code: "provider_images_unsupported", Detail: "Image input is not available for Grok in this integration yet."})
-	}
 	if err := a.checkTodoProcess(s); err != nil {
 		return s, err
 	}
 	h, err := a.host(ctx, s)
 	if err != nil {
 		return session.Session{}, err
+	}
+	// Grok takes pictures only as native ACP image blocks. Without an owning
+	// protocol host nothing is stored, typed or sent.
+	var native ports.ProtocolPictureHost
+	if s.Assistant == session.AssistantGrok {
+		protocol, ok := h.(ports.ProtocolPictureHost)
+		if !ok || !protocol.OwnsProtocol(s) {
+			return s, beforeTheFirstByte(Refusal{Code: "provider_images_unsupported", Detail: "Image input is not available for Grok in this integration yet."})
+		}
+		native = protocol
 	}
 	var paths []string
 	for _, url := range images {
@@ -621,11 +628,34 @@ func (a Actions) SendWithPictures(ctx context.Context, id, text string, images [
 	if len(paths) == 0 {
 		return s, Refusal{Code: "bad_request", Detail: "None of those were images I could read."}
 	}
+	if native != nil {
+		if err := a.sendNativePictures(ctx, s, native, text, paths); err != nil {
+			a.Pictures.Drops.Discard(paths)
+			return s, err
+		}
+		return s, nil
+	}
 	if err := a.deliverPictures(ctx, s, h, text, paths); err != nil {
 		a.Pictures.Drops.Discard(paths)
 		return s, err
 	}
 	return s, nil
+}
+
+// sendNativePictures hands kept pictures to an owned protocol prompt. A
+// refusal before the pipe write proves the model received nothing. An
+// accepted message waiting behind a running turn keeps its files until sent.
+func (a Actions) sendNativePictures(ctx context.Context, s session.Session, h ports.ProtocolPictureHost,
+	text string, paths []string) error {
+	err := h.SendProtocolPictures(ctx, s, text, paths, func() error { return checkOperation(ctx) })
+	if err == nil {
+		return nil
+	}
+	var local interface{ BeforeWrite() bool }
+	if errors.As(err, &local) && local.BeforeWrite() {
+		return beforeTheFirstByte(sendRefusal(s, err))
+	}
+	return sendRefusal(s, err)
 }
 
 // deliverPictures is `Targets.send(_ pieces:to:)`: the pictures go as pastes

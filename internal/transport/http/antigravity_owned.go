@@ -149,6 +149,12 @@ func (p ownedAntigravityTerminal) SendProtocol(ctx context.Context, s session.Se
 	}
 	return ownedAntigravityUnavailable()
 }
+func (p ownedAntigravityTerminal) SendProtocolPictures(ctx context.Context, s session.Session, text string, pictures []string, before func() error) error {
+	if h := p.server.ownedHost(s.Assistant); h != nil {
+		return h.SendProtocolPictures(ctx, s, text, pictures, before)
+	}
+	return ownedAntigravityUnavailable()
+}
 func (p ownedAntigravityTerminal) OwnsProtocol(s session.Session) bool {
 	h := p.server.ownedHost(s.Assistant)
 	return h != nil && h.OwnsProtocol(s)

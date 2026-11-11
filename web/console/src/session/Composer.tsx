@@ -127,8 +127,7 @@ export function Composer({
     onSend(text: string, pictures: readonly string[]): Promise<void> }
 }) {
   const T = L.strings
-  const grok = (remote?.assistant ?? row?.assistant) === "grok"
-  const allowPictures = !grok && (!remote || remote.allowPictures)
+  const allowPictures = !remote || remote.allowPictures
   const msg = useRef<HTMLDivElement>(null)
   const send = useRef<HTMLButtonElement>(null)
   const [text, setText] = useState("")
@@ -262,8 +261,8 @@ export function Composer({
     saveText(rawText())
   } }
   // The picture listeners are bound once, and ask what is open when they fire.
-  const open = useRef({ on, allowPictures, grok })
-  open.current = { on, allowPictures, grok }
+  const open = useRef({ on, allowPictures })
+  open.current = { on, allowPictures }
 
   useEffect(() => {
     const draft = remote?.restoreDraft
@@ -288,14 +287,7 @@ export function Composer({
     // Paste, because copying a screenshot and pressing paste is how this is
     // done everywhere else. Not while the filter box has the focus.
     const paste = (ev: ClipboardEvent) => {
-      if (!open.current.on) return
-      if (!open.current.allowPictures) {
-        if (open.current.grok && carriesPicture(ev.clipboardData)) {
-          ev.preventDefault()
-          toast(catalogWord("grok", "imagesUnavailable"), true)
-        }
-        return
-      }
+      if (!open.current.on || !open.current.allowPictures) return
       if (document.activeElement === document.getElementById("filter")) return
       // The box runs first and takes anything with words in it; a paste
       // already spoken for is left alone.
@@ -339,7 +331,6 @@ export function Composer({
         if (references.namesOnly) say(nextWord("dropNamesOnly"), false)
       })
       if (dropped.pictures.length && open.current.allowPictures) Shots.add(dropped.pictures, say)
-      else if (dropped.pictures.length && open.current.grok) say(catalogWord("grok", "imagesUnavailable"), true)
     }
     document.addEventListener("paste", paste)
     document.addEventListener("dragover", over)
@@ -630,10 +621,7 @@ export function Composer({
     }
     const input = toolMessage(rawText().trim(), toolAttachment.current, toolIdentity)
     const pictures = Shots.urls().slice()
-    if (pictures.length && !allowPictures) {
-      if (grok) setFailure(catalogWord("grok", "imagesUnavailable"))
-      return
-    }
+    if (pictures.length && !allowPictures) return
     if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, input, protocolOwned)) {
       setFailure(catalogWord((remote?.assistant ?? row?.assistant) === "grok" ? "grok" : "antigravity", "slashDraft"))
       return
@@ -801,8 +789,8 @@ export function Composer({
           className="attach"
           id="attach"
           type="button"
-          aria-label={grok ? catalogWord("grok", "imagesUnavailable") : T.webAttach}
-          title={grok ? catalogWord("grok", "imagesUnavailable") : T.webAttach}
+          aria-label={T.webAttach}
+          title={T.webAttach}
           disabled={!on || sending || !allowPictures}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => pick.current?.click()}

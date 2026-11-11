@@ -141,8 +141,11 @@ type conversation struct {
 	interrupted bool
 	// queued holds messages sent while a turn ran, oldest first, saved with
 	// the row. draining is set while one of them is being sent.
-	queued   []string
-	draining bool
+	queued []string
+	// queuedPictures holds each queued message's picture paths, aligned
+	// with queued; nil for a message without pictures.
+	queuedPictures [][]string
+	draining       bool
 	// watch follows the native log after a turn ended with tools running;
 	// nativeTurn says Gemini is running a turn it started itself.
 	watch      *nativeWatch
@@ -395,17 +398,53 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 // queue instead of being refused, the way Claude Code and Codex take input
 // mid-turn, and is sent as its own prompt after the turn ends (queue.go).
 func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string, before func() error) error {
-	return h.sendProtocol(ctx, s, text, before, false)
+	return h.sendProtocol(ctx, s, text, nil, before, false)
+}
+
+// SendProtocolPictures sends text and pictures as one native prompt, with each
+// picture as an ACP image block. The paths are normalized PNG or JPEG files the
+// caller keeps; they are read when the prompt is written, so a message queued
+// behind a running turn keeps only its paths. An agent that did not advertise
+// promptCapabilities.image refuses it before any write.
+func (h *Host) SendProtocolPictures(ctx context.Context, s session.Session, text string, pictures []string, before func() error) error {
+	if len(pictures) == 0 {
+		return h.sendProtocol(ctx, s, text, nil, before, false)
+	}
+	return h.sendProtocol(ctx, s, text, pictures, before, false)
+}
+
+// readPictures loads the pictures of one prompt, typed by their bytes.
+func readPictures(paths []string) ([]antigravityprocess.PromptImage, error) {
+	images := make([]antigravityprocess.PromptImage, 0, len(paths))
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil || len(data) == 0 {
+			return nil, refusal("picture_unavailable")
+		}
+		mime := "image/png"
+		if len(data) >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff {
+			mime = "image/jpeg"
+		}
+		images = append(images, antigravityprocess.PromptImage{MimeType: mime, Data: data})
+	}
+	return images, nil
 }
 
 // sendProtocol with direct set never queues: the queue's own sends and the
 // restart continuation go straight to the native prompt.
-func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string, before func() error, direct bool) error {
-	if text == "" {
+func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string, pictures []string, before func() error, direct bool) error {
+	if text == "" && len(pictures) == 0 {
 		return refusal("empty_text")
 	}
 	if h.assistant() == session.AssistantGrok && grokControlDraft(text) {
 		return refusal("unsupported_command")
+	}
+	if len(pictures) > 0 {
+		// A control command with pictures attached is neither a command nor a prompt.
+		command := strings.TrimSpace(text)
+		if configCommand(command) || command == "/usage" || command == "/quota" || strings.HasPrefix(command, "/usage ") || strings.HasPrefix(command, "/quota ") {
+			return refusal("unsupported_command")
+		}
 	}
 	c, err := h.lookup(s)
 	if err != nil {
@@ -431,7 +470,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			c.busy && (c.row.State == session.StateWorking || c.row.State == session.StateWaiting)
 		c.mu.Unlock()
 		if queue {
-			return h.enqueue(c, text, before)
+			return h.enqueue(c, text, pictures, before)
 		}
 	}
 	if _, err = h.Resume(ctx, s.CWD, s.ConversationID); err != nil {
@@ -463,11 +502,25 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 		h.mu.Unlock()
 		return refusal("busy")
 	}
+	if len(pictures) > 0 && !client.AcceptsImages() {
+		c.mu.Unlock()
+		h.mu.Unlock()
+		return refusal("images_unsupported")
+	}
 	encoded, _ := json.Marshal(contract.TranscriptEntry{Role: "user", Text: text, At: time.Now().Unix()})
 	if len(encoded)+2 > MaxViewBytes {
 		c.mu.Unlock()
 		h.mu.Unlock()
 		return refusal("text_too_large")
+	}
+	var images []antigravityprocess.PromptImage
+	if len(pictures) > 0 {
+		var err error
+		if images, err = readPictures(pictures); err != nil {
+			c.mu.Unlock()
+			h.mu.Unlock()
+			return err
+		}
 	}
 	inject := c.launchContext.Text != "" && c.injected == nil
 	launch := c.launchContext
@@ -537,7 +590,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 		}
 		watchdogDone := make(chan struct{})
 		defer close(watchdogDone)
-		result, err := client.PromptContextChecked(turn, promptText, launch.URI, contextText, func() error {
+		result, err := client.PromptImagesChecked(turn, promptText, launch.URI, contextText, images, func() error {
 			if before != nil {
 				if err := before(); err != nil {
 					return err
@@ -625,7 +678,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			c.textIndex = -1
 			c.textOrdinal = 0
 			c.textRole = ""
-			c.append(contract.TranscriptEntry{Role: "user", Text: text, At: time.Now().Unix()})
+			c.append(contract.TranscriptEntry{Role: "user", Text: text, ImageCount: int64(len(images)), At: time.Now().Unix()})
 			close(c.writeGate)
 			c.writeGate = nil
 			row := c.row

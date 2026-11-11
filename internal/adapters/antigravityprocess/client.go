@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/url"
@@ -155,6 +156,7 @@ type Client struct {
 	configResult                  func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
 	configResultID                string
 	embeddedContext               bool
+	promptImages                  bool               // negotiated promptCapabilities.image
 	configOptions                 json.RawMessage    // stateMu; current native metadata, never persisted
 	canLoad, canResume, canList   bool               // negotiated before opening a session
 	activePrompt, cancelledPrompt string             // stateMu; native turn, not process lifetime
@@ -335,6 +337,7 @@ func (c *Client) Initialize(ctx context.Context) (json.RawMessage, error) {
 		AgentCapabilities struct {
 			PromptCapabilities struct {
 				EmbeddedContext bool `json:"embeddedContext"`
+				Image           bool `json:"image"`
 			} `json:"promptCapabilities"`
 			LoadSession         bool                       `json:"loadSession"`
 			SessionCapabilities map[string]json.RawMessage `json:"sessionCapabilities"`
@@ -342,6 +345,7 @@ func (c *Client) Initialize(ctx context.Context) (json.RawMessage, error) {
 	}
 	_ = json.Unmarshal(r, &caps)
 	c.embeddedContext = caps.AgentCapabilities.PromptCapabilities.EmbeddedContext
+	c.promptImages = caps.AgentCapabilities.PromptCapabilities.Image
 	c.canLoad = caps.AgentCapabilities.LoadSession
 	_, c.canResume = caps.AgentCapabilities.SessionCapabilities["resume"]
 	_, c.canList = caps.AgentCapabilities.SessionCapabilities["list"]
@@ -522,27 +526,43 @@ type PromptResult struct {
 // Prompt sends one text turn, once. A successful result is completion evidence;
 // updates alone do not acknowledge a prompt or establish a stop reason.
 func (c *Client) Prompt(ctx context.Context, text string) (PromptResult, error) {
-	return c.prompt(ctx, text, "", "", nil, nil)
+	return c.prompt(ctx, text, "", "", nil, nil, nil)
 }
 
 // PromptAccepted calls written once after the complete request reaches the
 // private pipe. It is acceptance evidence, not completion or provider-read
 // evidence. The callback must not block or reenter the client.
 func (c *Client) PromptAccepted(ctx context.Context, text string, written func()) (PromptResult, error) {
-	return c.prompt(ctx, text, "", "", nil, written)
+	return c.prompt(ctx, text, "", "", nil, nil, written)
 }
 
 // PromptChecked checks existing operation authority under the pipe write lock,
 // after profile I/O and serialization. A refusal proves no prompt bytes were sent.
 func (c *Client) PromptChecked(ctx context.Context, text string, before func() error, written func()) (PromptResult, error) {
-	return c.prompt(ctx, text, "", "", before, written)
+	return c.prompt(ctx, text, "", "", nil, before, written)
 }
 
 // PromptContextChecked sends the embedded context and original user text in one
 // request, under the same authority and acceptance boundary as PromptChecked.
 func (c *Client) PromptContextChecked(ctx context.Context, text, uri, contextText string, before func() error, written func()) (PromptResult, error) {
-	return c.prompt(ctx, text, uri, contextText, before, written)
+	return c.prompt(ctx, text, uri, contextText, nil, before, written)
 }
+
+// PromptImage is one picture sent as an ACP image content block.
+type PromptImage struct {
+	MimeType string
+	Data     []byte
+}
+
+// PromptImagesChecked is PromptContextChecked with pictures after the text. It
+// is refused before any write unless the agent advertised
+// promptCapabilities.image; a picture is never downgraded to a path.
+func (c *Client) PromptImagesChecked(ctx context.Context, text, uri, contextText string, images []PromptImage, before func() error, written func()) (PromptResult, error) {
+	return c.prompt(ctx, text, uri, contextText, images, before, written)
+}
+
+// AcceptsImages reports the negotiated promptCapabilities.image.
+func (c *Client) AcceptsImages() bool { return c.promptImages }
 
 type beforeWriteError struct{ error }
 
@@ -696,7 +716,7 @@ func (c *Client) captureUsage(frame json.RawMessage) (bool, error) {
 	return true, nil
 }
 
-func (c *Client) prompt(ctx context.Context, text, uri, contextText string, before func() error, written func()) (PromptResult, error) {
+func (c *Client) prompt(ctx context.Context, text, uri, contextText string, images []PromptImage, before func() error, written func()) (PromptResult, error) {
 	if !c.callMu.TryLock() {
 		return PromptResult{}, failure("busy", NotWritten)
 	}
@@ -707,7 +727,21 @@ func (c *Client) prompt(ctx context.Context, text, uri, contextText string, befo
 	if err := c.checkPersonal(); err != nil {
 		return PromptResult{}, err
 	}
-	prompt := []any{map[string]string{"type": "text", "text": text}}
+	prompt := []any{}
+	if text != "" || len(images) == 0 {
+		prompt = append(prompt, map[string]string{"type": "text", "text": text})
+	}
+	if len(images) > 0 {
+		if !c.promptImages {
+			return PromptResult{}, failure("images_unsupported", NotWritten)
+		}
+		for _, image := range images {
+			if image.MimeType != "image/png" && image.MimeType != "image/jpeg" || len(image.Data) == 0 {
+				return PromptResult{}, failure("invalid_image", NotWritten)
+			}
+			prompt = append(prompt, map[string]string{"type": "image", "mimeType": image.MimeType, "data": base64.StdEncoding.EncodeToString(image.Data)})
+		}
+	}
 	if contextText != "" {
 		if !c.embeddedContext {
 			return PromptResult{}, failure("embedded_context_unsupported", NotWritten)

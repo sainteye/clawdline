@@ -95,7 +95,7 @@ func TestACPProcess(t *testing.T) {
 				result.(map[string]any)["agentInfo"] = map[string]string{"name": "antigravity-acp", "version": "1.5.0"}
 			}
 			if mode != "no-restore" {
-				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": mode != "no-context"}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
+				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": mode != "no-context", "image": mode == "images"}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
 			}
 		case "authenticate":
 			if !strings.Contains(string(m["params"]), `"methodId":"oauth-personal"`) {
