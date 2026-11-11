@@ -60,8 +60,9 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - 全程台灣繁體中文。
 
 【工具】
-- list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，附 latest 最近一句進度）、done（已完成）、idle（閒置）。
-- get_session_activity：某個 Session 的工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。解釋「它在做什麼、做到哪」用這個。
+- list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，附 latest 最近一句進度）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
+- get_session_summary：某個 Session 的摘要（它自己寫的交付摘要、最後一則回覆、在等什麼）。問「它做完了什麼、結果怎樣、現在如何」先用這個。
+- get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
 - send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
 - session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
@@ -72,7 +73,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用半句說在做什麼（依 latest），例如「雲端配對在補加密命令」。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
 
 【解說單一 Session】
-- 讀 get_session_activity 後，用兩到三句講：它在做什麼（目標）、做到哪（依 last_report 講最近的具體結果）、現在要不要使用者處理（在等什麼）。閒置的 Session 也要說它最後完成了什麼。
+- 先讀 get_session_summary，用兩到三句講：它在做什麼、做到哪（依 delivered_summary 或 last_reply 講具體結果）、現在要不要使用者處理（在等什麼）。閒置的 Session 也要說它最後完成了什麼。使用者追問過程或細節，再讀 get_session_activity。
 - 依紀錄內容具體講，不要只說「在工作中」或「已閒置」。`
 
 export const COPILOT_TOOLS = [
@@ -82,6 +83,22 @@ export const COPILOT_TOOLS = [
     description:
       '查詢目前這台電腦上所有運作中或閒置的 Sessions 清單與狀態。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先主動呼叫此工具。',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function',
+    name: 'get_session_summary',
+    description:
+      '讀取特定 Session 的摘要：它最後一次交付時自己寫的回報摘要（delivered_summary）、AI 最後一則回覆（last_reply）、目前狀態，在等使用者時附上它在問什麼。回答「它做完了什麼、結果如何、現在怎樣」時優先用這個，比讀完整工作紀錄快。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
+        },
+      },
+      required: ['session_id'],
+    },
   },
   {
     type: 'function',
@@ -148,7 +165,10 @@ export function sessionUpdateEvent(): Record<string, unknown> {
       audio: {
         input: {
           transcription: { model: 'whisper-1' },
-          turn_detection: { type: 'server_vad' },
+          // Waits for the end of what the person means, not the first pause:
+          // `server_vad` answered a mid-sentence breath. `low` is the most
+          // patient of `semantic_vad`'s eagerness settings.
+          turn_detection: { type: 'semantic_vad', eagerness: 'low', create_response: true, interrupt_response: true },
         },
         output: { voice: 'alloy' },
       },
@@ -202,6 +222,9 @@ export interface CopilotSessionRow {
   last_activity_at?: number
   question?: string
   options?: string[]
+  /** The Session's own words for its last delivery (`clawdline session report --summary`). */
+  delivered?: string
+  delivered_at?: number
 }
 
 function str(value: unknown): string {
@@ -224,6 +247,11 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
       if (typeof s.working_since === 'number' && s.working_since > 0) row.working_since = s.working_since
       const activity = s.activity as { at?: unknown; known?: unknown } | undefined
       if (activity && activity.known === true && typeof activity.at === 'number') row.last_activity_at = activity.at
+      const disposition = s.disposition as { title?: unknown; receiptAt?: unknown } | undefined
+      if (disposition && str(disposition.title).trim()) {
+        row.delivered = plainScreenText(str(disposition.title)).trim()
+        if (typeof disposition.receiptAt === 'number') row.delivered_at = disposition.receiptAt
+      }
       const menu = s.menu as { question?: unknown; options?: unknown } | undefined
       if (menu && typeof menu === 'object') {
         if (str(menu.question)) row.question = plainScreenText(str(menu.question))
@@ -355,7 +383,10 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const wanted = [...needs, ...working].slice(0, LIST_LATEST_READS)
   const latest = new Map<string, string>()
   await Promise.all(wanted.map(async (r) => latest.set(r.id, await latestWords(deps, r))))
-  const brief = (r: CopilotSessionRow) => ({ id: r.id, label: r.label, assistant: r.assistant })
+  const brief = (r: CopilotSessionRow) => ({
+    id: r.id, label: r.label, assistant: r.assistant,
+    ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
+  })
   const out = {
     summary: `${rows.length} 個 Session：${needs.length} 個等你回應、${working.length} 個工作中、${done.length} 個已完成、${idle.length} 個閒置`,
     needs_you: needs.map((r) => ({
@@ -485,6 +516,51 @@ export function activityOf(entries: unknown): ActivityEntry[] {
   return kept
 }
 
+async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  }
+  const { row } = found
+  const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
+  let lastReply = ''
+  try {
+    const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
+    if (res.ok) {
+      const entries = ((await res.json()) as { entries?: unknown })?.entries
+      const list = Array.isArray(entries) ? entries : []
+      for (let i = list.length - 1; i >= 0; i--) {
+        const e = list[i] as Record<string, unknown> | null
+        if (e && e.role === 'assistant' && str(e.text).trim()) { lastReply = clip(plainScreenText(str(e.text)), ACTIVITY_TEXT_CHARS); break }
+      }
+    }
+  } catch {
+    // refusal-ok: the summary still carries the Session's own delivery words and state without its transcript.
+  }
+  const out = {
+    session_id: row.id,
+    label: row.label,
+    assistant: row.assistant,
+    state: row.state,
+    work_state: row.work_state,
+    ...(row.delivered ? { delivered_summary: row.delivered } : {}),
+    ...(minutesSince(row.delivered_at, now) !== undefined ? { delivered_minutes_ago: minutesSince(row.delivered_at, now) } : {}),
+    ...(lastReply ? { last_reply: lastReply } : {}),
+    ...(minutesSince(row.working_since, now) !== undefined && row.state === 'working' ? { working_minutes: minutesSince(row.working_since, now) } : {}),
+    ...(row.question ? { question: row.question } : {}),
+    ...(row.options?.length ? { options: row.options } : {}),
+    ...(!row.delivered && !lastReply ? { note: '這個 Session 沒有交付摘要也讀不到回覆，可改用 get_session_screen 看畫面' } : {}),
+  }
+  logs.push({ level: 'info', text: `成功讀取「${row.label}」摘要${row.delivered ? '（含交付摘要）' : ''}` })
+  return out
+}
+
 async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
@@ -580,6 +656,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
   let result: unknown
   try {
     if (name === 'list_sessions') result = await listSessions(deps, logs)
+    else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))

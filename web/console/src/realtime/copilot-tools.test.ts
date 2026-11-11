@@ -8,7 +8,8 @@ import { ACTIVITY_TOTAL_CHARS, COPILOT_TOOLS, SCREEN_READ_ATTEMPTS, activityOf, 
 // reader's snapshot carry the same keys).
 const ROWS = [
   { id: "owned:acp:AAAA", label: "Refactor the billing page", assistant: "antigravity", state: "working", work_state: "working", cwd: "/x", working_since: 1_000_000, line: "Working… (10m)" },
-  { id: "%2", label: "Prepare screenshots", assistant: "codex", state: "idle", work_state: "unknown", cwd: "/y", activity: { at: 1_000_300, known: true } },
+  { id: "%2", label: "Prepare screenshots", assistant: "codex", state: "idle", work_state: "unknown", cwd: "/y", activity: { at: 1_000_300, known: true },
+    disposition: { evidence: "authenticated_session_delivery", receiptAt: 1_000_000, scope: "session", title: "Captured six feature screenshots; \x1b[1mabc123\x1b[0m is on main." } },
   { id: "%7", label: "Fix the flaky test", assistant: "claude", state: "waiting", work_state: "waiting", cwd: "/z",
     menu: { question: "\x1b[1mPush to main?\x1b[0m", options: [{ n: 1, label: "Yes", can: true, selected: true }, { n: 2, label: "No", can: true, selected: false }] } },
   { id: "%9", label: "Fix the login test", assistant: "claude", state: "working", work_state: "working", cwd: "/z" },
@@ -76,7 +77,7 @@ test("list_sessions sorts Sessions by what they need and says what the busy ones
   assert.equal(out.working[0].working_minutes, 10)
   assert.equal(out.working[0].latest, "Rewrote the invoice table; running the page tests.")
   assert.equal(out.working[1].latest, undefined, "an unreadable transcript leaves the row without a latest line")
-  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", minutes_ago: 5 }])
+  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", delivered: "Captured six feature screenshots; abc123 is on main.", minutes_ago: 5 }])
   const reads = calls.filter((c) => c.path.startsWith("/v1/transcript?"))
   assert.equal(reads.length, 3)
   for (const c of reads) assert.equal((c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
@@ -175,9 +176,11 @@ test("the session configuration is in the Realtime GA shape and carries every to
   assert.deepEqual(ev.session.output_modalities, ["audio"])
   assert.equal(ev.session.audio.input.transcription.model, "whisper-1")
   assert.equal(ev.session.audio.output.voice, "alloy")
+  assert.deepEqual(ev.session.audio.input.turn_detection, { type: "semantic_vad", eagerness: "low", create_response: true, interrupt_response: true },
+    "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_sessions", "get_session_activity", "get_session_screen", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_sessions", "get_session_summary", "get_session_activity", "get_session_screen", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -264,4 +267,30 @@ test("a pane id without its sign is that pane, not a position in the list", asyn
   const { deps } = fakeMachine({ "%2": [{ pending: false, readable: true, text: "two" }], "%7": [{ pending: false, readable: true, text: "seven" }] })
   assert.equal(JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"7"}', deps)).output).session_id, "%7")
   assert.match(JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"3"}', deps)).output).error, /找不到/)
+})
+
+test("get_session_summary gives the Session's own delivery words and its last reply in one read", async () => {
+  const { deps, calls } = fakeMachine({}, { transcripts: { "%2": { entries: [
+    { role: "user", text: "screenshots please" },
+    { role: "assistant", text: "Done: six screenshots are in docs/shots and pushed." },
+    { role: "tool", tool: "Bash", text: "git push" },
+  ] } } })
+  deps.now = () => 1_000_600
+  const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"codex"}', deps)).output)
+  assert.equal(out.label, "Prepare screenshots")
+  assert.equal(out.delivered_summary, "Captured six feature screenshots; abc123 is on main.")
+  assert.equal(out.delivered_minutes_ago, 10)
+  assert.equal(out.last_reply, "Done: six screenshots are in docs/shots and pushed.")
+  assert.deepEqual(calls.map((c) => c.path), ["/v1/sessions", "/v1/transcript?session=%252"])
+  assert.equal((calls[1].init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
+})
+
+test("a waiting Session's summary says what it asks, and survives an unreadable transcript", async () => {
+  const { deps } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"%7"}', deps)).output)
+  assert.equal(out.question, "Push to main?")
+  assert.deepEqual(out.options, ["Yes", "No"])
+  assert.equal(out.last_reply, undefined)
+  assert.equal(out.delivered_summary, undefined)
+  assert.match(out.note, /get_session_screen/)
 })
