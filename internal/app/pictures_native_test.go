@@ -8,6 +8,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -81,8 +82,13 @@ func TestGrokPicturesTooLargeAreATypedRefusal(t *testing.T) {
 	host.refuse = &antigravitysession.Error{Code: "pictures_too_large", Delivery: antigravityprocess.NotWritten}
 	_, err := a.SendWithPictures(context.Background(), "%7", "six screenshots", []string{pngURL(t, 1, 1)})
 	var ref Refusal
-	if !errors.As(err, &ref) || ref.Code != "pictures_too_large" || ref.RawDetail || !errors.As(err, new(interface{ BeforeWrite() bool })) {
+	if !errors.As(err, &ref) || ref.Code != "pictures_too_large" || ref.RawDetail {
 		t.Fatalf("refusal = %#v", err)
+	}
+	// Only the bare "nothing typed" cause keeps the HTTP detail translatable;
+	// on dev 4600b72 the host error rode along and the console got raw English.
+	if unsent, ok := ref.Cause.(terminal.Unsent); !ok || unsent.Why != ref.Detail {
+		t.Fatalf("cause = %#v", ref.Cause)
 	}
 	if n := len(files(t, drops)); n != 0 {
 		t.Fatalf("%d refused picture files kept", n)

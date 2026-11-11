@@ -653,8 +653,10 @@ func (a Actions) sendNativePictures(ctx context.Context, s session.Session, h po
 	}
 	var large interface{ PicturesTooLarge() bool }
 	if errors.As(err, &large) && large.PicturesTooLarge() {
+		// No Cause of its own: beforeTheFirstByte then marks it with the bare
+		// "nothing typed" cause the HTTP writer still translates.
 		return beforeTheFirstByte(Refusal{Code: "pictures_too_large",
-			Detail: "These pictures are too large to send together. Send fewer or smaller pictures in one message.", Cause: err})
+			Detail: "These pictures are too large to send together. Send fewer or smaller pictures in one message."})
 	}
 	var local interface{ BeforeWrite() bool }
 	if errors.As(err, &local) && local.BeforeWrite() {
