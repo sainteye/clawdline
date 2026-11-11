@@ -73,3 +73,18 @@ func TestGrokPictureRefusedBeforeWriteRemovesItsFiles(t *testing.T) {
 		t.Fatalf("%d refused picture files kept", n)
 	}
 }
+
+// Review 2026-11-11: pictures too large for one Grok prompt came back as a
+// raw send_failed. They are a typed refusal the console translates.
+func TestGrokPicturesTooLargeAreATypedRefusal(t *testing.T) {
+	a, host, _, drops := nativeFixture(t)
+	host.refuse = &antigravitysession.Error{Code: "pictures_too_large", Delivery: antigravityprocess.NotWritten}
+	_, err := a.SendWithPictures(context.Background(), "%7", "six screenshots", []string{pngURL(t, 1, 1)})
+	var ref Refusal
+	if !errors.As(err, &ref) || ref.Code != "pictures_too_large" || ref.RawDetail || !errors.As(err, new(interface{ BeforeWrite() bool })) {
+		t.Fatalf("refusal = %#v", err)
+	}
+	if n := len(files(t, drops)); n != 0 {
+		t.Fatalf("%d refused picture files kept", n)
+	}
+}

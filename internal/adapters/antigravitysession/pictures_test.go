@@ -104,3 +104,76 @@ func TestPicturesForAnAgentWithoutImagesAreRefusedBeforeWriting(t *testing.T) {
 		t.Fatal("a refused picture message was recorded")
 	}
 }
+
+// Review 2026-11-11: pictures that cannot fit one prompt were accepted into
+// the queue and failed only when written. They are now refused at once.
+func TestPicturesTooLargeForOnePromptAreRefusedBeforeQueueing(t *testing.T) {
+	t.Setenv("CLW_IMAGE_PEER", "yes")
+	h, row, _ := fixture(t)
+	big := filepath.Join(t.TempDir(), "big.png")
+	if err := os.WriteFile(big, append(append([]byte{}, testPNG...), make([]byte, 7<<20)...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "first"); err != nil {
+		t.Fatal(err)
+	}
+	err := h.SendProtocolPictures(context.Background(), row, "too much", []string{big}, nil)
+	var typed *Error
+	if !errors.As(err, &typed) || !typed.PicturesTooLarge() || !typed.BeforeWrite() {
+		t.Fatalf("err=%v", err)
+	}
+	c, _ := h.lookup(row)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.queued) != 0 {
+		t.Fatal("pictures too large for one prompt were queued")
+	}
+}
+
+// Review 2026-11-11: one queued message whose picture failed made the whole
+// queue fail. Only that message is kept as words; the next one still goes.
+func TestAQueuedPictureThatFailsDropsOnlyItsOwnMessage(t *testing.T) {
+	t.Setenv("CLW_IMAGE_PEER", "yes")
+	h, row, dir := fixture(t)
+	picture := filepath.Join(t.TempDir(), "gone.png")
+	if err := os.WriteFile(picture, testPNG, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SendProtocolPictures(context.Background(), row, "with a picture", []string{picture}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "third"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(picture); err != nil { // the drop cache pruned it
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	prompts := filepath.Join(dir, "prompts")
+	waitFor(t, func() bool { return readFile(t, prompts) == "prompt\nprompt\n" })
+	idleHost(t, h, row)
+	if got := strings.Join(userTurns(t, h, row), ","); got != "first,third" {
+		t.Fatalf("user turns = %q, want first,third", got)
+	}
+	page, err := h.Transcript(row, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	for _, e := range page.Entries {
+		if e.Role == "error" && strings.HasPrefix(e.Text, QueuedNotSent) {
+			kept = append(kept, strings.TrimPrefix(e.Text, QueuedNotSent))
+			if e.ImageCount != 1 {
+				t.Fatalf("kept message lost its picture count: %+v", e)
+			}
+		}
+	}
+	if strings.Join(kept, ",") != "with a picture" {
+		t.Fatalf("kept as not sent = %q", kept)
+	}
+}

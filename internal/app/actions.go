@@ -651,6 +651,11 @@ func (a Actions) sendNativePictures(ctx context.Context, s session.Session, h po
 	if err == nil {
 		return nil
 	}
+	var large interface{ PicturesTooLarge() bool }
+	if errors.As(err, &large) && large.PicturesTooLarge() {
+		return beforeTheFirstByte(Refusal{Code: "pictures_too_large",
+			Detail: "These pictures are too large to send together. Send fewer or smaller pictures in one message.", Cause: err})
+	}
 	var local interface{ BeforeWrite() bool }
 	if errors.As(err, &local) && local.BeforeWrite() {
 		return beforeTheFirstByte(sendRefusal(s, err))

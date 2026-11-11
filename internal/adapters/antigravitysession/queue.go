@@ -1,10 +1,12 @@
 package antigravitysession
 
 import (
+	"errors"
 	"log"
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -170,8 +172,40 @@ func (h *Host) drainNext(c *conversation) {
 		c.mu.Unlock()
 		return
 	}
+	if ownPictureFailure(err) && len(c.queued) > 0 && c.queued[0] == text {
+		// Only this message's own pictures failed: it alone is kept as
+		// words to send again, and the rest of the queue still goes.
+		c.queuedPictures = alignedPictures(c.queuedPictures, len(c.queued))
+		c.append(contract.TranscriptEntry{Role: "error", Text: QueuedNotSent + text, ImageCount: int64(len(c.queuedPictures[0])), At: time.Now().Unix()})
+		c.queued, c.queuedPictures = c.queued[1:], c.queuedPictures[1:]
+		_ = c.saveState()
+		next := len(c.queued) > 0 && !c.busy && !c.hidden
+		if next {
+			h.jobs.Add(1)
+		}
+		c.mu.Unlock()
+		if next {
+			go func() {
+				defer h.jobs.Done()
+				h.drainNext(c)
+			}()
+		}
+		return
+	}
 	c.dropQueued()
 	c.mu.Unlock()
+}
+
+// ownPictureFailure is a refusal caused by one message's pictures, before any
+// byte was written, that says nothing about the messages queued after it.
+func ownPictureFailure(err error) bool {
+	switch errorCode(err) {
+	case "picture_unavailable", "pictures_too_large", "images_unsupported":
+		return true
+	}
+	var native *antigravityprocess.Error
+	return errors.As(err, &native) && native.Delivery == antigravityprocess.NotWritten &&
+		(native.Code == "frame_too_large" || native.Code == "invalid_image" || native.Code == "images_unsupported")
 }
 
 // QueueUse answers the largest queue any conversation holds, in messages and

@@ -165,8 +165,11 @@ func (e *Error) BeforeWrite() bool { return e.Delivery == antigravityprocess.Not
 
 // BusyBeforeWrite distinguishes temporary admission from an uncertain effect.
 func (e *Error) BusyBeforeWrite() bool { return e.Code == "busy" && e.BeforeWrite() }
-func (e *Error) Error() string         { return "antigravity_session_" + e.Code }
-func refusal(code string) error        { return &Error{Code: code, Delivery: antigravityprocess.NotWritten} }
+
+// PicturesTooLarge says these pictures cannot fit one native prompt together.
+func (e *Error) PicturesTooLarge() bool { return e.Code == "pictures_too_large" }
+func (e *Error) Error() string          { return "antigravity_session_" + e.Code }
+func refusal(code string) error         { return &Error{Code: code, Delivery: antigravityprocess.NotWritten} }
 
 func New(ctx context.Context, opts Options) (*Host, error) {
 	if (opts.Assistant != "" && opts.Assistant != session.AssistantAntigravity && opts.Assistant != session.AssistantGrok) || ctx == nil || ctx.Err() != nil || !filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) {
@@ -410,7 +413,33 @@ func (h *Host) SendProtocolPictures(ctx context.Context, s session.Session, text
 	if len(pictures) == 0 {
 		return h.sendProtocol(ctx, s, text, nil, before, false)
 	}
+	// Refused when they are accepted, not when a queued prompt is written:
+	// a receipt for a message that can never be sent is not a receipt.
+	if err := picturesFit(text, pictures); err != nil {
+		return err
+	}
 	return h.sendProtocol(ctx, s, text, pictures, before, false)
+}
+
+// pictureFrameReserve is room in one ACP frame for the JSON envelope and a
+// first turn's embedded launch context, which the picture budget leaves free.
+const pictureFrameReserve = 512 << 10
+
+// picturesFit refuses pictures whose base64 cannot fit one MaxFrameBytes
+// prompt with their words. The client still checks the exact frame.
+func picturesFit(text string, pictures []string) error {
+	total := int64(2*len(text) + pictureFrameReserve)
+	for _, p := range pictures {
+		info, err := os.Stat(p)
+		if err != nil || info.Size() == 0 {
+			return refusal("picture_unavailable")
+		}
+		total += (info.Size() + 2) / 3 * 4
+	}
+	if total > MaxFrameBytes {
+		return refusal("pictures_too_large")
+	}
+	return nil
 }
 
 // readPictures loads the pictures of one prompt, typed by their bytes.

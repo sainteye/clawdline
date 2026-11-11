@@ -746,6 +746,8 @@ func actionStatus(code string) int {
 		return http.StatusConflict
 	case "backend_unsupported", "provider_images_unsupported":
 		return http.StatusNotImplemented
+	case "pictures_too_large":
+		return http.StatusRequestEntityTooLarge
 	case "send_unsubmitted":
 		// The line was typed and Enter was held back: it is in the session's
 		// input line. 502, like every write the terminal did not finish, so

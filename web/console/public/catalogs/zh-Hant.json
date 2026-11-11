@@ -11031,5 +11031,6 @@
   "admin.visitsPeriodAccounts": "本期間不重複帳號：{n}",
   "admin.visitsDailyTaipei": "每日 · 台灣時間",
   "admin.visitsDayTaipei": "日期（台灣時間）",
-  "admin.visitsTaipeiTime": "台灣時間"
+  "admin.visitsTaipeiTime": "台灣時間",
+  "http.b229584b3897206c": "這些圖片太大，無法一起送出。請減少一則訊息附的張數，或改用較小的圖片。"
 }

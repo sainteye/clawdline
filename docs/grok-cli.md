@@ -95,9 +95,12 @@ answers `provider_images_unsupported`.
 A picture message sent while a turn runs is queued like text. The saved queue
 keeps the picture's path, not its bytes (`queued_pictures` beside
 `queued_prompts`), and reads the file when that prompt is written. A file the
-drop cache has since removed fails that queued message visibly instead of
-sending the words without it. One ACP frame is bounded by `MaxFrameBytes`; a
-message whose pictures exceed it is refused as `frame_too_large` before writing.
+drop cache has since removed fails only that queued message: its words are
+kept in the transcript as not sent, with its picture count, and the messages
+queued after it are still sent. One ACP frame is bounded by `MaxFrameBytes`.
+Pictures whose base64 cannot fit it with their words are refused as
+`pictures_too_large` (HTTP 413, a translated refusal) when the message is
+sent, before it is stored or queued; the client still checks the exact frame.
 The user turn in the transcript records how many pictures it carried.
 
 In the other direction, `clawdline image send` from a Grok Session binds the

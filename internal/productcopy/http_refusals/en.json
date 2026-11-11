@@ -958,6 +958,7 @@
   "http.b1ceb0bb0f74b5cb": "A child proposes with its task_id and its task secret.",
   "http.b1f92da58a80ce4a": "There is no result.json to collect. It is the completion signal: validate it and rename it into place first; this route only asks for it to be collected now rather than on the next beat.",
   "http.b1fe6110ffeeb171": "A change is sent as application/json.",
+  "http.b229584b3897206c": "These pictures are too large to send together. Send fewer or smaller pictures in one message.",
   "http.b2cf94c7bf811f4a": "A machine Session cannot be started until the existing role and Sessions are fully accounted for.",
   "http.b33343a98339a5a5": "That document role is not supported. Use spec, design, test, deploy, completion_report, plan, plan_review or other.",
   "http.b3a4a9ba9fa9e200": "That task has sent its five notifications.",
