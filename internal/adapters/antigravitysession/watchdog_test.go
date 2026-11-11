@@ -208,21 +208,29 @@ func TestDefaultWatchdogPreservesTenMinuteSilentTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	idleHost(t, h, row)
-	page, err := h.Transcript(row, 100)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The synthetic peer reports the tool complete after it answers the
+	// prompt, so the completion can arrive just after the turn reads idle.
+	var page contract.TranscriptPage
 	completed := false
-	for _, e := range page.Entries {
-		if e.Role == "error" {
-			t.Fatalf("silent tool failed: %+v", page.Entries)
+	for deadline := time.Now().Add(2 * time.Second); !completed; {
+		page, err = h.Transcript(row, 100)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if e.Activity != nil && e.Activity.Status == "completed" {
-			completed = true
+		for _, e := range page.Entries {
+			if e.Role == "error" {
+				t.Fatalf("silent tool failed: %+v", page.Entries)
+			}
+			if e.Activity != nil && e.Activity.Status == "completed" {
+				completed = true
+			}
 		}
-	}
-	if !completed {
-		t.Fatalf("tool did not complete: %+v", page.Entries)
+		if !completed && time.Now().After(deadline) {
+			t.Fatalf("tool did not complete: %+v", page.Entries)
+		}
+		if !completed {
+			time.Sleep(time.Millisecond)
+		}
 	}
 }
 
