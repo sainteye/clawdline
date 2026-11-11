@@ -106,6 +106,24 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		"voice.polish_timeout_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-cleanup deadline; a slower turn is abandoned for Whisper's text"}
 		},
+		"voice.copilot_briefing_timeout_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-briefing deadline; a slower turn is abandoned and the copilot reads the Sessions itself"}
+		},
+		"voice.copilot_briefing_input_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-briefing guard; a longer input is refused before a turn"}
+		},
+		"voice.copilot_briefing_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-briefing guard; a longer answer is not handed to the call"}
+		},
+		"voice.copilot_briefing_reply_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-briefing clip of each last reply, keeping both ends"}
+		},
+		"voice.copilot_key_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-settings-write guard on the pasted key"}
+		},
+		"voice.copilot_extra_instructions_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-settings-write guard on the person's instructions"}
+		},
 		capacity.ArtifactsImages: func() capacity.Reading {
 			if s.pictures.store == nil {
 				return capacity.Unmeasured("this server keeps no picture store")

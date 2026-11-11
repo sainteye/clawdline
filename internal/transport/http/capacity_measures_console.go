@@ -262,6 +262,27 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleTranscriptFollowSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
+		"console.copilot_memory_turns": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser call memory; daemon cannot measure another device's storage"}
+		},
+		"console.copilot_list_transcript_reads": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call list read budget; daemon cannot measure another device's reads"}
+		},
+		"console.copilot_recap_pages": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap paging budget; daemon cannot measure another device's reads"}
+		},
+		"console.copilot_reply_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-explanation clip of a last reply; daemon cannot measure another device's reads"}
+		},
+		"console.copilot_screen_reads": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-screen-read retry budget; daemon cannot measure another device's reads"}
+		},
+		"console.copilot_orb_frames_per_second": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call drawing cadence; daemon cannot measure a browser's frames"}
+		},
+		"console.copilot_orb_pixel_ratio": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call canvas density; daemon cannot measure a browser's canvas"}
+		},
 		capacity.ConsoleTranscriptFillPages: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console opening history fill budget; daemon cannot measure another device’s reads"}
 		},
