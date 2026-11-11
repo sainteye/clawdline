@@ -61,6 +61,7 @@ func TestCopilotSettingsRefuseWhatIsNotOffered(t *testing.T) {
 	for body, code := range map[string]string{
 		`{"openai_key":"not-a-key"}`: "copilot_bad_key",
 		`{"model":"gpt-4o"}`:         "copilot_bad_model",
+		`{"voice":"fable"}`:          "copilot_bad_voice",
 		`{"something":"else"}`:       "bad_request",
 	} {
 		rec := copilotCall(t, s, s.copilotSettingsRoute, http.MethodPost, "/v1/settings/copilot", body)
@@ -95,7 +96,7 @@ func fakeOpenAI(t *testing.T, status int, answer string) *[]map[string]any {
 
 func TestACallStartsWithAClientSecretMintedOnTheMachine(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
-	copilotCall(t, s, s.copilotSettingsRoute, http.MethodPost, "/v1/settings/copilot", `{"openai_key":"`+testCopilotKey+`","model":"gpt-realtime"}`)
+	copilotCall(t, s, s.copilotSettingsRoute, http.MethodPost, "/v1/settings/copilot", `{"openai_key":"`+testCopilotKey+`","model":"gpt-realtime","voice":"cedar"}`)
 	seen := fakeOpenAI(t, http.StatusOK, `{"value":"ek_abc123","expires_at":1794500000,"session":{}}`)
 	rec := copilotCall(t, s, s.copilotSessionRoute, http.MethodPost, "/v1/voice/copilot-session", "")
 	if rec.Code != http.StatusOK {
@@ -103,7 +104,7 @@ func TestACallStartsWithAClientSecretMintedOnTheMachine(t *testing.T) {
 	}
 	var got copilotSessionAnswer
 	_ = json.Unmarshal(rec.Body.Bytes(), &got)
-	if got.ClientSecret != "ek_abc123" || got.ExpiresAt != 1794500000 || got.Model != "gpt-realtime" || got.Eagerness != "low" {
+	if got.ClientSecret != "ek_abc123" || got.ExpiresAt != 1794500000 || got.Model != "gpt-realtime" || got.Eagerness != "low" || got.Voice != "cedar" {
 		t.Fatalf("answer: %+v", got)
 	}
 	if strings.Contains(rec.Body.String(), "test0000") {

@@ -4,7 +4,8 @@ import { onMachineChanged } from "../../../cloud/machine-switch.js"
 import { NeedsUpdate } from "../../../machine/NeedsUpdate.js"
 import { nextWord } from "../../../next-strings.js"
 import { COPILOT_INSTRUCTIONS, COPILOT_TOOLS } from "../../../realtime/copilot-tools.js"
-import { getStoredOpenAIKey, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
+import { getStoredOpenAIKey, previewVoice, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
+import { formatUSD } from "../../../realtime/copilot-cost.js"
 import { readCopilotSettings, writeCopilotSettings, type CopilotSettingsChange, type CopilotSettingsSnapshot } from "../api.js"
 import { Chip, PopUp, Row, Switch } from "./controls.js"
 import { settingsFailureSentence } from "./failure.js"
@@ -22,6 +23,8 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
   const [key, setKey] = useState("")
   const [extra, setExtra] = useState("")
   const [onDevice, setOnDevice] = useState(getStoredOpenAIKey)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewSaid, setPreviewSaid] = useState("")
 
   const read = useCallback(() => {
     void readCopilotSettings().then(
@@ -88,6 +91,28 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
           options={snapshot.models.map((m) => ({ value: m, label: m }))}
           onPick={(picked) => { void change({ model: picked }).catch(() => undefined) }} />
       </Row>
+
+      <Row label={nextWord("copilotVoiceLabel")} hint={nextWord("copilotVoiceHint")}>
+        <PopUp label={nextWord("copilotVoiceLabel")} value={snapshot.voice}
+          options={(snapshot.voices ?? []).map((v, i) => ({ value: v, label: i < 2 ? nextWord("copilotVoiceRecommended", { voice: v }) : v }))}
+          onPick={(picked) => { setPreviewSaid(""); void change({ voice: picked }).catch(() => undefined) }} />
+        <Chip disabled={previewing || !snapshot.key_set} title={snapshot.key_set ? undefined : nextWord("copilotKeyUnset")}
+          onClick={() => {
+            setPreviewing(true)
+            setPreviewSaid("")
+            void previewVoice(snapshot.voice, nextWord("copilotVoicePreviewLine")).then(
+              ({ usd }) => setPreviewSaid(nextWord("copilotVoicePreviewCost", { cost: formatUSD(usd) })),
+              (error: unknown) => {
+                const code = error instanceof Error ? error.message : String(error)
+                // refusal-ok: a missing key has its own sentence; any other refusal is shown by its machine code, which the person reports as is.
+                setPreviewSaid(code === "copilot_key_missing" ? nextWord("copilotKeyUnset") : nextWord("copilotVoicePreviewFailed", { reason: code }))
+              },
+            ).finally(() => setPreviewing(false))
+          }}>
+          {nextWord(previewing ? "copilotVoicePreviewing" : "copilotVoicePreview")}
+        </Chip>
+      </Row>
+      {previewSaid ? <p className="sw-hint" role="status">{previewSaid}</p> : null}
 
       <Row label={nextWord("copilotEagernessLabel")} hint={nextWord("copilotEagernessHint")}>
         <PopUp label={nextWord("copilotEagernessLabel")} value={snapshot.eagerness}

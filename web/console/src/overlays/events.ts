@@ -14,6 +14,13 @@ export const OPEN_INFO = "clawdline:open-info"
 export const OPEN_CONFIRM = "clawdline:open-confirm"
 export const CLOSE_EXECUTION_CHANGED = "clawdline:close-execution-changed"
 export const GO_PAGE = "clawdline:go-page"
+
+/**
+ * The voice copilot asks the page it runs in to open one Session
+ * (`realtime/copilot-open.ts`). The local console opens it with `openSession`;
+ * on Cloud, CloudGate resolves the Session's current execution first.
+ */
+export const COPILOT_OPEN = "clawdline:copilot-open"
 /** A cancelable check before the shell hides a page with an open editor. */
 export const BEFORE_PAGE_CHANGE = "clawdline:before-page-change"
 

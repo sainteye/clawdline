@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11189,
+  "englishKeys": 11197,
   "counts": {
-    "negation": 3102,
+    "negation": 3104,
     "state": 1848,
     "permission": 669,
     "deletion": 255,
     "uncertainty": 421
   },
-  "unionCount": 4925,
+  "unionCount": 4927,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2303,6 +2303,8 @@
       "next.copilotCostUnpriced",
       "next.copilotKeyUnset",
       "next.copilotSettingsHint",
+      "next.copilotVoiceHint",
+      "next.copilotVoicePreviewFailed",
       "next.defaultAntigravityCatalogUnknown",
       "next.defaultModelInvalid",
       "next.defaultModelsFailed",
@@ -9881,6 +9883,8 @@
     "next.copilotKeySaved",
     "next.copilotKeyUnset",
     "next.copilotSettingsHint",
+    "next.copilotVoiceHint",
+    "next.copilotVoicePreviewFailed",
     "next.defaultAntigravityCatalogUnknown",
     "next.defaultModelInvalid",
     "next.defaultModelsFailed",

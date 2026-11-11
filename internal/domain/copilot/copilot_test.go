@@ -13,7 +13,7 @@ var testKey = "sk-" + "proj-abcdefghijklmnopWXYZ"
 
 func TestUnsetChoicesTakeTheirDefaults(t *testing.T) {
 	e := Settings{}.Effective()
-	if e.Model != "gpt-realtime-mini" || e.Eagerness != "low" || e.BriefingAssistant != "claude" || e.BriefingOff {
+	if e.Model != "gpt-realtime-mini" || e.Eagerness != "low" || e.Voice != "marin" || e.BriefingAssistant != "claude" || e.BriefingOff {
 		t.Fatalf("defaults: %+v", e)
 	}
 	if (Settings{Model: "gpt-5"}).Effective().Model != "gpt-realtime-mini" {
@@ -47,6 +47,7 @@ func TestAChangeOutsideWhatIsOfferedIsRefusedAndChangesNothing(t *testing.T) {
 		"key too long":        {Change{Key: ptr("sk-" + strings.Repeat("a", MaxKeyBytes))}, ErrBadKey},
 		"model":               {Change{Model: ptr("gpt-4o")}, ErrBadModel},
 		"eagerness":           {Change{Eagerness: ptr("medium")}, ErrBadEagerness},
+		"voice":               {Change{Voice: ptr("fable")}, ErrBadVoice},
 		"instructions":        {Change{ExtraInstructions: ptr(strings.Repeat("字", MaxExtraInstructionsRunes+1))}, ErrBadInstructions},
 		"briefing assistant":  {Change{BriefingAssistant: ptr("gemini")}, ErrBadAssistant},
 	} {
@@ -64,5 +65,14 @@ func TestInstructionsAtTheLimitAreKept(t *testing.T) {
 	s, err := Apply(Settings{}, Change{ExtraInstructions: ptr(strings.Repeat("字", MaxExtraInstructionsRunes)), Briefing: ptr(false)})
 	if err != nil || !s.BriefingOff {
 		t.Fatalf("%v %+v", err, s.BriefingOff)
+	}
+}
+
+func TestEveryOfferedVoiceIsKept(t *testing.T) {
+	for _, v := range Voices {
+		s, err := Apply(Settings{}, Change{Voice: ptr(v)})
+		if err != nil || s.Effective().Voice != v {
+			t.Errorf("%s: %v %q", v, err, s.Voice)
+		}
 	}
 }

@@ -32,6 +32,11 @@ var Models = []string{"gpt-realtime-mini", "gpt-realtime"}
 // Eagerness is semantic_vad's patience; "low" waits longest and is the default.
 var Eagerness = []string{"low", "auto", "high"}
 
+// Voices are the Realtime output voices; the first is the default. OpenAI
+// recommends marin and cedar for quality, and a call cannot change its voice
+// once it has spoken, so the choice applies from the next call.
+var Voices = []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"}
+
 // BriefingAssistants are the CLIs the machine can run to prepare a briefing.
 var BriefingAssistants = []string{"claude", "codex"}
 
@@ -40,6 +45,7 @@ type Settings struct {
 	Key               string `json:"openai_key,omitempty"`
 	Model             string `json:"model,omitempty"`
 	Eagerness         string `json:"eagerness,omitempty"`
+	Voice             string `json:"voice,omitempty"`
 	ExtraInstructions string `json:"extra_instructions,omitempty"`
 	BriefingAssistant string `json:"briefing_assistant,omitempty"`
 	// BriefingOff turns the machine's prepared briefing off; on unless set.
@@ -53,6 +59,9 @@ func (s Settings) Effective() Settings {
 	}
 	if !contains(Eagerness, s.Eagerness) {
 		s.Eagerness = Eagerness[0]
+	}
+	if !contains(Voices, s.Voice) {
+		s.Voice = Voices[0]
 	}
 	if !contains(BriefingAssistants, s.BriefingAssistant) {
 		s.BriefingAssistant = BriefingAssistants[0]
@@ -74,6 +83,7 @@ type Change struct {
 	Key               *string `json:"openai_key"`
 	Model             *string `json:"model"`
 	Eagerness         *string `json:"eagerness"`
+	Voice             *string `json:"voice"`
 	ExtraInstructions *string `json:"extra_instructions"`
 	BriefingAssistant *string `json:"briefing_assistant"`
 	Briefing          *bool   `json:"briefing"`
@@ -84,6 +94,7 @@ var (
 	ErrBadKey          = errors.New("copilot_bad_key")
 	ErrBadModel        = errors.New("copilot_bad_model")
 	ErrBadEagerness    = errors.New("copilot_bad_eagerness")
+	ErrBadVoice        = errors.New("copilot_bad_voice")
 	ErrBadInstructions = errors.New("copilot_bad_instructions")
 	ErrBadAssistant    = errors.New("copilot_bad_assistant")
 )
@@ -117,6 +128,12 @@ func apply(s Settings, c Change) (Settings, error) {
 			return s, ErrBadEagerness
 		}
 		s.Eagerness = *c.Eagerness
+	}
+	if c.Voice != nil {
+		if !contains(Voices, *c.Voice) {
+			return s, ErrBadVoice
+		}
+		s.Voice = *c.Voice
 	}
 	if c.ExtraInstructions != nil {
 		v := strings.TrimSpace(*c.ExtraInstructions)
