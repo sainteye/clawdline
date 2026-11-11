@@ -123,3 +123,54 @@ func TestShutdownMarksOnlyATurnStillWorking(t *testing.T) {
 		})
 	}
 }
+
+// The daemon cancels the context it gave the host before it calls Shutdown
+// (2026-11-11: a dev install's stopCloud ran first). The worker then dies under
+// a running turn, and that turn must still be woken after the next start
+// instead of ending as a failed turn the person has to notice.
+func TestATurnWhoseHostContextIsCancelledFirstIsStillWoken(t *testing.T) {
+	h, row, opts := persistentFixture(t)
+	stopHost(t, h)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h, err := New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.Resume(context.Background(), row.CWD, row.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	hang := filepath.Join(opts.AccountDir, "prompt-uncertain")
+	if err := os.WriteFile(hang, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_ = h.Send(context.Background(), row, "interrupted turn")
+	prompts := filepath.Join(opts.AccountDir, "prompts")
+	waitFor(t, func() bool { return readFile(t, prompts) == "prompt\n" })
+	cancel()
+	// The turn's own failure path runs before Shutdown can mark it.
+	waitFor(t, func() bool {
+		c, _ := h.lookup(row)
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return !c.busy
+	})
+	_ = h.Shutdown()
+	if err := os.Remove(hang); err != nil {
+		t.Fatal(err)
+	}
+
+	h = reopenHost(t, opts)
+	page, err := h.Transcript(row, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range page.Entries {
+		if e.Role == "error" {
+			t.Fatalf("a restart was shown as a failed turn: %q", e.Text)
+		}
+	}
+	if n := h.ContinueInterrupted(context.Background()); n != 1 {
+		t.Fatalf("woke %d conversations, want 1", n)
+	}
+}

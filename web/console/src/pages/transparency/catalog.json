@@ -3220,7 +3220,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "8adf5fb617e65e4b94303474390b3787e5c37e35b7094f9dd9ae652ba7431c7b",
+    "cmd/clawdline/main.go": "8c5b86e03b291f500ad4ac7617fd2ac27995e1690a3a17e3f43c563c59d20e82",
     "cmd/clawdline/session.go": "cafde1e2256317a25731543da5579b293cc47a83e48f0ff9c98fbf46309e283b",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3235,7 +3235,7 @@
     "internal/adapters/antigravitysession/continue.go": "90d684e85716a03590c609b36437c19e1adac1708915c956f07567f2c3c4cb0c",
     "internal/adapters/antigravitysession/grok.go": "29165034f2efe9349a807c745c65153e31f03e83060c70279317cade1566799a",
     "internal/adapters/antigravitysession/history.go": "1c2a13ede8d1b2c7fdae4e5326b1c3fa2a2b6de317188679178918ce6403d0dc",
-    "internal/adapters/antigravitysession/host.go": "da8dcf244c8988e7b7af34a7d03a21b5685f0cf64ad8478aa35440a1b82d4268",
+    "internal/adapters/antigravitysession/host.go": "51fda6f970256239d55d4a783c01ff32699ccd4a887ce9c37276cc03cfc43c45",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/antigravitysession/turnend.go": "0e37dc41dcf875f0cbc8d12ddeee5e9fb603ac309a400fb4d2ab594f8c09d32d",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",
