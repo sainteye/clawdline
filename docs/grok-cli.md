@@ -76,11 +76,29 @@ Grok entry.
 Bare slash and shell controls without a verified route stay in the draft.
 `/model <offered-id>` and Session model controls use native model selection;
 file paths containing slashes or extensions remain ordinary input. This first
-surface does not claim the complete native slash catalog, images, arbitrary
-native interaction extensions, scheduling or a terminal fallback. Image controls,
-paste and drop cannot enqueue Grok pictures; the server also refuses image input
-before storing a picture or sending model input. Those need
+surface does not claim the complete native slash catalog, arbitrary
+native interaction extensions, scheduling or a terminal fallback. Those need
 separate capability verification, rather than assuming Gemini support applies.
+
+## Pictures
+
+The attach button, paste and drop accept pictures for Grok as for other
+assistants. Each picture is normalized and kept in the daemon's drop cache,
+then sent in the same `session/prompt` as the words, as an ACP `image` block
+(`mimeType` `image/png` or `image/jpeg`, base64 `data`) after the text block.
+A picture is never typed as a path. The inspected CLI (`grok 1.0.77`) advertises
+`promptCapabilities.image: true` in `initialize`; a process that does not is
+refused with `images_unsupported` before any prompt byte is written, and the
+kept files are removed. A Grok Session without an owning protocol host still
+answers `provider_images_unsupported`.
+
+A picture message sent while a turn runs is queued like text. The saved queue
+keeps the picture's path, not its bytes (`queued_pictures` beside
+`queued_prompts`), and reads the file when that prompt is written. A file the
+drop cache has since removed fails that queued message visibly instead of
+sending the words without it. One ACP frame is bounded by `MaxFrameBytes`; a
+message whose pictures exceed it is refused as `frame_too_large` before writing.
+The user turn in the transcript records how many pictures it carried.
 
 ## Completion, interruption and recovery
 

@@ -30,7 +30,7 @@ func configCommand(text string) bool {
 // enqueue accepts a message for after the running turn. The receipt means the
 // machine saved it with the conversation, not that the model has read it; the
 // user turn appears in the transcript when the queued prompt is written.
-func (h *Host) enqueue(c *conversation, text string, before func() error) error {
+func (h *Host) enqueue(c *conversation, text string, pictures []string, before func() error) error {
 	if len(text) > MaxQueuedPromptBytes {
 		return refusal("text_too_large")
 	}
@@ -65,9 +65,12 @@ func (h *Host) enqueue(c *conversation, text string, before func() error) error 
 		h.mu.Unlock()
 		return refusal("queue_full")
 	}
+	c.queuedPictures = alignedPictures(c.queuedPictures, len(c.queued))
 	c.queued = append(c.queued, text)
+	c.queuedPictures = append(c.queuedPictures, pictures)
 	if err := c.saveState(); err != nil {
 		c.queued = c.queued[:len(c.queued)-1]
+		c.queuedPictures = c.queuedPictures[:len(c.queuedPictures)-1]
 		c.mu.Unlock()
 		h.mu.Unlock()
 		return err
@@ -106,10 +109,11 @@ func (c *conversation) afterTurn(stopping bool) bool {
 }
 
 func (c *conversation) dropQueued() {
-	for _, text := range c.queued {
-		c.append(contract.TranscriptEntry{Role: "error", Text: QueuedNotSent + text, At: time.Now().Unix()})
+	pictures := alignedPictures(c.queuedPictures, len(c.queued))
+	for i, text := range c.queued {
+		c.append(contract.TranscriptEntry{Role: "error", Text: QueuedNotSent + text, ImageCount: int64(len(pictures[i])), At: time.Now().Unix()})
 	}
-	c.queued = nil
+	c.queued, c.queuedPictures = nil, nil
 	_ = c.saveState()
 }
 
@@ -124,7 +128,8 @@ func (h *Host) drainNext(c *conversation) {
 		return
 	}
 	c.draining = true
-	text, row := c.queued[0], c.row
+	c.queuedPictures = alignedPictures(c.queuedPictures, len(c.queued))
+	text, pictures, row := c.queued[0], c.queuedPictures[0], c.row
 	c.mu.Unlock()
 	taken := false
 	take := func() error {
@@ -132,13 +137,14 @@ func (h *Host) drainNext(c *conversation) {
 		defer c.mu.Unlock()
 		if len(c.queued) > 0 && c.queued[0] == text {
 			c.queued = c.queued[1:]
+			c.queuedPictures = alignedPictures(c.queuedPictures, len(c.queued)+1)[1:]
 			taken = true
 		}
 		return nil
 	}
 	var err error
 	for attempt := 0; ; attempt++ {
-		err = h.sendProtocol(h.ctx, row, text, take, true)
+		err = h.sendProtocol(h.ctx, row, text, pictures, take, true)
 		// Another conversation holding the single opening slot, or this one's
 		// previous turn still unwinding, is a wait, not a reason to drop.
 		if err == nil || taken || attempt >= queueRetries || !retryable(err) {
@@ -190,4 +196,26 @@ func (h *Host) QueueUse() (rows, bytes int) {
 		c.mu.Unlock()
 	}
 	return rows, bytes
+}
+
+// alignedPictures pads or trims saved picture lists to one per queued message.
+// A record written before pictures were queued has none for any of them.
+func alignedPictures(pictures [][]string, n int) [][]string {
+	if len(pictures) > n {
+		return pictures[:n]
+	}
+	for len(pictures) < n {
+		pictures = append(pictures, nil)
+	}
+	return pictures
+}
+
+// savedQueuedPictures omits the field when no queued message has pictures.
+func (c *conversation) savedQueuedPictures() [][]string {
+	for _, p := range c.queuedPictures {
+		if len(p) > 0 {
+			return alignedPictures(c.queuedPictures, len(c.queued))
+		}
+	}
+	return nil
 }

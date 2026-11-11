@@ -4146,7 +4146,7 @@ test("rotation reminder uses attention notes, dismisses without sending and hand
 })
 
 // A synthetic provider boundary: these uploads never leave this test server.
-test("Grok pictures stay out of every composer input route", async () => {
+test("Grok pictures attach from the picker and are sent with the message", async () => {
  protocolMenuScenario = { waiting: false, requests: [] }
  protocolAssistant = "grok"
  try {
@@ -4158,20 +4158,28 @@ test("Grok pictures stay out of every composer input route", async () => {
     if (Date.now() > until) assert.fail("Grok composer did not load")
     await new Promise(resolve => setTimeout(resolve, 20))
    }
-   assert.equal(await tab.run(`document.getElementById("attach")?.disabled`), true)
+   assert.equal(await tab.run(`document.getElementById("attach")?.disabled`), false)
    await tab.run(`new Promise(resolve => {
     const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
     canvas.toBlob(blob => {
-     const dt = new DataTransfer(); dt.items.add(new File([blob], "unsupported.png", {type:"image/png"}));
+     const dt = new DataTransfer(); dt.items.add(new File([blob], "grok.png", {type:"image/png"}));
      const pick = document.getElementById("pick"); pick.files = dt.files; pick.dispatchEvent(new Event("change",{bubbles:true}));
-     document.getElementById("msg").dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true}));
-     document.getElementById("pane-detail").dispatchEvent(new DragEvent("drop",{dataTransfer:dt,bubbles:true,cancelable:true}));
      resolve(true);
     });
    })`)
-   await new Promise(resolve => setTimeout(resolve, 100))
-   assert.equal(await tab.run(`document.querySelectorAll("#shots .shot").length`), 0)
-   assert.equal(await tab.run(`document.getElementById("send")?.disabled`), true)
+   const shown = Date.now() + 5000
+   while (await tab.run(`document.querySelectorAll("#shots .shot").length`) !== 1) {
+    if (Date.now() > shown) assert.fail("the Grok picture was not attached")
+    await new Promise(resolve => setTimeout(resolve, 20))
+   }
+   draftSendBodies.length = 0
+   await tab.run(`document.getElementById("send").click()`)
+   const sentBy = Date.now() + 5000
+   while (!draftSendBodies.length && Date.now() < sentBy) await new Promise(resolve => setTimeout(resolve, 30))
+   assert.equal(draftSendBodies.length, 1, "the Grok picture send reaches the fixture")
+   const images = draftSendBodies[0].images as string[]
+   assert.equal(images.length, 1)
+   assert.match(images[0], /^data:image\//)
   })
  } finally { protocolAssistant = "antigravity"; protocolMenuScenario = null }
 })

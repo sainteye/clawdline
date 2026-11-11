@@ -10929,7 +10929,6 @@
   "transparency.card.grok-acp-context.summary": "Captures the selected role and handbook, enabled-skill references, Project memory, Board language, answer-Note rule and selected workflow. CodeGraph guidance follows explicit machine consent or the inherited snapshot.",
   "transparency.card.grok-acp-context.title": "Grok owned ACP context",
   "transparency.grok": "Grok Build",
-  "grok.imagesUnavailable": "Grok image input is not available in this integration yet.",
   "http.7a512054f936f703": "Image input is not available for Grok in this integration yet.",
   "capacityRow.console.started_session_follow_seconds.full": "At the deadline, the temporary launch observer releases its timers, reads and subscriptions. Normal list updates and pull to refresh continue independently.",
   "capacityRow.console.started_session_retry_seconds.full": "The next check reads a fresh list. It does not open another Session.",

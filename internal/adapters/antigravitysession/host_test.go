@@ -76,6 +76,8 @@ func TestOwnedPeer(t *testing.T) {
 				Prompt    []struct {
 					Text     string `json:"text"`
 					Type     string `json:"type"`
+					MimeType string `json:"mimeType,omitempty"`
+					Data     string `json:"data,omitempty"`
 					Resource struct {
 						URI  string `json:"uri"`
 						Text string `json:"text"`
@@ -109,6 +111,9 @@ func TestOwnedPeer(t *testing.T) {
 			}
 			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
 				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
+			}
+			if os.Getenv("CLW_IMAGE_PEER") == "yes" {
+				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"image": true}}
 			}
 		case "session/list":
 			result = map[string]any{"sessions": []any{}}

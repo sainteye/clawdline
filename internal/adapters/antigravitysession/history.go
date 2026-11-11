@@ -32,6 +32,7 @@ type savedConversation struct {
 	AutomaticTitle    string           `json:"automatic_title,omitempty"`
 	Interrupted       bool             `json:"interrupted_by_shutdown,omitempty"`
 	Queued            []string         `json:"queued_prompts,omitempty"`
+	QueuedPictures    [][]string       `json:"queued_pictures,omitempty"`
 	ChosenModel       string           `json:"chosen_model,omitempty"`
 	ChosenEffort      string           `json:"chosen_effort,omitempty"`
 	// Known is the runtime's last acknowledged model and effort offer, so a
@@ -123,6 +124,7 @@ func (s *historyStore) restore(profile string) (map[string]*conversation, error)
 			c.autoNameAttempted = saved.AutoNameAttempted
 			c.interrupted = saved.Interrupted
 			c.queued = saved.Queued
+			c.queuedPictures = alignedPictures(saved.QueuedPictures, len(saved.Queued))
 			c.chosenModel, c.chosenEffort = saved.ChosenModel, saved.ChosenEffort
 			if k := saved.Known; k != nil && len(k.Models) > 0 {
 				c.model, c.models, c.effort, c.efforts, c.effortID, c.structuredConfig = k.Model, k.Models, k.Effort, k.Efforts, k.EffortID, true
@@ -173,7 +175,7 @@ func (c *conversation) saveRow(w historyWriter) error {
 	if c.staging {
 		return nil
 	}
-	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity, LaunchContext: c.launchContext, Injected: c.injected, AutoNameAttempted: c.autoNameAttempted, AutomaticTitle: c.row.Rungs.Thread, Interrupted: c.interrupted, Queued: c.queued, ChosenModel: c.chosenModel, ChosenEffort: c.chosenEffort, Known: c.knownConfig()})
+	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity, LaunchContext: c.launchContext, Injected: c.injected, AutoNameAttempted: c.autoNameAttempted, AutomaticTitle: c.row.Rungs.Thread, Interrupted: c.interrupted, Queued: c.queued, QueuedPictures: c.savedQueuedPictures(), ChosenModel: c.chosenModel, ChosenEffort: c.chosenEffort, Known: c.knownConfig()})
 	if err == nil {
 		_, err = w.Exec(`INSERT INTO conversations(id,native_id,cwd,profile,row_json,generation,revision,ordinal,uncertain,hidden)
 		 VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET row_json=excluded.row_json,generation=excluded.generation,
