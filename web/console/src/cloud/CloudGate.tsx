@@ -14,7 +14,7 @@ import { machineManager } from "./machine-manager.js"
 import { createPortal, flushSync } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import App from "../App.js"
-import { CLOSE_EXECUTION_CHANGED } from "../overlays/events.js"
+import { CLOSE_EXECUTION_CHANGED, COPILOT_OPEN } from "../overlays/events.js"
 import { NAVIGATION_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
@@ -1774,6 +1774,27 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     location.hash = destination.machineID === reader.current?.machine
       ? sessionFragment(destination.sessionID) : destinationFragment(destination)
   }, [])
+
+  // The voice copilot opening a Session on this page: the reading machine's
+  // current execution of it, opened the way a started Session is.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionID: string; answer?: (opened: boolean) => void }>).detail
+      const machine = reader.current?.machine
+      if (!detail?.sessionID || !detail.answer || !machine) return
+      const answer = detail.answer
+      detail.answer = undefined
+      void liveSessionSource.readMachine(machine, new AbortController().signal).then((reading) => {
+        const destination = reading.kind === "ready"
+          ? reading.rows.find((row) => row.destination.sessionID === detail.sessionID && row.freshness === "current")?.destination
+          : undefined
+        if (destination) openStarted(destination)
+        answer(!!destination)
+      }, () => answer(false))
+    }
+    document.addEventListener(COPILOT_OPEN, onOpen)
+    return () => document.removeEventListener(COPILOT_OPEN, onOpen)
+  }, [openStarted])
 
   // The row the header names: the machine the console is reading, under the
   // account's own name for it. While the list is still arriving it is the row

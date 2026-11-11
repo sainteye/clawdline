@@ -108,9 +108,16 @@ answered `pending` until it is ready, and a briefing is handed out again for 60 
 arrives, the browser sends it to the call in a second `session.update`; until then the
 `get_status_briefing` tool waits for it, and without it the copilot reads the Sessions itself.
 
-**What the copilot can read.** `list_sessions`, `get_session_summary`, `get_session_recap`
+**What the copilot can read and do.** `list_sessions`, `get_session_summary`, `get_session_recap`
 (the whole conversation, paged back at most 5 pages), `get_session_activity`,
-`get_session_screen` and `send_message_to_session`. Over Cloud the copilot is opened inside one
+`get_session_screen`, `open_session` and `send_message_to_session`. `open_session` opens the
+Session on the page the call runs in, whichever browser that is: the local console opens it as a
+press in the list would, and on Cloud the reading machine's current execution of it is resolved
+first, as for a started Session (`realtime/copilot-open.ts`).
+
+**The voice.** One of Realtime's ten voices, `marin` unless chosen otherwise; a call cannot change
+its voice once it has spoken, so a new choice applies from the next call. **Listen** plays one line
+in it over a receive-only connection, with no microphone. Over Cloud the copilot is opened inside one
 Session's page, which pins Session content to that Session; its reads carry
 `X-Clawdline-Unopened-Read: 1`, and the seam resolves and verifies the named Session's current
 execution instead (`cloud/unopened-read.ts`). Settings › Voice copilot shows the instructions and

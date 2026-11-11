@@ -57,6 +57,7 @@ import {
   ActionConfirm,
   BEFORE_PAGE_CHANGE,
   GO_PAGE,
+  COPILOT_OPEN,
   Info,
   RoleDetail,
   OPEN_CONFIRM,
@@ -761,6 +762,25 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     document.addEventListener(GO_PAGE, onGo)
     return () => document.removeEventListener(GO_PAGE, onGo)
   }, [])
+
+  // The voice copilot opening a Session on the page it runs in. On Cloud,
+  // CloudGate answers instead: it resolves the Session's current execution.
+  const openSessionRef = useRef(openSession)
+  openSessionRef.current = openSession
+  useEffect(() => {
+    if (cloudSessions || fleetList) return undefined
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionID: string; answer?: (opened: boolean) => void }>).detail
+      if (!detail?.sessionID || !detail.answer) return
+      const known = rowsRef.current.some((r) => r.id === detail.sessionID)
+      if (known) openSessionRef.current(detail.sessionID)
+      const answer = detail.answer
+      detail.answer = undefined
+      answer(known)
+    }
+    document.addEventListener(COPILOT_OPEN, onOpen)
+    return () => document.removeEventListener(COPILOT_OPEN, onOpen)
+  }, [!!cloudSessions, !!fleetList])
 
   useEffect(() => {
     const onInfo = () => {

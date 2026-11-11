@@ -39,6 +39,8 @@ export interface ToolDeps {
   now?: () => number
   /** The machine's prepared briefing for this call, when it has one (`copilot-briefing`). */
   briefing?: () => Promise<string | null>
+  /** Opens one Session on the page the call runs in; true once it is on screen. */
+  openSession?: (id: string) => Promise<boolean>
 }
 
 export interface ToolResult {
@@ -76,6 +78,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
+- open_session：在使用者通話的這個畫面上打開某個 Session。使用者說「切到／打開／讓我看某某」就呼叫，打開後用一句話說「已經打開某某」，不用唸內容。
 - send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
 - session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
@@ -173,6 +176,18 @@ export const COPILOT_TOOLS = [
           type: 'string',
           description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
         },
+      },
+      required: ['session_id'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'open_session',
+    description: '在使用者正在通話的這個畫面上打開指定的 Session，讓他直接看到它的內容。使用者說「切到某某」「打開某某」「讓我看某某」時用這個。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。' },
       },
       required: ['session_id'],
     },
@@ -850,6 +865,29 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
   return { success: true, label: row.label }
 }
 
+async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  }
+  const { row } = found
+  if (!deps.openSession) return { error: '這個畫面不能由副駕駛切換 Session' }
+  const opened = await deps.openSession(row.id)
+  if (!opened) {
+    const error = `「${row.label}」沒有在這個畫面上打開（這個畫面目前讀不到它）`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  logs.push({ level: 'info', text: `已在畫面上打開「${row.label}」` })
+  return { opened: true, label: row.label }
+}
+
 async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   if (!deps.briefing) {
     logs.push({ level: 'error', text: '這通電話沒有機器整理的匯報' })
@@ -884,6 +922,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
+    else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))
     else {
       result = { error: `未知的工具：${name}` }

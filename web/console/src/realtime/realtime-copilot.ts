@@ -7,6 +7,7 @@
 import { greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
+import { openOnThisPage } from './copilot-open.js'
 
 export interface CopilotLogItem {
   id: string
@@ -143,6 +144,7 @@ export class RealtimeCopilotClient {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       briefing: () => this.briefing,
+      openSession: (id) => openOnThisPage(id),
     }
   }
 

@@ -180,7 +180,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "get_session_screen", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "get_session_screen", "open_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -402,4 +402,16 @@ test("a call speaks in the machine's chosen voice, and an unknown one falls back
   assert.equal(voiceOf("cedar"), "cedar")
   assert.equal(voiceOf(undefined), "marin")
   assert.equal(voiceOf("fable"), "marin")
+})
+
+test("open_session opens the named Session on the page the call runs in", async () => {
+  const { deps } = fakeMachine({})
+  const asked: string[] = []
+  deps.openSession = async (id) => { asked.push(id); return true }
+  const out = JSON.parse((await runCopilotTool("open_session", '{"session_id":"codex"}', deps)).output)
+  assert.deepEqual(asked, ["%2"])
+  assert.deepEqual(out, { opened: true, label: "Prepare screenshots" })
+  deps.openSession = async () => false
+  assert.match(JSON.parse((await runCopilotTool("open_session", '{"session_id":"%2"}', deps)).output).error, /沒有在這個畫面上打開/)
+  assert.ok(JSON.parse((await runCopilotTool("open_session", '{"session_id":"claude"}', deps)).output).candidates, "an ambiguous name is put back with its candidates")
 })
