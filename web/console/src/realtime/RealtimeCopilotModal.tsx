@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { nextWord } from '../next-strings.js'
 import {
   realtimeCopilot,
   getStoredOpenAIKey,
@@ -9,9 +10,11 @@ import {
 interface Props {
   open: boolean
   onClose: () => void
+  /** Shrinks a live call to the floating bubble (`CopilotDockView`). */
+  onMinimize?: () => void
 }
 
-export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
+export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimize }) => {
   const [copilotState, setCopilotState] = useState<RealtimeCopilotState>(realtimeCopilot.getState())
   const [apiKey, setApiKey] = useState(getStoredOpenAIKey())
   const [tempKey, setTempKey] = useState('')
@@ -61,12 +64,26 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
 
   return (
     <div className="realtime-modal-backdrop" onClick={(e) => {
-      if (e.target === e.currentTarget && !isConnected && !isConnecting) onClose()
+      if (e.target !== e.currentTarget) return
+      // A tap beside a live call's sheet shrinks it; the call goes on.
+      if (isConnected || isConnecting) onMinimize?.()
+      else onClose()
     }}>
       <div className="realtime-modal-sheet" role="dialog" aria-modal="true" aria-label="語音副駕駛即時通話">
         <div className="realtime-header">
           <div className="realtime-title-row">
             <span className="realtime-badge">Realtime Copilot</span>
+            {(isConnected || isConnecting) && onMinimize ? (
+              <button
+                type="button"
+                className="realtime-minimize-btn"
+                onClick={onMinimize}
+                aria-label={nextWord('copilotMinimize')}
+                title={nextWord('copilotMinimize')}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.5 8h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+              </button>
+            ) : null}
             <button
               type="button"
               className="realtime-close-btn"
