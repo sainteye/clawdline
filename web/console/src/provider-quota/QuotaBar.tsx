@@ -102,7 +102,7 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
             onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
             <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
             <span className="quota-compact-window">{compact ? <WindowValue window={compact} now={now} /> : <span className="quota-unknown">{used}</span>}</span>
-            {row.credits_in_use && <span className="quota-credits">{nextWord("quotaCreditsInUseLong")}</span>}
+            {row.credits_in_use && <span className="quota-credits">{nextWord("quotaCredits")}</span>}
             {stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
           </button>
         })}
