@@ -177,6 +177,60 @@ export function writeDefaultModels(change: Partial<DefaultModelValues>): Promise
   })
 }
 
+/** `/v1/settings/voice`: the voice cards' keys and what the machine offers for them. */
+export interface VoiceSettingsValues {
+  voice_polish?: boolean | null
+  voice_polish_assistant?: string | null
+  voice_polish_level?: string | null
+  voice_vocabulary?: string[] | null
+  voice_vocabulary_projects?: boolean | null
+}
+
+export type VoiceSettingsSnapshot = VoiceSettingsValues & {
+  polish_assistants: string[]
+  vocabulary_builtin: string[]
+  vocabulary_projects: string[]
+}
+
+/** The narrow voice route, carried over Cloud as `voice-settings`. */
+async function callVoiceSettings(init: RequestInit): Promise<VoiceSettingsSnapshot> {
+  const path = "/v1/settings/voice"
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  let res: Response
+  try {
+    res = await fetch(client.url(path), { ...init, signal: controller.signal })
+  } catch (cause) {
+    throw new TransportError(`${init.method ?? "GET"} ${path} did not complete`, cause)
+  } finally {
+    clearTimeout(timer)
+  }
+  const text = await res.text()
+  let parsed: unknown
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch (cause) {
+    throw new TransportError(`${path} answered with something that is not JSON`, cause)
+  }
+  if (!res.ok) {
+    if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
+    throw new TransportError(`${path} answered ${res.status} with no refusal in it`)
+  }
+  return parsed as VoiceSettingsSnapshot
+}
+
+export function readVoiceSettings(): Promise<VoiceSettingsSnapshot> {
+  return callVoiceSettings({ method: "GET" })
+}
+
+export function writeVoiceSettings(change: VoiceSettingsValues): Promise<VoiceSettingsSnapshot> {
+  return callVoiceSettings({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
+  })
+}
+
 async function callWorkGates(init: RequestInit): Promise<WorkGateSettingsSnapshot> {
   const path = "/v1/settings/work-gates"
   const controller = new AbortController()

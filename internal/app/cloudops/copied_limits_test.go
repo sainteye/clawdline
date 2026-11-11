@@ -4,6 +4,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projectfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -21,6 +22,7 @@ var copiedConstants = map[string]int64{
 	"ViewerEventsBatchBytesLimit":                  ViewerEventsBatchBytesLimit,
 	"SessionRowIDBytesLimit":                       SessionRowIDBytesLimit,
 	"defaultModelsCloudBodyLimit":                  defaultModelsCloudBodyLimit,
+	"nextconfig.MaxVoiceVocabularyTerms":           nextconfig.MaxVoiceVocabularyTerms,
 	"intentTextLimit":                              intentTextLimit,
 	"projectSyncCloudBodyLimit":                    projectSyncCloudBodyLimit,
 	"scheduleMaximumBytes":                         scheduleMaximumBytes,

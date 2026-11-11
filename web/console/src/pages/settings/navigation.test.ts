@@ -8,7 +8,7 @@ test("local settings expose each machine pane beside browser, work and status", 
 })
 
 test("Cloud navigation exposes remote pairing without local machine controls", () => {
-  assert.deepEqual(settingsPanes(true), ["browser", "work", "status", "workflow", "remote"])
+  assert.deepEqual(settingsPanes(true), ["browser", "work", "status", "workflow", "remote", "voice"])
 })
 
 test("keyboard navigation reaches every pane and wraps in both transports", () => {

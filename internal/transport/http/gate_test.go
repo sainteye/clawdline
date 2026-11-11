@@ -230,6 +230,7 @@ func TestGateCoversEveryChange(t *testing.T) {
 		"/v1/settings/browser",
 		"/v1/settings/notifications",
 		"/v1/settings/default-models",
+		"/v1/settings/voice",
 		"/v1/settings/work-gates",
 		"/v1/voice/setup",
 		"/v1/projects/p/worktrees/refresh",

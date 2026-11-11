@@ -31,7 +31,7 @@ import {
 } from "../cloud.js"
 import { directLocalNetworkShown } from "../direct-local.js"
 import { DEFAULTS, reading, supportsITermIntegration, type SettingKey } from "./defaults.js"
-import { cleanVocabulary, validTerm, VOICE_VOCABULARY_RUNES, VOICE_VOCABULARY_TERMS } from "./vocabulary.js"
+import { VoiceSettingsCards } from "./VoiceSettingsCards.js"
 import { installVoiceModel, readVoiceLanguage, readVoiceSetup } from "../voice.js"
 import {
   APP_EVENT,
@@ -112,8 +112,6 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
   const [voiceInstallBusy, setVoiceInstallBusy] = useState(false)
   const [voiceInstallSaid, setVoiceInstallSaid] = useState("")
   const [voiceCommandCopied, setVoiceCommandCopied] = useState(false)
-  const [voiceTerm, setVoiceTerm] = useState("")
-  const [voiceTermSaid, setVoiceTermSaid] = useState("")
   // The pairing card's own state. `pairingSaid` is whatever went wrong with the
   // last button press, which is separate from the line's `last_error`: one is
   // about this person's click and the other about the socket.
@@ -750,31 +748,6 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
         ) : null}
       </>
     )
-    // An older daemon answers the setup without these fields and refuses the
-    // keys: the cleanup and vocabulary cards are drawn only when it has them.
-    const hasPolish = Array.isArray(voiceSetupState?.polish_assistants)
-    const polishOn = !!now("voice_polish")
-    const assistant = String(now("voice_polish_assistant")) === "codex" ? "codex" : "claude"
-    const installed = voiceSetupState?.polish_assistants ?? []
-    const level = String(now("voice_polish_level")) === "punctuation" ? "punctuation" : "tidy"
-    const custom = cleanVocabulary(now("voice_vocabulary"))
-    const projectsOn = !!now("voice_vocabulary_projects")
-    const projects = voiceSetupState?.vocabulary_projects ?? []
-    const builtin = voiceSetupState?.vocabulary_builtin ?? []
-    const addTerm = () => {
-      const term = voiceTerm.trim()
-      if (!term) return
-      if (custom.length >= VOICE_VOCABULARY_TERMS) { setVoiceTermSaid(W.voiceVocabularyFull); return }
-      if (!validTerm(term) || custom.some((known) => known.toLowerCase() === term.toLowerCase())) {
-        setVoiceTermSaid(W.voiceVocabularyInvalid)
-        return
-      }
-      setVoiceTermSaid("")
-      void change({ voice_vocabulary: [...custom, term] }).then(() => setVoiceTerm(""), () => undefined)
-    }
-    const removeTerm = (term: string) => {
-      void change({ voice_vocabulary: custom.filter((known) => known !== term) }).catch(() => undefined)
-    }
     return (
       <div className="sw-column sw-voice">
         <section className="sw-voice-card" aria-labelledby="sw-voice-recognition">
@@ -797,99 +770,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
             </details>
           ) : setupDetails}
         </section>
-        {hasPolish ? (
-          <section className="sw-voice-card" aria-labelledby="sw-voice-polish">
-            <div className="sw-voice-headrow">
-              <h3 className="sw-voice-head" id="sw-voice-polish">{W.voicePolishTitle}</h3>
-              <Switch label={W.voicePolishSwitch} on={polishOn} onChange={flip("voice_polish")} />
-            </div>
-            <p className="sw-hint sw-voice-lead">{W.voicePolishSwitch}</p>
-            <p className="sw-hint">{W.voicePolishHint}</p>
-            {!polishOn ? (
-              <div className="sw-voice-pair">
-                <div className="sw-voice-say">
-                  <span className="sw-voice-say-label">{W.voicePolishExampleRaw}</span>
-                  {W.voicePolishExampleRawText}
-                </div>
-                <div className="sw-voice-say fixed">
-                  <span className="sw-voice-say-label">{W.voicePolishExampleFixed}</span>
-                  {W.voicePolishExampleFixedText}
-                </div>
-              </div>
-            ) : null}
-            <div className={polishOn ? "" : "sw-voice-dim"}>
-              <Row label={W.voicePolishModel} first>
-                <PopUp
-                  label={W.voicePolishModel}
-                  value={assistant}
-                  disabled={!polishOn}
-                  options={[{ value: "claude", label: W.voicePolishClaude }, { value: "codex", label: W.voicePolishCodex }]}
-                  onPick={pick("voice_polish_assistant")}
-                />
-              </Row>
-              <Row label={W.voicePolishLevel}>
-                <div className="sw-voice-seg" role="group" aria-label={W.voicePolishLevel}>
-                  <Chip armed={level === "punctuation"} disabled={!polishOn} onClick={() => pick("voice_polish_level")("punctuation")}>{W.voicePolishPunctuation}</Chip>
-                  <Chip armed={level === "tidy"} disabled={!polishOn} onClick={() => pick("voice_polish_level")("tidy")}>{W.voicePolishTidy}</Chip>
-                </div>
-              </Row>
-            </div>
-            {polishOn && !installed.includes(assistant) ? (
-              <Note dot="warn">{fill(W.voicePolishMissing, { assistant: assistant === "codex" ? "Codex" : "Claude Code" })}</Note>
-            ) : null}
-          </section>
-        ) : null}
-        {hasPolish ? (
-          <section className="sw-voice-card" aria-labelledby="sw-voice-vocabulary">
-            <h3 className="sw-voice-head" id="sw-voice-vocabulary">{W.voiceVocabularyTitle}</h3>
-            <p className="sw-hint">{W.voiceVocabularyHint}</p>
-            <form className="sw-voice-add" onSubmit={(event) => { event.preventDefault(); addTerm() }}>
-              <label className="sw-voice-hidden" htmlFor="sw-voice-term">{W.voiceVocabularyAddLabel}</label>
-              <input
-                id="sw-voice-term"
-                value={voiceTerm}
-                maxLength={VOICE_VOCABULARY_RUNES * 2}
-                placeholder={W.voiceVocabularyPlaceholder}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => { setVoiceTerm(event.target.value); setVoiceTermSaid("") }}
-              />
-              <button type="submit" className="sw-chip" disabled={!voiceTerm.trim()}>{W.voiceVocabularyAdd}</button>
-            </form>
-            {voiceTermSaid ? <p className="sw-said" role="alert">{voiceTermSaid}</p> : null}
-            <p className="sw-voice-group">{fill(W.voiceVocabularyCustom, { n: String(custom.length) })}</p>
-            {custom.length ? (
-              <ul className="sw-voice-chips">
-                {custom.map((term) => (
-                  <li key={term} className="sw-voice-chip">
-                    <span>{term}</span>
-                    <button type="button" aria-label={fill(W.voiceVocabularyRemove, { term })} onClick={() => removeTerm(term)}>
-                      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" /></svg>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="sw-voice-empty">{W.voiceVocabularyEmpty}</p>}
-            <label className="sw-voice-check">
-              <input type="checkbox" checked={projectsOn} onChange={(event) => flip("voice_vocabulary_projects")(event.target.checked)} />
-              <span>{W.voiceVocabularyProjects}</span>
-            </label>
-            {projectsOn ? (
-              <>
-                <p className="sw-voice-group">{fill(W.voiceVocabularyProjectsCount, { n: String(projects.length) })}</p>
-                {projects.length ? (
-                  <ul className="sw-voice-chips">
-                    {projects.map((term) => <li key={term} className="sw-voice-chip auto"><span>{term}</span></li>)}
-                  </ul>
-                ) : <p className="sw-voice-empty">{W.voiceVocabularyProjectsNone}</p>}
-              </>
-            ) : <p className="sw-hint">{W.voiceVocabularyProjectsOff}</p>}
-            <p className="sw-voice-group">{fill(W.voiceVocabularyBuiltin, { n: String(builtin.length) })}</p>
-            <ul className="sw-voice-chips">
-              {builtin.map((term) => <li key={term} className="sw-voice-chip builtin"><span>{term}</span></li>)}
-            </ul>
-          </section>
-        ) : null}
+        <VoiceSettingsCards shown />
       </div>
     )
   }

@@ -136,6 +136,13 @@ func init() {
 
 		op{name: "default-models-update"},
 
+		// The voice cards on Settings: dictation cleanup and the personal
+		// vocabulary. As narrow as default-models: a phone receives and changes
+		// only these five values.
+		op{name: "voice-settings", read: true},
+
+		op{name: "voice-settings-update"},
+
 		// A paired phone may edit only notification timing rules, through the
 		// same narrow route exposed by the local console.
 		op{name: "notification-rules", read: true},

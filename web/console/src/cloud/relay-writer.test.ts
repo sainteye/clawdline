@@ -239,7 +239,9 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/voice/source", "voice"],
     ["GET", "/v1/places", "places"],
     ["GET", "/v1/settings/default-models", "default-models"],
+    ["GET", "/v1/settings/voice", "voice-settings"],
     ["POST", "/v1/settings/default-models", "default-models-update"],
+    ["POST", "/v1/settings/voice", "voice-settings-update"],
     ["GET", "/v1/notification-rules", "notification-rules"],
     ["POST", "/v1/notification-rules", "notification-rules-update"],
     ["GET", "/v1/settings/work-gates", "work-gate-settings"],
@@ -2054,6 +2056,29 @@ test("the capacity block crosses as its machine word, with no field of its own",
   assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "bad_request")
 })
 
+test("a phone reads and changes the voice cards on the machine it follows", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+
+  assert.deepEqual(writeRoute("GET", "/v1/settings/voice"), { op: "voice-settings", word: "voice-settings" })
+  const read = await reader.fetch("/v1/settings/voice")
+  assert.equal(read.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "voice-settings", {}, "read"])
+
+  const write = await reader.fetch("/v1/settings/voice", post({ voice_polish: true, voice_vocabulary: ["Tailscale"] }))
+  assert.equal(write.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "voice-settings-update", {
+    changes: { voice_polish: true, voice_vocabulary: ["Tailscale"] },
+  }, "action"])
+
+  for (const path of ["/v1/settings/voice/extra", "/v1/settings/voice?all=1"]) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 501, path)
+  }
+  // The rest of the machine's settings still do not cross.
+  assert.equal(writeRoute("POST", "/v1/settings/browser"), null)
+})
+
 test("a phone reads and changes only the two default models", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
@@ -2518,6 +2543,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/provider-quotas", "provider-quotas"],
     ["/v1/doctor", "doctor"],
     ["/v1/settings/default-models", "default-models"],
+    ["/v1/settings/voice", "voice-settings"],
     ["/v1/notification-rules", "notification-rules"],
     ["/v1/settings/notifications", "notification-settings"],
     ["/v1/settings/work-gates", "work-gate-settings"],

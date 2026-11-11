@@ -356,7 +356,10 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["squad-events.conversations"], "GET /v1/squad/events?conversation=&after=&limit=")
   // The Session list's role rows read their launch snapshots in one batch (session/skill-feed.ts).
   assert.equal(CARRIED["squad-session-snapshots"], "GET /v1/squad/session-snapshots?conversation=")
-  assert.equal(Object.keys(CARRIED).length, 205)
+  // The voice cards on Settings (pages/settings/window/VoiceSettingsCards.tsx).
+  assert.equal(CARRIED["voice-settings"], "GET /v1/settings/voice")
+  assert.equal(CARRIED["voice-settings-update"], "POST /v1/settings/voice")
+  assert.equal(Object.keys(CARRIED).length, 207)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

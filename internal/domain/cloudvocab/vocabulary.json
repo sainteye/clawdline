@@ -3320,6 +3320,34 @@
       "decode": {"reply": "action", "fields": {"audio": {"type": "string", "non_empty": true}, "rate": {"type": "integer", "min": 16000, "max": 16000, "copies": {"min": "voiceRate", "max": "voiceRate"}}}, "route": {"path": "/v1/voice", "body": {"fields": {"audio": {"from": "audio"}, "rate": {"from": "rate"}}}}}
     },
     {
+      "op": "voice-settings",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/settings/voice",
+      "console_seam": "writer",
+      "local": {"method": "GET"},
+      "example": {"request": "req-read", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["request", "session"], "path": "/v1/settings/voice"}
+      ],
+      "decode": {"reply": "machine", "route": {"path": "/v1/settings/voice"}}
+    },
+    {
+      "op": "voice-settings-update",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/settings/voice",
+      "console_seam": "writer",
+      "local": {"method": "POST", "device": true},
+      "example": {"changes": {"voice_polish": true}, "request": "req-write", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["changes", "request", "session"], "path": "/v1/settings/voice", "local_body": ["voice_polish"]}
+      ],
+      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 5, "properties": {"voice_polish": {"type": "bool", "nullable": true}, "voice_polish_assistant": {"type": "string", "nullable": true, "enum": ["claude", "codex"]}, "voice_polish_level": {"type": "string", "nullable": true, "enum": ["punctuation", "tidy"]}, "voice_vocabulary": {"type": "list", "nullable": true, "max_items": 200, "items": {"type": "string", "max_bytes": 256}, "copies": {"max_items": "nextconfig.MaxVoiceVocabularyTerms"}}, "voice_vocabulary_projects": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/voice", "body": {"object": "changes"}}}
+    },
+    {
       "op": "work-gate-settings",
       "kind": "read",
       "write_gate": false,

@@ -719,6 +719,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/notification-rules"}, s.notificationRulesRoute},
 		{Route{"*", "/v1/settings/notifications"}, s.notificationSettingsRoute},
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
+		{Route{"*", "/v1/settings/voice"}, s.voiceSettingsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
 		{Route{"*", "/v1/settings/workflow"}, s.workflowSettingsRoute},
 		{Route{"*", "/v1/settings/integrations"}, s.integrationSettingsRoute},
