@@ -471,3 +471,8 @@ The continuation's text, condition and single delivery are unchanged, so the
 Both daemon stop paths now share one order that stops the owned hosts before the
 Cloud context. It adds no model input; the `gemini-restart-continue` explanations
 in both languages still apply.
+
+The Gemini Host's native-log reader now also projects turns a `schedule` timer
+starts and reads `manage_task` status results. It only reads the CLI's own log
+for display and sends nothing to the model, so no transparency explanation
+changes.

@@ -641,6 +641,30 @@ console sends directly only when it is present and keeps the browser queue
 above for older machines. The user turn appears in the transcript when the
 queued prompt is written, so another device sees it only then.
 
+**Turns Gemini starts itself (2026-11-11).** ACP streams only a
+`session/prompt`. When Gemini wakes itself, after a background task or a
+`schedule` timer, nothing crosses ACP and only the native log
+`brain/<id>/.system_generated/logs/transcript_full.jsonl` records it
+(`internal/adapters/antigravitysession/background.go`). After a turn ends
+normally with tools still running, the Host follows that log. The first version
+began projecting Gemini's own turn only on a `Task id "…" finished with result:`
+message. On 2026-11-11 a deploy turn set a 20-second `schedule` timer; Gemini
+woke 12 times over six minutes, checked the deploy, wrote short progress lines
+and two final reports, and the conversation showed none of it after "Waiting for
+the backend build". A live repeat with `sleep 40` and a 15-second timer logged
+no finished message at all: Gemini learned the task was done from `manage_task`.
+
+A system message from one of the conversation's own tasks (`sender=<id>/task-N`,
+which is how a timer fires) now also starts that projection, and ends the tool
+of a timer the watch follows. A `manage_task` result `Task: <id>` /
+`Status: DONE` (or a failure status) ends the matching followed task. The turn's
+one running `Run schedule` tool is paired with the latest `Timer:` task the log
+started; several are left unpaired because ACP titles them alike. Replaying that
+day's real log through the change showed every progress line, tool and report,
+with all tools completed and the watch ending after the last reply. The real log
+is private and is not in the repository; the tests use synthetic rows of the
+same shape.
+
 **A restart that kills the worker first (2026-11-11).** A dev install stopped
 the daemon at 11:59:24 while a Gemini turn sent at 11:55:18 was still running.
 The turn ended as `antigravity_process_cancelled`, its record had no

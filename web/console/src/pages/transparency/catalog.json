@@ -3230,7 +3230,7 @@
     "internal/adapters/antigravityprocess/client.go": "e556e2684a7b83ce9d694149af2b2faa63699f29c8e0f8b495a8c9e574213449",
     "internal/adapters/antigravityprocess/grok_routing.go": "b0ef1c0c37fd040f485af4a4b94da5b3378c093c27a2b5741fd90df90af32050",
     "internal/adapters/antigravityprocess/lifecycle.go": "996e78a33213f74dafcf8a6b11ac82e647fca79ee91a419162359a1a6a65bb0b",
-    "internal/adapters/antigravitysession/background.go": "5511f4f55e48bb1d38df992f6243a1f7c5a416518779d706bec093a9a4844d0c",
+    "internal/adapters/antigravitysession/background.go": "fc4a9b0a70dacbb7044a5303ebd6a22fb5c5a7914c75b03c4cfaa8d49f757283",
     "internal/adapters/antigravitysession/context.go": "f0885a69a11e075dbe343e59d33d316e107cdbddda042749877cf9f58df9d129",
     "internal/adapters/antigravitysession/continue.go": "90d684e85716a03590c609b36437c19e1adac1708915c956f07567f2c3c4cb0c",
     "internal/adapters/antigravitysession/grok.go": "29165034f2efe9349a807c745c65153e31f03e83060c70279317cade1566799a",

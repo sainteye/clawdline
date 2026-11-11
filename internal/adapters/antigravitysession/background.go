@@ -61,7 +61,12 @@ type nativeWatch struct {
 var (
 	taskStartedPattern  = regexp.MustCompile(`background task with task id: (\S+)`)
 	taskFinishedPattern = regexp.MustCompile(`Task id "([^"]+)" finished with result:`)
-	exitCodePattern     = regexp.MustCompile(`Command exited with code (-?\d+)`)
+	// A message from one of the conversation's own tasks, such as a schedule
+	// timer firing. Gemini answers it with a turn of its own.
+	taskSenderPattern = regexp.MustCompile(`sender=(\S+/task-\d+)`)
+	// manage_task status: "Task: <id>" then "Status: RUNNING|DONE|...".
+	taskStatusPattern = regexp.MustCompile(`Task: (\S+)\s+Status: ([A-Z_]+)`)
+	exitCodePattern   = regexp.MustCompile(`Command exited with code (-?\d+)`)
 )
 
 func (h *Host) nativeLogPath(conversationID string) string {
@@ -125,6 +130,25 @@ func sameCommand(title, desc string) bool {
 		return false
 	}
 	return title == desc || strings.HasPrefix(desc, title) || strings.HasPrefix(title, desc)
+}
+
+// scheduleTitle is how ACP titles Gemini's schedule tool; its native task
+// description starts with timerDescription.
+const (
+	scheduleTitle    = "Run schedule"
+	timerDescription = "Timer: "
+)
+
+// nativeTaskStatus maps a manage_task status to a tool status, or "" while
+// the task still runs or the status is not one this reader knows.
+func nativeTaskStatus(status string) string {
+	switch status {
+	case "DONE", "COMPLETED", "FINISHED", "SUCCEEDED":
+		return "completed"
+	case "ERROR", "FAILED", "KILLED", "CANCELLED", "CANCELED":
+		return "failed"
+	}
+	return ""
 }
 
 func resultStatus(content string) string {
@@ -194,11 +218,16 @@ func (h *Host) watchBackground(c *conversation) {
 	}
 	started := map[string]string{} // task ID -> description, latest wins
 	var last int64 = -1
+	latestTimer := ""
 	for _, r := range rows {
 		last = *r.Index
 		if r.Source == "MODEL" && r.Type == "GENERIC" && r.Status == "RUNNING" {
 			if m := taskStartedPattern.FindStringSubmatch(r.Content); m != nil {
-				started[m[1]] = taskDescription(r.Content)
+				desc := taskDescription(r.Content)
+				started[m[1]] = desc
+				if strings.HasPrefix(desc, timerDescription) {
+					latestTimer = m[1]
+				}
 			}
 		}
 	}
@@ -213,6 +242,19 @@ func (h *Host) watchBackground(c *conversation) {
 		if len(match) == 1 {
 			w.tasks[task] = match[0]
 			delete(running, match[0])
+		}
+	}
+	// ACP titles every schedule call alike, so only the turn's one running
+	// schedule is paired, with the latest timer the log started.
+	var schedules []string
+	for id, title := range running {
+		if title == scheduleTitle {
+			schedules = append(schedules, id)
+		}
+	}
+	if len(schedules) == 1 && latestTimer != "" {
+		if _, taken := w.tasks[latestTimer]; !taken {
+			w.tasks[latestTimer] = schedules[0]
 		}
 	}
 	if len(w.tasks) == 0 {
@@ -311,20 +353,25 @@ func (c *conversation) nativeTool(id string, status string, title *string) error
 // that turn, so only a background task's own result is taken from the log.
 func (h *Host) applyNative(c *conversation, w *nativeWatch, r nativeRow) error {
 	if r.Source == "SYSTEM" && r.Type == "SYSTEM_MESSAGE" {
-		m := taskFinishedPattern.FindStringSubmatch(r.Content)
-		if m == nil {
+		task, status := "", ""
+		if m := taskFinishedPattern.FindStringSubmatch(r.Content); m != nil {
+			task, status = m[1], resultStatus(r.Content)
+		} else if m := taskSenderPattern.FindStringSubmatch(r.Content); m != nil {
+			// A timer firing is that schedule call's end, and a wake-up.
+			task, status = m[1], "completed"
+		} else {
 			return nil
 		}
-		id, ok := w.tasks[m[1]]
-		if !ok {
+		if id, ok := w.tasks[task]; ok {
+			delete(w.tasks, task)
+			if err := c.nativeTool(id, status, nil); err != nil {
+				return err
+			}
+		} else if !strings.HasPrefix(task, c.row.ConversationID+"/") {
 			return nil
-		}
-		delete(w.tasks, m[1])
-		if err := c.nativeTool(id, resultStatus(r.Content), nil); err != nil {
-			return err
 		}
 		if !c.busy {
-			// Gemini answers its own task's result with a turn of its own.
+			// Gemini answers its own task's message with a turn of its own.
 			c.nativeTurn = true
 			c.touchActivity()
 		}
@@ -368,6 +415,16 @@ func (h *Host) applyNative(c *conversation, w *nativeWatch, r nativeRow) error {
 		}
 		id := w.awaiting[0]
 		w.awaiting = w.awaiting[1:]
+		if m := taskStatusPattern.FindStringSubmatch(r.Content); m != nil {
+			if tool, ok := w.tasks[m[1]]; ok {
+				if done := nativeTaskStatus(m[2]); done != "" {
+					delete(w.tasks, m[1])
+					if err := c.nativeTool(tool, done, nil); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		if r.Status == "RUNNING" {
 			if m := taskStartedPattern.FindStringSubmatch(r.Content); m != nil {
 				w.tasks[m[1]] = id
