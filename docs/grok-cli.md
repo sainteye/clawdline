@@ -116,7 +116,9 @@ Pinned summaries require the machine's additive `info_summary_v1` capability;
 an older machine is refused rather than read through an unpinned fallback.
 
 The provider quota bar retains Grok when a completed provider read reports
-`no_reading`, or an earlier observation exists. With no valid percentage it
+`no_reading` or an expired saved sign-in (`reauth_required`), or an earlier
+observation exists; an expired sign-in names the command that renews it instead
+of making Grok disappear. With no valid percentage it
 shows unknown without a progress bar or an invented zero. An initial empty slot
 or signed-out account stays hidden. Mobile visibility remains limited to the
 Session list. The Session footer and full Info also show the responding machine's
@@ -125,8 +127,9 @@ flight and fifteen-minute cooldown, without refreshing other providers. Account
 changes and logout invalidate the previous identity; older readings are marked
 outdated and retain their observation time. The footer never overlays an
 assistant-only reading from a previously selected machine. Missing percentages
-stay unknown rather than zero. Closing the quota dialog with Escape preserves the underlying Session
-and returns focus to the button that opened it.
+stay unknown rather than zero. Closing the quota dialog with Escape, its close button or a click on the
+backdrop preserves the underlying Session and returns focus to the button that
+opened it. The dialog's heading and close button stay pinned while its rows scroll.
 
 An acknowledged Grok ACP `-32003` becomes `grok_turn_rate_limited`, with a
 localized explanation. Other providers keep their existing failures. Grok process failures retain their

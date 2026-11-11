@@ -103,11 +103,13 @@ test("Grok with a proven missing reading stays visible without an invented windo
   assert.deepEqual(visibleQuotaRows([missing]),[missing])
   assert.equal(compactWindow(missing),undefined)
   assert.deepEqual(compactQuotaRows([missing,row("codex",0)],2).map(r=>r.id),["codex","grok"])
-  for (const problem of [undefined,"not_signed_in","unreadable","invalid_response","reauth_required","rate_limited","unavailable"]) {
+  for (const problem of [undefined,"not_signed_in","unreadable","invalid_response","rate_limited","unavailable"]) {
     assert.deepEqual(visibleQuotaRows([{...missing,problem}]),[],String(problem))
   }
   assert.deepEqual(visibleQuotaRows([{...missing,observed_at:100,problem:"unavailable",stale:true}]).map(r=>r.id),["grok"])
   assert.deepEqual(visibleQuotaRows([{...row("grok",20),problem:"not_signed_in"}]),[])
+  // An expired saved sign-in is a problem the details explain, not a reason to drop Grok.
+  assert.deepEqual(visibleQuotaRows([{...row("grok",0),windows:[],problem:"reauth_required"}]).map(r=>r.id),["grok"])
   assert.equal(visibleQuotaRows([row("grok",0)])[0].windows[0].used_percent,0)
   assert.deepEqual(visibleQuotaRows([{...missing,id:"gemini"}]),[])
 })
