@@ -470,3 +470,79 @@
   width: 20px;
   height: 20px;
 }
+
+/* Copilot Logs */
+.realtime-logs-container {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.realtime-logs-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.realtime-logs-toggle-btn:hover {
+  color: var(--ink);
+}
+
+.logs-count {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.realtime-logs-list {
+  background: var(--bg-alt, #18181b);
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-height: 140px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-item {
+  display: flex;
+  gap: 6px;
+  word-break: break-all;
+}
+
+.log-time {
+  color: var(--dim, #71717a);
+  flex-shrink: 0;
+}
+
+.log-tag {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.log-level-info .log-tag {
+  color: #38bdf8;
+}
+
+.log-level-tool .log-tag {
+  color: #fbbf24;
+}
+
+.log-level-error .log-tag {
+  color: #f87171;
+}
+
+.log-text {
+  color: var(--ink, #f4f4f5);
+}
