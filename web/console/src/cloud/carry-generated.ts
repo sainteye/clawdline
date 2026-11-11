@@ -25,6 +25,15 @@ export const CARRIED = {
   "archived-sessions": "GET /v1/sessions/archived",
   board: "GET /v1/board?project=&item=",
   "board-command": "POST /v1/board",
+  "browser-invite-cancel": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-decide": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-list": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-revoke": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  // Browser invitations (docs/browser-invite.md): the machine sheet's Name and
+  // access tab asks these directly through the copied client's machine request;
+  // no console route stands for them.
+  "browser-invite-start": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
+  "browser-invite-status": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",

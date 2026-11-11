@@ -1622,6 +1622,83 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.browser_invite_history",
+    "Class": "progress",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.BrowserInviteHistoryLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.browser_invite_name_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.BrowserInviteNameLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.browser_invite_request_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxBrowserInviteBody"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.browser_invites_live",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.BrowserInvitesLiveLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.content_key_epoch_record_bytes",
     "Class": "buffer",
     "Unit": "bytes",

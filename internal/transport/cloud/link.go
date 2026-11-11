@@ -160,6 +160,10 @@ type Viewer struct {
 	// "I revoked it" is visible rather than a row quietly disappearing.
 	Revoked   bool  `json:"revoked,omitempty"`
 	RevokedAt int64 `json:"revoked_at,omitempty"`
+	// Invited is a browser a browser invitation admitted; ExpiresAt is when
+	// that admission ends, Unix seconds, and 0 for never.
+	Invited   bool  `json:"invited,omitempty"`
+	ExpiresAt int64 `json:"expires_at,omitempty"`
 }
 
 // StateOff is the state of a link whose switch is off. It is deliberately not
@@ -264,6 +268,7 @@ type Link struct {
 	pinned          *adaptercloud.PinnedStore
 	pairing         *Pairing
 	identityPairing *IdentityPairing
+	browserInvites  *BrowserInvites
 
 	transport *adaptercloud.Transport
 	relay     *Relay
@@ -698,6 +703,24 @@ func Open(opts LinkOptions) (*Link, error) {
 		Now:    opts.Now,
 		Log:    opts.Log,
 	}
+	// Browser invitations admit a browser with no account to this machine
+	// alone; they share the pairing's client, keys, pins and revocation.
+	link.browserInvites = &BrowserInvites{
+		AccountID:  identity.AccountID,
+		MachineID:  identity.MachineID,
+		Credential: identity.MachineCredential,
+		Client:     link.pairing.Client,
+		Keys:       link.pairingKeys,
+		Pinned:     link.pinned,
+		Revoke:     link.pairing.Revoke,
+		Now:        opts.Now,
+		Log:        opts.Log,
+	}
+	link.pairing.OnInvitedRevoke = func(device string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), adaptercloud.OpeningTimeout)
+		defer cancel()
+		return link.pairing.Client.RevokeInvitedBrowser(ctx, identity.MachineCredential, device)
+	}
 	if err := link.wire(); err != nil {
 		link.fail(err)
 		return link, nil
@@ -754,6 +777,10 @@ func (l *Link) wire() error {
 		l.identityPairing.Generation = &l.contentAuthority.generation
 		l.identityPairing.ContentState = epoch.Current
 		l.identityPairing.Pinned = l.pinned
+		if l.browserInvites != nil {
+			l.browserInvites.Authority = &l.contentAuthority.mu
+			l.browserInvites.ContentState = epoch.Current
+		}
 	} else {
 		secret, err = domaincloud.LoadOrCreateMasterSecret(keys, rand.Reader)
 		if err != nil {
@@ -1594,7 +1621,26 @@ func (l *Link) publicKeyFor(sender string) (ed25519.PublicKey, bool) {
 	if l.roster == nil {
 		return nil, false
 	}
+	if l.rosterInvited(sender) {
+		// An invited browser with no live pin here has expired, been revoked,
+		// or was admitted by another machine. The roster must not admit it.
+		return nil, false
+	}
 	return l.roster.PublicKeyFor(sender)
+}
+
+// rosterInvited reports whether the account roster calls sender an invited
+// browser.
+func (l *Link) rosterInvited(sender string) bool {
+	if l.roster == nil {
+		return false
+	}
+	for _, device := range l.roster.Devices() {
+		if device.ID == sender {
+			return device.Kind == adaptercloud.RosterKindInvitedBrowser
+		}
+	}
+	return false
 }
 
 // Pairing is the handover this link drives, for the routes that start one.
@@ -1602,6 +1648,9 @@ func (l *Link) Pairing() *Pairing { return l.pairing }
 
 // IdentityPairing is the content-key handover, nil before the identity loads.
 func (l *Link) IdentityPairing() *IdentityPairing { return l.identityPairing }
+
+// BrowserInvites admits browsers with no account, nil before the identity loads.
+func (l *Link) BrowserInvites() *BrowserInvites { return l.browserInvites }
 
 // pairingKeys reads the two keys a handover carries, from the store, now.
 func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, error) {
@@ -1634,6 +1683,7 @@ func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, err
 func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519.PublicKey, requiresWriteGate bool) cloudops.Authority {
 	readable, _ := l.roster.Readable()
 	var pairedKey ed25519.PublicKey
+	invited := false
 	if l.pinned != nil {
 		if refused, err := l.pinned.Refused(sender); err != nil || refused {
 			// A device this machine threw out, or a pin file it cannot read.
@@ -1643,9 +1693,11 @@ func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519
 		}
 		if key, ok, err := l.pinned.PublicKeyFor(sender); err == nil && ok {
 			pairedKey = key
+			invited = l.pinned.IsInvited(sender)
 		}
 	}
 	a := cloudops.Authority{
+		Invited: invited,
 		// The clock guard is not wired yet; the transport admits on the relay's
 		// own timestamp window today. Saying `true` here is reporting what is
 		// actually checked rather than claiming a check that does not run —
@@ -1661,6 +1713,10 @@ func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519
 			continue
 		}
 		if device.RevokedAt != nil && *device.RevokedAt != "" {
+			return a
+		}
+		if device.Kind == adaptercloud.RosterKindInvitedBrowser && pairedKey == nil {
+			// Admitted only by a live local pin, never by the roster alone.
 			return a
 		}
 		if requiresWriteGate {
@@ -1826,6 +1882,7 @@ func (l *Link) Status() Status {
 				ID: device.DeviceID, Name: device.Name, Fingerprint: device.Fingerprint,
 				Scope: device.EffectiveScope(), Pinned: true, PairedAt: device.PairedAt,
 				Revoked: !device.Active(), RevokedAt: device.RevokedAt,
+				Invited: device.Invited, ExpiresAt: device.ExpiresAt,
 			})
 		}
 	}

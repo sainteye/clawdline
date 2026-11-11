@@ -37,6 +37,7 @@ export const VIEWER_CAPABILITIES = [
 
 const DEVICE_KEY = "clawdline.viewer.device";
 const DEVICE_PUBLIC_KEY = "clawdline.viewer.public";
+const INVITED_DEVICE = "clawdline.invited-device";
 const SEQUENCE_KEY = "clawdline.viewer.sequence";
 const SEQUENCE_BLOCK = 64;
 // Where the device's sequence ceiling is reserved. Its own database, so the key store's schema
@@ -340,6 +341,8 @@ export class CloudViewerSession {
         this.devicePrivateKey = null;
         this.tokenIdentity = null;
         this.devicePublicKey = null;
+        // Set when this browser was admitted by a browser invitation: its one machine.
+        this.invited = null;
         // Additive relay support must ship before the production composition root opts in.
         this.enableViewerRekey = options.enableViewerRekey === true;
         this.client = null;
@@ -377,6 +380,13 @@ export class CloudViewerSession {
         } else if (!sessionRefused(existing, "no_session")) {
             throw responseError(existing, "session_unavailable",
                 "Clawdline could not check this browser's session", sessionFailureIsTerminal(existing));
+        }
+        // A browser a machine admitted by invitation holds a cookie the account routes refuse
+        // (docs/browser-invite.md). It is ready here, bound to that one machine, and never goes on
+        // to register an account device of its own.
+        // Only a browser that adopted an invitation asks: an account browser makes no extra request.
+        if (this.adoptedInvitation() && await this.invitedSession()) {
+            return { state: "ready", accountID: this.account, deviceID: this.deviceID, invited: this.invited };
         }
 
         var pair = await this.crypto.subtle.generateKey(
@@ -420,6 +430,66 @@ export class CloudViewerSession {
         // exported cannot be asked for its public key either, and pairing has to state it.
         this.storage.setItem(DEVICE_PUBLIC_KEY + ":" + this.deviceID, bytesToBase64(publicKey));
         return { state: "ready", accountID: this.account, deviceID: this.deviceID };
+    }
+
+    /** Whether this browser ever adopted an invitation. Storage that cannot be read says no. */
+    adoptedInvitation() {
+        try { return Boolean(this.storage && this.storage.getItem(INVITED_DEVICE)); } catch (e) { return false; }
+    }
+
+    /** Whether this browser holds an invited session it can use; sets account, device and machine. */
+    async invitedSession() {
+        var got = await json(this.fetch, this.config.apiOrigin + "/v1/pairing/browser-invites/session");
+        if (got.status !== 200 || !hasSessionIdentity(got.body) || typeof got.body.machine_id !== "string"
+            || !got.body.machine_id) return false;
+        if (!(await this.restoreDeviceKey(got.body.device_id))) return false;
+        this.account = got.body.account_id;
+        this.deviceID = got.body.device_id;
+        this.invited = {
+            machineID: got.body.machine_id,
+            machineName: typeof got.body.machine_name === "string" ? got.body.machine_name : "",
+            expiresAt: typeof got.body.expires_at === "string" ? got.body.expires_at : null
+        };
+        this.caps = await this.readCapabilities();
+        return true;
+    }
+
+    /**
+     * Keep what a browser invitation handed over (`cloud/browser-invite.ts`): the device key the
+     * browser joined with, and the machine's content key, sender key and binding, stored under the
+     * same names an ordinary pairing uses so the client reads them unchanged. The machine's signing
+     * key must match the fingerprint the machine sealed beside it.
+     */
+    async adoptInvitedBrowser(result) {
+        var handover = result.handover;
+        var signing = base64ToBytes(handover.machineSigningKey);
+        if (handover.machineFingerprint && (await ed25519Fingerprint(signing)) !== handover.machineFingerprint) {
+            throw pairingError("fingerprint_mismatch", "the machine's signing key does not match its fingerprint");
+        }
+        this.account = result.accountID;
+        this.deviceID = result.deviceID;
+        this.devicePrivateKey = result.devicePrivateKey;
+        this.devicePublicKey = result.devicePublicKey;
+        await storeCryptoKey(DEVICE_KEY + ":" + this.deviceID, result.devicePrivateKey, this.indexedDB);
+        this.storage.setItem(DEVICE_PUBLIC_KEY + ":" + this.deviceID, bytesToBase64(result.devicePublicKey));
+        var machineID = result.machineID;
+        await storePairingCryptoKeys({
+            masterName: this.machineMasterKeyName(machineID),
+            masterKeyIDName: this.machineMasterKeyIDName(machineID),
+            masterKey: await importMasterSecret(base64ToBytes(handover.masterSecret)),
+            keyID: handover.keyID,
+            senderName: this.machineSenderKeyName(machineID, machineID),
+            senderKey: await importSenderPublicKey(signing),
+            bindingName: this.machineBindingName(machineID),
+            binding: { v: 1, machineID: machineID, senderID: machineID, keyID: handover.keyID, legacy: false,
+                epoch: handover.keyID === "ms-1" ? 1 : Number((/^mk-([1-9][0-9]*)-[a-f0-9]{64}$/
+                    .exec(handover.keyID) || [])[1]) || undefined },
+            preserve: { masterName: this.masterKeyName(),
+                masterKeyIDName: this.masterKeyIDName(),
+                senderName: this.senderKeyName(machineID) }
+        }, this.indexedDB);
+        this.invited = { machineID: machineID, machineName: result.machineName || "", expiresAt: result.expiresAt || null };
+        this.storage.setItem(INVITED_DEVICE, this.deviceID);
     }
 
     /** Safe metadata available only under the still-live, fresh OAuth login ticket. */

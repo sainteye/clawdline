@@ -386,6 +386,26 @@
     "Note": true
   },
   {
+    "Name": "cloud.browser_invite_history",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.browser_invite_name_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.browser_invite_request_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.browser_invites_live",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.content_key_epoch_record_bytes",
     "Known": true,
     "Note": true

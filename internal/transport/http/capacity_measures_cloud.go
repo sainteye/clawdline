@@ -33,6 +33,34 @@ func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Unmeasured("Cloud link does not expose raw key exchange usage")
 		},
+		"cloud.browser_invites_live": func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "Cloud line is off; no browser invitation can be live"}
+			}
+			if holder, ok := line.(CloudBrowserInviteLine); ok && holder.BrowserInvites() != nil {
+				used, _ := holder.BrowserInvites().Counts()
+				return capacity.Reading{Known: true, Used: int64(used)}
+			}
+			return capacity.Reading{Known: true, Note: "this machine is not signed in to Cloud; no browser invitation can be live"}
+		},
+		"cloud.browser_invite_history": func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "Cloud line is off; nothing is kept"}
+			}
+			if holder, ok := line.(CloudBrowserInviteLine); ok && holder.BrowserInvites() != nil {
+				_, kept := holder.BrowserInvites().Counts()
+				return capacity.Reading{Known: true, Used: int64(kept)}
+			}
+			return capacity.Reading{Known: true, Note: "this machine is not signed in to Cloud; nothing is kept"}
+		},
+		"cloud.browser_invite_name_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-invitation name guard; no retained buffer"}
+		},
+		"cloud.browser_invite_request_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request body guard; no retained buffer"}
+		},
 		"cloud.rekey_interval": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "global raw-offer admission interval; excess requests are refused"}
 		},

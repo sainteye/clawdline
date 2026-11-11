@@ -1,0 +1,40 @@
+{
+  "invite_id": "K7M4Q",
+  "secret": "9X2FTB",
+  "machine_id": "mac_00000000-0000-4000-8000-000000000001",
+  "browser_scalar": "da3d23700a9e5699258aef94dc060dfda5ebb61f02a5ea77fad53f4ff0976d08",
+  "machine_scalar": "d2316b454718c35362d83d69df6320f38578ed5984651435e2949762d900b80d",
+  "browser_message": "3e81f001e818a3d5570039972f79c0447d880800803b8c3b17d61e1bb6406072",
+  "machine_message": "fa446b737c0132464d0471bd0b11589c2e332018d96f7742d9d5b03459289e4c",
+  "isk": "4c0707e1c5081950c18af3bfa777ff0930564cf9e4eca7859f2eeeb3956daaab18f7c6194a8de7d7b178c2f03bb6667c91c1acb8e772dcfd05e1309f47dc7347",
+  "confirm_key": "bb0c4f8bbd5d7221f03c5c6aecca1f6fdb9b9c5d1d1c9085677ddab52b14de16",
+  "handover_key": "94bd068d1d4b7c391096358d7ee310f998069fa02354a0c09f40eb11816b4173",
+  "code": "101215",
+  "confirm_nonce": "000102030405060708090a0b",
+  "confirm": {
+    "v": 1,
+    "type": "clawdline_browser_invite_confirm",
+    "invite_id": "K7M4Q",
+    "machine_id": "mac_00000000-0000-4000-8000-000000000001",
+    "device_id": "dev_00000000-0000-4000-8000-000000000002",
+    "public_key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "name": "Linux · Chrome"
+  },
+  "sealed_confirm": "AAECAwQFBgcICQoL2/m6t2ugeSpnwDAcbrnRPI42CDwqlyuWX/xKkq56u7vQ0RfQICZm7yj+uTCx9fVJ1Vo9BS/i6F7rppEVwXCJQ/Pr2jZznmKwjb6/Y9cH8jNNd1st5njyqTcewm9RdK8ARrQPI7PYnSO0sjUGLfY5sMq1zpMte0YpYyqQhkoejCam8Dlu4CDir8kpH6q5oCepLVtDoIV2fHnoHfh4cnf51ieTYo5YdVGLtffZjAg0kB1PEXylUAvgsOPJCmfLkc4JeFcZlR8NPFVMz9NkKUQzRnReG0lAhCo/p80ItM7X+Hatu/vrxDIbdFZTn+rxyJBGwjWxruU2ZhTWXhjLA2QHgzkJqMKcYAKfUSgckuWb3Mk/wNMsLcAJdzQ=",
+  "handover_nonce": "0c0d0e0f1011121314151617",
+  "handover": {
+    "v": 1,
+    "type": "clawdline_browser_invite_handover",
+    "invite_id": "K7M4Q",
+    "account_id": "acct_00000000-0000-4000-8000-000000000003",
+    "machine_id": "mac_00000000-0000-4000-8000-000000000001",
+    "machine_signing_key": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "machine_fingerprint": "TEST-FING-ERPR-INT0",
+    "key_id": "ms-1",
+    "master_secret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "device_id": "dev_00000000-0000-4000-8000-000000000002",
+    "scope": "operate",
+    "expires_at": 1800000000
+  },
+  "sealed_handover": "DA0ODxAREhMUFRYXWOvFlgDUS7y0sFDFARZ45QsEDT+M493Gou7XbTrrGldZQBb+EkGLTPNQiAB4RGKjmrHO84XCtaiII6Yhxf/2yRBwa8LmPfUfpyIkyrqV5/k/VF/3aKrGBa9dvPNULsFtTOHDBWf1XVqtJHO2Pg++DodZOD25yifyWny2fTuNU7IINrjPRia0X0SMDL46rBin36o3PzH7Yp+qWUMir2S6h/F/AOzGrw7/kJEH5Sk72f8pkBfYrJ9EPnMoVZdnJCtNrVL7wpXCQ+9wcb16BAQ5OlPDS68FiE9vKItjaoaawfReQ8XqwMr44BhEZqohVOf4HqzI0FSuAwKCwH8RFjmsAYjJ4vYe1LNUxL9jtfVE3KTAHjltQ2ZY35cKfBUgzpKTEG4bBitAzUdGg6N/zi0hiXc/5PUEJF1WBsNarki5jTRUsfyOo23Vk8pTySC6IE7EsyiJcjwOy5wreQM2YkEGN60P30RvNSROxn86sHq26SC/L7Q2Vvzz+su2UgHQ4DqovGsDRkETu8cfGvINSpvxeDbKNwWLaXSic1MfM2wLx9QjO7ohfGqozbjXGuDaksB2NcxjGGBbOtSs+w7FqytWwq1AeFyg2kOZUmcOGoS3TojmFbee+bOarhgkj5E5qOet+rhxV1Os1ew="
+}

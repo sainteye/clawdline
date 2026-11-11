@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11033,
-  "riskKeys": 4854,
-  "nonRiskCount": 6179,
+  "englishContentKeys": 11098,
+  "riskKeys": 4892,
+  "nonRiskCount": 6206,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 439,
+      "count": 441,
       "sources": [
         null
       ],
@@ -464,6 +464,8 @@
         "capacityRow.cache.transcript_delta_pages.full",
         "capacityRow.cache.transcript_delta_pages.what",
         "capacityRow.callback.per_machine.what",
+        "capacityRow.cloud.browser_invite_name_characters.what",
+        "capacityRow.cloud.browser_invite_request_bytes.what",
         "capacityRow.cloud.content_key_epoch_record_bytes.what",
         "capacityRow.cloud.envelope_key_id.what",
         "capacityRow.cloud.header_read_diagnostic_seconds.what",
@@ -3797,7 +3799,7 @@
     },
     {
       "name": "next / other",
-      "count": 686,
+      "count": 711,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3903,6 +3905,21 @@
         "next.infoGrokAccountQuota",
         "next.infoReasoningEffort",
         "next.infoResetsInMinutes",
+        "next.invAdmitted",
+        "next.invAdmitting",
+        "next.invAnother",
+        "next.invCancel",
+        "next.invCompareTitle",
+        "next.invEnded",
+        "next.invExchanging",
+        "next.invExpiry7d",
+        "next.invExpiry8h",
+        "next.invListTitle",
+        "next.invOperateWarning",
+        "next.invStart",
+        "next.invTitle",
+        "next.invUnavailable",
+        "next.invUntil",
         "next.issueAuthCancel",
         "next.issueAuthContinue",
         "next.issueAuthCopied",
@@ -3934,6 +3951,16 @@
         "next.issueTrackersConnect",
         "next.issueTrackersDisconnect",
         "next.issueTrackersTitle",
+        "next.joinAgain",
+        "next.joinCodeLabel",
+        "next.joinCompareTitle",
+        "next.joinExchanging",
+        "next.joinIntro",
+        "next.joinJoining",
+        "next.joinRateLimited",
+        "next.joinSubmit",
+        "next.joinTitle",
+        "next.joinUsed",
         "next.machineDiskFree",
         "next.machineMonitoringNav",
         "next.machineNeedsUpdateLink",

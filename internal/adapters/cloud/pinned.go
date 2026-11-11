@@ -85,10 +85,26 @@ type PinnedDevice struct {
 	// A revoked row is kept rather than deleted: the row is the refusal, and
 	// deleting it would let the cloud's roster quietly re-admit the device.
 	RevokedAt int64 `json:"revoked_at,omitempty"`
+	// Invited marks a browser admitted by a browser invitation rather than an
+	// account pairing. Such a browser has no Clawdline account of its own and
+	// may not use the words that run as this machine (cloudops checks).
+	Invited bool `json:"invited,omitempty"`
+	// ExpiresAt ends the admission, in Unix seconds; 0 never ends it. An
+	// expired row refuses its device exactly as a revoked one does, so the
+	// account roster cannot re-admit it either.
+	ExpiresAt int64 `json:"expires_at,omitempty"`
+}
+
+// pinnedNow is the clock expiry is judged by; tests replace it.
+var pinnedNow = time.Now
+
+// Expired reports whether this row's admission has ended by time.
+func (d PinnedDevice) Expired() bool {
+	return d.ExpiresAt != 0 && pinnedNow().Unix() >= d.ExpiresAt
 }
 
 // Active reports whether this row still admits its device.
-func (d PinnedDevice) Active() bool { return d.RevokedAt == 0 }
+func (d PinnedDevice) Active() bool { return d.RevokedAt == 0 && !d.Expired() }
 
 func (d PinnedDevice) EffectiveScope() string {
 	if d.Scope == "" {
@@ -236,6 +252,22 @@ func (s *PinnedStore) PublicKeyFor(sender string) (ed25519.PublicKey, bool, erro
 		return nil, false, fmt.Errorf("%w: %s holds an unusable public key", ErrPinnedUnreadable, sender)
 	}
 	return nil, false, nil
+}
+
+// IsInvited reports whether sender's active pin came from a browser
+// invitation. An unreadable file answers false; callers check Refused first.
+func (s *PinnedStore) IsInvited(sender string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return false
+	}
+	for _, device := range s.record.Devices {
+		if device.DeviceID == sender && device.Active() {
+			return device.Invited
+		}
+	}
+	return false
 }
 
 // Refused reports whether this machine threw that sender out.
@@ -443,7 +475,7 @@ func (s *PinnedStore) Revoke(deviceID string, at time.Time) (bool, error) {
 		when = time.Now().Unix()
 	}
 	for i := range s.record.Devices {
-		if s.record.Devices[i].DeviceID != deviceID || !s.record.Devices[i].Active() {
+		if s.record.Devices[i].DeviceID != deviceID || s.record.Devices[i].RevokedAt != 0 {
 			continue
 		}
 		s.record.Devices[i].RevokedAt = when

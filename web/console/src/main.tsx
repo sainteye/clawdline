@@ -99,6 +99,11 @@ if (declared && (location.pathname === "/help" || location.pathname.startsWith("
   void import("./support/HelpCenter.js").then(({ HelpCenter }) =>
     render(<HelpCenter declared={declared} />),
   ).catch(startupFailure)
+} else if (declared && (location.pathname === "/join" || location.pathname === "/join/")) {
+  // A browser with no account joining one machine by invitation (docs/browser-invite.md).
+  void import("./cloud/JoinPage.js").then(({ JoinPage }) =>
+    render(<JoinPage declared={declared} />),
+  ).catch(startupFailure)
 } else if (declared && operations) {
   void import("./cloud/admin/AdminGate.js").then(({ AdminGate }) =>
     // Session establishment registers a revocable viewer device. React's

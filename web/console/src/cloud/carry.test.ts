@@ -359,7 +359,12 @@ test("one word, one list, and every route names a word the table carries", () =>
   // The voice cards on Settings (pages/settings/window/VoiceSettingsCards.tsx).
   assert.equal(CARRIED["voice-settings"], "GET /v1/settings/voice")
   assert.equal(CARRIED["voice-settings-update"], "POST /v1/settings/voice")
-  assert.equal(Object.keys(CARRIED).length, 207)
+  // Browser invitations, asked by the machine sheet directly (pages/devices/BrowserInvites.tsx).
+  for (const word of ["browser-invite-start", "browser-invite-list", "browser-invite-status",
+    "browser-invite-decide", "browser-invite-cancel", "browser-invite-revoke"] as const) {
+    assert.match(CARRIED[word], /^BrowserInvites\.tsx /)
+  }
+  assert.equal(Object.keys(CARRIED).length, 213)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

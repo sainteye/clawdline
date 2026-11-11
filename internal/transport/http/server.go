@@ -530,6 +530,8 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/cloud/pairing/identity/decision"}, s.cloudIdentityPairingDecisionRoute},
 		{Route{"*", "/v1/cloud/pairing/agent"}, s.cloudPairingAgentRoute},
 		{Route{"*", "/v1/cloud/pairing/agent/"}, s.cloudPairingAgentTaskRoute},
+		{Route{"*", "/v1/cloud/browser-invites"}, s.cloudBrowserInvitesRoute},
+		{Route{"*", "/v1/cloud/browser-invites/"}, s.cloudBrowserInviteRoute},
 		{Route{"*", "/v1/cloud/devices/revoke"}, s.cloudDeviceRoute},
 		{Route{"*", "/v1/cloud/devices/grant"}, s.cloudViewerScopeRoute},
 		{Route{"*", "/v1/cloud/keys/rotate"}, s.cloudRotateRoute},

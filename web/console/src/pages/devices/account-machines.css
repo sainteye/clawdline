@@ -190,3 +190,18 @@
   @keyframes am-sheet-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes am-sheet-out { from { opacity: 1; } to { opacity: 0; } }
 }
+
+/* Browser invitations (BrowserInvites.tsx) */
+.inv-card { padding: 14px; display: grid; gap: 10px; }
+.inv-expiry { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.inv-expiry legend { width: 100%; margin-bottom: 6px; }
+.inv-expiry label { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px;
+  border: 1px solid #3a3a42; border-radius: 10px; font-size: 14px; cursor: pointer; }
+.inv-expiry label.on { border-color: var(--accent); color: var(--ink); }
+.inv-expiry input { accent-color: var(--accent); margin: 0; }
+.inv-warn { color: var(--ink); }
+.inv-code, .inv-digits { margin: 4px 0; text-align: center; color: var(--ink);
+  font: 700 28px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; overflow-wrap: anywhere; }
+.inv-digits { font-size: 36px; }
+.inv-head { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+.inv-list-label { margin-top: 14px; }

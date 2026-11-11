@@ -10,3 +10,18 @@ func init() {
 		op{name: "pair-agent-status", read: true},
 	)
 }
+
+// Browser invitations admit a browser with no Clawdline account to this
+// machine alone (docs/browser-invite.md). A paired device starts one, reads
+// it, compares the digits and decides; the route answers only this machine,
+// and an invited browser may use none of these words (machineOnlyWords).
+func init() {
+	register(
+		op{name: "browser-invite-start"},
+		op{name: "browser-invite-list", read: true},
+		op{name: "browser-invite-status", read: true},
+		op{name: "browser-invite-decide"},
+		op{name: "browser-invite-cancel"},
+		op{name: "browser-invite-revoke"},
+	)
+}

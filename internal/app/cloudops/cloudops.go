@@ -181,6 +181,11 @@ type Authority struct {
 	// an effect here at all. False by default, everywhere.
 	WriteGateAllows bool
 	ViewerReadOnly  bool
+	// Invited is a sender a browser invitation admitted. It may use the
+	// machine's ordinary words, and never one that runs as this machine
+	// itself (a `local_exemption` row): inviting more browsers, carrying a
+	// pairing to another machine, changing this machine's network.
+	Invited bool
 	// ReadTranscriptAllows is set only after the machine rechecks the viewer's
 	// current roster capability and signing key for the separate r/ rail.
 	ReadTranscriptAllows bool
@@ -667,6 +672,10 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 			Message: "This machine's own routes are not reachable from its Cloud bridge.", fixedCopy: true,
 			Layer: layerRoute}, nil)
 	}
+	if machineOnlyWords[o.name] && b.senderInvited(ctx, cmd) {
+		return b.publish(cmd, plan, Refusal{Status: 403, Code: "invited_browser_machine_word",
+			Message: "An invited browser cannot do that on this machine.", fixedCopy: true}, nil)
+	}
 	req := o.route(plan)
 	if req.Header == nil {
 		req.Header = map[string]string{}
@@ -811,3 +820,12 @@ func idempotencyKey(cmd Command, plan plan) string {
 // rather than a variable so nothing can reassign it and let the publisher and
 // the viewer encode differently.
 func ChannelSegment(value string) string { return domaincloud.ChannelSegment(value) }
+
+// senderInvited asks the machine's authority whether this sender is an
+// invited browser. No authority (tests, a bridge with no link) is not one.
+func (b Bridge) senderInvited(ctx context.Context, cmd Command) bool {
+	if b.Authority == nil {
+		return false
+	}
+	return b.Authority(ctx, cmd.Sender, cmd.VerifiedKey, false).Invited
+}

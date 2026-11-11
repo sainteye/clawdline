@@ -26,6 +26,12 @@ export interface MachineManager {
   forget(machine: CloudMachine): Promise<ForgetOutcome>
   /** Opens pairing for a named machine, or the target picker when null. */
   pair(machine: string | null): void
+  /** Whether that machine's descriptor serves a Cloud word (an older daemon may not). */
+  serves?(machine: string, word: string): boolean
+  /** One Cloud word to that machine, answered or thrown with its refusal code. */
+  ask?(machine: string, word: string, body: Record<string, unknown>, kind: "action" | "read"): Promise<Record<string, unknown>>
+  /** True when this browser is an invited browser rather than an account device. */
+  invited?(): boolean
 }
 
 let installed: MachineManager | null = null

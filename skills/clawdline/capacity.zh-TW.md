@@ -85,6 +85,10 @@
 | `callback.per_machine` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `callback.per_root` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `callback.tail_bytes` | 8192 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `cloud.browser_invite_history` | 8 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `cloud.browser_invite_name_characters` | 64 | `characters` | `refuse` | `diagnostics` | — |
+| `cloud.browser_invite_request_bytes` | 1024 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.browser_invites_live` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `cloud.content_key_epoch_record_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `cloud.envelope_key_id` | 128 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.header_read_diagnostic_rows` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |

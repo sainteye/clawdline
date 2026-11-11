@@ -132,6 +132,35 @@ func healthSealedBounds() []Entry {
 			Sources: []string{"internal/transport/cloud.IdentityPairingLifetimeLimit"},
 		},
 		{
+			// Browser invitations live on one machine at once; the next start
+			// is refused (invite_limit) until one finishes or is cancelled.
+			Name: "cloud.browser_invites_live", Class: Buffer, Unit: Rows,
+			Limit: 3, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/transport/cloud.BrowserInvitesLiveLimit"},
+		},
+		{
+			// Finished invitations kept for the status route; the oldest goes.
+			Name: "cloud.browser_invite_history", Class: Progress, Unit: Rows,
+			Limit: 8, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.BrowserInviteHistoryLimit"},
+		},
+		{
+			// The name an invited browser asks to be shown by; a longer one is
+			// refused and the browser is shown as "Browser".
+			Name: "cloud.browser_invite_name_characters", Class: Buffer, Unit: Characters,
+			Limit: 64, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.BrowserInviteNameLimit"},
+		},
+		{
+			Name: "cloud.browser_invite_request_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 1 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxBrowserInviteBody"},
+		},
+		{
 			// Frames of the stalled goroutine in one /2 owner snapshot; the
 			// writer trims further to fit the snapshot bytes and says so.
 			Name: "cloud.health_sealed_snapshot_frames", Class: Buffer, Unit: Rows,
