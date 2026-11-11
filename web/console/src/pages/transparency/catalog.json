@@ -3271,7 +3271,7 @@
     "internal/adapters/antigravitysession/continue.go": "e9881d3f690e41772da5399edffd43c63f5dd647322810a864e863beca76b550",
     "internal/adapters/antigravitysession/grok.go": "29165034f2efe9349a807c745c65153e31f03e83060c70279317cade1566799a",
     "internal/adapters/antigravitysession/history.go": "63a23392dee2ab253a9ebd1c6968d6388b25a4e02cf49d57df7d92a5121c6c25",
-    "internal/adapters/antigravitysession/host.go": "2426e8e8f657996957d87a9c25d04508325ce18ccfad83d97782766c028d1814",
+    "internal/adapters/antigravitysession/host.go": "1c6b69099724dadb695bb22f210a3813a831006f2c01c10d2591d86029e79e48",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/antigravitysession/turnend.go": "0e37dc41dcf875f0cbc8d12ddeee5e9fb603ac309a400fb4d2ab594f8c09d32d",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",

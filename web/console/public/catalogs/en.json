@@ -11031,5 +11031,6 @@
   "admin.visitsPeriodAccounts": "Distinct accounts in this period: {n}",
   "admin.visitsDailyTaipei": "Daily · Taipei time",
   "admin.visitsDayTaipei": "Day (Taipei time)",
-  "admin.visitsTaipeiTime": "Taipei time"
+  "admin.visitsTaipeiTime": "Taipei time",
+  "http.b229584b3897206c": "These pictures are too large to send together. Send fewer or smaller pictures in one message."
 }
