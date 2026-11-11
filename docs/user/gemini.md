@@ -92,6 +92,10 @@ Quota is the native account reading, with its observation age and reset time
 when available. Missing data is unknown, not zero usage. Context occupancy is
 the current context reading, not a bill or a currency estimate.
 
+When Gemini waits on a background command or sets itself a timer and wakes up
+later, Clawdline reads those turns from the CLI's own log, because the CLI does
+not stream them, and shows its progress lines, tools and reply as they happen.
+
 ## Roles and shared Project memory
 
 On a machine that advertises role support, choose a role in **Open a session**.
