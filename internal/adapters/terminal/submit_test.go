@@ -450,3 +450,21 @@ func TestAntigravityTextStopsWhenTheLiveReadLosesItsFence(t *testing.T) {
 		t.Fatalf("lost fence was polled or submitted: err=%v reads=%d pastes=%d keys=%d", err, reads, pastes, keys)
 	}
 }
+
+// withoutFaint keeps what a program drew and drops only what it drew faint.
+// The first screen is the composer Claude Code 2.1.322 drew on this machine
+// with a prompt suggestion in it (`capture-pane -e`, 2026-11-11).
+func TestWithoutFaintDropsOnlyFaintText(t *testing.T) {
+	for _, c := range []struct{ styled, want string }{
+		{"\x1b[39m❯ \x1b[2m切了 Model 之後還是沒切過去\x1b[0m\n", "❯ \n"},
+		{"❯ \x1b[2mghost\x1b[22mtyped\n", "❯ typed\n"},
+		{"\x1b[38;2;2;2;2mred\x1b[0m kept", "red kept"},
+		{"\x1b[38:2::2:2:2mcolon\x1b[m", "colon"},
+		{"\x1b]8;;https://x\x1b\\link\x1b]8;;\x07 \x1b[2;1mfaint\nstill\x1b[0m next", "link \n next"},
+		{"\x1b[1;2mfaint\x1b[0mplain", "plain"},
+	} {
+		if got := withoutFaint(c.styled); got != c.want {
+			t.Errorf("withoutFaint(%q) = %q, want %q", c.styled, got, c.want)
+		}
+	}
+}

@@ -51,9 +51,14 @@ func TestComposerStubProgram(t *testing.T) {
 	os.Exit(0)
 }
 
+// ghostSuggestion is the next prompt the stub offers in "ghost" mode.
+const ghostSuggestion = "好，兩項都做，先關掉 Opus 快取"
+
 // composerStub draws a framed composer, reads the tty in raw mode and logs
 // every read and every submitted line. In "blind" mode it reads and logs but
-// never draws what it read: a program that is not taking its input.
+// never draws what it read: a program that is not taking its input. In
+// "ghost" mode an empty composer shows ghostSuggestion faint, the way Claude
+// Code draws its prompt suggestion, until something is typed over it.
 func composerStub(logPath, mode string) {
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -64,6 +69,9 @@ func composerStub(logPath, mode string) {
 		logFile.Write(append(raw, '\n'))
 	}
 	draw := func(line string) {
+		if line == "" && strings.HasPrefix(mode, "ghost") {
+			line = "\x1b[2m" + ghostSuggestion + "\x1b[0m"
+		}
 		fmt.Fprintf(os.Stdout, "\x1b[2J\x1b[H❯ %s\r\n──────────\r\n", line)
 	}
 	// Ask for bracketed paste, as every assistant CLI does.
@@ -80,7 +88,7 @@ func composerStub(logPath, mode string) {
 		}
 		chunk := buf[:n]
 		logEvent(stubEvent{Read: string(chunk)})
-		if mode == "blind" {
+		if mode == "blind" || mode == "ghost-blind" {
 			continue
 		}
 		if !pasting && !bytes.Contains(chunk, []byte("\x1b[200~")) && len(chunk) > 800 {
@@ -253,6 +261,44 @@ func TestTmuxSendSubmitsANoticeSizedLineWhole(t *testing.T) {
 		}
 		t.Fatalf("want the %d-byte line once and whole, followed only by at most %d empty nudges; got %d submission(s)",
 			len(text), len(nudgePauses), len(submitted))
+	}
+}
+
+// A line identical to the faint prompt suggestion already in the composer is
+// submitted. A phone takes Claude Code's suggestion as its next message, so
+// the text pasted is exactly what the composer already drew faint; read
+// without its styling, the input line held the text once before the paste
+// and once after, and the send came back send_unsubmitted with the words
+// left sitting in the composer.
+func TestTmuxSendSubmitsALineIdenticalToTheFaintSuggestion(t *testing.T) {
+	pane, logPath, client := privateTmux(t, "ghost")
+	if err := client.Send(context.Background(), pane, ghostSuggestion); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	var submitted []string
+	for _, e := range stubEvents(t, logPath) {
+		if e.Submit != nil {
+			submitted = append(submitted, *e.Submit)
+		}
+	}
+	if len(submitted) == 0 || submitted[0] != ghostSuggestion {
+		t.Fatalf("want %q submitted first, got %q", ghostSuggestion, submitted)
+	}
+}
+
+// A paste the program has not drawn yet is not confirmed by the faint
+// suggestion it is still showing: a blind program that keeps the same
+// suggestion on screen gets no Enter.
+func TestTmuxSendIsNotConfirmedByTheFaintSuggestionAlone(t *testing.T) {
+	pane, logPath, client := privateTmux(t, "ghost-blind")
+	err := client.Send(context.Background(), pane, ghostSuggestion)
+	if !errors.As(err, new(Unsubmitted)) {
+		t.Fatalf("want Unsubmitted, got %v", err)
+	}
+	for _, e := range stubEvents(t, logPath) {
+		if strings.Contains(e.Read, "\r") {
+			t.Fatalf("a Return reached a program that never drew the paste: %q", e.Read)
+		}
 	}
 }
 

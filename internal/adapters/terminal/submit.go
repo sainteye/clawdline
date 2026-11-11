@@ -595,9 +595,101 @@ func (p tmuxInput) enter(ctx context.Context) error {
 	return err
 }
 
+// screen is the pane as its program drew it, less anything drawn faint.
+//
+// **Claude Code draws its prompt suggestion faint in an empty composer**, and
+// `capture-pane -p` without `-e` drops the styling, so the suggestion read as
+// typed text. A phone that takes the suggestion sends exactly those words: the
+// input line held them once before the paste and once after, the count never
+// rose, and 28 sends in five days (2026-11-07..11) answered send_unsubmitted
+// with the words sitting in the composer. Faint text is a placeholder, never
+// input, so it is left out of every look — before the paste, so the words do
+// not count as already there, and after it, so a suggestion still on screen
+// cannot confirm a paste the program has not drawn.
 func (p tmuxInput) screen(ctx context.Context) (string, bool) {
-	out, err := p.call(ctx, "", "capture-pane", "-p", "-J", "-t", p.target)
-	return out, err == nil
+	out, err := p.call(ctx, "", "capture-pane", "-p", "-J", "-e", "-t", p.target)
+	return withoutFaint(out), err == nil
+}
+
+// withoutFaint is a `capture-pane -e` capture as plain text with every
+// character drawn faint (SGR 2) removed, and every escape sequence dropped.
+func withoutFaint(styled string) string {
+	var out strings.Builder
+	faint := false
+	for i := 0; i < len(styled); {
+		c := styled[i]
+		if c != 0x1b {
+			if !faint || c == '\n' {
+				out.WriteByte(c)
+			}
+			i++
+			continue
+		}
+		if i+1 >= len(styled) {
+			break
+		}
+		switch styled[i+1] {
+		case '[':
+			end := i + 2
+			for end < len(styled) && (styled[end] < 0x40 || styled[end] > 0x7e) {
+				end++
+			}
+			if end >= len(styled) {
+				return out.String()
+			}
+			if styled[end] == 'm' {
+				faint = sgrFaint(styled[i+2:end], faint)
+			}
+			i = end + 1
+		case ']':
+			// An OSC, such as a hyperlink: up to BEL or ST.
+			end := i + 2
+			for end < len(styled) && styled[end] != 0x07 && !(styled[end] == 0x1b && end+1 < len(styled) && styled[end+1] == '\\') {
+				end++
+			}
+			if end < len(styled) && styled[end] == 0x1b {
+				end++
+			}
+			i = end + 1
+		default:
+			i += 2
+		}
+	}
+	return out.String()
+}
+
+// sgrFaint is whether text is faint after one SGR's parameters: 2 turns it
+// on, 22 and a reset turn it off. The arguments of an extended colour (38,
+// 48, 58 with 5;n or 2;r;g;b) are skipped, so a 2 among them is a colour.
+func sgrFaint(params string, faint bool) bool {
+	if params == "" {
+		return false
+	}
+	fields := strings.FieldsFunc(params, func(r rune) bool { return r == ';' })
+	for j := 0; j < len(fields); j++ {
+		code := fields[j]
+		if k := strings.IndexByte(code, ':'); k >= 0 {
+			code = code[:k] // a colon form carries its own arguments
+		}
+		switch code {
+		case "0", "":
+			faint = false
+		case "2":
+			faint = true
+		case "22":
+			faint = false
+		case "38", "48", "58":
+			if strings.Contains(fields[j], ":") || j+1 >= len(fields) {
+				continue
+			}
+			if fields[j+1] == "5" {
+				j += 2
+			} else if fields[j+1] == "2" {
+				j += 4
+			}
+		}
+	}
+	return faint
 }
 
 // bufferName is a tmux buffer name nobody else is using.
