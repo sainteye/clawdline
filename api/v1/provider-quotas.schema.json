@@ -64,6 +64,14 @@
         },
         "problem": {
           "type": "string"
+        },
+        "credits_in_use": {
+          "type": "boolean",
+          "description": "A live window is spent and the account still has credits: the provider keeps answering and charges each turn to the credits balance. Codex only; absent otherwise."
+        },
+        "credit_balance": {
+          "type": "number",
+          "description": "The credits balance the newest provider record named, only while credits_in_use. Absent when the provider did not say."
         }
       }
     },

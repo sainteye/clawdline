@@ -42,6 +42,12 @@ export function compactQuotaRows(rows: readonly ProviderQuotaRow[], count: numbe
     return left && right ? right.used_percent - left.used_percent : left ? -1 : right ? 1 : 0
   }).slice(0, count)
 }
+/** The credits balance while credits are in use, in whole units grouped for reading; null otherwise. */
+export function quotaCreditBalance(row: ProviderQuotaRow, locale?: string): string | null {
+  const b = row.credit_balance
+  if (!row.credits_in_use || typeof b !== "number" || !Number.isFinite(b)) return null
+  return Math.round(b).toLocaleString(locale)
+}
 export function quotaStale(row: ProviderQuotaRow, now: number): boolean {
   return row.stale || row.windows.some((w) => w.resets_at !== undefined && w.resets_at <= now)
 }

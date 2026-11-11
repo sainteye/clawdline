@@ -1327,6 +1327,10 @@ func (s *Server) sessionLimits(assistant session.Assistant, now time.Time) *cont
 	out.Stale = read.Stale
 	out.Detail = read.Detail
 	out.UnknownReason = contract.AssistantUnknownReason(read.Reason)
+	out.CreditsInUse = read.CreditsInUse
+	if read.CreditBalance != nil {
+		out.CreditBalance = *read.CreditBalance
+	}
 	out.ReadAtMs = now.UnixMilli()
 	return out
 }

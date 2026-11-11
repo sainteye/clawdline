@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 // @ts-expect-error -- a `.ts` path, for node's strip-types runner.
-import { statusLimitCells, statusLimitRow } from "./status-limits.ts"
+import { statusLimitCells, statusLimitRow, statusCreditCell } from "./status-limits.ts"
 
 const responsiveStyles = readFileSync(new URL("./git-status.css", import.meta.url), "utf8")
 const infoCard = readFileSync(new URL("../overlays/info.ts", import.meta.url), "utf8")
@@ -86,4 +86,21 @@ test("an account quota reading names its scope and visibly marks historical data
   assert.deepEqual(statusLimitRow({ windows: [{name:"7d",usedPercent:0}],stale:false },
     {...WORDS,stale:"Outdated",source:"Grok"}),
     [{name:"7d",value:"0%",level:"ok",title:"Grok"}])
+})
+
+const creditWords = { name: "Credits", inUse: "In use", balance: (b: string) => `Balance ${b}`, explain: "Each turn is charged to your credits." }
+
+test("a spent window whose turns are charged to credits says so beside the window", () => {
+  const reading = { windows: [{ name: "7d", usedPercent: 100 }], creditsInUse: true, creditBalance: 44718.83 }
+  assert.deepEqual(statusLimitRow(reading, { unknown: "unknown", limits: "Limits", credits: creditWords }, "en-US"), [
+    { name: "7d", value: "100%", level: "bad" },
+    { name: "Credits", value: "In use · 44,719", level: "bad", title: "Each turn is charged to your credits. Balance 44,719" },
+  ])
+})
+
+test("credits are not shown as in use unless the daemon says so", () => {
+  assert.equal(statusCreditCell({ windows: [{ name: "7d", usedPercent: 100 }] }, creditWords), null)
+  assert.equal(statusCreditCell({ windows: [{ name: "7d", usedPercent: 100 }], creditsInUse: true }, undefined), null)
+  assert.deepEqual(statusCreditCell({ creditsInUse: true }, creditWords),
+    { name: "Credits", value: "In use", level: "bad", title: "Each turn is charged to your credits." })
 })

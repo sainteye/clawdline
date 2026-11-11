@@ -72,6 +72,9 @@ export function StatusLine({
   // assistant-only reading from a previously selected machine or account.
   const reading = row?.assistant === "grok" ? info?.limits : row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant)) : null
   const limitCells = statusLimitRow(reading, { unknown: T.webInfoUnknown, limits: T.webInfoLimits,
+    credits: { name: nextWord("quotaCredits"), inUse: nextWord("quotaCreditsInUse"),
+      balance: (balance) => nextWord("quotaCreditBalance", { balance }),
+      explain: nextWord("quotaCreditsExplain", { provider: L.assistantDisplayName(row?.assistant) }) },
     ...(row?.assistant === "grok" ? { stale: nextWord("quotaStale"), source: nextWord("infoGrokAccountQuota") + (reading?.at ? " " + nextWord("quotaUpdated", { time: L.clock(reading.at) }) : "") } : {}),
   })
   const deploy = runningDeploy(info)

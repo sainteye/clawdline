@@ -44,6 +44,7 @@ import { catalogWord } from "../catalog.js"
 import "./info-next.css"
 import { workflowInfoHTML } from "../session/workflow-profile.js"
 import { protocolStateHTML } from "../session/protocol-state.js"
+import { creditBalanceText } from "../session/status-limits.js"
 
 /**
  * The Session info card — `Info` in `input/info.js`, function for function,
@@ -521,7 +522,16 @@ function limitsHTML(limits: SessionLimits): string {
         '<span class="pct">' + esc(value) + "</span>" + reset + "</div>"
       )
     })
-    .join("")
+    .join("") + creditsHTML(limits)
+}
+
+/** A spent window whose turns are charged to credits says so under the windows. */
+function creditsHTML(limits: SessionLimits): string {
+  if (!limits.creditsInUse) return ""
+  const balance = creditBalanceText(limits.creditBalance)
+  return '<p class="note credits-in-use"><b>' + esc(nextWord("quotaCreditsInUseLong")) + "</b>" +
+    (balance ? " · " + esc(nextWord("quotaCreditBalance", { balance })) : "") + "<br>" +
+    esc(nextWord("quotaCreditsExplain", { provider: L.assistantDisplayName(data?.session.assistant) })) + "</p>"
 }
 
 /**

@@ -85,6 +85,16 @@ type Depleted struct {
 	At         *int64
 }
 
+// Credits is what a Codex record said about the account's credits beside
+// the windows it named. Every field is optional: an absent field is "not
+// established".
+type Credits struct {
+	HasCredits *bool
+	Unlimited  *bool
+	// Balance is the provider's balance, parsed from its decimal string.
+	Balance *float64
+}
+
 // Limits is what is known about a plan, and when it was known.
 // Empty Windows is "nobody said", never 0%.
 type Limits struct {
@@ -92,6 +102,14 @@ type Limits struct {
 	// At is Unix seconds of the record the windows came from.
 	At       *int64
 	Depleted *Depleted
+	// Credits is the credits clause of the record the windows came from.
+	Credits *Credits
+	// CreditsInUse is a live window being spent while the account still has
+	// credits: Codex keeps answering and every turn is charged to the
+	// credits balance instead of the plan. CreditBalance is that balance when
+	// the provider said it. Reader.Machine fills both.
+	CreditsInUse  bool
+	CreditBalance *float64
 	// Stale, FreshFor, Reason and Detail are what the machine reading knows
 	// about this reading's age and its silence. The record decoders above
 	// leave them zero: a decoded record has no age until somebody says when
@@ -321,6 +339,16 @@ func CodexRollout(data []byte) Limits {
 			}
 			continue
 		}
+		if credits, ok := rates["credits"].(map[string]any); ok {
+			c := &Credits{Balance: doubleOf(credits["balance"])}
+			if has, ok := credits["has_credits"].(bool); ok {
+				c.HasCredits = &has
+			}
+			if unlimited, ok := credits["unlimited"].(bool); ok {
+				c.Unlimited = &unlimited
+			}
+			out.Credits = c
+		}
 		out.Depleted = depleted
 		return out
 	}
@@ -478,6 +506,10 @@ type quota struct {
 	// fromClaudeCode is the windows having come from Claude Code's own usage
 	// answer because the status line had no fresh one.
 	fromClaudeCode bool
+	// creditsInUse and creditBalance are Quota's CreditsInUse and
+	// CreditBalance.
+	creditsInUse  bool
+	creditBalance *float64
 }
 
 // decayed is `AssistantQuota.decayed(_:now:)`. Where it writes a sentence of
@@ -646,6 +678,12 @@ func detailOf(q quota, credits bool, now time.Time) string {
 	if credits {
 		text += "; premium credits exhausted"
 	}
+	if q.creditsInUse {
+		text += "; using credits"
+		if q.creditBalance != nil {
+			text += fmt.Sprintf(" (balance %.0f)", *q.creditBalance)
+		}
+	}
 	return text + "; " + read(q, now)
 }
 
@@ -654,6 +692,10 @@ func detailOf(q quota, credits bool, now time.Time) string {
 // both end this way.
 func finished(q quota, credits bool, now time.Time) quota {
 	q = decayed(q, now)
+	if q.availability != Exhausted {
+		// Credits are only in use while a spent window is still live.
+		q.creditsInUse, q.creditBalance = false, nil
+	}
 	if q.detail == "" {
 		q.detail = detailOf(q, credits, now)
 	}
@@ -731,6 +773,13 @@ type Quota struct {
 	// FromClaudeCode is the windows having come from Claude Code's own usage
 	// answer rather than the status line's record.
 	FromClaudeCode bool
+	// CreditsInUse is a live Codex window being spent while the account
+	// still has credits: Codex keeps working and charges each turn to the
+	// credits balance. Availability stays Exhausted, because the plan is.
+	CreditsInUse bool
+	// CreditBalance is the credits balance the newest record named, only
+	// while CreditsInUse; nil when the provider did not say.
+	CreditBalance *float64
 }
 
 // NewReader reads under home. settings is asked on every reading that is not
@@ -768,7 +817,8 @@ func (r *Reader) Machine(assistant string, now time.Time) Limits {
 	}
 	q := r.Quota(assistant, now)
 	return Limits{Windows: q.Windows, At: q.ObservedAt, Stale: q.Stale,
-		FreshFor: q.FreshFor, Reason: q.Reason, Detail: q.Detail}
+		FreshFor: q.FreshFor, Reason: q.Reason, Detail: q.Detail,
+		CreditsInUse: q.CreditsInUse, CreditBalance: q.CreditBalance}
 }
 
 // Assistants is the order `AssistantQuota.all` answers in.
@@ -831,6 +881,8 @@ func (r *Reader) quota(assistant string, now time.Time, mayAsk bool) Quota {
 		Reason:         q.reason,
 		Detail:         q.detail,
 		FromClaudeCode: q.fromClaudeCode,
+		CreditsInUse:   q.creditsInUse,
+		CreditBalance:  q.creditBalance,
 	}
 	if out.Windows == nil {
 		out.Windows = []Window{}
@@ -1092,6 +1144,19 @@ func (r *Reader) codex(s Settings, now time.Time) quota {
 	q := quota{availability: availability, observedAt: observed,
 		resetsAt: tightestResetsAt(windows), windows: windows,
 		reason: f.reason, note: f.note}
+	if !credits && named != nil && named.Credits != nil &&
+		named.Credits.HasCredits != nil && *named.Credits.HasCredits {
+		for _, w := range windows {
+			if w.Hit {
+				q.creditsInUse = true
+				if b := named.Credits.Balance; b != nil && !math.IsNaN(*b) && !math.IsInf(*b, 0) {
+					v := *b
+					q.creditBalance = &v
+				}
+				break
+			}
+		}
+	}
 	return finished(q, credits, now)
 }
 
