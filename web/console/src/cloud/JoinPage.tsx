@@ -4,6 +4,7 @@ import { NAVIGATION_MARK } from "../brand-mark.js"
 import * as L from "../legacy/bridge.js"
 import { chooseTransport, cloudViewerDeviceMetadata, newCloudSession, readCloudConfig } from "./copied.js"
 import { InviteError, joinBrowserInvite, type InviteFailure, type JoinStage } from "./browser-invite.js"
+import { bootAdminCatalog } from "./admin/words.js"
 import "./join.css"
 
 /**
@@ -33,7 +34,16 @@ export function JoinPage({ declared }: { declared: string }) {
   const [view, setView] = useState<View>({ at: "type" })
   const mark = useRef<HTMLCanvasElement>(null)
   const stop = useRef<AbortController | null>(null)
-  useEffect(() => { if (mark.current) L.paintIcon(mark.current, NAVIGATION_MARK, 3) }, [])
+  // The document starts behind `html.booting` (main.tsx) until its words arrive; this page owns
+  // lifting it, as every other hosted page does. Without it the page stays blank.
+  const [wordsReady, setWordsReady] = useState(false)
+  useEffect(() => {
+    void bootAdminCatalog(config, document.baseURI).catch(() => {}).finally(() => {
+      setWordsReady(true)
+      document.documentElement.classList.remove("booting")
+    })
+  }, [config])
+  useEffect(() => { if (wordsReady && mark.current) L.paintIcon(mark.current, NAVIGATION_MARK, 3) }, [wordsReady])
   useEffect(() => () => stop.current?.abort(), [])
 
   const join = async (event: FormEvent) => {
@@ -57,6 +67,7 @@ export function JoinPage({ declared }: { declared: string }) {
   }
 
   const stage = view.at === "busy" ? view.stage : null
+  if (!wordsReady) return null
   return (
     <div className="door join" data-step="cloud">
       <div className="door-card" role="main" aria-labelledby="join-title">
