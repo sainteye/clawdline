@@ -63,6 +63,7 @@
   .quota-providers { gap: 12px; overflow: hidden; }
   .quota-provider { min-width: 0; flex-shrink: 1; overflow: hidden; }
   .quota-stale, .quota-credits, .quota-unknown { display: none; }
+  .quota-provider[data-stale] { opacity: .5; }
   .quota-compact-window progress, .quota-compact-window .quota-reset { display: none; }
 }
 
