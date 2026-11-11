@@ -227,11 +227,13 @@ export interface CopilotSettingsSnapshot {
   key_hint: string
   model: string
   eagerness: string
+  voice: string
   extra_instructions: string
   briefing: boolean
   briefing_assistant: string
   models: string[]
   eagernesses: string[]
+  voices: string[]
   briefing_assistants: string[]
   max_extra_instructions: number
 }
@@ -240,6 +242,7 @@ export interface CopilotSettingsChange {
   openai_key?: string
   model?: string
   eagerness?: string
+  voice?: string
   extra_instructions?: string
   briefing_assistant?: string
   briefing?: boolean

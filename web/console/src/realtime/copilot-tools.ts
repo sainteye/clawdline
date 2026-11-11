@@ -46,6 +46,9 @@ export interface ToolResult {
   logs: ToolLog[]
 }
 
+/** Realtime's output voices, the recommended first (internal/domain/copilot.Voices). */
+export const VOICES = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse']
+
 /** semantic_vad's eagerness settings, most patient first. */
 export const EAGERNESS = ['low', 'auto', 'high']
 
@@ -201,6 +204,8 @@ export const COPILOT_TOOLS = [
 export interface CallOptions {
   /** semantic_vad's eagerness: low (default), auto, high. */
   eagerness?: string
+  /** The Realtime output voice; marin unless the machine says otherwise. */
+  voice?: string
   /** The person's own extra instructions from Settings › Voice copilot. */
   extra?: string
   /** The machine's prepared briefing, once it has arrived. */
@@ -236,7 +241,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
           // patient of `semantic_vad`'s eagerness settings.
           turn_detection: { type: 'semantic_vad', eagerness: EAGERNESS.includes(options.eagerness ?? '') ? options.eagerness : 'low', create_response: true, interrupt_response: true },
         },
-        output: { voice: 'alloy' },
+        output: { voice: VOICES.includes(options.voice ?? '') ? options.voice : VOICES[0] },
       },
       tools: COPILOT_TOOLS,
       tool_choice: 'auto',

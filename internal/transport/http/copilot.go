@@ -107,11 +107,13 @@ type copilotSettingsAnswer struct {
 	KeyHint            string   `json:"key_hint"`
 	Model              string   `json:"model"`
 	Eagerness          string   `json:"eagerness"`
+	Voice              string   `json:"voice"`
 	ExtraInstructions  string   `json:"extra_instructions"`
 	Briefing           bool     `json:"briefing"`
 	BriefingAssistant  string   `json:"briefing_assistant"`
 	Models             []string `json:"models"`
 	Eagernesses        []string `json:"eagernesses"`
+	Voices             []string `json:"voices"`
 	BriefingAssistants []string `json:"briefing_assistants"`
 	MaxInstructions    int      `json:"max_extra_instructions"`
 }
@@ -120,9 +122,9 @@ func copilotAnswer(v copilot.Settings) copilotSettingsAnswer {
 	e := v.Effective()
 	return copilotSettingsAnswer{
 		KeySet: strings.TrimSpace(v.Key) != "", KeyHint: v.KeyHint(),
-		Model: e.Model, Eagerness: e.Eagerness, ExtraInstructions: e.ExtraInstructions,
+		Model: e.Model, Eagerness: e.Eagerness, Voice: e.Voice, ExtraInstructions: e.ExtraInstructions,
 		Briefing: !e.BriefingOff, BriefingAssistant: e.BriefingAssistant,
-		Models: copilot.Models, Eagernesses: copilot.Eagerness, BriefingAssistants: copilot.BriefingAssistants,
+		Models: copilot.Models, Eagernesses: copilot.Eagerness, Voices: copilot.Voices, BriefingAssistants: copilot.BriefingAssistants,
 		MaxInstructions: copilot.MaxExtraInstructionsRunes,
 	}
 }
@@ -154,7 +156,7 @@ func (s *Server) copilotSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, copilot.ErrBadKey):
 			writeRefusal(w, http.StatusBadRequest, "copilot_bad_key", "An OpenAI API key starts with sk- and has no spaces.")
-		case errors.Is(err, copilot.ErrBadModel), errors.Is(err, copilot.ErrBadEagerness), errors.Is(err, copilot.ErrBadAssistant):
+		case errors.Is(err, copilot.ErrBadModel), errors.Is(err, copilot.ErrBadEagerness), errors.Is(err, copilot.ErrBadVoice), errors.Is(err, copilot.ErrBadAssistant):
 			writeRefusal(w, http.StatusBadRequest, err.Error(), "That choice is not one this machine offers.")
 		case errors.Is(err, copilot.ErrBadInstructions):
 			writeRefusal(w, http.StatusBadRequest, "copilot_bad_instructions", "The extra instructions are too long.")
@@ -175,6 +177,7 @@ type copilotSessionAnswer struct {
 	ExpiresAt         int64  `json:"expires_at"`
 	Model             string `json:"model"`
 	Eagerness         string `json:"eagerness"`
+	Voice             string `json:"voice"`
 	ExtraInstructions string `json:"extra_instructions"`
 	Briefing          bool   `json:"briefing"`
 }
@@ -209,7 +212,7 @@ func (s *Server) copilotSessionRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, copilotSessionAnswer{ClientSecret: secret, ExpiresAt: expires, Model: e.Model,
-		Eagerness: e.Eagerness, ExtraInstructions: e.ExtraInstructions, Briefing: !e.BriefingOff})
+		Eagerness: e.Eagerness, Voice: e.Voice, ExtraInstructions: e.ExtraInstructions, Briefing: !e.BriefingOff})
 }
 
 // mintCopilotSecret asks OpenAI for one client secret. The detail it returns

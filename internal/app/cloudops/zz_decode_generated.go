@@ -736,7 +736,7 @@ func genDecodeCopilotSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"briefing": genRule{kind: "bool", nullable: true}, "briefing_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "eagerness": genRule{kind: "string", enum: []string{"low", "auto", "high"}, nullable: true}, "extra_instructions": genRule{kind: "string", maxBytes: 8000, nullable: true}, "model": genRule{kind: "string", enum: []string{"gpt-realtime-mini", "gpt-realtime"}, nullable: true}, "openai_key": genRule{kind: "string", maxBytes: 400, nullable: true}}, closed: true, maxKeys: 6}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"briefing": genRule{kind: "bool", nullable: true}, "briefing_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "eagerness": genRule{kind: "string", enum: []string{"low", "auto", "high"}, nullable: true}, "extra_instructions": genRule{kind: "string", maxBytes: 8000, nullable: true}, "model": genRule{kind: "string", enum: []string{"gpt-realtime-mini", "gpt-realtime"}, nullable: true}, "openai_key": genRule{kind: "string", maxBytes: 400, nullable: true}, "voice": genRule{kind: "string", enum: []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"}, nullable: true}}, closed: true, maxKeys: 7}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

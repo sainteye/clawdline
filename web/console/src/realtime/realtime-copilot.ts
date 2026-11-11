@@ -232,7 +232,7 @@ export class RealtimeCopilotClient {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
       })
       const grant = (await opened.json().catch(() => null)) as {
-        client_secret?: string; model?: string; eagerness?: string; extra_instructions?: string; briefing?: boolean
+        client_secret?: string; model?: string; eagerness?: string; voice?: string; extra_instructions?: string; briefing?: boolean
         error?: { code?: string; message?: string }
       } | null
       if (!opened.ok || !grant?.client_secret) {
@@ -242,7 +242,7 @@ export class RealtimeCopilotClient {
           ? '這台機器還沒設定 OpenAI API Key：請到「設定 › 語音副駕駛」填入。'
           : `機器沒有開出通話憑證（${code}）${grant?.error?.message ? '：' + grant.error.message : ''}`)
       }
-      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, extra: grant.extra_instructions } }
+      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, extra: grant.extra_instructions } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
@@ -480,3 +480,64 @@ export class RealtimeCopilotClient {
 }
 
 export const realtimeCopilot = new RealtimeCopilotClient()
+
+/** The longest a voice preview stays connected. */
+const PREVIEW_MAX_MS = 20000
+
+/**
+ * Says one short line in `voice`, as a call would: a receive-only Realtime
+ * connection opened with a client secret the machine mints, closed once the
+ * line has played. No microphone is asked for.
+ */
+export async function previewVoice(voice: string, line: string): Promise<{ usd: number }> {
+  const opened = await fetch('/v1/voice/copilot-session', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
+  })
+  const grant = (await opened.json().catch(() => null)) as { client_secret?: string; model?: string; error?: { code?: string } } | null
+  if (!opened.ok || !grant?.client_secret) {
+    // refusal-ok: the preview names the machine's refusal code to the person; there is no other action to take here.
+    throw new Error(grant?.error?.code ?? `HTTP ${opened.status}`)
+  }
+  const model = grant.model || 'gpt-realtime-mini'
+  const pc = new RTCPeerConnection()
+  const audio = document.createElement('audio')
+  audio.autoplay = true
+  pc.ontrack = (event) => { if (event.streams[0]) audio.srcObject = event.streams[0] }
+  pc.addTransceiver('audio', { direction: 'recvonly' })
+  const dc = pc.createDataChannel('oai-events')
+  let usd = 0
+  const done = new Promise<void>((resolve, reject) => {
+    const limit = setTimeout(() => resolve(), PREVIEW_MAX_MS)
+    dc.onopen = () => {
+      dc.send(JSON.stringify({ type: 'session.update', session: { type: 'realtime', output_modalities: ['audio'],
+        audio: { input: { turn_detection: null }, output: { voice } } } }))
+      dc.send(JSON.stringify({ type: 'response.create', response: { output_modalities: ['audio'],
+        instructions: `用自然的語氣，一字不差地說這一句，不要加任何其他話：「${line}」` } }))
+    }
+    dc.onmessage = (m) => {
+      let e: { type?: string; response?: { usage?: unknown }; error?: { message?: string } }
+      try { e = JSON.parse(String(m.data)) } catch { return }
+      if (e.type === 'error') { clearTimeout(limit); reject(new Error(e.error?.message || 'error')) }
+      if (e.type === 'response.done') {
+        usd = addUsage(emptyCost(model), e.response?.usage).usd
+        // The audio is still playing when the response is done; let it finish.
+        setTimeout(() => { clearTimeout(limit); resolve() }, 4000)
+      }
+    }
+  })
+  try {
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    const res = await fetch(`https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(model)}`, {
+      method: 'POST', body: offer.sdp, headers: { Authorization: `Bearer ${grant.client_secret}`, 'Content-Type': 'application/sdp' },
+    })
+    if (!res.ok) throw new Error(`OpenAI ${res.status}`)
+    await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() })
+    await done
+    return { usd }
+  } finally {
+    try { dc.close() } catch { /* refusal-ok: closing a preview's channel twice is harmless. */ }
+    try { pc.close() } catch { /* refusal-ok: closing a preview's connection twice is harmless. */ }
+    audio.srcObject = null
+  }
+}

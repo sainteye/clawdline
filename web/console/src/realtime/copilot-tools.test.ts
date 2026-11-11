@@ -175,7 +175,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
   assert.equal(ev.session.type, "realtime")
   assert.deepEqual(ev.session.output_modalities, ["audio"])
   assert.equal(ev.session.audio.input.transcription.model, "whisper-1")
-  assert.equal(ev.session.audio.output.voice, "alloy")
+  assert.equal(ev.session.audio.output.voice, "marin")
   assert.deepEqual(ev.session.audio.input.turn_detection, { type: "semantic_vad", eagerness: "low", create_response: true, interrupt_response: true },
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
@@ -395,4 +395,11 @@ test("asked for a briefing, the tool waits for the machine's and says when there
   assert.match(JSON.parse((await runCopilotTool("get_status_briefing", "{}", deps)).output).error, /list_sessions/)
   delete deps.briefing
   assert.match(JSON.parse((await runCopilotTool("get_status_briefing", "{}", deps)).output).error, /沒有機器整理的匯報/)
+})
+
+test("a call speaks in the machine's chosen voice, and an unknown one falls back to marin", () => {
+  const voiceOf = (voice?: string) => (sessionUpdateEvent("", "", { voice }) as { session: { audio: { output: { voice: string } } } }).session.audio.output.voice
+  assert.equal(voiceOf("cedar"), "cedar")
+  assert.equal(voiceOf(undefined), "marin")
+  assert.equal(voiceOf("fable"), "marin")
 })
