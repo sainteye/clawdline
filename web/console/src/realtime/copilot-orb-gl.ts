@@ -11,8 +11,15 @@ import { orbPixelRatio, type OrbLook } from "./copilot-orb.js"
  */
 export const ORB_PHASE_PERIOD = Math.PI * 2 * 20
 
+/**
+ * How fast the mist puffs form and disperse, per unit of the look's speed:
+ * listening (0.28) renews a puff about every 4 s, a loud answer about every 0.5 s.
+ */
+export const ORB_DISPERSAL = 0.15
+
 export interface OrbRenderer {
-  draw(look: OrbLook, phase: number): void
+  /** `life` (0..1) is where the mist puffs are in forming and dispersing. */
+  draw(look: OrbLook, phase: number, life: number): void
   dispose(): void
 }
 
@@ -33,6 +40,7 @@ uniform float uSwell;
 uniform float uGlow;
 uniform float uBright;
 uniform float uSwirl;
+uniform float uLife;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -64,12 +72,29 @@ void main() {
   vec2 p = uv / r;
   float z = sqrt(max(1.0 - dot(p, p), 0.0));
   vec2 sp = p / (0.55 + 0.45 * z);
-  vec2 q = rot(uPhase * 0.35) * sp * 1.3;
+  vec2 q = rot(uPhase * 0.35) * sp;
   q = rot(uSwirl * (1.0 - length(sp) * 0.6)) * q;
-  vec2 w = vec2(
-    fbm(q + 1.5 * vec2(cos(uPhase * 0.2), sin(uPhase * 0.2))),
-    fbm(q + vec2(5.2, 1.3) + 1.5 * vec2(sin(uPhase * 0.15), cos(uPhase * 0.15))));
-  float c = fbm(rot(-uPhase * 0.2) * q + 2.2 * w);
+  // A slow, low-frequency warp gives the puffs soft, uneven edges.
+  vec2 warp = vec2(
+    fbm(q * 1.1 + 1.5 * vec2(cos(uPhase * 0.2), sin(uPhase * 0.2))),
+    fbm(q * 1.1 + vec2(5.2, 1.3) + 1.5 * vec2(sin(uPhase * 0.15), cos(uPhase * 0.15)))) - 0.5;
+  vec2 s = q + warp * 0.5;
+  // Six puffs of mist, each born small and dense, then drifting outward,
+  // spreading and thinning until it is gone; staggered so one always forms.
+  float density = 0.0;
+  for (int i = 0; i < 6; i++) {
+    float fi = float(i);
+    float life = fract(uLife + fi / 6.0);
+    float ang = fi * 2.399 + uPhase * (fi < 3.0 ? 0.35 : -0.2);
+    vec2 dir = vec2(cos(ang), sin(ang));
+    vec2 center = dir * (0.32 + 0.3 * fract(fi * 0.618) + life * 0.3);
+    float radius = mix(0.2, 0.75, life);
+    float strength = sin(3.14159 * life) * mix(1.1, 0.5, life);
+    vec2 v = s - center;
+    density += strength * exp(-dot(v, v) / (radius * radius));
+  }
+  // A faint broad haze between the puffs.
+  density += 0.3 * smoothstep(0.35, 0.8, fbm(s * 0.9 + 3.0));
 
   float t = clamp(0.5 - p.y * 0.5, 0.0, 1.0);
   vec3 deep = vec3(0.11, 0.25, 0.62);
@@ -77,11 +102,13 @@ void main() {
   vec3 light = vec3(0.68, 0.85, 1.0);
   vec3 col = mix(deep, mid, smoothstep(0.0, 0.6, t));
   col = mix(col, light, smoothstep(0.55, 1.0, t));
-  // Soft, thick mist rather than a planet's sharp clouds.
-  float cloud = smoothstep(0.34, 0.86, c);
-  col = mix(col, vec3(0.95, 0.98, 1.0), cloud * 0.8);
-  col += smoothstep(0.6, 0.0, length(p - vec2(-0.32, 0.48))) * 0.32;
-  col *= mix(0.7, 1.0, z) * uBright;
+  // The sky dims with the state; the mist stays white so it never turns grey.
+  col *= uBright;
+  float cloud = smoothstep(0.08, 1.3, density);
+  vec3 mist = vec3(0.95, 0.98, 1.0) * clamp(uBright + 0.15, 0.9, 1.1);
+  col = mix(col, mist, cloud * 0.82);
+  col += smoothstep(0.6, 0.0, length(p - vec2(-0.32, 0.48))) * 0.28;
+  col *= mix(0.7, 1.0, z);
 
   float edge = smoothstep(r, r - 3.0 / side, d);
   gl_FragColor = vec4(mix(haloColor * halo, col, edge), max(edge, halo));
@@ -108,10 +135,10 @@ export function createOrbRenderer(canvas: HTMLCanvasElement): OrbRenderer | null
   gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0)
   gl.useProgram(program)
   const at = (name: string) => gl!.getUniformLocation(program, name)
-  const u = { res: at("uRes"), phase: at("uPhase"), swell: at("uSwell"), glow: at("uGlow"), bright: at("uBright"), swirl: at("uSwirl") }
+  const u = { res: at("uRes"), phase: at("uPhase"), swell: at("uSwell"), glow: at("uGlow"), bright: at("uBright"), swirl: at("uSwirl"), life: at("uLife") }
 
   return {
-    draw(look, phase) {
+    draw(look, phase, life) {
       const ratio = orbPixelRatio(window.devicePixelRatio)
       const width = Math.max(1, Math.round(canvas.clientWidth * ratio))
       const height = Math.max(1, Math.round(canvas.clientHeight * ratio))
@@ -128,6 +155,7 @@ export function createOrbRenderer(canvas: HTMLCanvasElement): OrbRenderer | null
       gl!.uniform1f(u.glow, look.glow)
       gl!.uniform1f(u.bright, look.bright)
       gl!.uniform1f(u.swirl, look.swirl)
+      gl!.uniform1f(u.life, life % 1)
       gl!.drawArrays(gl!.TRIANGLES, 0, 3)
     },
     dispose() {
