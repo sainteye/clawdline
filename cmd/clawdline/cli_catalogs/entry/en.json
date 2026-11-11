@@ -18,7 +18,7 @@
   "main_heavy_reason_r_command_run_a": "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory",
   "main_item_add_claim_name_child_assign": "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase",
   "main_landings_assistants_every_landing_still_owed": "  landings | assistants         every landing still owed (--work-id: every landing recorded for one item); what each assistant's account has left",
-  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send, wait or handoff can name",
+  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send or wait can name (handoff always opens a new Session)",
   "main_memory_shared_project": "  memory <list|show|add|update|forget|import>   the Project's shared memory, one store for Claude and Codex",
   "main_note_create_post_a_human_intervention": "  note create                   post a human intervention to one Session",
   "main_secret_run": "  secret run <note-id> -- <command> [args...]   feed a one-time Secret Handoff to a tool",

@@ -76,7 +76,8 @@ the command instead.
 | `clawdline playbook list\|create\|edit\|delete` | Manage saved launch messages (`clawdline guide project`) |
 | `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
 | `clawdline heavy [--handoff] -- <command…>` | Queues application/native compilation; ordinary commands run directly; `--handoff` gives a queued wait to a callback (§11) |
-| `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
+| `clawdline send --to <terminal> "…"` | Relays a message into another session (§8); a message, not a handoff |
+| `clawdline handoff --summary <file> [--assistant a]` | At a milestone, hands this Session's work to a **newly opened** Session; it never targets an existing one (`clawdline guide landing`) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
 | `clawdline output add [--kind created\|modified\|published] <file>` | Registers one exact Session output path (§8) |
@@ -84,7 +85,7 @@ the command instead.
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine; `--work-id <item id>`: every landing recorded for one Board item |
 | `clawdline leases [--json]` | Who holds the compile slot and each landing lease, and who waits behind them |
-| `clawdline sessions [--json]` | The Sessions a send, a wait or a handoff can name, with their state and task |
+| `clawdline sessions [--json]` | The Sessions a send or a wait can name, with their state and task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline cloud viewer login\|status\|machines\|pair` | Authorizes and pairs a separate local Cloud viewer |
@@ -1336,6 +1337,11 @@ clawdline send --to <terminal id> "text"        # or text on stdin
 This is `POST /v1/orchestrator/messages` with `{from_session, to_session, text}` and an
 `Idempotency-Key`. The daemon types it into the recipient's composer inside a
 `<clawdline-message>` envelope that names you as the source.
+
+**A message is not a handoff.** When the person asks you to hand your work over, run
+`clawdline handoff --summary <file>` (`clawdline guide landing`): it opens a new Session to receive it.
+Do not pick an existing Session from the address book and `send` it your state; that Session keeps its
+own work and does not become the owner of yours.
 
 - `to_session` is a **terminal id**: a message follows the tab you meant, not a conversation.
   `from_session` is your terminal or conversation id (the command fills it in).

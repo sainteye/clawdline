@@ -70,7 +70,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline playbook list\|create\|edit\|delete` | 管理儲存的啟動訊息（`clawdline guide project`） |
 | `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
 | `clawdline heavy [--handoff] -- <command…>` | 應用程式與原生編譯才排隊；一般指令直接執行；`--handoff` 會把排隊等待交給 callback（§11） |
-| `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
+| `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8）；這是傳話，不是交接 |
+| `clawdline handoff --summary <file> [--assistant a]` | 在里程碑把這個 Session 的工作交給**新開的** Session；不能指定既有 Session（`clawdline guide landing`） |
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
 | `clawdline output add [--kind created\|modified\|published] <file>` | 登錄一個確切的 Session 產出路徑（§8） |
@@ -78,7 +79,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing；`--work-id <item id>`：一個看板項目所有已記錄的 landing |
 | `clawdline leases [--json]` | 編譯名額與每個 landing lease 目前由誰持有、誰在後面排隊 |
-| `clawdline sessions [--json]` | 傳訊、等待或交接可以指名的 Session，附狀態與 task |
+| `clawdline sessions [--json]` | 傳訊或等待可以指名的 Session，附狀態與 task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline cloud viewer login\|status\|machines\|pair` | 授權並配對獨立的本機 Cloud 檢視端 |
@@ -1170,6 +1171,10 @@ clawdline send --to <terminal id> "text"        # or text on stdin
 這就是 `POST /v1/orchestrator/messages`，帶 `{from_session, to_session, text}` 和一個
 `Idempotency-Key`。daemon 會把它打進收件者的輸入框，外面包一層標明你是來源的 `<clawdline-message>`
 envelope。
+
+**傳話不是交接。** 使用者要你把工作交出去時，執行 `clawdline handoff --summary <file>`
+（`clawdline guide landing`）：它會開一個新的 Session 來接手。不要從通訊錄挑一個既有 Session，再用 `send`
+把你的狀態傳給它；那個 Session 仍做它自己的工作，不會變成你這份工作的負責人。
 
 - `to_session` 是 **terminal id**：訊息跟著你指定的那個分頁走，不是跟著 conversation 走。
   `from_session` 是你的 terminal id 或 conversation id（指令會幫你填）。
