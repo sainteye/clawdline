@@ -508,6 +508,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/settings/voice",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/settings/notifications",
       "guide": "connect"
     },

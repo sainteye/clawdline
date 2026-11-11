@@ -61,9 +61,16 @@ commands or saved sessions, so a sentence such as "commit and push to main" is o
   with cleanup on they are sent too.
 - **Built in**: `whisper.AlwaysExpected` (Clawdline, Claude Code and the rest), read-only.
 
-`GET /v1/voice/setup` answers `polish_assistants`, `vocabulary_builtin` and
-`vocabulary_projects` for the cards. A console talking to an older daemon, which answers without
-those fields, does not draw the cleanup and vocabulary cards.
+## From a phone
+
+The two cards read and write their own narrow route, `/v1/settings/voice`: the five keys above,
+plus `polish_assistants`, `vocabulary_builtin` and `vocabulary_projects`, and refusing every other
+setting. A paired Cloud console carries it as `voice-settings` and `voice-settings-update`, so
+app.clawdline.com shows the same cards under Settings › Voice input for the machine it follows,
+which is also the machine that transcribes the phone's recordings. Changing them from a remote
+device needs Send, as the default models do. The Recognition card (language, model) stays on the
+machine's own console. A machine from before API level 43 answers that it needs an update, and the
+cards say so instead of drawing controls that cannot save.
 
 The bounds are registered in `internal/domain/capacity` as `voice.vocabulary_terms`,
 `voice.vocabulary_term_characters`, `voice.vocabulary_project_terms`, `voice.polish_terms`,

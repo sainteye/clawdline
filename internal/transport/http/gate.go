@@ -556,6 +556,13 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || send)) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change notification rules."
 		}
+	case p == "/v1/settings/voice":
+		// The voice cards' narrow route, carried to a paired phone so it can
+		// turn dictation cleanup on and edit the vocabulary. A remote device
+		// needs Send, as it does for the default models.
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may read, and not change voice settings."
+		}
 	case p == "/v1/settings/default-models":
 		// This narrow route is the Settings surface carried to a paired phone.
 		// A local console may write it, and a remote device needs Send just as

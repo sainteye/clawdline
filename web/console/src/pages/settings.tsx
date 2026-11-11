@@ -17,6 +17,7 @@ import { pushShape, sendPushTest, startPush, subscribePush, togglePush } from ".
 import { legacyState } from "../legacy/overlay-bridge.js"
 import { followsRelay } from "../client.js"
 import { SettingsWindow } from "./settings/window/SettingsWindow.js"
+import { VoiceSettingsCards } from "./settings/window/VoiceSettingsCards.js"
 import { MACHINE_PANES, nextSettingsTab, settingsPanes } from "./settings/navigation.js"
 import { W } from "./settings/window/copy.js"
 import "./settings/window/window.css"
@@ -107,7 +108,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
     catalogWord("settings", "statusTab"),
     catalogWord("workflowSettings", "tab"),
     ...(!cloud ? [catalogWord("settings", "machineTab"), W.settingsVoice, W.settingsRemote,
-      W.settingsOrchestrator, catalogWord("dispatchPolicy", "navTitle")] : [W.settingsRemote]),
+      W.settingsOrchestrator, catalogWord("dispatchPolicy", "navTitle")] : [W.settingsRemote, W.settingsVoice]),
   ]
   // `enter` has not run until the page has been shown once; before that the
   // blocks it draws are as the markup has them.
@@ -486,6 +487,11 @@ function SettingsPage({ shown }: { shown: boolean }) {
         </div>
         {cloud && <div className="settings-pane" id="settings-pane-4" role="tabpanel" aria-labelledby="settings-tab-4" hidden={tab !== 4}>
           {shown && tab === 4 && <RemotePairingBlock />}
+        </div>}
+        {/* The voice cards travel over Cloud on their own narrow route; the
+            rest of the machine's voice tab (language, model) stays local. */}
+        {cloud && <div className="settings-pane" id="settings-pane-5" role="tabpanel" aria-labelledby="settings-tab-5" hidden={tab !== 5}>
+          {shown && tab === 5 && <div className="sw-window embedded"><div className="sw-column sw-voice"><VoiceSettingsCards shown /></div></div>}
         </div>}
         {!cloud && <div className="settings-pane settings-machine-pane" id="settings-machine-pane" role="tabpanel" aria-labelledby={`settings-tab-${tab >= 4 ? tab : 4}`} hidden={tab < 4}>
           {shown && tab >= 4 && <SettingsWindow embedded hideNavigation pane={MACHINE_PANES[Math.max(0, tab - 4)]} />}

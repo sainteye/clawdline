@@ -904,6 +904,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/settings/default-models",
 		body2: `{"codex_default_model":"gpt-6"}`,
 	}, {
+		word:    "voice-settings",
+		body:    map[string]any{"type": "voice-settings", "session": machine, "request": "req-voice"},
+		session: machine, name: "read:req-voice",
+		method: "GET", path: "/v1/settings/voice",
+	}, {
+		word: "voice-settings-update",
+		body: map[string]any{"type": "voice-settings-update", "session": machine, "request": "req-voice-write",
+			"changes": map[string]any{"voice_polish": true, "voice_vocabulary": []any{"Tailscale"}}},
+		session: machine, name: "action:req-voice-write",
+		method: "POST", path: "/v1/settings/voice",
+		body2: `{"voice_polish":true,"voice_vocabulary":["Tailscale"]}`,
+	}, {
 		word:    "notification-rules",
 		body:    map[string]any{"type": "notification-rules", "session": machine, "request": "req-rules"},
 		session: machine, name: "read:req-rules",

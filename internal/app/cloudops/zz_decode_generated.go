@@ -166,6 +166,8 @@ var generatedDecoders = map[string]genDecoder{
 	"verification.list":                  genDecodeVerificationList,
 	"verification.note":                  genDecodeVerificationNote,
 	"voice":                              genDecodeVoice,
+	"voice-settings":                     genDecodeVoiceSettings,
+	"voice-settings-update":              genDecodeVoiceSettingsUpdate,
 	"work-gate-settings":                 genDecodeWorkGateSettings,
 	"work-gate-settings-update":          genDecodeWorkGateSettingsUpdate,
 	"work.decision":                      genDecodeWorkDecision,
@@ -3784,6 +3786,43 @@ func genDecodeVoice(b body) (plan, LocalRequest, bool) {
 	path := "/v1/voice"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Body = b.genFields(map[string]genValue{"audio": genValue{from: "audio"}, "rate": genValue{from: "rate"}})
+	return p, req, true
+}
+
+// genDecodeVoiceSettings is the `voice-settings` row's decode.
+func genDecodeVoiceSettings(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/voice"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeVoiceSettingsUpdate is the `voice-settings-update` row's decode.
+func genDecodeVoiceSettingsUpdate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "changes", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"voice_polish": genRule{kind: "bool", nullable: true}, "voice_polish_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "voice_polish_level": genRule{kind: "string", enum: []string{"punctuation", "tidy"}, nullable: true}, "voice_vocabulary": genRule{kind: "list", nullable: true, items: &genRule{kind: "string", maxBytes: 256}, maxItems: genCount(200)}, "voice_vocabulary_projects": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 5}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/voice"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("changes")
 	return p, req, true
 }
 
