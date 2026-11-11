@@ -16,6 +16,7 @@ func TestTheVoiceCopilotConsoleBoundsMatchTheirRegistrations(t *testing.T) {
 		{"copilot-tools.ts", "LIST_LATEST_READS", "console.copilot_list_transcript_reads"},
 		{"copilot-tools.ts", "RECAP_PAGES", "console.copilot_recap_pages"},
 		{"copilot-tools.ts", "SCREEN_READ_ATTEMPTS", "console.copilot_screen_reads"},
+		{"copilot-tools.ts", "REPLY_CHARS", "console.copilot_reply_characters"},
 		{"copilot-orb.ts", "ORB_MAX_FPS", "console.copilot_orb_frames_per_second"},
 		{"copilot-orb.ts", "ORB_MAX_PIXEL_RATIO", "console.copilot_orb_pixel_ratio"},
 	} {

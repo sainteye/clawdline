@@ -62,11 +62,17 @@ export const SCREEN_READ_ATTEMPTS = 8
 export const SCREEN_READ_INTERVAL_MS = 400
 /** The tail of a screen the model is given: enough for a prompt and its last output. */
 export const SCREEN_TAIL_LINES = 40
+/**
+ * How much of a Session's last reply `explain_session_reply` hands over. A
+ * diagnosis with its proposed fix and the question it ends on runs to a few
+ * thousand characters; the 600 the other reads keep lose its reasoning.
+ */
+export const REPLY_CHARS = 8000
 
 export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
 
 【說話方式：短】
-- 每次回覆最多三句，能一句講完就一句。這是語音，不是文章。
+- 每次回覆最多三句，能一句講完就一句。這是語音，不是文章。（例外：整體匯報、總結經過、解釋最後一則回覆，見下面各段。）
 - 不要開場白（不說「好的」「我來查看」「請稍等」），不要重複使用者的問題，不要在結尾問「還需要什麼嗎」「要不要看畫面」。
 - 呼叫工具前不要先講話，拿到結果再直接講重點。
 - 不要唸 Session ID、路徑、指令、雜湊值。用 Session 的名稱稱呼它。
@@ -77,6 +83,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - get_session_summary：某個 Session 現在的摘要（最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」用這個。
 - get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
+- explain_session_reply：某個 Session 最後一則回覆的全文，加上使用者最後交代它的事。使用者說「解釋給我聽」「它在說什麼」「我看不懂」「它要我決定什麼」「講詳細一點」時用這個。
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
 - open_session：在使用者通話的這個畫面上打開某個 Session。使用者說「切到／打開／讓我看某某」就呼叫，打開後用一句話說「已經打開某某」，不用唸內容。
 - send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
@@ -100,7 +107,15 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 
 【解說單一 Session】
 - 先讀 get_session_summary，用兩到三句講：它在做什麼、做到哪（依 delivered_summary 或 last_reply 講具體結果）、現在要不要使用者處理（在等什麼）。閒置的 Session 也要說它最後完成了什麼。使用者追問過程或細節，再讀 get_session_activity。
-- 依紀錄內容具體講，不要只說「在工作中」或「已閒置」。`
+- 依紀錄內容具體講，不要只說「在工作中」或「已閒置」。
+- last_reply 的結尾如果在問使用者（要不要做、選哪個、請他確認），即使狀態是閒置，也要說它在等使用者決定，並問要不要詳細解釋。
+
+【解釋最後一則回覆（explain_session_reply）】
+- 目的是讓使用者聽完就懂狀況、知道要決定什麼。可以比平常長，大約六到十二句，用口語講，像同事當面解釋。
+- 依序講：先一句說使用者原本要它處理什麼問題；再講它查到的原因，每個問題用一兩句白話講清楚「為什麼會這樣」，不要唸函式名稱、檔名、路徑、API 或程式碼；接著講它建議怎麼修；最後明確說「要你決定的是：…」，把可以選的做法和各自的代價講出來。
+- 回覆裡沒有要使用者決定的事，就直接說「它沒有要你決定什麼」，並說它現在的狀態。
+- 只講 reply 裡有的內容，不要補充或推測；reply_truncated 為 true 時說中間有一部分沒讀到。
+- 使用者聽完說要做（例如「好，叫它修」），先唸出要送的文字並等使用者說好，再用 send_message_to_session 送出。`
 
 export const COPILOT_TOOLS = [
   {
@@ -154,6 +169,22 @@ export const COPILOT_TOOLS = [
     name: 'get_session_activity',
     description:
       '讀取特定 Session 內部的近期工作紀錄：使用者的交代、AI 助理的說明與回報、最近執行的工具與指令。用來解釋這個 Session 在做什麼、進度與結果。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
+        },
+      },
+      required: ['session_id'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'explain_session_reply',
+    description:
+      '讀取特定 Session 最後一則回覆的全文（reply），以及使用者最後交代它的事（asked）、目前狀態與它在等什麼。使用者說「解釋給我聽」「它在說什麼」「我看不懂」「它要我決定什麼」時用這個，然後依指示講清楚原因、建議與要使用者決定的事。',
     parameters: {
       type: 'object',
       properties: {
@@ -784,6 +815,66 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
   return out
 }
 
+async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  }
+  const { row } = found
+  const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
+  if (!res.ok) {
+    const why = await refusalText(res)
+    const error = `無法讀取「${row.label}」的回覆 (HTTP ${res.status})${why ? `：${why}` : ''}`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  const data = (await res.json()) as { entries?: unknown }
+  const list = Array.isArray(data?.entries) ? data.entries : []
+  let reply = ''
+  let replyAt = -1
+  for (let i = list.length - 1; i >= 0; i--) {
+    const e = list[i] as Record<string, unknown> | null
+    if (e && e.role === 'assistant' && str(e.text).trim()) { reply = plainScreenText(str(e.text)).trim(); replyAt = i; break }
+  }
+  let asked = ''
+  for (let i = (replyAt >= 0 ? replyAt : list.length) - 1; i >= 0; i--) {
+    const e = list[i] as Record<string, unknown> | null
+    const words = e && e.role === 'user' ? personWords(str(e.text)) : ''
+    if (words) { asked = clip(plainScreenText(words), ACTIVITY_TEXT_CHARS); break }
+  }
+  if (!reply) {
+    logs.push({ level: 'error', text: `「${row.label}」讀不到回覆` })
+    return { session_id: row.id, label: row.label, state: row.state, note: '這個 Session 讀不到最後一則回覆，可改用 get_session_screen 看畫面' }
+  }
+  const truncated = reply.length > REPLY_CHARS
+  logs.push({ level: 'info', text: `成功讀取「${row.label}」最後一則回覆（${reply.length} 字）` })
+  return {
+    session_id: row.id,
+    label: row.label,
+    assistant: row.assistant,
+    state: row.state,
+    ...(asked ? { asked } : {}),
+    reply: truncated ? clipKeepingLines(reply, REPLY_CHARS) : reply,
+    ...(truncated ? { reply_truncated: true } : {}),
+    ...(row.question ? { question: row.question } : {}),
+    ...(row.options?.length ? { options: row.options } : {}),
+    ...(row.delivered ? { delivered_summary: row.delivered } : {}),
+  }
+}
+
+/** Like `clip`, but a reply's line breaks are its structure, so they are kept. */
+function clipKeepingLines(text: string, n: number): string {
+  if (text.length <= n) return text
+  const head = Math.ceil(n / 2)
+  return text.slice(0, head) + '\n…\n' + text.slice(text.length - (n - head))
+}
+
 async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
@@ -921,6 +1012,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
+    else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))

@@ -183,6 +183,13 @@ func artifactsBounds() []Entry {
 			Sources: []string{"internal/adapters/planner.MaxBriefingRunes"},
 		},
 		{
+			// How much of each Session's last reply a briefing reads; a longer
+			// reply keeps its beginning and its end, where the question is.
+			Name: "voice.copilot_briefing_reply_characters", Class: Buffer, Unit: Characters,
+			Limit: 1500, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxBriefingReplyRunes"},
+		},
+		{
 			// A pasted OpenAI key longer than this is refused by the settings route.
 			Name: "voice.copilot_key_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 400, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,

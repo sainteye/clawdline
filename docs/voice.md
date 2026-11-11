@@ -100,20 +100,29 @@ so the first question needs no tool, and asks `POST /v1/voice/copilot-briefing`.
 **The briefing.** The machine reads its own Sessions through the handlers `/v1/sessions` and
 `/v1/transcript` answer with (at most 10, most urgent first: waiting, working, delivered, idle),
 keeps each one's waiting question, the person's recent asks, the summaries it recorded with
-`clawdline session report --summary` and its last reply, and has the chosen assistant write one
+`clawdline session report --summary` and its last reply (at most 1,500 characters, keeping its
+beginning and its end, where a question for the person usually is), and has the chosen assistant write one
 spoken briefing in order of urgency in a single tool-less turn (`planner.Briefing`, the same CLI
 invocation as LLM cleanup). On 2026-11-12, over three Sessions, Codex took 7.9 s and Claude Haiku
 14.4 s. The first request starts it in the background and waits at most 10 s; later requests are
 answered `pending` until it is ready, and a briefing is handed out again for 60 s. When it
 arrives, the browser sends it to the call in a second `session.update`; until then the
 `get_status_briefing` tool waits for it, and without it the copilot reads the Sessions itself.
+A last reply that ends by asking the person something counts as needing them even when the
+Session is idle: such a question is prose, not a menu, so the Session's state does not show it.
 
 **What the copilot can read and do.** `list_sessions`, `get_session_summary`, `get_session_recap`
 (the whole conversation, paged back at most 5 pages), `get_session_activity`,
-`get_session_screen`, `open_session` and `send_message_to_session`. `open_session` opens the
+`explain_session_reply`, `get_session_screen`, `open_session` and `send_message_to_session`. `open_session` opens the
 Session on the page the call runs in, whichever browser that is: the local console opens it as a
 press in the list would, and on Cloud the reading machine's current execution of it is resolved
 first, as for a started Session (`realtime/copilot-open.ts`).
+
+The other reads keep 600 characters of a reply, which loses the reasoning of a long diagnosis.
+`explain_session_reply` hands over the last reply whole (at most 8,000 characters, keeping its
+beginning and end) with the person's ask it answers, and the instructions have the copilot
+explain it at length: the problem, each cause in plain words, the proposed fix, and what the
+person is asked to decide with each choice's cost.
 
 **The voice.** One of Realtime's ten voices, `marin` unless chosen otherwise; a call cannot change
 its voice once it has spoken, so a new choice applies from the next call. **Listen** plays one line
@@ -130,5 +139,6 @@ OpenAI's listed rates; Whisper captions are billed per minute and are not includ
 The bounds are registered as `voice.copilot_key_bytes`,
 `voice.copilot_extra_instructions_characters`, `voice.copilot_briefing_timeout_milliseconds`,
 `voice.copilot_briefing_input_characters`, `voice.copilot_briefing_characters`,
+`voice.copilot_briefing_reply_characters`, `console.copilot_reply_characters`,
 `console.copilot_memory_turns`, `console.copilot_list_transcript_reads`,
 `console.copilot_recap_pages` and `console.copilot_screen_reads`.

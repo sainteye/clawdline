@@ -32,6 +32,10 @@ const (
 	copilotBriefingAsks       = 4
 	copilotBriefingDeliveries = 5
 	copilotBriefingTextRunes  = 300
+	// maxBriefingReplyRunes is how much of each Session's last reply the
+	// briefing turn reads. Its beginning says what was found and its end what
+	// the person is asked to decide, so a longer reply loses its middle.
+	maxBriefingReplyRunes = 1500
 )
 
 // copilotBriefingSessionsOf reads the Sessions; tests replace it.
@@ -69,6 +73,17 @@ type copilotBriefingSession struct {
 var copilotReportCommand = regexp.MustCompile(`clawdline\s+session\s+report\b[^\n]*?--summary\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')`)
 
 var copilotUnescape = regexp.MustCompile(`\\(.)`)
+
+// clipEnds keeps a text's beginning and end within n runes.
+func clipEnds(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	head := (n + 1) / 2
+	return string(r[:head]) + " … " + string(r[len(r)-(n-head):])
+}
 
 func clipRunes(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
@@ -190,7 +205,7 @@ func copilotBriefingFrom(read func(target string, into any) bool) ([]copilotBrie
 			}
 			for i := len(page.Entries) - 1; i >= 0; i-- {
 				if page.Entries[i].Role == "assistant" && strings.TrimSpace(page.Entries[i].Text) != "" {
-					b.LastReply = clipRunes(page.Entries[i].Text, 600)
+					b.LastReply = clipEnds(page.Entries[i].Text, maxBriefingReplyRunes)
 					break
 				}
 			}

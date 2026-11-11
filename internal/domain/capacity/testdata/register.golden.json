@@ -5110,6 +5110,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_reply_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 8000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_screen_reads",
     "Class": "buffer",
     "Unit": "rows",
@@ -12595,6 +12613,25 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/planner.MaxBriefingInputRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_briefing_reply_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 1500,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxBriefingReplyRunes"
     ]
   },
   {

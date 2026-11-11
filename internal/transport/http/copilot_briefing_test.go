@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 
@@ -195,5 +196,25 @@ func TestAFailedBriefingSaysWhy(t *testing.T) {
 	rec := copilotCall(t, s, s.copilotBriefingRoute, http.MethodPost, "/v1/voice/copilot-briefing", "")
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "copilot_briefing_no_assistant") {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+// A diagnosis runs to thousands of characters and ends on what the person is
+// asked to decide; the briefing must still see that question.
+func TestABriefingKeepsTheQuestionALongReplyEndsOn(t *testing.T) {
+	long := "Root cause found. " + strings.Repeat("The start path skips the default model. ", 120) +
+		"Shall I open a fix branch for both problems?"
+	raw, _ := json.Marshal(map[string]any{"entries": []map[string]string{{"role": "assistant", "text": long}}})
+	read := fakeBriefingReads(t, briefingList, map[string]string{"%257": string(raw)})
+	got, err := copilotBriefingFrom(read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := got[0].LastReply
+	if !strings.HasPrefix(reply, "Root cause found.") || !strings.HasSuffix(reply, "Shall I open a fix branch for both problems?") {
+		t.Fatalf("the reply lost an end: %q … %q", reply[:40], reply[len(reply)-60:])
+	}
+	if n := utf8.RuneCountInString(reply); n > maxBriefingReplyRunes+3 {
+		t.Fatalf("the reply is %d runes, over its bound", n)
 	}
 }
