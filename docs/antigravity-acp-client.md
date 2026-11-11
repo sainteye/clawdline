@@ -665,6 +665,18 @@ with all tools completed and the watch ending after the last reply. The real log
 is private and is not in the repository; the tests use synthetic rows of the
 same shape.
 
+That replay passed, but a live run on dev 9fdcf18 still showed nothing: the
+watch never started. The process runs with `GEMINI_HOME` set to the account
+directory, and AGY 1.5 reads its `settings.json` there, but it writes `brain/`
+under `$HOME/.gemini/<app-data-dir>`. This machine's account directory held only
+`antigravity-acp/settings.json`, so every watch since c1ce8854e failed to open
+its log and returned silently; the fixtures had written their logs under the
+account directory. The Host now uses the first existing log of
+`<account>/<app-data-dir>/brain/...` and `$HOME/.gemini/<app-data-dir>/brain/...`,
+taking `<app-data-dir>` from `--app-data-dir` when it is one directory name and
+`antigravity-acp` otherwise. A test whose peer writes under a temporary `HOME`
+failed before the change with no watch.
+
 **A restart that kills the worker first (2026-11-11).** A dev install stopped
 the daemon at 11:59:24 while a Gemini turn sent at 11:55:18 was still running.
 The turn ended as `antigravity_process_cancelled`, its record had no

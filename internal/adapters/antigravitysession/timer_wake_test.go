@@ -143,3 +143,68 @@ func TestATaskGeminiFindsDoneThroughItsStatusIsCompleted(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// On this machine AGY 1.5 kept settings in GEMINI_HOME but wrote its brain
+// under $HOME/.gemini, so the watch never found a log to follow.
+func TestTheNativeLogIsFoundWhereAGYWritesItUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLW_NATIVE_WAKE_PEER", "yes")
+	t.Setenv("CLW_NATIVE_LOG_UNDER_HOME", "yes")
+	prior := backgroundPollInterval
+	backgroundPollInterval = 5 * time.Millisecond
+	t.Cleanup(func() { backgroundPollInterval = prior })
+	h, row, opts := persistentFixture(t)
+	if err := h.Send(context.Background(), row, "deploy"); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+	c, _ := h.lookup(row)
+	c.mu.Lock()
+	native, watching := c.row.ConversationID, c.watch != nil
+	c.mu.Unlock()
+	if !watching {
+		t.Fatal("no watch: the log under HOME was not found")
+	}
+	if _, err := os.Stat(filepath.Join(opts.AccountDir, "antigravity-acp", "brain", native)); !os.IsNotExist(err) {
+		t.Fatal("the fixture wrote into the account directory; this test would not prove the HOME location")
+	}
+	logPath := filepath.Join(home, ".gemini", "antigravity-acp", "brain", native, ".system_generated", "logs", "transcript_full.jsonl")
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(`{"step_index":4,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","created_at":"2026-11-11T05:39:23Z","content":"sender=` + native + `/task-2 content=Task id \"` + native + `/task-2\" finished with result:\nCommand exited with code 0.\n"}` + "\n" +
+		`{"step_index":5,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-11T05:39:47Z","content":"All done."}` + "\n")
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		p, _ := h.Transcript(row, 100)
+		for _, e := range p.Entries {
+			if e.Role == "assistant" && e.Text == "All done." {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the reply from the log under HOME never appeared: %+v", p.Entries)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestAppDataDirAcceptsOnlyOneDirectoryName(t *testing.T) {
+	for args, want := range map[string]string{
+		"acp --app-data-dir antigravity-acp": "antigravity-acp",
+		"acp --app-data-dir=custom":          "custom",
+		"acp --app-data-dir ../escape":       "antigravity-acp",
+		"acp --app-data-dir /abs":            "antigravity-acp",
+		"acp":                                "antigravity-acp",
+	} {
+		if got := appDataDir(strings.Fields(args)); got != want {
+			t.Errorf("%q: %q, want %q", args, got, want)
+		}
+	}
+}

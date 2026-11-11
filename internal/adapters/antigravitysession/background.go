@@ -69,11 +69,44 @@ var (
 	exitCodePattern   = regexp.MustCompile(`Command exited with code (-?\d+)`)
 )
 
+// nativeLogPath answers the first existing native log for the conversation.
+// The public AGY 1.5 CLI reads its settings from GEMINI_HOME (the account
+// directory) but writes its brain under $HOME/.gemini/<app-data-dir>: on
+// 2026-11-11 this machine's account directory held only settings.json, every
+// watch failed to open its log, and no self-started turn was ever shown.
 func (h *Host) nativeLogPath(conversationID string) string {
 	if !isNativeID(conversationID) {
 		return ""
 	}
-	return filepath.Join(h.opts.AccountDir, "antigravity-acp", "brain", conversationID, ".system_generated", "logs", "transcript_full.jsonl")
+	tail := filepath.Join("brain", conversationID, ".system_generated", "logs", "transcript_full.jsonl")
+	app := appDataDir(h.opts.Args)
+	candidates := []string{filepath.Join(h.opts.AccountDir, app, tail)}
+	if home, err := os.UserHomeDir(); err == nil && filepath.IsAbs(home) {
+		candidates = append(candidates, filepath.Join(home, ".gemini", app, tail))
+	}
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			return path
+		}
+	}
+	return ""
+}
+
+// appDataDir is the CLI's --app-data-dir, a single directory name; anything
+// else falls back to the default the pilot configuration uses.
+func appDataDir(args []string) string {
+	for i, arg := range args {
+		value, ok := "", false
+		if arg == "--app-data-dir" && i+1 < len(args) {
+			value, ok = args[i+1], true
+		} else if v, found := strings.CutPrefix(arg, "--app-data-dir="); found {
+			value, ok = v, true
+		}
+		if ok && value != "" && value != "." && value != ".." && filepath.Base(value) == value {
+			return value
+		}
+	}
+	return "antigravity-acp"
 }
 
 func isNativeID(id string) bool {

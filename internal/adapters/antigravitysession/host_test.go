@@ -206,6 +206,10 @@ func TestOwnedPeer(t *testing.T) {
 				// The 2026-11-11 shape: the command becomes a native background
 				// task, the turn ends, and only the native log follows it.
 				logs := filepath.Join(os.Getenv("GEMINI_HOME"), "antigravity-acp", "brain", nativeID, ".system_generated", "logs")
+				if os.Getenv("CLW_NATIVE_LOG_UNDER_HOME") == "yes" {
+					// AGY 1.5 writes its brain under $HOME/.gemini, not GEMINI_HOME.
+					logs = filepath.Join(os.Getenv("HOME"), ".gemini", "antigravity-acp", "brain", nativeID, ".system_generated", "logs")
+				}
 				_ = os.MkdirAll(logs, 0700)
 				rows := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-11T01:20:00Z","content":"deploy"}
 {"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-11T01:20:01Z","tool_calls":[{"name":"run_command","args":{"CommandLine":"./deploy web"}}]}
