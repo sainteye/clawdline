@@ -4,6 +4,8 @@
  * Clawdline sessions on the Mac.
  */
 
+import { greetingEvent, runCopilotTool, sessionUpdateEvent, toolReplyEvents } from './copilot-tools.js'
+
 export interface CopilotLogItem {
   id: string
   timestamp: string
@@ -243,113 +245,41 @@ export class RealtimeCopilotClient {
     if (!this.dc || this.dc.readyState !== 'open') return
 
     this.addLog('info', '正在向 OpenAI 傳送副駕駛系統配置與工具定義...')
-
-    const sessionUpdate = {
-      type: 'session.update',
-      session: {
-        modalities: ['text', 'audio'],
-        voice: 'alloy',
-        input_audio_transcription: {
-          model: 'whisper-1',
-        },
-        instructions: `你是 Clawdline 的隨身全雙工語音副駕駛（Voice Copilot）。
-使用者目前正透過手機語音與你直接對話。
-
-【什麼是 Clawdline 與目前環境】
-- Clawdline 是使用者的主機 AI 程式開發與多 Agent 編排守護行程（Local Agent Orchestrator），運行在使用者本機電腦上。
-- 使用者在電腦上啟動了多個 AI 程式開發工作階段（Sessions，例如 Claude Code、Codex、Antigravity ACP），各自在終端機中執行程式開發、重構、除錯與測試。
-- 使用者現在正在外面或用手機操作，透過雲端連線與你交談。你的職責是當使用者的隨身技術管家，協助監看這台電腦上所有的開發進度。
-
-【你可以讀取哪些資料】
-1. list_sessions：讀取當前電腦上所有的工作階段（Sessions），包含 Session ID、名稱（label/title）、以及工作狀態（如 busy、idle、waiting for input）。
-2. get_session_screen：讀取指定 Session 當前終端機螢幕的最新文字輸出內容（包含指令輸出、程式碼改動、測試結果或錯誤報告）。
-
-【你可以執行什麼操作】
-1. 語音摘要回報：主動從 Sessions 清單或終端螢幕中提煉重點，以簡明扼要、條理清晰的繁體中文口頭向使用者回報。
-2. send_message_to_session：代使用者將文字指令直接鍵入指定 Session 終端機（例如回應 Agent 的詢問、下達修復指令或執行命令）。
-
-【核心原則：主動呼叫工具】
-- 當使用者詢問「進度如何」、「現在在跑什麼」、「幫我看 session」、「有什麼任務」時，你必須【立刻主動調用 list_sessions 或 get_session_screen 工具】，絕對不要只在口頭上回答或反問！
-- 查詢到 Sessions 後，主動告訴使用者有哪幾個任務在跑，並詢問要不要看某個任務的畫面。
-- 如果使用者指定看某個任務（例如「看第一個」、「看 codex」、「看測試那個」），立刻調用 get_session_screen 讀取最新終端輸出，並用語音摘述其進度與是否有錯誤。
-- 全程使用台灣繁體中文（zh-Hant-TW），語氣專業自然，適合語音聆聽，避免唸出長串無意義的哈希值或代碼符號。`,
-        tools: [
-          {
-            type: 'function',
-            name: 'list_sessions',
-            description:
-              '查詢目前這台電腦上所有運作中或閒置的 Sessions 清單與狀態。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先主動呼叫此工具。',
-            parameters: { type: 'object', properties: {} },
-          },
-          {
-            type: 'function',
-            name: 'get_session_screen',
-            description:
-              '讀取特定 Session 當前的終端機螢幕文字輸出，以供摘要其執行進度、最新輸出與狀態。',
-            parameters: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: "目標 Session ID 或終端機標識，例如 '%1' 或 'owned:acp:...'",
-                },
-              },
-              required: ['session_id'],
-            },
-          },
-          {
-            type: 'function',
-            name: 'send_message_to_session',
-            description: '將使用者的文字指令或訊息直接鍵入指定 Session 的終端機輸入框。',
-            parameters: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: '目標 Session ID 或終端機 ID',
-                },
-                message: {
-                  type: 'string',
-                  description: '要傳送給該 Session 的文字內容',
-                },
-              },
-              required: ['session_id', 'message'],
-            },
-          },
-        ],
-        tool_choice: 'auto',
-      },
-    }
-
-    this.dc.send(JSON.stringify(sessionUpdate))
-
-    // Send initial greeting request
-    const greetingRequest = {
-      type: 'response.create',
-      response: {
-        modalities: ['text', 'audio'],
-        instructions:
-          "請以親切、專業的繁體中文向使用者問候，並主動介紹自己的功能：『你好！我是 Clawdline 隨身語音副駕駛。我能幫你隨時掌握這台電腦上所有 AI 程式開發 Sessions 與任務終端。你可以隨時問我目前有哪些任務在跑、叫我幫你查看某個任務的即時終端畫面與執行進度，或是讓我代你向終端發送文字指令。需要我先幫你看看現在有哪些 Sessions 嗎？』",
-      },
-    }
-    this.dc.send(JSON.stringify(greetingRequest))
+    this.dc.send(JSON.stringify(sessionUpdateEvent()))
+    this.dc.send(JSON.stringify(greetingEvent()))
     this.addLog('info', '已送出開場問候要求')
   }
 
+  // Both spellings of the output events are handled: GA names them
+  // `response.output_audio*`, the beta `response.audio*`.
   private async handleRealtimeEvent(event: any) {
     switch (event.type) {
+      case 'session.updated':
+        this.addLog('info', `副駕駛配置已生效（${Array.isArray(event.session?.tools) ? event.session.tools.length : 0} 個工具）`)
+        break
+      case 'error': {
+        const msg = event.error?.message || event.error?.code || '未知錯誤'
+        this.addLog('error', `OpenAI 回報錯誤：${msg}`)
+        break
+      }
       case 'input_audio_buffer.speech_started':
         this.updateState({ speakingState: 'listening' })
         break
       case 'input_audio_buffer.speech_stopped':
         this.updateState({ speakingState: 'thinking' })
         break
-      case 'response.audio.delta':
-        this.updateState({ speakingState: 'speaking' })
+      case 'response.created':
+        this.updateState({ lastAssistantSpeech: '' })
         break
+      case 'response.output_audio.delta':
+      case 'response.audio.delta':
+        if (this.state.speakingState !== 'speaking') this.updateState({ speakingState: 'speaking' })
+        break
+      case 'response.output_audio.done':
       case 'response.audio.done':
         this.updateState({ speakingState: 'listening' })
         break
+      case 'response.output_audio_transcript.delta':
       case 'response.audio_transcript.delta':
         if (event.delta) {
           const cur = this.state.lastAssistantSpeech || ''
@@ -369,99 +299,16 @@ export class RealtimeCopilotClient {
   }
 
   private async handleToolCall(event: { call_id: string; name: string; arguments: string }) {
-    const { call_id, name, arguments: argsJson } = event
-    let args: any = {}
-    try {
-      args = JSON.parse(argsJson)
-    } catch {
-      // refusal-ok: malformed tool arguments JSON defaults to empty arguments.
-      args = {}
-    }
-
-    this.addLog('tool', `執行工具【${name}】參數: ${JSON.stringify(args)}`)
-    this.updateState({
-      toolCallLog: `正在執行工具：${name}...`,
-      speakingState: 'thinking',
+    this.updateState({ toolCallLog: `正在執行工具：${event.name}...`, speakingState: 'thinking' })
+    const { output, logs } = await runCopilotTool(event.name, event.arguments, {
+      fetch: (input, init) => fetch(input, init),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     })
-
-    let resultOutput = ''
-    try {
-      if (name === 'list_sessions') {
-        const res = await fetch('/v1/sessions')
-        if (!res.ok) {
-          resultOutput = JSON.stringify({ error: `查詢失敗 (HTTP ${res.status})` })
-          this.addLog('error', `查詢 sessions 失敗: HTTP ${res.status}`)
-        } else {
-          const data = await res.json()
-          const rawList = data.sessions || []
-          const cleanSessions = rawList.map((s: any) => ({
-            id: s.id || s.sessionId,
-            label: s.label || s.title || s.assistant || s.id,
-            state: s.state,
-            work_state: s.work_state,
-          }))
-          resultOutput = JSON.stringify({
-            count: cleanSessions.length,
-            sessions: cleanSessions,
-          })
-          this.addLog('info', `成功讀取 Sessions 清單，共 ${cleanSessions.length} 個工作階段`)
-        }
-      } else if (name === 'get_session_screen') {
-        const sessionId = args.session_id
-        const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/screen`)
-        if (!res.ok) {
-          resultOutput = JSON.stringify({ error: `無法讀取螢幕 (HTTP ${res.status})` })
-          this.addLog('error', `讀取 Session ${sessionId} 螢幕失敗: HTTP ${res.status}`)
-        } else {
-          const data = await res.json()
-          const screenText = data.screen?.text || ''
-          const lines = screenText.split('\n')
-          const recentLines = lines.slice(-40).join('\n')
-          resultOutput = JSON.stringify({
-            session_id: sessionId,
-            recent_screen_text: recentLines,
-          })
-          this.addLog('info', `成功讀取 Session ${sessionId} 畫面 (擷取最近 ${lines.length} 行)`)
-        }
-      } else if (name === 'send_message_to_session') {
-        const { session_id, message } = args
-        const res = await fetch(`/v1/sessions/${encodeURIComponent(session_id)}/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: message }),
-        })
-        if (!res.ok) {
-          resultOutput = JSON.stringify({ error: `訊息送出失敗 (HTTP ${res.status})` })
-          this.addLog('error', `發送訊息至 Session ${session_id} 失敗: HTTP ${res.status}`)
-        } else {
-          resultOutput = JSON.stringify({ success: true, message: '訊息已成功送入該 Session 終端' })
-          this.addLog('info', `已成功發送訊息至 Session ${session_id}`)
-        }
-      } else {
-        resultOutput = JSON.stringify({ error: `未知的工具：${name}` })
-        this.addLog('error', `未知的工具請求：${name}`)
-      }
-    } catch (err) {
-      resultOutput = JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
-      this.addLog('error', `工具執行異常: ${resultOutput}`)
-    }
-
+    for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
 
-    // Send function call output back to OpenAI
     if (this.dc && this.dc.readyState === 'open') {
-      const toolResponse = {
-        type: 'conversation.item.create',
-        item: {
-          type: 'function_call_output',
-          call_id,
-          output: resultOutput,
-        },
-      }
-      this.dc.send(JSON.stringify(toolResponse))
-
-      // Trigger model response
-      this.dc.send(JSON.stringify({ type: 'response.create' }))
+      for (const message of toolReplyEvents(event.call_id, output)) this.dc.send(JSON.stringify(message))
     }
   }
 
