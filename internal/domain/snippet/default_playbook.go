@@ -51,7 +51,7 @@ Every reviewer: read-only; at most 8 substantive findings, severity first. Each 
 	ReviewEvidenceLimits +
 	`
 
-Synthesize by reading each cited location yourself, merging duplicates and labeling confirmed, plausible, unresolved intent, or rejected with reasons. Do not edit code. Report the scope decision/evidence, task IDs, reviewer count, ranked findings, intent questions and unverified claims. Ask which findings to fix.`
+Synthesize by reading each cited location yourself, merging duplicates and labeling confirmed, plausible, unresolved intent, or rejected with reasons. Do not edit code. Report the scope decision/evidence, task IDs, reviewer count, ranked findings, intent questions and unverified claims. When explaining findings and required decisions to the user, translate technical nuances into plain, conversational language: summarize what needs deciding, the current situation, real-world risks, and clear options in the plainest words instead of reciting raw line numbers or jargon. Ask which findings to fix.`
 
 // DefaultPlaybook describes an editable built-in and its deduplication titles.
 type DefaultPlaybook struct {
