@@ -476,3 +476,7 @@ The Gemini Host's native-log reader now also projects turns a `schedule` timer
 starts and reads `manage_task` status results. It only reads the CLI's own log
 for display and sends nothing to the model, so no transparency explanation
 changes.
+
+The native-log reader also looks under `$HOME/.gemini/<app-data-dir>`, where AGY
+1.5 writes its conversation logs. It still only reads for display and sends
+nothing to the model.
