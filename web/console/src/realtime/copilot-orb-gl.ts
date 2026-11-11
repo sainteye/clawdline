@@ -46,7 +46,7 @@ float fbm(vec2 p) {
   float v = 0.0;
   float a = 0.5;
   mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
-  for (int k = 0; k < 5; k++) { v += a * noise(p); p = m * p; a *= 0.5; }
+  for (int k = 0; k < 4; k++) { v += a * noise(p); p = m * p; a *= 0.5; }
   return v;
 }
 mat2 rot(float a) { float c = cos(a); float s = sin(a); return mat2(c, -s, s, c); }
@@ -57,13 +57,14 @@ void main() {
   float r = 0.8 * uSwell;
   float d = length(uv);
   vec3 haloColor = vec3(0.38, 0.62, 0.98);
-  float halo = exp(-pow(max(d - r, 0.0) * 4.5, 1.4)) * uGlow * 0.6;
+  // The halo fades out before the canvas's edge, so no square shows.
+  float halo = exp(-pow(max(d - r, 0.0) * 5.0, 1.3)) * (1.0 - smoothstep(r, 0.98, d)) * uGlow * 0.6;
   if (d > r) { gl_FragColor = vec4(haloColor * halo, halo); return; }
 
   vec2 p = uv / r;
   float z = sqrt(max(1.0 - dot(p, p), 0.0));
   vec2 sp = p / (0.55 + 0.45 * z);
-  vec2 q = rot(uPhase * 0.35) * sp * 1.6;
+  vec2 q = rot(uPhase * 0.35) * sp * 1.3;
   q = rot(uSwirl * (1.0 - length(sp) * 0.6)) * q;
   vec2 w = vec2(
     fbm(q + 1.5 * vec2(cos(uPhase * 0.2), sin(uPhase * 0.2))),
@@ -76,8 +77,9 @@ void main() {
   vec3 light = vec3(0.68, 0.85, 1.0);
   vec3 col = mix(deep, mid, smoothstep(0.0, 0.6, t));
   col = mix(col, light, smoothstep(0.55, 1.0, t));
-  float cloud = smoothstep(0.42, 0.8, c);
-  col = mix(col, vec3(0.97, 0.99, 1.0), cloud * 0.85);
+  // Soft, thick mist rather than a planet's sharp clouds.
+  float cloud = smoothstep(0.34, 0.86, c);
+  col = mix(col, vec3(0.95, 0.98, 1.0), cloud * 0.8);
   col += smoothstep(0.6, 0.0, length(p - vec2(-0.32, 0.48))) * 0.32;
   col *= mix(0.7, 1.0, z) * uBright;
 
