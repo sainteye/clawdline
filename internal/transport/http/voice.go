@@ -167,12 +167,19 @@ func (s *Server) transcribe(w http.ResponseWriter, r *http.Request) {
 	plan := engine.Plan()
 	log.Printf("audit voice.transcribe seconds=%.1f ms=%d chars=%d ok=1 lang=%s script=%s from=%s",
 		seconds, ms, len([]rune(text)), plan.Code, plan.Script, plan.From.Source)
+	values, readErr := s.settingsFile().Read()
+	final, raw, polish := polishTranscript(ctx, readVoiceOptions(values, readErr == nil), text, engine.Vocabulary)
+	if polish != nil {
+		// The outcome and the sizes, and not one character of either text.
+		log.Printf("audit voice.polish assistant=%s status=%s ms=%d chars=%d cleaned=%d",
+			polish.Assistant, polish.Status, polish.Ms, polishRunes(text), polishRunes(final))
+	}
 	// **Nothing heard is a 200.** Whisper answers with nothing for silence,
 	// for a clip it decided was a groove, and for a recording of a room — and
 	// none of those is a failure of the request. What was asked is "what was
 	// said", and "nothing" is an answer to that; a 4xx here would have a page
 	// apologising for a microphone that was working perfectly.
-	writeJSON(w, contract.VoiceResult{Text: text, Ms: ms})
+	writeJSON(w, contract.VoiceResult{Text: final, Ms: ms, Raw: raw, Polish: polish})
 }
 
 func voiceBinaryPathState(path string) string {
@@ -354,15 +361,7 @@ func (s *Server) whisper() whisper.Transcriber {
 	if v, ok := values.String("voice_language"); ok && v != "" {
 		out.Language = v
 	}
-	if raw, ok := values.Raw["voice_vocabulary"]; ok {
-		var words []string
-		// A hand-edited list with a number in it is not a reason to refuse to
-		// transcribe: the key is left at its default and the rest of the file
-		// still counts.
-		if json.Unmarshal(raw, &words) == nil {
-			out.Vocabulary = words
-		}
-	}
+	out.Vocabulary = s.vocabulary(readVoiceOptions(values, true))
 	return out
 }
 

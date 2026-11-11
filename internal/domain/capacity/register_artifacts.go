@@ -122,5 +122,45 @@ func artifactsBounds() []Entry {
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/whisper.ModelDownloadBytesLimit"},
 		},
+		{
+			// The person's own dictation terms (voice_vocabulary). A longer
+			// list or a longer term is refused by the settings route.
+			Name: "voice.vocabulary_terms", Class: Buffer, Unit: Rows,
+			Limit: 200, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/nextconfig.MaxVoiceVocabularyTerms"},
+		},
+		{
+			Name: "voice.vocabulary_term_characters", Class: Buffer, Unit: Characters,
+			Limit: 64, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/nextconfig.MaxVoiceVocabularyRunes"},
+		},
+		{
+			// Project folder names that join the vocabulary when ticked: the
+			// forty the project picker lists. Further projects are not added.
+			Name: "voice.vocabulary_project_terms", Class: Buffer, Unit: Rows,
+			Limit: 40, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.voiceProjectTermLimit"},
+		},
+		{
+			// How many terms one cleanup turn is shown; the rest are still
+			// repaired locally by whisper.ApplyVocabulary.
+			Name: "voice.polish_terms", Class: Buffer, Unit: Rows,
+			Limit: 240, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxPolishTerms"},
+		},
+		{
+			// A longer transcript is answered unchanged, `polish.status`
+			// too_long, rather than spending a turn on it.
+			Name: "voice.polish_characters", Class: Buffer, Unit: Characters,
+			Limit: 4000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxPolishRunes"},
+		},
+		{
+			// A slower cleanup is abandoned and the Whisper text answered,
+			// `polish.status` timeout: the person is waiting at the composer.
+			Name: "voice.polish_timeout_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 15000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxPolishDuration"},
+		},
 	}
 }

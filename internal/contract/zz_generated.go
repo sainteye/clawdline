@@ -7069,11 +7069,26 @@ type SettingsRequest struct {
 	// `auto`, or a language tag: letters, digits and dashes.
 	VoiceLanguage *string `json:"voice_language"`
 
+	// true or false.
+	VoicePolish *bool `json:"voice_polish"`
+
+	// `claude` or `codex`.
+	VoicePolishAssistant *string `json:"voice_polish_assistant"`
+
+	// `punctuation` or `tidy`.
+	VoicePolishLevel *string `json:"voice_polish_level"`
+
 	// 0 to 30.
 	VoiceSettleSeconds *float64 `json:"voice_settle_seconds"`
 
 	// 0 to 300.
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
+
+	// At most 200 distinct one-line terms of at most 64 characters each.
+	VoiceVocabulary []string `json:"voice_vocabulary"`
+
+	// true or false.
+	VoiceVocabularyProjects *bool `json:"voice_vocabulary_projects"`
 
 	// 360 to 1400.
 	Width                 *float64 `json:"width"`
@@ -7329,11 +7344,31 @@ type SettingsSnapshot struct {
 	// `zh-Hans` or `en`.
 	VoiceLanguage *string `json:"voice_language"`
 
+	// Whether a small model punctuates and corrects each transcript after Whisper.
+	// Absent is off: it sends the transcript and vocabulary to the chosen assistant's
+	// provider.
+	VoicePolish *bool `json:"voice_polish"`
+
+	// Whose account cleans up a transcript: `claude` (Haiku) or `codex` (its small
+	// model, slower). Absent is `claude`.
+	VoicePolishAssistant *string `json:"voice_polish_assistant"`
+
+	// `punctuation` adds punctuation and corrects certain mis-hearings; `tidy` also
+	// removes filler words. Absent is `tidy`.
+	VoicePolishLevel *string `json:"voice_polish_level"`
+
 	// How long a pause ends a sentence. 0 is off.
 	VoiceSettleSeconds *float64 `json:"voice_settle_seconds"`
 
 	// How long a silence ends the whole turn. 0 is off.
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
+
+	// The person's own terms, repaired in every transcript and shown to cleanup.
+	// Absent is an empty list.
+	VoiceVocabulary []string `json:"voice_vocabulary"`
+
+	// Whether this machine's project folder names join the vocabulary. Absent is off.
+	VoiceVocabularyProjects *bool `json:"voice_vocabulary_projects"`
 
 	// The bar's width in points.
 	Width                 *float64 `json:"width"`
@@ -9795,6 +9830,21 @@ type VoiceModelInstall struct {
 	OK    bool   `json:"ok"`
 }
 
+// What happened to the optional cleanup turn after Whisper. Absent when cleanup
+// is off. Every status other than `applied` means `text` is Whisper's own.
+type VoicePolish struct {
+	// `claude` or `codex`: whose account the turn used.
+	Assistant string `json:"assistant"`
+
+	// How long the cleanup turn took.
+	Ms int64 `json:"ms"`
+
+	// `applied`, `unchanged`, `unavailable` (the chosen assistant is not installed),
+	// `unfaithful` (the cleanup changed the words and was discarded), `too_long`,
+	// `quota`, `timeout` or `failed`.
+	Status string `json:"status"`
+}
+
 // A refusal from this route. It is the ordinary refusal shape with one field
 // added, because `no_whisper` covers two different afternoons: `brew install
 // whisper-cpp` leaves a machine with the binary and no model, and a page told
@@ -9826,7 +9876,15 @@ type VoiceRequest struct {
 // an answer and not a failure: whisper heard the recording and there were no
 // words in it, which happens to a pocket and to a room that went quiet.
 type VoiceResult struct {
-	Ms   int64  `json:"ms"`
+	Ms     int64        `json:"ms"`
+	Polish *VoicePolish `json:"polish,omitempty"`
+
+	// Whisper's own text, present only when a cleanup replaced it, so the composer can
+	// offer it back.
+	Raw string `json:"raw,omitempty"`
+
+	// The transcript to use: the cleaned text when `polish.status` is `applied`,
+	// otherwise Whisper's own.
 	Text string `json:"text"`
 }
 
@@ -9861,8 +9919,19 @@ type VoiceSetup struct {
 	// darwin, linux or windows.
 	Platform string `json:"platform"`
 
+	// Which assistants could clean up a transcript on this machine: `claude`, `codex`,
+	// both or neither.
+	PolishAssistants []string `json:"polish_assistants,omitempty"`
+
 	// ready, no_binary or no_model.
 	Status string `json:"status"`
+
+	// The names every transcript is repaired against without being asked.
+	VocabularyBuiltin []string `json:"vocabulary_builtin,omitempty"`
+
+	// The project folder names `voice_vocabulary_projects` would add, listed so the
+	// person sees exactly what a ticked box sends.
+	VocabularyProjects []string `json:"vocabulary_projects,omitempty"`
 }
 
 // GET /v1/voice/source: the machine whose Whisper will read the next recording.

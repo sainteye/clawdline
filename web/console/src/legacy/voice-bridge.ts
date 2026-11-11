@@ -105,10 +105,10 @@ export interface VoiceJob {
    * off that attribute on `.composer` itself, not off the row.
    */
   composer: HTMLElement | null
-  /** What the words are for. Nothing on this path sends. */
-  sink: (said: string) => void
+  /** What the words are for, with what the optional cleanup did to them. Nothing on this path sends. */
+  sink: (said: string, polish?: VoicePolishOutcome) => void
   /** A Cloud composer can use the account's existing voice host. Dictation never sends to a Session. */
-  transcribe?: (audio: string, rate: number) => Promise<{ text?: string; ms?: number }>
+  transcribe?: (audio: string, rate: number) => Promise<VoiceAnswer>
   /** The machine whose Whisper will receive this recording. Display-only. */
   source?: () => Promise<{ label: string; description: string }>
   /** This job's own reason to give up early — the composer gone, a sheet shut. */
@@ -151,7 +151,7 @@ interface Recording {
   closeDecoder?: () => void
   // A cancelled wait may still be executing on the host. Reuse that request
   // until it settles; manual Retry must not amplify a stalled transcription.
-  reading?: { revision: number; promise: Promise<{ text?: string; ms?: number }> }
+  reading?: { revision: number; promise: Promise<VoiceAnswer> }
 }
 let recording: Recording | null = null
 let stageTimer: ReturnType<typeof setTimeout> | null = null
@@ -588,7 +588,7 @@ function processRecording(): void {
       const prior = take.reading?.promise
       // If final bytes arrived during a partial attempt, wait for that host
       // request to settle before starting the manually requested full one.
-      const request: Promise<{ text?: string; ms?: number }> = Promise.resolve(prior).catch(() => null).then(() => {
+      const request: Promise<VoiceAnswer> = Promise.resolve(prior).catch(() => null).then(() => {
         if (!current()) return {}
         return job?.transcribe ? job.transcribe(audio, RATE) : postVoice(audio, RATE)
       })
@@ -606,7 +606,7 @@ function processRecording(): void {
     if (!said) { recover("processing_failed"); speak(S.webVoiceEmpty); return }
     cancel()
     knockTwice()
-    job?.sink(said)
+    job?.sink(said, polishOutcome(answer))
   }).catch((e: VoiceFailure) => {
     if (!current()) return
     recover("processing_failed")
@@ -981,7 +981,7 @@ function base64(bytes: Uint8Array): string {
  * One key per submitted request. Recovery shares an outstanding promise; a
  * fresh manual request is made only after the earlier one has settled.
  */
-export async function postVoice(audio: string, rate: number): Promise<{ text?: string; ms?: number }> {
+export async function postVoice(audio: string, rate: number): Promise<VoiceAnswer> {
   let res: Response
   try {
     res = await fetch("/v1/voice", {
@@ -1019,7 +1019,21 @@ export async function postVoice(audio: string, rate: number): Promise<{ text?: s
     throw failure
   }
   if (!data) throw new Error(S.webNotJSON)
-  return data as { text?: string; ms?: number }
+  return data as VoiceAnswer
+}
+
+/** What `/v1/voice` answers. `raw` and `polish` come only from a daemon with cleanup. */
+export type VoiceAnswer = { text?: string; ms?: number; raw?: string; polish?: { status?: string } }
+
+/** The cleanup's outcome as the composer shows it, or nothing when cleanup was off. */
+export type VoicePolishOutcome = { status: string; raw?: string }
+
+export function polishOutcome(answer: VoiceAnswer): VoicePolishOutcome | undefined {
+  const status = typeof answer.polish?.status === "string" ? answer.polish.status : ""
+  if (!status) return undefined
+  const raw = typeof answer.raw === "string" && answer.raw.trim() ? answer.raw.trim() : undefined
+  if (status === "applied" && !raw) return undefined
+  return raw ? { status, raw } : { status }
 }
 
 /* ---- what it looks like ------------------------------------------------- */

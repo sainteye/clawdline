@@ -23,7 +23,14 @@ var voiceModelInstall = whisper.InstallDefaultModel
 func (s *Server) voiceSetupRoute(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
-		writeJSON(w, voiceSetup(s.whisper()))
+		reply := voiceSetup(s.whisper())
+		reply.PolishAssistants = voicePolishAvailable()
+		reply.VocabularyBuiltin = append([]string{}, whisper.AlwaysExpected...)
+		reply.VocabularyProjects = s.voiceProjectTerms()
+		if reply.VocabularyProjects == nil {
+			reply.VocabularyProjects = []string{}
+		}
+		writeJSON(w, reply)
 	case http.MethodPost:
 		path, err := voiceModelInstall(r.Context(), http.DefaultClient, "")
 		if err != nil {
@@ -53,6 +60,10 @@ type voiceSetupReply struct {
 	BinaryInstall string   `json:"binary_install"`
 	ModelName     string   `json:"model_name"`
 	ModelBytes    int64    `json:"model_bytes"`
+	// Cleanup and vocabulary, for the voice tab (docs/voice.md).
+	PolishAssistants   []string `json:"polish_assistants"`
+	VocabularyBuiltin  []string `json:"vocabulary_builtin"`
+	VocabularyProjects []string `json:"vocabulary_projects"`
 }
 
 type voiceModelInstallReply struct {

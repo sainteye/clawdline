@@ -1,0 +1,47 @@
+/* What the optional LLM cleanup did to the words just dictated: a small tag
+   over the box, with the way back to Whisper's own text when it replaced it. */
+.voice-polish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.voice-polish-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+
+.voice-polish[data-status="applied"] .voice-polish-tag {
+  border-color: rgba(76, 203, 127, 0.4);
+  background: rgba(76, 203, 127, 0.1);
+}
+
+.voice-polish[data-status="fallback"] .voice-polish-tag {
+  border-color: rgba(240, 180, 120, 0.45);
+  background: rgba(240, 180, 120, 0.08);
+}
+
+.voice-polish button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--accent, #d97757);
+  font: inherit;
+  cursor: pointer;
+}
+
+.voice-polish button.voice-polish-dismiss {
+  min-width: 32px;
+  padding: 0;
+  color: var(--faint);
+}
