@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
-import { createOrbRenderer, ORB_PHASE_PERIOD, type OrbRenderer } from "./copilot-orb-gl.js"
+import { createOrbRenderer, ORB_DISPERSAL, ORB_PHASE_PERIOD, type OrbRenderer } from "./copilot-orb-gl.js"
 import { QUIET, easeLook, frameDue, orbLook, settled, smoothLevel, type OrbLevels, type OrbMode } from "./copilot-orb.js"
 
 interface Props {
@@ -37,6 +37,7 @@ export function CopilotOrb({ mode, levels }: Props) {
     let heard: OrbLevels = QUIET
     let look = orbLook(modeNow.current, QUIET, still)
     let phase = Math.random() * ORB_PHASE_PERIOD
+    let life = Math.random()
     let frame = 0
     let last = 0
 
@@ -51,7 +52,8 @@ export function CopilotOrb({ mode, levels }: Props) {
       const target = orbLook(modeNow.current, heard, still)
       look = easeLook(look, target, dt)
       phase = (phase + look.speed * dt) % ORB_PHASE_PERIOD
-      if (renderer) renderer.draw(look, phase)
+      life = (life + look.speed * dt * ORB_DISPERSAL) % 1
+      if (renderer) renderer.draw(look, phase, life)
       box.style.setProperty("--orb-swell", look.swell.toFixed(3))
       box.style.setProperty("--orb-glow", look.glow.toFixed(3))
       box.style.setProperty("--orb-bright", look.bright.toFixed(3))
