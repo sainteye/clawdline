@@ -22,6 +22,16 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
     })
   }, [])
 
+  useEffect(() => {
+    if (open) {
+      const stored = getStoredOpenAIKey()
+      if (stored) {
+        setApiKey(stored)
+        setShowKeyInput(false)
+      }
+    }
+  }, [open])
+
   if (!open) return null
 
   const handleStartCall = () => {
@@ -105,30 +115,46 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
         )}
 
         {/* API Key configuration row */}
-        {(!isConnected || showKeyInput) && (
-          <div className="realtime-key-row">
-            <label htmlFor="openai-key-input">OpenAI API 金鑰：</label>
-            <div className="key-input-wrap">
-              <input
-                id="openai-key-input"
-                type="password"
-                placeholder="sk-..."
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                disabled={isConnected || isConnecting}
-              />
-              {apiKey && !showKeyInput && (
-                <button
-                  type="button"
-                  className="key-edit-btn"
-                  onClick={() => setShowKeyInput(true)}
-                >
-                  修改
-                </button>
-              )}
+        {!isConnected && (
+          showKeyInput ? (
+            <div className="realtime-key-row">
+              <label htmlFor="openai-key-input">OpenAI API 金鑰：</label>
+              <div className="key-input-wrap">
+                <input
+                  id="openai-key-input"
+                  type="password"
+                  placeholder="sk-..."
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  disabled={isConnecting}
+                />
+                {apiKey && (
+                  <button
+                    type="button"
+                    className="key-edit-btn"
+                    onClick={() => {
+                      setStoredOpenAIKey(apiKey)
+                      setShowKeyInput(false)
+                    }}
+                  >
+                    儲存
+                  </button>
+                )}
+              </div>
+              <small className="key-hint">僅保存在此裝置本地儲存空間，不外傳</small>
             </div>
-            <small className="key-hint">僅保存在此手機/瀏覽器本地 LocalStorage，不外傳</small>
-          </div>
+          ) : (
+            <div className="realtime-key-status-row">
+              <span className="realtime-key-ready">✓ 已載入 OpenAI API 金鑰</span>
+              <button
+                type="button"
+                className="key-edit-link"
+                onClick={() => setShowKeyInput(true)}
+              >
+                更換
+              </button>
+            </div>
+          )
         )}
 
         {/* Bottom Call Controls */}
