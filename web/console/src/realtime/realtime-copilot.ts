@@ -150,8 +150,8 @@ export class RealtimeCopilotClient {
 
       // 6. Connect with OpenAI Realtime API endpoint (GA)
       const baseUrl = 'https://api.openai.com/v1/realtime/calls'
-      const model = 'gpt-4o-realtime-preview'
-      const response = await fetch(`${baseUrl}?model=${model}`, {
+      const model = 'gpt-realtime-mini'
+      let response = await fetch(`${baseUrl}?model=${model}`, {
         method: 'POST',
         body: offer.sdp,
         headers: {
@@ -159,6 +159,18 @@ export class RealtimeCopilotClient {
           'Content-Type': 'application/sdp',
         },
       })
+
+      if (!response.ok && response.status === 404) {
+        // Fallback to gpt-realtime if mini is unavailable
+        response = await fetch(`${baseUrl}?model=gpt-realtime`, {
+          method: 'POST',
+          body: offer.sdp,
+          headers: {
+            Authorization: `Bearer ${apiKey.trim()}`,
+            'Content-Type': 'application/sdp',
+          },
+        })
+      }
 
       if (!response.ok) {
         const errorText = await response.text()
