@@ -3337,7 +3337,7 @@
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
     "internal/transport/http/codegraph.go": "c2f88e6495724bd5e48254669f62274e72d613e2c4757c32e0fbae909c65954c",
-    "internal/transport/http/codegraph_guidance.go": "3930ce9a7e35315b21e765e93b784c36963c70a30358488ce0352c3b68217464",
+    "internal/transport/http/codegraph_guidance.go": "8a8270387e51712efeb14d484514bb96f3935f9be3193734702495f2812b9c0b",
     "internal/transport/http/coordinator.go": "21ae3a467eb3601187e6773ceef73c6edc6f80ba96dd537864782018ae31b7a6",
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "b3c637185ee7d4a40fbd9820734d439d11c2ae87460c646ef54a7e4afc60a6b2",

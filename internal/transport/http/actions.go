@@ -655,11 +655,26 @@ func writeActionRefusal(w http.ResponseWriter, err error) {
 		_ = json.NewEncoder(w).Encode(wire)
 		return
 	}
-	if ref.RawDetail || ref.Cause != nil {
+	if !refusalDetailFixed(ref) {
 		writeRawRefusal(w, status, ref.Code, ref.Detail)
 		return
 	}
 	writeRefusal(w, status, ref.Code, ref.Detail)
+}
+
+// refusalDetailFixed says the detail is authored copy a catalog may key. A
+// Cause usually carries runtime text, but the bare "nothing was typed" marker
+// that app.beforeTheFirstByte adds repeats the same fixed sentence; without
+// this, every refusal made before the first byte reached a person untranslated.
+func refusalDetailFixed(ref app.Refusal) bool {
+	if ref.RawDetail {
+		return false
+	}
+	if ref.Cause == nil {
+		return true
+	}
+	unsent, ok := ref.Cause.(terminal.Unsent)
+	return ok && unsent.Why == ref.Detail
 }
 
 func actionStatus(code string) int {
