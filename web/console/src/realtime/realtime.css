@@ -1,35 +1,19 @@
 /* Realtime Voice Copilot button in Composer */
-.composer .voice-phone {
-  flex: 0 0 auto;
-  width: 30px;
-  min-height: 30px;
-  border-radius: 8px;
-  color: var(--dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.composer .voice-phone:hover:not(:disabled) {
-  background: var(--card-hi);
-  color: var(--ink);
-}
-
-.composer .voice-phone.in-call {
+.filter-row .copilot-call.in-call {
   color: #10b981;
   background: rgba(16, 185, 129, 0.15);
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
   animation: pulse-green 1.8s infinite;
 }
 
-.composer .voice-phone .ico {
+.filter-row .copilot-call .ico {
   display: block;
   width: 17px;
   height: 17px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filter-row .copilot-call.in-call { animation: none; }
 }
 
 @keyframes pulse-green {
