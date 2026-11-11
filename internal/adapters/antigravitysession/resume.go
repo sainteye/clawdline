@@ -240,6 +240,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 			return session.Session{}, refusal("history_unavailable")
 		}
 	}
+	c.stopWatch()
 	c.client = client
 	c.launchContext = stage.launchContext
 	c.injected = stage.injected

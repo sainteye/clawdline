@@ -131,6 +131,10 @@ type conversation struct {
 	// the row. draining is set while one of them is being sent.
 	queued   []string
 	draining bool
+	// watch follows the native log after a turn ended with tools running;
+	// nativeTurn says Gemini is running a turn it started itself.
+	watch      *nativeWatch
+	nativeTurn bool
 }
 
 func (c *conversation) touchActivity() {
@@ -346,6 +350,9 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 			row.State = session.StateWaiting
 			row.Line = session.MenuRevision(*row.Menu)
 		}
+		if c.nativeTurn && row.State == session.StateIdle {
+			row.State = session.StateWorking
+		}
 		if c.client != nil && c.client.Err() != nil {
 			row.Menu = nil
 			row.State = session.StateUnknown
@@ -447,6 +454,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 	inject := c.launchContext.Text != "" && c.injected == nil
 	launch := c.launchContext
 	c.busy = true
+	c.nativeTurn = false
 	c.activeTools = nil
 	c.activeToolBytes = 0
 	c.endMarked = false
@@ -681,6 +689,9 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 			_ = c.saveState()
 		}
 		notify = (result.StopReason == "end_turn" || marked) && c.storeErr == nil
+		if notify && h.ctx.Err() == nil {
+			h.watchBackground(c)
+		}
 	}()
 	select {
 	case <-accepted:

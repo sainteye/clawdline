@@ -30,6 +30,7 @@ func (h *Host) Stop(ctx context.Context, row session.Session) error {
 	}
 	wasHidden, wasUncertain, state, permission := c.hidden, c.uncertain, c.row.State, c.permission
 	c.stopping = true
+	c.stopWatch()
 	c.hidden = true
 	c.permission = nil
 	if c.busy {

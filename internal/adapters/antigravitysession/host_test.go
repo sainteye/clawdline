@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -135,6 +136,9 @@ func TestOwnedPeer(t *testing.T) {
 				n++
 				os.WriteFile(filepath.Join(dir, "session-number"), []byte(strconv.Itoa(n)), 0600)
 				nativeID = "synthetic-native-" + strconv.Itoa(n)
+				if os.Getenv("CLW_NATIVE_WAKE_PEER") == "yes" {
+					nativeID = fmt.Sprintf("11111111-1111-4111-8111-%012d", n)
+				}
 			}
 			result = map[string]any{"sessionId": nativeID, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 			result.(map[string]any)["models"] = map[string]any{"currentModelId": "synthetic-high", "availableModels": []any{map[string]string{"modelId": "synthetic-high", "name": "Synthetic High"}, map[string]string{"modelId": "synthetic-low", "name": "Synthetic Low"}}}
@@ -198,6 +202,22 @@ func TestOwnedPeer(t *testing.T) {
 		case "session/set_model":
 			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
+			if os.Getenv("CLW_NATIVE_WAKE_PEER") == "yes" {
+				// The 2026-11-11 shape: the command becomes a native background
+				// task, the turn ends, and only the native log follows it.
+				logs := filepath.Join(os.Getenv("GEMINI_HOME"), "antigravity-acp", "brain", nativeID, ".system_generated", "logs")
+				_ = os.MkdirAll(logs, 0700)
+				rows := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-11T01:20:00Z","content":"deploy"}
+{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-11T01:20:01Z","tool_calls":[{"name":"run_command","args":{"CommandLine":"./deploy web"}}]}
+{"step_index":2,"source":"MODEL","type":"GENERIC","status":"RUNNING","created_at":"2026-11-11T01:20:02Z","content":"Tool is running as a background task with task id: ` + nativeID + `/task-2\nTask Description: ./deploy web\nTask logs are available"}
+{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-11T01:20:03Z","content":"I will report when it finishes."}
+`
+				_ = os.WriteFile(filepath.Join(logs, "transcript_full.jsonl"), []byte(rows), 0600)
+				notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "bg-1", "title": "./deploy web", "kind": "execute", "status": "in_progress"})
+				notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "I will report when it finishes."}})
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]string{"stopReason": "end_turn"}})
+				continue
+			}
 			if os.Getenv("CLW_BACKGROUND_TOOL_PEER") == "yes" {
 				// The 2026-11-10 shape: a shell command keeps running in the
 				// background and the turn ends with it still in_progress.

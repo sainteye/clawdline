@@ -646,3 +646,104 @@ func TestShutdownClosingAProcessIsNotAnUncertainTurn(t *testing.T) {
 		t.Fatal("closing the process during shutdown marked a finished turn uncertain")
 	}
 }
+
+// On 2026-11-11 a deploy became a native background task; the turn ended,
+// the task finished three minutes later and Gemini ran a turn of its own that
+// never crossed ACP. Only its native log recorded the result and the report.
+func TestNativeBackgroundTaskAndTheTurnItWakesAreShown(t *testing.T) {
+	t.Setenv("CLW_NATIVE_WAKE_PEER", "yes")
+	prior := backgroundPollInterval
+	backgroundPollInterval = 5 * time.Millisecond
+	t.Cleanup(func() { backgroundPollInterval = prior })
+	h, row, opts := persistentFixture(t)
+	if err := h.Send(context.Background(), row, "deploy"); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+	c, _ := h.lookup(row)
+	c.mu.Lock()
+	native := c.row.ConversationID
+	c.mu.Unlock()
+	logPath := filepath.Join(opts.AccountDir, "antigravity-acp", "brain", native, ".system_generated", "logs", "transcript_full.jsonl")
+	appendRows := func(rows string) {
+		t.Helper()
+		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString(rows); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+	}
+	state := func() session.State {
+		t.Helper()
+		inv, err := h.Inventory(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range inv.Sessions {
+			if s.ID == row.ID {
+				return s.State
+			}
+		}
+		t.Fatal("row missing")
+		return ""
+	}
+	waitFor := func(what string, ok func(contract.TranscriptPage) bool) contract.TranscriptPage {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			p, err := h.Transcript(row, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok(p) {
+				return p
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		p, _ := h.Transcript(row, 100)
+		t.Fatalf("%s never happened: %+v", what, p.Entries)
+		return p
+	}
+	toolStatus := func(p contract.TranscriptPage, id string) string {
+		for _, e := range p.Entries {
+			if e.Activity != nil && e.Activity.ToolCallID == id {
+				return e.Activity.Status
+			}
+		}
+		return ""
+	}
+	if got := state(); got != session.StateIdle {
+		t.Fatalf("a turn that ended is %q", got)
+	}
+	// A half-written row is not read until its line is complete.
+	appendRows(`{"step_index":4,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","created_at":"2026-11-11T01:23:13Z","content":"sender=` + native + `/task-2 content=Task id \"` + native + `/task-2\" finished with result:\nCommand exited with code 0.\n"}` + "\n" +
+		`{"step_index":5,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-11T01:23:14Z","tool_calls":[{"name":"run_command","args":{"CommandLine":"curl health"}}]}` + "\n")
+	waitFor("the background task's result", func(p contract.TranscriptPage) bool {
+		return toolStatus(p, "bg-1") == "completed" && toolStatus(p, "native:"+native+":5:0") == "inProgress"
+	})
+	if got := state(); got != session.StateWorking {
+		t.Fatalf("Gemini's own turn is shown as %q", got)
+	}
+	appendRows(`{"step_index":6,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"2026-11-11T01:23:21Z","content":"Command exited with code 0."}` + "\n" +
+		`{"step_index":7,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-11T01:23:25Z","content":"Deployed and healthy."}` + "\n")
+	waitFor("Gemini's own report", func(p contract.TranscriptPage) bool {
+		last := p.Entries[len(p.Entries)-1]
+		return toolStatus(p, "native:"+native+":5:0") == "completed" && last.Role == "assistant" && last.Text == "Deployed and healthy."
+	})
+	deadline := time.Now().Add(3 * time.Second)
+	for state() != session.StateIdle && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := state(); got != session.StateIdle {
+		t.Fatalf("the turn Gemini ended is still %q", got)
+	}
+	c.mu.Lock()
+	watching := c.watch != nil
+	c.mu.Unlock()
+	if watching {
+		t.Fatal("the watch outlived every task and turn it followed")
+	}
+}
