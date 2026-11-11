@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11130,
+  "englishKeys": 11135,
   "counts": {
-    "negation": 3091,
+    "negation": 3093,
     "state": 1839,
     "permission": 667,
     "deletion": 253,
     "uncertainty": 421
   },
-  "unionCount": 4904,
+  "unionCount": 4906,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2292,6 +2292,8 @@
       "next.cloudTerminalPermissionDeviceMissing",
       "next.codexAsyncAnswerHint",
       "next.compressedReadFailed",
+      "next.copilotCostNote",
+      "next.copilotCostUnpriced",
       "next.defaultAntigravityCatalogUnknown",
       "next.defaultModelInvalid",
       "next.defaultModelsFailed",
@@ -9835,6 +9837,8 @@
     "next.codexAsyncAnswerHint",
     "next.codexAsyncChoiceHint",
     "next.compressedReadFailed",
+    "next.copilotCostNote",
+    "next.copilotCostUnpriced",
     "next.copilotExpand",
     "next.defaultAntigravityCatalogUnknown",
     "next.defaultModelInvalid",

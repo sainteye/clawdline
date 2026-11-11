@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { nextWord } from '../next-strings.js'
+import { formatUSD } from './copilot-cost.js'
 import {
   realtimeCopilot,
   getStoredOpenAIKey,
@@ -121,6 +122,27 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
                 {copilotState.lastAssistantSpeech}
               </div>
             )}
+          </div>
+        )}
+
+        {copilotState.cost && copilotState.cost.responses > 0 && (
+          <div className="realtime-cost-row" aria-live="polite">
+            <span className="realtime-cost-total">
+              {nextWord(copilotState.cost.priced ? 'copilotCost' : 'copilotCostUnpriced', {
+                cost: formatUSD(copilotState.cost.usd),
+                responses: copilotState.cost.responses,
+              })}
+            </span>
+            <span className="realtime-cost-note">{nextWord('copilotCostNote', { model: copilotState.cost.model })}</span>
+          </div>
+        )}
+
+        {copilotState.remembered > 0 && (
+          <div className="realtime-memory-row">
+            <span>{nextWord('copilotRemembered', { count: copilotState.remembered })}</span>
+            <button type="button" className="realtime-forget-btn" onClick={() => realtimeCopilot.forgetMemory()}>
+              {nextWord('copilotForget')}
+            </button>
           </div>
         )}
 
