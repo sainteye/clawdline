@@ -453,3 +453,7 @@ explanations of the Gemini context and workflow cards were revised to match.
 The Gemini Host's saved model and effort choices, their reapplication after a
 load, and the saved last offer change configuration writes only. They add no
 model input, so the Gemini context explanations in both languages are unchanged.
+
+The Gemini Host's shared model offer for disconnected conversations only changes
+which choices the info sheet lists. It adds no model input, so the Gemini context
+explanations in both languages are unchanged.

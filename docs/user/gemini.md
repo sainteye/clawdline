@@ -84,7 +84,9 @@ reloads a conversation, for example after Clawdline restarts. Clawdline remember
 the model and effort you chose and selects them again before the next message.
 A choice the CLI no longer offers is left out, and the sheet shows what will
 actually run. While a conversation is not connected, the sheet still offers the
-choices the CLI last reported; choosing one reconnects first.
+choices the CLI last reported, for that conversation or, when it has none yet,
+for another Gemini conversation on this machine; choosing one reconnects first
+and checks it against what the CLI offers then.
 
 Quota is the native account reading, with its observation age and reset time
 when available. Missing data is unknown, not zero usage. Context occupancy is

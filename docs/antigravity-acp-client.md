@@ -658,6 +658,17 @@ running still offers its choices; selecting one resumes the process first and is
 validated against the live offer. Conversations chosen before this change have no
 recorded choice and keep the runtime default until the person selects again.
 
+That alone left every conversation saved before the change without an offer
+until it reconnected: on this machine all three visible Gemini Sessions were in
+that state after the dev install, and the info sheet still had no model switch.
+The offer is account-wide, so the Host also keeps the most recent one any
+conversation reported, seeded at start from saved conversations (hidden ones
+included) and refreshed while a conversation is connected. A disconnected
+conversation without its own offer shows that shared list with its model and
+effort unknown unless the person chose them there. The lock order stays `h.mu`
+before `c.mu`: Facts reads the shared offer before locking the conversation and
+records a live offer after releasing it.
+
 A zero-model diagnostic on 2026-10-26 found that both the installed ACP 1.4.1
 runtime and the official registry's ACP 1.4.3 runtime offer only `default`,
 `auto_edit` and `yolo`. ACP 1.4.1 rejects a `mode=auto` selection with JSON-RPC
