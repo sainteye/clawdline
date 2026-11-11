@@ -15,6 +15,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
   const [copilotState, setCopilotState] = useState<RealtimeCopilotState>(realtimeCopilot.getState())
   const [apiKey, setApiKey] = useState(getStoredOpenAIKey())
   const [tempKey, setTempKey] = useState('')
+  const [showLogs, setShowLogs] = useState(false)
 
   useEffect(() => {
     return realtimeCopilot.subscribe((state) => {
@@ -101,6 +102,31 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
               <div className="realtime-bubble assistant">
                 <span className="bubble-label">副駕駛：</span>
                 {copilotState.lastAssistantSpeech}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Realtime Event & Tool Call Logs */}
+        {copilotState.logs && copilotState.logs.length > 0 && (
+          <div className="realtime-logs-container">
+            <button
+              type="button"
+              className="realtime-logs-toggle-btn"
+              onClick={() => setShowLogs(!showLogs)}
+            >
+              <span>{showLogs ? '▼ 隱藏執行日誌' : '▶ 查看執行日誌'}</span>
+              <span className="logs-count">({copilotState.logs.length})</span>
+            </button>
+            {showLogs && (
+              <div className="realtime-logs-list" role="log" aria-label="副駕駛執行日誌">
+                {copilotState.logs.map((item) => (
+                  <div key={item.id} className={`log-item log-level-${item.level}`}>
+                    <span className="log-time">[{item.timestamp}]</span>
+                    <span className="log-tag">[{item.level === 'tool' ? '工具' : item.level === 'error' ? '錯誤' : '資訊'}]</span>
+                    <span className="log-text">{item.text}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
