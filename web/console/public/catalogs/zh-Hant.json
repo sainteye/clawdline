@@ -9753,7 +9753,7 @@
   "settings.voicePolishExampleFixedText": "你先不要動那個檔案，我還在改，等我改完了再跟你講，你再處理後面的部分。",
   "settings.voicePolishModel": "模型",
   "settings.voicePolishClaude": "Claude Haiku（Claude Code）",
-  "settings.voicePolishCodex": "Codex 小模型（較慢，約 7 秒）",
+  "settings.voicePolishCodex": "Codex 小模型（較慢，約 5～8 秒）",
   "settings.voicePolishMissing": "這台機器沒有安裝 {assistant}，轉寫結果會直接使用 Whisper 的原文。",
   "settings.voicePolishLevel": "修正程度",
   "settings.voicePolishPunctuation": "只補標點",

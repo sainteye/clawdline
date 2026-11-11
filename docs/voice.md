@@ -17,14 +17,19 @@ seed, and this machine, which always runs with the seed, still showed the incons
 With **LLM cleanup** on, the daemon sends each transcript to a small model for one tool-less turn
 after Whisper (`internal/adapters/planner/polish.go`). The model adds punctuation, corrects a
 mis-heard word only when the context makes it certain, and, at the default level, removes filler
-words. It does not translate, summarize or answer.
+words. It does not translate, summarize or answer. Chinese stays in the
+script the transcript is already in (`whisper.Plan.Script`): Traditional, Simplified, or, when
+nothing chose one, whatever characters Whisper wrote.
 
 - **Off unless set** (`voice_polish`). With it off, nothing about a recording leaves the machine.
   With it on, the transcript and the vocabulary go to the chosen assistant's provider, through the
   CLI that is already signed in on this machine. No API key is involved.
 - **Assistant** (`voice_polish_assistant`): `claude` runs Claude Haiku; `codex` runs Codex's small
   model. Measured on 2026-11-11 with the product's own flags, Haiku took 3.1–4.3 s for one sentence
-  and Codex took 5.1–7.7 s. A browser-side wait of 120 s already covers either.
+  and Codex took 5.1–7.7 s; Settings quotes these. (A first prototype without those flags measured
+  2.0–3.1 s and 5.3–10.5 s over twelve transcripts.) A browser-side wait of 120 s covers either, and
+  the turn runs after Whisper hands back its queue slot, so a cleanup never makes the next
+  recording wait.
 - **Level** (`voice_polish_level`): `punctuation` keeps every word; `tidy` (the default) also
   removes filler words.
 

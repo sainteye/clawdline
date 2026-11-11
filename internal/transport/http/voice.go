@@ -134,7 +134,11 @@ func (s *Server) transcribe(w http.ResponseWriter, r *http.Request) {
 			"Two recordings are already waiting to be transcribed on this machine. Try again in a moment.")
 		return
 	}
-	defer voiceLeave()
+	// The slot is Whisper's: it is handed back as soon as the transcript is
+	// read, so a cleanup turn of up to planner.MaxPolishDuration never makes
+	// the next recording hear "two recordings are already waiting".
+	leave := sync.OnceFunc(voiceLeave)
+	defer leave()
 
 	engine := voiceEngine(s)
 	started := time.Now()
@@ -167,8 +171,9 @@ func (s *Server) transcribe(w http.ResponseWriter, r *http.Request) {
 	plan := engine.Plan()
 	log.Printf("audit voice.transcribe seconds=%.1f ms=%d chars=%d ok=1 lang=%s script=%s from=%s",
 		seconds, ms, len([]rune(text)), plan.Code, plan.Script, plan.From.Source)
+	leave()
 	values, readErr := s.settingsFile().Read()
-	final, raw, polish := polishTranscript(ctx, readVoiceOptions(values, readErr == nil), text, engine.Vocabulary)
+	final, raw, polish := polishTranscript(ctx, readVoiceOptions(values, readErr == nil), text, plan.Script, engine.Vocabulary)
 	if polish != nil {
 		// The outcome and the sizes, and not one character of either text.
 		log.Printf("audit voice.polish assistant=%s status=%s ms=%d chars=%d cleaned=%d",

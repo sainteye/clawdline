@@ -3133,6 +3133,35 @@
     "Note": true
   },
   {
+    "Name": "voice.polish_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.polish_terms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.polish_timeout_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.vocabulary_project_terms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.vocabulary_term_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.vocabulary_terms",
+    "Known": true
+  },
+  {
     "Name": "waits.open",
     "Known": true
   },
