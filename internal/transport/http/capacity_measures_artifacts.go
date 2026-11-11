@@ -84,6 +84,28 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		capacity.VoiceModelDownloadBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-download guard; the temporary file is released after verification"}
 		},
+		"voice.vocabulary_terms": func() capacity.Reading {
+			values, err := s.settingsFile().Read()
+			if err != nil {
+				return capacity.Unmeasured("the settings file cannot be read")
+			}
+			return capacity.Reading{Known: true, Used: int64(len(readVoiceOptions(values, true).custom))}
+		},
+		"voice.vocabulary_term_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-term guard on a settings write"}
+		},
+		"voice.vocabulary_project_terms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-dictation guard; project names are read only when ticked"}
+		},
+		"voice.polish_terms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-cleanup guard; further terms are repaired locally"}
+		},
+		"voice.polish_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-cleanup guard; a longer transcript is answered unchanged"}
+		},
+		"voice.polish_timeout_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-cleanup deadline; a slower turn is abandoned for Whisper's text"}
+		},
 		capacity.ArtifactsImages: func() capacity.Reading {
 			if s.pictures.store == nil {
 				return capacity.Unmeasured("this server keeps no picture store")
