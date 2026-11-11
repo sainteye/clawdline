@@ -61,16 +61,23 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 
 【工具】
 - list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，附 latest 最近一句進度）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
-- get_session_summary：某個 Session 的摘要（它自己寫的交付摘要、最後一則回覆、在等什麼）。問「它做完了什麼、結果怎樣、現在如何」先用這個。
+- get_session_summary：某個 Session 現在的摘要（最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」用這個。
+- get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
 - send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
 - session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
-- 使用者問進度、在跑什麼、某個 Session 怎麼了，一律先呼叫工具，不要憑空回答。工具回傳 error 就照實說讀不到與原因，不要編造。
+- 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
+- 工具回傳 error 就照實說讀不到與原因，不要編造。
 
 【回報清單】
 - 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」
 - 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用半句說在做什麼（依 latest），例如「雲端配對在補加密命令」。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
+
+【總結一個 Session 的經過（get_session_recap）】
+- 用一段自然的口語講，像同事口頭跟你交接：先一句說這個 Session 主要在做什麼，再照時間順序講它完成了哪幾件事（合併相近的，最多講五件），最後一句說現在的狀態、還有沒有要使用者處理的。
+- 這一段可以比平常長，大約五到八句。像講故事一樣用「一開始…接著…後來…最後…」把事情串起來；不要說「第一、第二」或「1、2、3」，不要逐條唸清單，不要唸 commit 編號、檔名或指令。
+- 依 deliveries 和 requests 講，紀錄裡沒有的事不要補。
 
 【解說單一 Session】
 - 先讀 get_session_summary，用兩到三句講：它在做什麼、做到哪（依 delivered_summary 或 last_reply 講具體結果）、現在要不要使用者處理（在等什麼）。閒置的 Session 也要說它最後完成了什麼。使用者追問過程或細節，再讀 get_session_activity。
@@ -83,6 +90,22 @@ export const COPILOT_TOOLS = [
     description:
       '查詢目前這台電腦上所有運作中或閒置的 Sessions 清單與狀態。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先主動呼叫此工具。',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function',
+    name: 'get_session_recap',
+    description:
+      '讀取特定 Session 從開始到現在的完整經過：使用者陸續交代了哪些事（requests）、它每一次交付回報了什麼（deliveries，依時間排序）、以及它最後一則回覆。使用者問「這個 Session 完成了什麼」「從頭到尾做了哪些事」「幫我總結這個 Session」時用這個，然後用一段自然的口語講給使用者聽。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
+        },
+      },
+      required: ['session_id'],
+    },
   },
   {
     type: 'function',
@@ -155,14 +178,14 @@ export const COPILOT_TOOLS = [
  * are refused with an `error` event, which left the call talking without its
  * tools or its instructions.
  */
-export function sessionUpdateEvent(memory = ''): Record<string, unknown> {
+export function sessionUpdateEvent(memory = '', snapshot = ''): Record<string, unknown> {
   return {
     type: 'session.update',
     session: {
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: memory ? `${COPILOT_INSTRUCTIONS}\n\n${memory}` : COPILOT_INSTRUCTIONS,
+      instructions: [COPILOT_INSTRUCTIONS, snapshot, memory].filter(Boolean).join('\n\n'),
       audio: {
         input: {
           transcription: { model: 'whisper-1' },
@@ -523,6 +546,137 @@ export function activityOf(entries: unknown): ActivityEntry[] {
   return kept
 }
 
+/** How far back a recap reads: pages of the transcript, and what it keeps of them. */
+export const RECAP_PAGES = 5
+export const RECAP_REQUESTS = 12
+export const RECAP_DELIVERIES = 12
+export const RECAP_TEXT_CHARS = 280
+
+// The command a Session runs to record a delivery, with its summary quoted.
+const REPORT_COMMAND = /clawdline\s+session\s+report\b[^\n]*?--summary\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')/
+
+/** The words of a person's message, or "" for what Clawdline itself delivered into the conversation. */
+function personWords(text: string): string {
+  const t = text.trim()
+  if (!t) return ''
+  // Notices, task briefs and system wrappers arrive as user turns but are not the person.
+  if (/^<(clawdline-|system-reminder|task-notification|command-|local-command)/.test(t)) return ''
+  return t
+}
+
+export interface RecapRead {
+  requests: { text: string; at?: number }[]
+  deliveries: { text: string; at?: number }[]
+  lastReply: string
+  pages: number
+  complete: boolean
+}
+
+/**
+ * Reads a Session's conversation from its newest page back, at most
+ * RECAP_PAGES pages, and keeps what the person asked for and what the
+ * Session reported delivering, oldest first.
+ */
+export async function readRecap(deps: ToolDeps, id: string): Promise<RecapRead | { error: string; status: number }> {
+  const requests: RecapRead['requests'] = []
+  const deliveries: RecapRead['deliveries'] = []
+  let lastReply = ''
+  let before: number | undefined
+  let pages = 0
+  let complete = false
+  while (pages < RECAP_PAGES) {
+    const path = `/v1/transcript?session=${encodeURIComponent(id)}${before ? `&before=${before}` : ''}`
+    const res = await deps.fetch(path, NAMED_READ)
+    if (!res.ok) {
+      if (pages === 0) return { error: (await refusalText(res)) || `HTTP ${res.status}`, status: res.status }
+      break
+    }
+    const page = (await res.json()) as { entries?: unknown; nextBefore?: unknown }
+    pages++
+    const entries = Array.isArray(page.entries) ? page.entries : []
+    const pageRequests: RecapRead['requests'] = []
+    const pageDeliveries: RecapRead['deliveries'] = []
+    for (const raw of entries) {
+      const e = raw as Record<string, unknown> | null
+      if (!e) continue
+      const text = str(e.text)
+      const at = Number(e.at) || undefined
+      if (e.role === 'user') {
+        const words = personWords(text)
+        if (words) pageRequests.push({ text: clip(plainScreenText(words), RECAP_TEXT_CHARS), ...(at ? { at } : {}) })
+      } else if (e.role === 'tool') {
+        const m = REPORT_COMMAND.exec(text)
+        const summary = m ? (m[1] ?? m[2] ?? '').replace(/\\(.)/g, '$1') : ''
+        if (summary.trim()) pageDeliveries.push({ text: clip(summary, RECAP_TEXT_CHARS), ...(at ? { at } : {}) })
+      }
+    }
+    if (pages === 1) {
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i] as Record<string, unknown> | null
+        if (e && e.role === 'assistant' && str(e.text).trim()) { lastReply = clip(plainScreenText(str(e.text)), ACTIVITY_TEXT_CHARS); break }
+      }
+    }
+    // Pages arrive newest first; each page's own entries are oldest first.
+    requests.unshift(...pageRequests)
+    deliveries.unshift(...pageDeliveries)
+    const next = Number(page.nextBefore)
+    if (!next || (before !== undefined && next >= before)) { complete = true; break }
+    before = next
+  }
+  // The newest are the ones worth keeping when there are too many; the first request is the goal.
+  const keptRequests = requests.length > RECAP_REQUESTS ? [requests[0], ...requests.slice(-(RECAP_REQUESTS - 1))] : requests
+  return { requests: keptRequests, deliveries: deliveries.slice(-RECAP_DELIVERIES), lastReply, pages, complete }
+}
+
+async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  }
+  const { row } = found
+  const recap = await readRecap(deps, row.id)
+  if ('error' in recap) {
+    const error = `無法讀取「${row.label}」的工作紀錄 (HTTP ${recap.status})：${recap.error}`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  logs.push({ level: 'info', text: `成功讀取「${row.label}」經過：${recap.requests.length} 個交代、${recap.deliveries.length} 次交付（讀了 ${recap.pages} 頁）` })
+  return {
+    session_id: row.id,
+    label: row.label,
+    assistant: row.assistant,
+    state: row.state,
+    requests: recap.requests.map((r) => r.text),
+    deliveries: recap.deliveries.map((d) => d.text),
+    ...(row.delivered && !recap.deliveries.some((d) => d.text === row.delivered) ? { latest_delivery: row.delivered } : {}),
+    ...(recap.lastReply ? { last_reply: recap.lastReply } : {}),
+    ...(row.question ? { question: row.question } : {}),
+    ...(recap.complete ? {} : { note: '這個 Session 很長，只讀了最近的部分；更早的經過沒有包含在內' }),
+  }
+}
+
+/** The list as the call's opening context, so the first question needs no tool. */
+export async function sessionsSnapshot(deps: ToolDeps): Promise<string> {
+  const logs: ToolLog[] = []
+  const list = await listSessions(deps, logs)
+  if (!list || typeof list !== 'object' || 'error' in (list as object)) return ''
+  return snapshotSection(list as Record<string, unknown>)
+}
+
+export function snapshotSection(list: Record<string, unknown>): string {
+  return [
+    '【通話開始時的 Session 快照】',
+    '這是接通電話時讀到的狀態（JSON，與 list_sessions 相同格式）。第一個問題可以直接依它回答；要最新狀態再呼叫工具。',
+    JSON.stringify(list),
+  ].join('\n')
+}
+
 async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
@@ -663,6 +817,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
   let result: unknown
   try {
     if (name === 'list_sessions') result = await listSessions(deps, logs)
+    else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))

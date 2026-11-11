@@ -4,7 +4,7 @@
  * Clawdline sessions on the Mac.
  */
 
-import { greetingEvent, runCopilotTool, sessionUpdateEvent, toolReplyEvents } from './copilot-tools.js'
+import { greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 
@@ -33,6 +33,8 @@ export type RealtimeListener = (state: RealtimeCopilotState) => void
 
 const API_KEY_STORAGE_KEY = 'clawdline.openai.apikey'
 const MEMORY_STORAGE_KEY = 'clawdline.copilot.memory'
+/** How long the call's first words wait for the opening Session snapshot. */
+const SNAPSHOT_WAIT_MS = 4000
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000)
@@ -129,6 +131,14 @@ export class RealtimeCopilotClient {
     remembered: readMemory().length,
   }
   private memory: MemoryTurn[] = readMemory()
+  /** This call's opening Session snapshot, read while the connection is set up. */
+  private snapshot: Promise<string> = Promise.resolve('')
+  private toolDeps(): ToolDeps {
+    return {
+      fetch: (input, init) => fetch(input, init),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    }
+  }
   private model = 'gpt-realtime-mini'
 
   subscribe(listener: RealtimeListener): () => void {
@@ -173,6 +183,9 @@ export class RealtimeCopilotClient {
 
     setStoredOpenAIKey(apiKey)
     this.memory = readMemory()
+    // Read the Sessions now, beside the microphone and WebRTC setup, so the
+    // first question can be answered from them without a tool call.
+    this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
     this.updateState({ status: 'connecting', error: undefined, toolCallLog: undefined, remembered: this.memory.length })
     this.addLog('info', '正在請求麥克風權限並建立 WebRTC 連線...')
 
@@ -252,7 +265,7 @@ export class RealtimeCopilotClient {
 
   private setupDataChannel(dc: RTCDataChannel) {
     dc.onopen = () => {
-      this.sendSessionConfiguration()
+      void this.sendSessionConfiguration()
     }
 
     dc.onmessage = (event) => {
@@ -276,13 +289,18 @@ export class RealtimeCopilotClient {
     }
   }
 
-  private sendSessionConfiguration() {
+  private async sendSessionConfiguration() {
     if (!this.dc || this.dc.readyState !== 'open') return
 
-    this.addLog('info', '正在向 OpenAI 傳送副駕駛系統配置與工具定義...')
+    this.addLog('info', '正在讀取 Session 快照並傳送副駕駛設定...')
+    // Waits for the snapshot at most SNAPSHOT_WAIT_MS: a slow machine must not hold the call's first words.
+    const snapshot = await Promise.race([this.snapshot,
+      new Promise<string>((resolve) => setTimeout(() => resolve(''), SNAPSHOT_WAIT_MS))])
+    if (!this.dc || this.dc.readyState !== 'open') return
+    this.addLog(snapshot ? 'info' : 'error', snapshot ? '已附上 Session 快照，第一句就能直接問' : 'Session 快照沒有及時讀到，副駕駛會改用工具查詢')
     const section = memorySection(this.memory, nowSeconds())
     if (section) this.addLog('info', `已載入之前通話的 ${this.memory.length} 句對話`)
-    this.dc.send(JSON.stringify(sessionUpdateEvent(section)))
+    this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot)))
     this.dc.send(JSON.stringify(greetingEvent(!!section)))
     this.addLog('info', '已送出開場問候要求')
   }
@@ -361,10 +379,7 @@ export class RealtimeCopilotClient {
 
   private async handleToolCall(event: { call_id: string; name: string; arguments: string }) {
     this.updateState({ toolCallLog: `正在執行工具：${event.name}...`, speakingState: 'thinking' })
-    const { output, logs } = await runCopilotTool(event.name, event.arguments, {
-      fetch: (input, init) => fetch(input, init),
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    })
+    const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
 

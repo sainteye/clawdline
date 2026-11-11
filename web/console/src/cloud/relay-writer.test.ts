@@ -3174,3 +3174,13 @@ test("an unopened read of a Session the machine cannot verify is refused", async
   assert.equal(res.status, 409)
   assert.equal(f.client.calls.some(([name]) => name === "readForGeneration"), false)
 })
+
+test("the copilot pages back through another Session's transcript while one Session is open", async () => {
+  const f = unopenedReadSeam()
+  const res = await f.reader.fetch(`/v1/transcript?session=${encodeURIComponent(f.other)}&before=4522709`, { headers: { "X-Clawdline-Unopened-Read": "1" } })
+  assert.equal(res.status, 200)
+  const call = f.client.calls.find(([name, , word]) => name === "readForGeneration" && word === "transcript")
+  assert.deepEqual(call?.[1], { machineID: f.machine, sessionID: f.other, executionGeneration: f.generation })
+  assert.equal((call?.[3] as { before?: number }).before, 4522709)
+  assert.equal((await f.reader.fetch(`/v1/transcript?session=${encodeURIComponent(f.other)}&before=nope`, { headers: { "X-Clawdline-Unopened-Read": "1" } })).status, 400)
+})

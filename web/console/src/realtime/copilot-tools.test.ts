@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, COPILOT_TOOLS, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, COPILOT_INSTRUCTIONS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -180,7 +180,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_sessions", "get_session_summary", "get_session_activity", "get_session_screen", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "get_session_screen", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -293,4 +293,83 @@ test("a waiting Session's summary says what it asks, and survives an unreadable 
   assert.equal(out.last_reply, undefined)
   assert.equal(out.delivered_summary, undefined)
   assert.match(out.note, /get_session_screen/)
+})
+
+// Two pages of one Session's conversation, newest first as the machine pages them.
+const NEWER = { entries: [
+  { at: "30", role: "user", text: "Now make the call button float." },
+  { at: "31", role: "tool", tool: "Bash", text: 'git push && clawdline session report --summary "The call shrinks to a \\"bubble\\"; a497edf is on main." 2>&1 | tail -1' },
+  { at: "32", role: "user", text: "<clawdline-notice>{\"kind\":\"task_finished\"}</clawdline-notice>" },
+  { at: "33", role: "assistant", text: "The bubble is live." },
+], nextBefore: 500 }
+const OLDER = { entries: [
+  { at: "10", role: "user", text: "Make the copilot read any Session." },
+  { at: "11", role: "tool", tool: "Bash", text: "clawdline session report --summary 'Reads any Session over Cloud; 0fbc999 deployed.'" },
+  { at: "12", role: "tool", tool: "Bash", text: "clawdline codegraph query \"session report summary\"" },
+] }
+
+function pagedMachine() {
+  const paths: string[] = []
+  const deps: ToolDeps = {
+    async fetch(path) {
+      paths.push(path)
+      if (path === "/v1/sessions") return Response.json({ sessions: ROWS })
+      if (path === "/v1/transcript?session=%257") return Response.json(NEWER)
+      if (path === "/v1/transcript?session=%257&before=500") return Response.json(OLDER)
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+  }
+  return { deps, paths }
+}
+
+test("a recap reads the Session back to its start and keeps the person's asks and each delivery, oldest first", async () => {
+  const { deps, paths } = pagedMachine()
+  const read = await readRecap(deps, "%7")
+  assert.ok(!("error" in read))
+  const r = read as Exclude<typeof read, { error: string }>
+  assert.deepEqual(paths, ["/v1/transcript?session=%257", "/v1/transcript?session=%257&before=500"])
+  assert.deepEqual(r.requests.map((x: { text: string }) => x.text), ["Make the copilot read any Session.", "Now make the call button float."])
+  assert.deepEqual(r.deliveries.map((x: { text: string }) => x.text), ["Reads any Session over Cloud; 0fbc999 deployed.", 'The call shrinks to a "bubble"; a497edf is on main.'])
+  assert.equal(r.lastReply, "The bubble is live.")
+  assert.equal(r.complete, true)
+})
+
+test("get_session_recap hands the model the whole story to tell", async () => {
+  const { deps } = pagedMachine()
+  const out = JSON.parse((await runCopilotTool("get_session_recap", '{"session_id":"flaky"}', deps)).output)
+  assert.equal(out.label, "Fix the flaky test")
+  assert.equal(out.requests.length, 2)
+  assert.equal(out.deliveries.length, 2)
+  assert.equal(out.question, "Push to main?")
+  assert.equal(out.note, undefined, "the whole conversation was read")
+})
+
+test("a recap stops at its page budget and says it did", async () => {
+  let n = 0
+  const deps: ToolDeps = {
+    async fetch(path) {
+      if (path === "/v1/sessions") return Response.json({ sessions: ROWS })
+      n++
+      return Response.json({ entries: [{ role: "user", text: `ask ${n}` }], nextBefore: 1000 - n })
+    },
+    async sleep() {},
+  }
+  const out = JSON.parse((await runCopilotTool("get_session_recap", '{"session_id":"%2"}', deps)).output)
+  assert.equal(n, 5)
+  assert.match(out.note, /只讀了最近的部分/)
+  assert.equal(out.requests[0], "ask 5", "the oldest page read comes first")
+})
+
+test("the call opens with the Sessions already in its instructions", async () => {
+  const { deps } = fakeMachine({}, { transcripts: {} })
+  const snapshot = await sessionsSnapshot(deps)
+  assert.match(snapshot, /^【通話開始時的 Session 快照】/)
+  assert.match(snapshot, /Fix the flaky test/)
+  assert.match(snapshot, /Push to main\?/)
+  const ev = sessionUpdateEvent("【之前的通話】x", snapshot) as { session: { instructions: string } }
+  assert.ok(ev.session.instructions.startsWith(COPILOT_INSTRUCTIONS))
+  assert.ok(ev.session.instructions.indexOf(snapshot) < ev.session.instructions.indexOf("【之前的通話】"))
+  const refused: ToolDeps = { async fetch() { return new Response("", { status: 503 }) }, async sleep() {} }
+  assert.equal(await sessionsSnapshot(refused), "", "a machine that cannot answer leaves the call to its tools")
 })
