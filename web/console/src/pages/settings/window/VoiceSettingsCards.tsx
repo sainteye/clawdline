@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
-import { asMachineNeedsUpdate } from "@clawdline/core"
-import { catalogWord } from "../../../catalog.js"
+import { asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
+import { followsRelay } from "../../../client.js"
+import { onMachineChanged } from "../../../cloud/machine-switch.js"
+import { NeedsUpdate } from "../../../machine/NeedsUpdate.js"
 import { readVoiceSettings, writeVoiceSettings, type VoiceSettingsSnapshot, type VoiceSettingsValues } from "../api.js"
 import { Chip, Note, PopUp, Row, Switch } from "./controls.js"
 import { W, fill } from "./copy.js"
@@ -19,16 +21,18 @@ import { cleanVocabulary, validTerm, VOICE_VOCABULARY_RUNES, VOICE_VOCABULARY_TE
 export function VoiceSettingsCards({ shown }: { shown: boolean }) {
   const [snapshot, setSnapshot] = useState<VoiceSettingsSnapshot | null>(null)
   const [failure, setFailure] = useState("")
-  const [outdated, setOutdated] = useState(false)
+  const [outdated, setOutdated] = useState<MachineNeedsUpdate | null>(null)
   const [term, setTerm] = useState("")
   const [termSaid, setTermSaid] = useState("")
   const [pending, setPending] = useState<VoiceSettingsValues>({})
 
   const read = useCallback(() => {
     void readVoiceSettings().then(
-      (answer) => { setSnapshot(answer); setFailure(""); setOutdated(false) },
+      (answer) => { setSnapshot(answer); setFailure(""); setOutdated(null) },
       (error: unknown) => {
-        if (asMachineNeedsUpdate(error)) { setOutdated(true); return }
+        setSnapshot(null)
+        const update = asMachineNeedsUpdate(error)
+        if (update) { setOutdated(update); return }
         setFailure(settingsFailureSentence(error))
       },
     )
@@ -37,6 +41,10 @@ export function VoiceSettingsCards({ shown }: { shown: boolean }) {
   useEffect(() => {
     if (shown) read()
   }, [shown, read])
+
+  // A Cloud console switches machines in place; the cards then belong to the
+  // other machine and are read again rather than kept from the first one.
+  useEffect(() => (shown ? onMachineChanged(read) : undefined), [shown, read])
 
   const change = (keys: VoiceSettingsValues): Promise<void> => {
     setPending((prior) => ({ ...prior, ...keys }))
@@ -62,7 +70,7 @@ export function VoiceSettingsCards({ shown }: { shown: boolean }) {
     )
   }
 
-  if (outdated) return <Note dot="warn">{catalogWord("next", "machineNeedsUpdate")}</Note>
+  if (outdated) return <NeedsUpdate update={outdated} className="sw-said" />
   if (!snapshot) return failure ? <p className="sw-said" role="alert">{failure}</p> : null
 
   const value = <K extends keyof VoiceSettingsValues>(key: K): VoiceSettingsValues[K] =>
@@ -93,6 +101,9 @@ export function VoiceSettingsCards({ shown }: { shown: boolean }) {
 
   return (
     <>
+      {followsRelay() && snapshot.machine ? (
+        <p className="sw-voice-machine" role="status">{fill(W.voiceSettingsMachine, { machine: snapshot.machine })}</p>
+      ) : null}
       <section className="sw-voice-card" aria-labelledby="sw-voice-polish">
         <div className="sw-voice-headrow">
           <h3 className="sw-voice-head" id="sw-voice-polish">{W.voicePolishTitle}</h3>
