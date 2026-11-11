@@ -1,5 +1,6 @@
 import type { Snippet, SnippetAnswer, SnippetControls, PlaybookSource } from "../legacy/snippets-bridge.js"
-import { localizedPlaybook } from "../playbook-words.js"
+// @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
+import { localizedPlaybook } from "../playbook-words.ts"
 
 /**
  * The five snippet routes as this sheet reads and writes them
@@ -135,18 +136,18 @@ export const orderSnippets = (
 ): Promise<{ ok: boolean }> => call<{ ok: boolean }>("/v1/snippets/order" + on(sessionRowID), writing("POST", body))
 
 /** Project Playbooks share the durable reusable-text store, addressed by machine. */
-const onMachine = (machine: string) => "?machine=" + encodeURIComponent(machine)
+const onMachine = (machine?: string | null) => (machine && machine.trim()) ? "?machine=" + encodeURIComponent(machine.trim()) : ""
 
-export const readReusableTextForMachine = (machine: string): Promise<SnippetAnswer> =>
+export const readReusableTextForMachine = (machine?: string | null): Promise<SnippetAnswer> =>
   call<SnippetAnswer>("/v1/snippets" + onMachine(machine)).then(localizeAnswer)
 
-export const createPlaybook = (machine: string, project: string, title: string, body: string, source?: PlaybookSource): Promise<Snippet> =>
+export const createPlaybook = (machine: string | undefined | null, project: string, title: string, body: string, source?: PlaybookSource): Promise<Snippet> =>
   call<Snippet>("/v1/snippets" + onMachine(machine), writing("POST", { title, body, scope: "playbook", ...(project ? { project } : {}), ...(source ? { source } : {}) }))
 
-export const updatePlaybook = (machine: string, id: string, title: string, body: string, source?: PlaybookSource | null): Promise<Snippet> =>
+export const updatePlaybook = (machine: string | undefined | null, id: string, title: string, body: string, source?: PlaybookSource | null): Promise<Snippet> =>
   call<Snippet>("/v1/snippets/" + encodeURIComponent(id) + onMachine(machine), writing("PATCH", { title, body, ...(source !== undefined ? { source } : {}) }))
 
-export const deletePlaybook = (machine: string, id: string): Promise<{ ok: boolean; deleted: string }> =>
+export const deletePlaybook = (machine: string | undefined | null, id: string): Promise<{ ok: boolean; deleted: string }> =>
   call<{ ok: boolean; deleted: string }>("/v1/snippets/" + encodeURIComponent(id) + onMachine(machine), writing("DELETE"))
 
 /**

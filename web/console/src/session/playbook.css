@@ -8,6 +8,31 @@
 .playbook-detail-actions button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 8px; color: var(--dim); }
 .playbook-detail-actions button:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
 .playbook-detail-actions .playbook-delete:hover:not(:disabled) { color: var(--danger, #d84a4a); }
+.playbook-detail-actions .playbook-delete[data-armed="on"] {
+  width: auto;
+  min-width: 40px;
+  padding: 0 .65rem;
+  background: color-mix(in srgb, var(--danger, #d84a4a) 15%, transparent);
+  color: var(--danger, #d84a4a);
+  border: 1px solid color-mix(in srgb, var(--danger, #d84a4a) 40%, transparent);
+  border-radius: 8px;
+  font-size: .8rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.playbook-detail-actions .playbook-delete[data-armed="on"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #d84a4a) 25%, transparent);
+  color: var(--danger, #d84a4a);
+}
+.playbook-detail-error {
+  margin: 0;
+  padding: .5rem 1rem;
+  background: color-mix(in srgb, var(--danger, #d84a4a) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger, #d84a4a) 30%, transparent);
+  color: var(--danger, #d84a4a);
+  font-size: .84rem;
+  font-weight: 600;
+}
 .playbook-detail-actions .work-icon { width: 18px; height: 18px; }
 .playbook-detail-actions button:disabled { opacity: .5; cursor: default; }
 .playbook-quick-message .work-voice-labelled > span { display: block; margin-bottom: 6px; color: var(--faint); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
