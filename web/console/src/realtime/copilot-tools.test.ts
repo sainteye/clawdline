@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, COPILOT_INSTRUCTIONS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -180,7 +180,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "get_session_screen", "open_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -415,3 +415,35 @@ test("open_session opens the named Session on the page the call runs in", async 
   assert.match(JSON.parse((await runCopilotTool("open_session", '{"session_id":"%2"}', deps)).output).error, /沒有在這個畫面上打開/)
   assert.ok(JSON.parse((await runCopilotTool("open_session", '{"session_id":"claude"}', deps)).output).candidates, "an ambiguous name is put back with its candidates")
 })
+
+test("explain_session_reply hands over a long reply whole, with the ask it answers", async () => {
+  const diagnosis = "Problem 1: the start path skips the default model.\n" + "x".repeat(1800) + "\nShall I open a fix branch?"
+  const { deps } = fakeMachine({}, { transcripts: { "%2": { entries: [
+    { role: "user", text: "Why does it still open on Argon?" },
+    { role: "user", text: "<clawdline-notice>{}</clawdline-notice>" },
+    { role: "tool", tool: "Bash", text: "grep -rn DefaultModel" },
+    { role: "assistant", text: diagnosis },
+  ] } } })
+  const out = JSON.parse((await runCopilotTool("explain_session_reply", '{"session_id":"%2"}', deps)).output)
+  assert.equal(out.label, "Prepare screenshots")
+  assert.equal(out.asked, "Why does it still open on Argon?")
+  assert.equal(out.reply, diagnosis)
+  assert.equal(out.reply_truncated, undefined)
+})
+
+test("a reply over its budget keeps its beginning and the question it ends on", async () => {
+  const diagnosis = "Root cause found.\n" + "y".repeat(REPLY_CHARS * 2) + "\nShall I open a fix branch?"
+  const { deps } = fakeMachine({}, { transcripts: { "%2": { entries: [{ role: "assistant", text: diagnosis }] } } })
+  const out = JSON.parse((await runCopilotTool("explain_session_reply", '{"session_id":"%2"}', deps)).output)
+  assert.equal(out.reply_truncated, true)
+  assert.ok(out.reply.startsWith("Root cause found."))
+  assert.ok(out.reply.endsWith("Shall I open a fix branch?"))
+  assert.ok(out.reply.length <= REPLY_CHARS + 3)
+})
+
+test("explain_session_reply says so when a Session has no reply to explain", async () => {
+  const { deps } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("explain_session_reply", '{"session_id":"%7"}', deps)).output)
+  assert.match(out.error ?? out.note, /讀不到|無法讀取/)
+})
+

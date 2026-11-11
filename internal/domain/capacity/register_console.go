@@ -151,6 +151,13 @@ func consoleBounds() []Entry {
 			Limit: 5, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
 		{
+			// REPLY_CHARS in realtime/copilot-tools.ts: how much of a Session's
+			// last reply explain_session_reply hands the call; a longer reply
+			// keeps its beginning and end and says it was shortened.
+			Name: "console.copilot_reply_characters", Class: Buffer, Unit: Characters,
+			Limit: 8000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// SCREEN_READ_ATTEMPTS in realtime/copilot-tools.ts: how many times
 			// a pending screen capture is read again before the copilot says it
 			// timed out.

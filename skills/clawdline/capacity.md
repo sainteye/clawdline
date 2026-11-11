@@ -262,6 +262,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.copilot_orb_frames_per_second` | 30 | `rows` | `coalesce` | `diagnostics` | — |
 | `console.copilot_orb_pixel_ratio` | 2 | `multipliers` | `coalesce` | `diagnostics` | — |
 | `console.copilot_recap_pages` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_reply_characters` | 8000 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.direct_history_hours` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
@@ -654,6 +655,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `usage.work_units_per_answer` | 500 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
 | `voice.copilot_briefing_characters` | 2500 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_briefing_input_characters` | 60000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_briefing_reply_characters` | 1500 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_briefing_timeout_milliseconds` | 90000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_extra_instructions_characters` | 2000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_key_bytes` | 400 | `bytes` | `refuse` | `sender, diagnostics` | — |
