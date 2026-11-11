@@ -184,5 +184,5 @@ func writeGuidanceSendRefusal(w http.ResponseWriter, err error, suffix string) {
 		writeRefusalAboutWithSource(w, 500, "internal", err.Error(), contract.Refusal{CodegraphSuffix: suffix}, false)
 		return
 	}
-	writeRefusalAboutWithSource(w, actionStatus(ref.Code), ref.Code, ref.Detail, contract.Refusal{CodegraphSuffix: suffix}, !ref.RawDetail && ref.Cause == nil)
+	writeRefusalAboutWithSource(w, actionStatus(ref.Code), ref.Code, ref.Detail, contract.Refusal{CodegraphSuffix: suffix}, refusalDetailFixed(ref))
 }
