@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"mime"
 	"net/http"
+	"runtime"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/whisper"
+	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // voiceSettingKeys are the only settings /v1/settings/voice reads or writes:
@@ -27,6 +30,9 @@ type voiceSettingsAnswer struct {
 	PolishAssistants []string `json:"polish_assistants"`
 	Builtin          []string `json:"vocabulary_builtin"`
 	ProjectTerms     []string `json:"vocabulary_projects"`
+	// Machine is this machine's name as Cloud lists it, so a phone that can
+	// switch machines says which one the cards change.
+	Machine string `json:"machine"`
 }
 
 // voiceSettingsRoute is the narrow settings surface carried to a paired Cloud
@@ -96,6 +102,10 @@ func (s *Server) voiceSettingsSnapshot(f *nextconfig.File, v nextconfig.Values) 
 		Builtin:          append([]string{}, whisper.AlwaysExpected...),
 		ProjectTerms:     s.voiceProjectTerms(),
 	}
+	// The name the machine registers and publishes under (cloud_onboarding.go):
+	// the settings override, then the host name.
+	cloud, _ := adaptercloud.ReadSettings(f)
+	out.Machine = cloudtransport.MachineName(cloudtransport.HostName(), runtime.GOOS, "", cloud.MachineName)
 	if out.Vocabulary == nil {
 		out.Vocabulary = []string{}
 	}

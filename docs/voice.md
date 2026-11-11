@@ -66,8 +66,10 @@ commands or saved sessions, so a sentence such as "commit and push to main" is o
 The two cards read and write their own narrow route, `/v1/settings/voice`: the five keys above,
 plus `polish_assistants`, `vocabulary_builtin` and `vocabulary_projects`, and refusing every other
 setting. A paired Cloud console carries it as `voice-settings` and `voice-settings-update`, so
-app.clawdline.com shows the same cards under Settings › Voice input for the machine it follows,
-which is also the machine that transcribes the phone's recordings. Changing them from a remote
+app.clawdline.com shows the same cards under Settings › Voice input for the machine selected in
+its header, and names that machine (`machine` in the answer), because a phone can switch between
+several. Switching machines reads the cards again. A recording made in a Session is transcribed
+by that Session's machine, so its cleanup follows that machine's settings. Changing them from a remote
 device needs Send, as the default models do. The Recognition card (language, model) stays on the
 machine's own console. A machine from before API level 43 answers that it needs an update, and the
 cards say so instead of drawing controls that cannot save.

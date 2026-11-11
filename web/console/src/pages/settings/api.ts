@@ -190,6 +190,8 @@ export type VoiceSettingsSnapshot = VoiceSettingsValues & {
   polish_assistants: string[]
   vocabulary_builtin: string[]
   vocabulary_projects: string[]
+  /** The machine's name as Cloud lists it; absent from a daemon before it was added. */
+  machine?: string
 }
 
 /** The narrow voice route, carried over Cloud as `voice-settings`. */

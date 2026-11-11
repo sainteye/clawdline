@@ -39,7 +39,7 @@ func TestVoiceSettingsAnswersOnlyTheVoiceCards(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"voice_polish", "voice_polish_assistant", "voice_polish_level", "voice_vocabulary",
-		"voice_vocabulary_projects", "polish_assistants", "vocabulary_builtin", "vocabulary_projects"}
+		"voice_vocabulary_projects", "polish_assistants", "vocabulary_builtin", "vocabulary_projects", "machine"}
 	if len(got) != len(want) {
 		t.Fatalf("answered %d keys: %v", len(got), got)
 	}
@@ -53,6 +53,9 @@ func TestVoiceSettingsAnswersOnlyTheVoiceCards(t *testing.T) {
 	}
 	if list, _ := got["voice_vocabulary"].([]any); len(list) != 1 || list[0] != "Tailscale" {
 		t.Fatalf("vocabulary %v", got["voice_vocabulary"])
+	}
+	if name, _ := got["machine"].(string); name == "" {
+		t.Errorf("no machine name: %v", got["machine"])
 	}
 	if list, _ := got["vocabulary_projects"].([]any); len(list) != 1 || list[0] != "orchard-api" {
 		t.Fatalf("projects %v", got["vocabulary_projects"])
