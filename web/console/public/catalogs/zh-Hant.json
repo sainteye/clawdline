@@ -9078,6 +9078,7 @@
   "next.usageInProgress": "進行中",
   "next.scheduleArchiveCodex": "分頁關閉後封存 Codex 對話",
   "next.scheduleArchiveCodexHint": "避免每跑一次就在 Codex 清單多一個對話。分頁還開著的 run 不會封存；從執行紀錄打開某一輪時，會先把它的對話取消封存。",
+  "next.grokInterruptedByRestart": "這個 Grok 回合執行中，Clawdline 重新啟動了（例如安裝更新），回合因此中斷。執行中的工具可能已做了一部分；系統沒有自動重送，請先確認結果再決定是否重送。",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

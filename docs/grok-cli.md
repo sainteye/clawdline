@@ -117,7 +117,12 @@ with completed cards and partial output preserved. This records the invocation's
 outcome, not a guarantee about every external effect. An uncertain write is
 never automatically repeated. After a daemon restart, the original transcript
 can be resumed, but queued or interrupted Grok prompts are not automatically
-resent. The person controls the next input.
+resent. The person controls the next input. A turn that was still running when
+the daemon stopped, for example for a dev install, ends with
+`grok_turn_interrupted_by_restart`, which the console explains as a restart
+rather than a provider failure, and its running tool cards are settled as
+cancelled. Other Grok failures after the prompt was written also settle running
+tool cards, since nothing will report them.
 
 History is stored in a Grok-specific state directory, and persisted records,
 lookup and restore require the actual provider identity. Existing Gemini

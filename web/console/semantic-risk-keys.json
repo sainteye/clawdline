@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11030,
+  "englishKeys": 11031,
   "counts": {
-    "negation": 3071,
-    "state": 1820,
+    "negation": 3072,
+    "state": 1821,
     "permission": 643,
     "deletion": 251,
     "uncertainty": 421
   },
-  "unionCount": 4853,
+  "unionCount": 4854,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2318,6 +2318,7 @@
       "next.fontScaleNotRemembered",
       "next.gitNoDirectory",
       "next.gitPermissionDenied",
+      "next.grokInterruptedByRestart",
       "next.grokRateLimited",
       "next.grokRequestFailed",
       "next.grokResponseMismatch",
@@ -4431,6 +4432,7 @@
       "next.firstSessionSignInHelp",
       "next.fleetUpdateFailed",
       "next.fleetUpdateRolledBack",
+      "next.grokInterruptedByRestart",
       "next.grokRateLimited",
       "next.grokRequestFailed",
       "next.grokResponseMismatch",
@@ -9802,6 +9804,7 @@
     "next.fontScaleNotRemembered",
     "next.gitNoDirectory",
     "next.gitPermissionDenied",
+    "next.grokInterruptedByRestart",
     "next.grokRateLimited",
     "next.grokRequestFailed",
     "next.grokResponseMismatch",

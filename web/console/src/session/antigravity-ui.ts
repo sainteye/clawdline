@@ -115,10 +115,11 @@ export function assistantTurnFailureCode(assistant: string | undefined, text: st
     ? text.replace(/^antigravity_/, "grok_") : text
 }
 
-export function assistantTurnFailureWord(assistant: string | undefined, text: string): "grokRateLimited" | "grokResponseMismatch" | "grokRequestFailed" | null {
+export function assistantTurnFailureWord(assistant: string | undefined, text: string): "grokRateLimited" | "grokResponseMismatch" | "grokRequestFailed" | "grokInterruptedByRestart" | null {
   if (assistant !== "grok") return null
   const code = assistantTurnFailureCode(assistant, text)
   if (code === "grok_turn_rate_limited") return "grokRateLimited"
+  if (code === "grok_turn_interrupted_by_restart") return "grokInterruptedByRestart"
   if (code === "grok_process_unexpected_id") return "grokResponseMismatch"
   if (code === "grok_process_rpc_error") return "grokRequestFailed"
   return null
