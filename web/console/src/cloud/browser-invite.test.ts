@@ -64,7 +64,7 @@ function fakeCloud(secret: string, opts: { deny?: boolean } = {}) {
       state.keys = await deriveInviteKeys(isk, "K7M4Q")
       state.machineMessage = Buffer.from(state.machine.message).toString("base64")
       state.status = "joined"
-      return reply(200, { join_token: "t".repeat(43), device_id: state.deviceID, machine_id: "mac_x", machine_name: "Mac", expiry: "8h" })
+      return reply(200, { join_token: "t".repeat(43), device_id: state.deviceID, machine_id: "mac_x", machine_name: "Studio", expiry: "8h" })
     }
     if (path.endsWith("/browser")) {
       return reply(200, { status: state.status, machine_message: state.machineMessage, ...(state.handover ? { handover: state.handover } : {}) })
