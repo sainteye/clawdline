@@ -1,0 +1,353 @@
+/* Realtime Voice Copilot button in Composer */
+.composer .voice-phone {
+  flex: 0 0 auto;
+  width: 30px;
+  min-height: 30px;
+  border-radius: 8px;
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.composer .voice-phone:hover:not(:disabled) {
+  background: var(--card-hi);
+  color: var(--ink);
+}
+
+.composer .voice-phone.in-call {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+  animation: pulse-green 1.8s infinite;
+}
+
+.composer .voice-phone .ico {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
+
+@keyframes pulse-green {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* Modal Backdrop */
+.realtime-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .realtime-modal-backdrop {
+    align-items: center;
+  }
+}
+
+/* Modal Sheet */
+.realtime-modal-sheet {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 20px 20px 0 0;
+  padding: 24px 20px 32px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+  animation: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 640px) {
+  .realtime-modal-sheet {
+    border-radius: 20px;
+  }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.realtime-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.realtime-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.realtime-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  background: var(--accent-in);
+  border: 1px solid var(--accent-ed);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.realtime-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: var(--dim);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.realtime-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+/* Visualizer Orb */
+.realtime-visual-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0 16px;
+  gap: 16px;
+}
+
+.realtime-orb {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orb-core {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--line);
+  transition: all 0.3s ease;
+  z-index: 2;
+}
+
+.orb-ring {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  border: 1.5px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.ring-1 {
+  width: 62px;
+  height: 62px;
+}
+
+.ring-2 {
+  width: 76px;
+  height: 76px;
+}
+
+/* Orb States */
+.orb-idle .orb-core {
+  background: var(--line);
+}
+
+.orb-connecting .orb-core {
+  background: var(--accent);
+  animation: pulse-core 1.2s infinite ease-in-out;
+}
+
+.orb-listening .orb-core {
+  background: #10b981;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+}
+
+.orb-listening .ring-1 {
+  border-color: rgba(16, 185, 129, 0.5);
+  animation: ripple 1.6s infinite ease-out;
+}
+
+.orb-thinking .orb-core {
+  background: #f59e0b;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.4);
+  animation: pulse-core 1s infinite alternate;
+}
+
+.orb-speaking .orb-core {
+  background: #3b82f6;
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+  animation: pulse-core 0.8s infinite ease-in-out;
+}
+
+.orb-speaking .ring-1 {
+  border-color: rgba(59, 130, 246, 0.6);
+  animation: ripple 1.2s infinite ease-out;
+}
+
+.orb-speaking .ring-2 {
+  border-color: rgba(59, 130, 246, 0.3);
+  animation: ripple 1.2s 0.4s infinite ease-out;
+}
+
+@keyframes pulse-core {
+  0% { transform: scale(0.92); opacity: 0.8; }
+  100% { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes ripple {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.realtime-status-label {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: center;
+}
+
+/* Transcripts */
+.realtime-transcript-box {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.realtime-bubble .bubble-label {
+  font-weight: 600;
+  color: var(--accent);
+  margin-right: 4px;
+}
+
+.realtime-bubble.user .bubble-label {
+  color: var(--dim);
+}
+
+.realtime-error-box {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+/* API Key Input */
+.realtime-key-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.realtime-key-row label {
+  color: var(--dim);
+}
+
+.key-input-wrap {
+  display: flex;
+  gap: 8px;
+}
+
+.key-input-wrap input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: var(--mono);
+}
+
+.key-edit-btn {
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card-hi);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.key-hint {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+/* Actions */
+.realtime-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.realtime-start-call-btn,
+.realtime-hangup-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  width: 100%;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+
+.realtime-start-call-btn {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.realtime-start-call-btn:hover {
+  opacity: 0.9;
+}
+
+.realtime-hangup-btn {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.realtime-hangup-btn:hover {
+  opacity: 0.9;
+}
+
+.call-ico {
+  width: 20px;
+  height: 20px;
+}
