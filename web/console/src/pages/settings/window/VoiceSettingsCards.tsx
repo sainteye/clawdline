@@ -8,6 +8,7 @@ import { Chip, Note, PopUp, Row, Switch } from "./controls.js"
 import { W, fill } from "./copy.js"
 import { settingsFailureSentence } from "./failure.js"
 import { cleanVocabulary, validTerm, VOICE_VOCABULARY_RUNES, VOICE_VOCABULARY_TERMS } from "./vocabulary.js"
+import { getStoredOpenAIKey, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
 
 /**
  * The LLM cleanup and personal vocabulary cards (docs/voice.md).
@@ -25,6 +26,8 @@ export function VoiceSettingsCards({ shown }: { shown: boolean }) {
   const [term, setTerm] = useState("")
   const [termSaid, setTermSaid] = useState("")
   const [pending, setPending] = useState<VoiceSettingsValues>({})
+  const [copilotKey, setCopilotKey] = useState(getStoredOpenAIKey)
+  const [copilotSaved, setCopilotSaved] = useState(false)
 
   const read = useCallback(() => {
     void readVoiceSettings().then(
@@ -39,7 +42,11 @@ export function VoiceSettingsCards({ shown }: { shown: boolean }) {
   }, [])
 
   useEffect(() => {
-    if (shown) read()
+    if (shown) {
+      read()
+      setCopilotKey(getStoredOpenAIKey())
+      setCopilotSaved(false)
+    }
   }, [shown, read])
 
   // A Cloud console switches machines in place; the cards then belong to the
@@ -193,6 +200,60 @@ export function VoiceSettingsCards({ shown }: { shown: boolean }) {
           {builtin.map((known) => <li key={known} className="sw-voice-chip builtin"><span>{known}</span></li>)}
         </ul>
         {failure ? <p className="sw-said" role="alert">{failure}</p> : null}
+      </section>
+      <section className="sw-voice-card" aria-labelledby="sw-voice-copilot">
+        <h3 className="sw-voice-head" id="sw-voice-copilot">語音副駕駛（Realtime Copilot）</h3>
+        <p className="sw-hint">
+          與 OpenAI Realtime API 建立全雙工語音通話，隨身掌握與指揮各個工作階段。金鑰僅儲存於此裝置本地儲存空間，不外傳。
+        </p>
+        <div className="sw-voice-key-box">
+          <label className="sw-voice-key-label" htmlFor="sw-voice-key-input">
+            OpenAI API 金鑰：
+          </label>
+          <div className="sw-voice-key-input-row">
+            <input
+              id="sw-voice-key-input"
+              type="password"
+              className="sw-voice-key-input"
+              placeholder="sk-..."
+              value={copilotKey}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => {
+                setCopilotKey(e.target.value)
+                setCopilotSaved(false)
+              }}
+            />
+            <button
+              type="button"
+              className="sw-chip"
+              disabled={!copilotKey.trim()}
+              onClick={() => {
+                setStoredOpenAIKey(copilotKey)
+                setCopilotSaved(true)
+              }}
+            >
+              儲存
+            </button>
+            {getStoredOpenAIKey() ? (
+              <button
+                type="button"
+                className="sw-chip sw-chip-dim"
+                onClick={() => {
+                  setStoredOpenAIKey("")
+                  setCopilotKey("")
+                  setCopilotSaved(false)
+                }}
+              >
+                清除
+              </button>
+            ) : null}
+          </div>
+          {copilotSaved ? <p className="sw-said sw-voice-saved" role="status">✓ 金鑰已成功儲存至此裝置</p> : null}
+          <p className="sw-hint sw-voice-key-status">
+            {getStoredOpenAIKey() ? "● 目前狀態：已配置金鑰（通話時可直接連線）" : "○ 目前狀態：尚未配置金鑰（點擊電話圖示時將提示設定）"}
+          </p>
+        </div>
       </section>
     </>
   )
