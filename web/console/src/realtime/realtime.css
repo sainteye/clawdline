@@ -306,6 +306,37 @@
   font-size: 11px;
 }
 
+.realtime-key-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.realtime-key-ready {
+  color: #10b981;
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.key-edit-link {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0 4px;
+}
+
+.key-edit-link:hover {
+  color: var(--ink);
+}
+
 /* Actions */
 .realtime-actions {
   display: flex;

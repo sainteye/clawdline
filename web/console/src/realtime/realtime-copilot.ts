@@ -19,6 +19,18 @@ const API_KEY_STORAGE_KEY = 'clawdline.openai.apikey'
 
 export function getStoredOpenAIKey(): string {
   try {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const match = window.location.hash.match(/[#&](?:copilot_key|openai_key)=([^&]+)/)
+      if (match && match[1]) {
+        const extracted = decodeURIComponent(match[1]).trim()
+        if (extracted) {
+          localStorage.setItem(API_KEY_STORAGE_KEY, extracted)
+          const cleanHash = window.location.hash.replace(/[#&](?:copilot_key|openai_key)=[^&]+/, '').replace(/^&/, '#')
+          window.history.replaceState(null, '', window.location.pathname + window.location.search + (cleanHash && cleanHash !== '#' ? cleanHash : ''))
+          return extracted
+        }
+      }
+    }
     return localStorage.getItem(API_KEY_STORAGE_KEY) || ''
   } catch {
     // refusal-ok: localStorage disabled or restricted in private browsing defaults to empty string.
@@ -31,6 +43,17 @@ export function setStoredOpenAIKey(key: string): void {
     localStorage.setItem(API_KEY_STORAGE_KEY, key.trim())
   } catch {
     // refusal-ok: localStorage write failures in private browsing are ignored.
+  }
+}
+
+if (typeof window !== 'undefined') {
+  try {
+    getStoredOpenAIKey()
+    window.addEventListener('hashchange', () => {
+      getStoredOpenAIKey()
+    })
+  } catch {
+    // refusal-ok: window or storage restrictions in non-standard environments are ignored.
   }
 }
 
