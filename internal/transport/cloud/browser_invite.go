@@ -139,6 +139,9 @@ type browserInvite struct {
 	deviceID  string
 	publicKey string
 	name      string
+	// cancelled is set by Cancel before it stops the run, so the run's own
+	// ending does not record the person's cancel as a failure.
+	cancelled bool
 }
 
 // Start makes a new invitation for a browser that will stay admitted for
@@ -323,6 +326,7 @@ func (b *BrowserInvites) Cancel(ctx context.Context, id string) (BrowserInviteVi
 		}
 		return BrowserInviteView{}, ErrInviteUnknown
 	}
+	inv.cancelled = true
 	inv.cancel()
 	b.mu.Unlock()
 	if err := b.Client.DenyBrowserInvite(ctx, b.Credential, id); err != nil && !errors.Is(err, adaptercloud.ErrInviteUnusable) {
@@ -550,9 +554,10 @@ func (b *BrowserInvites) setPhase(inv *browserInvite, phase string) {
 func (b *BrowserInvites) end(inv *browserInvite, err error) {
 	b.mu.Lock()
 	_, live := b.live[inv.view.InviteID]
+	cancelled := inv.cancelled
 	b.mu.Unlock()
-	if !live {
-		return // Cancel already finished it.
+	if !live || cancelled {
+		return // Cancel finishes it, as cancelled.
 	}
 	b.finish(inv, InvitePhaseFailed, inviteErrorCode(err))
 }

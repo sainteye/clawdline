@@ -31,6 +31,8 @@ type inviteCloud struct {
 	denied    bool
 	revoked   []string
 	admitErr  error
+	// denyDelay stands for the network round trip a real deny takes.
+	denyDelay time.Duration
 	// reportKey, when set, is the key Cloud claims the browser has
 	// (a substitution the machine must catch).
 	reportKey string
@@ -75,6 +77,7 @@ func (c *inviteCloud) AdmitBrowserInvite(_ context.Context, _, _, device, handov
 }
 
 func (c *inviteCloud) DenyBrowserInvite(context.Context, string, string) error {
+	time.Sleep(c.denyDelay)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.denied, c.status = true, adaptercloud.InviteStatusDenied
@@ -293,6 +296,21 @@ func TestInvitationsAreBoundedAndExpiryIsChecked(t *testing.T) {
 	}
 	if v, err := invites.Cancel(context.Background(), "AAAAA"); err != nil || v.Phase != InvitePhaseCancelled || v.Code != "" {
 		t.Fatalf("cancel: %+v %v", v, err)
+	}
+	// The run stopping must not overwrite the person's cancel. A real deny is a network round
+	// trip, so the run usually notices the cancel first; the fake waits to reproduce that.
+	c.denyDelay = 20 * time.Millisecond
+	for i := 0; i < 5; i++ {
+		c.id = fmt.Sprintf("C%04d", i)
+		if _, err := invites.Start(context.Background(), "8h"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := invites.Cancel(context.Background(), c.id); err != nil {
+			t.Fatal(err)
+		}
+		if v, _ := invites.Status(c.id); v.Phase != InvitePhaseCancelled {
+			t.Fatalf("round %d: a cancelled invitation reads %q", i, v.Phase)
+		}
 	}
 	if _, err := invites.Start(context.Background(), "8h"); err != nil {
 		t.Fatalf("after a cancel: %v", err)
