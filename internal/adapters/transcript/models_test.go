@@ -81,3 +81,28 @@ func TestClaudeModelCatalogDoesNotPromoteAnInstalledButUnavailablePreview(t *tes
 		}
 	}
 }
+
+func TestAntigravityModelsParsing(t *testing.T) {
+	raw := "gemini-4-argon-medium\tGemini 4 Argon (Medium)\n" +
+		"gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n" +
+		"claude-opus-5-5-low\tClaude Opus 5.5 (Low)\n" +
+		"invalid model with spaces\n" +
+		"-starts-with-dash\tDash\n"
+	models := parseAntigravityModels([]byte(raw))
+	want := []Model{
+		{ID: "gemini-4-argon-medium", Name: "Gemini 4 Argon (Medium)", Command: "gemini-4-argon-medium"},
+		{ID: "gemini-3.8-flash-high", Name: "Gemini 3.8 Flash (High)", Command: "gemini-3.8-flash-high"},
+		{ID: "claude-opus-5-5-low", Name: "Claude Opus 5.5 (Low)", Command: "claude-opus-5-5-low"},
+	}
+	if !reflect.DeepEqual(models, want) {
+		t.Fatalf("parseAntigravityModels:\n got: %#v\nwant: %#v", models, want)
+	}
+}
+
+func TestAntigravityModelsUninstalledReturnsNil(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	if got := AntigravityModels(dir); got != nil {
+		t.Fatalf("expected nil when uninstalled, got: %#v", got)
+	}
+}

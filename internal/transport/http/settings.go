@@ -463,7 +463,7 @@ func defaultModelsSnapshot(f *nextconfig.File, v nextconfig.Values) defaultModel
 	snapshot := settingsSnapshot(f, v)
 	home, _ := os.UserHomeDir()
 	models := map[string][]defaultModelOption{"codex": {}, "claude": {}, "antigravity": {}}
-	for _, assistant := range []string{"codex", "claude"} {
+	for _, assistant := range []string{"codex", "claude", "antigravity"} {
 		for _, model := range transcript.Models(home, assistant) {
 			models[assistant] = append(models[assistant], defaultModelOption{Value: model.Command, Label: model.Name})
 		}

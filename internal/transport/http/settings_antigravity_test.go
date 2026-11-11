@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -95,5 +96,53 @@ func TestSavedProviderEffortReachesBothLaunchCompositionsWithoutRestart(t *testi
 				}
 			}
 		}
+	}
+}
+
+func TestAntigravityDefaultsWithInstalledCatalog(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	agyScript := "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf \"gemini-3.8-flash-medium\\tGemini 3.8 Flash (Medium)\\ngemini-4-argon-high\\tGemini 4 Argon (High)\\n\"\n  exit 0\nfi\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(binDir, "agy"), []byte(agyScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", binDir)
+
+	s := &Server{cfg: config.Config{Dir: filepath.Join(home, "next")}}
+	response := defaultModelsCall(t, s, http.MethodGet, "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("get default models: %d %s", response.Code, response.Body)
+	}
+	var answer map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	models, ok := answer["models"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing models map: %#v", answer)
+	}
+	nativeModels, ok := models["antigravity"].([]any)
+	if !ok || len(nativeModels) < 2 {
+		t.Fatalf("expected antigravity models, got: %#v", models["antigravity"])
+	}
+	first := nativeModels[0].(map[string]any)
+	if first["value"] != "gemini-3.8-flash-medium" || first["label"] != "Gemini 3.8 Flash (Medium)" {
+		t.Fatalf("unexpected first model: %#v", first)
+	}
+
+	saveResp := defaultModelsCall(t, s, http.MethodPost, "application/json", `{"antigravity_default_model":"gemini-3.8-flash-medium"}`)
+	if saveResp.Code != http.StatusOK {
+		t.Fatalf("save antigravity default model: %d %s", saveResp.Code, saveResp.Body)
+	}
+	var savedAnswer map[string]any
+	if err := json.Unmarshal(saveResp.Body.Bytes(), &savedAnswer); err != nil {
+		t.Fatal(err)
+	}
+	if savedAnswer["antigravity_default_model"] != "gemini-3.8-flash-medium" {
+		t.Fatalf("default model not saved: %#v", savedAnswer)
 	}
 }

@@ -534,7 +534,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               onPick={(value) => void change({ claude_default_model: value })}
             />
           </Row>
-          <Row label={catalogWord("next", "defaultAntigravityModel")} hint={catalogWord("next", "defaultAntigravityCatalogUnknown")}>
+          <Row label={catalogWord("next", "defaultAntigravityModel")} hint={defaultModels?.models?.antigravity?.length ? undefined : catalogWord("next", "defaultAntigravityCatalogUnknown")}>
             <PopUp label={catalogWord("next", "defaultAntigravityModel")} value={String(now("antigravity_default_model"))}
               options={defaultModelOptions(defaultModels, "antigravity", String(now("antigravity_default_model")), W.settingsProviderDefault)}
               disabled={!defaultModels} onPick={value => void change({ antigravity_default_model: value })} />

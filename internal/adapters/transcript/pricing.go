@@ -126,6 +126,8 @@ func Models(home, assistant string) []Model {
 		return claudeModels(home, claudeExecutable(home))
 	case "codex":
 		return CodexModels(home)
+	case "antigravity":
+		return AntigravityModels(home)
 	}
 	return nil
 }

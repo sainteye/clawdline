@@ -1,6 +1,8 @@
 package transcript
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // AntigravityFacts uses only the exact model supplied by a validated hook
@@ -305,4 +309,125 @@ func claudeExecutable(home string) string {
 		}
 	}
 	return ""
+}
+
+// AntigravityExecutable is the Antigravity CLI (agy) binary this machine would run:
+// PATH first, then ~/.local/bin/agy; "" when none is there.
+func AntigravityExecutable(home string) string { return antigravityExecutable(home) }
+
+func antigravityExecutable(home string) string {
+	var candidates []string
+	if found, err := exec.LookPath("agy"); err == nil {
+		candidates = append(candidates, found)
+	}
+	candidates = append(candidates,
+		filepath.Join(home, ".local", "bin", "agy"),
+		filepath.Join(home, ".local", "bin", "agy.exe"),
+	)
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+			return candidate
+		}
+	}
+	return ""
+}
+
+var (
+	antigravityModelsMu    sync.Mutex
+	antigravityModelsCache []Model
+	antigravityModelsTime  time.Time
+	antigravityModelsExe   string
+)
+
+var AntigravityFallbackModels = []Model{
+	{ID: "gemini-3.8-flash-medium", Name: "Gemini 3.8 Flash (Medium)", Command: "gemini-3.8-flash-medium"},
+	{ID: "gemini-3.8-flash-high", Name: "Gemini 3.8 Flash (High)", Command: "gemini-3.8-flash-high"},
+	{ID: "gemini-3.8-flash-low", Name: "Gemini 3.8 Flash (Low)", Command: "gemini-3.8-flash-low"},
+	{ID: "gemini-4-argon-medium", Name: "Gemini 4 Argon (Medium)", Command: "gemini-4-argon-medium"},
+	{ID: "gemini-4-argon-high", Name: "Gemini 4 Argon (High)", Command: "gemini-4-argon-high"},
+	{ID: "gemini-4-argon-low", Name: "Gemini 4 Argon (Low)", Command: "gemini-4-argon-low"},
+	{ID: "claude-opus-5-5-medium", Name: "Claude Opus 5.5 (Medium)", Command: "claude-opus-5-5-medium"},
+	{ID: "claude-opus-5-5-high", Name: "Claude Opus 5.5 (High)", Command: "claude-opus-5-5-high"},
+	{ID: "claude-opus-5-5-low", Name: "Claude Opus 5.5 (Low)", Command: "claude-opus-5-5-low"},
+	{ID: "claude-sonnet-5-5-medium", Name: "Claude Sonnet 5.5 (Medium)", Command: "claude-sonnet-5-5-medium"},
+	{ID: "claude-sonnet-5-5-high", Name: "Claude Sonnet 5.5 (High)", Command: "claude-sonnet-5-5-high"},
+	{ID: "claude-sonnet-5-5-low", Name: "Claude Sonnet 5.5 (Low)", Command: "claude-sonnet-5-5-low"},
+	{ID: "gpt-oss-120b-medium", Name: "GPT-OSS 120B (Medium)", Command: "gpt-oss-120b-medium"},
+}
+
+func parseAntigravityModels(output []byte) []Model {
+	var models []Model
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		slug := strings.TrimSpace(parts[0])
+		if !validAntigravityModelSlug(slug) {
+			continue
+		}
+		name := strings.TrimSpace(parts[1])
+		if name == "" {
+			name = slug
+		}
+		models = append(models, Model{
+			ID:      slug,
+			Name:    name,
+			Command: slug,
+		})
+	}
+	return models
+}
+
+func validAntigravityModelSlug(raw string) bool {
+	if raw == "" || len(raw) > 64 || strings.HasPrefix(raw, "-") {
+		return false
+	}
+	for _, r := range raw {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// AntigravityModels queries the models available through the installed CLI.
+// An uninstalled CLI returns nil without querying or faking models.
+func AntigravityModels(home string) []Model {
+	exe := antigravityExecutable(home)
+	if exe == "" {
+		return nil
+	}
+	antigravityModelsMu.Lock()
+	defer antigravityModelsMu.Unlock()
+	if exe == antigravityModelsExe && time.Since(antigravityModelsTime) < 5*time.Minute && len(antigravityModelsCache) > 0 {
+		return append([]Model(nil), antigravityModelsCache...)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, exe, "models")
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		parsed := parseAntigravityModels(stdout.Bytes())
+		if len(parsed) > 0 {
+			antigravityModelsCache = parsed
+			antigravityModelsTime = time.Now()
+			antigravityModelsExe = exe
+			return append([]Model(nil), parsed...)
+		}
+	}
+	if len(antigravityModelsCache) > 0 && exe == antigravityModelsExe {
+		return append([]Model(nil), antigravityModelsCache...)
+	}
+	return append([]Model(nil), AntigravityFallbackModels...)
 }

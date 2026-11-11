@@ -98,7 +98,7 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
       </div>
       {picker("claude", "claude_default_model", nextWord("defaultClaudeModel"))}
       {picker("antigravity", "antigravity_default_model", catalogWord("next", "defaultAntigravityModel"))}
-      <p className="say">{catalogWord("next", "defaultAntigravityCatalogUnknown")}</p>
+      {snapshot?.models?.antigravity?.length ? null : <p className="say">{catalogWord("next", "defaultAntigravityCatalogUnknown")}</p>}
       <div className="settings-model-field">
         <div className="settings-model-label">{catalogWord("next", "defaultAntigravityEffort")}</div>
         <ChoiceMenu id="settings-antigravity-default-effort" label={catalogWord("next", "defaultAntigravityEffort")}

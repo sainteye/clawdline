@@ -19,12 +19,12 @@ function Icon({ id }: { id: string }) {
     <path d="m6 18 12-12M8 6l10 12" stroke="currentColor" strokeWidth="2" />
   </svg>
 }
-function WindowValue({ window: w, now, detail = false }: { window: ProviderQuotaWindow; now: number; detail?: boolean }) {
+function WindowValue({ window: w, now, detail = false, mobile = false }: { window: ProviderQuotaWindow; now: number; detail?: boolean; mobile?: boolean }) {
   const reset = quotaCountdown(w.resets_at, now)
   return <span className="quota-window" data-urgent={w.used_percent >= 80 || undefined}>
     <span className="quota-window-name">{w.name === "monthly" ? nextWord("quotaMonthly") : w.name}</span>
     <progress aria-label={nextWord("quotaUsedWindow", { window: w.name })} max={100} value={w.used_percent} />
-    <span>{nextWord("quotaUsed", { percent: Math.round(w.used_percent) })}</span>
+    <span>{mobile ? `${Math.round(w.used_percent)}%` : nextWord("quotaUsed", { percent: Math.round(w.used_percent) })}</span>
     {reset !== null && <span className="quota-reset">{reset === "" ? nextWord("quotaResetPending") : detail
       ? nextWord("quotaResetsIn", { time: reset }) : reset}</span>}
   </span>
@@ -57,9 +57,9 @@ export function QuotaBar({ machineName, offline = false, mobileListShown = false
   const [revision, setRevision] = useState(0)
   useEffect(() => onMachineChanged(() => setRevision((n) => n + 1)), [])
   if (!(mobile ? preference.mobile : preference.desktop) || (mobile && !mobileListShown) || (version.apiLevel !== undefined && version.apiLevel < 28)) return null
-  return <QuotaReading key={revision} machineName={machineName} offline={offline} />
+  return <QuotaReading key={revision} machineName={machineName} offline={offline} mobile={mobile} />
 }
-function QuotaReading({ machineName, offline }: { machineName?: string; offline: boolean }) {
+function QuotaReading({ machineName, offline, mobile = false }: { machineName?: string; offline: boolean; mobile?: boolean }) {
   const offlineRef = useRef(offline); offlineRef.current = offline
   const read = useMemo(() => async () => {
     if (offlineRef.current) throw new Error("offline")
@@ -95,15 +95,17 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
       <div className="quota-providers">
         {shown.map((row) => {
           const compact = compactWindow(row)
-          const used = compact ? nextWord("quotaUsed", { percent: Math.round(compact.used_percent) }) : nextWord("quotaUnknown")
+          const used = compact
+            ? (mobile ? `${Math.round(compact.used_percent)}%` : nextWord("quotaUsed", { percent: Math.round(compact.used_percent) }))
+            : (mobile ? "" : nextWord("quotaUnknown"))
           const reading = row.credits_in_use ? `${used} · ${nextWord("quotaCreditsInUseLong")}` : used
           return <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
             data-stale={stale(row) || undefined} data-credits={row.credits_in_use || undefined} aria-label={`${row.label} · ${reading}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
             onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
             <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
-            <span className="quota-compact-window">{compact ? <WindowValue window={compact} now={now} /> : <span className="quota-unknown">{used}</span>}</span>
-            {row.credits_in_use && <span className="quota-credits">{nextWord("quotaCredits")}</span>}
-            {stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
+            <span className="quota-compact-window">{compact ? <WindowValue window={compact} now={now} mobile={mobile} /> : <span className="quota-unknown">{used}</span>}</span>
+            {!mobile && row.credits_in_use && <span className="quota-credits">{nextWord("quotaCredits")}</span>}
+            {!mobile && stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
           </button>
         })}
         {more > 0 && <button type="button" className="quota-more" aria-haspopup="dialog" aria-controls="provider-quota-detail"
