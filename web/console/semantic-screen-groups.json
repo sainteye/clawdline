@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11127,
-  "riskKeys": 4903,
-  "nonRiskCount": 6224,
+  "englishContentKeys": 11130,
+  "riskKeys": 4904,
+  "nonRiskCount": 6226,
   "groups": [
     {
       "name": "acp / other",
@@ -3799,7 +3799,7 @@
     },
     {
       "name": "next / other",
-      "count": 729,
+      "count": 731,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3854,7 +3854,9 @@
         "next.compressedReadTooLarge",
         "next.compressedReadUnsupported",
         "next.copilotCall",
+        "next.copilotHangup",
         "next.copilotInCall",
+        "next.copilotMinimize",
         "next.devStackConfigTitle",
         "next.devStackEditButton",
         "next.devStackLinksTitle",

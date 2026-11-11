@@ -52,6 +52,7 @@ import type { Attention } from "./cloud/admin/health/attention.js"
 import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
 import { scanRecovering, sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import type { MachineOffline } from "./session/machine-offline.js"
+import { CopilotDockView } from "./realtime/CopilotDockView.js"
 import {
   ActionConfirm,
   BEFORE_PAGE_CHANGE,
@@ -1295,6 +1296,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         }}
       /> : null}
       <NewBuild />
+      <CopilotDockView />
     </>
   )
 }

@@ -530,3 +530,88 @@
 .log-text {
   color: var(--ink, #f4f4f5);
 }
+
+/* The sheet's shrink button, beside its close button. */
+.realtime-minimize-btn {
+  margin-left: auto;
+  margin-right: 4px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--dim);
+  cursor: pointer;
+}
+.realtime-minimize-btn svg { width: 16px; height: 16px; }
+.realtime-minimize-btn:hover { background: var(--card-hi); color: var(--ink); }
+.realtime-minimize-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The floating call bubble: above every page, dragged aside while the call goes on. */
+.copilot-bubble {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 60px;
+  height: 60px;
+  z-index: 9998;
+  transition: transform 0.22s ease-out;
+  touch-action: none;
+}
+.copilot-bubble.dragging { transition: none; }
+.copilot-bubble-body {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #10b981;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.copilot-bubble.dragging .copilot-bubble-body { cursor: grabbing; transform: scale(1.06); }
+.copilot-bubble-body svg { width: 26px; height: 26px; pointer-events: none; }
+.copilot-bubble-body:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.copilot-bubble-body.state-listening { background: #10b981; }
+.copilot-bubble-body.state-idle { background: #10b981; }
+.copilot-bubble-body.state-thinking { background: #f59e0b; }
+.copilot-bubble-body.state-speaking { background: #3b82f6; animation: bubble-speak 1.2s infinite ease-in-out; }
+.copilot-bubble-body.state-connecting { background: var(--accent); animation: bubble-speak 1.2s infinite ease-in-out; }
+@keyframes bubble-speak {
+  0%, 100% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 0 rgba(59, 130, 246, 0.45); }
+  50% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 8px rgba(59, 130, 246, 0); }
+}
+.copilot-bubble-hangup {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--bg, #0e0e11);
+  background: #ef4444;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+/* A wider target than it looks, for a thumb. */
+.copilot-bubble-hangup::before { content: ""; position: absolute; inset: -8px; }
+.copilot-bubble-hangup svg { width: 11px; height: 11px; }
+.copilot-bubble-hangup:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .copilot-bubble { transition: none; }
+  .copilot-bubble-body.state-speaking, .copilot-bubble-body.state-connecting { animation: none; }
+}
