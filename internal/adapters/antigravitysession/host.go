@@ -57,11 +57,16 @@ type Options struct {
 const DefaultInactivityTimeout = 3 * time.Minute
 
 type Host struct {
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	opts     Options
-	rows     map[string]*conversation
+	mu     sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	opts   Options
+	rows   map[string]*conversation
+	// offer is the account's most recent model and effort offer from any
+	// conversation. A Session that has not reported its own since it was last
+	// connected shows this one; a switch still reconnects and is validated live.
+	offer    *knownConfig
+	offerAt  time.Time
 	opening  bool
 	closed   bool
 	jobs     sync.WaitGroup
@@ -188,6 +193,9 @@ func New(ctx context.Context, opts Options) (*Host, error) {
 			h.store.db.Close()
 			cancel()
 			return nil, err
+		}
+		for _, c := range h.rows {
+			h.noteOffer(c.knownConfig(), c.row.Activity.At)
 		}
 	}
 	for _, c := range h.rows {
@@ -1140,11 +1148,32 @@ type Facts struct {
 	Protocol *contract.SessionProtocol
 }
 
+// noteOffer is called under h.mu; a nil or older offer is ignored.
+func (h *Host) noteOffer(k *knownConfig, at time.Time) {
+	if k == nil || h.offer != nil && at.Before(h.offerAt) {
+		return
+	}
+	h.offer, h.offerAt = k, at
+}
+
 func (h *Host) Facts(s session.Session) (Facts, error) {
 	c, err := h.lookup(s)
 	if err != nil {
 		return Facts{}, err
 	}
+	// Lock order is h.mu before c.mu: read the shared offer first, and record
+	// this conversation's live offer only after c.mu is released.
+	h.mu.Lock()
+	shared := h.offer
+	h.mu.Unlock()
+	var live *knownConfig
+	defer func() {
+		if live != nil {
+			h.mu.Lock()
+			h.noteOffer(live, time.Now())
+			h.mu.Unlock()
+		}
+	}()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var limits *contract.SessionLimits
@@ -1154,6 +1183,19 @@ func (h *Host) Facts(s session.Session) (Facts, error) {
 		limits = quotaSnapshot(c.quota, time.Now())
 	}
 	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Effort: c.effort, Efforts: append([]string(nil), c.efforts...), Limits: limits}
+	if own := c.knownConfig(); own != nil {
+		if c.client != nil {
+			live = own
+		}
+	} else if c.client == nil {
+		if shared != nil {
+			// Not this conversation's reading: what runs is unknown until it
+			// reconnects, except a choice the person already made here.
+			f.Model, f.Effort = c.chosenModel, c.chosenEffort
+			f.Models = append([]contract.SessionModel{}, shared.Models...)
+			f.Efforts = append([]string(nil), shared.Efforts...)
+		}
+	}
 	f.Protocol = &contract.SessionProtocol{Phase: "not_connected"}
 	if c.client != nil {
 		// Both are an owned metadata-only snapshot. No raw frame can enter it.

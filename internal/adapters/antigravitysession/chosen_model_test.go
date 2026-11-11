@@ -4,10 +4,13 @@ package antigravitysession
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 // AGY 1.5 restores its default model and effort when a conversation is loaded
@@ -73,5 +76,37 @@ func TestAChoiceNoLongerOfferedLeavesTheRuntimeValue(t *testing.T) {
 	}
 	if strings.Contains(readFile(t, filepath.Join(opts.AccountDir, "config-writes")), "retired-model") {
 		t.Fatal("wrote a model the runtime does not offer")
+	}
+}
+
+// A conversation saved before offers were recorded, or one that has not
+// connected since, still offers the account's choices other conversations
+// reported; it does not claim to know which model it will run.
+func TestADisconnectedSessionWithoutItsOwnOfferUsesTheAccountOffer(t *testing.T) {
+	t.Setenv("CLW_CONFIG_PEER", "yes")
+	h, first, opts := persistentFixture(t)
+	second, err := h.OpenWithContext(context.Background(), ports.OpenRequest{Cwd: opts.AccountDir}, LaunchContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopHost(t, h)
+	db, err := sql.Open("sqlite", filepath.Join(opts.StateDir, "conversations.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`UPDATE conversations SET row_json=json_remove(row_json,'$.known_config') WHERE id=?`, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	h = reopenHost(t, opts)
+	facts, err := h.Facts(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.Models) != 2 || len(facts.Efforts) == 0 || facts.Model != "" {
+		t.Fatalf("disconnected Session without its own offer: %+v", facts)
+	}
+	if own, _ := h.Facts(first); own.Model != "synthetic-flash" {
+		t.Fatalf("its own offer was replaced: %+v", own)
 	}
 }
