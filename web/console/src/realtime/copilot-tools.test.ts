@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, greetingEvent, instructionsFor, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, greetingEvent, instructionsFor, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -183,7 +183,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "set_speaking_speed", "set_answer_length", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -543,4 +543,35 @@ test("the copilot speaks the language the console is shown in", () => {
   assert.match((greetingEvent(true) as { response: { instructions: string } }).response.instructions, /很短的繁體中文打招呼/)
   // The short-answer setting still applies in another language.
   assert.ok(instructionsFor(false, "en").includes(LONG_RULE))
+})
+
+test("slower and faster move one step and stop at the ends", () => {
+  assert.equal(nextSpeed("0.9", "slower"), "0.8")
+  assert.equal(nextSpeed("0.8", "slower"), "0.8")
+  assert.equal(nextSpeed("1.0", "faster"), "1.1")
+  assert.equal(nextSpeed("1.1", "faster"), "1.1")
+  assert.equal(nextSpeed("0.8", "normal"), "1.0")
+  assert.equal(nextSpeed("0.9", "1.1"), "1.1")
+  assert.equal(nextSpeed("0.9", "2.0"), "0.9")
+})
+
+test("asked in the call, the copilot changes its speed and length and keeps them for the next call", async () => {
+  const { deps } = fakeMachine({})
+  let delivery = { speed: "0.9", brief: true }
+  const changes: unknown[] = []
+  deps.delivery = () => delivery
+  deps.adjust = async (change) => { changes.push(change); delivery = { ...delivery, ...change }; return { saved: true } }
+  assert.deepEqual(JSON.parse((await runCopilotTool("set_speaking_speed", '{"speed":"slower"}', deps)).output), { speed: "0.8", changed: true, saved_for_next_calls: true })
+  assert.match(JSON.parse((await runCopilotTool("set_speaking_speed", '{"speed":"slower"}', deps)).output).note, /最慢/)
+  assert.deepEqual(JSON.parse((await runCopilotTool("set_answer_length", '{"brief":false}', deps)).output), { brief: false, saved_for_next_calls: true })
+  assert.deepEqual(changes, [{ speed: "0.8" }, { brief: false }], "a step that changes nothing is not sent")
+})
+
+test("an in-call change sends the instructions and speed, never the voice", () => {
+  const ev = adjustEvent("", "", { speed: "0.8", brief: false, voice: "cedar" }) as { session: Record<string, any> }
+  assert.equal(ev.session.type, "realtime")
+  assert.equal(ev.session.audio.output.speed, 0.8)
+  assert.equal("voice" in ev.session.audio.output, false)
+  assert.ok(ev.session.instructions.includes(LONG_RULE))
+  assert.equal("tools" in ev.session, false)
 })

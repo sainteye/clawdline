@@ -43,6 +43,9 @@ export interface ToolDeps {
   briefing?: () => Promise<string | null>
   /** Opens one Session on the page the call runs in; true once it is on screen. */
   openSession?: (id: string) => Promise<boolean>
+  /** This call's speed and answer length now, and a way to change them for this call and the next. */
+  delivery?: () => { speed: string; brief: boolean }
+  adjust?: (change: { speed?: string; brief?: boolean }) => Promise<{ saved: boolean }>
 }
 
 export interface ToolResult {
@@ -96,6 +99,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - open_session：在使用者通話的這個畫面上打開某個 Session。使用者說「切到／打開／讓我看某某」就呼叫，打開後用一句話說「已經打開某某」，不用唸內容。
 - answer_session_question：替使用者回答某個 Session 在等的問題（選項選單）。
 - get_session_notes：讀 Session 留給使用者的便條紙。
+- set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
 - session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
@@ -264,6 +268,28 @@ export const COPILOT_TOOLS = [
       properties: {
         session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱；省略時讀全部' },
       },
+    },
+  },
+  {
+    type: 'function',
+    name: 'set_speaking_speed',
+    description: '調整你講話的速度，這通電話馬上生效，也存成下次通話的設定。使用者說「講慢一點」「快一點」「恢復正常速度」時呼叫。',
+    parameters: {
+      type: 'object',
+      properties: {
+        speed: { type: 'string', enum: ['slower', 'faster', 'normal', '0.8', '0.9', '1.0', '1.1'], description: 'slower／faster 往下或往上調一格；normal 是 1.0；也可以直接給數值' },
+      },
+      required: ['speed'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'set_answer_length',
+    description: '切換簡短回答：brief 為 true 時一般問答最多三句，false 時完整回答。這通電話馬上生效，也存成下次通話的設定。使用者說「簡短一點」「講詳細一點」時呼叫。',
+    parameters: {
+      type: 'object',
+      properties: { brief: { type: 'boolean', description: 'true 簡短、false 詳細' } },
+      required: ['brief'],
     },
   },
   {
@@ -1223,6 +1249,47 @@ async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   return count ? { sessions: out } : { note: wanted.trim() ? '這個 Session 沒有還沒處理的便條' : '沒有 Session 留下還沒處理的便條' }
 }
 
+/** The speed a spoken ask lands on: one step slower or faster, normal, or a named rate. */
+export function nextSpeed(current: string, ask: string): string {
+  const i = Math.max(0, SPEEDS.indexOf(current))
+  if (ask === 'slower') return SPEEDS[Math.max(0, i - 1)]
+  if (ask === 'faster') return SPEEDS[Math.min(SPEEDS.length - 1, i + 1)]
+  if (ask === 'normal') return '1.0'
+  return SPEEDS.includes(ask) ? ask : current
+}
+
+async function setSpeed(deps: ToolDeps, logs: ToolLog[], ask: string): Promise<unknown> {
+  if (!deps.adjust || !deps.delivery) return { error: '這通電話不能調整語速' }
+  const now = deps.delivery()
+  const speed = nextSpeed(SPEEDS.includes(now.speed) ? now.speed : String(DEFAULT_SPEED), ask)
+  if (speed === now.speed) {
+    const edge = ask === 'slower' ? '已經是最慢的速度了' : ask === 'faster' ? '已經是最快的速度了' : '速度沒有變'
+    return { speed, changed: false, note: edge }
+  }
+  const { saved } = await deps.adjust({ speed })
+  logs.push({ level: 'info', text: `語速調成 ${speed} 倍${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}` })
+  return { speed, changed: true, saved_for_next_calls: saved }
+}
+
+async function setLength(deps: ToolDeps, logs: ToolLog[], brief: unknown): Promise<unknown> {
+  if (!deps.adjust) return { error: '這通電話不能調整回答長度' }
+  if (typeof brief !== 'boolean') return { error: '要說簡短（true）還是詳細（false）' }
+  const { saved } = await deps.adjust({ brief })
+  logs.push({ level: 'info', text: `${brief ? '改成簡短回答' : '改成詳細回答'}${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}` })
+  return { brief, saved_for_next_calls: saved }
+}
+
+/**
+ * The part of the configuration an in-call change sends: the instructions
+ * rebuilt for the new answer length, and the playback rate. Never the voice,
+ * which a call cannot change once it has spoken.
+ */
+export function adjustEvent(memory: string, snapshot: string, options: CallOptions): Record<string, unknown> {
+  const full = sessionUpdateEvent(memory, snapshot, options) as { session: { instructions: string; audio: { output: { speed: number } } } }
+  return { type: 'session.update', session: { type: 'realtime', instructions: full.session.instructions,
+    audio: { output: { speed: full.session.audio.output.speed } } } }
+}
+
 async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   if (!deps.briefing) {
     logs.push({ level: 'error', text: '這通電話沒有機器整理的匯報' })
@@ -1261,6 +1328,8 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice))
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
+    else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
+    else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))
     else {
       result = { error: `未知的工具：${name}` }
