@@ -222,25 +222,36 @@ export class RealtimeCopilotClient {
       session: {
         modalities: ['text', 'audio'],
         voice: 'alloy',
+        input_audio_transcription: {
+          model: 'whisper-1',
+        },
         instructions: `你是 Clawdline 的隨身語音副駕駛（Voice Copilot）。
-使用者的本機機器上正在運行 Clawdline 守護行程，而使用者目前正在用手機透過全雙工語音與你交談。
+使用者的本機正在運行 Clawdline 守護行程，使用者目前正透過手機全雙工語音與你交談。
 請一律使用繁體中文（台灣，zh-Hant-TW）回答。
-你的主要功能：
-1. 當使用者詢問「現在有哪些 session」、「目前有什麼任務在跑」時，呼叫 list_sessions 工具查看，並用語音條理分明、簡短地向使用者摘要。
-2. 當使用者詢問某個特定 session 的細節或進度時，呼叫 get_session_screen 工具讀取該終端畫面，並將最新的進度或是否有錯誤做語音重點摘要。
-3. 當使用者指示「幫我傳話給某個 session」或「發指令給某個任務」時，呼叫 send_message_to_session 工具轉交訊息。
-回覆時請保持語氣自然、專業、簡潔，適合語音聆聽，避免唸出大量無意義的程式碼細節或雜湊值。`,
+
+【最重要原則：主動呼叫工具】
+1. 當使用者詢問「現在有什麼 session」、「有哪些任務」、「幫我看進度」、「目前在跑什麼」或任何相關工作狀態時，你必須【立刻主動呼叫 list_sessions 工具】，絕不要只用口頭反問或閒聊。
+2. 取得 session 清單後：
+   - 先簡明條列目前有哪幾個 session（名稱、狀態）。
+   - 若使用者想了解某個 session 的畫面或進度，立刻呼叫 get_session_screen 工具，讀取終端畫面並進行重點摘要。
+3. 當使用者指示「幫我傳話給某個 session」或「發送指令」時，呼叫 send_message_to_session 工具。
+
+回覆風格：
+- 簡短、條理分明、親切自然，專為語音聆聽設計。
+- 避免唸出冗長代碼、哈希值或無意義的除錯字串。`,
         tools: [
           {
             type: 'function',
             name: 'list_sessions',
-            description: '查詢目前這台機器上 Clawdline 所有運作中或閒置的 Sessions 清單與狀態。',
+            description:
+              '查詢當前機器上所有 Sessions 清單與執行狀態。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先呼叫此工具。',
             parameters: { type: 'object', properties: {} },
           },
           {
             type: 'function',
             name: 'get_session_screen',
-            description: '讀取特定 Session 當前的終端機螢幕文字輸出，以供摘要其執行進度與狀態。',
+            description:
+              '讀取特定 Session 當前的終端機螢幕文字輸出，以供摘要其執行進度與狀態。',
             parameters: {
               type: 'object',
               properties: {
@@ -339,20 +350,22 @@ export class RealtimeCopilotClient {
     let resultOutput = ''
     try {
       if (name === 'list_sessions') {
-        const res = await fetch('/v1/orchestrator/sessions')
+        const res = await fetch('/v1/sessions')
         if (!res.ok) {
           resultOutput = JSON.stringify({ error: `查詢失敗 (HTTP ${res.status})` })
         } else {
           const data = await res.json()
-          const cleanSessions = (data.sessions || []).map((s: any) => ({
-            id: s.id,
-            label: s.label,
-            assistant: s.assistant,
+          const rawList = data.sessions || []
+          const cleanSessions = rawList.map((s: any) => ({
+            id: s.id || s.sessionId,
+            label: s.label || s.title || s.assistant || s.id,
             state: s.state,
             work_state: s.work_state,
-            directory: s.cwd,
           }))
-          resultOutput = JSON.stringify({ sessions: cleanSessions })
+          resultOutput = JSON.stringify({
+            count: cleanSessions.length,
+            sessions: cleanSessions,
+          })
         }
       } else if (name === 'get_session_screen') {
         const sessionId = args.session_id
