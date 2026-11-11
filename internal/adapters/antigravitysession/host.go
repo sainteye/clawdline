@@ -453,6 +453,7 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 	}
 	inject := c.launchContext.Text != "" && c.injected == nil
 	launch := c.launchContext
+	assistant := c.row.Assistant
 	c.busy = true
 	c.nativeTurn = false
 	c.activeTools = nil
@@ -507,13 +508,18 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 		turn, cancel := context.WithCancel(h.ctx)
 		defer cancel()
 		stop := context.AfterFunc(ctx, cancel)
-		contextText := ""
+		promptText, contextText := withReminder(text, launch.Reminder), ""
 		if inject {
-			contextText = launch.Text
+			promptText = text
+			if assistant == session.AssistantGrok {
+				contextText = launch.Text
+			} else {
+				promptText = inlineContext(launch.Text, text)
+			}
 		}
 		watchdogDone := make(chan struct{})
 		defer close(watchdogDone)
-		result, err := client.PromptContextChecked(turn, text, launch.URI, contextText, func() error {
+		result, err := client.PromptContextChecked(turn, promptText, launch.URI, contextText, func() error {
 			if before != nil {
 				if err := before(); err != nil {
 					return err

@@ -300,6 +300,9 @@ func TestOwnedPeer(t *testing.T) {
 			if len(req.Params.Prompt) == 2 && req.Params.Prompt[0].Type == "resource" {
 				flattened := "Embedded resource (" + req.Params.Prompt[0].Resource.URI + "):\n" + req.Params.Prompt[0].Resource.Text + " " + req.Params.Prompt[1].Text
 				_ = os.WriteFile(filepath.Join(dir, nativeID+"-context-replay"), []byte(flattened), 0600)
+			} else if len(req.Params.Prompt) == 1 && strings.HasPrefix(req.Params.Prompt[0].Text, "<clawdline_instructions>") {
+				// AGY 1.5 replays a text-only prompt as one unchanged text chunk.
+				_ = os.WriteFile(filepath.Join(dir, nativeID+"-context-replay"), []byte(req.Params.Prompt[0].Text), 0600)
 			}
 			f.WriteString("prompt\n")
 			f.Close()

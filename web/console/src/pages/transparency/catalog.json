@@ -3230,11 +3230,12 @@
     "internal/adapters/antigravityprocess/client.go": "e556e2684a7b83ce9d694149af2b2faa63699f29c8e0f8b495a8c9e574213449",
     "internal/adapters/antigravityprocess/grok_routing.go": "b0ef1c0c37fd040f485af4a4b94da5b3378c093c27a2b5741fd90df90af32050",
     "internal/adapters/antigravityprocess/lifecycle.go": "996e78a33213f74dafcf8a6b11ac82e647fca79ee91a419162359a1a6a65bb0b",
-    "internal/adapters/antigravitysession/context.go": "13b5b096cceb95cc60c4ab0c1841ea1177e537a42e55f85c87751c22d1801cd3",
+    "internal/adapters/antigravitysession/background.go": "5511f4f55e48bb1d38df992f6243a1f7c5a416518779d706bec093a9a4844d0c",
+    "internal/adapters/antigravitysession/context.go": "f0885a69a11e075dbe343e59d33d316e107cdbddda042749877cf9f58df9d129",
     "internal/adapters/antigravitysession/continue.go": "90d684e85716a03590c609b36437c19e1adac1708915c956f07567f2c3c4cb0c",
     "internal/adapters/antigravitysession/grok.go": "29165034f2efe9349a807c745c65153e31f03e83060c70279317cade1566799a",
     "internal/adapters/antigravitysession/history.go": "4184c95a867fb5d054495a182e52ea157cf073e86aea93052bca8280b10e1d9b",
-    "internal/adapters/antigravitysession/host.go": "01de1b45095cef565325b61e691c51e856e0d609e274d956d5019f0f95690403",
+    "internal/adapters/antigravitysession/host.go": "6555bb602f7feff893a8e98a5196bdd8fa6c3f8bb27e36ed83628fa2a5ccb26d",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/antigravitysession/turnend.go": "0e37dc41dcf875f0cbc8d12ddeee5e9fb603ac309a400fb4d2ab594f8c09d32d",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",
@@ -3249,7 +3250,7 @@
     "internal/adapters/nextconfig/nextconfig.go": "1596b01af44c3c07dfc8843852cda4142a1e858f322bde071462d4a3028a1c04",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
-    "internal/adapters/projects/antigravity_context.go": "19c5395961fc715ddac5265b6ccae80338577a6551246ee4ddd5b939de919d04",
+    "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "42be85313d854b53a9983e1d62b2221c8e288893532573ab4221670221908c18",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
@@ -3294,7 +3295,7 @@
     "internal/transport/http/antigravity_history.go": "af3efe40f4214a0df012df5ff47904df2e228bfde3011f7ca72cb92bfd5a45ce",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
-    "internal/transport/http/antigravity_owned.go": "ac1eeba43612da781b0a597dce5dfcb17badcb66727e7dd15b7f8444438e81d2",
+    "internal/transport/http/antigravity_owned.go": "d71065fad1b44a82adf3527c012eb11c36e6a4a860e6560423c2e39458038d50",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
@@ -3338,7 +3339,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "528af9ff059d226dce5531cc2aa623274c37d36cdf612059c6ea89abe63ad921",
-    "zh-Hant": "e22292688570661c4dea245356b87988805f3476284a2f4bc2dc5dc480dfda4f"
+    "en": "f52b0fd37c09a3294c1ae9629666c3509a899ffe2f541ddf0cc60af08d0faa28",
+    "zh-Hant": "5a8208c513f6f9d79bae91607c4ce50a5e210c760579b524d5ec20232b8abe16"
   }
 }

@@ -128,12 +128,13 @@ func ownedContextFor(place projects.Place, prepared app.OwnedContext, assistant 
 		// neither creates a Project file nor asks the provider to read one.
 		resource = place.Path
 	}
-	text := prepared.Context.Instructions()
+	text, reminder := prepared.Context.Instructions(), ""
 	if assistant == projects.AssistantAntigravity {
 		text = ownedInstructions(text)
+		reminder = prepared.Context.TurnReminder()
 	}
 	return antigravitysession.LaunchContext{
-		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: text,
+		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: text, Reminder: reminder,
 		Persona: prepared.Persona, SquadLaunchID: prepared.LaunchID, SquadCapabilityPath: prepared.Files.CapabilityPath,
 		WorkflowLaunchID: prepared.Workflow.ID,
 	}

@@ -130,20 +130,25 @@ func TestLaunchContextSurvivesBlankAndAcceptedReopen(t *testing.T) {
 	}
 }
 
-func assertPromptContext(t *testing.T, opts Options, row session.Session, embedded bool, text string) {
+func assertPromptContext(t *testing.T, opts Options, row session.Session, embedded bool, text string, reminder ...string) {
 	t.Helper()
 	var prompt []struct {
 		Type, Text string
 		Resource   struct{ URI, Text string }
 	}
+	if len(reminder) == 0 {
+		reminder = []string{""}
+	}
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(opts.AccountDir, row.ConversationID+"-prompt"))), &prompt); err != nil {
 		t.Fatal(err)
 	}
 	if embedded {
-		if len(prompt) != 2 || prompt[0].Type != "resource" || prompt[0].Resource.Text != text || prompt[1].Text != "identical user" {
+		// AGY 1.5 replays an embedded resource as a bare link; the context
+		// travels in the prompt's own text.
+		if len(prompt) != 1 || prompt[0].Type != "text" || prompt[0].Text != "<clawdline_instructions>\n"+text+"\n</clawdline_instructions>\n\nidentical user" {
 			t.Fatalf("first prompt: %+v", prompt)
 		}
-	} else if len(prompt) != 1 || prompt[0].Type != "text" {
+	} else if len(prompt) != 1 || prompt[0].Type != "text" || reminder[0] != "" && !strings.HasSuffix(prompt[0].Text, withReminder("", reminder[0])) {
 		t.Fatalf("next prompt: %+v", prompt)
 	}
 }
@@ -193,7 +198,31 @@ func TestLaunchContextsAndCapabilityPathsStayConversationOwned(t *testing.T) {
 
 func TestReplayContextOnlyMatchesFirstExactUserChunk(t *testing.T) {
 	launch := contextLaunch("backend")
-	flat := "Embedded resource (" + launch.URI + "):\n" + launch.Text + " original"
+	for _, flat := range []string{"Embedded resource (" + launch.URI + "):\n" + launch.Text + " original", inlineContext(launch.Text, "original")} {
+		replayFirstChunk(t, launch, flat)
+	}
+}
+
+func TestReplayRemovesOnlyTheExactTurnReminder(t *testing.T) {
+	launch := contextLaunch("backend")
+	launch.Reminder = "Keep explaining."
+	c := &conversation{launchContext: launch, injected: &injectedTurn{OriginalText: "original"}, replaying: true}
+	for in, want := range map[string]string{
+		inlineContext(launch.Text, "original"):            "original",
+		withReminder("later turn", launch.Reminder):       "later turn",
+		"later turn <clawdline_reminder>Keep explaining.": "later turn <clawdline_reminder>Keep explaining.",
+	} {
+		c.replaySawUser = strings.HasPrefix(in, "later")
+		u := antigravityacp.SessionUpdate{Kind: "user_message_chunk", Text: in}
+		c.cleanReplayContext(&u)
+		if u.Text != want {
+			t.Fatalf("%q became %q", in, u.Text)
+		}
+	}
+}
+
+func replayFirstChunk(t *testing.T, launch LaunchContext, flat string) {
+	t.Helper()
 	for _, first := range []string{flat, flat + " changed", "other first turn"} {
 		c := &conversation{launchContext: launch, injected: &injectedTurn{OriginalText: "original"}, replaying: true}
 		u := antigravityacp.SessionUpdate{Kind: "user_message_chunk", Text: first}

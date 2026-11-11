@@ -95,10 +95,13 @@ A resumed conversation retains its original snapshot, even if the role settings
 have changed. It does not inject a new snapshot or resend an interrupted message.
 An older machine that does not support this path keeps its role picker hidden.
 
-The native CLI currently flattens embedded instructions into its replayed user
-text. Clawdline restores the original input only when that first replayed turn
-matches its saved context and original text exactly. Unknown replay formats are
-preserved rather than deleting text by guesswork.
+Clawdline sends a new conversation's role, memory and step-explanation guidance
+at the start of its first message, because the current Gemini CLI drops
+instructions attached any other way. When step explanations are on, each later
+message also ends with a one-sentence reminder. History shows your original words
+without either; Clawdline removes them only on an exact match and leaves unknown
+replay formats intact rather than deleting text by guesswork. Conversations started
+before this change keep their original first message.
 
 Native tools use their own Clawdline Session identity. CLI dispatch can start a
 Gemini child with the existing role squad, worktree, acceptance and result
