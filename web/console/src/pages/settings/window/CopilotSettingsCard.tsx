@@ -168,7 +168,7 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
         <summary>{nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
         <p className="sw-hint">{nextWord("copilotSourceHint")}</p>
         <h4>{nextWord("copilotSourceInstructions")}</h4>
-        <pre className="sw-copilot-pre">{instructionsFor(snapshot.brief !== false)}</pre>
+        <pre className="sw-copilot-pre">{instructionsFor(snapshot.brief !== false, document.documentElement.lang)}</pre>
         <h4>{nextWord("copilotSourceTools")}</h4>
         <ul className="sw-copilot-tools">
           {COPILOT_TOOLS.map((tool) => (

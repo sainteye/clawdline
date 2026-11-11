@@ -303,6 +303,8 @@ export interface CallOptions {
   extra?: string
   /** The machine's prepared briefing, once it has arrived. */
   briefing?: string
+  /** The language the console is shown in (`<html lang>`), which the copilot speaks. */
+  language?: string
 }
 
 /** The instructions' section holding the machine's briefing, or "". */
@@ -321,9 +323,33 @@ export function extraSection(extra: string): string {
 export const BRIEF_RULE = '- 一般問答要短：最多三句，能一句講完就一句。這是語音，不是文章。'
 export const LONG_RULE = '- 一般問答可以完整回答，把重點和原因講清楚；仍然不要開場白、不要重複使用者的問題。'
 
-/** The instructions for one call: the short-answer rule as the machine's setting says. */
-export function instructionsFor(brief = true): string {
-  return brief ? COPILOT_INSTRUCTIONS : COPILOT_INSTRUCTIONS.replace(BRIEF_RULE, LONG_RULE)
+/** The language rule as written for a console shown in Chinese. */
+export const CHINESE_RULE = '- 全程台灣繁體中文。'
+
+/**
+ * What the instructions call the console's language, or "" for Chinese,
+ * whose rule stays as written. `language` is a BCP 47 tag such as "en".
+ */
+export function spokenLanguage(language = ''): string {
+  const tag = language.trim()
+  if (!tag || /^zh\b/i.test(tag)) return ''
+  try {
+    return new Intl.DisplayNames(['zh-Hant'], { type: 'language' }).of(tag) || tag
+  } catch {
+    return tag // refusal-ok: an unknown tag is named as it is; the model still reads it.
+  }
+}
+
+/** The language rule for a console shown in `language`. */
+export function languageRule(language = ''): string {
+  const name = spokenLanguage(language)
+  return name ? `- 全程用${name}（${language.trim()}）說話：這是使用者介面的語言。Session 的名稱與工具結果裡的原文照原樣唸。` : CHINESE_RULE
+}
+
+/** The instructions for one call: the short-answer rule as the machine's setting says, in the console's language. */
+export function instructionsFor(brief = true, language = ''): string {
+  const rules = brief ? COPILOT_INSTRUCTIONS : COPILOT_INSTRUCTIONS.replace(BRIEF_RULE, LONG_RULE)
+  return rules.replace(CHINESE_RULE, languageRule(language))
 }
 
 export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOptions = {}): Record<string, unknown> {
@@ -333,7 +359,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [instructionsFor(options.brief !== false), extraSection(options.extra ?? ''), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -359,14 +385,15 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
  * with an earlier call remembered it picks up from there instead of saying
  * the same introduction again.
  */
-export function greetingEvent(remembered = false): Record<string, unknown> {
+export function greetingEvent(remembered = false, language = ''): Record<string, unknown> {
+  const name = spokenLanguage(language) || '繁體中文'
   return {
     type: 'response.create',
     response: {
       output_modalities: ['audio'],
       instructions: remembered
-        ? '這不是第一次通話。不要自我介紹、不要說你能做什麼。用一句很短的繁體中文打招呼；如果之前的通話裡有還沒講完或使用者在意的事，就用半句提起它。'
-        : '用一句繁體中文問候，說你可以回報這台電腦上各個 Session 的狀況。不要超過一句。',
+        ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。用一句很短的${name}打招呼；如果之前的通話裡有還沒講完或使用者在意的事，就用半句提起它。`
+        : `用一句${name}問候，說你可以回報這台電腦上各個 Session 的狀況。不要超過一句。`,
     },
   }
 }

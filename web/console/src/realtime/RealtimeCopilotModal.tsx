@@ -48,13 +48,13 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
   const isConnected = copilotState.status === 'connected'
   const isConnecting = copilotState.status === 'connecting'
 
-  let stateLabel = '準備通話'
-  if (isConnecting) stateLabel = '正在建立 WebRTC 即時通話連線...'
+  let stateLabel = nextWord('copilotReady')
+  if (isConnecting) stateLabel = nextWord('copilotConnecting')
   else if (isConnected) {
     if (copilotState.toolCallLog) stateLabel = copilotState.toolCallLog
-    else if (copilotState.speakingState === 'speaking') stateLabel = '副駕駛正在回覆中...'
-    else if (copilotState.speakingState === 'thinking') stateLabel = '正在思考與整理資料...'
-    else stateLabel = '通話中 · 請開口說話（隨時可插話）'
+    else if (copilotState.speakingState === 'speaking') stateLabel = nextWord('copilotAnswering')
+    else if (copilotState.speakingState === 'thinking') stateLabel = nextWord('copilotThinking')
+    else stateLabel = nextWord('copilotListening')
   }
 
   return (
@@ -64,7 +64,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
       if (isConnected || isConnecting) onMinimize?.()
       else onClose()
     }}>
-      <div className="realtime-modal-sheet" role="dialog" aria-modal="true" aria-label="語音副駕駛即時通話">
+      <div className="realtime-modal-sheet" role="dialog" aria-modal="true" aria-label={nextWord('copilotCallTitle')}>
         <div className="realtime-header">
           <div className="realtime-title-row">
             <span className="realtime-badge">Realtime Copilot</span>
@@ -83,12 +83,12 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
               type="button"
               className="realtime-close-btn"
               onClick={handleHangup}
-              aria-label="關閉"
+              aria-label={nextWord('copilotClose')}
             >
               ×
             </button>
           </div>
-          <p className="realtime-desc">隨身語音副駕駛 · 掌握本地 Session 動態與即時指揮</p>
+          <p className="realtime-desc">{nextWord('copilotDesc')}</p>
         </div>
 
         {/* The cloud orb, moving with both voices */}
@@ -105,13 +105,13 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           <div className="realtime-transcript-box">
             {copilotState.lastTranscript && (
               <div className="realtime-bubble user">
-                <span className="bubble-label">你：</span>
+                <span className="bubble-label">{nextWord('copilotYouSaid')}</span>
                 {copilotState.lastTranscript}
               </div>
             )}
             {copilotState.lastAssistantSpeech && (
               <div className="realtime-bubble assistant">
-                <span className="bubble-label">副駕駛：</span>
+                <span className="bubble-label">{nextWord('copilotSaid')}</span>
                 {copilotState.lastAssistantSpeech}
               </div>
             )}
@@ -147,15 +147,15 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
               className="realtime-logs-toggle-btn"
               onClick={() => setShowLogs(!showLogs)}
             >
-              <span>{showLogs ? '▼ 隱藏執行日誌' : '▶ 查看執行日誌'}</span>
+              <span>{nextWord(showLogs ? 'copilotLogsHide' : 'copilotLogsShow')}</span>
               <span className="logs-count">({copilotState.logs.length})</span>
             </button>
             {showLogs && (
-              <div className="realtime-logs-list" role="log" aria-label="副駕駛執行日誌">
+              <div className="realtime-logs-list" role="log" aria-label={nextWord('copilotLogsLabel')}>
                 {copilotState.logs.map((item) => (
                   <div key={item.id} className={`log-item log-level-${item.level}`}>
                     <span className="log-time">[{item.timestamp}]</span>
-                    <span className="log-tag">[{item.level === 'tool' ? '工具' : item.level === 'error' ? '錯誤' : '資訊'}]</span>
+                    <span className="log-tag">[{nextWord(item.level === 'tool' ? 'copilotLogTool' : item.level === 'error' ? 'copilotLogError' : 'copilotLogInfo')}]</span>
                     <span className="log-text">{item.text}</span>
                   </div>
                 ))}
@@ -170,10 +170,10 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           </div>
         )}
 
-        {copilotState.error && copilotState.error.includes('語音副駕駛') && !isConnected ? (
+        {copilotState.error && copilotState.error === nextWord('copilotErrorKeyMissing') && !isConnected ? (
           <div className="realtime-key-status-row">
             <button type="button" className="key-edit-link" onClick={openSettings}>
-              前往「設定 › 語音副駕駛」
+              {nextWord('copilotGoSettings')}
             </button>
           </div>
         ) : null}
@@ -190,7 +190,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
                 <svg viewBox="0 0 24 24" className="call-ico" fill="currentColor">
                   <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
                 </svg>
-                開始語音通話
+                {nextWord('copilotStart')}
               </button>
             )
           ) : (
@@ -202,7 +202,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
               <svg viewBox="0 0 24 24" className="call-ico" fill="currentColor">
                 <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.58.9A14.88 14.88 0 012.05 15c-.58.12-1.05-.35-1.05-.94V10.5c0-.49.36-.9.84-.98 3.12-.5 6.34-.77 9.66-.77s6.54.27 9.66.77c.48.08.84.49.84.98v3.56c0 .59-.47 1.06-1.05.94a14.88 14.88 0 01-4.77-1.28.995.995 0 01-.58-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
               </svg>
-              結束通話
+              {nextWord('copilotHangup')}
             </button>
           )}
         </div>

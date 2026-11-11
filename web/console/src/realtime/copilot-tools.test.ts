@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, greetingEvent, instructionsFor, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -529,4 +529,18 @@ test("short answers are the machine's switch, on unless it says off", () => {
   assert.ok(text(undefined).includes(BRIEF_RULE) && !text(undefined).includes(LONG_RULE))
   assert.ok(text(false).includes(LONG_RULE) && !text(false).includes(BRIEF_RULE))
   assert.match(text(false), /不受三句限制/, "the report exception stays either way")
+})
+
+test("the copilot speaks the language the console is shown in", () => {
+  const english = (sessionUpdateEvent("", "", { language: "en" }) as { session: { instructions: string } }).session.instructions
+  assert.match(english, /全程用英文（en）說話/)
+  assert.doesNotMatch(english, /全程台灣繁體中文/)
+  const greeting = (greetingEvent(false, "en") as { response: { instructions: string } }).response.instructions
+  assert.match(greeting, /用一句英文問候/)
+  // Chinese, and a console whose language is not known, keep the words as they were.
+  assert.equal(instructionsFor(true, "zh-Hant"), instructionsFor(true))
+  assert.match(instructionsFor(true), /全程台灣繁體中文/)
+  assert.match((greetingEvent(true) as { response: { instructions: string } }).response.instructions, /很短的繁體中文打招呼/)
+  // The short-answer setting still applies in another language.
+  assert.ok(instructionsFor(false, "en").includes(LONG_RULE))
 })
