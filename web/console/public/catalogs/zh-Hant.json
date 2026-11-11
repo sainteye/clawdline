@@ -9219,6 +9219,8 @@
   "next.copilotSpeedCalm": "稍慢（0.9 倍）",
   "next.copilotSpeedNormal": "正常（1.0 倍）",
   "next.copilotSpeedQuick": "稍快（1.1 倍）",
+  "next.copilotBriefLabel": "簡短回答",
+  "next.copilotBriefHint": "開啟時，一般問答最多三句；關閉時，副駕駛會完整回答。回報 Session 狀況時一律逐一講完。",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

@@ -3,7 +3,7 @@ import { asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
 import { onMachineChanged } from "../../../cloud/machine-switch.js"
 import { NeedsUpdate } from "../../../machine/NeedsUpdate.js"
 import { nextWord } from "../../../next-strings.js"
-import { COPILOT_INSTRUCTIONS, COPILOT_TOOLS } from "../../../realtime/copilot-tools.js"
+import { COPILOT_TOOLS, instructionsFor } from "../../../realtime/copilot-tools.js"
 import { getStoredOpenAIKey, previewVoice, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
 import { formatUSD } from "../../../realtime/copilot-cost.js"
 import { readCopilotSettings, writeCopilotSettings, type CopilotSettingsChange, type CopilotSettingsSnapshot } from "../api.js"
@@ -125,6 +125,11 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
           onPick={(picked) => { void change({ speed: picked }).catch(() => undefined) }} />
       </Row>
 
+      <Row label={nextWord("copilotBriefLabel")} hint={nextWord("copilotBriefHint")}>
+        <Switch label={nextWord("copilotBriefLabel")} on={snapshot.brief !== false}
+          onChange={(on) => { void change({ brief: on }).catch(() => undefined) }} />
+      </Row>
+
       <Row label={nextWord("copilotEagernessLabel")} hint={nextWord("copilotEagernessHint")}>
         <PopUp label={nextWord("copilotEagernessLabel")} value={snapshot.eagerness}
           options={[
@@ -163,7 +168,7 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
         <summary>{nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
         <p className="sw-hint">{nextWord("copilotSourceHint")}</p>
         <h4>{nextWord("copilotSourceInstructions")}</h4>
-        <pre className="sw-copilot-pre">{COPILOT_INSTRUCTIONS}</pre>
+        <pre className="sw-copilot-pre">{instructionsFor(snapshot.brief !== false)}</pre>
         <h4>{nextWord("copilotSourceTools")}</h4>
         <ul className="sw-copilot-tools">
           {COPILOT_TOOLS.map((tool) => (

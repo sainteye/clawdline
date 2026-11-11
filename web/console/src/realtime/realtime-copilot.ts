@@ -242,7 +242,7 @@ export class RealtimeCopilotClient {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
       })
       const grant = (await opened.json().catch(() => null)) as {
-        client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; extra_instructions?: string; briefing?: boolean
+        client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean
         error?: { code?: string; message?: string }
       } | null
       if (!opened.ok || !grant?.client_secret) {
@@ -252,7 +252,7 @@ export class RealtimeCopilotClient {
           ? '這台機器還沒設定 OpenAI API Key：請到「設定 › 語音副駕駛」填入。'
           : `機器沒有開出通話憑證（${code}）${grant?.error?.message ? '：' + grant.error.message : ''}`)
       }
-      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, extra: grant.extra_instructions } }
+      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })

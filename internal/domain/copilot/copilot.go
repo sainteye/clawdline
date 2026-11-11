@@ -56,6 +56,8 @@ type Settings struct {
 	BriefingAssistant string `json:"briefing_assistant,omitempty"`
 	// BriefingOff turns the machine's prepared briefing off; on unless set.
 	BriefingOff bool `json:"briefing_off,omitempty"`
+	// LongAnswers lifts the three-sentence limit on ordinary answers; off unless set.
+	LongAnswers bool `json:"long_answers,omitempty"`
 }
 
 // Effective fills every unset choice with its default.
@@ -97,6 +99,7 @@ type Change struct {
 	ExtraInstructions *string `json:"extra_instructions"`
 	BriefingAssistant *string `json:"briefing_assistant"`
 	Briefing          *bool   `json:"briefing"`
+	Brief             *bool   `json:"brief"`
 }
 
 // Errors a change is refused with; each is the refusal's code.
@@ -167,6 +170,9 @@ func apply(s Settings, c Change) (Settings, error) {
 	}
 	if c.Briefing != nil {
 		s.BriefingOff = !*c.Briefing
+	}
+	if c.Brief != nil {
+		s.LongAnswers = !*c.Brief
 	}
 	return s, nil
 }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11207,
+  "englishContentKeys": 11209,
   "riskKeys": 4928,
-  "nonRiskCount": 6279,
+  "nonRiskCount": 6281,
   "groups": [
     {
       "name": "acp / other",
@@ -3815,7 +3815,7 @@
     },
     {
       "name": "next / other",
-      "count": 768,
+      "count": 770,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3869,6 +3869,8 @@
         "next.commandNoPlanner",
         "next.compressedReadTooLarge",
         "next.compressedReadUnsupported",
+        "next.copilotBriefHint",
+        "next.copilotBriefLabel",
         "next.copilotBriefingAssistantLabel",
         "next.copilotBriefingClaude",
         "next.copilotBriefingCodex",

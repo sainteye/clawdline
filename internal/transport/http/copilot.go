@@ -111,6 +111,7 @@ type copilotSettingsAnswer struct {
 	Speed              string   `json:"speed"`
 	ExtraInstructions  string   `json:"extra_instructions"`
 	Briefing           bool     `json:"briefing"`
+	Brief              bool     `json:"brief"`
 	BriefingAssistant  string   `json:"briefing_assistant"`
 	Models             []string `json:"models"`
 	Eagernesses        []string `json:"eagernesses"`
@@ -125,7 +126,7 @@ func copilotAnswer(v copilot.Settings) copilotSettingsAnswer {
 	return copilotSettingsAnswer{
 		KeySet: strings.TrimSpace(v.Key) != "", KeyHint: v.KeyHint(),
 		Model: e.Model, Eagerness: e.Eagerness, Voice: e.Voice, Speed: e.Speed, ExtraInstructions: e.ExtraInstructions,
-		Briefing: !e.BriefingOff, BriefingAssistant: e.BriefingAssistant,
+		Briefing: !e.BriefingOff, Brief: !e.LongAnswers, BriefingAssistant: e.BriefingAssistant,
 		Models: copilot.Models, Eagernesses: copilot.Eagerness, Voices: copilot.Voices, Speeds: copilot.Speeds, BriefingAssistants: copilot.BriefingAssistants,
 		MaxInstructions: copilot.MaxExtraInstructionsRunes,
 	}
@@ -183,6 +184,7 @@ type copilotSessionAnswer struct {
 	Speed             string `json:"speed"`
 	ExtraInstructions string `json:"extra_instructions"`
 	Briefing          bool   `json:"briefing"`
+	Brief             bool   `json:"brief"`
 }
 
 // copilotSessionRoute is POST /v1/voice/copilot-session: it mints a
@@ -215,7 +217,7 @@ func (s *Server) copilotSessionRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, copilotSessionAnswer{ClientSecret: secret, ExpiresAt: expires, Model: e.Model,
-		Eagerness: e.Eagerness, Voice: e.Voice, Speed: e.Speed, ExtraInstructions: e.ExtraInstructions, Briefing: !e.BriefingOff})
+		Eagerness: e.Eagerness, Voice: e.Voice, Speed: e.Speed, ExtraInstructions: e.ExtraInstructions, Briefing: !e.BriefingOff, Brief: !e.LongAnswers})
 }
 
 // mintCopilotSecret asks OpenAI for one client secret. The detail it returns

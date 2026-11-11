@@ -297,6 +297,8 @@ export interface CallOptions {
   voice?: string
   /** The playback rate as the machine keeps it ("0.9" unless set). */
   speed?: string
+  /** Short answers: ordinary answers held to three sentences; on unless the machine says false. */
+  brief?: boolean
   /** The person's own extra instructions from Settings › Voice copilot. */
   extra?: string
   /** The machine's prepared briefing, once it has arrived. */
@@ -315,6 +317,15 @@ export function extraSection(extra: string): string {
   return text ? ['【使用者的附加指示】', text].join('\n') : ''
 }
 
+/** The short-answer rule, and what replaces it when the person turns it off. */
+export const BRIEF_RULE = '- 一般問答要短：最多三句，能一句講完就一句。這是語音，不是文章。'
+export const LONG_RULE = '- 一般問答可以完整回答，把重點和原因講清楚；仍然不要開場白、不要重複使用者的問題。'
+
+/** The instructions for one call: the short-answer rule as the machine's setting says. */
+export function instructionsFor(brief = true): string {
+  return brief ? COPILOT_INSTRUCTIONS : COPILOT_INSTRUCTIONS.replace(BRIEF_RULE, LONG_RULE)
+}
+
 export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOptions = {}): Record<string, unknown> {
   return {
     type: 'session.update',
@@ -322,7 +333,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [COPILOT_INSTRUCTIONS, extraSection(options.extra ?? ''), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false), extraSection(options.extra ?? ''), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {

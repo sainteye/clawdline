@@ -63,8 +63,8 @@ func TestAChangeOutsideWhatIsOfferedIsRefusedAndChangesNothing(t *testing.T) {
 }
 
 func TestInstructionsAtTheLimitAreKept(t *testing.T) {
-	s, err := Apply(Settings{}, Change{ExtraInstructions: ptr(strings.Repeat("字", MaxExtraInstructionsRunes)), Briefing: ptr(false)})
-	if err != nil || !s.BriefingOff {
+	s, err := Apply(Settings{}, Change{ExtraInstructions: ptr(strings.Repeat("字", MaxExtraInstructionsRunes)), Briefing: ptr(false), Brief: ptr(false)})
+	if err != nil || !s.BriefingOff || !s.LongAnswers {
 		t.Fatalf("%v %+v", err, s.BriefingOff)
 	}
 }

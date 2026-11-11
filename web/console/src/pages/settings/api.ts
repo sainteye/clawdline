@@ -231,6 +231,7 @@ export interface CopilotSettingsSnapshot {
   speed: string
   extra_instructions: string
   briefing: boolean
+  brief: boolean
   briefing_assistant: string
   models: string[]
   eagernesses: string[]
@@ -249,6 +250,7 @@ export interface CopilotSettingsChange {
   extra_instructions?: string
   briefing_assistant?: string
   briefing?: boolean
+  brief?: boolean
 }
 
 async function callCopilotSettings(init: RequestInit): Promise<CopilotSettingsSnapshot> {

@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -522,4 +522,11 @@ test("a call speaks at the machine's speed, a little slower than OpenAI's unless
   assert.equal(speedOf(undefined), 0.9)
   assert.equal(speedOf("0.8"), 0.8)
   assert.equal(speedOf("3"), 0.9)
+})
+
+test("short answers are the machine's switch, on unless it says off", () => {
+  const text = (brief?: boolean) => (sessionUpdateEvent("", "", { brief }) as { session: { instructions: string } }).session.instructions
+  assert.ok(text(undefined).includes(BRIEF_RULE) && !text(undefined).includes(LONG_RULE))
+  assert.ok(text(false).includes(LONG_RULE) && !text(false).includes(BRIEF_RULE))
+  assert.match(text(false), /不受三句限制/, "the report exception stays either way")
 })
