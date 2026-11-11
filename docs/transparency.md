@@ -457,3 +457,7 @@ model input, so the Gemini context explanations in both languages are unchanged.
 The Gemini Host's shared model offer for disconnected conversations only changes
 which choices the info sheet lists. It adds no model input, so the Gemini context
 explanations in both languages are unchanged.
+
+The Session info sheet now lists model and reasoning choices before the CodeGraph
+section and moves the native connection state to the end. The CodeGraph guidance
+it shows and the preference it saves are unchanged in both languages.
