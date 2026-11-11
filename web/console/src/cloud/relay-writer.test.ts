@@ -3186,3 +3186,32 @@ test("the copilot pages back through another Session's transcript while one Sess
   assert.equal((call?.[3] as { before?: number }).before, 4522709)
   assert.equal((await f.reader.fetch(`/v1/transcript?session=${encodeURIComponent(f.other)}&before=nope`, { headers: { "X-Clawdline-Unopened-Read": "1" } })).status, 400)
 })
+
+test("the copilot answers another Session's question while one Session is open, at that Session's current execution", async () => {
+  const other = "e".repeat(32)
+  const client = new FakeClient()
+  client.rows = [row("s1"), row("s2")]
+  client.descriptors.set("mac-a", GO_DAEMON)
+  const admitted: unknown[] = []
+  const reader = new RelayReader("mac-a", {
+    fleetTarget: () => ({ machineID: "mac-a", sessionID: "s1", executionGeneration: EXECUTION }),
+    admitFleetMutation: async (target) => { admitted.push(target) },
+    resolveSession: async (machine, session) => machine === "mac-a" && session === "s2"
+      ? { machineID: "mac-a", sessionID: "s2", executionGeneration: other } : null,
+  })
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "req-1" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const pinned = await reader.fetch("/v1/sessions/s2/key", post({ key: "1", expect: FINGERPRINT }, { "Idempotency-Key": "press-copilot-0" }))
+  assert.equal(pinned.status, 409, "an unmarked press stays pinned to the opened Session")
+  const res = await reader.fetch("/v1/sessions/s2/key", post({ key: "1", expect: FINGERPRINT },
+    { "Idempotency-Key": "press-copilot-1", "X-Clawdline-Unopened-Read": "1" }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(admitted, [{ machineID: "mac-a", sessionID: "s2", executionGeneration: other }])
+  assert.deepEqual(client.calls.pop()?.slice(0, 4), [
+    "_read", { machine: "mac-a", session: "s2" }, "answer", { request: "press-copilot-1", execution_generation: other, answer: "1", expect: FINGERPRINT },
+  ])
+  const unknown = await reader.fetch("/v1/sessions/s9/key", post({ key: "1", expect: FINGERPRINT },
+    { "Idempotency-Key": "press-copilot-2", "X-Clawdline-Unopened-Read": "1" }))
+  assert.equal(unknown.status, 409, "a Session the machine cannot verify is not pressed")
+})

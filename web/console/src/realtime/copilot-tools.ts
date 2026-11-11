@@ -19,6 +19,8 @@
 
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { UNOPENED_READ_HEADER } from "../cloud/unopened-read.ts"
+// @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
+import { menuFingerprint } from "../session/fingerprint.ts"
 
 /** Every content read names its Session on purpose: the copilot is opened inside another one. */
 const NAMED_READ: RequestInit = { headers: { [UNOPENED_READ_HEADER]: "1" } }
@@ -86,10 +88,20 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - explain_session_reply：某個 Session 最後一則回覆的全文，加上使用者最後交代它的事。使用者說「解釋給我聽」「它在說什麼」「我看不懂」「它要我決定什麼」「講詳細一點」時用這個。
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
 - open_session：在使用者通話的這個畫面上打開某個 Session。使用者說「切到／打開／讓我看某某」就呼叫，打開後用一句話說「已經打開某某」，不用唸內容。
+- answer_session_question：替使用者回答某個 Session 在等的問題（選項選單）。
+- get_session_notes：讀 Session 留給使用者的便條紙。
 - send_message_to_session：替使用者把文字送進某個 Session。送之前先唸出內容並等使用者說好。
 - session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
+
+【回答 Session 的問題】
+- Session 在等使用者回答時（needs_you 或 summary 裡有 question 與 options），先用口語唸出它在問什麼和每個選項的編號與意思，然後問使用者要選哪一個。
+- 只有在使用者明確說出選哪一個（例如「選 1」「選 Yes」「就第一個」）之後才呼叫 answer_session_question；使用者沒講清楚就再問一次，絕對不要自己替使用者選。按完用一句話說選了什麼；工具回報問題已經變了，就照實說並重新唸新的問題。
+
+【便條紙】
+- Session 有 notes（便條數）時，回報那個 Session 要提一句「它留了幾張便條給你」。
+- 使用者問便條內容，或問有什麼要他處理時，呼叫 get_session_notes，唸出標題、要他做什麼和原因；有建議回覆就唸出選項，但不要替他回覆便條。
 
 【整體匯報】
 - 使用者要整體狀況（「匯報現在的狀況」「現在怎麼樣」「有什麼要我處理」）時：指示裡有【整理好的現況匯報】就依它講，可以照原意講得更口語、更短；還沒有就呼叫 get_status_briefing。拿不到匯報才改用 list_sessions 自己整理。
@@ -225,6 +237,30 @@ export const COPILOT_TOOLS = [
   },
   {
     type: 'function',
+    name: 'answer_session_question',
+    description: '替使用者回答某個 Session 正在等的問題（畫面上的選項選單）。只能在你已經唸出問題和選項、而且使用者明確說出要選哪一個之後呼叫。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱' },
+        choice: { type: 'string', description: '使用者選的選項：編號（例如 "1"）或選項文字' },
+      },
+      required: ['session_id', 'choice'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'get_session_notes',
+    description: '讀取 Session 留給使用者、還沒處理的便條紙（標題、要使用者做什麼、原因、內容、建議回覆）。不填 session_id 就讀所有有便條的 Session。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱；省略時讀全部' },
+      },
+    },
+  },
+  {
+    type: 'function',
     name: 'send_message_to_session',
     description: '將使用者確認過的文字指令或訊息直接鍵入指定 Session 的終端機輸入框。',
     parameters: {
@@ -348,6 +384,14 @@ export interface CopilotSessionRow {
   /** The Session's own words for its last delivery (`clawdline session report --summary`). */
   delivered?: string
   delivered_at?: number
+  /** The waiting question as the machine sent it, which a press must name (`fingerprint.ts`). */
+  menu?: Record<string, unknown>
+  /** The numbered options of that question. */
+  choices?: { n: number; label: string }[]
+  /** Unresolved notes the Session's agents left for the person (`attention_count`). */
+  notes?: number
+  /** The conversation the notes belong to (`sessionId`). */
+  conversation?: string
 }
 
 function str(value: unknown): string {
@@ -375,8 +419,16 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
         row.delivered = plainScreenText(str(disposition.title)).trim()
         if (typeof disposition.receiptAt === 'number') row.delivered_at = disposition.receiptAt
       }
+      if (typeof s.attention_count === 'number' && s.attention_count > 0) row.notes = s.attention_count
+      if (str(s.sessionId)) row.conversation = str(s.sessionId)
       const menu = s.menu as { question?: unknown; options?: unknown } | undefined
       if (menu && typeof menu === 'object') {
+        row.menu = menu as Record<string, unknown>
+        if (Array.isArray(menu.options)) {
+          row.choices = menu.options
+            .filter((o): o is { n: number; label?: unknown } => !!o && typeof o === 'object' && typeof (o as { n?: unknown }).n === 'number')
+            .map((o) => ({ n: o.n, label: plainScreenText(str(o.label)) }))
+        }
         if (str(menu.question)) row.question = plainScreenText(str(menu.question))
         if (Array.isArray(menu.options)) {
           row.options = menu.options
@@ -509,13 +561,14 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const brief = (r: CopilotSessionRow) => ({
     id: r.id, label: r.label, assistant: r.assistant,
     ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
+    ...(r.notes ? { notes: r.notes } : {}),
   })
   const out = {
     summary: `${rows.length} 個 Session：${needs.length} 個等你回應、${working.length} 個工作中、${done.length} 個已完成、${idle.length} 個閒置`,
     needs_you: needs.map((r) => ({
       ...brief(r),
       ...(r.question ? { question: r.question } : {}),
-      ...(r.options?.length ? { options: r.options } : {}),
+      ...(r.choices?.length ? { options: r.choices.map((c) => `${c.n}. ${c.label}`) } : r.options?.length ? { options: r.options } : {}),
       ...(latest.get(r.id) ? { latest: latest.get(r.id) } : {}),
     })),
     working: working.map((r) => ({
@@ -808,7 +861,8 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
     ...(lastReply ? { last_reply: lastReply } : {}),
     ...(minutesSince(row.working_since, now) !== undefined && row.state === 'working' ? { working_minutes: minutesSince(row.working_since, now) } : {}),
     ...(row.question ? { question: row.question } : {}),
-    ...(row.options?.length ? { options: row.options } : {}),
+    ...(row.choices?.length ? { options: row.choices.map((c) => `${c.n}. ${c.label}`) } : row.options?.length ? { options: row.options } : {}),
+    ...(row.notes ? { notes: row.notes } : {}),
     ...(!row.delivered && !lastReply ? { note: '這個 Session 沒有交付摘要也讀不到回覆，可改用 get_session_screen 看畫面' } : {}),
   }
   logs.push({ level: 'info', text: `成功讀取「${row.label}」摘要${row.delivered ? '（含交付摘要）' : ''}` })
@@ -979,6 +1033,108 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
   return { opened: true, label: row.label }
 }
 
+/** The option a spoken choice names: its number, or its label. */
+export function choiceOf(choices: { n: number; label: string }[], spoken: string): { n: number; label: string } | { error: string } {
+  const w = spoken.trim().replace(/^第\s*/, '').replace(/\s*個$/, '')
+  const digits = /^\d+$/.test(w) ? Number(w) : ({ '一': 1, '二': 2, '三': 3, '四': 4, '五': 5 } as Record<string, number>)[w]
+  if (digits) {
+    const byNumber = choices.find((c) => c.n === digits)
+    if (byNumber) return byNumber
+  }
+  const lower = w.toLowerCase()
+  const exact = choices.filter((c) => c.label.toLowerCase() === lower)
+  if (exact.length === 1) return exact[0]
+  const partial = choices.filter((c) => lower && c.label.toLowerCase().includes(lower))
+  if (partial.length === 1) return partial[0]
+  return { error: `「${spoken}」對不到唯一的選項；選項是：${choices.map((c) => `${c.n}. ${c.label}`).join('、')}` }
+}
+
+async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, spoken: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  }
+  const { row } = found
+  if (!row.menu || !row.choices?.length) {
+    logs.push({ level: 'error', text: `「${row.label}」現在沒有在等問題的答案` })
+    return { error: `「${row.label}」現在沒有在等問題的答案` }
+  }
+  const choice = choiceOf(row.choices, spoken)
+  if ('error' in choice) {
+    logs.push({ level: 'error', text: choice.error })
+    return { error: choice.error }
+  }
+  // The press names the question it answers; the machine refuses it if the
+  // screen now asks something else.
+  const expect = menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0])
+  const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
+    body: JSON.stringify({ key: String(choice.n), expect }),
+  })
+  if (!res.ok) {
+    const why = await refusalText(res)
+    const error = `沒有替「${row.label}」選「${choice.label}」（HTTP ${res.status}${why ? `：${why}` : ''}）；它的問題可能已經變了，請重新查看`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  logs.push({ level: 'info', text: `已替「${row.label}」選了 ${choice.n}. ${choice.label}` })
+  return { answered: true, label: row.label, question: row.question ?? '', chose: `${choice.n}. ${choice.label}` }
+}
+
+/** How many Sessions' notes one ask reads when none is named. */
+export const NOTES_SESSIONS = 6
+
+async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  let rows: CopilotSessionRow[]
+  if (wanted.trim()) {
+    const found = resolveSession(read.rows, wanted)
+    if ('error' in found) {
+      logs.push({ level: 'error', text: found.error })
+      return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    }
+    rows = [found.row]
+  } else {
+    rows = read.rows.filter((r) => r.notes).slice(0, NOTES_SESSIONS)
+  }
+  const out: { session_id: string; label: string; notes: unknown[] }[] = []
+  for (const row of rows) {
+    if (!row.conversation) continue
+    const res = await deps.fetch(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${row.conversation}`)}`, NAMED_READ)
+    if (!res.ok) continue
+    const body = (await res.json()) as { rows?: unknown }
+    const notes = (Array.isArray(body.rows) ? body.rows : [])
+      .filter((n): n is Record<string, unknown> => !!n && typeof n === 'object')
+      .filter((n) => n.resolved_at == null && n.withdrawn !== true && n.kind !== 'secret')
+      .map((n) => ({
+        kind: str(n.kind),
+        from: str(n.source_label),
+        title: str(n.title),
+        summary: str(n.summary),
+        action: str(n.action),
+        reason: str(n.reason),
+        ...(str(n.detail) ? { detail: clip(plainScreenText(str(n.detail)), ACTIVITY_TEXT_CHARS) } : {}),
+        ...(Array.isArray(n.options) && n.options.length
+          ? { replies: n.options.map((o) => (o && typeof o === 'object' ? str((o as { label?: unknown }).label) : '')).filter(Boolean) } : {}),
+      }))
+    if (notes.length) out.push({ session_id: row.id, label: row.label, notes })
+  }
+  const count = out.reduce((n, s) => n + s.notes.length, 0)
+  logs.push({ level: 'info', text: `讀到 ${count} 張還沒處理的便條` })
+  return count ? { sessions: out } : { note: wanted.trim() ? '這個 Session 沒有還沒處理的便條' : '沒有 Session 留下還沒處理的便條' }
+}
+
 async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   if (!deps.briefing) {
     logs.push({ level: 'error', text: '這通電話沒有機器整理的匯報' })
@@ -1015,6 +1171,8 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
+    else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice))
+    else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message))
     else {
       result = { error: `未知的工具：${name}` }

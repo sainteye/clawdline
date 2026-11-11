@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, choiceOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -11,6 +11,7 @@ const ROWS = [
   { id: "%2", label: "Prepare screenshots", assistant: "codex", state: "idle", work_state: "unknown", cwd: "/y", activity: { at: 1_000_300, known: true },
     disposition: { evidence: "authenticated_session_delivery", receiptAt: 1_000_000, scope: "session", title: "Captured six feature screenshots; \x1b[1mabc123\x1b[0m is on main." } },
   { id: "%7", label: "Fix the flaky test", assistant: "claude", state: "waiting", work_state: "waiting", cwd: "/z",
+    sessionId: "conversation-of-the-flaky-test", attention_count: 2,
     menu: { question: "\x1b[1mPush to main?\x1b[0m", options: [{ n: 1, label: "Yes", can: true, selected: true }, { n: 2, label: "No", can: true, selected: false }] } },
   { id: "%9", label: "Fix the login test", assistant: "claude", state: "working", work_state: "working", cwd: "/z" },
 ]
@@ -25,7 +26,7 @@ const PAINTED =
 
 interface Call { path: string; init?: RequestInit }
 
-function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?: number; transcripts?: Record<string, unknown> } = {}) {
+function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?: number; transcripts?: Record<string, unknown>; notes?: unknown } = {}) {
   const calls: Call[] = []
   const sleeps: number[] = []
   const reads: Record<string, number> = {}
@@ -52,6 +53,8 @@ function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?
         return Response.json({ screen: answers[Math.min(n, answers.length - 1)] })
       }
       if (m && m[2] === "send") return Response.json({ ok: true })
+      if (/^\/v1\/sessions\/[^/]+\/key$/.test(path)) return Response.json({ ok: true })
+      if (path.startsWith("/v1/work/v2/human-interventions/")) return Response.json(opts.notes ?? { ok: true, rows: [], pruned_resolved: 0 })
       return new Response("", { status: 404 })
     },
     async sleep(ms) { sleeps.push(ms) },
@@ -71,7 +74,7 @@ test("list_sessions sorts Sessions by what they need and says what the busy ones
   assert.equal(out.summary, "4 個 Session：1 個等你回應、2 個工作中、0 個已完成、1 個閒置")
   assert.deepEqual(out.needs_you.map((r: { id: string }) => r.id), ["%7"])
   assert.equal(out.needs_you[0].question, "Push to main?")
-  assert.deepEqual(out.needs_you[0].options, ["Yes", "No"])
+  assert.deepEqual(out.needs_you[0].options, ["1. Yes", "2. No"])
   assert.equal(out.needs_you[0].latest, "Twenty runs pass now. Should I push to main?")
   assert.deepEqual(out.working.map((r: { id: string }) => r.id), ["owned:acp:AAAA", "%9"])
   assert.equal(out.working[0].working_minutes, 10)
@@ -180,7 +183,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -289,7 +292,7 @@ test("a waiting Session's summary says what it asks, and survives an unreadable 
   const { deps } = fakeMachine({})
   const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"%7"}', deps)).output)
   assert.equal(out.question, "Push to main?")
-  assert.deepEqual(out.options, ["Yes", "No"])
+  assert.deepEqual(out.options, ["1. Yes", "2. No"])
   assert.equal(out.last_reply, undefined)
   assert.equal(out.delivered_summary, undefined)
   assert.match(out.note, /get_session_screen/)
@@ -447,3 +450,56 @@ test("explain_session_reply says so when a Session has no reply to explain", asy
   assert.match(out.error ?? out.note, /讀不到|無法讀取/)
 })
 
+
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { menuFingerprint } from "../session/fingerprint.ts"
+
+test("a chosen option is pressed with the fingerprint of the question it answers", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"flaky","choice":"1"}', deps)).output)
+  assert.equal(out.answered, true)
+  assert.equal(out.chose, "1. Yes")
+  const press = calls.at(-1)!
+  assert.equal(press.path, "/v1/sessions/%257/key")
+  const sent = JSON.parse(String(press.init?.body))
+  const menu = ROWS.find((r) => r.id === "%7")!.menu
+  assert.deepEqual(sent, { key: "1", expect: menuFingerprint(menu as never) })
+  assert.equal((press.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
+})
+
+test("a choice that names no single option presses nothing", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%7","choice":"maybe"}', deps)).output)
+  assert.match(out.error, /1\. Yes、2\. No/)
+  assert.equal(calls.some((c) => c.path.endsWith("/key")), false)
+  const idle = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%2","choice":"1"}', deps)).output)
+  assert.match(idle.error, /沒有在等問題的答案/)
+})
+
+test("spoken choices find their option", () => {
+  const choices = [{ n: 1, label: "Yes" }, { n: 2, label: "No, and tell Claude what to do differently" }]
+  assert.equal((choiceOf(choices, "第一個") as { n: number }).n, 1)
+  assert.equal((choiceOf(choices, "2") as { n: number }).n, 2)
+  assert.equal((choiceOf(choices, "yes") as { n: number }).n, 1)
+  assert.equal((choiceOf(choices, "tell claude") as { n: number }).n, 2)
+  assert.ok("error" in choiceOf(choices, "3"))
+})
+
+test("a Session's notes are read for the person, without resolved, withdrawn or secret ones", async () => {
+  const { deps, calls } = fakeMachine({}, { notes: { ok: true, pruned_resolved: 0, rows: [
+    { id: "n1", kind: "answer", source_label: "Fix the flaky test", title: "Choose a date", summary: "One release date needs your choice.",
+      action: "Choose a date.", reason: "Only you can choose it.", options: [{ label: "Tuesday", draft: "Tuesday works." }, { label: "Wednesday", draft: "Wednesday works." }],
+      resolved_at: null },
+    { id: "n2", kind: "read", title: "Old", summary: "", action: "", reason: "", options: [], resolved_at: 1 },
+    { id: "n3", kind: "secret", title: "API key", summary: "", action: "", reason: "", options: [], resolved_at: null },
+    { id: "n4", kind: "read", title: "Withdrawn", summary: "", action: "", reason: "", options: [], resolved_at: null, withdrawn: true },
+  ] } })
+  const out = JSON.parse((await runCopilotTool("get_session_notes", "{}", deps)).output)
+  assert.deepEqual(calls.at(-1)?.path, "/v1/work/v2/human-interventions/conversation%3Aconversation-of-the-flaky-test")
+  assert.equal(out.sessions.length, 1)
+  assert.deepEqual(out.sessions[0].notes.map((n: { title: string }) => n.title), ["Choose a date"])
+  assert.deepEqual(out.sessions[0].notes[0].replies, ["Tuesday", "Wednesday"])
+  const list = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
+  assert.equal(list.needs_you[0].notes, 2)
+  assert.deepEqual(list.needs_you[0].options, ["1. Yes", "2. No"])
+})
