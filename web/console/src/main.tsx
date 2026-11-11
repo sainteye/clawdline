@@ -50,11 +50,13 @@ import "./brand-handle.css"
 import "./font-scale.css"
 
 import { restoreFontScale } from "./font-scale.js"
+import { captureCopilotKey } from "./realtime/realtime-copilot.js"
 
 // The body remains hidden behind `html.booting` until its words arrive, so a
 // remembered size is in place before the first visible layout.
 restoreFontScale()
 capturePromoLink(window)
+captureCopilotKey(window)
 
 const host = document.getElementById("root")
 if (!host) throw new Error("no #root in the document")

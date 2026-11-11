@@ -17,20 +17,39 @@ export type RealtimeListener = (state: RealtimeCopilotState) => void
 
 const API_KEY_STORAGE_KEY = 'clawdline.openai.apikey'
 
-export function getStoredOpenAIKey(): string {
+export function captureCopilotKey(scope: Pick<Window, 'location' | 'history'>): void {
   try {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const match = window.location.hash.match(/[#&](?:copilot_key|openai_key)=([^&]+)/)
-      if (match && match[1]) {
-        const extracted = decodeURIComponent(match[1]).trim()
-        if (extracted) {
-          localStorage.setItem(API_KEY_STORAGE_KEY, extracted)
-          const cleanHash = window.location.hash.replace(/[#&](?:copilot_key|openai_key)=[^&]+/, '').replace(/^&/, '#')
-          window.history.replaceState(null, '', window.location.pathname + window.location.search + (cleanHash && cleanHash !== '#' ? cleanHash : ''))
-          return extracted
-        }
+    let key = ''
+    if (scope.location.search) {
+      const searchParams = new URLSearchParams(scope.location.search)
+      key = searchParams.get('copilot_key') || searchParams.get('openai_key') || ''
+      if (key) {
+        searchParams.delete('copilot_key')
+        searchParams.delete('openai_key')
+        const newSearch = searchParams.toString() ? `?${searchParams.toString()}` : ''
+        scope.history.replaceState(null, '', scope.location.pathname + newSearch + scope.location.hash)
       }
     }
+    if (!key && scope.location.hash) {
+      const hashParams = new URLSearchParams(scope.location.hash.replace(/^#/, ''))
+      key = hashParams.get('copilot_key') || hashParams.get('openai_key') || ''
+      if (key) {
+        hashParams.delete('copilot_key')
+        hashParams.delete('openai_key')
+        const newHash = hashParams.toString() ? `#${hashParams.toString()}` : ''
+        scope.history.replaceState(null, '', scope.location.pathname + scope.location.search + newHash)
+      }
+    }
+    if (key.trim()) {
+      localStorage.setItem(API_KEY_STORAGE_KEY, key.trim())
+    }
+  } catch {
+    // refusal-ok: localStorage or location access errors in private browsing are ignored.
+  }
+}
+
+export function getStoredOpenAIKey(): string {
+  try {
     return localStorage.getItem(API_KEY_STORAGE_KEY) || ''
   } catch {
     // refusal-ok: localStorage disabled or restricted in private browsing defaults to empty string.

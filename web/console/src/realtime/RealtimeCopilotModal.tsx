@@ -14,7 +14,7 @@ interface Props {
 export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
   const [copilotState, setCopilotState] = useState<RealtimeCopilotState>(realtimeCopilot.getState())
   const [apiKey, setApiKey] = useState(getStoredOpenAIKey())
-  const [showKeyInput, setShowKeyInput] = useState(!getStoredOpenAIKey())
+  const [tempKey, setTempKey] = useState('')
 
   useEffect(() => {
     return realtimeCopilot.subscribe((state) => {
@@ -27,7 +27,6 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
       const stored = getStoredOpenAIKey()
       if (stored) {
         setApiKey(stored)
-        setShowKeyInput(false)
       }
     }
   }, [open])
@@ -36,7 +35,6 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
 
   const handleStartCall = () => {
     if (!apiKey.trim()) {
-      setShowKeyInput(true)
       return
     }
     setStoredOpenAIKey(apiKey)
@@ -114,62 +112,90 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose }) => {
           </div>
         )}
 
-        {/* API Key configuration row */}
-        {!isConnected && (
-          showKeyInput ? (
-            <div className="realtime-key-row">
-              <label htmlFor="openai-key-input">OpenAI API 金鑰：</label>
-              <div className="key-input-wrap">
-                <input
-                  id="openai-key-input"
-                  type="password"
-                  placeholder="sk-..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  disabled={isConnecting}
-                />
-                {apiKey && (
-                  <button
-                    type="button"
-                    className="key-edit-btn"
-                    onClick={() => {
-                      setStoredOpenAIKey(apiKey)
-                      setShowKeyInput(false)
-                    }}
-                  >
-                    儲存
-                  </button>
-                )}
-              </div>
-              <small className="key-hint">僅保存在此裝置本地儲存空間，不外傳</small>
+        {/* Missing API Key Reminder Dialog */}
+        {!isConnected && !apiKey && (
+          <div className="realtime-key-reminder-box" role="alert">
+            <div className="reminder-header">
+              <span className="reminder-icon">🔑</span>
+              <h4 className="reminder-title">尚未配置 OpenAI API 金鑰</h4>
             </div>
-          ) : (
-            <div className="realtime-key-status-row">
-              <span className="realtime-key-ready">✓ 已載入 OpenAI API 金鑰</span>
+            <p className="reminder-desc">
+              語音副駕駛需要 OpenAI Realtime API 金鑰以建立全雙工語音通話。您可前往「設定 &gt; 語音」完成設定，或直接在下方填入：
+            </p>
+            <div className="reminder-input-wrap">
+              <input
+                id="openai-key-input"
+                type="password"
+                placeholder="sk-..."
+                value={tempKey}
+                onChange={(e) => setTempKey(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
               <button
                 type="button"
-                className="key-edit-link"
-                onClick={() => setShowKeyInput(true)}
+                className="realtime-save-start-btn"
+                disabled={!tempKey.trim()}
+                onClick={() => {
+                  const val = tempKey.trim()
+                  if (!val) return
+                  setStoredOpenAIKey(val)
+                  setApiKey(val)
+                  void realtimeCopilot.start(val)
+                }}
               >
-                更換
+                儲存並開始通話
               </button>
             </div>
-          )
+            <div className="reminder-footer">
+              <button
+                type="button"
+                className="reminder-settings-link"
+                onClick={() => {
+                  onClose()
+                  const row = document.querySelector<HTMLButtonElement>('#sidebar [data-page-to="settings"]')
+                  if (row && !row.disabled) row.click()
+                }}
+              >
+                前往「設定 &gt; 語音」設定金鑰 →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Key configured indicator */}
+        {!isConnected && apiKey && (
+          <div className="realtime-key-status-row">
+            <span className="realtime-key-ready">✓ 已載入 OpenAI API 金鑰</span>
+            <button
+              type="button"
+              className="key-edit-link"
+              onClick={() => {
+                onClose()
+                const row = document.querySelector<HTMLButtonElement>('#sidebar [data-page-to="settings"]')
+                if (row && !row.disabled) row.click()
+              }}
+            >
+              前往設定
+            </button>
+          </div>
         )}
 
         {/* Bottom Call Controls */}
         <div className="realtime-actions">
           {!isConnected && !isConnecting ? (
-            <button
-              type="button"
-              className="realtime-start-call-btn"
-              onClick={handleStartCall}
-            >
-              <svg viewBox="0 0 24 24" className="call-ico" fill="currentColor">
-                <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
-              </svg>
-              開始語音通話
-            </button>
+            apiKey ? (
+              <button
+                type="button"
+                className="realtime-start-call-btn"
+                onClick={handleStartCall}
+              >
+                <svg viewBox="0 0 24 24" className="call-ico" fill="currentColor">
+                  <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
+                </svg>
+                開始語音通話
+              </button>
+            ) : null
           ) : (
             <button
               type="button"

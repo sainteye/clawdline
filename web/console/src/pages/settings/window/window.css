@@ -418,6 +418,51 @@
   border-top: 1px solid var(--sw-hairline);
   cursor: pointer;
 }
+
+.sw-voice-key-box {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sw-voice-key-label {
+  font-size: 12px;
+  color: var(--sw-soft);
+}
+.sw-voice-key-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sw-voice-key-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--sw-chip-edge);
+  background: var(--sw-chip-fill);
+  color: var(--sw-label);
+  font-size: 13px;
+  font-family: var(--sw-mono, monospace);
+}
+.sw-voice-key-input:focus {
+  outline: none;
+  border-color: #10b981;
+}
+.sw-chip.sw-chip-dim {
+  color: var(--sw-soft);
+  opacity: 0.8;
+}
+.sw-voice-saved {
+  color: #10b981;
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+.sw-voice-key-status {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+}
 .sw-voice-check input {
   width: 16px;
   height: 16px;
