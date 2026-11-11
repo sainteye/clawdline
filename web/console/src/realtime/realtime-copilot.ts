@@ -148,8 +148,8 @@ export class RealtimeCopilotClient {
       const offer = await this.pc.createOffer()
       await this.pc.setLocalDescription(offer)
 
-      // 6. Connect with OpenAI Realtime API endpoint
-      const baseUrl = 'https://api.openai.com/v1/realtime'
+      // 6. Connect with OpenAI Realtime API endpoint (GA)
+      const baseUrl = 'https://api.openai.com/v1/realtime/calls'
       const model = 'gpt-4o-realtime-preview'
       const response = await fetch(`${baseUrl}?model=${model}`, {
         method: 'POST',
