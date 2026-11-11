@@ -99,13 +99,6 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
       {picker("claude", "claude_default_model", nextWord("defaultClaudeModel"))}
       {picker("antigravity", "antigravity_default_model", catalogWord("next", "defaultAntigravityModel"))}
       {snapshot?.models?.antigravity?.length ? null : <p className="say">{catalogWord("next", "defaultAntigravityCatalogUnknown")}</p>}
-      <div className="settings-model-field">
-        <div className="settings-model-label">{catalogWord("next", "defaultAntigravityEffort")}</div>
-        <ChoiceMenu id="settings-antigravity-default-effort" label={catalogWord("next", "defaultAntigravityEffort")}
-          value={modelOf(snapshot, "antigravity_default_effort")} disabled={disabled}
-          options={Array.from(new Set(["", "low", "medium", "high", "xhigh", "max", modelOf(snapshot, "antigravity_default_effort")])).map(value => ({ value, label: value || nextWord("defaultModelPlaceholder") }))}
-          onPick={(selected) => commit("antigravity_default_effort", selected)} />
-      </div>
       {snapshot ? null : (
         <button className="chip" type="button" disabled={busy === "read"} onClick={read}>
           {nextWord("defaultModelsRetry")}
