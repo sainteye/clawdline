@@ -295,7 +295,7 @@ func usageTranscriptExists(home, id string) bool {
 	if found, _ := filepath.Glob(filepath.Join(home, ".claude", "projects", "*", id+".jsonl")); len(found) > 0 {
 		return true
 	}
-	return transcript.CodexPath(home, id) != ""
+	return transcript.CodexPath(home, id) != "" || transcript.CodexArchivedPath(home, id) != ""
 }
 
 // usageTask answers one child task: known when a session names it or the

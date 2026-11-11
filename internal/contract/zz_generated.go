@@ -5546,20 +5546,23 @@ type ScheduleList struct {
 // the retained runs the list leaves out. `webhook_binding_availability` is
 // `active` (with `webhook_hook_id`), `unbound`, or `binding_store_unavailable`.
 type ScheduleRecord struct {
-	CatchUpHours       int64            `json:"catch_up_hours"`
-	CloseTab           string           `json:"close_tab"`
-	Enabled            bool             `json:"enabled"`
-	File               string           `json:"file"`
-	FiredAt            int64            `json:"fired_at,omitempty"`
-	ID                 string           `json:"id"`
-	LastMissedAt       int64            `json:"last_missed_at,omitempty"`
-	LastRun            *ScheduleLastRun `json:"last_run,omitempty"`
-	NextFire           int64            `json:"next_fire,omitempty"`
-	NotifyOnFailure    bool             `json:"notify_on_failure"`
-	Once               bool             `json:"once,omitempty"`
-	Runs               []ScheduleRun    `json:"runs"`
-	RunsMayBeTruncated bool             `json:"runs_may_be_truncated,omitempty"`
-	Task               ScheduleTask     `json:"task"`
+	// A Codex run's conversation is archived in Codex once Clawdline closes its tab.
+	// False on a file without the key.
+	ArchiveCodexConversation bool             `json:"archive_codex_conversation,omitempty"`
+	CatchUpHours             int64            `json:"catch_up_hours"`
+	CloseTab                 string           `json:"close_tab"`
+	Enabled                  bool             `json:"enabled"`
+	File                     string           `json:"file"`
+	FiredAt                  int64            `json:"fired_at,omitempty"`
+	ID                       string           `json:"id"`
+	LastMissedAt             int64            `json:"last_missed_at,omitempty"`
+	LastRun                  *ScheduleLastRun `json:"last_run,omitempty"`
+	NextFire                 int64            `json:"next_fire,omitempty"`
+	NotifyOnFailure          bool             `json:"notify_on_failure"`
+	Once                     bool             `json:"once,omitempty"`
+	Runs                     []ScheduleRun    `json:"runs"`
+	RunsMayBeTruncated       bool             `json:"runs_may_be_truncated,omitempty"`
+	Task                     ScheduleTask     `json:"task"`
 
 	// The IANA zone whose wall clock when.at names. Absent on legacy schedules, which
 	// use the machine zone.
@@ -5586,12 +5589,16 @@ type ScheduleRecord struct {
 // that conversation. Those proof fields are audit evidence and are not stored
 // in the schedule.
 type ScheduleRequest struct {
-	Assistant    string   `json:"assistant"`
-	At           string   `json:"at,omitempty"`
-	CatchUpHours int64    `json:"catch_up_hours,omitempty"`
-	CloseTab     string   `json:"close_tab,omitempty"`
-	Days         []string `json:"days,omitempty"`
-	Enabled      bool     `json:"enabled,omitempty"`
+	// Archive a Codex run's conversation in Codex once Clawdline closes its tab. A
+	// create without the key turns it on for a Codex schedule; a save without it keeps
+	// what the file says. Other assistants ignore it.
+	ArchiveCodexConversation bool     `json:"archive_codex_conversation,omitempty"`
+	Assistant                string   `json:"assistant"`
+	At                       string   `json:"at,omitempty"`
+	CatchUpHours             int64    `json:"catch_up_hours,omitempty"`
+	CloseTab                 string   `json:"close_tab,omitempty"`
+	Days                     []string `json:"days,omitempty"`
+	Enabled                  bool     `json:"enabled,omitempty"`
 
 	// Positive calendar-day interval, paired with start and at; excludes days, on and
 	// trigger_only.
@@ -5683,15 +5690,20 @@ type ScheduleRow struct {
 // One task a schedule made, newest first in the detail. `summary` is what the
 // task wrote when it finished.
 type ScheduleRun struct {
-	Assistant  string `json:"assistant"`
-	Created    int64  `json:"created"`
-	FinishedAt int64  `json:"finished_at,omitempty"`
-	ProjectDir string `json:"project_dir"`
-	SessionID  string `json:"session_id,omitempty"`
-	State      string `json:"state"`
-	Summary    string `json:"summary,omitempty"`
-	TaskID     string `json:"task_id"`
-	TerminalID string `json:"terminal_id,omitempty"`
+	Assistant string `json:"assistant"`
+
+	// The run's Codex conversation was archived by its schedule's
+	// archive_codex_conversation and is archived now. Resuming it by session_id
+	// unarchives it first.
+	ConversationArchived bool   `json:"conversation_archived,omitempty"`
+	Created              int64  `json:"created"`
+	FinishedAt           int64  `json:"finished_at,omitempty"`
+	ProjectDir           string `json:"project_dir"`
+	SessionID            string `json:"session_id,omitempty"`
+	State                string `json:"state"`
+	Summary              string `json:"summary,omitempty"`
+	TaskID               string `json:"task_id"`
+	TerminalID           string `json:"terminal_id,omitempty"`
 }
 
 // A made or saved schedule. `dispatch_enabled` rides beside a made one only:

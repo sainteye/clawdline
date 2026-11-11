@@ -9059,6 +9059,8 @@
   "next.toolResultOutput": "Output",
   "next.usageToday": "Today",
   "next.usageInProgress": "in progress",
+  "next.scheduleArchiveCodex": "Archive the Codex chat after its tab closes",
+  "next.scheduleArchiveCodexHint": "Keeps Codex's chat list from gaining one chat per run. A run whose tab stays open is not archived, and opening a run from its history brings its chat back.",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

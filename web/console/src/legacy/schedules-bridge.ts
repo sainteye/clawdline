@@ -140,6 +140,8 @@ export interface ScheduleRecord {
   close_tab?: string
   catch_up_hours?: number
   notify_on_failure?: boolean
+  /** A Codex run's conversation is archived in Codex once its tab is closed. Absent from an older daemon. */
+  archive_codex_conversation?: boolean
   once?: boolean
   /** True for a schedule with no time, whose `when` is `{ trigger_only: true }`. */
   trigger_only?: boolean
@@ -184,6 +186,8 @@ export interface ScheduleBody {
   timeout_minutes: number
   /** ask, edits or full; "" takes a stored one off; absent keeps what the file says. */
   permission_mode?: string
+  /** Absent on a create is on for Codex; absent on a save keeps what the file says. */
+  archive_codex_conversation?: boolean
 }
 
 export interface SchedulePlace {

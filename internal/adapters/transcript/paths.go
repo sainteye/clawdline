@@ -42,3 +42,15 @@ func CodexPath(home, sessionID string) string {
 	})
 	return found
 }
+
+// CodexArchivedPath finds the rollout file of a thread Codex has archived.
+// Codex moves an archived thread's rollout, under the same name, into one
+// flat folder; a compressed one (.jsonl.zst) is not a transcript this daemon
+// reads, and is not found.
+func CodexArchivedPath(home, sessionID string) string {
+	matches, _ := filepath.Glob(filepath.Join(home, ".codex", "archived_sessions", "rollout-*-"+sessionID+".jsonl"))
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[0]
+}

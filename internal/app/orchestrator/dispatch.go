@@ -71,6 +71,9 @@ type ScheduleOrigin struct {
 	// CloseTab is the schedule's close_tab — on_success, always or never —
 	// which decides what the run's end does to its tab (tabPolicy).
 	CloseTab string
+	// ArchiveConversation archives a Codex run's conversation after its tab
+	// is closed (conversation_archive.go).
+	ArchiveConversation bool
 }
 
 // RespawnOrigin is where a respawned task came from.
@@ -146,6 +149,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		record.Investigation = req.Schedule.Investigation
 		record.ScheduleTitle = truncate(req.Schedule.Title, rootLabelLimit)
 		record.ScheduleCloseTab = req.Schedule.CloseTab
+		record.ScheduleArchiveConversation = req.Schedule.ArchiveConversation
 	}
 	// Fixed before anything is arbitrated, so the arbitration below asks the
 	// same question of this task that it asks of every live one (D21).

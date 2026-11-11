@@ -33,6 +33,19 @@ type RunConversations struct {
 	// Recorded is whether the assistant's transcript of id is on disk for
 	// projectDir (projects.Recorded).
 	Recorded func(projectDir, assistant, id string) bool
+	// Archived is whether the assistant holds id archived (projects
+	// .CodexArchived): a scheduled Codex run whose conversation the broker
+	// archived is still a run that can be resumed, once it is unarchived.
+	Archived func(assistant, id string) bool
+}
+
+// present is whether a run's conversation is on disk, in the assistant's
+// list or in its archive.
+func (c RunConversations) present(projectDir, assistant, id string) bool {
+	if c.Recorded != nil && c.Recorded(projectDir, assistant, id) {
+		return true
+	}
+	return c.Archived != nil && c.Archived(assistant, id)
 }
 
 // resumable is whether a run could be resumed at all: it has ended, and its
@@ -60,7 +73,7 @@ func (b *ScheduleBook) runConversations(runs []store.ScheduleRun) map[string]str
 			continue
 		}
 		if r.ConversationID != "" {
-			if c.Recorded(r.ProjectDir, r.Assistant, r.ConversationID) {
+			if c.present(r.ProjectDir, r.Assistant, r.ConversationID) {
 				out[r.TaskID] = r.ConversationID
 			}
 			continue
@@ -98,7 +111,7 @@ func (b *ScheduleBook) ScheduledConversation(ctx context.Context, projectDir, as
 		return false
 	}
 	c := b.Conversations
-	if c.Recorded == nil || id == "" || !c.Recorded(projectDir, assistant, id) {
+	if c.Recorded == nil || id == "" || !c.present(projectDir, assistant, id) {
 		return false
 	}
 	runs, err := b.Store.ScheduleRuns(ctx, "")

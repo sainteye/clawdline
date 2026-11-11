@@ -207,7 +207,9 @@ var effectHandlers = map[string]effectHandler{
 	EffectWorktree:           {idempotent: true, run: runWorktree},
 	EffectCloseChild:         {idempotent: true, run: runCloseChild},
 	EffectPlanReviewDocument: {idempotent: true, run: runPlanReviewDocument},
-	EffectMessage:            {idempotent: false, run: runMessage},
+	// Codex answers a second archive by finding the first.
+	EffectArchiveConversation: {idempotent: true, run: runArchiveConversation},
+	EffectMessage:             {idempotent: false, run: runMessage},
 	// A push cannot be asked afterwards whether it arrived, so a recovery
 	// never sends one a second time.
 	EffectDeadLetterPush:        {idempotent: false, run: runDeadLetterPush},

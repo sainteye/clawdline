@@ -729,6 +729,12 @@ const Schedule = (() => {
   let closeTab = "on_success"
   let enabled = true
   let notify = true
+  // archive_codex_conversation: on for a new schedule; an edited one shows
+  // what its file says, and a file without the key is off.
+  let archiveCodex = true
+  // Whether the daemon that answered the edited schedule knows the field. A
+  // save to one that does not never names it (it would be an unknown field).
+  let archiveKnown = false
   let creating = false
   let editingId: string | null = null
   let loadingEdit = false
@@ -881,6 +887,7 @@ const Schedule = (() => {
         chosenEffort = kept?.effort || ""
         drawWith()
         drawModel()
+        drawFlags()
       }
       row.appendChild(chip)
     })
@@ -1079,6 +1086,15 @@ const Schedule = (() => {
       drawFlags()
     }
     row.appendChild(notifyChip)
+    if (chosenAssistant === "codex") {
+      const archiveChip = checkChip(archiveCodex, nextWord("scheduleArchiveCodex"))
+      archiveChip.title = nextWord("scheduleArchiveCodexHint")
+      archiveChip.onclick = () => {
+        archiveCodex = !archiveCodex
+        drawFlags()
+      }
+      row.appendChild(archiveChip)
+    }
     paint()
   }
 
@@ -1247,6 +1263,8 @@ const Schedule = (() => {
     closeTab = "on_success"
     enabled = true
     notify = true
+    archiveCodex = true
+    archiveKnown = false
     el<HTMLInputElement>("schedule-title").value = ""
     el<HTMLInputElement>("schedule-at").value = ""
     el<HTMLTextAreaElement>("schedule-instructions").value = ""
@@ -1367,6 +1385,8 @@ const Schedule = (() => {
     enabled = record.enabled !== false
     closeTab = record.close_tab && CLOSE_VALUES.indexOf(record.close_tab) >= 0 ? record.close_tab : "on_success"
     notify = record.notify_on_failure !== false
+    archiveKnown = typeof record.archive_codex_conversation === "boolean"
+    archiveCodex = record.archive_codex_conversation === true
     storedPermission = typeof task.permission_mode === "string" ? task.permission_mode : ""
     chosenPermission = PERMISSIONS.some(([value]) => value === storedPermission) ? storedPermission : ""
     // A schedule that has a permission shows it, rather than keeping it folded away.
@@ -1529,6 +1549,12 @@ const Schedule = (() => {
     // stored one off. No key keeps what the file has, and a daemon older than
     // the field still takes a schedule that never had one.
     if (chosenPermission || (editing && storedPermission)) payload.permission_mode = chosenPermission
+    // A Codex schedule names its archive choice when the daemon is known to
+    // read it, and a new one only when it is turned off: a create without
+    // the key is already on.
+    if (chosenAssistant === "codex" && (editing ? archiveKnown : !archiveCodex)) {
+      payload.archive_codex_conversation = archiveCodex
+    }
 
     if (moving()) {
       move(payload)
