@@ -65,7 +65,8 @@ export function MachineAccess({ source, picker }: { source: AccessSource; picker
       <PairCard machineKey={source.key} machineName={source.machineName} ask={source.ask}
         available={source.inviteAvailable} unavailableWord={source.unavailableWord} onChanged={reload} />
       <section aria-labelledby="access-list-title">
-        <p className="am-label" id="access-list-title">{nextWord("accessListTitle", { machine: source.machineName })}</p>
+        <p className="am-label" id="access-list-title">{source.machineName
+          ? nextWord("accessListTitle", { machine: source.machineName }) : nextWord("accessListTitleHere")}</p>
         <Group title="accessGroupInvited" note="accessGroupInvitedNote" loaded={invited}
           revoke={async (id) => { await source.revokeInvited(id); reload() }} />
         <Group title="accessGroupAccount" note={source.accountNote} loaded={account}
@@ -97,7 +98,8 @@ function Group({ title, note, loaded, revoke }: { title: NextWord; note: NextWor
       <p className="access-group-title">{nextWord(title)}</p>
       <p className="am-sub access-group-note">{nextWord(note)}</p>
       {loaded === null ? <p className="am-say" role="status">{nextWord("msDevicesLoading")}</p>
-        : "error" in loaded ? <p className="am-say" role="status">{nextWord("accessGroupUnreadable", { code: loaded.error })}</p>
+        : "error" in loaded ? <p className="am-say" role="status">{loaded.error === "forbidden" || loaded.error === "http_403"
+          ? nextWord("accessNotOwnerList") : nextWord("accessGroupUnreadable", { code: loaded.error })}</p>
           : loaded.rows.length === 0 ? <p className="am-say">{nextWord("accessGroupEmpty")}</p>
             : (
               <ul className="am-card">

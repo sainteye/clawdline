@@ -9160,6 +9160,8 @@
   "next.accessCloudOff": "Inviting a browser needs this machine connected to Clawdline Cloud.",
   "next.accessMachineLabel": "Machine",
   "next.accessNotOwner": "This browser is signed in as a device of its own. Invite from the Clawdline app window or from Cloud.",
+  "next.accessNotOwnerList": "Only the Clawdline app window or Cloud can show this list.",
+  "next.accessListTitleHere": "Devices that can use this machine",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

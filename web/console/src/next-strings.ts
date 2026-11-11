@@ -2547,6 +2547,8 @@ const words = {
     accessPairedOn: "Paired {date}",
     accessCloudOff: "Inviting a browser needs this machine connected to Clawdline Cloud.",
     accessMachineLabel: "Machine",
+    accessListTitleHere: "Devices that can use this machine",
+    accessNotOwnerList: "Only the Clawdline app window or Cloud can show this list.",
     accessNotOwner: "This browser is signed in as a device of its own. Invite from the Clawdline app window or from Cloud.",
   },
   "zh-Hant": {
@@ -4985,6 +4987,8 @@ const words = {
     accessPairedOn: "配對於 {date}",
     accessCloudOff: "邀請瀏覽器需要這台機器連上 Clawdline Cloud。",
     accessMachineLabel: "機器",
+    accessListTitleHere: "可以使用這台機器的裝置",
+    accessNotOwnerList: "只有 Clawdline App 視窗或 Cloud 能顯示這份清單。",
     accessNotOwner: "這個瀏覽器是以自己的裝置身分登入的。請在 Clawdline App 視窗或 Cloud 裡邀請。",
   },
 } as const

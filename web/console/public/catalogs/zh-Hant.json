@@ -9160,6 +9160,8 @@
   "next.accessCloudOff": "邀請瀏覽器需要這台機器連上 Clawdline Cloud。",
   "next.accessMachineLabel": "機器",
   "next.accessNotOwner": "這個瀏覽器是以自己的裝置身分登入的。請在 Clawdline App 視窗或 Cloud 裡邀請。",
+  "next.accessNotOwnerList": "只有 Clawdline App 視窗或 Cloud 能顯示這份清單。",
+  "next.accessListTitleHere": "可以使用這台機器的裝置",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

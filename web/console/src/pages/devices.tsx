@@ -83,9 +83,10 @@ function DevicesPageView({ shown }: { shown: boolean }) {
     // The machine's own console puts its access section first, as Cloud does.
     const node = document.createElement("div")
     node.id = "devices-signed-in"
-    const lede = document.getElementById("devices-lede")
-    if (lede?.parentElement === shell) lede.after(node)
-    else shell.prepend(node)
+    // Under the page's heading and before the machine cards, where Cloud draws it too.
+    const rows = document.getElementById("devices-rows")
+    if (rows && shell.contains(rows)) rows.before(node)
+    else shell.appendChild(node)
     setSignedIn(node)
     return () => node.remove()
   }, [])
@@ -220,14 +221,14 @@ function LocalAccess({ shown }: { shown: boolean }) {
     Promise.all([read("/v1/cloud/status"), read("/v1/cloud/browser-invites")]).then(([cloud, invites]) => {
       if (!live) return
       const body = cloud.body
-      const name = typeof body.machine_name === "string" && body.machine_name ? body.machine_name : nextWord("devicesThisMachine")
+      const name = typeof body.machine_name === "string" ? body.machine_name : ""
       setStatus({ name, cloud: body.enabled === true && typeof body.machine_id === "string" && body.machine_id !== "",
         owner: invites.status !== 403 })
     })
     return () => { live = false }
   }, [shown])
   const source = useMemo(() => status
-    ? { ...localAccessSource(status.name, status.cloud && status.owner, <SignedInBlock shown={shown} />),
+    ? { ...localAccessSource(status.name, status.cloud && status.owner, <SignedInBlock shown={shown} bare />),
       unavailableWord: status.owner ? "accessCloudOff" as const : "accessNotOwner" as const }
     : null, [status, shown])
   return source ? <MachineAccess source={source} /> : null

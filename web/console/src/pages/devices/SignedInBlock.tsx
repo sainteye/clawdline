@@ -40,7 +40,7 @@ function when(unix: number): string {
  * Nothing is drawn on the console Clawdline Cloud serves: the browsers there
  * are the Cloud's, and `clawdline cloud devices` is their list.
  */
-export function SignedInBlock({ shown }: { shown: boolean }) {
+export function SignedInBlock({ shown, bare = false }: { shown: boolean; bare?: boolean }) {
   const [state, setState] = useState<SignedIn | null>(null)
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -118,9 +118,10 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
   }
 
   return (
-    <div className="signed-in" aria-labelledby="signed-in-title">
-      <h2 id="signed-in-title">{nextWord("signedInTitle")}</h2>
-      <p className="devices-lede">{nextWord("signedInLede")}</p>
+    <div className="signed-in" aria-labelledby={bare ? undefined : "signed-in-title"}>
+      {/* Inside the access section's third group the group already names it. */}
+      {!bare && <h2 id="signed-in-title">{nextWord("signedInTitle")}</h2>}
+      {!bare && <p className="devices-lede">{nextWord("signedInLede")}</p>}
       <p className="devices-status" role="status" aria-live="polite">
         {said}
       </p>
