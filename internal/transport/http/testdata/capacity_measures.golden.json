@@ -1242,6 +1242,41 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_list_transcript_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_memory_turns",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_orb_frames_per_second",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_orb_pixel_ratio",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_recap_pages",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_reply_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_screen_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.direct_history_hours",
     "Known": true,
     "Note": true
@@ -3144,6 +3179,36 @@
   },
   {
     "Name": "usage.work_units_per_answer",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_briefing_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_briefing_input_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_briefing_reply_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_briefing_timeout_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_extra_instructions_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_key_bytes",
     "Known": true,
     "Note": true
   },
