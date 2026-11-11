@@ -94,7 +94,7 @@ test("a spent window whose turns are charged to credits says so beside the windo
   const reading = { windows: [{ name: "7d", usedPercent: 100 }], creditsInUse: true, creditBalance: 44718.83 }
   assert.deepEqual(statusLimitRow(reading, { unknown: "unknown", limits: "Limits", credits: creditWords }, "en-US"), [
     { name: "7d", value: "100%", level: "bad" },
-    { name: "Credits", value: "In use · 44,719", level: "bad", title: "Each turn is charged to your credits. Balance 44,719" },
+    { name: "Credits", value: "In use · 44,719", level: "bad", title: "Each turn is charged to your credits. Balance 44,719", kind: "credits" },
   ])
 })
 
@@ -102,5 +102,9 @@ test("credits are not shown as in use unless the daemon says so", () => {
   assert.equal(statusCreditCell({ windows: [{ name: "7d", usedPercent: 100 }] }, creditWords), null)
   assert.equal(statusCreditCell({ windows: [{ name: "7d", usedPercent: 100 }], creditsInUse: true }, undefined), null)
   assert.deepEqual(statusCreditCell({ creditsInUse: true }, creditWords),
-    { name: "Credits", value: "In use", level: "bad", title: "Each turn is charged to your credits." })
+    { name: "Credits", value: "In use", level: "bad", title: "Each turn is charged to your credits.", kind: "credits" })
+})
+
+test("phones keep the credits word and leave its balance to the info card", () => {
+  assert.match(responsiveStyles, /@media \(max-width: 520px\)[\s\S]*?\.limit\[data-kind="credits"\] b \{ display: none; \}/)
 })

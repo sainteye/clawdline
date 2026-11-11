@@ -95,5 +95,10 @@ footer.status-line .files[hidden] {
     padding-left: 8px;
   }
 
+  /* A phone's Status Line already shares one row with the model and Git.
+     Credits in use keeps its red word; the balance is in the info card. */
+  footer.status-line .limit[data-kind="credits"] { color: var(--bad); }
+  footer.status-line .limit[data-kind="credits"] b { display: none; }
+
   .panel-view-body { padding-left: 10px; padding-right: 10px; }
 }

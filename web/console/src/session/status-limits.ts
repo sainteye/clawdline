@@ -9,6 +9,8 @@ export interface StatusLimitCell {
   level: "" | "ok" | "warn" | "bad"
   /** The daemon's sentence about the reading, for a pointer that can hover. */
   title?: string
+  /** "credits" for the cell that says turns are charged to credits. */
+  kind?: "credits"
 }
 
 /** The parts of the daemon's `limits` this row draws. */
@@ -52,6 +54,7 @@ export function statusCreditCell(reading: StatusLimitReading | null | undefined,
     value: balance ? `${words.inUse} · ${balance}` : words.inUse,
     level: "bad",
     title: balance ? `${words.explain} ${words.balance(balance)}` : words.explain,
+    kind: "credits",
   }
 }
 

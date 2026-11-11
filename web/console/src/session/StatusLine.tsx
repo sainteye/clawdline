@@ -152,7 +152,7 @@ export function StatusLine({
       {deployChip(deploy, progress, drawn.current)}
       <div className="limits" id="status-line-limits">
         {limitCells.map((window, index) => (
-          <span className="limit" data-level={window.level} title={window.title} key={`${window.name}:${index}`}>
+          <span className="limit" data-level={window.level} data-kind={window.kind} title={window.title} key={`${window.name}:${index}`}>
             {window.name} <b>{window.value}</b>
           </span>
         ))}
