@@ -218,6 +218,37 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-pair-status",
 		method: "GET", path: "/v1/cloud/pairing/agent/" + taskID,
 	}, {
+		word:    "browser-invite-start",
+		body:    map[string]any{"type": "browser-invite-start", "session": machine, "request": "req-invite-start", "expiry": "7d"},
+		session: machine, name: "action:req-invite-start",
+		method: "POST", path: "/v1/cloud/browser-invites", body2: `{"expiry":"7d"}`,
+	}, {
+		word:    "browser-invite-list",
+		body:    map[string]any{"type": "browser-invite-list", "session": machine, "request": "req-invite-list"},
+		session: machine, name: "read:req-invite-list",
+		method: "GET", path: "/v1/cloud/browser-invites",
+	}, {
+		word:    "browser-invite-status",
+		body:    map[string]any{"type": "browser-invite-status", "session": machine, "request": "req-invite-status", "invite_id": "K7M4Q"},
+		session: machine, name: "read:req-invite-status",
+		method: "GET", path: "/v1/cloud/browser-invites/K7M4Q",
+	}, {
+		word: "browser-invite-decide",
+		body: map[string]any{"type": "browser-invite-decide", "session": machine, "request": "req-invite-decide",
+			"invite_id": "K7M4Q", "approve": true},
+		session: machine, name: "action:req-invite-decide",
+		method: "POST", path: "/v1/cloud/browser-invites/K7M4Q/decision", body2: `{"approve":true}`,
+	}, {
+		word:    "browser-invite-cancel",
+		body:    map[string]any{"type": "browser-invite-cancel", "session": machine, "request": "req-invite-cancel", "invite_id": "K7M4Q"},
+		session: machine, name: "action:req-invite-cancel",
+		method: "POST", path: "/v1/cloud/browser-invites/K7M4Q/cancel", body2: `{}`,
+	}, {
+		word:    "browser-invite-revoke",
+		body:    map[string]any{"type": "browser-invite-revoke", "session": machine, "request": "req-invite-revoke", "device_id": "dev_invited"},
+		session: machine, name: "action:req-invite-revoke",
+		method: "POST", path: "/v1/cloud/browser-invites/devices/dev_invited/revoke", body2: `{}`,
+	}, {
 		word: "peer-control",
 		body: map[string]any{"type": "peer-control", "session": machine, "request": "req-peer-control",
 			"control": map[string]any{"action": "status"}},

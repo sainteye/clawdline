@@ -11033,5 +11033,13 @@
   "admin.visitsDailyTaipei": "每日 · 台灣時間",
   "admin.visitsDayTaipei": "日期（台灣時間）",
   "admin.visitsTaipeiTime": "台灣時間",
-  "http.b229584b3897206c": "這些圖片太大，無法一起送出。請減少一則訊息附的張數，或改用較小的圖片。"
+  "http.b229584b3897206c": "這些圖片太大，無法一起送出。請減少一則訊息附的張數，或改用較小的圖片。",
+  "capacityRow.cloud.browser_invites_live.what": "這台機器同時等待中的瀏覽器邀請數量。",
+  "capacityRow.cloud.browser_invites_live.full": "在其中一組被使用、拒絕或取消之前，新的邀請會被拒絕。",
+  "capacityRow.cloud.browser_invite_history.what": "這台機器仍會顯示的已結束瀏覽器邀請。",
+  "capacityRow.cloud.browser_invite_history.full": "最舊的已結束邀請會先被移除；已允許的瀏覽器不受影響。",
+  "capacityRow.cloud.browser_invite_name_characters.what": "受邀瀏覽器要求顯示的名稱。",
+  "capacityRow.cloud.browser_invite_name_characters.full": "名稱過長時不採用，改顯示為「Browser」。",
+  "capacityRow.cloud.browser_invite_request_bytes.what": "對這台機器送出的一次瀏覽器邀請請求大小。",
+  "capacityRow.cloud.browser_invite_request_bytes.full": "過大的請求會在讀取前被拒絕；邀請狀態不會改變。"
 }

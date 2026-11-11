@@ -63,6 +63,16 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/cloud/browser-invites",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/browser-invites/",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/cloud/devices/revoke",
       "guide": "cloud"
     },

@@ -297,6 +297,12 @@ export const CARRIED = {
  * done instead (the row's `console_sentence`).
  */
 export const DEFERRED = {
+  "browser-invite-cancel": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
+  "browser-invite-decide": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
+  "browser-invite-list": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
+  "browser-invite-revoke": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
+  "browser-invite-start": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
+  "browser-invite-status": "A browser invitation is started and answered from Devices → a machine's menu in a later console release; until then use this machine's Local console.",
   // `key` and `answer` are one command under two names on the wire. This
   // console sends a waiting card's press as `answer`, because only that
   // spelling carries `expect`, the fingerprint of the question the press was

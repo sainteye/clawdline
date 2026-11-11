@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11033,
-  "riskKeys": 4854,
-  "nonRiskCount": 6179,
+  "englishContentKeys": 11041,
+  "riskKeys": 4860,
+  "nonRiskCount": 6181,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 439,
+      "count": 441,
       "sources": [
         null
       ],
@@ -464,6 +464,8 @@
         "capacityRow.cache.transcript_delta_pages.full",
         "capacityRow.cache.transcript_delta_pages.what",
         "capacityRow.callback.per_machine.what",
+        "capacityRow.cloud.browser_invite_name_characters.what",
+        "capacityRow.cloud.browser_invite_request_bytes.what",
         "capacityRow.cloud.content_key_epoch_record_bytes.what",
         "capacityRow.cloud.envelope_key_id.what",
         "capacityRow.cloud.header_read_diagnostic_seconds.what",

@@ -36,6 +36,10 @@ readings without polling or creating a pairing. Each machine shares its pending
 read, and a return during that read is retained for one follow-up rather than
 lost. A retired account or connection cannot publish its late result.
 
+### Browser invitations
+
+A browser with no Clawdline account can be admitted to one machine by a short code the owner types into it, with a chosen expiry. The protocol, its threat table and the Cloud contract are in [browser-invite.md](browser-invite.md).
+
 ### Per-browser machine grants
 
 A local pin can carry `scope: "readonly"` or `scope: "operate"`. A pin written by an older daemon with no scope retains `operate`; an unknown scope never grants operations. The machine's `cloud_commands` switch remains an independent prerequisite. Account roster membership, revocation and signing-key checks still apply, but legacy account `send_prompt` bits do not override the machine's local grant. A roster cannot expand a readonly pin. Content-key rotation is not part of this grant change. Older daemons ignore the new scope field: rolling back to a pre-scope daemon restores its legacy operation rules. Keep a scope-aware daemon installed when relying on readonly grants; this migration does not make older executables enforce a new policy.

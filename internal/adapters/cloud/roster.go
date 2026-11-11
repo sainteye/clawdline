@@ -53,6 +53,11 @@ const RosterRefresh = 60 * time.Second
 // second attempt uses a fresh transport and shares the original deadline.
 const RosterShortReadAttemptsLimit = 2
 
+// RosterKindInvitedBrowser is the kind Cloud gives a browser a browser
+// invitation admitted. Such a browser is admitted only by this machine's own
+// pin, which carries its expiry; the roster alone never admits it.
+const RosterKindInvitedBrowser = "invited_browser"
+
 // RosterDevice is one enrolled viewer as the control plane describes it.
 type RosterDevice struct {
 	ID          string   `json:"id"`

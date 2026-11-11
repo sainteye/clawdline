@@ -11033,5 +11033,13 @@
   "admin.visitsDailyTaipei": "Daily · Taipei time",
   "admin.visitsDayTaipei": "Day (Taipei time)",
   "admin.visitsTaipeiTime": "Taipei time",
-  "http.b229584b3897206c": "These pictures are too large to send together. Send fewer or smaller pictures in one message."
+  "http.b229584b3897206c": "These pictures are too large to send together. Send fewer or smaller pictures in one message.",
+  "capacityRow.cloud.browser_invites_live.what": "Browser invitations waiting on this machine at once.",
+  "capacityRow.cloud.browser_invites_live.full": "A new invitation is refused until one is used, denied or cancelled.",
+  "capacityRow.cloud.browser_invite_history.what": "Finished browser invitations this machine still shows.",
+  "capacityRow.cloud.browser_invite_history.full": "The oldest finished invitation is forgotten first; admitted browsers stay admitted.",
+  "capacityRow.cloud.browser_invite_name_characters.what": "The name an invited browser asks to be shown by.",
+  "capacityRow.cloud.browser_invite_name_characters.full": "A longer name is refused and the browser is shown as Browser.",
+  "capacityRow.cloud.browser_invite_request_bytes.what": "The size of one browser-invitation request to this machine.",
+  "capacityRow.cloud.browser_invite_request_bytes.full": "A larger request is refused before it is read; the invitation is unchanged."
 }

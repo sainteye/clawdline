@@ -123,6 +123,10 @@ type Pairing struct {
 	RevokeContent func(string) (bool, error)
 	OnRevoke      func(string) error
 	OnScopeChange func(string) error
+	// OnInvitedRevoke tells Cloud that an invited browser this machine just
+	// refused is gone, so its Cloud session ends too. The local refusal has
+	// already been written and is what counts.
+	OnInvitedRevoke func(string) error
 
 	mu         sync.Mutex
 	state      PairingState
@@ -504,6 +508,17 @@ func (p *Pairing) Revoke(deviceID string) (bool, error) {
 	if p == nil || p.Pinned == nil {
 		return false, ErrPairingUnavailable
 	}
+	invited := p.Pinned.IsInvited(deviceID)
+	changed, err := p.revokeLocal(deviceID)
+	if err == nil && invited && p.OnInvitedRevoke != nil {
+		if cloudErr := p.OnInvitedRevoke(deviceID); cloudErr != nil {
+			return changed, fmt.Errorf("the invited browser was refused here, but Cloud was not told: %w", cloudErr)
+		}
+	}
+	return changed, err
+}
+
+func (p *Pairing) revokeLocal(deviceID string) (bool, error) {
 	if p.RevokeContent != nil {
 		return p.RevokeContent(deviceID)
 	}

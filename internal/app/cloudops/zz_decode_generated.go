@@ -11,6 +11,12 @@ var generatedDecoders = map[string]genDecoder{
 	"archived-sessions":                  genDecodeArchivedSessions,
 	"board":                              genDecodeBoard,
 	"board-command":                      genDecodeBoardCommand,
+	"browser-invite-cancel":              genDecodeBrowserInviteCancel,
+	"browser-invite-decide":              genDecodeBrowserInviteDecide,
+	"browser-invite-list":                genDecodeBrowserInviteList,
+	"browser-invite-revoke":              genDecodeBrowserInviteRevoke,
+	"browser-invite-start":               genDecodeBrowserInviteStart,
+	"browser-invite-status":              genDecodeBrowserInviteStatus,
 	"capacity":                           genDecodeCapacity,
 	"codegraph-guidance":                 genDecodeCodegraphGuidance,
 	"coordination.leases":                genDecodeCoordinationLeases,
@@ -414,6 +420,158 @@ func genDecodeBoardCommand(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("command")
+	return p, req, true
+}
+
+// genDecodeBrowserInviteCancel is the `browser-invite-cancel` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeBrowserInviteCancel(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "invite_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("invite_id", genRule{kind: "string", length: 5}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/cloud/browser-invites/" + segment(genText(b["invite_id"])) + "/cancel"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = map[string]string{}
+	if v, sent := b.genSource(genValue{from: "request"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeBrowserInviteDecide is the `browser-invite-decide` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeBrowserInviteDecide(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "approve", "invite_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("approve", genRule{kind: "bool"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("invite_id", genRule{kind: "string", length: 5}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/cloud/browser-invites/" + segment(genText(b["invite_id"])) + "/decision"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = map[string]string{}
+	if v, sent := b.genSource(genValue{from: "request"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"approve": genValue{from: "approve"}})
+	return p, req, true
+}
+
+// genDecodeBrowserInviteList is the `browser-invite-list` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeBrowserInviteList(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/cloud/browser-invites"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeBrowserInviteRevoke is the `browser-invite-revoke` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeBrowserInviteRevoke(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "device_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("device_id", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/cloud/browser-invites/devices/" + segment(genText(b["device_id"])) + "/revoke"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = map[string]string{}
+	if v, sent := b.genSource(genValue{from: "request"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeBrowserInviteStart is the `browser-invite-start` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeBrowserInviteStart(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expiry", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expiry", genRule{kind: "string", enum: []string{"8h", "7d", "never"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/cloud/browser-invites"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = map[string]string{}
+	if v, sent := b.genSource(genValue{from: "request"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"expiry": genValue{from: "expiry"}})
+	return p, req, true
+}
+
+// genDecodeBrowserInviteStatus is the `browser-invite-status` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeBrowserInviteStatus(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "invite_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("invite_id", genRule{kind: "string", length: 5}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/cloud/browser-invites/" + segment(genText(b["invite_id"]))
+	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
 
