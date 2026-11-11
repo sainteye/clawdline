@@ -5058,6 +5058,40 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_orb_frames_per_second",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_orb_pixel_ratio",
+    "Class": "buffer",
+    "Unit": "multipliers",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_recap_pages",
     "Class": "buffer",
     "Unit": "rows",

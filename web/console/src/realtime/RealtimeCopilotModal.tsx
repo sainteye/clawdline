@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { nextWord } from '../next-strings.js'
 import { formatUSD } from './copilot-cost.js'
+import { CopilotOrb } from './CopilotOrb.js'
 import {
   realtimeCopilot,
   type RealtimeCopilotState,
 } from './realtime-copilot.js'
+
+/** One stable reader, so the orb is not woken by every render. */
+const readCallLevels = () => realtimeCopilot.readLevels()
 
 interface Props {
   open: boolean
@@ -87,13 +91,12 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           <p className="realtime-desc">隨身語音副駕駛 · 掌握本地 Session 動態與即時指揮</p>
         </div>
 
-        {/* Dynamic Voice Dot / Wave Visualizer */}
+        {/* The cloud orb, moving with both voices */}
         <div className="realtime-visual-box">
-          <div className={`realtime-orb ${isConnected ? `orb-${copilotState.speakingState}` : isConnecting ? 'orb-connecting' : 'orb-idle'}`}>
-            <div className="orb-core"></div>
-            <div className="orb-ring ring-1"></div>
-            <div className="orb-ring ring-2"></div>
-          </div>
+          <CopilotOrb
+            mode={isConnected ? copilotState.speakingState : isConnecting ? 'connecting' : 'idle'}
+            levels={isConnected ? readCallLevels : undefined}
+          />
           <div className="realtime-status-label">{stateLabel}</div>
         </div>
 

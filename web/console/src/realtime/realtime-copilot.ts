@@ -4,6 +4,8 @@
  * Clawdline sessions on the Mac.
  */
 
+import { CallMeter } from './copilot-meter.js'
+import type { OrbLevels } from './copilot-orb.js'
 import { greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
@@ -124,6 +126,8 @@ export class RealtimeCopilotClient {
   private dc: RTCDataChannel | null = null
   private mediaStream: MediaStream | null = null
   private audioEl: HTMLAudioElement | null = null
+  /** How loud each side is, for the orb; measured here, never recorded. */
+  private meter = new CallMeter()
   private listeners: Set<RealtimeListener> = new Set()
 
   private state: RealtimeCopilotState = {
@@ -218,12 +222,16 @@ export class RealtimeCopilotClient {
       return
     }
 
+    // Before any await: iOS keeps an audio context made later in this tap suspended.
+    const meterRefused = this.meter.open()
+
     this.memory = readMemory()
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
     this.updateState({ status: 'connecting', error: undefined, toolCallLog: undefined, remembered: this.memory.length })
     this.addLog('info', '正在向機器要通話憑證，並請求麥克風權限...')
+    if (meterRefused) this.addLog('info', `光球無法跟著音量動：${meterRefused}`)
 
     try {
       // 0. The machine mints a short-lived client secret with its own key; the
@@ -249,6 +257,8 @@ export class RealtimeCopilotClient {
 
       // 1. Get microphone audio stream
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const inputRefused = meterRefused ? null : this.meter.attachInput(this.mediaStream)
+      if (inputRefused) this.addLog('info', `光球無法跟著你的音量動：${inputRefused}`)
 
       // 2. Setup RTCPeerConnection
       this.pc = new RTCPeerConnection()
@@ -259,6 +269,8 @@ export class RealtimeCopilotClient {
       this.pc.ontrack = (event) => {
         if (this.audioEl && event.streams[0]) {
           this.audioEl.srcObject = event.streams[0]
+          const outputRefused = meterRefused ? null : this.meter.attachOutput(event.streams[0])
+          if (outputRefused) this.addLog('info', `光球無法跟著副駕駛的音量動：${outputRefused}`)
         }
       }
 
@@ -432,6 +444,11 @@ export class RealtimeCopilotClient {
     }
   }
 
+  /** How loud the person and the copilot are right now, each 0..1, for the orb. */
+  readLevels(): OrbLevels {
+    return this.meter.read()
+  }
+
   disconnect() {
     if (this.dc) {
       try {
@@ -466,6 +483,7 @@ export class RealtimeCopilotClient {
       this.audioEl.srcObject = null
       this.audioEl = null
     }
+    this.meter.close()
 
     this.addLog('info', '語音通話已結束並關閉媒體流')
 
