@@ -3,6 +3,7 @@ import * as L from "../legacy/bridge.js"
 import { catalogWord } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
 import type { RefObject } from "react"
+import { CopilotCallButton } from "../realtime/CopilotCallButton.js"
 
 /** The original Session toolbar, with the destination decision supplied by its page. */
 export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onTerminals, onVoice, onWork, onStart,
@@ -35,6 +36,7 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/></svg>
       </button>
     </div>
+    <CopilotCallButton />
     <button className="start" id="voice-go" type="button" title={T.webCommand + " · " + shortcutLabel("voice")} aria-label={T.webCommandLabel} aria-keyshortcuts={shortcutAria("voice")}
       aria-pressed="false" onClick={onVoice}>
       <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

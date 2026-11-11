@@ -9162,6 +9162,8 @@
   "next.accessNotOwner": "This browser is signed in as a device of its own. Invite from the Clawdline app window or from Cloud.",
   "next.accessNotOwnerList": "Only the Clawdline app window or Cloud can show this list.",
   "next.accessListTitleHere": "Devices that can use this machine",
+  "next.copilotCall": "Call the voice copilot",
+  "next.copilotInCall": "Voice copilot call in progress",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",
