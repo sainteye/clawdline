@@ -21,7 +21,8 @@
         "version": { "description": "Validated standalone CLI version, absent when compatibility could not be established.", "type": "string" },
         "authState": { "$ref": "#/$defs/StartAuthState" },
         "integrationState": { "$ref": "#/$defs/StartIntegrationState" },
-        "capabilities": { "$ref": "#/$defs/StartCapabilities" }
+        "capabilities": { "$ref": "#/$defs/StartCapabilities" },
+        "scheduleArchive": { "description": "A schedule using this assistant may set archive_codex_conversation on this daemon. Omission is a daemon that refuses the field; the schedule form then does not offer it.", "type": "boolean" }
       }
     },
     "StartAuthState": {

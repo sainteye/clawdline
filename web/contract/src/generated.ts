@@ -9322,6 +9322,13 @@ export interface StartAssistant {
   label: string
 
   /**
+   * A schedule using this assistant may set archive_codex_conversation on this
+   * daemon. Omission is a daemon that refuses the field; the schedule form then
+   * does not offer it.
+   */
+  scheduleArchive?: boolean
+
+  /**
    * Validated standalone CLI version, absent when compatibility could not be
    * established.
    */

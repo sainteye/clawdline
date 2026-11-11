@@ -45,6 +45,15 @@ func settledScheduledCodexRun(t *testing.T, b *Broker, ctx context.Context, id s
 	}
 }
 
+// machineReading is what b.read answers while the archive is decided: a
+// complete tmux answer holding the given tabs, or an incomplete one.
+func machineReading(complete bool, tabs ...session.Session) func(context.Context) session.Inventory {
+	rows := append([]session.Session{{ID: "%7", Assistant: session.AssistantClaude, State: session.StateIdle}}, tabs...)
+	return func(context.Context) session.Inventory {
+		return session.Inventory{Sessions: rows, Complete: complete, Sources: map[string]bool{"tmux": complete}}
+	}
+}
+
 func idleCodexTab() reading {
 	return reading{sessions: map[string]session.Session{"%41": {ID: "%41", Assistant: session.AssistantCodex,
 		State: session.StateIdle, ConversationID: archivedConversation}},
@@ -70,6 +79,7 @@ func TestAScheduledCodexRunIsArchivedAfterItsTabCloses(t *testing.T) {
 	// A broker that has been watching for a while, so the close is made now
 	// and the effect's wall-clock stamp is this test's now.
 	b.lingerStarted = now.Add(-time.Hour)
+	b.Reading = machineReading(true)
 	if n := b.closeLingers(ctx, idleCodexTab()); n != 1 || len(launcher.closed) != 1 {
 		t.Fatalf("closed %d, launcher %v", n, launcher.closed)
 	}
@@ -107,6 +117,7 @@ func TestOnlyAnAskingRunIsArchivedAndAGoneTabCounts(t *testing.T) {
 	b.Launcher = &fakeLauncher{}
 	calls := &archiveCalls{}
 	b.ArchiveConversation = calls.archive
+	b.Reading = machineReading(true)
 	settledScheduledCodexRun(t, b, ctx, "c6900002-0000-4000-8000-000000000002", false)
 	b.closeLingers(ctx, idleCodexTab())
 	now = now.Add(21 * time.Second)
@@ -143,14 +154,55 @@ func TestAConversationWhoseTabIsStillOpenIsNotArchived(t *testing.T) {
 	settledScheduledCodexRun(t, b, ctx, id, true)
 	b.lingerStarted = now.Add(-time.Hour)
 	b.closeLingers(ctx, idleCodexTab())
-	still := idleCodexTab()
-	b.Live = func(context.Context) []session.Session { return []session.Session{still.sessions["%41"]} }
+	b.Reading = machineReading(true, idleCodexTab().sessions["%41"])
 	now = now.Add(time.Minute)
 	b.RecoverEffects(ctx)
 	if calls.count() != 0 {
 		t.Fatalf("archived a conversation whose tab is open: %v", calls.ids)
 	}
-	if body, ok := latestEvent(t, b, ctx, "task.child.conversation.archive_failed", id); !ok || body["error"] != "tab_open" {
+	if body, ok := latestEvent(t, b, ctx, "task.child.conversation.archive_failed", id); !ok || body["error"] != "conversation_open" {
 		t.Fatalf("no refusal recorded: %v", body)
+	}
+}
+
+// archiveRefusalAfterClose settles one asking run, closes its tab, and runs
+// the archive on the reading given, answering the refusal it recorded.
+func archiveRefusalAfterClose(t *testing.T, id string, rd func(context.Context) session.Inventory) (int, any) {
+	t.Helper()
+	b, ctx := newTestBroker(t)
+	now := time.Now()
+	b.Clock = func() time.Time { return now }
+	b.Launcher = &fakeLauncher{}
+	calls := &archiveCalls{}
+	b.ArchiveConversation = calls.archive
+	settledScheduledCodexRun(t, b, ctx, id, true)
+	b.lingerStarted = now.Add(-time.Hour)
+	b.closeLingers(ctx, idleCodexTab())
+	b.Reading = rd
+	now = now.Add(time.Minute)
+	b.RecoverEffects(ctx)
+	body, _ := latestEvent(t, b, ctx, "task.child.conversation.archive_failed", id)
+	return calls.count(), body["error"]
+}
+
+// A reading that cannot prove the tab gone, a run resumed from its history
+// into another tab, and the run's own tab seen without a conversation each
+// keep the conversation in Codex's list.
+func TestTheArchiveWaitsForProofThatNothingHoldsTheConversation(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		rd   func(context.Context) session.Inventory
+		want string
+	}{
+		{"incomplete reading", machineReading(false), "reading_incomplete"},
+		{"resumed in another tab", machineReading(true, session.Session{ID: "%77", Assistant: session.AssistantCodex,
+			State: session.StateWorking, ConversationID: archivedConversation}), "conversation_open"},
+		{"own tab without a conversation", machineReading(true, session.Session{ID: "%41", Assistant: session.AssistantCodex,
+			State: session.StateIdle}), "tab_open"},
+	} {
+		n, why := archiveRefusalAfterClose(t, "c6900005-0000-4000-8000-000000000005", c.rd)
+		if n != 0 || why != c.want {
+			t.Errorf("%s: archive calls %d, refusal %v; want 0 and %s", c.name, n, why, c.want)
+		}
 	}
 }

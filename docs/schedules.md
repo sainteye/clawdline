@@ -463,7 +463,12 @@ and the broker, usage attribution and resume all assume one conversation per tas
 is off, so no existing schedule changed. A create without the key turns it on for a Codex schedule
 (the person chose this default); a save without it keeps what the file says, so a client from before
 the field cannot turn it off. Other assistants ignore it. The console shows it only for Codex, as
-"Archive the Codex chat after its tab closes" / 「分頁關閉後封存 Codex 對話」.
+"Archive the Codex chat after its tab closes" / 「分頁關閉後封存 Codex 對話」, and only when the
+machine the form writes to says it takes the field: its `/v1/places` answer (also carried over
+Cloud) marks the Codex assistant `scheduleArchive: true`. To such a machine the form always names
+the value; to an older one it never does, since that daemon would refuse it as an unknown field and
+would not archive. An edited schedule shows what its file says, and a file without the key is off —
+including one moved from a machine that never had the field, so a move does not turn it on.
 
 **When the archive happens.** Only after the broker has closed the run's tab by its `close_tab`
 (`task.child.linger.due`), or seen that tab gone (`task.child.linger.gone`). A tab left open — `never`,
@@ -472,9 +477,15 @@ is one a person may still be reading. The archive is an outbox effect
 (`child.conversation.archive`, `internal/app/orchestrator/conversation_archive.go`) written in the
 transaction that takes the linger, so a restart in between still archives. The pass that closes
 the tab does not run it: closing only asks Codex to exit, and Codex writes the end of its rollout as
-it goes. The beat's effect recovery runs it once it has stood unheld for thirty seconds; if a fresh
-reading still shows the run's tab holding that conversation (the close did not happen), it is
-refused as `tab_open` and the conversation stays. The record keeps `child_conversation_archived_at`; a failure is the effect's outcome and a
+it goes. The beat's effect recovery runs it once it has stood unheld for thirty seconds. It then takes a
+fresh reading and archives only when nothing can still be using the conversation
+(`archiveRefusal`): a reading with no terminals, or whose source for the run's tab did not answer
+completely, is `reading_incomplete`; any tab seen holding the conversation — a run resumed from its
+history into a new Session included — is `conversation_open`; the run's own tab seen at all, even
+with no conversation named, is `tab_open`. A refusal is final and the conversation stays in Codex's
+list. A Session resumed in a window the reading cannot list is not seen; the run's own source
+answering completely is the same proof a linger uses to call a tab gone. After a restart, an
+archive the dead broker left is adopted and run on the first pass, without the thirty-second wait. The record keeps `child_conversation_archived_at`; a failure is the effect's outcome and a
 `task.child.conversation.archive_failed` event, and the run itself is not affected.
 
 **How it is archived.** `thread/archive` on `codex app-server --stdio`, the server Clawdline already
@@ -500,7 +511,7 @@ archived rollout, so archiving does not make a run's tokens disappear. A rollout
 compresses to `.jsonl.zst` is not read.
 
 `TestAScheduledCodexRunIsArchivedAfterItsTabCloses`, `TestOnlyAnAskingRunIsArchivedAndAGoneTabCounts`,
-`TestAConversationWhoseTabIsStillOpenIsNotArchived`,
+`TestAConversationWhoseTabIsStillOpenIsNotArchived`, `TestTheArchiveWaitsForProofThatNothingHoldsTheConversation`,
 `TestANewCodexScheduleArchivesItsConversationsByDefault`, `TestAnArchivedRunIsStillResumable`.
 
 ## Incident investigation schedules

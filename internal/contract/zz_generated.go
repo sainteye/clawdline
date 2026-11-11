@@ -7703,6 +7703,11 @@ type StartAssistant struct {
 	IntegrationState StartIntegrationState `json:"integrationState,omitempty"`
 	Label            string                `json:"label"`
 
+	// A schedule using this assistant may set archive_codex_conversation on this
+	// daemon. Omission is a daemon that refuses the field; the schedule form then does
+	// not offer it.
+	ScheduleArchive bool `json:"scheduleArchive,omitempty"`
+
 	// Validated standalone CLI version, absent when compatibility could not be
 	// established.
 	Version string `json:"version,omitempty"`

@@ -68,14 +68,18 @@ func runArchiveConversation(ctx context.Context, b *Broker, e store.Effect) effe
 			events: []store.Event{{Kind: "task.child.conversation.archive_failed", Subject: e.Subject,
 				Payload: payload(map[string]any{"error": "unsupported"})}}}
 	}
-	// The close it follows may not have happened: a tab still showing this
-	// conversation is one Codex is running in, and it is left in the list.
-	if r, _, err := b.Record(ctx, e.Subject); err == nil && r.ChildTerminalID != "" {
-		if s, open := b.read(ctx).session(r.ChildTerminalID); open && s.ConversationID == w.Conversation {
-			return effectResult{state: store.EffectFailed, outcome: "the run's tab is still open",
-				events: []store.Event{{Kind: "task.child.conversation.archive_failed", Subject: e.Subject,
-					Payload: payload(map[string]any{"error": "tab_open"})}}}
-		}
+	// The close it follows may not have happened, and the conversation may be
+	// open again somewhere else: a run resumed from its history is an
+	// ordinary Session holding the same conversation. Either is Codex at
+	// work, and the conversation is left in the list.
+	r, _, err := b.Record(ctx, e.Subject)
+	if err != nil {
+		return effectResult{state: store.EffectFailed, outcome: "the run's record could not be read", err: err}
+	}
+	if why, sentence := archiveRefusal(b.read(ctx), r, w.Conversation); why != "" {
+		return effectResult{state: store.EffectFailed, outcome: sentence,
+			events: []store.Event{{Kind: "task.child.conversation.archive_failed", Subject: e.Subject,
+				Payload: payload(map[string]any{"error": why})}}}
 	}
 	if err := b.ArchiveConversation(ctx, w.Assistant, w.Conversation); err != nil {
 		log.Printf("orchestrator: task %s: conversation %s was not archived: %v", e.Subject, w.Conversation, err)
@@ -96,4 +100,26 @@ func runArchiveConversation(ctx context.Context, b *Broker, e store.Effect) effe
 		log.Printf("orchestrator: task %s: archive of %s not recorded: %v", e.Subject, w.Conversation, err)
 	}
 	return effectResult{state: store.EffectDone, outcome: "archived " + w.Conversation + " at " + at.UTC().Format(time.RFC3339)}
+}
+
+// archiveRefusal is why a conversation may not be archived on this reading,
+// and its sentence; "" when it may. Absence is decided as a linger decides a
+// tab gone (lingerStepFor): only by a reading that saw terminals and whose
+// source for the run's tab answered completely. Any tab seen holding the
+// conversation, or the run's own tab seen at all — even with a conversation
+// this reading could not name — keeps it. A refusal is final: the
+// conversation stays in Codex's list, which is the safe side.
+func archiveRefusal(rd reading, r Record, conversation string) (string, string) {
+	if len(rd.sessions) == 0 || !rd.sourceComplete(r.ChildBackend) {
+		return "reading_incomplete", "this machine's terminals did not answer completely, so the tab is not proved gone"
+	}
+	for _, s := range rd.sessions {
+		if s.ConversationID == conversation {
+			return "conversation_open", "a tab is holding the conversation"
+		}
+	}
+	if _, open := rd.session(r.ChildTerminalID); open {
+		return "tab_open", "the run's tab is still open"
+	}
+	return "", ""
 }
