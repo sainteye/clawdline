@@ -9137,6 +9137,7 @@
   "next.joinFailed": "The invitation could not be completed.",
   "next.joinAgain": "Use another code",
   "next.invFailedDeviceLimit": "Your account has no room for another device. Remove one under Devices, then make a new invitation.",
+  "next.joinRetry": "Try the same code again",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

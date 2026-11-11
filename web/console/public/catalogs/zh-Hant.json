@@ -9137,6 +9137,7 @@
   "next.joinFailed": "邀請無法完成。",
   "next.joinAgain": "改用其他邀請碼",
   "next.invFailedDeviceLimit": "你的帳號裝置數已達上限。請先在裝置頁移除一個裝置，再重新產生邀請。",
+  "next.joinRetry": "用同一組碼重試",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

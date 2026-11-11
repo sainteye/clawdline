@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react"
 import { nextWord, type NextWord } from "../next-strings.js"
 import { NAVIGATION_MARK } from "../brand-mark.js"
 import * as L from "../legacy/bridge.js"
@@ -21,7 +21,10 @@ const FAILURE: Record<InviteFailure, NextWord> = {
   network: "joinNetwork", failed: "joinFailed",
 }
 
-type View = { at: "type" } | { at: "busy"; stage: JoinStage } | { at: "failed"; word: NextWord }
+type View = { at: "type" } | { at: "busy"; stage: JoinStage } | { at: "failed"; word: NextWord; retry: boolean }
+
+/** Refusals after which the very same code can still work: a full account, a busy network. */
+const RETRYABLE = new Set<InviteFailure>(["device_limit", "network", "rate_limited"])
 
 export function JoinPage({ declared }: { declared: string }) {
   const config = useMemo(() => {
@@ -46,7 +49,7 @@ export function JoinPage({ declared }: { declared: string }) {
   useEffect(() => { if (wordsReady && mark.current) L.paintIcon(mark.current, NAVIGATION_MARK, 3) }, [wordsReady])
   useEffect(() => () => stop.current?.abort(), [])
 
-  const join = async (event: FormEvent) => {
+  const join = async (event: FormEvent | MouseEvent) => {
     event.preventDefault()
     if (!config || view.at === "busy") return
     const controller = new AbortController()
@@ -62,7 +65,8 @@ export function JoinPage({ declared }: { declared: string }) {
       location.replace("/")
     } catch (error) {
       if (controller.signal.aborted) return
-      setView({ at: "failed", word: FAILURE[error instanceof InviteError ? error.code : "failed"] })
+      const code = error instanceof InviteError ? error.code : "failed"
+      setView({ at: "failed", word: FAILURE[code], retry: RETRYABLE.has(code) })
     }
   }
 
@@ -91,7 +95,14 @@ export function JoinPage({ declared }: { declared: string }) {
           ) : view.at === "failed" ? (
             <>
               <p className="fine" role="alert">{nextWord(view.word)}</p>
-              <button className="go" type="button" onClick={() => { setCode(""); setView({ at: "type" }) }}>{nextWord("joinAgain")}</button>
+              {view.retry ? (
+                <>
+                  <button className="go" type="button" onClick={(e) => void join(e)}>{nextWord("joinRetry")}</button>
+                  <button className="alt" type="button" onClick={() => { setCode(""); setView({ at: "type" }) }}>{nextWord("joinAgain")}</button>
+                </>
+              ) : (
+                <button className="go" type="button" onClick={() => { setCode(""); setView({ at: "type" }) }}>{nextWord("joinAgain")}</button>
+              )}
             </>
           ) : stage?.stage === "compare" ? (
             <div aria-live="polite">

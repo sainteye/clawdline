@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11099,
+  "englishContentKeys": 11100,
   "riskKeys": 4893,
-  "nonRiskCount": 6206,
+  "nonRiskCount": 6207,
   "groups": [
     {
       "name": "acp / other",
@@ -3799,7 +3799,7 @@
     },
     {
       "name": "next / other",
-      "count": 711,
+      "count": 712,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3958,6 +3958,7 @@
         "next.joinIntro",
         "next.joinJoining",
         "next.joinRateLimited",
+        "next.joinRetry",
         "next.joinSubmit",
         "next.joinTitle",
         "next.joinUsed",

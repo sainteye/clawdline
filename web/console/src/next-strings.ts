@@ -2525,6 +2525,7 @@ const words = {
     joinNetwork: "Could not reach Clawdline. Check the connection and try again.",
     joinFailed: "The invitation could not be completed.",
     joinAgain: "Use another code",
+    joinRetry: "Try the same code again",
   },
   "zh-Hant": {
     rotationRequest: "請準備以新 Session 接手目前工作。先讀 clawdline guide landing，依里程碑換手流程整理目標、已確認決策與限制、已驗證進度、工作樹與未提交改動的歸屬、阻礙、證據、未完責任及下一步。確認接手者已讀取狀態、看板責任已移交。處理仍留在這裡的責任後，執行 clawdline session close --dry-run 並回報實際結果。保留舊 Session，等我檢查後關閉；若換手失敗或狀態不明，保持開啟並說明阻礙。保留所有供應商對話檔。",
@@ -4940,6 +4941,7 @@ const words = {
     joinNetwork: "連不到 Clawdline，請確認網路後再試一次。",
     joinFailed: "邀請無法完成。",
     joinAgain: "改用其他邀請碼",
+    joinRetry: "用同一組碼重試",
   },
 } as const
 
