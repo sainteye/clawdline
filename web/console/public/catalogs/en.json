@@ -9773,6 +9773,7 @@
   "settings.voiceVocabularyBuiltin": "Built in ({n})",
   "settings.voiceVocabularyInvalid": "A term is one line of at most 64 characters, and each term appears once.",
   "settings.voiceVocabularyFull": "The vocabulary holds at most 200 terms.",
+  "settings.voiceSettingsMachine": "These settings apply to {machine}. Recordings in a Session are transcribed on that Session's machine.",
   "shell.menuCopy": "Copy",
   "shell.menuCut": "Cut",
   "shell.menuEdit": "Edit",

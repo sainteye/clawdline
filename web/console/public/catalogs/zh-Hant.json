@@ -9773,6 +9773,7 @@
   "settings.voiceVocabularyBuiltin": "內建（{n}）",
   "settings.voiceVocabularyInvalid": "每個詞只能一行、最多 64 個字，而且不能重複。",
   "settings.voiceVocabularyFull": "詞庫最多 200 個詞。",
+  "settings.voiceSettingsMachine": "這些設定套用在 {machine}。在 Session 裡錄音時，由那個 Session 所在的機器轉寫。",
   "shell.menuCopy": "複製",
   "shell.menuCut": "剪下",
   "shell.menuEdit": "編輯",
