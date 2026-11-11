@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10971,
-  "riskKeys": 4833,
-  "nonRiskCount": 6138,
+  "englishContentKeys": 11030,
+  "riskKeys": 4853,
+  "nonRiskCount": 6177,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 433,
+      "count": 439,
       "sources": [
         null
       ],
@@ -825,6 +825,12 @@
         "capacityRow.usage.daily_rows.what",
         "capacityRow.usage.overview_tasks.what",
         "capacityRow.usage.work_units_per_answer.what",
+        "capacityRow.voice.polish_characters.what",
+        "capacityRow.voice.polish_terms.what",
+        "capacityRow.voice.polish_timeout_milliseconds.full",
+        "capacityRow.voice.vocabulary_project_terms.what",
+        "capacityRow.voice.vocabulary_term_characters.what",
+        "capacityRow.voice.vocabulary_terms.what",
         "capacityRow.work.digests.what",
         "capacityRow.work.image_bytes.what",
         "capacityRow.work.image_request_body_bytes.what",
@@ -5648,7 +5654,7 @@
     },
     {
       "name": "settings / other",
-      "count": 126,
+      "count": 148,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
@@ -5755,8 +5761,30 @@
         "settings.voiceModelHint",
         "settings.voiceModelPaths",
         "settings.voiceModelTitle",
+        "settings.voiceMoreSetup",
         "settings.voiceNoModel",
+        "settings.voicePolishClaude",
+        "settings.voicePolishCodex",
+        "settings.voicePolishExampleFixed",
+        "settings.voicePolishExampleRaw",
+        "settings.voicePolishLevel",
+        "settings.voicePolishModel",
+        "settings.voicePolishPunctuation",
+        "settings.voicePolishSwitch",
+        "settings.voicePolishTidy",
+        "settings.voicePolishTitle",
         "settings.voiceReady",
+        "settings.voiceRecognitionTitle",
+        "settings.voiceVocabularyAdd",
+        "settings.voiceVocabularyAddLabel",
+        "settings.voiceVocabularyBuiltin",
+        "settings.voiceVocabularyCustom",
+        "settings.voiceVocabularyFull",
+        "settings.voiceVocabularyInvalid",
+        "settings.voiceVocabularyPlaceholder",
+        "settings.voiceVocabularyProjects",
+        "settings.voiceVocabularyProjectsCount",
+        "settings.voiceVocabularyTitle",
         "settings.voiceWhyChosen",
         "settings.voiceWhyLanguage",
         "settings.voiceWhyMachine",
@@ -6306,7 +6334,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 158,
+      "count": 160,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6433,6 +6461,8 @@
         "transparency.card.tool-library.title",
         "transparency.card.turn-todos.effect",
         "transparency.card.turn-todos.title",
+        "transparency.card.voice-polish.condition",
+        "transparency.card.voice-polish.title",
         "transparency.claude",
         "transparency.codex",
         "transparency.common",
@@ -6538,6 +6568,24 @@
         "verify.unset",
         "verify.verdict",
         "verify.why"
+      ]
+    },
+    {
+      "name": "voicePolish / other",
+      "count": 9,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "voicePolish.applied",
+        "voicePolish.dismiss",
+        "voicePolish.quota",
+        "voicePolish.raw",
+        "voicePolish.showPolished",
+        "voicePolish.showRaw",
+        "voicePolish.timeout",
+        "voicePolish.too_long",
+        "voicePolish.unfaithful"
       ]
     },
     {

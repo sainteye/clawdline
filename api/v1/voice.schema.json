@@ -21,7 +21,20 @@
       "required": ["ms", "text"],
       "properties": {
         "ms": { "type": "integer" },
-        "text": { "type": "string" }
+        "text": { "type": "string", "description": "The transcript to use: the cleaned text when `polish.status` is `applied`, otherwise Whisper's own." },
+        "raw": { "type": "string", "description": "Whisper's own text, present only when a cleanup replaced it, so the composer can offer it back." },
+        "polish": { "$ref": "#/$defs/VoicePolish" }
+      }
+    },
+    "VoicePolish": {
+      "description": "What happened to the optional cleanup turn after Whisper. Absent when cleanup is off. Every status other than `applied` means `text` is Whisper's own.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "assistant", "ms"],
+      "properties": {
+        "status": { "type": "string", "description": "`applied`, `unchanged`, `unavailable` (the chosen assistant is not installed), `unfaithful` (the cleanup changed the words and was discarded), `too_long`, `quota`, `timeout` or `failed`." },
+        "assistant": { "type": "string", "description": "`claude` or `codex`: whose account the turn used." },
+        "ms": { "type": "integer", "description": "How long the cleanup turn took." }
       }
     },
     "VoiceLanguage": {
@@ -64,7 +77,10 @@
         "model_dirs": { "description": "Directories searched for ggml models, with the home directory written as ~.", "type": "array", "items": { "type": "string" } },
         "binary_install": { "description": "A command, or commands separated by newlines, that install the compatible whisper.cpp CLI on this platform. The Python openai-whisper command is intentionally never offered.", "type": "string" },
         "model_name": { "description": "The pinned model the POST action downloads.", "type": "string" },
-        "model_bytes": { "description": "Its exact download size.", "type": "integer" }
+        "model_bytes": { "description": "Its exact download size.", "type": "integer" },
+        "polish_assistants": { "description": "Which assistants could clean up a transcript on this machine: `claude`, `codex`, both or neither.", "type": "array", "items": { "type": "string" } },
+        "vocabulary_builtin": { "description": "The names every transcript is repaired against without being asked.", "type": "array", "items": { "type": "string" } },
+        "vocabulary_projects": { "description": "The project folder names `voice_vocabulary_projects` would add, listed so the person sees exactly what a ticked box sends.", "type": "array", "items": { "type": "string" } }
       }
     },
     "VoiceModelInstall": {

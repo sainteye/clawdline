@@ -37,6 +37,12 @@ export const DEFAULTS = {
   output_newest_first: false,
   voice_engine: "auto",
   voice_language: "auto",
+  /** Off: cleanup sends the transcript to the chosen assistant's provider. */
+  voice_polish: false,
+  voice_polish_assistant: "claude",
+  voice_polish_level: "tidy",
+  voice_vocabulary: [] as readonly string[],
+  voice_vocabulary_projects: false,
   voice_settle_seconds: 1.8,
   voice_stop_seconds: 4.0,
   remote: false,

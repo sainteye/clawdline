@@ -154,6 +154,32 @@
           "nullable": true,
           "type": "string"
         },
+        "voice_polish": {
+          "description": "Whether a small model punctuates and corrects each transcript after Whisper. Absent is off: it sends the transcript and vocabulary to the chosen assistant's provider.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "voice_polish_assistant": {
+          "description": "Whose account cleans up a transcript: `claude` (Haiku) or `codex` (its small model, slower). Absent is `claude`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_polish_level": {
+          "description": "`punctuation` adds punctuation and corrects certain mis-hearings; `tidy` also removes filler words. Absent is `tidy`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_vocabulary": {
+          "description": "The person's own terms, repaired in every transcript and shown to cleanup. Absent is an empty list.",
+          "nullable": true,
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "voice_vocabulary_projects": {
+          "description": "Whether this machine's project folder names join the vocabulary. Absent is off.",
+          "nullable": true,
+          "type": "boolean"
+        },
         "voice_language": {
           "description": "What whisper reads a recording as: `auto`, which follows `language`, then this machine's languages, then the shipped catalog — or a tag such as `zh-Hant`, `zh-Hans` or `en`.",
           "nullable": true,
@@ -413,6 +439,32 @@
           "description": "`auto`, `apple` or `whisper`.",
           "nullable": true,
           "type": "string"
+        },
+        "voice_polish": {
+          "description": "true or false.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "voice_polish_assistant": {
+          "description": "`claude` or `codex`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_polish_level": {
+          "description": "`punctuation` or `tidy`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_vocabulary": {
+          "description": "At most 200 distinct one-line terms of at most 64 characters each.",
+          "nullable": true,
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "voice_vocabulary_projects": {
+          "description": "true or false.",
+          "nullable": true,
+          "type": "boolean"
         },
         "voice_language": {
           "description": "`auto`, or a language tag: letters, digits and dashes.",

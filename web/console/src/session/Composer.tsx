@@ -13,6 +13,7 @@ import * as L from "../legacy/bridge.js"
 import { createShots, carriesFiles, carriesPicture } from "../legacy/shots-bridge.js"
 import { composerDraftKey, composerDrafts } from "./composer-drafts.js"
 import * as V from "../legacy/voice-bridge.js"
+import { dictatedFrom, polishWord, swapDictation, type Dictated } from "./voice-polish.js"
 import { COMPOSE_APPEND } from "../legacy/snippets-bridge.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import {
@@ -39,6 +40,7 @@ import "./prompt-suggestions.css"
 import { ComposerBox } from "./ComposerBox.js"
 import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
+import "./voice-polish.css"
 import "./drop-target.css"
 import { RemotePermissions } from "./RemotePermissions.js"
 import { Start } from "./Start.js"
@@ -198,6 +200,9 @@ export function Composer({
   // reads back from `Voice`: `voiceBusy` for the two waits, `voiceLive` for
   // the one control that must stay alive through them.
   const [voice, setVoice] = useState<V.VoiceState>(V.voiceState)
+  // What the optional cleanup did to the words dictated last: replaced them
+  // (with Whisper's own text kept to offer back), or kept them and why.
+  const [dictated, setDictated] = useState<Dictated | null>(null)
   // `SkillPicker`'s three fields: the rows drawn, the highlighted one, and
   // whether the menu is up. The catalog itself is held by the bridge.
   const [skills, setSkills] = useState<{ shown: boolean; matches: AssistantSkill[]; selected: number }>({
@@ -574,7 +579,11 @@ export function Composer({
     const job: V.VoiceJob = {
       host,
       composer: form.current,
-      sink: (said) => { if (alive.current) sink.current(said) },
+      sink: (said, polish) => {
+        if (!alive.current) return
+        sink.current(said)
+        setDictated(dictatedFrom(said, polish))
+      },
       transcribe: remote?.transcribe,
       source: voiceSource,
       missingWhisper: (failure) => setVoiceInstall({ reason: failure.reason, help: false }),
@@ -665,6 +674,7 @@ export function Composer({
     setText("")
     saveText("")
     setFailure("")
+    setDictated(null)
     Shots.clear()
     inFlight.current = true
     setSending(true)
@@ -752,6 +762,18 @@ export function Composer({
           diffs away the meter, the count or the two ways out. `opening` is the
           browser's own permission sheet, which is on top of the page and says
           more than this row could, so the row stays hidden for it. */}
+      {dictated && <div className="voice-polish" data-status={dictated.status === "applied" ? "applied" : "fallback"} role="status">
+        <span className="voice-polish-tag">{polishWord(dictated)}</span>
+        {dictated.raw && <button type="button" onClick={() => {
+          const el = msg.current
+          const next = el ? swapDictation(el.textContent ?? "", dictated) : null
+          if (!el || !next) { setDictated(null); return }
+          el.textContent = next.text
+          changed()
+          setDictated(next.dictated)
+        }}>{dictated.showing === "polished" ? catalogWord("voicePolish", "showRaw") : catalogWord("voicePolish", "showPolished")}</button>}
+        <button type="button" className="voice-polish-dismiss" aria-label={catalogWord("voicePolish", "dismiss")} onClick={() => setDictated(null)}>×</button>
+      </div>}
       <div className="voice" id="voice" role="status" hidden={voice === "off" || voice === "opening"} ref={voiceRow}></div>
       {terminalShortcut &&
         <div className="native-terminal-shortcut">

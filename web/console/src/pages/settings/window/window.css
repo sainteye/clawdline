@@ -242,6 +242,184 @@
   margin-bottom: 7px;
 }
 
+/* The voice tab: one column of three cards — recognition, LLM cleanup and the
+   personal vocabulary — so it reads the same at phone width. */
+.sw-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 600px;
+}
+.sw-voice-card {
+  border: 1px solid var(--sw-chip-edge);
+  border-radius: 10px;
+  padding: 6px 16px 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.sw-voice-headrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sw-voice h3.sw-voice-head {
+  margin: 0;
+  padding: 12px 0 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--sw-label);
+}
+.sw-voice-lead {
+  color: var(--sw-label);
+}
+.sw-voice-more {
+  margin-top: 10px;
+  color: var(--sw-soft);
+}
+.sw-voice-more summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+.sw-voice-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+@media (max-width: 520px) {
+  .sw-voice-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.sw-voice-say {
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--sw-label);
+}
+.sw-voice-say.fixed {
+  background: rgba(76, 203, 127, 0.08);
+  border: 1px solid rgba(76, 203, 127, 0.28);
+}
+.sw-voice-say-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10.5px;
+  color: var(--sw-soft);
+}
+.sw-voice-dim {
+  opacity: 0.45;
+}
+.sw-voice-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sw-voice-add {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.sw-voice-add input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--sw-chip-edge);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--sw-label);
+  font: inherit;
+}
+.sw-voice-add input::placeholder {
+  color: var(--sw-faint);
+}
+.sw-voice-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.sw-voice-group {
+  margin: 14px 0 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--sw-soft);
+}
+.sw-voice-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sw-voice-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  border: 1px solid var(--sw-chip-edge);
+  background: var(--sw-chip-fill);
+  font-size: 12px;
+  color: var(--sw-label);
+}
+.sw-voice-chip button {
+  width: 26px;
+  height: 26px;
+  margin: 0 -8px 0 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: none;
+  color: var(--sw-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.sw-voice-chip button:hover {
+  color: var(--sw-label);
+  background: var(--sw-chip-fill);
+}
+.sw-voice-chip.auto {
+  background: rgba(76, 203, 127, 0.1);
+  border-color: rgba(76, 203, 127, 0.3);
+}
+.sw-voice-chip.builtin {
+  color: var(--sw-soft);
+}
+.sw-voice-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sw-faint);
+}
+.sw-voice-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sw-hairline);
+  cursor: pointer;
+}
+.sw-voice-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--sw-accent);
+}
+
 /* The footer: where the file is, as plain selectable text. There is no "open
    the config file" button, and its absence is deliberate — see Settings.swift. */
 .sw-foot {

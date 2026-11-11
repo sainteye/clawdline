@@ -643,6 +643,12 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `usage.work_cursor_rows` | 50000 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `usage.work_units_per_answer` | 500 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `voice.polish_characters` | 4000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.polish_terms` | 240 | `rows` | `refuse` | `diagnostics` | — |
+| `voice.polish_timeout_milliseconds` | 15000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.vocabulary_project_terms` | 40 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.vocabulary_term_characters` | 64 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.vocabulary_terms` | 200 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `waits.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `work.assignments` | 4000 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `work.card_description_runes` | 200 | `characters` | `evict_oldest` | `diagnostics, sender` | — |

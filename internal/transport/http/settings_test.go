@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -366,6 +367,8 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 			sent[key.Name] = (key.Min + key.Max) / 2
 		case "int":
 			sent[key.Name] = int64((key.Min + key.Max) / 2)
+		case "strings":
+			sent[key.Name] = []string{"Tailscale", "PostgreSQL"}
 		}
 	}
 	body, err := json.Marshal(sent)
@@ -396,6 +399,12 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 		}
 		if wantInt, isInt := want.(int64); isInt {
 			if got != float64(wantInt) {
+				t.Fatalf("%s: sent %v, answered %v", name, want, got)
+			}
+			continue
+		}
+		if wantList, isList := want.([]string); isList {
+			if fmt.Sprint(got) != fmt.Sprint(wantList) {
 				t.Fatalf("%s: sent %v, answered %v", name, want, got)
 			}
 			continue

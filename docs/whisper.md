@@ -2,6 +2,7 @@
 <!-- clawdline-doc: kind=record audience=both -->
 
 > Current browser recording behavior: [recording recovery](voice-recording-recovery.md).
+> Current voice settings, optional LLM cleanup and the personal vocabulary: [voice settings](voice.md).
 
 # Dictating locally in more than one language
 

@@ -12396,6 +12396,125 @@
   },
   {
     "Register": "daemon",
+    "Name": "voice.polish_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxPolishRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.polish_terms",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 240,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxPolishTerms"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.polish_timeout_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxPolishDuration"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.vocabulary_project_terms",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 40,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.voiceProjectTermLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.vocabulary_term_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/nextconfig.MaxVoiceVocabularyRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.vocabulary_terms",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/nextconfig.MaxVoiceVocabularyTerms"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "waits.open",
     "Class": "buffer",
     "Unit": "rows",

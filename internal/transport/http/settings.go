@@ -28,6 +28,8 @@ var settingsFiles sync.Map // dir -> *nextconfig.File
 var browserSettings = map[string]bool{
 	"language": true, "terminal": true,
 	"mascot": true, "notch": true, "voice_language": true,
+	"voice_polish": true, "voice_polish_assistant": true, "voice_polish_level": true,
+	"voice_vocabulary": true, "voice_vocabulary_projects": true,
 	"codex_auto_name": true, "auto_name_assistant": true,
 	"remote": true, "tailscale_hostname": true, "cloudflare_tunnel_retired": true,
 	"push_on_delivery": true, "push_on_fanout": true,
@@ -542,6 +544,9 @@ func settingsValue(key nextconfig.Settable, raw json.RawMessage) (any, bool) {
 	case "bool":
 		var b bool
 		return b, json.Unmarshal(raw, &b) == nil
+	case "strings":
+		var list []string
+		return list, json.Unmarshal(raw, &list) == nil && list != nil
 	case "number":
 		var f float64
 		return f, json.Unmarshal(raw, &f) == nil

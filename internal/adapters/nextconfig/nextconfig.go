@@ -32,6 +32,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 )
@@ -434,7 +436,7 @@ func ValidScope(s string) bool {
 type Settable struct {
 	// Name is the key as it is spelled in the file.
 	Name string
-	// Kind is one of "string", "bool", "number", "int".
+	// Kind is one of "string", "bool", "number", "int", "strings".
 	Kind string
 	// Choices is the closed set a string may be, when it is closed.
 	Choices []string
@@ -444,6 +446,8 @@ type Settable struct {
 	Min, Max float64
 	// Zero lets an integer also be 0, outside Min and Max: the key's "off".
 	Zero bool
+	// MaxItems and MaxRunes bound a "strings" list and each of its entries.
+	MaxItems, MaxRunes int
 	// Refusal is the code a rejected value answers with.
 	Refusal string
 	// Because is what the refusal says after the code.
@@ -451,9 +455,22 @@ type Settable struct {
 }
 
 // Allows reports whether v is a value this key will take. v is a string, a
-// bool, a float64 or an int64, matching Kind.
+// bool, a float64, an int64 or a []string, matching Kind.
 func (k Settable) Allows(v any) bool {
 	switch k.Kind {
+	case "strings":
+		list, ok := v.([]string)
+		if !ok || len(list) > k.MaxItems {
+			return false
+		}
+		seen := map[string]bool{}
+		for _, entry := range list {
+			if !ValidListEntry(entry, k.MaxRunes) || seen[strings.ToLower(entry)] {
+				return false
+			}
+			seen[strings.ToLower(entry)] = true
+		}
+		return true
 	case "string":
 		s, ok := v.(string)
 		if !ok {
@@ -543,6 +560,22 @@ var Settables = []Settable{
 	// window offers, and a hand-written `zh_TW` is a tag this file keeps.
 	{Name: "voice_language", Kind: "string", Check: ValidLanguageTag, Refusal: "invalid_voice_language",
 		Because: "auto, or a language tag such as zh-Hant, zh-Hans or en"},
+	// Dictation cleanup by a small model after Whisper (docs/voice.md). Off
+	// unless set: it sends the transcript and vocabulary to the chosen
+	// assistant's provider, which local Whisper never does.
+	{Name: "voice_polish", Kind: "bool"},
+	{Name: "voice_polish_assistant", Kind: "string", Choices: []string{"claude", "codex"},
+		Refusal: "invalid_voice_polish_assistant", Because: "claude or codex"},
+	{Name: "voice_polish_level", Kind: "string", Choices: []string{"punctuation", "tidy"},
+		Refusal: "invalid_voice_polish_level", Because: "punctuation or tidy"},
+	// The person's own terms, repaired in every transcript. The Swift app's
+	// key and spelling: a JSON list of strings.
+	{Name: "voice_vocabulary", Kind: "strings", MaxItems: MaxVoiceVocabularyTerms, MaxRunes: MaxVoiceVocabularyRunes,
+		Refusal: "invalid_voice_vocabulary",
+		Because: "a list of distinct terms, each one line of at most 64 characters, at most 200 of them"},
+	// Whether this machine's project folder names join the vocabulary. Off
+	// unless set, because cleanup would send those names too.
+	{Name: "voice_vocabulary_projects", Kind: "bool"},
 	{Name: "voice_settle_seconds", Kind: "number", Min: 0, Max: 30},
 	{Name: "voice_stop_seconds", Kind: "number", Min: 0, Max: 300},
 	{Name: "remote", Kind: "bool"},
@@ -614,6 +647,26 @@ var Settables = []Settable{
 	{Name: "claude_auto_compact_window", Kind: "int", Min: 50_000, Max: 1_000_000, Zero: true,
 		Refusal: "invalid_auto_compact_window",
 		Because: "0 for none, or a whole number of tokens from 50000 to 1000000"},
+}
+
+// MaxVoiceVocabularyTerms and MaxVoiceVocabularyRunes bound voice_vocabulary.
+const (
+	MaxVoiceVocabularyTerms = 200
+	MaxVoiceVocabularyRunes = 64
+)
+
+// ValidListEntry is one line of text: not blank, no surrounding space, no
+// control character, at most maxRunes long.
+func ValidListEntry(entry string, maxRunes int) bool {
+	if strings.TrimSpace(entry) != entry || entry == "" || utf8.RuneCountInString(entry) > maxRunes {
+		return false
+	}
+	for _, r := range entry {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidSetupSkipped is empty or a comma-separated list of distinct setup items.

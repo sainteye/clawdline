@@ -8522,6 +8522,21 @@ export interface SettingsRequest {
   voice_language: string | null
 
   /**
+   * true or false.
+   */
+  voice_polish: boolean | null
+
+  /**
+   * `claude` or `codex`.
+   */
+  voice_polish_assistant: string | null
+
+  /**
+   * `punctuation` or `tidy`.
+   */
+  voice_polish_level: string | null
+
+  /**
    * 0 to 30.
    */
   voice_settle_seconds: number | null
@@ -8530,6 +8545,16 @@ export interface SettingsRequest {
    * 0 to 300.
    */
   voice_stop_seconds: number | null
+
+  /**
+   * At most 200 distinct one-line terms of at most 64 characters each.
+   */
+  voice_vocabulary: string[] | null
+
+  /**
+   * true or false.
+   */
+  voice_vocabulary_projects: boolean | null
 
   /**
    * 360 to 1400.
@@ -8917,6 +8942,25 @@ export interface SettingsSnapshot {
   voice_language: string | null
 
   /**
+   * Whether a small model punctuates and corrects each transcript after Whisper.
+   * Absent is off: it sends the transcript and vocabulary to the chosen assistant's
+   * provider.
+   */
+  voice_polish: boolean | null
+
+  /**
+   * Whose account cleans up a transcript: `claude` (Haiku) or `codex` (its small
+   * model, slower). Absent is `claude`.
+   */
+  voice_polish_assistant: string | null
+
+  /**
+   * `punctuation` adds punctuation and corrects certain mis-hearings; `tidy` also
+   * removes filler words. Absent is `tidy`.
+   */
+  voice_polish_level: string | null
+
+  /**
    * How long a pause ends a sentence. 0 is off.
    */
   voice_settle_seconds: number | null
@@ -8925,6 +8969,17 @@ export interface SettingsSnapshot {
    * How long a silence ends the whole turn. 0 is off.
    */
   voice_stop_seconds: number | null
+
+  /**
+   * The person's own terms, repaired in every transcript and shown to cleanup.
+   * Absent is an empty list.
+   */
+  voice_vocabulary: string[] | null
+
+  /**
+   * Whether this machine's project folder names join the vocabulary. Absent is off.
+   */
+  voice_vocabulary_projects: boolean | null
 
   /**
    * The bar's width in points.
@@ -11785,6 +11840,29 @@ export interface VoiceModelInstall {
 }
 
 /**
+ * What happened to the optional cleanup turn after Whisper. Absent when cleanup is
+ * off. Every status other than `applied` means `text` is Whisper's own.
+ */
+export interface VoicePolish {
+  /**
+   * `claude` or `codex`: whose account the turn used.
+   */
+  assistant: string
+
+  /**
+   * How long the cleanup turn took.
+   */
+  ms: number
+
+  /**
+   * `applied`, `unchanged`, `unavailable` (the chosen assistant is not installed),
+   * `unfaithful` (the cleanup changed the words and was discarded), `too_long`,
+   * `quota`, `timeout` or `failed`.
+   */
+  status: string
+}
+
+/**
  * A refusal from this route. It is the ordinary refusal shape with one field added,
  * because `no_whisper` covers two different afternoons: `brew install whisper-cpp`
  * leaves a machine with the binary and no model, and a page told only "no whisper"
@@ -11828,6 +11906,18 @@ export interface VoiceRequest {
  */
 export interface VoiceResult {
   ms: number
+  polish?: VoicePolish
+
+  /**
+   * Whisper's own text, present only when a cleanup replaced it, so the composer
+   * can offer it back.
+   */
+  raw?: string
+
+  /**
+   * The transcript to use: the cleaned text when `polish.status` is `applied`,
+   * otherwise Whisper's own.
+   */
   text: string
 }
 
@@ -11880,9 +11970,26 @@ export interface VoiceSetup {
   platform: string
 
   /**
+   * Which assistants could clean up a transcript on this machine: `claude`,
+   * `codex`, both or neither.
+   */
+  polish_assistants?: string[]
+
+  /**
    * ready, no_binary or no_model.
    */
   status: string
+
+  /**
+   * The names every transcript is repaired against without being asked.
+   */
+  vocabulary_builtin?: string[]
+
+  /**
+   * The project folder names `voice_vocabulary_projects` would add, listed so the
+   * person sees exactly what a ticked box sends.
+   */
+  vocabulary_projects?: string[]
 }
 
 /**
