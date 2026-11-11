@@ -14,7 +14,7 @@
   "main_heavy_reason_r_command_run_a": "  heavy [--reason r] -- <command…>   マシンのコンパイル枠と十分なメモリを待ってからビルドまたはテストを実行",
   "main_item_add_claim_name_child_assign": "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board 項目、Root 自身の名前、手順、文書、フェーズ",
   "main_landings_assistants_every_landing_still_owed": "  landings | assistants         未完了の着地処理すべて（--work-id: 1 項目の着地記録すべて）と各アシスタントのアカウントに残る作業",
-  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    各リースの保持者と待機者、および send、wait、handoff で指定できる Session",
+  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    各リースの保持者と待機者、および send、wait で指定できる Session（handoff は常に新しい Session を開きます）",
   "main_note_create_post_a_human_intervention": "  note create                   1 つの Session に人の対応事項を投稿",
   "main_notify_title_t_body_b_push": "  notify --title <t> --body <b>   利用者に通知をプッシュ",
   "main_open_print_sign_a_browser_in": "  open [--print]   読み取りと送信を許可してブラウザーにサインイン",

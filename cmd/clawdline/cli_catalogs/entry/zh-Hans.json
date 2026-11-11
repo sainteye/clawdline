@@ -14,7 +14,7 @@
   "main_heavy_reason_r_command_run_a": "  heavy [--reason r] -- <command…>   等待此机器的编译名额及足够内存后，运行构建或测试套件",
   "main_item_add_claim_name_child_assign": "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board 项目、Root 自身名称、步骤、文档和阶段",
   "main_landings_assistants_every_landing_still_owed": "  landings | assistants         尚待处理的所有落地工作（--work-id：某项目的所有落地记录）；各助理账号剩余的工作",
-  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    各租约的持有者或等待者；send、wait 或 handoff 可指定的 Session",
+  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    各租约的持有者或等待者；send 或 wait 可指定的 Session（handoff 始终打开新的 Session）",
   "main_note_create_post_a_human_intervention": "  note create                   向一个 Session 发布人工介入事项",
   "main_notify_title_t_body_b_push": "  notify --title <t> --body <b>   向用户推送通知",
   "main_open_print_sign_a_browser_in": "  open [--print]   授权浏览器登录，以读取和发送消息",

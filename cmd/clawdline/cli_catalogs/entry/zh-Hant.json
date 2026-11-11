@@ -18,7 +18,7 @@
   "main_heavy_reason_r_command_run_a": "  heavy [--reason r] -- <command…>   等待此機器的編譯名額及足夠記憶體後，執行建置或測試套件",
   "main_item_add_claim_name_child_assign": "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board 項目、Root 自身名稱、步驟、文件與階段",
   "main_landings_assistants_every_landing_still_owed": "  landings | assistants         尚待處理的所有落地作業（--work-id：某項目的所有落地紀錄）；各助理帳號剩餘的工作",
-  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    各租約的持有者或等候者；send、wait 或 handoff 可指定的 Session",
+  "main_leases_sessions_json_who_holds_or": "  leases | sessions [--json]    各租約的持有者或等候者；send 或 wait 可指定的 Session（handoff 一律開新的 Session）",
   "main_memory_shared_project": "  memory <list|show|add|update|forget|import>   Claude 與 Codex 共用的 Project 記憶資料",
   "main_note_create_post_a_human_intervention": "  note create                   向一個 Session 張貼人工介入事項",
   "main_secret_run": "  secret run <note-id> -- <command> [args...]   將一次性機密值交給工具的標準輸入",

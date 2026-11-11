@@ -645,7 +645,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_send_to_terminal_text_relay_a", "  send --to <terminal> [text…]  relay a message into another session's composer"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_notify_title_t_body_b_push", "  notify --title <t> --body <b>   push a notification to the person"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_landings_assistants_every_landing_still_owed", "  landings | assistants         every landing still owed (--work-id: every landing recorded for one item); what each assistant's account has left"))
-	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_leases_sessions_json_who_holds_or", "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send, wait or handoff can name"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_leases_sessions_json_who_holds_or", "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send or wait can name (handoff always opens a new Session)"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_type_session_id_text_type_straight", "  type <session-id> <text>      type straight into a terminal, recording nothing (for testing a backend)"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_doctor_capacity_drill_audit_security_fill", "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_open_print_sign_a_browser_in", "  open [--print]   sign a browser in with permission to read and send"))
