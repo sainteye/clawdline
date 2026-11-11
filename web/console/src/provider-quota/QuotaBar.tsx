@@ -99,8 +99,9 @@ function QuotaReading({ machineName, offline, mobile = false }: { machineName?: 
             ? (mobile ? `${Math.round(compact.used_percent)}%` : nextWord("quotaUsed", { percent: Math.round(compact.used_percent) }))
             : (mobile ? "" : nextWord("quotaUnknown"))
           const reading = row.credits_in_use ? `${used} · ${nextWord("quotaCreditsInUseLong")}` : used
+          const aria = reading ? `${row.label} · ${reading}` : row.label
           return <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
-            data-stale={stale(row) || undefined} data-credits={row.credits_in_use || undefined} aria-label={`${row.label} · ${reading}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
+            data-stale={stale(row) || undefined} data-credits={row.credits_in_use || undefined} aria-label={aria} aria-haspopup="dialog" aria-controls="provider-quota-detail"
             onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
             <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
             <span className="quota-compact-window">{compact ? <WindowValue window={compact} now={now} mobile={mobile} /> : <span className="quota-unknown">{used}</span>}</span>

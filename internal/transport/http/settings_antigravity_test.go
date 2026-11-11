@@ -105,7 +105,7 @@ func TestAntigravityDefaultsWithInstalledCatalog(t *testing.T) {
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	agyScript := "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf \"gemini-3.8-flash-medium\\tGemini 3.8 Flash (Medium)\\ngemini-4-argon-high\\tGemini 4 Argon (High)\\n\"\n  exit 0\nfi\nexit 1\n"
+	agyScript := "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf \"gemini-unique-test-slug\\tGemini Unique Test Model\\ngemini-4-argon-high\\tGemini 4 Argon (High)\\n\"\n  exit 0\nfi\nexit 1\n"
 	if err := os.WriteFile(filepath.Join(binDir, "agy"), []byte(agyScript), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -130,11 +130,11 @@ func TestAntigravityDefaultsWithInstalledCatalog(t *testing.T) {
 		t.Fatalf("expected antigravity models, got: %#v", models["antigravity"])
 	}
 	first := nativeModels[0].(map[string]any)
-	if first["value"] != "gemini-3.8-flash-medium" || first["label"] != "Gemini 3.8 Flash (Medium)" {
+	if first["value"] != "gemini-unique-test-slug" || first["label"] != "Gemini Unique Test Model" {
 		t.Fatalf("unexpected first model: %#v", first)
 	}
 
-	saveResp := defaultModelsCall(t, s, http.MethodPost, "application/json", `{"antigravity_default_model":"gemini-3.8-flash-medium"}`)
+	saveResp := defaultModelsCall(t, s, http.MethodPost, "application/json", `{"antigravity_default_model":"gemini-unique-test-slug"}`)
 	if saveResp.Code != http.StatusOK {
 		t.Fatalf("save antigravity default model: %d %s", saveResp.Code, saveResp.Body)
 	}
@@ -142,7 +142,39 @@ func TestAntigravityDefaultsWithInstalledCatalog(t *testing.T) {
 	if err := json.Unmarshal(saveResp.Body.Bytes(), &savedAnswer); err != nil {
 		t.Fatal(err)
 	}
-	if savedAnswer["antigravity_default_model"] != "gemini-3.8-flash-medium" {
+	if savedAnswer["antigravity_default_model"] != "gemini-unique-test-slug" {
 		t.Fatalf("default model not saved: %#v", savedAnswer)
+	}
+}
+
+func TestAntigravityDefaultsWithFailingCatalogReturnsEmpty(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	agyScript := "#!/bin/sh\nexit 3\n"
+	if err := os.WriteFile(filepath.Join(binDir, "agy"), []byte(agyScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", binDir)
+
+	s := &Server{cfg: config.Config{Dir: filepath.Join(home, "next")}}
+	response := defaultModelsCall(t, s, http.MethodGet, "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("get default models: %d %s", response.Code, response.Body)
+	}
+	var answer map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	models, ok := answer["models"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing models map: %#v", answer)
+	}
+	nativeModels, ok := models["antigravity"].([]any)
+	if ok && len(nativeModels) > 0 {
+		t.Fatalf("expected empty antigravity models on failure, got: %#v", nativeModels)
 	}
 }

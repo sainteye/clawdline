@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -325,8 +326,10 @@ func antigravityExecutable(home string) string {
 		filepath.Join(home, ".local", "bin", "agy.exe"),
 	)
 	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
-			return candidate
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			if runtime.GOOS == "windows" || info.Mode()&0111 != 0 {
+				return candidate
+			}
 		}
 	}
 	return ""
@@ -337,23 +340,8 @@ var (
 	antigravityModelsCache []Model
 	antigravityModelsTime  time.Time
 	antigravityModelsExe   string
+	antigravityModelsErr   bool
 )
-
-var AntigravityFallbackModels = []Model{
-	{ID: "gemini-3.8-flash-medium", Name: "Gemini 3.8 Flash (Medium)", Command: "gemini-3.8-flash-medium"},
-	{ID: "gemini-3.8-flash-high", Name: "Gemini 3.8 Flash (High)", Command: "gemini-3.8-flash-high"},
-	{ID: "gemini-3.8-flash-low", Name: "Gemini 3.8 Flash (Low)", Command: "gemini-3.8-flash-low"},
-	{ID: "gemini-4-argon-medium", Name: "Gemini 4 Argon (Medium)", Command: "gemini-4-argon-medium"},
-	{ID: "gemini-4-argon-high", Name: "Gemini 4 Argon (High)", Command: "gemini-4-argon-high"},
-	{ID: "gemini-4-argon-low", Name: "Gemini 4 Argon (Low)", Command: "gemini-4-argon-low"},
-	{ID: "claude-opus-5-5-medium", Name: "Claude Opus 5.5 (Medium)", Command: "claude-opus-5-5-medium"},
-	{ID: "claude-opus-5-5-high", Name: "Claude Opus 5.5 (High)", Command: "claude-opus-5-5-high"},
-	{ID: "claude-opus-5-5-low", Name: "Claude Opus 5.5 (Low)", Command: "claude-opus-5-5-low"},
-	{ID: "claude-sonnet-5-5-medium", Name: "Claude Sonnet 5.5 (Medium)", Command: "claude-sonnet-5-5-medium"},
-	{ID: "claude-sonnet-5-5-high", Name: "Claude Sonnet 5.5 (High)", Command: "claude-sonnet-5-5-high"},
-	{ID: "claude-sonnet-5-5-low", Name: "Claude Sonnet 5.5 (Low)", Command: "claude-sonnet-5-5-low"},
-	{ID: "gpt-oss-120b-medium", Name: "GPT-OSS 120B (Medium)", Command: "gpt-oss-120b-medium"},
-}
 
 func parseAntigravityModels(output []byte) []Model {
 	var models []Model
@@ -397,17 +385,25 @@ func validAntigravityModelSlug(raw string) bool {
 }
 
 // AntigravityModels queries the models available through the installed CLI.
-// An uninstalled CLI returns nil without querying or faking models.
+// An uninstalled or failing CLI returns nil without faking models.
 func AntigravityModels(home string) []Model {
 	exe := antigravityExecutable(home)
 	if exe == "" {
 		return nil
 	}
 	antigravityModelsMu.Lock()
-	defer antigravityModelsMu.Unlock()
-	if exe == antigravityModelsExe && time.Since(antigravityModelsTime) < 5*time.Minute && len(antigravityModelsCache) > 0 {
-		return append([]Model(nil), antigravityModelsCache...)
+	if exe == antigravityModelsExe {
+		if !antigravityModelsErr && time.Since(antigravityModelsTime) < 5*time.Minute && len(antigravityModelsCache) > 0 {
+			cached := append([]Model(nil), antigravityModelsCache...)
+			antigravityModelsMu.Unlock()
+			return cached
+		}
+		if antigravityModelsErr && time.Since(antigravityModelsTime) < 1*time.Minute {
+			antigravityModelsMu.Unlock()
+			return nil
+		}
 	}
+	antigravityModelsMu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -420,14 +416,21 @@ func AntigravityModels(home string) []Model {
 	if err := cmd.Run(); err == nil {
 		parsed := parseAntigravityModels(stdout.Bytes())
 		if len(parsed) > 0 {
+			antigravityModelsMu.Lock()
 			antigravityModelsCache = parsed
 			antigravityModelsTime = time.Now()
 			antigravityModelsExe = exe
+			antigravityModelsErr = false
+			antigravityModelsMu.Unlock()
 			return append([]Model(nil), parsed...)
 		}
 	}
-	if len(antigravityModelsCache) > 0 && exe == antigravityModelsExe {
-		return append([]Model(nil), antigravityModelsCache...)
-	}
-	return append([]Model(nil), AntigravityFallbackModels...)
+
+	antigravityModelsMu.Lock()
+	antigravityModelsCache = nil
+	antigravityModelsTime = time.Now()
+	antigravityModelsExe = exe
+	antigravityModelsErr = true
+	antigravityModelsMu.Unlock()
+	return nil
 }
