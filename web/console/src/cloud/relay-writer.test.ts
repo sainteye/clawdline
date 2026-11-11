@@ -3118,3 +3118,59 @@ test("closing Info during source resolution sends no read", async () => {
   assert.equal(response.status >= 400, true)
   assert.deepEqual(client.calls, [])
 })
+
+// The voice copilot is opened from one Session's composer and asked about
+// another. Its reads name the Session they mean with this header; without it a
+// read of an unopened Session is still refused, as before.
+function unopenedReadSeam() {
+  const machine = "mac-a", opened = "%17", other = "%2"
+  const generation = "d".repeat(32)
+  class PinnedClient extends FakeClient {
+    async readForGeneration(target: { machineID: string; sessionID: string; executionGeneration: string },
+      word: string, fields: Record<string, unknown>) {
+      this.calls.push(["readForGeneration", target, word, fields])
+      if (word === "screen") return { screen: { id: target.sessionID, pending: false, readable: true, text: "hello\n" } }
+      if (word === "transcript") return { id: target.sessionID, entries: [{ role: "user", text: "goal" }], signature: "s", evidence: "transcript" }
+      throw new Error("unexpected word " + word)
+    }
+  }
+  const client = new PinnedClient()
+  const reader = new RelayReader(machine, {
+    fleetTarget: () => ({ machineID: machine, sessionID: opened, executionGeneration: EXECUTION }),
+    resolveSession: async (namedMachine, session) =>
+      namedMachine === machine && session === other ? { machineID: machine, sessionID: other, executionGeneration: generation } : null,
+  })
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "unopened-read" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  return { reader, client, machine, other, generation }
+}
+
+test("the copilot reads another Session's screen while one Session is open", async () => {
+  const f = unopenedReadSeam()
+  const path = `/v1/sessions/${encodeURIComponent(f.other)}/screen`
+  assert.equal((await f.reader.fetch(path)).status, 409, "an unmarked read stays pinned to the opened Session")
+  const res = await f.reader.fetch(path, { headers: { "X-Clawdline-Unopened-Read": "1" } })
+  assert.equal(res.status, 200)
+  assert.equal(((await json(res)) as { screen: { text: string } }).screen.text, "hello\n")
+  const call = f.client.calls.find(([name, , word]) => name === "readForGeneration" && word === "screen")
+  assert.deepEqual(call?.[1], { machineID: f.machine, sessionID: f.other, executionGeneration: f.generation })
+})
+
+test("the copilot reads another Session's transcript while one Session is open", async () => {
+  const f = unopenedReadSeam()
+  const res = await f.reader.fetch(`/v1/transcript?session=${encodeURIComponent(f.other)}`, { headers: { "X-Clawdline-Unopened-Read": "1" } })
+  assert.equal(res.status, 200)
+  const page = await json(res)
+  assert.equal(page.id, f.other)
+  assert.deepEqual(page.entries, [{ role: "user", text: "goal" }])
+  const call = f.client.calls.find(([name, , word]) => name === "readForGeneration" && word === "transcript")
+  assert.deepEqual(call?.[1], { machineID: f.machine, sessionID: f.other, executionGeneration: f.generation })
+})
+
+test("an unopened read of a Session the machine cannot verify is refused", async () => {
+  const f = unopenedReadSeam()
+  const res = await f.reader.fetch(`/v1/sessions/${encodeURIComponent("%99")}/screen`, { headers: { "X-Clawdline-Unopened-Read": "1" } })
+  assert.equal(res.status, 409)
+  assert.equal(f.client.calls.some(([name]) => name === "readForGeneration"), false)
+})
