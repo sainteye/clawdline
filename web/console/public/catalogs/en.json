@@ -9171,6 +9171,7 @@
   "next.copilotCost": "This call: {cost} · {responses} responses",
   "next.copilotCostNote": "OpenAI's listed {model} rates; Whisper captions are not included",
   "next.copilotCostUnpriced": "This call: at least {cost} · {responses} responses (one model has no listed rate here)",
+  "next.copilotOrb": "A blue cloud that moves with your voice and the copilot's",
   "next.copilotRemembered": "Remembers {count} lines from earlier calls",
   "next.copilotForget": "Forget earlier calls",
   "next.copilotSettingsTitle": "Voice copilot",
@@ -11184,5 +11185,9 @@
   "capacityRow.console.copilot_recap_pages.what": "How far back the voice copilot reads a Session's conversation to tell you what it completed.",
   "capacityRow.console.copilot_recap_pages.full": "A longer Session is recapped from its recent part, and the copilot says so.",
   "capacityRow.console.copilot_screen_reads.what": "How many times the voice copilot asks for a Session's screen while the machine is still capturing it.",
-  "capacityRow.console.copilot_screen_reads.full": "The copilot says the screen could not be read in time; ask again in a moment."
+  "capacityRow.console.copilot_screen_reads.full": "The copilot says the screen could not be read in time; ask again in a moment.",
+  "capacityRow.console.copilot_orb_frames_per_second.what": "How many times a second the voice copilot's cloud orb is drawn.",
+  "capacityRow.console.copilot_orb_frames_per_second.full": "Faster screens skip the extra frames; the orb moves the same and uses less battery.",
+  "capacityRow.console.copilot_orb_pixel_ratio.what": "How sharp the voice copilot's cloud orb is drawn on a dense screen.",
+  "capacityRow.console.copilot_orb_pixel_ratio.full": "A denser screen draws the orb at this sharpness and scales it; a soft cloud looks the same."
 }

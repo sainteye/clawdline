@@ -9171,6 +9171,7 @@
   "next.copilotCost": "這次通話：{cost} · {responses} 次回答",
   "next.copilotCostNote": "依 OpenAI 公布的 {model} 單價計算，不含 Whisper 字幕費用",
   "next.copilotCostUnpriced": "這次通話：至少 {cost} · {responses} 次回答（有模型沒有單價資料）",
+  "next.copilotOrb": "隨你和副駕駛的聲音流動的藍色雲霧",
   "next.copilotRemembered": "記得之前通話的 {count} 句對話",
   "next.copilotForget": "忘記之前的對話",
   "next.copilotSettingsTitle": "語音副駕駛",
@@ -11184,5 +11185,9 @@
   "capacityRow.console.copilot_recap_pages.what": "語音副駕駛回顧一個 Session 完成了什麼時，最多往回讀多少紀錄。",
   "capacityRow.console.copilot_recap_pages.full": "很長的 Session 只回顧最近的部分，副駕駛也會告訴你。",
   "capacityRow.console.copilot_screen_reads.what": "機器還在擷取 Session 畫面時，語音副駕駛最多再問幾次。",
-  "capacityRow.console.copilot_screen_reads.full": "副駕駛會說畫面沒有及時讀到；過一下再問一次就好。"
+  "capacityRow.console.copilot_screen_reads.full": "副駕駛會說畫面沒有及時讀到；過一下再問一次就好。",
+  "capacityRow.console.copilot_orb_frames_per_second.what": "語音副駕駛的雲霧光球每秒最多畫幾次。",
+  "capacityRow.console.copilot_orb_frames_per_second.full": "更新率更高的螢幕會略過多的畫面；光球動起來一樣，比較省電。",
+  "capacityRow.console.copilot_orb_pixel_ratio.what": "在高解析度螢幕上，語音副駕駛的雲霧光球最多畫得多精細。",
+  "capacityRow.console.copilot_orb_pixel_ratio.full": "更高解析度的螢幕會用這個精細度畫好再放大；柔和的雲霧看起來沒有差別。"
 }

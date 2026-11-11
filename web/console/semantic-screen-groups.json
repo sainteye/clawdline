@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11184,
+  "englishContentKeys": 11189,
   "riskKeys": 4925,
-  "nonRiskCount": 6259,
+  "nonRiskCount": 6264,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 450,
+      "count": 454,
       "sources": [
         null
       ],
@@ -566,6 +566,10 @@
         "capacityRow.console.copilot_list_transcript_reads.what",
         "capacityRow.console.copilot_memory_turns.full",
         "capacityRow.console.copilot_memory_turns.what",
+        "capacityRow.console.copilot_orb_frames_per_second.full",
+        "capacityRow.console.copilot_orb_frames_per_second.what",
+        "capacityRow.console.copilot_orb_pixel_ratio.full",
+        "capacityRow.console.copilot_orb_pixel_ratio.what",
         "capacityRow.console.copilot_recap_pages.full",
         "capacityRow.console.copilot_screen_reads.what",
         "capacityRow.console.direct_history_machines.what",
@@ -3808,7 +3812,7 @@
     },
     {
       "name": "next / other",
-      "count": 755,
+      "count": 756,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3884,6 +3888,7 @@
         "next.copilotMinimize",
         "next.copilotModelHint",
         "next.copilotModelLabel",
+        "next.copilotOrb",
         "next.copilotRemembered",
         "next.copilotSettingsTitle",
         "next.copilotSourceHint",
