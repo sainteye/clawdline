@@ -14,7 +14,7 @@ import { machineManager } from "./machine-manager.js"
 import { createPortal, flushSync } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import App from "../App.js"
-import { CLOSE_EXECUTION_CHANGED, COPILOT_OPEN } from "../overlays/events.js"
+import { CLOSE_EXECUTION_CHANGED, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
 import { NAVIGATION_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
@@ -1795,6 +1795,25 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     document.addEventListener(COPILOT_OPEN, onOpen)
     return () => document.removeEventListener(COPILOT_OPEN, onOpen)
   }, [openStarted])
+
+  // The voice copilot asking where it may start a Session: the machines this
+  // page offers, with whether each is online and which one it reads.
+  const copilotMachines = useRef<{ id: string; name: string; online: boolean; current: boolean }[]>([])
+  copilotMachines.current = quickMachines.map((machine) => ({
+    id: machine.id, name: machine.name || machine.label || machine.id,
+    online: machine.freshness === "current", current: machine.id === reading,
+  }))
+  useEffect(() => {
+    const onAsk = (event: Event) => {
+      const detail = (event as CustomEvent<{ answer?: (machines: unknown[]) => void }>).detail
+      if (!detail?.answer) return
+      const answer = detail.answer
+      detail.answer = undefined
+      answer(copilotMachines.current)
+    }
+    document.addEventListener(COPILOT_MACHINES, onAsk)
+    return () => document.removeEventListener(COPILOT_MACHINES, onAsk)
+  }, [])
 
   // The row the header names: the machine the console is reading, under the
   // account's own name for it. While the list is still arriving it is the row

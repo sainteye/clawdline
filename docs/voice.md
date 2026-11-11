@@ -117,7 +117,18 @@ Session is idle: such a question is prose, not a menu, so the Session's state do
 `send_message_to_session`. `answer_session_question` presses one option of a waiting Session's
 question only after the person names it; the press carries the question's fingerprint, so the
 machine refuses it if the screen asks something else by then. Over Cloud it resolves that
-Session's current execution as a newly started Session's is. **Writes go to the Session under discussion.** `send_message_to_session`,
+Session's current execution as a newly started Session's is. **Starting a Session.** `list_machines` names the machines the page offers (on Cloud, CloudGate
+answers with each machine's freshness; the local console has its own only) and carries the
+current machine's projects, installed assistants and their default and offered models
+(`/v1/places`, `/v1/settings/default-models`); `list_projects` reads another machine's with
+`?machine=`. `start_session` posts `/v1/places/<id>/start/<assistant>[/<model>]` only after the
+copilot has asked for whatever of machine, project, assistant and model it did not know, one at a
+time, and read the whole choice back; the project it names must be that id's. `open_session` waits
+up to five seconds for a just-started Session to reach the list. On 2026-11-12, before the
+projects came with the machine list, the copilot asked "專案A 還是專案B"; with them it named real
+projects and started codex in clawdline.
+
+**Writes go to the Session under discussion.** `send_message_to_session`,
 `answer_session_question` and `close_session` accept only a Session's id or its whole name (never
 an assistant type or part of a name, which the read tools accept), and require `session_label`, the
 name the copilot said aloud, which must be that Session's. The call remembers the Session it last
@@ -144,7 +155,7 @@ person is asked to decide with each choice's cost.
 
 **Speed and length.** `audio.output.speed` is the machine's choice of 0.8, 0.9 (the default),
 1.0 or 1.1; it slows the generated audio, and the instructions also ask for a pause between
-sentences. Ordinary answers stay at three sentences while **Short answers** is on (the default; off lets them
+sentences. The Session summary names only the kinds it has (no "0 個已完成"). Ordinary answers stay at three sentences while **Short answers** is on (the default; off lets them
 run in full); a report on Sessions goes through each one in
 two or three (its goal, what it delivered recently, what it is doing now), from each busy row's
 `goal` (the person's newest ask), `recent` (its last two delivery summaries) and `latest`. On

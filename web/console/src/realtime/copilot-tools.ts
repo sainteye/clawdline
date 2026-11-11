@@ -43,6 +43,8 @@ export interface ToolDeps {
   briefing?: () => Promise<string | null>
   /** Opens one Session on the page the call runs in; true once it is on screen. */
   openSession?: (id: string) => Promise<boolean>
+  /** The machines a new Session can be started on, as the page knows them. */
+  machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
   /** The Session this call is talking about: the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
   /** This call's speed and answer length now, and a way to change them for this call and the next. */
@@ -104,6 +106,15 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）就照實說原因，不要再試。
 - send_message_to_session：替使用者把文字送進某個 Session。
+【開新的 Session】
+- 使用者要開新 Session 時，第一步一定先呼叫 list_machines，接著呼叫 list_projects，然後才開口問。機器、專案、助理、模型的名稱只能用這兩個工具回傳的，絕對不要自己編名稱或舉不存在的例子。
+- 要確定四件事：哪台機器、哪個專案、用哪個助理、用哪個模型。缺哪一項就問哪一項，一次只問一項，不要自己猜。
+- 機器：list_machines 只有一台就直接用它、不要問；有兩台以上而使用者沒說，就問要開在哪一台（只列在線的）。
+- 專案：呼叫 list_projects，依使用者說的名稱找；找不到或有好幾個像的，就唸兩三個最接近的名稱請他選。
+- 助理：使用者沒說就問要用 Claude Code、Codex、Gemini 還是 Grok（只列 list_projects 說有安裝的）。
+- 模型：使用者沒說就問「要用預設的某某模型嗎？」；說好就不填 model。
+- 四件事都確定後，先講「要在『機器』的『專案』用『助理（模型）』開一個新的 Session，對嗎？」，使用者說好才呼叫 start_session。開好後說一句已經開好，並問要不要切過去看（open_session）。
+
 【送出、回答、關閉之前：一定要對準正在討論的那個 Session】
 - 這三個動作只能用 list_sessions 的 id 或完整名稱，並且在 session_label 填你跟使用者講的那個 Session 名稱。
 - 預設對象就是使用者目前正在跟你討論的那個 Session；不要因為名稱相近或助理種類相同就換成別的。
@@ -128,7 +139,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - 有【整理好的現況匯報】時，第一句就用它的整體結論（例如有幾件事要使用者處理），不要改用快照的 summary 數字：快照只看得出狀態，匯報才判斷了哪些事要使用者處理，兩者混用會前後矛盾。
 
 【回報清單】
-- 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」
+- 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」數量是 0 的分類不要講。
 - 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用兩到三句講：它的目標（goal）、最近完成了什麼（recent）、現在正在做什麼（latest）。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
 - 使用者要「工作中的 Session 的狀況」時，這一段可以長，寧可講清楚也不要一句帶過；一個 Session 講完停一下再講下一個。
 
@@ -315,6 +326,37 @@ export const COPILOT_TOOLS = [
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
       },
       required: ['session_id', 'session_label'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'list_machines',
+    description: '列出可以開新 Session 的機器（名稱、在不在線、是不是目前這個畫面讀的那台）。使用者要開新 Session、但沒說哪台機器時先呼叫。',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function',
+    name: 'list_projects',
+    description: '列出某台機器上的專案（名稱與 id）、已安裝的助理，以及各助理的預設模型與可選模型。開新 Session 前用來確認專案、助理和模型。',
+    parameters: {
+      type: 'object',
+      properties: { machine_id: { type: 'string', description: 'list_machines 回傳的 id；省略就是目前這台' } },
+    },
+  },
+  {
+    type: 'function',
+    name: 'start_session',
+    description: '在指定機器的指定專案開一個新的 AI 程式開發 Session。只有在機器、專案、助理都確定、模型也確定（或使用者同意用預設），而且你已經念出完整內容、使用者說好之後才呼叫。',
+    parameters: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: 'list_projects 回傳的專案 id' },
+        project_label: { type: 'string', description: '你跟使用者講的專案名稱，必須就是這個 id 的專案' },
+        assistant: { type: 'string', description: 'list_projects 回傳的助理 id，例如 claude、codex、antigravity、grok' },
+        model: { type: 'string', description: 'list_projects 回傳的模型 value；用預設模型就省略' },
+        machine_id: { type: 'string', description: 'list_machines 回傳的機器 id；省略就是目前這台' },
+      },
+      required: ['project_id', 'project_label', 'assistant'],
     },
   },
   {
@@ -724,6 +766,12 @@ function progressFields(p: Progress | undefined): Record<string, unknown> {
   }
 }
 
+/** "4 個 Session：2 個工作中、2 個閒置": a kind with none is not said (2026-11-12). */
+export function countSummary(total: number, kinds: [number, string][]): string {
+  const said = kinds.filter(([n]) => n > 0).map(([n, words]) => `${n} ${words}`)
+  return said.length ? `${total} 個 Session：${said.join('、')}` : `${total} 個 Session`
+}
+
 function waits(r: CopilotSessionRow): boolean {
   return r.state === 'waiting' || r.work_state === 'waiting' || !!r.question
 }
@@ -749,7 +797,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     ...(r.notes ? { notes: r.notes } : {}),
   })
   const out = {
-    summary: `${rows.length} 個 Session：${needs.length} 個等你回應、${working.length} 個工作中、${done.length} 個已完成、${idle.length} 個閒置`,
+    summary: countSummary(rows.length, [[needs.length, '個等你回應'], [working.length, '個工作中'], [done.length, '個已完成'], [idle.length, '個閒置']]),
     needs_you: needs.map((r) => ({
       ...brief(r),
       ...(r.question ? { question: r.question } : {}),
@@ -1249,7 +1297,15 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  let found = resolveSession(read.rows, wanted)
+  // A Session the copilot just started reaches the list a moment later.
+  for (let tries = 0; 'error' in found && /^(%\d+|owned:)/.test(wanted.trim()) && tries < NEW_SESSION_READS; tries++) {
+    await deps.sleep(NEW_SESSION_INTERVAL_MS)
+    const again = await readRows(deps)
+    if ('error' in again) break
+    read.rows = again.rows
+    found = resolveSession(read.rows, wanted)
+  }
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
@@ -1326,6 +1382,10 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
   logs.push({ level: 'info', text: `已替「${row.label}」選了 ${choice.n}. ${choice.label}` })
   return { answered: true, label: row.label, question: row.question ?? '', chose: `${choice.n}. ${choice.label}` }
 }
+
+/** How long open_session waits for a just-started Session to reach the list. */
+export const NEW_SESSION_READS = 5
+export const NEW_SESSION_INTERVAL_MS = 1000
 
 /** How many Sessions' notes one ask reads when none is named. */
 export const NOTES_SESSIONS = 6
@@ -1467,6 +1527,88 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
   return { closed: true, label: row.label }
 }
 
+async function listMachines(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
+  const machines = deps.machines ? await deps.machines() : []
+  logs.push({ level: 'info', text: `可以開 Session 的機器：${machines.length || 1} 台` })
+  const list = machines.length ? machines : [{ id: '', name: '這台機器', online: true, current: true }]
+  // The current machine's projects come with the list, so the first question
+  // names real projects (a bare list once led to "專案A 還是專案B").
+  const here = await listProjects(deps, logs, '')
+  return { machines: list, current_machine: here }
+}
+
+interface PlacesAnswer {
+  places?: { id?: unknown; label?: unknown; repo?: unknown }[]
+  assistants?: { id?: unknown; label?: unknown; installed?: unknown; availability?: unknown }[]
+}
+
+async function listProjects(deps: ToolDeps, logs: ToolLog[], machine: string): Promise<unknown> {
+  const q = machine ? `?machine=${encodeURIComponent(machine)}` : ''
+  const res = await deps.fetch(`/v1/places${q}`)
+  if (!res.ok) {
+    const why = await refusalText(res)
+    const error = `讀不到專案清單（HTTP ${res.status}${why ? `：${why}` : ''}）`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  const body = (await res.json()) as PlacesAnswer
+  const projects = (body.places ?? []).filter((p) => str(p.id)).map((p) => ({ id: str(p.id), label: str(p.label) || str(p.id) }))
+  // An assistant this machine says is not installed is not offered.
+  const assistants = (body.assistants ?? []).filter((a) => str(a.id) && a.installed !== false)
+    .map((a) => ({ id: str(a.id), label: str(a.label) || str(a.id) }))
+  let models: Record<string, { default?: string; choices: string[] }> = {}
+  if (!machine) {
+    try {
+      const m = await deps.fetch('/v1/settings/default-models')
+      if (m.ok) {
+        const d = (await m.json()) as Record<string, unknown> & { models?: Record<string, { value?: unknown; label?: unknown }[]> }
+        for (const a of assistants) {
+          const list = Array.isArray(d.models?.[a.id]) ? d.models![a.id] : []
+          models[a.id] = {
+            ...(str(d[`${a.id}_default_model`]) ? { default: str(d[`${a.id}_default_model`]) } : {}),
+            choices: list.map((x) => str(x.value)).filter(Boolean).slice(0, 12),
+          }
+        }
+      }
+    } catch {
+      // refusal-ok: without the model list a Session still starts on the assistant's own default.
+      models = {}
+    }
+  }
+  logs.push({ level: 'info', text: `讀到 ${projects.length} 個專案、${assistants.length} 種助理` })
+  return { projects, assistants, ...(Object.keys(models).length ? { models } : { note: '這台機器的模型清單讀不到；不填 model 就用預設' }) }
+}
+
+async function startSession(deps: ToolDeps, logs: ToolLog[], args: Record<string, unknown>): Promise<unknown> {
+  const project = str(args.project_id), said = str(args.project_label), assistant = str(args.assistant)
+  const model = str(args.model), machine = str(args.machine_id)
+  if (!project || !assistant) return { error: '還不知道要開在哪個專案或用哪個助理' }
+  const q = machine ? `?machine=${encodeURIComponent(machine)}` : ''
+  const listed = await deps.fetch(`/v1/places${q}`)
+  if (!listed.ok) return { error: `讀不到專案清單（HTTP ${listed.status}）` }
+  const place = ((await listed.json()) as PlacesAnswer).places?.find((p) => str(p.id) === project)
+  if (!place) return { error: `這台機器沒有 id 為「${project}」的專案；請用 list_projects 確認` }
+  if (!sameName(said, str(place.label))) return { error: `你說的是「${said}」，但這個 id 是「${str(place.label)}」專案；沒有開。請確認專案` }
+  let path = `/v1/places/${encodeURIComponent(project)}/start/${encodeURIComponent(assistant)}`
+  if (model) path += `/${encodeURIComponent(model)}`
+  const res = await deps.fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))() },
+    body: '{}',
+  })
+  if (!res.ok) {
+    const why = await refusalText(res)
+    const error = `沒有開成新的 Session（HTTP ${res.status}${why ? `：${why}` : ''}）`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  const answer = (await res.json().catch(() => ({}))) as { id?: unknown }
+  const id = str(answer.id)
+  if (id) deps.focus?.set(id)
+  logs.push({ level: 'info', text: `已在「${str(place.label)}」開了新的 ${assistant} Session` })
+  return { started: true, project: str(place.label), assistant, ...(model ? { model } : { model: '預設' }), ...(id ? { session_id: id } : {}) }
+}
+
 async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   if (!deps.briefing) {
     logs.push({ level: 'error', text: '這通電話沒有機器整理的匯報' })
@@ -1508,6 +1650,9 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
     else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
     else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true)
+    else if (name === 'list_machines') result = await listMachines(deps, logs)
+    else if (name === 'list_projects') result = await listProjects(deps, logs, str(args.machine_id))
+    else if (name === 'start_session') result = await startSession(deps, logs, args)
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message), str(args.session_label), args.switch_confirmed === true)
     else {
       result = { error: `未知的工具：${name}` }
