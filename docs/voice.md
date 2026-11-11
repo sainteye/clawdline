@@ -113,7 +113,12 @@ Session is idle: such a question is prose, not a menu, so the Session's state do
 
 **What the copilot can read and do.** `list_sessions`, `get_session_summary`, `get_session_recap`
 (the whole conversation, paged back at most 5 pages), `get_session_activity`,
-`explain_session_reply`, `get_session_screen`, `open_session` and `send_message_to_session`. `open_session` opens the
+`explain_session_reply`, `get_session_screen`, `open_session`, `answer_session_question`, `get_session_notes` and
+`send_message_to_session`. `answer_session_question` presses one option of a waiting Session's
+question only after the person names it; the press carries the question's fingerprint, so the
+machine refuses it if the screen asks something else by then. Over Cloud it resolves that
+Session's current execution as a newly started Session's is. `get_session_notes` reads the unresolved
+notes agents left for the person (secret handoffs excepted) and does not reply to them. `open_session` opens the
 Session on the page the call runs in, whichever browser that is: the local console opens it as a
 press in the list would, and on Cloud the reading machine's current execution of it is resolved
 first, as for a started Session (`realtime/copilot-open.ts`).
@@ -123,6 +128,15 @@ The other reads keep 600 characters of a reply, which loses the reasoning of a l
 beginning and end) with the person's ask it answers, and the instructions have the copilot
 explain it at length: the problem, each cause in plain words, the proposed fix, and what the
 person is asked to decide with each choice's cost.
+
+**Speed and length.** `audio.output.speed` is the machine's choice of 0.8, 0.9 (the default),
+1.0 or 1.1; it slows the generated audio, and the instructions also ask for a pause between
+sentences. Ordinary answers stay at three sentences while **Short answers** is on (the default; off lets them
+run in full); a report on Sessions goes through each one in
+two or three (its goal, what it delivered recently, what it is doing now), from each busy row's
+`goal` (the person's newest ask), `recent` (its last two delivery summaries) and `latest`. On
+2026-11-12 "how are the working Sessions" was answered "four Sessions are working" and nothing
+else until that exception was stated first.
 
 **The voice.** One of Realtime's ten voices, `marin` unless chosen otherwise; a call cannot change
 its voice once it has spoken, so a new choice applies from the next call. **Listen** plays one line

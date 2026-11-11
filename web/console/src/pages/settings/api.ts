@@ -228,12 +228,15 @@ export interface CopilotSettingsSnapshot {
   model: string
   eagerness: string
   voice: string
+  speed: string
   extra_instructions: string
   briefing: boolean
+  brief: boolean
   briefing_assistant: string
   models: string[]
   eagernesses: string[]
   voices: string[]
+  speeds: string[]
   briefing_assistants: string[]
   max_extra_instructions: number
 }
@@ -243,9 +246,11 @@ export interface CopilotSettingsChange {
   model?: string
   eagerness?: string
   voice?: string
+  speed?: string
   extra_instructions?: string
   briefing_assistant?: string
   briefing?: boolean
+  brief?: boolean
 }
 
 async function callCopilotSettings(init: RequestInit): Promise<CopilotSettingsSnapshot> {
