@@ -3286,7 +3286,7 @@
     "internal/adapters/nextconfig/nextconfig.go": "6ad923c49a050feeb7796acf3bb5050f00458ee1382e2175f9a2eb2183e2ad7e",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
-    "internal/adapters/planner/polish.go": "37cba4274623c27e3bafb03145eaab27804aa0e722b358bcbba7264dc80e35c8",
+    "internal/adapters/planner/polish.go": "fd7fe181dab1a58e020205db4e3e25add674169ef2d42edc79137abda1be9ae2",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "42be85313d854b53a9983e1d62b2221c8e288893532573ab4221670221908c18",
