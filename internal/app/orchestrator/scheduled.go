@@ -35,6 +35,9 @@ type ScheduledRun struct {
 	// CloseTab is the schedule's close_tab: what the run's end does to the
 	// tab it opens (tabPolicy). Empty is the schedule default, on_success.
 	CloseTab string
+	// ArchiveConversation is the schedule's archive_codex_conversation, for
+	// a Codex run: the conversation is archived once its tab is closed.
+	ArchiveConversation bool
 	// Template is the schedule's `task` object as it is stored. It becomes
 	// the task.json the task is admitted from, with the three keys the broker
 	// owns — protocol, id and root — set over whatever the template says.
@@ -103,9 +106,10 @@ func (b *Broker) DispatchScheduled(ctx context.Context, run ScheduledRun) (Sched
 		}
 	}
 	out, err := b.Dispatch(ctx, DispatchRequest{
-		TaskID:   run.TaskID,
-		Secret:   NewSecret(),
-		Schedule: &ScheduleOrigin{ID: run.ScheduleID, Title: run.Title, CloseTab: run.CloseTab, Investigation: run.Investigation},
+		TaskID: run.TaskID,
+		Secret: NewSecret(),
+		Schedule: &ScheduleOrigin{ID: run.ScheduleID, Title: run.Title, CloseTab: run.CloseTab,
+			ArchiveConversation: run.ArchiveConversation, Investigation: run.Investigation},
 	})
 	if err == nil {
 		return ScheduledDispatch{Dispatched: out}, nil
@@ -121,7 +125,8 @@ func scheduleOf(r Record) *ScheduleOrigin {
 	if r.ScheduleID == "" {
 		return nil
 	}
-	return &ScheduleOrigin{ID: r.ScheduleID, Title: r.ScheduleTitle, CloseTab: r.ScheduleCloseTab, Investigation: r.Investigation}
+	return &ScheduleOrigin{ID: r.ScheduleID, Title: r.ScheduleTitle, CloseTab: r.ScheduleCloseTab,
+		ArchiveConversation: r.ScheduleArchiveConversation, Investigation: r.Investigation}
 }
 
 func sameInvestigationOrigin(a, b *schedulewebhook.InvestigationRef) bool {

@@ -60,6 +60,7 @@ export interface MoveRecord {
   close_tab?: string
   catch_up_hours?: number
   notify_on_failure?: boolean
+  archive_codex_conversation?: boolean
   fired_at?: number
   webhook_binding_availability?: string
   webhook_hook_id?: string
@@ -242,6 +243,7 @@ export function recordBody(record: MoveRecord, place: string, enabled: boolean):
   if (record.close_tab !== undefined) body.close_tab = record.close_tab
   if (record.catch_up_hours !== undefined) body.catch_up_hours = record.catch_up_hours
   if (record.notify_on_failure !== undefined) body.notify_on_failure = record.notify_on_failure
+  if (record.archive_codex_conversation !== undefined) body.archive_codex_conversation = record.archive_codex_conversation
   if (task.timeout_minutes !== undefined) body.timeout_minutes = task.timeout_minutes
   return body
 }
@@ -319,7 +321,7 @@ export function targetBody(form: Record<string, unknown>, record: MoveRecord, pl
  */
 export function refusedByOlderTarget(error: unknown): boolean {
   const message = error && typeof error === "object" ? (error as { message?: unknown }).message : undefined
-  return typeof message === "string" && /unknown field:[^.]*\b(template|permission_mode|time_zone)\b/.test(message)
+  return typeof message === "string" && /unknown field:[^.]*\b(template|permission_mode|time_zone|archive_codex_conversation)\b/.test(message)
 }
 
 /** The three writes, each to the machine it names. `create` routes by the body's place. */

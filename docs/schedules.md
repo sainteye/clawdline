@@ -451,6 +451,58 @@ Codex 的舊 run 不回補，只有新的 run 從讀數記下對話。
 
 `TestAFinishedRunIsResumedByItsChildsConversation`、`TestAChildConversationIsFoundByItsFirstLine`。
 
+## Codex runs leave Codex's list (2026-11-11)
+
+The problem: every run of a schedule is a new conversation, and Codex lists each one as a chat of its
+own. An hourly Codex schedule adds twenty-four chats a day to the list a person works from in the
+Codex app. Reusing one conversation for every run was considered and rejected: the conversation
+grows without bound, each run's CHILD.md, secret and task id stay in the context of the next one,
+and the broker, usage attribution and resume all assume one conversation per task.
+
+**What a schedule says.** `archive_codex_conversation` (boolean) beside `close_tab`. A file without it
+is off, so no existing schedule changed. A create without the key turns it on for a Codex schedule
+(the person chose this default); a save without it keeps what the file says, so a client from before
+the field cannot turn it off. Other assistants ignore it. The console shows it only for Codex, as
+"Archive the Codex chat after its tab closes" / 「分頁關閉後封存 Codex 對話」.
+
+**When the archive happens.** Only after the broker has closed the run's tab by its `close_tab`
+(`task.child.linger.due`), or seen that tab gone (`task.child.linger.gone`). A tab left open — `never`,
+a timeout, a failure under `on_success` — keeps its conversation in Codex's list, because an open tab
+is one a person may still be reading. The archive is an outbox effect
+(`child.conversation.archive`, `internal/app/orchestrator/conversation_archive.go`) written in the
+transaction that takes the linger, so a restart in between still archives. The pass that closes
+the tab does not run it: closing only asks Codex to exit, and Codex writes the end of its rollout as
+it goes. The beat's effect recovery runs it once it has stood unheld for thirty seconds; if a fresh
+reading still shows the run's tab holding that conversation (the close did not happen), it is
+refused as `tab_open` and the conversation stays. The record keeps `child_conversation_archived_at`; a failure is the effect's outcome and a
+`task.child.conversation.archive_failed` event, and the run itself is not affected.
+
+**How it is archived.** `thread/archive` on `codex app-server --stdio`, the server Clawdline already
+asks for Codex's history (`internal/adapters/projects/codex_archive.go`). Measured on codex-cli
+0.166.0 against a finished scheduled run on this machine: the call answered and sent
+`thread/archived`; `thread/list` stopped listing the conversation and listed it under
+`archived: true`; the rollout moved, under the same name, to `~/.codex/archived_sessions`;
+`thread/resume` was refused with "session … is archived. Run `codex unarchive …` first";
+after `thread/unarchive`, resume worked. A conversation already archived counts as done, so a
+second attempt after a crash is harmless. A Codex guardian sub-agent thread whose parent was the run
+stayed where it was. Whether the Codex desktop app drops the chat at once or on its next refresh
+was not observed: the app was not running during the measurement.
+
+**Resuming an archived run.** The schedule's history still offers the run (`session_id`, plus
+`conversation_archived: true`), because `RunConversations.Archived` counts an archived rollout as
+present. `POST /v1/places/:id/resume/…` unarchives it before it resumes, and refuses with
+`codex_unavailable` when Codex will not bring it back. A conversation resumed this way is an
+ordinary Session and is not archived again.
+
+**Usage keeps counting it.** The usage ledger also discovers `~/.codex/archived_sessions/rollout-*.jsonl`
+from the window's first day (by the date in the name), and a per-session usage read finds an
+archived rollout, so archiving does not make a run's tokens disappear. A rollout Codex later
+compresses to `.jsonl.zst` is not read.
+
+`TestAScheduledCodexRunIsArchivedAfterItsTabCloses`, `TestOnlyAnAskingRunIsArchivedAndAGoneTabCounts`,
+`TestAConversationWhoseTabIsStillOpenIsNotArchived`,
+`TestANewCodexScheduleArchivesItsConversationsByDefault`, `TestAnArchivedRunIsStillResumable`.
+
 ## Incident investigation schedules
 
 A trigger-only schedule with `task.kind: "health_investigation"` can receive a

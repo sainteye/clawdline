@@ -142,6 +142,12 @@ type Schedule struct {
 	CloseTab        CloseTab
 	CatchUpHours    int
 	NotifyOnFailure bool
+	// ArchiveCodexConversation is `archive_codex_conversation`: when
+	// Clawdline closes a Codex run's tab, the run's conversation is archived
+	// in Codex so its list does not grow by one chat per run. A file without
+	// the key is false; the console offers it on for a new Codex schedule.
+	// It has no effect on any other assistant.
+	ArchiveCodexConversation bool
 	// The three stamps. A zero time means the file does not carry the key.
 	CreatedAt     time.Time
 	WhenChangedAt time.Time
@@ -217,7 +223,7 @@ func boolean(raw any) (bool, bool) {
 var allowedFields = map[string]bool{
 	"clawdline_schedule": true, "schedule_id": true, "title": true, "when": true, "task": true,
 	"enabled": true, "close_tab": true, "catch_up_hours": true, "notify_on_failure": true,
-	"created_at": true, "when_changed_at": true, "fired_at": true, "time_zone": true,
+	"archive_codex_conversation": true, "created_at": true, "when_changed_at": true, "fired_at": true, "time_zone": true,
 }
 
 var allowedTaskFields = map[string]bool{
@@ -308,6 +314,13 @@ func Parse(obj map[string]any, id string, isDirectory func(string) bool) (Schedu
 			return Schedule{}, bad("notify_on_failure must be a boolean")
 		}
 		out.NotifyOnFailure = b
+	}
+	if raw, present := obj["archive_codex_conversation"]; present {
+		b, ok := boolean(raw)
+		if !ok {
+			return Schedule{}, bad("archive_codex_conversation must be a boolean")
+		}
+		out.ArchiveCodexConversation = b
 	}
 	// Unix seconds, optional on purpose: a file without them means "as far back
 	// as anyone knows", which this daemon then narrows to its own first sighting.

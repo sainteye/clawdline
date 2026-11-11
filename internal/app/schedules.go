@@ -370,6 +370,7 @@ func (b *ScheduleBook) Detail(ctx context.Context, id string) (map[string]any, b
 	out["close_tab"] = string(s.CloseTab)
 	out["catch_up_hours"] = s.CatchUpHours
 	out["notify_on_failure"] = s.NotifyOnFailure
+	out["archive_codex_conversation"] = s.ArchiveCodexConversation
 	out["when"] = s.When.Object()
 	if s.TimeZone != "" {
 		out["time_zone"] = s.TimeZone
@@ -409,6 +410,11 @@ func (b *ScheduleBook) Detail(ctx context.Context, id string) (map[string]any, b
 		}
 		if id := conversations[r.TaskID]; id != "" {
 			rec["session_id"] = id
+			// Resuming it unarchives it first (place resume route).
+			if !r.ConversationArchivedAt.IsZero() && b.Conversations.Archived != nil &&
+				b.Conversations.Archived(r.Assistant, id) {
+				rec["conversation_archived"] = true
+			}
 		}
 		if !r.FinishedAt.IsZero() {
 			rec["finished_at"] = r.FinishedAt.Unix()
@@ -458,11 +464,15 @@ func (b *ScheduleBook) MachineRefusal(ctx context.Context, method, id string, bo
 	return &r
 }
 
+// archiveCodexKey is the schedule field that archives a Codex run's
+// conversation once Clawdline has closed its tab (docs/schedules.md).
+const archiveCodexKey = "archive_codex_conversation"
+
 var formFields = map[string]bool{
 	"title": true, "at": true, "days": true, "on": true, "every_days": true, "start": true, "place_id": true, "assistant": true,
 	"instructions": true, "enabled": true, "close_tab": true, "catch_up_hours": true,
 	"notify_on_failure": true, "timeout_minutes": true, "model": true, "reasoning_effort": true, "permission_mode": true,
-	"trigger_only": true, "time_zone": true,
+	"trigger_only": true, "time_zone": true, "archive_codex_conversation": true,
 }
 
 // templateFields are the task-template keys a create may carry in `template`:
@@ -657,7 +667,7 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 	if !createdAt.IsZero() {
 		obj["created_at"] = createdAt.Unix()
 	}
-	for _, key := range []string{"close_tab", "catch_up_hours", "notify_on_failure"} {
+	for _, key := range []string{"close_tab", "catch_up_hours", "notify_on_failure", "archive_codex_conversation"} {
 		if v, ok := body[key]; ok {
 			obj[key] = v
 		}
@@ -781,6 +791,12 @@ func (b *ScheduleBook) Create(ctx context.Context, body map[string]any, authorit
 	if refusal != nil {
 		return *refusal
 	}
+	// A new Codex schedule archives its runs' conversations unless the body
+	// says otherwise: one chat per run in Codex's own list is what the person
+	// asked to stop. A file that never had the key keeps reading as off.
+	if _, named := body[archiveCodexKey]; !named && body["assistant"] == "codex" {
+		body[archiveCodexKey] = true
+	}
 	now := b.now()
 	id := newUUID()
 	obj, _, refusal := b.build(ctx, body, id, now, carried)
@@ -863,6 +879,11 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 	// clock. A client that intentionally changes it names the new zone.
 	if _, named := body["time_zone"]; !named && existing.s.TimeZone != "" {
 		body["time_zone"] = existing.s.TimeZone
+	}
+	// The same for a client from before archive_codex_conversation: its save
+	// keeps what the file says rather than turning the archive off.
+	if _, named := body[archiveCodexKey]; !named && existing.s.ArchiveCodexConversation {
+		body[archiveCodexKey] = true
 	}
 	obj, made, refusal := b.build(ctx, body, id, existing.s.CreatedAt, carried)
 	if refusal != nil {
@@ -1186,7 +1207,8 @@ func (b *ScheduleBook) dispatchInvestigationID(ctx context.Context, s schedule.S
 	defer cancel()
 	out, err := b.Broker.DispatchScheduled(opening, orchestrator.ScheduledRun{
 		TaskID: id, ScheduleID: s.ID, Title: s.Title, Template: s.Task, CloseTab: string(s.CloseTab),
-		Investigation: investigation, InvestigationBundle: evidence,
+		ArchiveConversation: s.ArchiveCodexConversation && s.TaskString("assistant") == "codex",
+		Investigation:       investigation, InvestigationBundle: evidence,
 	})
 	if out.Absent {
 		_ = b.Store.ForgetScheduleRun(ctx, id)

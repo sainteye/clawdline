@@ -73,6 +73,9 @@ func (s *Server) scheduleBook() *app.ScheduleBook {
 			Recorded: func(dir, assistant, id string) bool {
 				return projects.Recorded(projects.Place{Path: dir}, assistant, id)
 			},
+			Archived: func(assistant, id string) bool {
+				return assistant == projects.AssistantCodex && projects.CodexArchived(id)
+			},
 		},
 		DispatchEnabled: func() bool {
 			v, err := nextconfig.Open(dir).Read()

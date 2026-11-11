@@ -527,6 +527,14 @@ type Record struct {
 	// end does to its tab (tabPolicy). Empty on a record written before it
 	// existed, which reads as the schedule default, on_success.
 	ScheduleCloseTab string `json:"schedule_close_tab,omitempty"`
+	// ScheduleArchiveConversation is that schedule's
+	// archive_codex_conversation when this run was dispatched. A Codex run
+	// with it set has its conversation archived after the broker closes its
+	// tab or sees the tab gone (conversation_archive.go).
+	ScheduleArchiveConversation bool `json:"schedule_archive_conversation,omitempty"`
+	// ChildConversationArchivedAt is when that archive was made. Zero until
+	// it was, and on every run that did not ask for one.
+	ChildConversationArchivedAt time.Time `json:"child_conversation_archived_at,omitempty"`
 	// Dispatcher is the store handle that admitted this task — its process
 	// and a nonce (store.Owner). Only that process ever holds the plaintext
 	// secret, so a task still `queued` after it has provably gone can never be

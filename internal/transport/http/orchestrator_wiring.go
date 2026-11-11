@@ -231,6 +231,14 @@ func newBroker(s *Server) *orchestrator.Broker {
 		RootAssignmentSettled: func(ctx context.Context, _ orchestrator.RootAssignment) {
 			go s.settleAwaitedAssignments(context.WithoutCancel(ctx))
 		},
+		// A scheduled Codex run's conversation leaves Codex's list once its
+		// tab is closed, when its schedule asks (conversation_archive.go).
+		ArchiveConversation: func(ctx context.Context, assistant, conversation string) error {
+			if assistant != projects.AssistantCodex {
+				return errors.New("archiving is supported for Codex conversations only")
+			}
+			return projects.CodexArchive(ctx, conversation)
+		},
 		RecordPlanReview: func(ctx context.Context, taskID string) error {
 			_, err := s.workV2().AddPlanReviewFromTask(ctx, taskID)
 			return err

@@ -475,7 +475,9 @@ func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 		// decide yet costs the pass nothing but this lookup.
 		var r Record
 		_, present := rd.session(l.Pane)
-		if present {
+		// A tab that is gone is read too when it may owe its conversation's
+		// archive: that is decided from the record (conversation_archive.go).
+		if present || rd.sourceComplete(l.Backend) {
 			if held, _, err := b.Record(ctx, l.Task); err == nil {
 				r = held
 			}
@@ -491,6 +493,10 @@ func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 		}
 		var effects []store.Effect
 		var kind string
+		// archive is the effect, beside the close, that archives the run's
+		// conversation; it is left for the beat's recovery (see
+		// conversation_archive.go), so it is not run below.
+		archive, archiving := store.Effect{}, false
 		switch step {
 		case lingerWait:
 			if now.Sub(l.Deadline) < lingerGiveUp {
@@ -500,6 +506,7 @@ func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 			body["why"] = "nothing decided it within a day of its deadline; the tab is left as it is"
 		case lingerGone:
 			kind = "task.child.linger.gone"
+			archive, archiving = archiveEffectFor(r)
 		case lingerLeave:
 			kind = "task.child.linger.left"
 		case lingerClose:
@@ -519,6 +526,11 @@ func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 			}
 			raw, _ := json.Marshal(c)
 			effects = []store.Effect{{Kind: EffectCloseChild, Subject: l.Task, Payload: raw}}
+			archive, archiving = archiveEffectFor(r)
+		}
+		run := len(effects)
+		if archiving {
+			effects = append(effects, archive)
 		}
 		payload, _ := json.Marshal(body)
 		ids, err := b.Store.TakeLinger(ctx, l.Task, []store.Event{{Kind: kind, Subject: l.Task, Payload: payload}}, effects)
@@ -528,6 +540,9 @@ func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 		b.lingers.forget(l.Task)
 		if iterm && step == lingerClose {
 			itermTaken = true
+		}
+		if run < len(ids) {
+			ids = ids[:run]
 		}
 		for _, res := range b.runRecorded(ctx, ids) {
 			if res.state == store.EffectDone && res.outcome == "closed" {

@@ -530,6 +530,18 @@ func (u *UsageLedger) discover(since time.Time) map[string]usageFile {
 			add(usageFile{assistant: "codex", conversation: codexConversation(p), path: p})
 		}
 	}
+	// An archived conversation was still spent: a scheduled Codex run's is
+	// archived once its tab closes (orchestrator conversation_archive.go).
+	// Codex keeps the start date in the moved file's name, so a file from
+	// before the window is passed over without a stat.
+	archived, _ := filepath.Glob(filepath.Join(u.Home, ".codex", "archived_sessions", "rollout-*.jsonl"))
+	for _, p := range archived {
+		name := filepath.Base(p)
+		if len(name) >= len("rollout-2006-01-02") && name[len("rollout-"):len("rollout-2006-01-02")] < first.Format("2006-01-02") {
+			continue
+		}
+		add(usageFile{assistant: "codex", conversation: codexConversation(p), path: p})
+	}
 	return out
 }
 

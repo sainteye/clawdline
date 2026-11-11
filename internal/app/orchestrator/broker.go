@@ -120,6 +120,10 @@ type Broker struct {
 	// whoever asked for it — a Board item's new Session — can settle its own
 	// side. Nil tells nobody.
 	RootAssignmentSettled func(ctx context.Context, a RootAssignment)
+	// ArchiveConversation archives one assistant conversation in that
+	// assistant's own list (conversation_archive.go). Nil archives nothing,
+	// and an archive owed is recorded as failed.
+	ArchiveConversation func(ctx context.Context, assistant, conversation string) error
 	// RecordPlanReview handles the durable effect owed by a successful
 	// plan_review child on an item. It must be idempotent: recovery may run it
 	// again after the document was written but before the effect was settled.

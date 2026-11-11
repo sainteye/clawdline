@@ -545,7 +545,19 @@ func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assista
 		s.scheduleBook().ScheduledConversation(ctx, place.Path, assistant, conversation) {
 		// Not on the project's own history, which leaves scheduled children
 		// out: a finished scheduled run's conversation, proved by its run
-		// (app/schedule_resume.go), resumes as an ordinary Session.
+		// (app/schedule_resume.go), resumes as an ordinary Session. One its
+		// schedule archived in Codex is unarchived first: Codex refuses to
+		// resume an archived conversation.
+		if assistant == projects.AssistantCodex && projects.CodexArchived(conversation) {
+			if uerr := projects.CodexUnarchive(ctx, conversation); uerr != nil {
+				log.Printf("audit place.resume place=%s assistant=%s session=%.64s ok=0 why=unarchive_failed err=%v",
+					place.ID, assistant, conversation, uerr)
+				writePlaceRefusal(w, http.StatusServiceUnavailable, "codex_unavailable",
+					"Codex could not bring this archived conversation back. Retry the request.", "")
+				return
+			}
+			log.Printf("audit place.resume place=%s assistant=%s session=%.64s unarchived=1", place.ID, assistant, conversation)
+		}
 		made, err = starter.Start(ctx, place, assistant, "", conversation, persona)
 	}
 	if err != nil {

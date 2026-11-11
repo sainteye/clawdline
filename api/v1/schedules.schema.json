@@ -66,6 +66,7 @@
       "required": ["assistant", "created", "project_dir", "state", "task_id"],
       "properties": {
         "assistant": { "type": "string" },
+        "conversation_archived": { "description": "The run's Codex conversation was archived by its schedule's archive_codex_conversation and is archived now. Resuming it by session_id unarchives it first.", "type": "boolean" },
         "created": { "type": "integer" },
         "finished_at": { "type": "integer" },
         "project_dir": { "type": "string" },
@@ -92,6 +93,7 @@
         "last_run": { "$ref": "#/$defs/ScheduleLastRun" },
         "next_fire": { "type": "integer" },
         "notify_on_failure": { "type": "boolean" },
+        "archive_codex_conversation": { "description": "A Codex run's conversation is archived in Codex once Clawdline closes its tab. False on a file without the key.", "type": "boolean" },
         "once": { "type": "boolean" },
         "runs": { "type": "array", "items": { "$ref": "#/$defs/ScheduleRun" } },
         "runs_may_be_truncated": { "type": "boolean" },
@@ -151,6 +153,7 @@
         "model": { "description": "No key leaves the model alone; an empty string takes it off.", "type": "string" },
         "reasoning_effort": { "description": "Codex high or xhigh; Antigravity low, medium, high, xhigh or max. No key keeps the saved value for the same provider; changing provider does not inherit another provider's effort. An empty string takes it off.", "type": "string" },
         "notify_on_failure": { "type": "boolean" },
+        "archive_codex_conversation": { "description": "Archive a Codex run's conversation in Codex once Clawdline closes its tab. A create without the key turns it on for a Codex schedule; a save without it keeps what the file says. Other assistants ignore it.", "type": "boolean" },
         "on": { "type": "string" },
         "permission_mode": { "description": "ask, edits or full; an empty string takes it off (this machine's default); no key keeps what the file says. Only a person's device sets or changes it: this machine's orchestrator token, and a session carrying a person's message, are refused with permission_needs_person unless the value is what the file already says.", "type": "string" },
         "place_id": { "type": "string" },

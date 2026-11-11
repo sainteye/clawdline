@@ -284,6 +284,10 @@ type ScheduleRun struct {
 	ConversationID string
 	Isolation      string
 	FinishedAt     time.Time
+	// ConversationArchivedAt is when the broker archived that conversation
+	// in its assistant's own list (orchestrator.Record
+	// .ChildConversationArchivedAt); zero when it did not.
+	ConversationArchivedAt time.Time
 }
 
 // RecordScheduleRun links a task to the schedule that made it. Written before
@@ -325,7 +329,8 @@ func (s *Store) ScheduleRuns(ctx context.Context, scheduleID string) ([]Schedule
 	             COALESCE(CASE WHEN json_valid(t.record) THEN json_extract(t.record, '$.child_terminal_id') END, ''),
 	             COALESCE(CASE WHEN json_valid(t.record) THEN json_extract(t.record, '$.child_conversation_id') END, ''),
 	             COALESCE(CASE WHEN json_valid(t.record) THEN json_extract(t.record, '$.isolation') END, ''),
-	             COALESCE(CASE WHEN json_valid(t.record) THEN json_extract(t.record, '$.finished_at') END, '')
+	             COALESCE(CASE WHEN json_valid(t.record) THEN json_extract(t.record, '$.finished_at') END, ''),
+	             COALESCE(CASE WHEN json_valid(t.record) THEN json_extract(t.record, '$.child_conversation_archived_at') END, '')
 	      FROM schedule_runs r
 	      LEFT JOIN broker_tasks t ON t.id = r.task_id
 	      LEFT JOIN broker_task_texts x ON x.task_id = r.task_id AND x.field = '` + TextSummary + `'`
@@ -343,16 +348,19 @@ func (s *Store) ScheduleRuns(ctx context.Context, scheduleID string) ([]Schedule
 	for rows.Next() {
 		var r ScheduleRun
 		var created, fire int64
-		var finished string
+		var finished, archived string
 		if err := rows.Scan(&r.TaskID, &r.ScheduleID, &created, &fire, &r.How,
 			&r.State, &r.Assistant, &r.ProjectDir, &r.Summary,
-			&r.TerminalID, &r.ConversationID, &r.Isolation, &finished); err != nil {
+			&r.TerminalID, &r.ConversationID, &r.Isolation, &finished, &archived); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		r.Created, r.Fire = fromUnix(created), fromUnix(fire)
 		if at, err := time.Parse(time.RFC3339Nano, finished); err == nil && at.Year() > 1 {
 			r.FinishedAt = at
+		}
+		if at, err := time.Parse(time.RFC3339Nano, archived); err == nil && at.Year() > 1 {
+			r.ConversationArchivedAt = at
 		}
 		out = append(out, r)
 	}

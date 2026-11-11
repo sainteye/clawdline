@@ -6515,6 +6515,11 @@ export interface ScheduleList {
  * (with `webhook_hook_id`), `unbound`, or `binding_store_unavailable`.
  */
 export interface ScheduleRecord {
+  /**
+   * A Codex run's conversation is archived in Codex once Clawdline closes its tab.
+   * False on a file without the key.
+   */
+  archive_codex_conversation?: boolean
   catch_up_hours: number
   close_tab: string
   enabled: boolean
@@ -6557,6 +6562,12 @@ export interface ScheduleRecord {
  * Those proof fields are audit evidence and are not stored in the schedule.
  */
 export interface ScheduleRequest {
+  /**
+   * Archive a Codex run's conversation in Codex once Clawdline closes its tab. A
+   * create without the key turns it on for a Codex schedule; a save without it
+   * keeps what the file says. Other assistants ignore it.
+   */
+  archive_codex_conversation?: boolean
   assistant: string
   at?: string
   catch_up_hours?: number
@@ -6689,6 +6700,13 @@ export interface ScheduleRow {
  */
 export interface ScheduleRun {
   assistant: string
+
+  /**
+   * The run's Codex conversation was archived by its schedule's
+   * archive_codex_conversation and is archived now. Resuming it by session_id
+   * unarchives it first.
+   */
+  conversation_archived?: boolean
   created: number
   finished_at?: number
   project_dir: string
