@@ -1356,7 +1356,7 @@ export class RelayReader {
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
-          if (isUnopenedRead(init) && !url.searchParams.has("before") && !url.searchParams.has("after") && !url.searchParams.has("view")) {
+          if (isUnopenedRead(init) && !url.searchParams.has("after") && !url.searchParams.has("view")) {
             // The voice copilot, asking about a Session other than the opened
             // one (`unopened-read.ts`): its current execution, verified, read
             // as that execution's own — never the opened Session's held page.
@@ -1365,7 +1365,13 @@ export class RelayReader {
             if (!target || target.machineID !== this.machine || target.sessionID !== session || !client.readForGeneration) {
               return this.refuse(method, path, 409, "execution_target_required", "This Session's current execution cannot be verified.")
             }
-            const body = await client.readForGeneration(target, "transcript", { limit: CLOUD_TRANSCRIPT_LIMIT }, init?.signal ?? undefined)
+            // An earlier page (`before=`) is read the same way: the copilot's
+            // recap pages back through the Session's whole conversation.
+            const beforeRaw = url.searchParams.get("before")
+            const before = historyCursor(beforeRaw)
+            if (beforeRaw !== null && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
+            const body = await client.readForGeneration(target, "transcript",
+              { limit: CLOUD_TRANSCRIPT_LIMIT, ...(before ? { before } : {}) }, init?.signal ?? undefined)
             this.note(method, path, "relay", undefined, { word: "transcript" })
             return json(200, transcriptPage(body, session))
           }
