@@ -168,3 +168,45 @@ func TestPolishRunsOneSandboxedCodexTurn(t *testing.T) {
 		t.Errorf("stdin %q", gotStdin)
 	}
 }
+
+// Observed on 2026-11-11 at 18:12 on a phone: Haiku put the whole JSON
+// answer inside the text field, and the composer received the braces.
+func TestPolishUnwrapsAnAnswerThatWrapsItself(t *testing.T) {
+	raw := "來試試看這樣亂講欸不對就是說如果這樣講的話會怎麼樣子"
+	want := "來試試看這樣亂講。欸不對。就是說，如果這樣講的話會怎麼樣子？"
+	for name, answer := range map[string]string{
+		"nested object":  `{"structured_output":{"text":"{\"text\": \"` + want + `\"}"}}`,
+		"twice nested":   `{"structured_output":{"text":"{\"text\": \"{\\\"text\\\": \\\"` + want + `\\\"}\"}"}}`,
+		"fenced":         `{"structured_output":{"text":"` + "```json\\n{\\\"text\\\": \\\"" + want + "\\\"}\\n```" + `"}}`,
+		"result only":    `{"result":"{\"text\": \"` + want + `\"}"}`,
+		"result wrapped": `{"result":"{\"text\": \"{\\\"text\\\": \\\"` + want + `\\\"}\"}"}`,
+	} {
+		p := Planner{
+			LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
+			Run: func(context.Context, string, []string, string, string, []string) ([]byte, error) {
+				return []byte(answer), nil
+			},
+		}
+		got, err := p.Polish(context.Background(), raw, nil, PolishTidy, "Hant", "claude")
+		if err != nil || got != want {
+			t.Errorf("%s: got %q, %v", name, got, err)
+		}
+	}
+}
+
+// What cannot be unwrapped is refused rather than typed into the composer.
+func TestFaithfulRefusesStructureTheDictationNeverHad(t *testing.T) {
+	raw := "來試試看這樣亂講欸不對"
+	for _, polished := range []string{
+		`{"text": "來試試看這樣亂講，欸不對。"`,
+		`來試試看這樣亂講，欸不對。"}`,
+		`text: 來試試看這樣亂講，欸不對。`,
+	} {
+		if Faithful(raw, polished, PolishTidy) {
+			t.Errorf("accepted %q", polished)
+		}
+	}
+	if !Faithful(`git commit -m "fix {bug}"`, `git commit -m "fix {bug}"。`, PolishTidy) {
+		t.Error("braces the speaker said are not structure")
+	}
+}

@@ -207,7 +207,7 @@ func (p Planner) Polish(ctx context.Context, text string, terms []string, level,
 	if json.Unmarshal(object, &cleaned) != nil {
 		return "", errors.New("cleanup did not return text")
 	}
-	polished := strings.TrimSpace(cleaned.Text)
+	polished := unwrapPolished(cleaned.Text)
 	if !Faithful(text, polished, level) {
 		return "", ErrPolishUnfaithful
 	}
@@ -225,6 +225,14 @@ func (p Planner) Installed(assistant string) bool { return p.executable(assistan
 // characters that may change is larger for the tidy level, which removes
 // filler words on purpose.
 func Faithful(raw, polished, level string) bool {
+	// An answer's own structure is not something the speaker said: braces or
+	// a "text" key the transcript never had mean the answer was not unwrapped
+	// (unwrapPolished), and typing it into the composer would show JSON.
+	for _, mark := range structureMarks {
+		if strings.Contains(strings.ToLower(polished), mark) && !strings.Contains(strings.ToLower(raw), mark) {
+			return false
+		}
+	}
 	a, b := wordsOnly(raw), wordsOnly(polished)
 	if len(b) == 0 {
 		return len(a) == 0
@@ -241,6 +249,38 @@ func Faithful(raw, polished, level string) bool {
 		longest = len(b)
 	}
 	return float64(distance(a, b)) <= allowed*float64(longest)
+}
+
+var structureMarks = []string{"{", "}", `"text"`, "text:"}
+
+// unwrapPolished is the cleaned text inside an answer that wrapped itself.
+//
+// Observed on 2026-11-11: with --json-schema, Haiku once put its whole answer
+// inside the text field, so the composer received `{"text": "…"}`. A wrapped
+// answer is unwrapped, as many times as it was wrapped, and from a fenced
+// code block too; anything else is the text as it came.
+func unwrapPolished(s string) string {
+	text := strings.TrimSpace(s)
+	for range 4 {
+		inner := strings.TrimSpace(text)
+		if fenced, ok := strings.CutPrefix(inner, "```"); ok {
+			fenced = strings.TrimPrefix(fenced, "json")
+			if body, ok := strings.CutSuffix(strings.TrimSpace(fenced), "```"); ok {
+				inner = strings.TrimSpace(body)
+			}
+		}
+		if !strings.HasPrefix(inner, "{") || !strings.HasSuffix(inner, "}") {
+			return text
+		}
+		var wrapped struct {
+			Text *string `json:"text"`
+		}
+		if json.Unmarshal([]byte(inner), &wrapped) != nil || wrapped.Text == nil {
+			return text
+		}
+		text = strings.TrimSpace(*wrapped.Text)
+	}
+	return text
 }
 
 func wordsOnly(s string) []rune {
