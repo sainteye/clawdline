@@ -477,7 +477,7 @@ export function Detail({
         setAgentId(null); setToolDraft({text:prepared.task, attachment:{id:crypto.randomUUID(),target:identity,title:localized(prepared.project.name, currentCatalogTag()) || prepared.project.repo, prompt:prepared.prompt,revision:prepared.project.source_commit,mode:prepared.mode}});setToolOpen(false)
       }} />}
       <UserMessages row={row} />
-      <Snippets row={row} steward={steward} />
+      <Snippets row={row} steward={steward} machine={readerMachine} />
     </DetailPane>
   )
 }

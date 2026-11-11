@@ -132,7 +132,7 @@ function snippetSentence(failure: unknown, fallback: string): string {
  * Clawdfather actions and opens on it; Clawdfather stands in no project, so its
  * Snippet and Playbook tabs show the machine-wide groups only.
  */
-export function Snippets({ row, steward = false }: { row: SessionRow | null; steward?: boolean }) {
+export function Snippets({ row, steward = false, machine }: { row: SessionRow | null; steward?: boolean; machine?: string | null }) {
   const [open, setOpen] = useState(false)
   const openedOn = useRef<string | null>(null)
 
@@ -155,7 +155,7 @@ export function Snippets({ row, steward = false }: { row: SessionRow | null; ste
 
   return createPortal(
     <div className="overlay" id="snippets" hidden={!open} onClick={() => setOpen(false)}>
-      {open && row ? <Sheet row={row} steward={steward} onClose={() => setOpen(false)} /> : null}
+      {open && row ? <Sheet row={row} steward={steward} machine={machine} onClose={() => setOpen(false)} /> : null}
     </div>,
     document.body,
   )
@@ -174,7 +174,7 @@ const TRANSCRIPT_LIMIT = 200
 
 type SheetTab = "clawdfather" | "snippet" | "playbook"
 
-function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; onClose: () => void }) {
+function Sheet({ row, steward, machine: machineProp, onClose }: { row: SessionRow; steward: boolean; machine?: string | null; onClose: () => void }) {
   const T = L.strings
   const tabs: SheetTab[] = steward ? ["clawdfather", "snippet", "playbook"] : ["snippet", "playbook"]
   const [tab, setTab] = useState<SheetTab>(tabs[0])
@@ -189,6 +189,8 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   const [playbookSaveError, setPlaybookSaveError] = useState("")
   const [playbookSaving, setPlaybookSaving] = useState(false)
   const [playbookDeleting, setPlaybookDeleting] = useState(false)
+  const [playbookDeleteArmed, setPlaybookDeleteArmed] = useState(false)
+  const [playbookEditorArmed, setPlaybookEditorArmed] = useState(false)
   const [playbookSourceStatus, setPlaybookSourceStatus] = useState<"checking" | "ready" | "unavailable" | "scope">("checking")
   const [playbookPreview, setPlaybookPreview] = useState<{ id: string; body: string; name: string; version: string } | null>(null)
   const [projectUnresolved, setProjectUnresolved] = useState(false)
@@ -227,7 +229,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   // A row that names a machine is a row read across the relay — the local
   // daemon's own `/v1/sessions` carries no such field — and that is the one
   // case where "whose snippets are these" has more than one answer.
-  const machine = (row as { machine?: string }).machine ?? null
+  const machine = (machineProp?.trim() || (row as { machine?: string }).machine?.trim()) || null
   const model: SnippetModel = snippetGroups(answer, { machine, project: steward ? null : row.cwd ?? null })
   const whose = machine ? L.machineFor(row).label : ""
   const shown = snippetOrder(model)
@@ -241,6 +243,10 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   useEffect(() => {
     if (selectedPlaybook && !currentPlaybook) setSelectedPlaybook(null)
   }, [selectedPlaybook, currentPlaybook])
+
+  useEffect(() => {
+    setPlaybookDeleteArmed(false)
+  }, [selectedPlaybook?.id, tab])
 
   useEffect(() => {
     const source = currentPlaybook?.source
@@ -610,17 +616,24 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   const closePlaybookEditor = () => {
     setPlaybookDraft(null)
     setPlaybookSaveError("")
+    setPlaybookEditorArmed(false)
   }
 
   const removePlaybook = async () => {
     if (!currentPlaybook || playbookDeleting || startingPlaybook) return
-    if (!window.confirm(W("confirmDelete", { name: currentPlaybook.title }))) return
-    setPlaybookDeleting(true); setPlaybookError("")
+    if (!playbookDeleteArmed) {
+      setPlaybookDeleteArmed(true)
+      return
+    }
+    setPlaybookDeleting(true)
+    setPlaybookError("")
     try {
       await deletePlaybook(machine ?? "", currentPlaybook.id)
+      setPlaybookDeleteArmed(false)
       if (await refresh()) setSelectedPlaybook(null)
     } catch (cause) {
       setPlaybookError(cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("deleteRefused") : W("deleteUnknown"))
+      setPlaybookDeleteArmed(false)
     } finally { setPlaybookDeleting(false) }
   }
 
@@ -754,15 +767,24 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
             ＋
           </button>
         </div>
-        {tab === "clawdfather" && coordination ? null : tab === "playbook" && currentPlaybook ? <div className="playbook-detail-nav">
-          <button type="button" onClick={() => setSelectedPlaybook(null)}>← {W("backToPlaybooks")}</button>
-          <span className="playbook-detail-actions">
-            <button type="button" aria-label={W("editAction")} title={W("editAction")} disabled={playbookDeleting || startingPlaybook}
-              onClick={() => { setPlaybookSaveError(""); setPlaybookDraft({ id: currentPlaybook.id, title: currentPlaybook.title, body: currentPlaybook.body, global: !currentPlaybook.project, source: currentPlaybook.source }) }}><WorkIcon name="edit" /></button>
-            <button type="button" className="playbook-delete" aria-label={playbookDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} title={playbookDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} disabled={playbookDeleting || startingPlaybook}
-              aria-busy={playbookDeleting} onClick={() => void removePlaybook()}>{playbookDeleting ? <ActionSpinner /> : <WorkIcon name="delete" />}</button>
-          </span>
-        </div> : <div className="snippets-tabs" role="tablist" aria-label={tabs.map(tabLabel).join(" / ")}
+        {tab === "clawdfather" && coordination ? null : tab === "playbook" && currentPlaybook ? <>
+          <div className="playbook-detail-nav">
+            <button type="button" onClick={() => { setPlaybookDeleteArmed(false); setSelectedPlaybook(null) }}>← {W("backToPlaybooks")}</button>
+            <span className="playbook-detail-actions">
+              <button type="button" aria-label={W("editAction")} title={W("editAction")} disabled={playbookDeleting || startingPlaybook}
+                onClick={() => { setPlaybookDeleteArmed(false); setPlaybookSaveError(""); setPlaybookEditorArmed(false); setPlaybookDraft({ id: currentPlaybook.id, title: currentPlaybook.title, body: currentPlaybook.body, global: !currentPlaybook.project, source: currentPlaybook.source }) }}><WorkIcon name="edit" /></button>
+              <button type="button" className="playbook-delete"
+                data-armed={playbookDeleteArmed ? "on" : undefined}
+                aria-label={playbookDeleting ? catalogWord("literal", "a5df1fce3ed1") : playbookDeleteArmed ? T.webSnippetDeleteAsk : W("delete")}
+                title={playbookDeleting ? catalogWord("literal", "a5df1fce3ed1") : playbookDeleteArmed ? T.webSnippetDeleteAsk : W("delete")}
+                disabled={playbookDeleting || startingPlaybook}
+                aria-busy={playbookDeleting} onClick={() => void removePlaybook()}>
+                {playbookDeleting ? <ActionSpinner /> : playbookDeleteArmed ? <span className="playbook-delete-arm-label">{T.webSnippetDeleteAsk}</span> : <WorkIcon name="delete" />}
+              </button>
+            </span>
+          </div>
+          {playbookError && <p className="playbook-detail-error" role="alert">{playbookError}</p>}
+        </> : <div className="snippets-tabs" role="tablist" aria-label={tabs.map(tabLabel).join(" / ")}
           onKeyDown={(event) => {
             if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
             event.preventDefault()
@@ -978,16 +1000,16 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           </div>
         </div>
       </div>}
-      {playbookDraft && <div className="overlay" id="playbook-quick-editor" onClick={() => { if (!playbookSaving) closePlaybookEditor() }}>
+      {playbookDraft && <div className="overlay" id="playbook-quick-editor" onClick={() => { if (!playbookSaving && !playbookDeleting) closePlaybookEditor() }}>
         <div className="sheet snippet-editor-sheet" role="dialog" aria-modal="true" aria-labelledby="playbook-quick-title" onClick={(event) => event.stopPropagation()}>
           <h2 id="playbook-quick-title">{W(playbookDraft.id ? "edit" : "new")}</h2>
           <div className="block"><label className="field-label" htmlFor="playbook-quick-name">{W("name")}</label>
             <input className="find" id="playbook-quick-name" type="text" maxLength={200} value={playbookDraft.title}
-              onChange={(event) => setPlaybookDraft({ ...playbookDraft, title: event.target.value })} /></div>
+              onChange={(event) => { setPlaybookEditorArmed(false); setPlaybookDraft({ ...playbookDraft, title: event.target.value }) }} /></div>
           {playbookDraft.source ? <div className="block"><label className="field-label" htmlFor="playbook-quick-message">{W("message")}</label>
             <textarea className="find" id="playbook-quick-message" rows={6} maxLength={4000} readOnly value={playbookDraft.body} /></div>
             : <div className="block playbook-quick-message"><VoiceTextarea label={W("message")} id="playbook-quick-message" className="find" rows={6} maxLength={4000}
-              value={playbookDraft.body} onValue={(body) => setPlaybookDraft((draft) => draft ? { ...draft, body } : draft)} /></div>}
+              value={playbookDraft.body} onValue={(body) => { setPlaybookEditorArmed(false); setPlaybookDraft((draft) => draft ? { ...draft, body } : draft) }} /></div>}
           {playbookDraft.source && <p className="playbook-linked-hint">{W("linkedMessageHint")}</p>}
           {!playbookDraft.id && <div className="block"><span className="field-label">{W("availability")}</span><div className="row">
             {!!projectKey && !projectUnresolved && <button type="button" className={"chip" + (!playbookDraft.global ? " on" : "")}
@@ -996,8 +1018,37 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
               aria-pressed={playbookDraft.global} onClick={() => setPlaybookDraft({ ...playbookDraft, global: true })}>{W("global")}</button>
           </div></div>}
           {playbookSaveError && <p className="said" role="alert">{playbookSaveError}</p>}
-          <div className="buttons"><button className="chip" type="button" disabled={playbookSaving} onClick={closePlaybookEditor}>{W("cancel")}</button>
-            <button className="chip confirm-go" type="button" disabled={playbookSaving} aria-busy={playbookSaving} onClick={() => void savePlaybook()}><ActionProgress busy={playbookSaving} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button></div>
+          <div className="buttons">
+            {playbookDraft.id && <button
+              className="chip danger"
+              id="playbook-editor-delete"
+              type="button"
+              disabled={playbookSaving || playbookDeleting}
+              aria-busy={playbookDeleting}
+              onClick={async () => {
+                if (!playbookEditorArmed) { setPlaybookEditorArmed(true); return }
+                setPlaybookDeleting(true)
+                setPlaybookSaveError("")
+                try {
+                  await deletePlaybook(machine ?? "", playbookDraft.id!)
+                  setPlaybookEditorArmed(false)
+                  closePlaybookEditor()
+                  if (await refresh()) setSelectedPlaybook(null)
+                } catch (cause) {
+                  setPlaybookSaveError(cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("deleteRefused") : W("deleteUnknown"))
+                  setPlaybookEditorArmed(false)
+                } finally {
+                  setPlaybookDeleting(false)
+                }
+              }}
+            >
+              <ActionProgress busy={playbookDeleting} label={catalogWord("literal", "a5df1fce3ed1")}>
+                {playbookEditorArmed ? T.webSnippetDeleteAsk : T.webSnippetDelete}
+              </ActionProgress>
+            </button>}
+            <button className="chip" type="button" disabled={playbookSaving || playbookDeleting} onClick={closePlaybookEditor}>{W("cancel")}</button>
+            <button className="chip confirm-go" type="button" disabled={playbookSaving || playbookDeleting} aria-busy={playbookSaving} onClick={() => void savePlaybook()}><ActionProgress busy={playbookSaving} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button>
+          </div>
         </div>
       </div>}
     </>
