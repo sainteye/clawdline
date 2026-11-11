@@ -143,6 +143,14 @@ func init() {
 
 		op{name: "voice-settings-update"},
 
+		// The voice copilot's card on Settings: its model, patience, extra
+		// instructions and whether an OpenAI key is set (never the key), and
+		// the call start, a client secret minted with that key.
+		op{name: "copilot-settings", read: true},
+		op{name: "copilot-settings-update"},
+		op{name: "copilot-session"},
+		op{name: "copilot-briefing"},
+
 		// A paired phone may edit only notification timing rules, through the
 		// same narrow route exposed by the local console.
 		op{name: "notification-rules", read: true},

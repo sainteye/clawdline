@@ -37,12 +37,20 @@ export interface ToolDeps {
   newRequestID?: () => string
   /** Unix seconds; how long ago is said from this. */
   now?: () => number
+  /** The machine's prepared briefing for this call, when it has one (`copilot-briefing`). */
+  briefing?: () => Promise<string | null>
 }
 
 export interface ToolResult {
   output: string
   logs: ToolLog[]
 }
+
+/** semantic_vad's eagerness settings, most patient first. */
+export const EAGERNESS = ['low', 'auto', 'high']
+
+/** How long the briefing tool waits for a briefing still being prepared. */
+export const BRIEFING_TOOL_WAIT_MS = 25000
 
 /** How many times a pending screen is read again, and how long apart. */
 export const SCREEN_READ_ATTEMPTS = 8
@@ -70,6 +78,10 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
 
+【整體匯報】
+- 使用者要整體狀況（「匯報現在的狀況」「現在怎麼樣」「有什麼要我處理」）時：指示裡有【整理好的現況匯報】就依它講，可以照原意講得更口語、更短；還沒有就呼叫 get_status_briefing。拿不到匯報才改用 list_sessions 自己整理。
+- 匯報要先講需要使用者處理的事，再講進行中的、最近完成的；這一段可以比平常長。
+
 【回報清單】
 - 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」
 - 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用半句說在做什麼（依 latest），例如「雲端配對在補加密命令」。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
@@ -84,6 +96,13 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - 依紀錄內容具體講，不要只說「在工作中」或「已閒置」。`
 
 export const COPILOT_TOOLS = [
+  {
+    type: 'function',
+    name: 'get_status_briefing',
+    description:
+      '取得機器上的助理依輕重緩急整理好的整體現況匯報：哪些事需要使用者處理、哪些在進行、最近完成了什麼。使用者說「匯報現在的狀況」「現在怎麼樣」「有什麼要我處理」時，如果指示裡還沒有【整理好的現況匯報】，就呼叫這個；它可能要等幾秒。',
+    parameters: { type: 'object', properties: {} },
+  },
   {
     type: 'function',
     name: 'list_sessions',
@@ -178,21 +197,43 @@ export const COPILOT_TOOLS = [
  * are refused with an `error` event, which left the call talking without its
  * tools or its instructions.
  */
-export function sessionUpdateEvent(memory = '', snapshot = ''): Record<string, unknown> {
+export interface CallOptions {
+  /** semantic_vad's eagerness: low (default), auto, high. */
+  eagerness?: string
+  /** The person's own extra instructions from Settings › Voice copilot. */
+  extra?: string
+  /** The machine's prepared briefing, once it has arrived. */
+  briefing?: string
+}
+
+/** The instructions' section holding the machine's briefing, or "". */
+export function briefingSection(briefing: string): string {
+  const text = briefing.trim()
+  if (!text) return ''
+  return ['【整理好的現況匯報】', '這是機器上的助理在通話開始時，依各個 Session 的紀錄整理好的匯報。使用者要整體狀況時依它回答。', text].join('\n')
+}
+
+export function extraSection(extra: string): string {
+  const text = extra.trim()
+  return text ? ['【使用者的附加指示】', text].join('\n') : ''
+}
+
+export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOptions = {}): Record<string, unknown> {
   return {
     type: 'session.update',
     session: {
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [COPILOT_INSTRUCTIONS, snapshot, memory].filter(Boolean).join('\n\n'),
+      instructions: [COPILOT_INSTRUCTIONS, extraSection(options.extra ?? ''), briefingSection(options.briefing ?? ''), snapshot, memory]
+        .filter(Boolean).join('\n\n'),
       audio: {
         input: {
           transcription: { model: 'whisper-1' },
           // Waits for the end of what the person means, not the first pause:
           // `server_vad` answered a mid-sentence breath. `low` is the most
           // patient of `semantic_vad`'s eagerness settings.
-          turn_detection: { type: 'semantic_vad', eagerness: 'low', create_response: true, interrupt_response: true },
+          turn_detection: { type: 'semantic_vad', eagerness: EAGERNESS.includes(options.eagerness ?? '') ? options.eagerness : 'low', create_response: true, interrupt_response: true },
         },
         output: { voice: 'alloy' },
       },
@@ -803,6 +844,21 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
   return { success: true, label: row.label }
 }
 
+async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
+  if (!deps.briefing) {
+    logs.push({ level: 'error', text: '這通電話沒有機器整理的匯報' })
+    return { error: '這通電話沒有機器整理的匯報，請改用 list_sessions 自己整理' }
+  }
+  const text = await Promise.race([deps.briefing(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), BRIEFING_TOOL_WAIT_MS))])
+  if (!text) {
+    logs.push({ level: 'error', text: '機器的匯報還沒整理好' })
+    return { error: '機器的匯報還沒整理好或整理失敗，請改用 list_sessions 自己整理' }
+  }
+  logs.push({ level: 'info', text: '已取得機器整理好的匯報' })
+  return { briefing: text }
+}
+
 /** Run one tool call; never throws, every failure is an `error` the model can say. */
 export async function runCopilotTool(name: string, argsJson: string, deps: ToolDeps): Promise<ToolResult> {
   const logs: ToolLog[] = []
@@ -816,7 +872,8 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
   logs.push({ level: 'tool', text: `執行工具【${name}】參數: ${JSON.stringify(args)}` })
   let result: unknown
   try {
-    if (name === 'list_sessions') result = await listSessions(deps, logs)
+    if (name === 'get_status_briefing') result = await statusBriefing(deps, logs)
+    else if (name === 'list_sessions') result = await listSessions(deps, logs)
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))

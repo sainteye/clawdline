@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -133,72 +131,18 @@ func (p Planner) Polish(ctx context.Context, text string, terms []string, level,
 	if assistant != "codex" {
 		assistant = "claude"
 	}
-	executable := p.executable(assistant)
-	if executable == "" {
-		return "", ErrNoPlanner
-	}
 	timeout := p.Timeout
 	if timeout <= 0 || timeout > MaxPolishDuration {
 		timeout = MaxPolishDuration
 	}
 	input := PolishInput(text, terms)
 
-	var object []byte
-	if assistant == "claude" {
-		args := []string{"-p", "--model", polishClaudeModel, "--effort", "low", "--system-prompt", PolishPrompt(level, script),
-			"--output-format", "json", "--json-schema", polishSchema, "--tools", "",
-			"--permission-mode", "dontAsk", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
-			"--setting-sources", "", "--no-session-persistence", "--disable-slash-commands"}
-		turn, cancel := context.WithTimeout(ctx, timeout)
-		raw, err := p.runner()(turn, executable, args, input, scratch(), nil)
-		late := turn.Err() != nil && ctx.Err() == nil
-		cancel()
-		if err != nil && late {
-			return "", ErrPolishTimeout
-		}
-		if err != nil {
-			return "", failed(err, raw, stderrOf(err))
-		}
-		var ok bool
-		object, ok = objectFromClaude(raw)
-		if !ok {
-			return "", failed(errors.New("cleanup did not return an object"), raw)
-		}
-	} else {
-		dir, err := os.MkdirTemp("", "clawdline-polish-")
-		if err != nil {
-			return "", err
-		}
-		defer os.RemoveAll(dir)
-		answer := filepath.Join(dir, "text.json")
-		args := []string{"exec", "--ephemeral", "--ignore-user-config", "--ignore-rules",
-			"--skip-git-repo-check", "--sandbox", "read-only", "--disable", "shell_tool",
-			"--disable", "unified_exec", "-c", `web_search="disabled"`, "-c", "agents.enabled=false",
-			"-c", `approval_policy="never"`, "-c", `model_reasoning_effort="low"`,
-			"-m", polishCodexModel, "--color", "never", "-C", dir, "-o", answer, "-"}
-		env := []string{}
-		if p.Home != "" && os.Getenv("CODEX_HOME") == "" {
-			env = append(env, "CODEX_HOME="+filepath.Join(p.Home, ".codex"))
-		}
-		turn, cancel := context.WithTimeout(ctx, timeout)
-		out, runErr := p.runner()(turn, executable, args, PolishPrompt(level, script)+"\n\n"+input, dir, env)
-		late := turn.Err() != nil && ctx.Err() == nil
-		cancel()
-		if runErr != nil && late {
-			return "", ErrPolishTimeout
-		}
-		if runErr != nil {
-			return "", failed(runErr, out, stderrOf(runErr))
-		}
-		raw, readErr := os.ReadFile(answer)
-		if readErr != nil {
-			return "", readErr
-		}
-		var ok bool
-		object, ok = objectFromText(raw)
-		if !ok {
-			return "", errors.New("cleanup did not return an object")
-		}
+	object, err := p.runTurn(ctx, assistant, PolishPrompt(level, script), input, polishSchema, timeout, "text.json")
+	if errors.Is(err, errTurnTimeout) {
+		return "", ErrPolishTimeout
+	}
+	if err != nil {
+		return "", err
 	}
 
 	var cleaned struct {

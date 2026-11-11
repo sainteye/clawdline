@@ -957,6 +957,30 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/settings/voice",
 		body2: `{"voice_polish":true,"voice_vocabulary":["Tailscale"]}`,
 	}, {
+		word:    "copilot-settings",
+		body:    map[string]any{"type": "copilot-settings", "session": machine, "request": "req-copilot"},
+		session: machine, name: "read:req-copilot",
+		method: "GET", path: "/v1/settings/copilot",
+	}, {
+		word: "copilot-settings-update",
+		body: map[string]any{"type": "copilot-settings-update", "session": machine, "request": "req-copilot-write",
+			"changes": map[string]any{"eagerness": "auto", "briefing": false}},
+		session: machine, name: "action:req-copilot-write",
+		method: "POST", path: "/v1/settings/copilot",
+		body2: `{"briefing":false,"eagerness":"auto"}`,
+	}, {
+		word:    "copilot-session",
+		body:    map[string]any{"type": "copilot-session", "session": machine, "request": "req-call"},
+		session: machine, name: "action:req-call",
+		method: "POST", path: "/v1/voice/copilot-session",
+		body2: `{}`,
+	}, {
+		word:    "copilot-briefing",
+		body:    map[string]any{"type": "copilot-briefing", "session": machine, "request": "req-brief"},
+		session: machine, name: "action:req-brief",
+		method: "POST", path: "/v1/voice/copilot-briefing",
+		body2: `{}`,
+	}, {
 		word:    "notification-rules",
 		body:    map[string]any{"type": "notification-rules", "session": machine, "request": "req-rules"},
 		session: machine, name: "read:req-rules",

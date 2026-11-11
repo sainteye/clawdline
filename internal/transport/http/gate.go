@@ -563,6 +563,18 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change voice settings."
 		}
+	case p == "/v1/settings/copilot":
+		// The voice copilot's settings, carried to a paired phone. Writing them
+		// stores the OpenAI key; a remote device needs Send, as for voice.
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may read, and not change the voice copilot settings."
+		}
+	case p == "/v1/voice/copilot-session" || p == "/v1/voice/copilot-briefing":
+		// Each starts work billed to the person: a client secret opens a
+		// Realtime call on the machine's key, a briefing runs an assistant turn.
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may not start a voice copilot call."
+		}
 	case p == "/v1/settings/default-models":
 		// This narrow route is the Settings surface carried to a paired phone.
 		// A local console may write it, and a remote device needs Send just as

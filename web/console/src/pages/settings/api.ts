@@ -221,6 +221,64 @@ async function callVoiceSettings(init: RequestInit): Promise<VoiceSettingsSnapsh
   return parsed as VoiceSettingsSnapshot
 }
 
+/** Settings › Voice copilot, as `/v1/settings/copilot` answers it: never the key. */
+export interface CopilotSettingsSnapshot {
+  key_set: boolean
+  key_hint: string
+  model: string
+  eagerness: string
+  extra_instructions: string
+  briefing: boolean
+  briefing_assistant: string
+  models: string[]
+  eagernesses: string[]
+  briefing_assistants: string[]
+  max_extra_instructions: number
+}
+
+export interface CopilotSettingsChange {
+  openai_key?: string
+  model?: string
+  eagerness?: string
+  extra_instructions?: string
+  briefing_assistant?: string
+  briefing?: boolean
+}
+
+async function callCopilotSettings(init: RequestInit): Promise<CopilotSettingsSnapshot> {
+  const path = "/v1/settings/copilot"
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  let res: Response
+  try {
+    res = await fetch(client.url(path), { ...init, signal: controller.signal })
+  } catch (cause) {
+    throw new TransportError(`${init.method ?? "GET"} ${path} did not complete`, cause)
+  } finally {
+    clearTimeout(timer)
+  }
+  const text = await res.text()
+  let parsed: unknown
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch (cause) {
+    throw new TransportError(`${path} answered with something that is not JSON`, cause)
+  }
+  if (!res.ok) {
+    if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
+    throw new TransportError(`${path} answered ${res.status} with no refusal in it`)
+  }
+  return parsed as CopilotSettingsSnapshot
+}
+
+export function readCopilotSettings(): Promise<CopilotSettingsSnapshot> {
+  return callCopilotSettings({ method: "GET" })
+}
+
+export function writeCopilotSettings(change: CopilotSettingsChange): Promise<CopilotSettingsSnapshot> {
+  return callCopilotSettings({ method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(change) })
+}
+
 export function readVoiceSettings(): Promise<VoiceSettingsSnapshot> {
   return callVoiceSettings({ method: "GET" })
 }

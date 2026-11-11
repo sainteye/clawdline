@@ -162,5 +162,37 @@ func artifactsBounds() []Entry {
 			Limit: 15000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/planner.MaxPolishDuration"},
 		},
+		{
+			// The voice copilot's prepared briefing: a slower turn is abandoned
+			// and the copilot reads the Sessions itself during the call.
+			Name: "voice.copilot_briefing_timeout_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 90000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxBriefingDuration"},
+		},
+		{
+			// What one briefing turn is given; more is refused before a turn.
+			Name: "voice.copilot_briefing_input_characters", Class: Buffer, Unit: Characters,
+			Limit: 60000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxBriefingInputRunes"},
+		},
+		{
+			// A longer answer is not handed to the copilot: it rides in every
+			// response's input for the rest of the call.
+			Name: "voice.copilot_briefing_characters", Class: Buffer, Unit: Characters,
+			Limit: 2500, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxBriefingRunes"},
+		},
+		{
+			// A pasted OpenAI key longer than this is refused by the settings route.
+			Name: "voice.copilot_key_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 400, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/domain/copilot.MaxKeyBytes"},
+		},
+		{
+			// The person's own extra instructions, carried in every response.
+			Name: "voice.copilot_extra_instructions_characters", Class: Buffer, Unit: Characters,
+			Limit: 2000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/domain/copilot.MaxExtraInstructionsRunes"},
+		},
 	}
 }

@@ -180,7 +180,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "get_session_screen", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "get_session_screen", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -372,4 +372,27 @@ test("the call opens with the Sessions already in its instructions", async () =>
   assert.ok(ev.session.instructions.indexOf(snapshot) < ev.session.instructions.indexOf("【之前的通話】"))
   const refused: ToolDeps = { async fetch() { return new Response("", { status: 503 }) }, async sleep() {} }
   assert.equal(await sessionsSnapshot(refused), "", "a machine that cannot answer leaves the call to its tools")
+})
+
+test("the machine's settings and briefing shape the call's configuration", () => {
+  const ev = sessionUpdateEvent("【之前的通話】x", "【通話開始時的 Session 快照】y", { eagerness: "high", extra: "叫我 Sean", briefing: "一件事要你處理。" }) as
+    { session: { instructions: string; audio: { input: { turn_detection: { eagerness: string } } } } }
+  const text = ev.session.instructions
+  assert.equal(ev.session.audio.input.turn_detection.eagerness, "high")
+  const order = ["【使用者的附加指示】", "【整理好的現況匯報】", "【通話開始時的 Session 快照】", "【之前的通話】"].map((h) => text.lastIndexOf(h))
+  assert.ok(order.every((i) => i > 0), JSON.stringify(order))
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "extra, briefing, snapshot, then memory")
+  const odd = sessionUpdateEvent("", "", { eagerness: "medium" }) as { session: { audio: { input: { turn_detection: { eagerness: string } } } } }
+  assert.equal(odd.session.audio.input.turn_detection.eagerness, "low", "an eagerness the API does not take falls back to patient")
+})
+
+test("asked for a briefing, the tool waits for the machine's and says when there is none", async () => {
+  const { deps } = fakeMachine({})
+  deps.briefing = async () => "一件事要你處理：Fix the flaky test 在等你決定。"
+  const got = JSON.parse((await runCopilotTool("get_status_briefing", "{}", deps)).output)
+  assert.match(got.briefing, /Fix the flaky test/)
+  deps.briefing = async () => null
+  assert.match(JSON.parse((await runCopilotTool("get_status_briefing", "{}", deps)).output).error, /list_sessions/)
+  delete deps.briefing
+  assert.match(JSON.parse((await runCopilotTool("get_status_briefing", "{}", deps)).output).error, /沒有機器整理的匯報/)
 })

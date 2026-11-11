@@ -4,7 +4,7 @@
  * Clawdline sessions on the Mac.
  */
 
-import { greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type ToolDeps } from './copilot-tools.js'
+import { greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 
@@ -33,6 +33,8 @@ export type RealtimeListener = (state: RealtimeCopilotState) => void
 
 const API_KEY_STORAGE_KEY = 'clawdline.openai.apikey'
 const MEMORY_STORAGE_KEY = 'clawdline.copilot.memory'
+/** How long a call keeps asking the machine for its briefing. */
+const BRIEFING_POLL_MS = 100000
 /** How long the call's first words wait for the opening Session snapshot. */
 const SNAPSHOT_WAIT_MS = 4000
 
@@ -133,11 +135,51 @@ export class RealtimeCopilotClient {
   private memory: MemoryTurn[] = readMemory()
   /** This call's opening Session snapshot, read while the connection is set up. */
   private snapshot: Promise<string> = Promise.resolve('')
+  /** What this call's session.update says, kept so a later update can resend it whole. */
+  private call: { memory: string; snapshot: string; options: CallOptions } = { memory: '', snapshot: '', options: {} }
+  private briefing: Promise<string | null> = Promise.resolve(null)
   private toolDeps(): ToolDeps {
     return {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      briefing: () => this.briefing,
     }
+  }
+
+  /**
+   * The machine's briefing for this call: asked once, then again while the
+   * machine answers `pending`, until it is ready or BRIEFING_POLL_MS passes.
+   */
+  private async pollBriefing(): Promise<string | null> {
+    const until = Date.now() + BRIEFING_POLL_MS
+    while (Date.now() < until && this.state.status !== 'disconnected' && this.state.status !== 'error') {
+      let res: Response
+      try {
+        res = await fetch('/v1/voice/copilot-briefing', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}' })
+      } catch {
+        // refusal-ok: the briefing is optional; an unreachable one leaves the call going and the copilot reads the Sessions itself.
+        this.addLog('error', '讀不到機器的匯報（連線失敗）')
+        return null
+      }
+      const body = (await res.json().catch(() => null)) as { briefing?: unknown; pending?: unknown; retry_after_ms?: unknown; error?: { code?: unknown } } | null
+      if (res.status === 202 && body?.pending) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(10000, Math.max(1000, Number(body.retry_after_ms) || 4000))))
+        continue
+      }
+      if (res.ok && typeof body?.briefing === 'string' && body.briefing.trim()) return body.briefing
+      const code = typeof body?.error?.code === 'string' ? body.error.code : `HTTP ${res.status}`
+      if (code !== 'copilot_briefing_off') this.addLog('error', `機器的匯報沒有整理成功（${code}），副駕駛會自己讀 Session`)
+      return null
+    }
+    return null
+  }
+
+  /** Resends the whole configuration once the briefing has arrived. */
+  private sendBriefing(text: string) {
+    if (!this.dc || this.dc.readyState !== 'open') return
+    this.call.options = { ...this.call.options, briefing: text }
+    this.dc.send(JSON.stringify(sessionUpdateEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    this.addLog('info', '機器整理好的現況匯報已交給副駕駛')
   }
   private model = 'gpt-realtime-mini'
 
@@ -171,25 +213,40 @@ export class RealtimeCopilotClient {
     this.updateState({ logs: nextLogs })
   }
 
-  async start(apiKey: string): Promise<void> {
+  async start(): Promise<void> {
     if (this.state.status === 'connected' || this.state.status === 'connecting') {
       return
     }
 
-    if (!apiKey.trim()) {
-      this.updateState({ status: 'error', error: '請輸入有效的 OpenAI API Key' })
-      return
-    }
-
-    setStoredOpenAIKey(apiKey)
     this.memory = readMemory()
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
     this.updateState({ status: 'connecting', error: undefined, toolCallLog: undefined, remembered: this.memory.length })
-    this.addLog('info', '正在請求麥克風權限並建立 WebRTC 連線...')
+    this.addLog('info', '正在向機器要通話憑證，並請求麥克風權限...')
 
     try {
+      // 0. The machine mints a short-lived client secret with its own key; the
+      // key itself never reaches this browser (internal/transport/http/copilot.go).
+      const opened = await fetch('/v1/voice/copilot-session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
+      })
+      const grant = (await opened.json().catch(() => null)) as {
+        client_secret?: string; model?: string; eagerness?: string; extra_instructions?: string; briefing?: boolean
+        error?: { code?: string; message?: string }
+      } | null
+      if (!opened.ok || !grant?.client_secret) {
+        const code = grant?.error?.code ?? `HTTP ${opened.status}`
+        // refusal-ok: only a missing key has an action here (Settings); every other refusal is shown with its own code and the machine's sentence.
+        throw new Error(code === 'copilot_key_missing'
+          ? '這台機器還沒設定 OpenAI API Key：請到「設定 › 語音副駕駛」填入。'
+          : `機器沒有開出通話憑證（${code}）${grant?.error?.message ? '：' + grant.error.message : ''}`)
+      }
+      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, extra: grant.extra_instructions } }
+      // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
+      this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
+      void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
+
       // 1. Get microphone audio stream
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
 
@@ -221,29 +278,15 @@ export class RealtimeCopilotClient {
 
       // 6. Connect with OpenAI Realtime API endpoint (GA)
       const baseUrl = 'https://api.openai.com/v1/realtime/calls'
-      const model = 'gpt-realtime-mini'
-      let response = await fetch(`${baseUrl}?model=${model}`, {
+      this.model = grant.model || 'gpt-realtime-mini'
+      const response = await fetch(`${baseUrl}?model=${encodeURIComponent(this.model)}`, {
         method: 'POST',
         body: offer.sdp,
         headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
+          Authorization: `Bearer ${grant.client_secret}`,
           'Content-Type': 'application/sdp',
         },
       })
-
-      this.model = model
-      if (!response.ok && response.status === 404) {
-        // Fallback to gpt-realtime if mini is unavailable
-        this.model = 'gpt-realtime'
-        response = await fetch(`${baseUrl}?model=gpt-realtime`, {
-          method: 'POST',
-          body: offer.sdp,
-          headers: {
-            Authorization: `Bearer ${apiKey.trim()}`,
-            'Content-Type': 'application/sdp',
-          },
-        })
-      }
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -300,7 +343,8 @@ export class RealtimeCopilotClient {
     this.addLog(snapshot ? 'info' : 'error', snapshot ? '已附上 Session 快照，第一句就能直接問' : 'Session 快照沒有及時讀到，副駕駛會改用工具查詢')
     const section = memorySection(this.memory, nowSeconds())
     if (section) this.addLog('info', `已載入之前通話的 ${this.memory.length} 句對話`)
-    this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot)))
+    this.call = { ...this.call, memory: section, snapshot }
+    this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
     this.dc.send(JSON.stringify(greetingEvent(!!section)))
     this.addLog('info', '已送出開場問候要求')
   }

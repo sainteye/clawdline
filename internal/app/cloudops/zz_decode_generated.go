@@ -22,6 +22,10 @@ var generatedDecoders = map[string]genDecoder{
 	"coordination.leases":                genDecodeCoordinationLeases,
 	"coordination.pauses":                genDecodeCoordinationPauses,
 	"coordination.waits":                 genDecodeCoordinationWaits,
+	"copilot-briefing":                   genDecodeCopilotBriefing,
+	"copilot-session":                    genDecodeCopilotSession,
+	"copilot-settings":                   genDecodeCopilotSettings,
+	"copilot-settings-update":            genDecodeCopilotSettingsUpdate,
 	"default-models":                     genDecodeDefaultModels,
 	"default-models-update":              genDecodeDefaultModelsUpdate,
 	"diagnostics.events":                 genDecodeDiagnosticsEvents,
@@ -670,6 +674,79 @@ func genDecodeCoordinationWaits(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/orchestrator/waits"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeCopilotBriefing is the `copilot-briefing` row's decode.
+func genDecodeCopilotBriefing(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-briefing"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeCopilotSession is the `copilot-session` row's decode.
+func genDecodeCopilotSession(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-session"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeCopilotSettings is the `copilot-settings` row's decode.
+func genDecodeCopilotSettings(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/copilot"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeCopilotSettingsUpdate is the `copilot-settings-update` row's decode.
+func genDecodeCopilotSettingsUpdate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "changes", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"briefing": genRule{kind: "bool", nullable: true}, "briefing_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "eagerness": genRule{kind: "string", enum: []string{"low", "auto", "high"}, nullable: true}, "extra_instructions": genRule{kind: "string", maxBytes: 8000, nullable: true}, "model": genRule{kind: "string", enum: []string{"gpt-realtime-mini", "gpt-realtime"}, nullable: true}, "openai_key": genRule{kind: "string", maxBytes: 400, nullable: true}}, closed: true, maxKeys: 6}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/copilot"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("changes")
 	return p, req, true
 }
 

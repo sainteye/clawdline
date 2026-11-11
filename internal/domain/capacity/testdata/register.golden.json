@@ -5022,6 +5022,78 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_list_transcript_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 6,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_memory_turns",
+    "Class": "user_input",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_recap_pages",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_screen_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.direct_history_hours",
     "Class": "observation",
     "Unit": "rows",
@@ -12449,6 +12521,106 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/app.workUnitAnswerLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_briefing_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 2500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxBriefingRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_briefing_input_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 60000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxBriefingInputRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_briefing_timeout_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 90000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxBriefingDuration"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_extra_instructions_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/copilot.MaxExtraInstructionsRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_key_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 400,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/copilot.MaxKeyBytes"
     ]
   },
   {

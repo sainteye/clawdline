@@ -77,3 +77,51 @@ cards say so instead of drawing controls that cannot save.
 The bounds are registered in `internal/domain/capacity` as `voice.vocabulary_terms`,
 `voice.vocabulary_term_characters`, `voice.vocabulary_project_terms`, `voice.polish_terms`,
 `voice.polish_characters` and `voice.polish_timeout_milliseconds`.
+
+## Voice copilot
+
+The phone button in the Session list's toolbar opens a voice call with OpenAI Realtime that
+reports on this machine's Sessions. The call can shrink to a draggable bubble that stays above
+every page; its red mark ends it.
+
+**What the machine keeps.** Settings › Voice copilot writes `<state>/copilot.json` (mode 0600)
+through `/v1/settings/copilot`: the OpenAI API key, the model (`gpt-realtime-mini` by default,
+or `gpt-realtime`), semantic VAD's eagerness (`low` by default, which waits through pauses
+mid-sentence), the person's extra instructions, and whether and with which assistant a briefing
+is prepared. No answer carries the key, only `key_set` and its last four characters. A paired
+device needs Send to change these, as for the voice cards.
+
+**How a call starts.** The browser asks `POST /v1/voice/copilot-session`. The machine mints a
+Realtime client secret with its key (`POST /v1/realtime/client_secrets`, 600 seconds) and
+answers it with the settings; the browser opens the call with that secret, so the key never
+reaches a phone or Cloud. Meanwhile the browser reads the Session list into the instructions,
+so the first question needs no tool, and asks `POST /v1/voice/copilot-briefing`.
+
+**The briefing.** The machine reads its own Sessions through the handlers `/v1/sessions` and
+`/v1/transcript` answer with (at most 10, most urgent first: waiting, working, delivered, idle),
+keeps each one's waiting question, the person's recent asks, the summaries it recorded with
+`clawdline session report --summary` and its last reply, and has the chosen assistant write one
+spoken briefing in order of urgency in a single tool-less turn (`planner.Briefing`, the same CLI
+invocation as LLM cleanup). On 2026-11-12, over three Sessions, Codex took 7.9 s and Claude Haiku
+14.4 s. The first request starts it in the background and waits at most 10 s; later requests are
+answered `pending` until it is ready, and a briefing is handed out again for 60 s. When it
+arrives, the browser sends it to the call in a second `session.update`; until then the
+`get_status_briefing` tool waits for it, and without it the copilot reads the Sessions itself.
+
+**What the copilot can read.** `list_sessions`, `get_session_summary`, `get_session_recap`
+(the whole conversation, paged back at most 5 pages), `get_session_activity`,
+`get_session_screen` and `send_message_to_session`. Over Cloud the copilot is opened inside one
+Session's page, which pins Session content to that Session; its reads carry
+`X-Clawdline-Unopened-Read: 1`, and the seam resolves and verifies the named Session's current
+execution instead (`cloud/unopened-read.ts`). Settings › Voice copilot shows the instructions and
+every tool's description exactly as a call sends them.
+
+**What the browser keeps.** The lines both sides spoke in earlier calls (at most 24, three days),
+for the next call's instructions, and this call's cost, priced from each `response.done` usage at
+OpenAI's listed rates; Whisper captions are billed per minute and are not included.
+
+The bounds are registered as `voice.copilot_key_bytes`,
+`voice.copilot_extra_instructions_characters`, `voice.copilot_briefing_timeout_milliseconds`,
+`voice.copilot_briefing_input_characters`, `voice.copilot_briefing_characters`,
+`console.copilot_memory_turns`, `console.copilot_list_transcript_reads`,
+`console.copilot_recap_pages` and `console.copilot_screen_reads`.

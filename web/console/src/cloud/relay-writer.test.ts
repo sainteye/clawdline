@@ -2576,6 +2576,8 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/sessions/s1/cloud-receipts/press-1", "session-receipt"],
     // The Session page's skills picker on another machine (e13a02e6).
     ["/v1/sessions/s1/skills", "skills"],
+    // Settings › Voice copilot (pages/settings/window/CopilotSettingsCard.tsx).
+    ["/v1/settings/copilot", "copilot-settings"],
   ]
   for (const [path, op] of reads) {
     const route = writeRoute("GET", path)

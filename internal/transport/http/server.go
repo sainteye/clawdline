@@ -722,6 +722,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/settings/notifications"}, s.notificationSettingsRoute},
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
 		{Route{"*", "/v1/settings/voice"}, s.voiceSettingsRoute},
+		{Route{"*", "/v1/settings/copilot"}, s.copilotSettingsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
 		{Route{"*", "/v1/settings/workflow"}, s.workflowSettingsRoute},
 		{Route{"*", "/v1/settings/integrations"}, s.integrationSettingsRoute},
@@ -774,6 +775,8 @@ func (s *Server) routeTable() []route {
 		// a send: this machine transcribes and answers with the text, and what
 		// happens to it afterwards is the composer's business.
 		{Route{"*", "/v1/voice"}, s.voiceRoute},
+		{Route{"*", "/v1/voice/copilot-session"}, s.copilotSessionRoute},
+		{Route{"*", "/v1/voice/copilot-briefing"}, s.copilotBriefingRoute},
 		{Route{"*", "/v1/voice/language"}, s.voiceLanguageRoute},
 		{Route{"*", "/v1/voice/source"}, s.voiceSourceRoute},
 		{Route{"*", "/v1/voice/setup"}, s.voiceSetupRoute},
