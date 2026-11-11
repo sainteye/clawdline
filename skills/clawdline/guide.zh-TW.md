@@ -1802,6 +1802,12 @@ clawdline item doc <item id> --role completion_report --title "Completion report
   `completion_report`；再寫一份（不論 title）就是改版那一份，title 也換成新的。
 - 第 33 份文件會被拒絕（`documents_full`），什麼都不會寫入；訊息會附上一條改版現有文件的
   `clawdline item doc` 指令。
+- `clawdline item doc-delete <item id> <doc id>` 會刪掉項目不再需要的文件，空出位置
+  （`POST /v1/work/v2/agent/items/<id>/documents/<doc id>/delete`，body 是
+  `{"expected_version", "session_id"}`，事件是 `document.deleted`）。只有擁有項目的 Session 能刪，
+  而且項目要還沒結束。`completion_report`、每一份 `plan_review`、每一份 review boundary 和最新的
+  `plan` 會保留（`document_kept`），因為 planning gate 會讀它們；被新計畫取代的舊 plan 可以刪。
+  `clawdline item show` 會列出每份文件的 id。
 
 - `plan` 和 `plan_review` 只用在 Epic 或 Feature（其他種類回 `document_role_not_applicable`）。
 - `plan_review` 的 `reference` 是審查這份計畫的 Clawdline child 的 task id。daemon 只在這些條件都成立

@@ -157,6 +157,61 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 	return out, err
 }
 
+// DeleteDocument removes one document from an item its Session owns, so an
+// item that reached WorkV2DocumentLimit can take documents again. It keeps
+// what a gate or the finish reads: the completion_report, every plan_review,
+// every review boundary, and the latest plan, whose position against the
+// reviews is what the planning gate compares. An older plan is superseded by
+// the latest one, so removing it changes no gate.
+func (w *WorkSystemV2) DeleteDocument(ctx context.Context, id, docID, session string, expected int64, file WorkV2Filer) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if !VersionHolds(expected, prev.Version) {
+			return store.ErrConflict
+		}
+		if prev.OwnerSession == "" || prev.OwnerSession != session || prev.Phase.Terminal() {
+			return notItemOwner("delete documents of", id)
+		}
+		doc, latestPlan, found, err := tx.ItemDocument(id, docID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return work.RefuseV2("document_not_found", "No such document belongs to this item.")
+		}
+		switch {
+		case doc.Role == work.DocumentCompletionReport:
+			return work.RefuseV2("document_kept", "The completion report is kept; revise it instead.")
+		case doc.Role == work.DocumentPlanReview, doc.Role == "other" && doc.Title == work.ReviewBoundaryTitle:
+			return work.RefuseV2("document_kept", "Plan reviews and review assessments are kept: the planning gate reads them.")
+		case latestPlan:
+			return work.RefuseV2("document_kept", "The latest plan is kept: the planning gate reads it. Older plans can be deleted.")
+		}
+		if err := tx.DeleteDocument(id, docID); err != nil {
+			return err
+		}
+		next := prev
+		next.UpdatedAt = w.now()
+		if err := tx.PutItem(prev, next, "document.deleted", session,
+			payload(map[string]any{"document_id": doc.ID, "role": doc.Role})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next}
+		if file != nil {
+			if k, a, ok := file(out); ok {
+				return tx.CompleteReceipt(k, a)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
 // PlanReviewTitle is the title of the plan_review a review child adds by
 // itself; the verdict follows it when the receipt names one.
 const PlanReviewTitle = "Plan review"

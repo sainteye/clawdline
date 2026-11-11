@@ -214,5 +214,7 @@
   "error.no_run_propose_next": "`clawdline item propose`（同樣的 --kind、--title 與描述）提交提案，並請當事人在 Board 的 Agent proposals 中接受。",
   "receipt.proposal_filed": "已提交提案 %s  %s\n當事人會在 Board 的 Agent proposals 中接受或拒絕；在那之前它還不是 Board 項目。\n",
   "flag.source_todo": "propose 用：提案來源，這個 Session 自己的待辦",
-  "flag.source_item": "propose 用：提案來源，這個 Session 負責的 Board 項目"
+  "flag.source_item": "propose 用：提案來源，這個 Session 負責的 Board 項目",
+  "usage.doc_delete": "       clawdline item doc-delete [--conversation id] [--key k] [--port n] <項目 ID> <文件 ID>",
+  "receipt.document_deleted": "刪除文件 "
 }

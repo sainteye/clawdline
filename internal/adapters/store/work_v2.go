@@ -1660,6 +1660,44 @@ func (t *WorkV2Tx) ReviseDocument(d work.DocumentV2) error {
 	return nil
 }
 
+// ItemDocument is one document of one item, with whether it is the item's
+// latest plan, read inside the transaction that may delete it. A document of
+// another item is not found.
+func (t *WorkV2Tx) ItemDocument(workID, docID string) (work.DocumentV2, bool, bool, error) {
+	var d work.DocumentV2
+	var created, updated int64
+	var latestPlan int
+	err := t.tx.QueryRowContext(t.ctx, `SELECT d.id,d.work_id,d.role,d.title,d.body,d.reference,d.position,d.version,
+      d.created_at,d.updated_at, d.role='plan' AND d.rowid=(SELECT p.rowid FROM work_v2_documents p
+        WHERE p.work_id=d.work_id AND p.role='plan' ORDER BY p.created_at DESC, p.rowid DESC LIMIT 1)
+    FROM work_v2_documents d WHERE d.id=? AND d.work_id=?`, docID, workID).Scan(&d.ID, &d.WorkID, &d.Role,
+		&d.Title, &d.Body, &d.Reference, &d.Position, &d.Version, &created, &updated, &latestPlan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return work.DocumentV2{}, false, false, nil
+	}
+	if err != nil {
+		return work.DocumentV2{}, false, false, err
+	}
+	d.CreatedAt, d.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+	return d, latestPlan == 1, true, nil
+}
+
+// DeleteDocument removes one document of one item, freeing its place under
+// WorkV2DocumentLimit.
+func (t *WorkV2Tx) DeleteDocument(workID, docID string) error {
+	res, err := t.tx.ExecContext(t.ctx, `DELETE FROM work_v2_documents WHERE id=? AND work_id=?`, docID, workID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
+		return ErrConflict
+	}
+	t.wrote++
+	return nil
+}
+
 // PlanDocuments includes the review boundary declarations in the same
 // insertion order as plans and reviews. Seconds tie, so rowid breaks it. A
 // plan_review carries its reference, the review task whose receipt the

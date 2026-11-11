@@ -301,7 +301,7 @@ func itemCommand(args []string) {
 		}
 		rest = positional
 		f.phase = ev
-	case "step-done", "step-cancel", "step-reopen", "phase":
+	case "step-done", "step-cancel", "step-reopen", "doc-delete", "phase":
 		if len(positional) != 2 {
 			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.two", "clawdline item %s: takes an item id and one more argument, got %d arguments\n"), op, len(positional))
 			itemUsage()
@@ -402,6 +402,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.acceptance_revise_options", "                            [--conversation id] [--key k] [--port n] <item id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.doc", "       clawdline item doc --role <role> --title <t> [--reference r] [--body-file f | stdin]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.doc_options", "                          [--conversation id] [--key k] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.doc_delete", "       clawdline item doc-delete [--conversation id] [--key k] [--port n] <item id> <doc id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.phase", "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id] | --no-landing-reason t]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.phase_deployment", "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.phase_next", "                            <item id> <implementing|verifying|merging|deploying|done>"))
@@ -792,6 +793,10 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			body["reason"] = f.reason
 		}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/steps/" + url.PathEscape(stepID) + "/" + action
+	case "doc-delete":
+		itemID, docID := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
+		body = map[string]any{"session_id": conversation}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/documents/" + url.PathEscape(docID) + "/delete"
 	case "phase":
 		itemID, next := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
 		ev := f.phase
@@ -1164,6 +1169,8 @@ func itemWrote(stdout io.Writer, op string, args []string, it itemWire) {
 			state = cliCopy("item", "receipt.step_reopened", " restored to pending")
 		}
 		what = cliCopy("item", "receipt.step_prefix", "step ") + strings.TrimSpace(args[1]) + state
+	} else if op == "doc-delete" && len(args) > 1 {
+		what = cliCopy("item", "receipt.document_deleted", "the deletion of document ") + strings.TrimSpace(args[1])
 	} else if op == "phase" && len(args) > 1 {
 		what = cliCopy("item", "receipt.phase_prefix", "phase ") + strings.TrimSpace(args[1])
 	}

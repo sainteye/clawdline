@@ -2097,6 +2097,12 @@ as it is, so a retry is safe. The old text is not kept; use a different title to
   revises it and takes the new title.
 - A 33rd document is refused with `documents_full` and nothing is written; the message names the
   `clawdline item doc` command that revises an existing document instead.
+- `clawdline item doc-delete <item id> <doc id>` deletes a document the item no longer needs and
+  frees its place (`POST /v1/work/v2/agent/items/<id>/documents/<doc id>/delete`, body
+  `{"expected_version", "session_id"}`, event `document.deleted`). Only the owning Session can,
+  and only while the item is open. The `completion_report`, every `plan_review`, every review
+  boundary and the latest `plan` are kept (`document_kept`), because the planning gate reads them;
+  an older plan is superseded and can go. `clawdline item show` lists each document's id.
 
 - `plan` and `plan_review` belong to an Epic or Feature (`document_role_not_applicable` for other kinds).
 - A `plan_review`'s `reference` is the task id of the Clawdline child that reviewed the plan. The

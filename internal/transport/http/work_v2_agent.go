@@ -319,6 +319,36 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		_, _ = w.Write(answer)
 		return
 	}
+	if len(parts) == 5 && parts[0] == "items" && workID(parts[1]) && parts[2] == "documents" &&
+		parts[4] == "delete" && r.Method == http.MethodPost {
+		var body struct {
+			ExpectedVersion int64  `json:"expected_version"`
+			SessionID       string `json:"session_id"`
+		}
+		raw, ok := readWorkV2Body(w, r, &body)
+		if !ok {
+			return
+		}
+		k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+		if !ok {
+			return
+		}
+		itemOf := s.workV2ItemProjector(r.Context())
+		var answer []byte
+		_, err := s.workV2().DeleteDocument(r.Context(), parts[1], parts[3], body.SessionID, app.AgentExpectedVersion(body.ExpectedVersion),
+			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+				answer = workV2Answer(itemOf(v))
+				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+			})
+		if err != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(answer)
+		return
+	}
 	if len(parts) == 5 && parts[0] == "items" && workID(parts[1]) && parts[2] == "steps" &&
 		(parts[4] == "complete" || parts[4] == "cancel" || parts[4] == "reopen") && r.Method == http.MethodPost {
 		var body struct {

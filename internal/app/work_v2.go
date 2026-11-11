@@ -148,8 +148,9 @@ func DocumentsFullMessage(id, role string) string {
 	return fmt.Sprintf("This item already holds %d documents, the most it keeps, so nothing was written. "+
 		"A completion_report is always accepted, and writing a document again with the role and title of one "+
 		"already on the item revises it in place instead of adding one. `clawdline item show %s` lists the "+
-		"documents; revise one with `clawdline item doc %s --role %s --title \"<its title>\" --body-file <file>`.",
-		store.WorkV2DocumentLimit, id, id, role)
+		"documents; revise one with `clawdline item doc %s --role %s --title \"<its title>\" --body-file <file>`, "+
+		"or delete one no longer needed, such as a superseded plan, with `clawdline item doc-delete %s <doc id>`.",
+		store.WorkV2DocumentLimit, id, id, role, id)
 }
 
 func workV2Error(status int, code, message string) error {

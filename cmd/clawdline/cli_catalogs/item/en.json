@@ -214,5 +214,7 @@
   "error.no_run_propose_next": "`clawdline item propose` (same --kind, --title and description) and tell the person to accept it in the Board's Agent proposals.",
   "receipt.proposal_filed": "filed proposal %s  %s\nThe person accepts or declines it in the Board's Agent proposals; it is not a Board item until then.\n",
   "flag.source_todo": "for propose: this Session's own to-do the proposal comes from",
-  "flag.source_item": "for propose: a Board item this Session owns that the proposal comes from"
+  "flag.source_item": "for propose: a Board item this Session owns that the proposal comes from",
+  "usage.doc_delete": "       clawdline item doc-delete [--conversation id] [--key k] [--port n] <item id> <doc id>",
+  "receipt.document_deleted": "the deletion of document "
 }
