@@ -14,13 +14,16 @@ export function readQuotaVisible(store: ReadStore | null = quotaStorage(), layou
 export function saveQuotaVisible(on: boolean, store: WriteStore | null = quotaStorage(), layout: QuotaLayout = "desktop"): boolean {
   try { if (!store) return false; store.setItem(quotaVisibilityKey(layout), String(on)); return true } catch { return false }
 }
-/** Grok may retain a proven missing reading; an initial provider slot is not evidence. */
+/**
+ * Grok may retain a proven missing reading or an expired saved sign-in, which the details explain
+ * with the command that renews it; an initial provider slot is not evidence.
+ */
 export function visibleQuotaRows(rows: readonly ProviderQuotaRow[]): ProviderQuotaRow[] {
   return rows.flatMap((row) => {
     if (row.id === "grok" && row.problem === "not_signed_in") return []
     const windows = row.windows.filter((w) => Number.isFinite(w.used_percent) && w.used_percent >= 0 && w.used_percent <= 100)
     const observed = typeof row.observed_at === "number" && Number.isFinite(row.observed_at) && row.observed_at > 0
-    return windows.length || row.id === "grok" && (row.problem === "no_reading" || observed) ? [{ ...row, windows }] : []
+    return windows.length || row.id === "grok" && (row.problem === "no_reading" || row.problem === "reauth_required" || observed) ? [{ ...row, windows }] : []
   })
 }
 export function tightestWindow(row: ProviderQuotaRow) {

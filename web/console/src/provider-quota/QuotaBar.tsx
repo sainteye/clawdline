@@ -114,7 +114,13 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
     </footer>
     <dialog ref={dialog} id="provider-quota-detail" className="quota-dialog" aria-labelledby="quota-dialog-title"
       onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation() }}
-      onCancel={() => setExpanded(false)} onClose={() => { setExpanded(false); opener.current?.focus() }}>
+      onCancel={() => setExpanded(false)} onClose={() => { setExpanded(false); opener.current?.focus() }}
+      onClick={(event) => {
+        // A click on the backdrop targets the dialog itself, outside its box.
+        if (event.target !== event.currentTarget) return
+        const box = event.currentTarget.getBoundingClientRect()
+        if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) setExpanded(false)
+      }}>
       <div className="quota-dialog-heading"><h2 id="quota-dialog-title">{nextWord("quotaTitle")}</h2>
         <button type="button" onClick={() => setExpanded(false)} aria-label={nextWord("quotaClose")}>×</button></div>
       <p className="quota-caption">{machineName || nextWord("quotaThisMachine")} · {nextWord("quotaAccountScope")}</p>
