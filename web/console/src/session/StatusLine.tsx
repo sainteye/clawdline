@@ -3,6 +3,7 @@ import type { GitSnapshot, ProjectLink, SessionInfo, SessionInfoContext, Session
 import { contextCell } from "./context.js"
 import { conversationBecameKnown } from "./info-freshness.js"
 import { statusLimitRow } from "./status-limits.js"
+import { assistantLabel } from "./antigravity-ui.js"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
@@ -74,7 +75,7 @@ export function StatusLine({
   const limitCells = statusLimitRow(reading, { unknown: T.webInfoUnknown, limits: T.webInfoLimits,
     credits: { name: nextWord("quotaCredits"), inUse: nextWord("quotaCreditsInUse"),
       balance: (balance) => nextWord("quotaCreditBalance", { balance }),
-      explain: nextWord("quotaCreditsExplain", { provider: L.assistantDisplayName(row?.assistant) }) },
+      explain: nextWord("quotaCreditsExplain", { provider: assistantLabel(row?.assistant) }) },
     ...(row?.assistant === "grok" ? { stale: nextWord("quotaStale"), source: nextWord("infoGrokAccountQuota") + (reading?.at ? " " + nextWord("quotaUpdated", { time: L.clock(reading.at) }) : "") } : {}),
   })
   const deploy = runningDeploy(info)

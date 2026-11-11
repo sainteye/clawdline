@@ -531,7 +531,7 @@ function creditsHTML(limits: SessionLimits): string {
   const balance = creditBalanceText(limits.creditBalance)
   return '<p class="note credits-in-use"><b>' + esc(nextWord("quotaCreditsInUseLong")) + "</b>" +
     (balance ? " · " + esc(nextWord("quotaCreditBalance", { balance })) : "") + "<br>" +
-    esc(nextWord("quotaCreditsExplain", { provider: L.assistantDisplayName(data?.session.assistant) })) + "</p>"
+    esc(nextWord("quotaCreditsExplain", { provider: assistantLabel(data?.session.assistant) })) + "</p>"
 }
 
 /**
