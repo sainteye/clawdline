@@ -27,6 +27,8 @@ import type { CarriedWord, CarryTable } from "./carry.js"
 import { readPersonaDisplay } from "./persona-cache.ts"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { usageOverviewQuery } from "./carry.ts"
+// @ts-expect-error -- Node loads the source extension in focused behavior tests.
+import { isUnopenedRead } from "./unopened-read.ts"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
@@ -1354,6 +1356,19 @@ export class RelayReader {
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
+          if (isUnopenedRead(init) && !url.searchParams.has("before") && !url.searchParams.has("after") && !url.searchParams.has("view")) {
+            // The voice copilot, asking about a Session other than the opened
+            // one (`unopened-read.ts`): its current execution, verified, read
+            // as that execution's own — never the opened Session's held page.
+            const target = await this.options.resolveSession?.(this.machine, session)
+            const client = this.connected()
+            if (!target || target.machineID !== this.machine || target.sessionID !== session || !client.readForGeneration) {
+              return this.refuse(method, path, 409, "execution_target_required", "This Session's current execution cannot be verified.")
+            }
+            const body = await client.readForGeneration(target, "transcript", { limit: CLOUD_TRANSCRIPT_LIMIT }, init?.signal ?? undefined)
+            this.note(method, path, "relay", undefined, { word: "transcript" })
+            return json(200, transcriptPage(body, session))
+          }
           const view = url.searchParams.get("view")
           if (view?.startsWith("tool-v1:") || view?.startsWith("tool-v1z:") || view?.startsWith("entry-v1:") || view?.startsWith("entry-v1z:")) {
             const body = await this.connected().readForGeneration!(await this.coherentSession(session, init?.signal),
