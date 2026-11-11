@@ -190,5 +190,6 @@ test("Grok current and historical transport errors never use Gemini display code
   assert.equal(assistantTurnFailureWord("antigravity","antigravity_process_unexpected_id"),null)
   assert.equal(assistantTurnFailureCode("grok","ordinary antigravity_process_text"),"ordinary antigravity_process_text")
   assert.equal(assistantTurnFailureWord("grok","grok_process_rpc_error"),"grokRequestFailed")
+  assert.equal(assistantTurnFailureWord("grok","grok_turn_interrupted_by_restart"),"grokInterruptedByRestart")
   assert.equal(assistantTurnFailureWord("grok","grok_turn_rate_limited"),"grokRateLimited")
 })

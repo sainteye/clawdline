@@ -9078,6 +9078,7 @@
   "next.usageInProgress": "in progress",
   "next.scheduleArchiveCodex": "Archive the Codex chat after its tab closes",
   "next.scheduleArchiveCodexHint": "Keeps Codex's chat list from gaining one chat per run. A run whose tab stays open is not archived, and opening a run from its history brings its chat back.",
+  "next.grokInterruptedByRestart": "Clawdline restarted while this Grok turn was running, for example to install an update, so the turn stopped. Tools that were running may have partly finished. Nothing was resent; check the results before sending again.",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

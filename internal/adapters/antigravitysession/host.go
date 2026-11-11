@@ -740,7 +740,19 @@ func (h *Host) sendProtocol(ctx context.Context, s session.Session, text string,
 				_ = c.saveState()
 				return
 			}
-			c.append(contract.TranscriptEntry{Role: "error", Text: h.turnFailureText(err), At: time.Now().Unix()})
+			text := h.turnFailureText(err)
+			if h.assistant() == session.AssistantGrok {
+				// The process is gone or the prompt failed: nothing reports the
+				// tools still shown as running, so they are settled as cancelled.
+				if cerr := c.cancelActiveTools(); cerr != nil {
+					outcome, c.storeErr = cerr, cerr
+				}
+				// Grok work is never resumed after a restart, so say why it stopped.
+				if h.ctx.Err() != nil && !c.stopping && !c.hidden {
+					text = "grok_turn_interrupted_by_restart"
+				}
+			}
+			c.append(contract.TranscriptEntry{Role: "error", Text: text, At: time.Now().Unix()})
 			_ = c.saveState()
 			return
 		}
