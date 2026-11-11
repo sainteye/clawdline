@@ -4,6 +4,10 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/app/lane"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // composer is Claude Code's input line holding line, framed by its rules.
@@ -47,5 +51,42 @@ func TestAnEnterAnywhereElsePressesNothing(t *testing.T) {
 		if typed := pane.keys(); len(typed) != 0 {
 			t.Errorf("%s: typed %q", c.name, typed)
 		}
+	}
+}
+
+// inputTerminal is a pane whose host can also read the input line the way a
+// send does, with faint text left out.
+type inputTerminal struct {
+	*menuTerminal
+	input string
+}
+
+func (t *inputTerminal) InputScreen(ctx context.Context, s session.Session) (string, bool) {
+	return t.input, true
+}
+
+// An Enter is not pressed at a faint prompt suggestion that happens to be the
+// same words. The phone's "press Enter" card can outlive the words it was for:
+// they were submitted or cleared on the machine, and Claude Code then drew the
+// same line again faint as its next suggestion. Read without styling, that
+// composer held the words, and the Enter went to an empty composer.
+func TestAnEnterIsNotPressedAtAFaintSuggestionOfTheSameWords(t *testing.T) {
+	words := "commit、push、deploy。"
+	pane := &inputTerminal{menuTerminal: &menuTerminal{s: paneFor("%7"), screen: composer(words)}, input: composer("")}
+	actions := Actions{Inventory: Inventory{Terminals: []ports.TerminalHost{pane}, Screen: pane},
+		Terminals: []ports.TerminalHost{pane}, Lanes: lane.New(lane.DefaultLimit)}
+	_, err := actions.SubmitTyped(context.Background(), "%7", words)
+	if ref, ok := err.(Refusal); !ok || ref.Code != "input_moved" {
+		t.Fatalf("err %v, want input_moved", err)
+	}
+	if typed := pane.keys(); len(typed) != 0 {
+		t.Fatalf("typed %q at a faint suggestion", typed)
+	}
+	pane.input = composer(words)
+	if _, err := actions.SubmitTyped(context.Background(), "%7", words); err != nil {
+		t.Fatalf("words really typed: err %v", err)
+	}
+	if typed := pane.keys(); len(typed) != 1 || typed[0] != "\r" {
+		t.Fatalf("typed %q, want one Return", typed)
 	}
 }

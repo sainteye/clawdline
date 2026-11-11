@@ -77,7 +77,22 @@ func (a Actions) SubmitTyped(ctx context.Context, id, typed string) (session.Ses
 		return s, Refusal{Code: "input_behind_question",
 			Detail: "That session is asking a question now, and Enter would answer it. Enter was not pressed."}
 	}
-	if !terminal.HoldsTyped(screen, typed) {
+	// The input line is read as a send reads it, where the host can: a faint
+	// prompt suggestion of the same words is not the words still typed. The
+	// menu check above keeps the ordinary capture, where dim text can be part
+	// of a question.
+	held := screen
+	if reader, ok := h.(interface {
+		InputScreen(context.Context, session.Session) (string, bool)
+	}); ok {
+		if held, ok = reader.InputScreen(ctx, s); !ok {
+			note["verdict"] = "unreadable"
+			a.record(ctx, "session.key", s.ID, note)
+			return s, Refusal{Code: "input_unreadable",
+				Detail: "That session's screen could not be read, so its input line could not be checked. Enter was not pressed."}
+		}
+	}
+	if !terminal.HoldsTyped(held, typed) {
 		note["verdict"] = "not_held"
 		a.record(ctx, "session.key", s.ID, note)
 		return s, Refusal{Code: "input_moved",

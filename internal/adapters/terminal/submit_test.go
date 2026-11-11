@@ -462,6 +462,9 @@ func TestWithoutFaintDropsOnlyFaintText(t *testing.T) {
 		{"\x1b[38:2::2:2:2mcolon\x1b[m", "colon"},
 		{"\x1b]8;;https://x\x1b\\link\x1b]8;;\x07 \x1b[2;1mfaint\nstill\x1b[0m next", "link \n next"},
 		{"\x1b[1;2mfaint\x1b[0mplain", "plain"},
+		// tmux -e writes a frame drawn in the line-drawing set as SO..SI;
+		// a SI left at the start of the next line hid its caret.
+		{"\x0eqqqq\x0f\n❯ typed\n", "qqqq\n❯ typed\n"},
 	} {
 		if got := withoutFaint(c.styled); got != c.want {
 			t.Errorf("withoutFaint(%q) = %q, want %q", c.styled, got, c.want)

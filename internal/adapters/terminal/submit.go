@@ -611,6 +611,18 @@ func (p tmuxInput) screen(ctx context.Context) (string, bool) {
 	return withoutFaint(out), err == nil
 }
 
+// InputScreen is a pane's screen as a send reads its input line: faint text,
+// a prompt suggestion, left out (tmuxInput.screen). An Enter pressed from the
+// phone at words a send left typed checks the words against this, not against
+// Capture, where a faint suggestion of the same words reads as typed.
+func (t *Tmux) InputScreen(ctx context.Context, s session.Session) (string, bool) {
+	t, s = t.sessionTarget(s)
+	if t == nil || s.Backend != session.BackendTmux || s.ID == "" {
+		return "", false
+	}
+	return tmuxInput{call: t.call, target: s.ID}.screen(ctx)
+}
+
 // withoutFaint is a `capture-pane -e` capture as plain text with every
 // character drawn faint (SGR 2) removed, and every escape sequence dropped.
 func withoutFaint(styled string) string {
@@ -618,6 +630,13 @@ func withoutFaint(styled string) string {
 	faint := false
 	for i := 0; i < len(styled); {
 		c := styled[i]
+		if c == 0x0e || c == 0x0f {
+			// Shift Out and Shift In: tmux -e brackets what a program drew in
+			// the line-drawing set with them. They are not text, and one left
+			// at the start of a line would hide the caret on it.
+			i++
+			continue
+		}
 		if c != 0x1b {
 			if !faint || c == '\n' {
 				out.WriteByte(c)

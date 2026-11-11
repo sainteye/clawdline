@@ -326,3 +326,17 @@ func TestTmuxSendPressesNoEnterUntilThePaneShowsTheText(t *testing.T) {
 		t.Fatalf("an Enter reached a program that never showed the text: %q", read.String())
 	}
 }
+
+// InputScreen reads an empty composer as empty while a faint suggestion is
+// drawn in it, where Capture reads the suggestion as typed words.
+func TestTmuxInputScreenLeavesOutTheFaintSuggestion(t *testing.T) {
+	pane, _, client := privateTmux(t, "ghost")
+	plain, ok := client.Capture(context.Background(), pane)
+	if !ok || !HoldsTyped(plain, ghostSuggestion) {
+		t.Fatalf("the fixture should read as typed without styling:\n%s", plain)
+	}
+	input, ok := client.InputScreen(context.Background(), pane)
+	if !ok || HoldsTyped(input, ghostSuggestion) {
+		t.Fatalf("InputScreen still holds the suggestion:\n%s", input)
+	}
+}
