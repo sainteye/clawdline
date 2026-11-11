@@ -17,9 +17,22 @@ export function isAppleTouchDevice(scope) {
         || (/Mac/.test(platform) && Number(navigator.maxTouchPoints || 0) > 1);
 }
 
+/**
+ * The Clawdline iOS app's web view announces itself before any page script
+ * runs (`window.clawdlineNative`, set by the shell's document-start script).
+ * Its storage is its own, exactly as a Home Screen app's is, so it signs in
+ * and pairs inside itself and must never be sent to install the PWA.
+ */
+export function isNativeAppShell(scope) {
+    scope = scope || {};
+    var native = scope.clawdlineNative;
+    return !!native && typeof native === "object" && native.platform === "ios";
+}
+
 export function isStandaloneWebApp(scope) {
     scope = scope || {};
     var navigator = scope.navigator || {};
+    if (isNativeAppShell(scope)) return true;
     if (navigator.standalone === true) return true;
     return typeof scope.matchMedia === "function"
         && scope.matchMedia("(display-mode: standalone)").matches === true;
