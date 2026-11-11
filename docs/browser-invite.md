@@ -5,12 +5,15 @@ read and operate permission, for 8 hours, 7 days, or until revoked. It exists fo
 owner uses but does not trust with their account: a cloud computer reached over remote desktop,
 where typing works but copying text out does not.
 
-The owner starts it on a device already paired with the machine: Cloud's **Devices** page → the
-machine → **Name and access** (`web/console/src/pages/devices/BrowserInvites.tsx`). The machine's
-own local routes below do the same for a script on the machine; the Local console has no screen
-for it yet. The device shows a code such as
-`K7M4Q-9X2FTB`. The owner opens `app.clawdline.com/join` in the new browser and types it. Both
-screens then show the same six digits; the owner compares them and approves on the inviting device.
+The owner starts it at the top of the **Devices** page, which is the same on Clawdline Cloud and on
+the machine's own console (`web/console/src/pages/devices/MachineAccess.tsx`): **Pair a new
+browser** makes an invitation link, and the same card asks to **confirm the pairing** when a browser
+shows its six digits. Below it one list names everything that may use the machine, in three groups
+whose Revoke says how far it reaches: invited browsers (this machine only), the account's browsers
+and phones (on Cloud the whole account; on the machine's console this machine only), and devices
+signed in to the machine directly. On the machine's console only its own key may invite; a browser
+signed in as a device of its own is told so. On Cloud the direct group is read and revoked through
+the `direct-devices` and `direct-device-revoke` words, which an invited browser may not use.
 
 ## What protects it
 

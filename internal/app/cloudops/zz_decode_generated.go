@@ -26,6 +26,8 @@ var generatedDecoders = map[string]genDecoder{
 	"default-models-update":              genDecodeDefaultModelsUpdate,
 	"diagnostics.events":                 genDecodeDiagnosticsEvents,
 	"diagnostics.report":                 genDecodeDiagnosticsReport,
+	"direct-device-revoke":               genDecodeDirectDeviceRevoke,
+	"direct-devices":                     genDecodeDirectDevices,
 	"direct-local-network-enable":        genDecodeDirectLocalNetworkEnable,
 	"dismiss-restorable":                 genDecodeDismissRestorable,
 	"doctor":                             genDecodeDoctor,
@@ -743,6 +745,52 @@ func genDecodeDiagnosticsReport(b body) (plan, LocalRequest, bool) {
 		return plan{}, LocalRequest{}, false
 	}
 	return p, LocalRequest{}, true
+}
+
+// genDecodeDirectDeviceRevoke is the `direct-device-revoke` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeDirectDeviceRevoke(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "device_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("device_id", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/auth/devices/" + segment(genText(b["device_id"])) + "/revoke"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = map[string]string{}
+	if v, sent := b.genSource(genValue{from: "request"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeDirectDevices is the `direct-devices` row's decode.
+//
+// Deliberately this machine (`local_exemption`): its route refuses every
+// caller but this machine's own token, which the in-process request carries.
+func genDecodeDirectDevices(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/auth/devices"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
 }
 
 // genDecodeDirectLocalNetworkEnable is the `direct-local-network-enable` row's decode.

@@ -1,5 +1,5 @@
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { nextWord } from "../../next-strings.js"
 import type { NextWord } from "../../next-strings.js"
@@ -10,12 +10,11 @@ import { directHistory, failingSince, watchDirectHistory, type DirectHour } from
 import type { DirectTry } from "../../cloud/direct-carrier.js"
 import type { CloudMachine } from "../../cloud/copied.js"
 import { NAME_MAX } from "../../cloud/rename.js"
-import { listViewerDevices, revokeViewerDevice, type ViewerDevice, type ViewerDeviceList } from "../../cloud/viewer-devices.js"
 import { MachinePlatformIcon } from "../../cloud/MachinePlatformIcon.js"
 import { sessionsFact } from "../../cloud/unpaired-rows.js"
 import { machineSeenWord } from "../../cloud/machine-seen.js"
 import { OwnerDiagnostics } from "../../cloud/health-owner/OwnerDiagnostics.js"
-import { BrowserInvites } from "./BrowserInvites.js"
+import { MachineAccess, cloudAccessSource } from "./MachineAccess.js"
 import "./account-machines.css"
 
 /**
@@ -118,9 +117,26 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
 
   const open = rows?.find((m) => m.id === openID) ?? null
   const retry = accountRoster().retry
+  // The access section names one machine: the one picked, else the first paired one.
+  const [accessID, setAccessID] = useState<string | null>(null)
+  const paired = rows?.filter((m) => m.pairing !== "not_paired") ?? []
+  const accessMachine = paired.find((m) => m.id === accessID) ?? paired[0] ?? null
+  const accessSource = useMemo(() => manager && accessMachine ? cloudAccessSource(manager, accessMachine.id, nameOf(accessMachine)) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [manager, accessMachine?.id, accessMachine ? nameOf(accessMachine) : ""])
 
   return (
     <div className="account-machines" data-tick={tick}>
+      {accessSource && (
+        <MachineAccess source={accessSource} picker={paired.length > 1 ? (
+          <label className="access-picker">
+            <span className="am-label">{nextWord("accessMachineLabel")}</span>
+            <select value={accessMachine!.id} onChange={(e) => setAccessID(e.target.value)}>
+              {paired.map((m) => <option key={m.id} value={m.id}>{nameOf(m)}</option>)}
+            </select>
+          </label>
+        ) : undefined} />
+      )}
       {told && <p className="am-told" role="status">{told}</p>}
       {roster === "failed" && (
         <div className="am-roster-failed">
@@ -483,8 +499,6 @@ function AccessTab({ machine, manager, onForget }: { machine: Row; manager: Mach
         )}
         {said && <p className="am-say" role="status">{said}</p>}
       </section>
-      <BrowserInvites machineID={machine.id} machineName={name} manager={manager} />
-      <ViewerDevices manager={manager} />
       {manager.invited?.() !== true && (
         <button type="button" className="am-danger am-wide" onClick={onForget}>{nextWord("msForget")}</button>
       )}
@@ -492,82 +506,8 @@ function AccessTab({ machine, manager, onForget }: { machine: Row; manager: Mach
   )
 }
 
-function deviceName(device: ViewerDevice): string {
-  const kind = device.kind === "ios" ? nextWord("msDeviceIos") : device.kind === "android" ? nextWord("msDeviceAndroid") : nextWord("msDeviceBrowser")
-  return device.name && device.name !== "Browser" ? device.name : kind
-}
 
-function shortDate(at: string): string {
-  const when = new Date(at)
-  if (Number.isNaN(when.getTime())) return at
-  try { return new Intl.DateTimeFormat(locale(), { month: "numeric", day: "numeric" }).format(when) } catch { return when.toLocaleDateString() }
-}
 
-function ViewerDevices({ manager }: { manager: MachineManager }) {
-  const [list, setList] = useState<ViewerDeviceList | null>(null)
-  const [asking, setAsking] = useState<string | null>(null)
-  const [revoking, setRevoking] = useState(false)
-  const [said, setSaid] = useState<string | null>(null)
-  const me = manager.deviceID()
-
-  const read = useCallback(async () => {
-    setList(await listViewerDevices(manager.apiOrigin))
-  }, [manager.apiOrigin])
-  useEffect(() => { void read() }, [read])
-
-  const revoke = async (device: ViewerDevice) => {
-    setRevoking(true)
-    const outcome = await revokeViewerDevice(manager.apiOrigin, device.id)
-    setRevoking(false)
-    setAsking(null)
-    const named = deviceName(device)
-    if (outcome.kind === "revoked") { setSaid(null); void read(); return }
-    setSaid(outcome.kind === "unreadable"
-      ? nextWord("msRevokeUnknown", { device: named, code: outcome.code })
-      : nextWord("msRevokeFailed", { device: named, code: outcome.code }))
-  }
-
-  return (
-    <section aria-labelledby="am-devices-label">
-      <p className="am-label" id="am-devices-label">{nextWord("msDevicesLabel")}</p>
-      {list === null ? (
-        <p className="am-say" role="status">{nextWord("msDevicesLoading")}</p>
-      ) : list.kind !== "listed" ? (
-        <p className="am-say" role="status">{nextWord("msDevicesFailed")}</p>
-      ) : (
-        <ul className="am-card">
-          {[...list.devices].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0)).map((device) => (
-            <li key={device.id} className="am-card-row">
-              {asking === device.id ? (
-                <div className="am-revoke-ask">
-                  <p>{nextWord("msRevokeAsk", { device: deviceName(device) })}</p>
-                  <div className="am-pair-buttons">
-                    <button type="button" className="am-ghost" onClick={() => setAsking(null)} disabled={revoking}>{nextWord("msCancel")}</button>
-                    <button type="button" className="am-danger-fill" onClick={() => void revoke(device)} disabled={revoking}>
-                      {revoking ? nextWord("msRevoking") : nextWord("msRevoke")}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <span className="am-card-text">
-                    <span>{deviceName(device)}</span>
-                    <span className="am-sub">{device.lastSeenAt ? nextWord("msDeviceLastUsed", { date: shortDate(device.lastSeenAt) }) : nextWord("msDeviceNeverUsed")}</span>
-                  </span>
-                  {device.id === me
-                    ? <span className="am-this">{nextWord("msDeviceThis")}</span>
-                    : <button type="button" className="am-danger am-small" onClick={() => { setSaid(null); setAsking(device.id) }}>{nextWord("msRevoke")}</button>}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      <p className="am-say">{nextWord("msDevicesNote")}</p>
-      {said && <p className="am-say" role="status">{said}</p>}
-    </section>
-  )
-}
 
 function ForgetPanel({ machine, manager, onCancel, onForgotten }: {
   machine: Row

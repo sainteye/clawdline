@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
 import type { PageModule } from "./types.js"
 import { accountMachinesInstalled, bindDevices, devicesLede, offerForgetting, offerLastSeen, offerPairing, watchAccountMachines, watchMachineActions, type DevicesPage } from "../legacy/devices-bridge.js"
@@ -7,6 +7,7 @@ import { nextWord } from "../next-strings.js"
 import { machineSeenWord } from "../cloud/machine-seen.js"
 import sectionMarkup from "./devices/section.html?raw"
 import { SignedInBlock } from "./devices/SignedInBlock.js"
+import { MachineAccess, localAccessSource } from "./devices/MachineAccess.js"
 import { CloudTerminalPermission } from "./devices/CloudTerminalPermission.js"
 import { useCloudAccount } from "../cloud/account-context.js"
 import "./devices-actions.css"
@@ -79,9 +80,12 @@ function DevicesPageView({ shown }: { shown: boolean }) {
   useLayoutEffect(() => {
     const shell = document.querySelector("#devices .devices-shell")
     if (!shell || accountMachinesInstalled()) return
+    // The machine's own console puts its access section first, as Cloud does.
     const node = document.createElement("div")
     node.id = "devices-signed-in"
-    shell.appendChild(node)
+    const lede = document.getElementById("devices-lede")
+    if (lede?.parentElement === shell) lede.after(node)
+    else shell.prepend(node)
     setSignedIn(node)
     return () => node.remove()
   }, [])
@@ -171,7 +175,7 @@ function DevicesPageView({ shown }: { shown: boolean }) {
         onClick={followPageLink}
         dangerouslySetInnerHTML={{ __html: sectionMarkup }}
       />
-      {signedIn && createPortal(<SignedInBlock shown={shown} />, signedIn)}
+      {signedIn && createPortal(<LocalAccess shown={shown} />, signedIn)}
       {cloudPermission && createPortal(<CloudTerminalPermission shown={shown} />, cloudPermission)}
       {accountNode && createPortal(<AccountMachines shown={shown} onStart={() => navigate("sessions")} />, accountNode)}
     </>
@@ -196,3 +200,35 @@ function followPageLink(ev: MouseEvent<HTMLElement>): void {
 }
 
 export const page: PageModule = { id: "devices", Component: DevicesPageView }
+
+/**
+ * The machine's own console's access section (`devices/MachineAccess.tsx`):
+ * the same card and groups as Cloud's, read from this machine's routes, with
+ * the directly signed-in devices kept in their own block for its permission
+ * controls. Cloud status says whether invitations can work at all.
+ */
+function LocalAccess({ shown }: { shown: boolean }) {
+  const [status, setStatus] = useState<{ name: string; cloud: boolean; owner: boolean } | null>(null)
+  useEffect(() => {
+    if (!shown) return
+    let live = true
+    const read = (path: string) => fetch(path, { cache: "no-store" })
+      .then(async (res) => ({ status: res.status, body: res.ok ? await res.json() as Record<string, unknown> : {} }))
+      .catch(() => ({ status: 0, body: {} as Record<string, unknown> }))
+    // Only this machine's own key may invite; a browser signed in as a device of its own is
+    // refused (403) and is told so instead of meeting the refusal at the button.
+    Promise.all([read("/v1/cloud/status"), read("/v1/cloud/browser-invites")]).then(([cloud, invites]) => {
+      if (!live) return
+      const body = cloud.body
+      const name = typeof body.machine_name === "string" && body.machine_name ? body.machine_name : nextWord("devicesThisMachine")
+      setStatus({ name, cloud: body.enabled === true && typeof body.machine_id === "string" && body.machine_id !== "",
+        owner: invites.status !== 403 })
+    })
+    return () => { live = false }
+  }, [shown])
+  const source = useMemo(() => status
+    ? { ...localAccessSource(status.name, status.cloud && status.owner, <SignedInBlock shown={shown} />),
+      unavailableWord: status.owner ? "accessCloudOff" as const : "accessNotOwner" as const }
+    : null, [status, shown])
+  return source ? <MachineAccess source={source} /> : null
+}

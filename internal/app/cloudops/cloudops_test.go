@@ -218,6 +218,16 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-pair-status",
 		method: "GET", path: "/v1/cloud/pairing/agent/" + taskID,
 	}, {
+		word:    "direct-devices",
+		body:    map[string]any{"type": "direct-devices", "session": machine, "request": "req-direct-devices"},
+		session: machine, name: "read:req-direct-devices",
+		method: "GET", path: "/v1/auth/devices",
+	}, {
+		word:    "direct-device-revoke",
+		body:    map[string]any{"type": "direct-device-revoke", "session": machine, "request": "req-direct-revoke", "device_id": "dev_direct"},
+		session: machine, name: "action:req-direct-revoke",
+		method: "POST", path: "/v1/auth/devices/dev_direct/revoke", body2: `{}`,
+	}, {
 		word:    "browser-invite-start",
 		body:    map[string]any{"type": "browser-invite-start", "session": machine, "request": "req-invite-start", "expiry": "7d"},
 		session: machine, name: "action:req-invite-start",

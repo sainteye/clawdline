@@ -364,7 +364,9 @@ test("one word, one list, and every route names a word the table carries", () =>
     "browser-invite-decide", "browser-invite-cancel", "browser-invite-revoke"] as const) {
     assert.match(CARRIED[word], /^BrowserInvites\.tsx /)
   }
-  assert.equal(Object.keys(CARRIED).length, 213)
+  // The Devices page's directly signed-in group, read and revoked from Cloud (pages/devices/MachineAccess.tsx).
+  for (const word of ["direct-devices", "direct-device-revoke"] as const) assert.match(CARRIED[word], /^MachineAccess\.tsx /)
+  assert.equal(Object.keys(CARRIED).length, 215)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

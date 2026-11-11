@@ -47,6 +47,12 @@ export const CARRIED = {
   // anything once a row is recorded (`cloud-viewer-events.js`); a failed
   // carried read is one (`cloud.read.failed`, `relay-reader.ts`).
   "diagnostics.events": "cloud-client.js _deliverViewerEvents (after a recorded failure)",
+  // The Devices page's third group (pages/devices/MachineAccess.tsx): devices
+  // signed in to this machine directly, read and revoked from Cloud as from the
+  // machine's own window. Both words run as this machine, so an invited browser
+  // may use neither.
+  "direct-device-revoke": "MachineAccess.tsx source.ask (Devices → Pair a new browser → Signed in to this machine)",
+  "direct-devices": "MachineAccess.tsx source.ask (Devices → Pair a new browser → Signed in to this machine)",
   "direct-local-network-enable": "cloud-client.js enableSameNetwork",
   "dismiss-restorable": "POST /v1/sessions/restorable/dismiss",
   // Account quota snapshots for the global footer. Credentials remain on the

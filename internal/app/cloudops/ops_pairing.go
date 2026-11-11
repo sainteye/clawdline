@@ -25,3 +25,12 @@ func init() {
 		op{name: "browser-invite-revoke"},
 	)
 }
+
+// The Devices page's directly signed-in devices, read and revoked from Cloud
+// as from this machine's own window. Both run as this machine.
+func init() {
+	register(
+		op{name: "direct-devices", read: true},
+		op{name: "direct-device-revoke"},
+	)
+}

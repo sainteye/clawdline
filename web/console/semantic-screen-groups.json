@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11100,
-  "riskKeys": 4893,
-  "nonRiskCount": 6207,
+  "englishContentKeys": 11122,
+  "riskKeys": 4903,
+  "nonRiskCount": 6219,
   "groups": [
     {
       "name": "acp / other",
@@ -3799,11 +3799,23 @@
     },
     {
       "name": "next / other",
-      "count": 712,
+      "count": 724,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
+        "next.accessCloudOff",
+        "next.accessCopied",
+        "next.accessCopyLink",
+        "next.accessGroupAccount",
+        "next.accessGroupAccountCloudNote",
+        "next.accessGroupDirect",
+        "next.accessGroupInvited",
+        "next.accessGroupInvitedNote",
+        "next.accessListTitle",
+        "next.accessMachineLabel",
+        "next.accessMakeLink",
+        "next.accessNotOwner",
         "next.adminDashboardNav",
         "next.apiPerformance1",
         "next.apiPerformance168",

@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../../next-strings.js"
-import type { MachineManager } from "../../cloud/machine-manager.js"
 
 /**
- * A machine's browser invitations, in its sheet's Name and access tab
- * (docs/browser-invite.md): make a code for a browser with no account, compare
- * the digits that browser shows, allow or deny, and revoke an invited browser
- * later. Every step is one Cloud word to the machine; the code and the digits
- * never leave this page and the machine except inside encrypted envelopes.
+ * The top card of the Devices page (`MachineAccess.tsx`), the same on the
+ * console a machine serves and on Clawdline Cloud: make an invitation link for
+ * a browser with no account, and confirm the pairing when that browser shows
+ * its six digits (docs/browser-invite.md). Every step is one invitation word;
+ * `ask` carries it, as a Cloud word or as this machine's own route.
  */
 
 type Expiry = "8h" | "7d" | "never"
+
+export type InviteAsk = (word: string, body: Record<string, unknown>, kind: "action" | "read") => Promise<Record<string, unknown>>
 
 interface InviteView {
   invite_id: string
@@ -24,17 +25,16 @@ interface InviteView {
   error?: string
 }
 
-interface InvitedRow { device_id: string; name?: string; expires_at: number; active: boolean; paired_at: number }
-
 const POLL_MS = 2_000
 const LIVE = new Set(["waiting", "exchanging", "confirm_code", "admitting"])
+const JOIN_ORIGIN = "https://app.clawdline.com"
 
-function codeOf(error: unknown): string {
+export function codeOf(error: unknown): string {
   const code = (error as { code?: unknown })?.code
   return typeof code === "string" && code ? code : error instanceof Error ? error.message : "unknown"
 }
 
-function when(seconds: number): string {
+export function when(seconds: number): string {
   try {
     return new Intl.DateTimeFormat(document.documentElement.lang || undefined,
       { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(seconds * 1000))
@@ -45,56 +45,58 @@ function readView(answer: Record<string, unknown>): InviteView | null {
   return typeof answer.invite_id === "string" && typeof answer.phase === "string" ? answer as unknown as InviteView : null
 }
 
-export function BrowserInvites({ machineID, machineName, manager }: { machineID: string; machineName: string; manager: MachineManager }) {
+/** The link the invited browser opens; the code rides in it so nothing is typed. */
+export function joinLink(code: string): string {
+  return `${JOIN_ORIGIN}/join?code=${encodeURIComponent(code)}`
+}
+
+export function PairCard({ machineKey, machineName, ask, available, unavailableWord, onChanged }: {
+  machineKey: string
+  machineName: string
+  ask: InviteAsk | null
+  /** False when this machine cannot invite here; `unavailableWord` says why. */
+  available: boolean
+  unavailableWord: "invUnavailable" | "invInvitedHere" | "accessCloudOff" | "accessNotOwner"
+  /** Called when an invitation admitted a browser, so the list below reads again. */
+  onChanged?: () => void
+}) {
   const [expiry, setExpiry] = useState<Expiry>("8h")
   const [invite, setInvite] = useState<InviteView | null>(null)
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<string | null>(null)
-  const [browsers, setBrowsers] = useState<InvitedRow[] | null>(null)
+  const [copied, setCopied] = useState(false)
   const live = useRef(true)
   useEffect(() => { live.current = true; return () => { live.current = false } }, [])
-
-  const ask = manager.ask
-  const serves = manager.serves?.(machineID, "browser-invite-start") === true && Boolean(ask)
-  const invited = manager.invited?.() === true
-
-  const refreshList = useCallback(async () => {
-    if (!ask) return
-    try {
-      const answer = await ask(machineID, "browser-invite-list", {}, "read")
-      if (live.current && Array.isArray(answer.browsers)) setBrowsers(answer.browsers as InvitedRow[])
-    } catch { /* the list is a convenience; the invitation itself reports its own errors */ }
-  }, [ask, machineID])
-
-  useEffect(() => { if (serves && !invited) void refreshList() }, [serves, invited, refreshList])
+  useEffect(() => { setInvite(null); setSaid(null) }, [machineKey])
 
   // A live invitation is read every two seconds while this page shows it.
   useEffect(() => {
     if (!invite || !LIVE.has(invite.phase) || !ask) return
     const timer = setTimeout(async () => {
       try {
-        const answer = readView(await ask(machineID, "browser-invite-status", { invite_id: invite.invite_id }, "read"))
+        const answer = readView(await ask("browser-invite-status", { invite_id: invite.invite_id }, "read"))
         if (live.current && answer) {
           setInvite(answer)
-          if (answer.phase === "admitted") void refreshList()
+          if (answer.phase === "admitted") onChanged?.()
         }
       } catch (error) {
         if (live.current) setSaid(nextWord("invError", { code: codeOf(error) }))
       }
     }, POLL_MS)
     return () => clearTimeout(timer)
-  }, [invite, ask, machineID, refreshList])
+  }, [invite, ask, onChanged])
 
-  if (invited) return <section><p className="am-label">{nextWord("invTitle")}</p><p className="am-say">{nextWord("invInvitedHere")}</p></section>
-  if (!serves) return <section><p className="am-label">{nextWord("invTitle")}</p><p className="am-say">{nextWord("invUnavailable")}</p></section>
+  const head = <p className="am-label" id="inv-title">{nextWord("accessPairTitle")}</p>
+  if (!available || !ask) {
+    return <section aria-labelledby="inv-title" className="inv">{head}<div className="am-card inv-card"><p className="am-say">{nextWord(unavailableWord)}</p></div></section>
+  }
 
   const act = async (word: string, body: Record<string, unknown>) => {
-    if (!ask) return
     setBusy(true)
     setSaid(null)
     try {
-      const answer = readView(await ask(machineID, word, body, "action"))
-      if (live.current && answer) setInvite(answer)
+      const answer = readView(await ask(word, body, "action"))
+      if (live.current && answer) { setInvite(answer); setCopied(false) }
     } catch (error) {
       if (live.current) setSaid(nextWord("invError", { code: codeOf(error) }))
     } finally {
@@ -102,20 +104,14 @@ export function BrowserInvites({ machineID, machineName, manager }: { machineID:
     }
   }
 
-  const revoke = async (device: string) => {
-    if (!ask) return
-    try {
-      await ask(machineID, "browser-invite-revoke", { device_id: device }, "action")
-      await refreshList()
-    } catch (error) {
-      if (live.current) setSaid(nextWord("invRevokeFailed", { code: codeOf(error) }))
-    }
+  const copy = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); if (live.current) setCopied(true) } catch { /* the link stays selectable on screen */ }
   }
 
   const ended = invite && !LIVE.has(invite.phase)
   return (
     <section aria-labelledby="inv-title" className="inv">
-      <p className="am-label" id="inv-title">{nextWord("invTitle")}</p>
+      {head}
       {!invite || ended ? (
         <div className="am-card inv-card">
           {ended && <p className="am-say inv-result" role="status">{resultWord(invite!, machineName)}</p>}
@@ -124,7 +120,7 @@ export function BrowserInvites({ machineID, machineName, manager }: { machineID:
             <legend className="am-sub">{nextWord("invExpiryLabel")}</legend>
             {(["8h", "7d", "never"] as const).map((choice) => (
               <label key={choice} className={expiry === choice ? "on" : ""}>
-                <input type="radio" name={"inv-expiry-" + machineID} value={choice} checked={expiry === choice}
+                <input type="radio" name={"inv-expiry-" + machineKey} value={choice} checked={expiry === choice}
                   onChange={() => setExpiry(choice)} />
                 {nextWord(choice === "8h" ? "invExpiry8h" : choice === "7d" ? "invExpiry7d" : "invExpiryNever")}
               </label>
@@ -132,12 +128,12 @@ export function BrowserInvites({ machineID, machineName, manager }: { machineID:
           </fieldset>
           {expiry === "never" && <p className="am-say inv-warn">{nextWord("invNeverWarning", { machine: machineName })}</p>}
           <button type="button" className="am-accent am-wide" disabled={busy}
-            onClick={() => void act("browser-invite-start", { expiry })}>{ended ? nextWord("invAnother") : nextWord("invStart")}</button>
+            onClick={() => void act("browser-invite-start", { expiry })}>{nextWord("accessMakeLink")}</button>
         </div>
       ) : invite.phase === "confirm_code" || invite.phase === "admitting" ? (
         <div className="am-card inv-card" role="alertdialog" aria-labelledby="inv-compare">
-          <p className="inv-head" id="inv-compare">{nextWord("invCompareTitle", { machine: machineName })}</p>
-          <p className="am-sub">{invite.browser_name}</p>
+          <p className="inv-head" id="inv-compare">{nextWord("accessConfirmTitle", { browser: invite.browser_name || "Browser" })}</p>
+          <p className="am-sub">{nextWord("invCompareTitle", { machine: machineName })}</p>
           <p className="inv-digits">{(invite.comparison_code ?? "").slice(0, 3)} {(invite.comparison_code ?? "").slice(3)}</p>
           <p className="am-say">{nextWord("invCompareHint")}</p>
           <p className="am-say inv-warn">{nextWord("invOperateWarning")}</p>
@@ -151,8 +147,15 @@ export function BrowserInvites({ machineID, machineName, manager }: { machineID:
         </div>
       ) : (
         <div className="am-card inv-card" aria-live="polite">
-          {invite.code && <p className="inv-code">{invite.code}</p>}
-          {invite.code && invite.code_expires_at ? <p className="am-say">{nextWord("invCodeHow", { time: when(invite.code_expires_at) })}</p> : null}
+          {invite.code && (
+            <>
+              <p className="inv-link" translate="no">{joinLink(invite.code)}</p>
+              <button type="button" className="am-accent am-wide" onClick={() => void copy(joinLink(invite.code!))}>
+                {copied ? nextWord("accessCopied") : nextWord("accessCopyLink")}</button>
+              <p className="am-say">{nextWord("accessCodeLine", { code: invite.code })}</p>
+              {invite.code_expires_at ? <p className="am-say">{nextWord("accessLinkHow", { time: when(invite.code_expires_at) })}</p> : null}
+            </>
+          )}
           <p className="am-say inv-warn">{nextWord("invCodeSecret")}</p>
           <p className="am-say">{invite.phase === "exchanging" ? nextWord("invExchanging") : nextWord("invWaiting")}</p>
           <button type="button" className="am-ghost am-wide" disabled={busy}
@@ -160,23 +163,6 @@ export function BrowserInvites({ machineID, machineName, manager }: { machineID:
         </div>
       )}
       {said && <p className="am-say" role="status">{said}</p>}
-      <p className="am-label inv-list-label">{nextWord("invListTitle")}</p>
-      {browsers === null ? null : browsers.length === 0 ? (
-        <p className="am-say">{nextWord("invListEmpty")}</p>
-      ) : (
-        <ul className="am-card">
-          {browsers.map((row) => (
-            <li key={row.device_id} className="am-card-row">
-              <span className="am-card-text">
-                <span>{row.name || row.device_id}</span>
-                <span className="am-sub">{!row.active ? nextWord("invEnded")
-                  : row.expires_at ? nextWord("invUntil", { time: when(row.expires_at) }) : nextWord("invUntilRevoked")}</span>
-              </span>
-              {row.active && <button type="button" className="am-ghost am-small" onClick={() => void revoke(row.device_id)}>{nextWord("invRevoke")}</button>}
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   )
 }

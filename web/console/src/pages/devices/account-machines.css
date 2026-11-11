@@ -1,6 +1,6 @@
 /* The hosted console's machine list and its sheet (devices/AccountMachines.tsx). */
 /* The sheet is drawn into <body>, outside the list, so both carry the palette. */
-.account-machines, .am-layer {
+.account-machines, .am-layer, .machine-access {
   --am-ok-hi: #6fd6a6;
   --am-ok-lo: #3f9f78;
   --am-no-hi: #f2a07c;
@@ -205,3 +205,14 @@
 .inv-digits { font-size: 36px; }
 .inv-head { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
 .inv-list-label { margin-top: 14px; }
+
+/* One machine's access section, the same on both consoles (MachineAccess.tsx). */
+.machine-access { margin: 6px 0 22px; }
+.machine-access .inv-link { margin: 0; padding: 10px 12px; border-radius: 10px; background: #0c0c10; color: var(--ink);
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
+.access-picker { display: grid; gap: 6px; }
+.access-picker select { min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid #3a3a42;
+  background: var(--am-panel); color: var(--ink); font-size: 14px; }
+.access-group { display: grid; gap: 6px; margin-top: 12px; }
+.access-group-title { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; }
+.access-group-note { margin: 0 0 4px; }
