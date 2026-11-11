@@ -655,6 +655,14 @@ cancelled is marked interrupted instead of recording a failure, unless the
 person stopped or closed it. A reproducer cancelling the host context before
 Shutdown failed with that exact error before the change.
 
+A review of that change found the `srv.Serve` failure path still stopped the
+Cloud context first, the reordering had no test, and the reproducer counted the
+wake-up without proving delivery. Both stop paths now call `stopServing`
+(`cmd/clawdline/stop_order.go`), whose test fails if the Cloud context is
+cancelled before the owned hosts stop, and the reproducer also requires the
+continuation to reach the worker as the last user message and not be sent again
+after a second restart. The deferred stops already ran hosts first (LIFO).
+
 **Model and effort across a reload (2026-11-11).** A captured AGY 1.5.5
 conversation acknowledged `model=gemini-3.8-flash` at 10:59:43; after the daemon
 restarted, the next process's `session/load` reported `currentValue` back at the

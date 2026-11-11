@@ -366,11 +366,7 @@ func serve() {
 	}
 	defer stopAntigravityAll()
 	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), func() {
-		// Owned Gemini and Grok hosts first: their workers live under cloudCtx,
-		// and Shutdown must mark a running turn before that context kills it.
-		stopAntigravityAll()
-		stopCloud()
-		stopCodeGraph()
+		stopServing(stopAntigravityAll, stopCloud, stopCodeGraph)
 	})
 	srv.StartScheduler(context.Background())
 	// The broker's beat: collect what children wrote, run the two clocks, and
@@ -398,9 +394,7 @@ func serve() {
 	}
 	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
-		stopCloud()
-		stopCodeGraph()
-		stopAntigravityAll()
+		stopServing(stopAntigravityAll, stopCloud, stopCodeGraph)
 		refuseToServe(1, err.Error())
 	}
 }

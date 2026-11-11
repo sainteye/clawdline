@@ -467,3 +467,7 @@ marked for the existing restart continuation instead of recorded as a failed
 turn, and the daemon stops the owned hosts before the Cloud context on a signal.
 The continuation's text, condition and single delivery are unchanged, so the
 `gemini-restart-continue` explanations in both languages still apply.
+
+Both daemon stop paths now share one order that stops the owned hosts before the
+Cloud context. It adds no model input; the `gemini-restart-continue` explanations
+in both languages still apply.

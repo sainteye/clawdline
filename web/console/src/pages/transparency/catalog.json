@@ -3220,7 +3220,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "8c5b86e03b291f500ad4ac7617fd2ac27995e1690a3a17e3f43c563c59d20e82",
+    "cmd/clawdline/main.go": "a97d92ea816b0b006d05f4ddf87f6f662f35c24077b78075da7cc253d966b6a0",
     "cmd/clawdline/session.go": "cafde1e2256317a25731543da5579b293cc47a83e48f0ff9c98fbf46309e283b",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
