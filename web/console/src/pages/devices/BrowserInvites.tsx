@@ -192,5 +192,6 @@ function resultWord(invite: InviteView, machine: string): string {
   }
   if (invite.error === "expired") return nextWord("invFailedExpired")
   if (invite.error === "code_mismatch") return nextWord("invFailedMismatch")
+  if (invite.error === "device_limit") return nextWord("invFailedDeviceLimit")
   return nextWord("invFailedOther", { code: invite.error || invite.phase })
 }

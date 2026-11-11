@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11098,
+  "englishKeys": 11099,
   "counts": {
-    "negation": 3088,
+    "negation": 3089,
     "state": 1835,
     "permission": 660,
-    "deletion": 251,
+    "deletion": 253,
     "uncertainty": 421
   },
-  "unionCount": 4892,
+  "unionCount": 4893,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2336,6 +2336,7 @@
       "next.invCodeSecret",
       "next.invDenied",
       "next.invError",
+      "next.invFailedDeviceLimit",
       "next.invFailedMismatch",
       "next.invFailedOther",
       "next.invIntro",
@@ -5769,6 +5770,8 @@
       "next.endWorkReleaseAndArchive",
       "next.endWorkReleaseAndClose",
       "next.imageMarkupUndo",
+      "next.invFailedDeviceLimit",
+      "next.joinDeviceLimit",
       "next.machineReclaimReasonIntentNotRecorded",
       "next.machineReclaimReasonRemoveFailed",
       "next.msForget",
@@ -9892,6 +9895,7 @@
     "next.invError",
     "next.invExpiryLabel",
     "next.invExpiryNever",
+    "next.invFailedDeviceLimit",
     "next.invFailedExpired",
     "next.invFailedMismatch",
     "next.invFailedOther",

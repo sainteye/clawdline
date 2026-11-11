@@ -580,6 +580,10 @@ func inviteErrorCode(err error) string {
 	switch {
 	case err == nil:
 		return ""
+	case strings.Contains(err.Error(), "device_limit_reached"):
+		// Cloud's typed refusal for an account with no viewer-device slot left. It reaches
+		// here as a 409, which would otherwise read as a spent invitation.
+		return "device_limit"
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, adaptercloud.ErrInviteUnusable):
 		return "expired"
 	case errors.Is(err, domaincloud.ErrInviteSealed), errors.Is(err, domaincloud.ErrInviteMismatch),

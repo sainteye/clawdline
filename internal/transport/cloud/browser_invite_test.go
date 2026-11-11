@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -258,6 +259,9 @@ func TestDenyingAndAFailedAdmissionLeaveNothingAdmitted(t *testing.T) {
 		t.Fatalf("after deny: %+v denied=%v", rows, c.denied)
 	}
 
+	if got := inviteErrorCode(fmt.Errorf("%w: /v1/pairing/browser-invites/admit answered 409: {\"error\":{\"code\":\"device_limit_reached\"}}", adaptercloud.ErrInviteUnusable)); got != "device_limit" {
+		t.Fatalf("a full account reads as %q", got)
+	}
 	c2 := &inviteCloud{id: "M9Q2X", admitErr: errors.New("Cloud is down")}
 	invites2, pinned2 := testInvites(t, c2)
 	started, _ = invites2.Start(context.Background(), "8h")
