@@ -17,6 +17,11 @@ func cacheBounds() []Entry {
 		{Name: "cache.provider_quota_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/providerquota.RequestSecondsLimit"}},
+		// An expired Grok access token is renewed by the Grok CLI's own refresh,
+		// at most one run per account cooldown, thirty seconds each.
+		{Name: "cache.provider_quota_renew_seconds", Class: Observation, Unit: Seconds, Limit: 30, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/providerquota.RenewSecondsLimit"}},
 		// Claude Code's own usage answer, asked when the status line has no
 		// fresh window: one ask at a time, at most one per 15 minutes, ten
 		// seconds each, reading at most 1 MiB of its output.

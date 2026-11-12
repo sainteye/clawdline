@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11255,
-  "riskKeys": 4943,
-  "nonRiskCount": 6312,
+  "englishContentKeys": 11281,
+  "riskKeys": 4957,
+  "nonRiskCount": 6324,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 457,
+      "count": 461,
       "sources": [
         null
       ],
@@ -842,6 +842,10 @@
         "capacityRow.voice.copilot_briefing_input_characters.what",
         "capacityRow.voice.copilot_briefing_reply_characters.full",
         "capacityRow.voice.copilot_briefing_reply_characters.what",
+        "capacityRow.voice.copilot_decision_body_bytes.what",
+        "capacityRow.voice.copilot_decision_said_characters.what",
+        "capacityRow.voice.copilot_decision_timeout_milliseconds.full",
+        "capacityRow.voice.copilot_decision_timeout_milliseconds.what",
         "capacityRow.voice.copilot_key_bytes.what",
         "capacityRow.voice.polish_characters.what",
         "capacityRow.voice.polish_terms.what",
@@ -3815,7 +3819,7 @@
     },
     {
       "name": "next / other",
-      "count": 801,
+      "count": 809,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3883,6 +3887,9 @@
         "next.copilotConnecting",
         "next.copilotCost",
         "next.copilotDesc",
+        "next.copilotDidAnswer",
+        "next.copilotDidRun",
+        "next.copilotDidStart",
         "next.copilotEagernessAuto",
         "next.copilotEagernessHigh",
         "next.copilotEagernessLow",
@@ -3916,6 +3923,8 @@
         "next.copilotLogsHide",
         "next.copilotLogsLabel",
         "next.copilotLogsShow",
+        "next.copilotMarkSaid",
+        "next.copilotMicBusy",
         "next.copilotMinimize",
         "next.copilotModelHint",
         "next.copilotModelLabel",
@@ -3936,6 +3945,9 @@
         "next.copilotSpeedSlow",
         "next.copilotStart",
         "next.copilotThinking",
+        "next.copilotToolAsked",
+        "next.copilotToolMany",
+        "next.copilotToolsUsed",
         "next.copilotVoiceLabel",
         "next.copilotVoicePreview",
         "next.copilotVoicePreviewCost",

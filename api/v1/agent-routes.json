@@ -693,6 +693,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/voice/copilot-decide",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/voice/copilot-session",
       "guide": "connect"
     },

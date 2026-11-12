@@ -50,8 +50,11 @@ a translation: two wait on the person, two are working, two have delivered. The 
 ## The voices
 
 `tools/copilot-demo/voices/<lang>/<line>.ogg` are OpenAI text-to-speech (`gpt-4o-mini-tts`):
-the copilot in `marin`, the voice copilot's default, the person in `cedar`. They are AI voices,
-not recordings of people. Changing a line in `story.mjs` means speaking it again:
+the copilot in `marin`, the voice copilot's default, and the person in `cedar` in English and
+`ash` in Chinese. They are AI voices,
+not recordings of people. Each language's speaking instructions and `tempo` are in `story.mjs`:
+Chinese is played 1.15 times faster, because it came out at about 4.1 characters a second and
+asking the model for a quicker pace made it slower. Changing a line means speaking it again:
 
 ```sh
 rm tools/copilot-demo/voices/<lang>/<line>.ogg

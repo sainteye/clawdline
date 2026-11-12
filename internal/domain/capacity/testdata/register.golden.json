@@ -1241,6 +1241,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "cache.provider_quota_renew_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/providerquota.RenewSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cache.provider_quota_request_seconds",
     "Class": "observation",
     "Unit": "seconds",
@@ -12652,6 +12671,66 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/planner.MaxBriefingDuration"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_decision_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.copilotDecisionBodyLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_decision_said_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotDecisionSaidRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_decision_timeout_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 8000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotDecisionDuration"
     ]
   },
   {

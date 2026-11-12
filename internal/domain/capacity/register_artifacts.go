@@ -190,6 +190,24 @@ func artifactsBounds() []Entry {
 			Sources: []string{"internal/transport/http.maxBriefingReplyRunes"},
 		},
 		{
+			// One spoken sentence the voice copilot's Decision API judges.
+			Name: "voice.copilot_decision_said_characters", Class: Buffer, Unit: Characters,
+			Limit: 1000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/transport/http.maxCopilotDecisionSaidRunes"},
+		},
+		{
+			// The decision route's request: one sentence as JSON, with room for escaping.
+			Name: "voice.copilot_decision_body_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 16384, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/transport/http.copilotDecisionBodyLimit"},
+		},
+		{
+			// A slower decision is abandoned; the copilot chooses from the list itself.
+			Name: "voice.copilot_decision_timeout_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 8000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotDecisionDuration"},
+		},
+		{
 			// A pasted OpenAI key longer than this is refused by the settings route.
 			Name: "voice.copilot_key_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 400, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,

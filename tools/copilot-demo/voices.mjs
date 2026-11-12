@@ -3,7 +3,8 @@
 //
 //   OPENAI_API_KEY=… node tools/copilot-demo/voices.mjs --lang en|zh-Hant [--force]
 //
-// Writes voices/<lang>/<line>.ogg (Opus, silence trimmed) for every line in
+// Writes voices/<lang>/<line>.ogg (Opus, silence trimmed, played at the story's
+// tempo) for every line in
 // story.mjs that has no file yet; --force speaks them all again. This is a
 // paid call, one request per line written; the committed voices make it
 // unnecessary unless a line changes.
@@ -33,7 +34,8 @@ try {
     })
     if (!res.ok) throw new Error(`${id}: HTTP ${res.status} ${await res.text()}`)
     const raw = join(work, id + '.wav'); writeFileSync(raw, Buffer.from(await res.arrayBuffer()))
-    const trim = 'silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse'
+    const tempo = S.words.tempo && S.words.tempo !== 1 ? `,atempo=${S.words.tempo}` : ''
+    const trim = 'silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse' + tempo
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', raw, '-af', trim, '-c:a', 'libopus', '-b:a', '48k', '-ar', '48000', '-ac', '1', file])
     spoken++; console.log('spoke ' + id)
   }

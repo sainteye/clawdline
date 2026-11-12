@@ -6,10 +6,10 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { adjustEvent, DEFAULT_SPEED, focusGreetingEvent, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallFocus, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
-import { openOnThisPage } from './copilot-open.js'
+import { machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
 
 export interface CopilotLogItem {
@@ -31,6 +31,10 @@ export interface RealtimeCopilotState {
   cost?: CallCost
   /** How many earlier turns this browser remembers (`copilot-memory.ts`). */
   remembered: number
+  /** The last thing the copilot did on the machine, shown for a moment (`actionNotice`). */
+  notice?: { text: string; at: number; warn?: boolean }
+  /** The tools used since the person last spoke, in order (`toolTrace`). */
+  tools?: ToolTrace[]
 }
 
 export type RealtimeListener = (state: RealtimeCopilotState) => void
@@ -128,6 +132,9 @@ function consoleLanguage(): string {
   return typeof document === 'undefined' ? '' : document.documentElement.lang || ''
 }
 
+/** Thrown inside `start` when the person hung up while the call rang. */
+const CALL_HUNG_UP = new Error('hung up while ringing')
+
 export class RealtimeCopilotClient {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
@@ -135,6 +142,20 @@ export class RealtimeCopilotClient {
   private audioEl: HTMLAudioElement | null = null
   /** How loud each side is, for the orb; measured here, never recorded. */
   private meter = new CallMeter()
+  /** Stops the ringback that plays while the call connects (`CallMeter.ring`). */
+  private stopRing: (() => void) | null = null
+  /**
+   * The person's current sentence as transcribed, for the Decision API; empty
+   * from the moment they start speaking until its transcript arrives, so a
+   * decision never judges the sentence before.
+   */
+  private heardNow = ''
+  /** What the machine confirmed since the person last spoke (`unbackedClaims`). */
+  private doneSinceHeard = new Set<ActionKind>()
+  /** A correction is under way, so its own words are not checked again. */
+  private correcting = false
+  /** Which start this is; `disconnect` moves it on so a ringing start stops. */
+  private attempt = 0
   private listeners: Set<RealtimeListener> = new Set()
 
   private state: RealtimeCopilotState = {
@@ -149,12 +170,19 @@ export class RealtimeCopilotClient {
   /** What this call's session.update says, kept so a later update can resend it whole. */
   private call: { memory: string; snapshot: string; options: CallOptions } = { memory: '', snapshot: '', options: {} }
   private briefing: Promise<string | null> = Promise.resolve(null)
+  /** The Session this call is talking about (`ToolDeps.focus`); a new call starts with none. */
+  private focus: string | undefined
   private toolDeps(): ToolDeps {
     return {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       briefing: () => this.briefing,
       openSession: (id) => openOnThisPage(id),
+      snippets: (id, request) => openSnippetsOnThisPage(id, request),
+      heard: () => this.heardNow,
+      decide: (said) => decideOnMachine(said),
+      machines: () => machinesOnThisPage(),
+      focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
       adjust: (change) => this.adjust(change),
     }
@@ -199,7 +227,7 @@ export class RealtimeCopilotClient {
         continue
       }
       if (res.ok && typeof body?.briefing === 'string' && body.briefing.trim()) return body.briefing
-      const code = typeof body?.error?.code === 'string' ? body.error.code : `HTTP ${res.status}`
+      const { code } = copilotRefusal(body, res.status)
       if (code !== 'copilot_briefing_off') this.addLog('error', nextWord('copilotLogBriefingFailed', { code }))
       return null
     }
@@ -228,6 +256,10 @@ export class RealtimeCopilotClient {
 
   private updateState(patch: Partial<RealtimeCopilotState>) {
     this.state = { ...this.state, ...patch }
+    if (this.state.status !== 'connecting' && this.stopRing) {
+      this.stopRing()
+      this.stopRing = null
+    }
     for (const listener of this.listeners) {
       listener(this.state)
     }
@@ -247,22 +279,38 @@ export class RealtimeCopilotClient {
   }
 
   /**
-   * Starts a call. With `focus` the call was placed from that Session, and its
+   * Starts a call. With `origin` the call was placed from that Session, and its
    * first words hand that Session over instead of greeting. A call already
    * going (or connecting) is turned to the Session instead of starting again.
    */
-  async start(focus?: CallFocus): Promise<void> {
+  async start(origin?: CallOrigin): Promise<void> {
     if (this.state.status === 'connected' || this.state.status === 'connecting') {
-      if (focus) this.focusOn(focus)
+      if (origin) this.turnTo(origin)
       return
     }
 
     // Before any await: iOS keeps an audio context made later in this tap suspended.
     const meterRefused = this.meter.open()
+    // The call rings until it connects, fails or is hung up (`updateState`).
+    this.stopRing = this.meter.ring()
+    // A hang-up while it rings ends this attempt: `disconnect` moves `attempt`
+    // on, and every step below checks it before the call goes any further.
+    const attempt = ++this.attempt
+    const own: { stream?: MediaStream; pc?: RTCPeerConnection } = {}
+    const check = () => { if (attempt !== this.attempt) throw CALL_HUNG_UP }
+    // The microphone is asked for in the tap itself, beside the call pass:
+    // iOS Safari refused it (NotAllowedError) when it was asked only after
+    // the pass came back over Cloud, seconds after the press.
+    const microphone: Promise<MediaStream> = navigator.mediaDevices?.getUserMedia
+      ? navigator.mediaDevices.getUserMedia({ audio: true })
+      : Promise.reject(new DOMException('This browser offers no microphone.', 'NotSupportedError'))
+    microphone.catch(() => undefined)
 
     this.memory = readMemory()
-    // A fresh call: nothing of the last one's options, only where this one was placed from.
-    this.call = { memory: '', snapshot: '', options: { focus } }
+    // A fresh call: nothing of the last one's options, only where this one
+    // was placed from, and that Session is the one under discussion.
+    this.call = { memory: '', snapshot: '', options: { origin } }
+    this.focus = origin?.id
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
@@ -276,29 +324,37 @@ export class RealtimeCopilotClient {
       const opened = await fetch('/v1/voice/copilot-session', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
       })
+      check()
       const grant = (await opened.json().catch(() => null)) as {
         client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean
-        error?: { code?: string; message?: string }
       } | null
       if (!opened.ok || !grant?.client_secret) {
-        const code = grant?.error?.code ?? `HTTP ${opened.status}`
-        // refusal-ok: only a missing key has an action here (Settings); every other refusal is shown with its own code and the machine's sentence.
+        const { code, message } = copilotRefusal(grant, opened.status)
+        // refusal-ok: a missing key points to Settings, an older machine to its update; every other refusal is shown with its own code and the machine's sentence.
         throw new Error(code === 'copilot_key_missing'
           ? nextWord('copilotErrorKeyMissing')
-          : grant?.error?.message ? nextWord('copilotErrorNoPassDetail', { code, message: grant.error.message }) : nextWord('copilotErrorNoPass', { code }))
+          : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
+          : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
       }
-      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, focus: this.call.options.focus } }
+      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
-      // 1. Get microphone audio stream
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      check()
+      // 1. The microphone asked for in the tap.
+      own.stream = await microphone.catch((error: unknown) => {
+        const name = error instanceof DOMException || error instanceof Error ? error.name : ''
+        throw new Error(nextWord(microphoneProblem(name), { name: name || String(error) }))
+      })
+      check()
+      this.mediaStream = own.stream
       const inputRefused = meterRefused ? null : this.meter.attachInput(this.mediaStream)
       if (inputRefused) this.addLog('info', nextWord('copilotLogNoInputMeter', { reason: inputRefused }))
 
       // 2. Setup RTCPeerConnection
-      this.pc = new RTCPeerConnection()
+      own.pc = new RTCPeerConnection()
+      this.pc = own.pc
 
       // 3. Audio output for assistant voice
       this.audioEl = document.createElement('audio')
@@ -322,8 +378,10 @@ export class RealtimeCopilotClient {
       this.setupDataChannel(this.dc)
 
       // 5. Create WebRTC Offer
-      const offer = await this.pc.createOffer()
-      await this.pc.setLocalDescription(offer)
+      const offer = await own.pc.createOffer()
+      check()
+      await own.pc.setLocalDescription(offer)
+      check()
 
       // 6. Connect with OpenAI Realtime API endpoint (GA)
       const baseUrl = 'https://api.openai.com/v1/realtime/calls'
@@ -337,17 +395,31 @@ export class RealtimeCopilotClient {
         },
       })
 
+      check()
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(nextWord('copilotErrorRealtime', { status: response.status, detail: errorText }))
       }
 
       const answerSdp = await response.text()
-      await this.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+      check()
+      await own.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+      check()
 
       this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
       this.addLog('info', nextWord('copilotLogConnected'))
     } catch (err) {
+      // A call that did not start keeps no microphone, even one granted late.
+      void microphone.then((stream) => { if (stream !== this.mediaStream) for (const track of stream.getTracks()) track.stop() }, () => undefined)
+      if (err === CALL_HUNG_UP || attempt !== this.attempt) {
+        // Hung up while it rang: `disconnect` already said so. Only what this
+        // attempt itself opened is released; a newer call keeps its own.
+        for (const track of own.stream?.getTracks() ?? []) track.stop()
+        own.pc?.close()
+        if (this.mediaStream === own.stream) this.mediaStream = null
+        if (own.pc && this.pc === own.pc) { this.pc = null; this.dc = null }
+        return
+      }
       // refusal-ok: every error thrown above already names the machine's code and sentence; it is shown whole.
       this.disconnect()
       const msg = err instanceof Error ? err.message : String(err)
@@ -395,9 +467,9 @@ export class RealtimeCopilotClient {
     if (section) this.addLog('info', nextWord('copilotLogMemory', { count: this.memory.length }))
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
-    const focus = this.call.options.focus
-    this.dc.send(JSON.stringify(focus ? focusGreetingEvent(focus, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
-    this.addLog('info', focus ? nextWord('copilotLogFocus', { name: focus.label || focus.id }) : nextWord('copilotLogGreeting'))
+    const origin = this.call.options.origin
+    this.dc.send(JSON.stringify(origin ? originGreetingEvent(origin, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
+    this.addLog('info', origin ? nextWord('copilotLogFocus', { name: origin.label || origin.id }) : nextWord('copilotLogGreeting'))
   }
 
   /**
@@ -405,15 +477,17 @@ export class RealtimeCopilotClient {
    * for the configuration it is about to send; once open, the instructions
    * are resent with it and the copilot is asked for the handover now.
    */
-  private focusOn(focus: CallFocus) {
-    this.call.options = { ...this.call.options, focus }
+  private turnTo(origin: CallOrigin) {
+    this.call.options = { ...this.call.options, origin }
+    this.focus = origin.id
     if (!this.dc || this.dc.readyState !== 'open') return
     this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
     // Only a response in progress can be cancelled; cancelling none is an error event.
     if (this.state.speakingState === 'speaking' || this.state.speakingState === 'thinking') this.dc.send(JSON.stringify({ type: 'response.cancel' }))
-    this.dc.send(JSON.stringify(focusGreetingEvent(focus, consoleLanguage())))
-    this.addLog('info', nextWord('copilotLogFocus', { name: focus.label || focus.id }))
+    this.dc.send(JSON.stringify(originGreetingEvent(origin, consoleLanguage())))
+    this.addLog('info', nextWord('copilotLogFocus', { name: origin.label || origin.id }))
   }
+
 
   // Both spellings of the output events are handled: GA names them
   // `response.output_audio*`, the beta `response.audio*`.
@@ -428,6 +502,11 @@ export class RealtimeCopilotClient {
         break
       }
       case 'input_audio_buffer.speech_started':
+        // A new sentence has begun: the last one no longer says what is meant,
+        // and what was done for it no longer backs what is said next.
+        this.heardNow = ''
+        this.doneSinceHeard.clear()
+        this.updateState({ tools: [] })
         this.updateState({ speakingState: 'listening' })
         break
       case 'input_audio_buffer.speech_stopped':
@@ -453,6 +532,7 @@ export class RealtimeCopilotClient {
         break
       case 'conversation.item.input_audio_transcription.completed':
         if (event.transcript) {
+          this.heardNow = event.transcript
           this.updateState({ lastTranscript: event.transcript })
           this.keep('user', event.transcript)
           this.addLog('info', nextWord('copilotLogHeard', { text: event.transcript }))
@@ -461,6 +541,17 @@ export class RealtimeCopilotClient {
       case 'response.done': {
         const spoken = this.state.lastAssistantSpeech
         if (spoken) this.keep('assistant', spoken)
+        // Said it did something the machine never confirmed: say so on screen,
+        // and have the copilot correct itself before the person relies on it.
+        const unbacked = spoken ? unbackedClaims(spoken, this.doneSinceHeard) : []
+        if (unbacked.length && !this.correcting) {
+          this.correcting = true
+          this.updateState({ notice: { text: nextWord('copilotClaimNotDone'), at: Date.now(), warn: true } })
+          this.addLog('error', nextWord('copilotClaimNotDone'))
+          if (this.dc && this.dc.readyState === 'open') for (const e of unbackedClaimEvents(unbacked)) this.dc.send(JSON.stringify(e))
+        } else {
+          this.correcting = false
+        }
         if (event.response?.usage) {
           const cost = addUsage(this.state.cost ?? emptyCost(this.model), event.response.usage)
           this.updateState({ cost })
@@ -489,9 +580,19 @@ export class RealtimeCopilotClient {
 
   private async handleToolCall(event: { call_id: string; name: string; arguments: string }) {
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: event.name }), speakingState: 'thinking' })
+    const startedAt = performance.now()
     const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
+    this.updateState({ tools: [...(this.state.tools ?? []), toolTrace(event.name, output, performance.now() - startedAt)] })
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
+    // Only what the machine confirmed is shown and chimed, never what the
+    // copilot says it did.
+    const done = actionNotice(event.name, output)
+    if (done) {
+      this.doneSinceHeard.add(NOTICE_KIND[done.key])
+      this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
+      this.meter.chime()
+    }
 
     if (this.dc && this.dc.readyState === 'open') {
       for (const message of toolReplyEvents(event.call_id, output)) this.dc.send(JSON.stringify(message))
@@ -504,6 +605,7 @@ export class RealtimeCopilotClient {
   }
 
   disconnect() {
+    this.attempt += 1
     if (this.dc) {
       try {
         this.dc.close()
@@ -565,10 +667,10 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
   const opened = await fetch('/v1/voice/copilot-session', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
   })
-  const grant = (await opened.json().catch(() => null)) as { client_secret?: string; model?: string; error?: { code?: string } } | null
+  const grant = (await opened.json().catch(() => null)) as { client_secret?: string; model?: string } | null
   if (!opened.ok || !grant?.client_secret) {
     // refusal-ok: the preview names the machine's refusal code to the person; there is no other action to take here.
-    throw new Error(grant?.error?.code ?? `HTTP ${opened.status}`)
+    throw new Error(copilotRefusal(grant, opened.status).code)
   }
   const model = grant.model || 'gpt-realtime-mini'
   const pc = new RTCPeerConnection()
@@ -611,5 +713,25 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
     try { dc.close() } catch { /* refusal-ok: closing a preview's channel twice is harmless. */ }
     try { pc.close() } catch { /* refusal-ok: closing a preview's connection twice is harmless. */ }
     audio.srcObject = null
+  }
+}
+
+/**
+ * The Decision API on the machine that holds the key
+ * (`internal/transport/http/copilot_decide.go`): which of its Sessions the
+ * person's sentence means. A refusal is thrown; the tool then lets the copilot
+ * choose from the list itself.
+ */
+async function decideOnMachine(said: string): Promise<{ id?: string; candidates?: string[] }> {
+  const res = await fetch('/v1/voice/copilot-decide', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said }),
+  })
+  const body = (await res.json().catch(() => null)) as { id?: unknown; candidates?: unknown } | null
+  // refusal-ok: a refused decision falls back to the copilot's own choice in `resolveRead`, which is said in the tool's answer.
+  if (!res.ok || !body) throw new Error(copilotRefusal(body, res.status).code)
+  return {
+    ...(typeof body.id === 'string' && body.id ? { id: body.id } : {}),
+    ...((body as { many?: unknown }).many === true ? { many: true } : {}),
+    candidates: Array.isArray(body.candidates) ? body.candidates.filter((c): c is string => typeof c === 'string') : [],
   }
 }

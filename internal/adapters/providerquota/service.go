@@ -53,6 +53,9 @@ type slot struct {
 
 // Service keeps one snapshot per provider. Reads never start agents or send prompts.
 // Provider requests are single-flight per account and cannot hold up a console read.
+// An expired Grok access token with a saved refresh token is renewed by the Grok CLI's
+// own refresh before the account is called reauth_required; Clawdline never exchanges
+// or writes the refresh token itself.
 type Service struct {
 	home     string
 	local    *limits.Reader
@@ -62,6 +65,7 @@ type Service struct {
 	readFile func(string) ([]byte, error)
 	getenv   func(string) string
 	gemini   func(context.Context) ([]Window, string)
+	renew    func(context.Context) error
 }
 
 func New(home string, local *limits.Reader) *Service {
@@ -74,6 +78,16 @@ func New(home string, local *limits.Reader) *Service {
 // service is published. It replaces the retired personal Gemini CLI API path.
 func (s *Service) WithGemini(read func(context.Context) ([]Window, string)) *Service {
 	s.gemini = read
+	return s
+}
+
+// ErrRenewalUnavailable means the CLI could not be asked to renew this time.
+var ErrRenewalUnavailable = errors.New("grok renewal unavailable")
+
+// WithGrokRenewal selects how an expired Grok access token is renewed: a bounded
+// run of the official CLI, which takes its own lock and rewrites auth.json.
+func (s *Service) WithGrokRenewal(renew func(context.Context) error) *Service {
+	s.renew = renew
 	return s
 }
 func readSmall(path string) ([]byte, error) {
@@ -163,14 +177,15 @@ func (s *Service) provider(now time.Time, i int, id, label string, refresh bool)
 		v.identity = cred.identity
 		v.next = time.Time{}
 	}
-	if problem != "" {
+	renewFirst := problem == "reauth_required" && cred.renewable && s.canRenew(id)
+	if problem != "" && !renewFirst {
 		v.row.Problem = problem
 		v.row.Stale = len(v.row.Windows) > 0
 	} else if refresh && !v.busy && !now.Before(v.next) {
 		v.busy = true
 		v.next = now.Add(RefreshSecondsLimit * time.Second)
 		generation := v.generation
-		go s.refresh(i, id, cred, generation)
+		go s.refresh(i, id, cred, generation, renewFirst)
 	}
 	row := v.row
 	row.Windows = append([]Window{}, row.Windows...)
@@ -182,19 +197,58 @@ func (s *Service) provider(now time.Time, i int, id, label string, refresh bool)
 	return row, busy
 }
 
-func (s *Service) refresh(index int, id string, c credential, generation uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), RequestSecondsLimit*time.Second)
+func (s *Service) canRenew(id string) bool { return id == "grok" && s.renew != nil }
+
+// renewed runs the CLI's own refresh once and rereads the credential it wrote.
+// A token that is still expired afterwards is the only reauth_required outcome.
+func (s *Service) renewed(id string) (credential, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), RenewSecondsLimit*time.Second)
 	defer cancel()
-	windows, problem, retry := s.fetch(ctx, id, c)
+	err := s.renew(ctx) // The file, not the exit status, says whether renewal happened.
+	c, problem := s.credentials(id, time.Now())
+	if problem == "reauth_required" && errors.Is(err, ErrRenewalUnavailable) {
+		// Grok could not be asked this time; that is not proof the sign-in has lapsed.
+		problem = "unavailable"
+	}
+	return c, problem
+}
+
+func (s *Service) refresh(index int, id string, c credential, generation uint64, renewFirst bool) {
+	original := c.identity
+	var windows []Window
+	var problem string
+	var retry time.Time
+	renewedOnce := false
+	if renewFirst {
+		c, problem = s.renewed(id)
+		renewedOnce = true
+	}
+	if problem == "" {
+		ctx, cancel := context.WithTimeout(context.Background(), RequestSecondsLimit*time.Second)
+		windows, problem, retry = s.fetch(ctx, id, c)
+		cancel()
+		// A token the server rejected before its stated expiry gets one renewal and one retry.
+		if problem == "reauth_required" && !renewedOnce && c.renewable && s.canRenew(id) {
+			if c, problem = s.renewed(id); problem == "" {
+				ctx, cancel := context.WithTimeout(context.Background(), RequestSecondsLimit*time.Second)
+				windows, problem, retry = s.fetch(ctx, id, c)
+				cancel()
+			}
+		}
+	}
 	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := &s.slots[index]
-	if v.generation != generation || v.identity != c.identity {
+	if v.generation != generation || v.identity != original {
 		v.busy = false
 		return
 	}
 	v.busy = false
+	// The renewed credential belongs to the same account; it must not reset the reading.
+	if c.identity != "" {
+		v.identity = c.identity
+	}
 	if retry.After(v.next) {
 		v.next = retry
 	}
@@ -226,7 +280,11 @@ func (s *Service) Reading() capacity.Reading {
 	return capacity.Reading{Known: true, Used: n, WindowSeconds: RefreshSecondsLimit}
 }
 
-type credential struct{ token, user, project, identity string }
+type credential struct {
+	token, user, project, identity string
+	// renewable means the selected Grok entry carries a refresh token the CLI can use.
+	renewable bool
+}
 
 func (s *Service) credentials(id string, now time.Time) (credential, string) {
 	dir := filepath.Join(s.home, "."+id)
@@ -265,6 +323,7 @@ func (s *Service) credentials(id string, now time.Time) (credential, string) {
 			Key     string `json:"key"`
 			User    string `json:"user_id"`
 			Expires string `json:"expires_at"`
+			Refresh string `json:"refresh_token"`
 		}
 		if json.Unmarshal(b, &entries) != nil {
 			return c, "invalid_response"
@@ -288,6 +347,7 @@ func (s *Service) credentials(id string, now time.Time) (credential, string) {
 			}
 			c.token = a.Key
 			c.user = a.User
+			c.renewable = a.Refresh != ""
 			if a.Expires != "" {
 				expiry, e := time.Parse(time.RFC3339Nano, a.Expires)
 				if e != nil {
