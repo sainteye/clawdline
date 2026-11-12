@@ -1772,6 +1772,87 @@
         "reject_always"
       ],
       "description": "Native option kind is preserved. Persistent choices are never accepted in v1 and cannot widen authority."
+    },
+    "ProjectAssistantProjectOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A source-registered choice for Bot configuration. The label is metadata, not proof that a directory or native provider is currently usable. Creation and execution resolve the selected ID again.",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/ProjectAssistantProjectSelection"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "label"
+      ]
+    },
+    "ProjectAssistantProjectsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Read the source-owned Bot Project catalog. Page size uses the existing 1..100 row bound. The opaque cursor binds the source, principal, grant and complete catalog revision; this does not read the retired /v1/projects catalog.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "page_size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "machine_id",
+        "cursor",
+        "page_size"
+      ]
+    },
+    "ProjectAssistantProjectsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A complete-row page from one fresh registered-choice revision. Agent values identify configuration kinds accepted by Create and do not assert CLI installation, authentication or native readiness. A byte-limited page advances only through complete returned choices.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantAgent"
+          }
+        },
+        "revision": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantProjectOption"
+          }
+        },
+        "next_cursor": {
+          "type": "string"
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "source",
+        "agents",
+        "revision",
+        "items",
+        "next_cursor",
+        "has_more"
+      ]
     }
   }
 }

@@ -5661,6 +5661,16 @@ export type ProjectAssistantProjectKind =
 export const ProjectAssistantProjectKindValues: readonly ProjectAssistantProjectKind[] = ["repository", "place"] as const
 
 /**
+ * A source-registered choice for Bot configuration. The label is metadata, not
+ * proof that a directory or native provider is currently usable. Creation and
+ * execution resolve the selected ID again.
+ */
+export interface ProjectAssistantProjectOption {
+  label: string
+  target: ProjectAssistantProjectSelection
+}
+
+/**
  * Linked worktrees resolve to the existing canonical repository. Non-repository
  * places retain their own identity.
  */
@@ -5678,6 +5688,33 @@ export interface ProjectAssistantProjectScope {
 export interface ProjectAssistantProjectSelection {
   machine_id: string
   project_id: string
+}
+
+/**
+ * Read the source-owned Bot Project catalog. Page size uses the existing 1..100 row
+ * bound. The opaque cursor binds the source, principal, grant and complete catalog
+ * revision; this does not read the retired /v1/projects catalog.
+ */
+export interface ProjectAssistantProjectsRequest {
+  cursor: string
+  machine_id: string
+  page_size: number
+}
+
+/**
+ * A complete-row page from one fresh registered-choice revision. Agent values
+ * identify configuration kinds accepted by Create and do not assert CLI
+ * installation, authentication or native readiness. A byte-limited page advances
+ * only through complete returned choices.
+ */
+export interface ProjectAssistantProjectsResponse {
+  agents: ProjectAssistantAgent[]
+  contract_version: string
+  has_more: boolean
+  items: ProjectAssistantProjectOption[]
+  next_cursor: string
+  revision: string
+  source: ProjectAssistantSourceStatus
 }
 
 /**
