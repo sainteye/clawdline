@@ -236,6 +236,16 @@
     "Known": true
   },
   {
+    "Name": "browser.activity_picture_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.activity_picture_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "browser.audit_rows",
     "Known": true
   },
@@ -260,6 +270,11 @@
   },
   {
     "Name": "browser.result_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.stdin_text_bytes",
     "Known": true,
     "Note": true
   },

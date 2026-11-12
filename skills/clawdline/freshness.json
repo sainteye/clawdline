@@ -65,8 +65,8 @@
       "translation": "1d17cf90d81d429dd406beb2569e2ab755a7517665957aca024943bd5787f5da"
     },
     "note": {
-      "source": "e7dac2c212c2d1f49a728c9640e86ab89b0e7d09827ac07349c3504a7e4858dd",
-      "translation": "c83dfefa5172cf21efc0e5162a8e2dd8665a28b3f20ca3f8db974c11bc437d48"
+      "source": "c91631c5f9c69ec758e1a44ad66a10b14a1f90571f3be345515ffc84d3c929fc",
+      "translation": "c44b220442b6be359f15a33a35f13d42ccf959b84ebe0fc22f4237d5084d3289"
     },
     "board": {
       "source": "3aeb03c18fa30be14738720125bc59393e323bc1c2957a5bd6158793ed90452a",
@@ -83,6 +83,10 @@
     "refused": {
       "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
       "translation": "8336dc7413c187fd31b164d22352c81093304c5d3713e5a1ee9f8a0fc7b70fcb"
+    },
+    "browser": {
+      "source": "5a33e535748337868d66460d5f7630d10c69116d8daa4da273c6ea6497c838f7",
+      "translation": "cbd3a760ec3bbef42fe49b8f079f3c0acd5a8adb0f867e165f051cbff0de2cda"
     }
   },
   "pt-BR": {

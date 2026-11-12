@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -17,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
 	"github.com/sainteye/clawdline/internal/config"
 )
 
@@ -33,7 +33,8 @@ const browserUsage = `usage: clawdline browser <command>
   tabs                           list the tabs this Session may use
   read [--tab N]                 the page's text and the elements that can be pressed or filled
   click <text> | --x N --y N     press the element whose label is <text>, or a point
-  type <text>                    type into the focused field (Chinese included)
+  type <text> | --stdin          type into the focused field (Chinese included); --stdin reads a
+                                 Secret Handoff: clawdline secret run <note> -- clawdline browser type --stdin
   key <name>                     Enter, Tab, Backspace, Escape, ArrowDown, ArrowUp, PageDown, PageUp
   scroll <down|up>               scroll the page by about one screen
   screenshot [--out FILE]        save a JPEG of the tab and print its path
@@ -96,7 +97,7 @@ func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer
 		}
 		return report(out, errOut, "browser audit", a)
 	}
-	cmdArgs, outFile, code := browserArgs(op, rest, errOut)
+	cmdArgs, outFile, code := browserArgs(op, rest, os.Stdin, errOut)
 	if code != 0 {
 		return code
 	}
@@ -112,13 +113,14 @@ func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer
 }
 
 // browserArgs turns the words after an op into the command's JSON arguments.
-func browserArgs(op string, rest []string, errOut io.Writer) (map[string]any, string, int) {
+func browserArgs(op string, rest []string, stdin io.Reader, errOut io.Writer) (map[string]any, string, int) {
 	fs := flag.NewFlagSet("browser "+op, flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	tab := fs.Int("tab", 0, "tab id")
 	x := fs.Float64("x", -1, "x")
 	y := fs.Float64("y", -1, "y")
 	outFile := fs.String("out", "", "file")
+	fromStdin := fs.Bool("stdin", false, "read the text from standard input")
 	if fs.Parse(rest) != nil {
 		return nil, "", 2
 	}
@@ -149,6 +151,18 @@ func browserArgs(op string, rest []string, errOut io.Writer) (map[string]any, st
 			args["target"] = words
 		}
 	case "type":
+		if *fromStdin {
+			// A secret arrives here from `clawdline secret run`: it is typed,
+			// never printed, and the audit keeps only its length.
+			data, err := io.ReadAll(io.LimitReader(stdin, maxStdinText+1))
+			if err != nil || len(data) > maxStdinText || len(data) == 0 {
+				fmt.Fprintln(errOut, "clawdline browser type --stdin: standard input was empty, unreadable or larger than 16 KiB")
+				return nil, "", 2
+			}
+			text := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
+			args["text"], args["secret"] = text, true
+			break
+		}
 		if !need("the text") {
 			return nil, "", 2
 		}
@@ -207,6 +221,10 @@ func saveScreenshot(a answer, outFile string, out, errOut io.Writer) int {
 	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "path": outFile, "url": body.Value.URL, "bytes": len(data)})
 	return 0
 }
+
+// maxStdinText bounds what `type --stdin` reads, within the bridge's own
+// argument bound.
+const maxStdinText = 16 << 10
 
 // ---- native messaging host ----
 
@@ -328,11 +346,9 @@ func readNativeMessage(r io.Reader) ([]byte, error) {
 
 // ---- installing the host for one Chrome profile directory ----
 
-const browserHostName = "com.clawdline.browser"
-
 // browserInstallHost writes Chrome's native messaging manifest for the
 // extension into a Chrome user-data directory, and a launcher that pins this
-// daemon's directory and port. It is what the console's install guide runs.
+// daemon's directory and port (internal/adapters/browserlaunch).
 func browserInstallHost(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("browser install-host", flag.ContinueOnError)
 	fs.SetOutput(errOut)
@@ -341,11 +357,12 @@ func browserInstallHost(args []string, out, errOut io.Writer) int {
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	if !validExtensionID(*extID) || *chromeDir == "" || !filepath.IsAbs(*chromeDir) {
+	if !browserlaunch.ValidExtensionID(*extID) || *chromeDir == "" || !filepath.IsAbs(*chromeDir) {
 		fmt.Fprintln(errOut, "usage: clawdline browser install-host --extension-id <32 letters a-p> --chrome-dir <absolute path>")
 		return 2
 	}
-	exe, err := os.Executable()
+	dir := config.Dir()
+	exe, err := browserlaunch.LauncherBinary(dir)
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 1
@@ -355,42 +372,11 @@ func browserInstallHost(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	dir := config.Dir()
-	launcher := filepath.Join(dir, "browser-host.sh")
-	var script bytes.Buffer
-	fmt.Fprintf(&script, "#!/bin/sh\nCLAWDLINE_NEXT_DIR=%s CLAWDLINE_NEXT_PORT=%d exec %s browser-host\n", shellQuote(dir), port, shellQuote(exe))
-	if err := os.WriteFile(launcher, script.Bytes(), 0o700); err != nil {
+	host, err := browserlaunch.InstallHost(dir, port, exe, *extID, *chromeDir)
+	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	hosts := filepath.Join(*chromeDir, "NativeMessagingHosts")
-	if err := os.MkdirAll(hosts, 0o755); err != nil {
-		fmt.Fprintln(errOut, err)
-		return 1
-	}
-	manifest, _ := json.MarshalIndent(map[string]any{
-		"name": browserHostName, "description": "Clawdline browser bridge", "path": launcher,
-		"type": "stdio", "allowed_origins": []string{"chrome-extension://" + *extID + "/"},
-	}, "", "  ")
-	path := filepath.Join(hosts, browserHostName+".json")
-	if err := os.WriteFile(path, append(manifest, '\n'), 0o644); err != nil {
-		fmt.Fprintln(errOut, err)
-		return 1
-	}
-	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "manifest": path, "launcher": launcher})
+	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "manifest": host.Manifest, "launcher": host.Launcher})
 	return 0
 }
-
-func validExtensionID(id string) bool {
-	if len(id) != 32 {
-		return false
-	}
-	for _, c := range id {
-		if c < 'a' || c > 'p' {
-			return false
-		}
-	}
-	return true
-}
-
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

@@ -7,6 +7,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projectfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/cloudvocab"
 	"github.com/sainteye/clawdline/internal/domain/squad"
@@ -18,6 +19,7 @@ import (
 // copy of, by the name the table's `copies` gives it. The generated decoders
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
+	"browserbridge.MaxAuditRows":                   browserbridge.MaxAuditRows,
 	"capacity.AntigravityConsentRequestBytesLimit": capacity.AntigravityConsentRequestBytesLimit,
 	"ViewerEventsBatchBytesLimit":                  ViewerEventsBatchBytesLimit,
 	"SessionRowIDBytesLimit":                       SessionRowIDBytesLimit,

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/workflow"
 	"github.com/sainteye/clawdline/skills"
 )
 
@@ -72,5 +73,19 @@ func TestCodeGraphLaunchGuidanceIsIndependentAndDoesNotReadAnIndexWhenOff(t *tes
 	text, err = s.integrationLaunchText(context.Background(), root)
 	if err != nil || text != skills.WorkflowInstructions() {
 		t.Fatalf("codegraph off retained its guidance: %q %v", text, err)
+	}
+}
+
+func TestIntegrationLaunchTellsANewSessionAboutTheBrowserOnlyWhenItIsOn(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	root := t.TempDir()
+	for _, on := range []bool{false, true, false} {
+		if _, err := s.settingsFile().Set(map[string]any{"browser_enabled": on}); err != nil {
+			t.Fatal(err)
+		}
+		text, err := s.integrationLaunchText(context.Background(), root)
+		if err != nil || on && text != workflow.BrowserUseInstructions() || !on && text != "" {
+			t.Fatalf("browser enabled=%v: %q %v", on, text, err)
+		}
 	}
 }

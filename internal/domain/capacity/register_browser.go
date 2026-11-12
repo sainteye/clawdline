@@ -8,6 +8,9 @@ const (
 	BrowserResultBytes     = "browser.result_bytes"
 	BrowserHostMessage     = "browser.host_message_bytes"
 	BrowserAuditText       = "browser.audit_text_characters"
+	BrowserStdinText       = "browser.stdin_text_bytes"
+	BrowserActivityRows    = "browser.activity_picture_rows"
+	BrowserActivityBytes   = "browser.activity_picture_bytes"
 )
 
 // browserBounds is every registered row named browser.*.
@@ -36,6 +39,29 @@ func browserBounds() []Entry {
 			Limit: 2000, AtLimit: Coalesce,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/browserbridge.MaxAuditTextRunes"},
+		},
+		{
+			// What `clawdline browser type --stdin` reads, as a Secret Handoff
+			// arrives; more is refused before anything is typed.
+			Name: BrowserStdinText, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"cmd/clawdline.maxStdinText"},
+		},
+		{
+			// Recent actions that keep a small picture of the page after them,
+			// in memory only; the oldest picture goes first.
+			Name: BrowserActivityRows, Class: Observation, Unit: Rows,
+			Limit: 40, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon, Routine: true,
+			Sources: []string{"internal/app/browserbridge.MaxActivityThumbs"},
+		},
+		{
+			// One such picture; a larger one is not kept.
+			Name: BrowserActivityBytes, Class: Buffer, Unit: Bytes,
+			Limit: 96 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/browserbridge.MaxThumbBytes"},
 		},
 		{
 			Name: BrowserArgBytes, Class: Buffer, Unit: Bytes,

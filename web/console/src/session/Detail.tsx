@@ -39,7 +39,7 @@ import { MenuHandoffNotice } from "./MenuHandoffNotice.js"
 import { menuHandoffDelay, unreadMenuSeen, type UnreadMenu } from "./menu-handoff.js"
 import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
-import { BrowserPanel } from "./BrowserPanel.js"
+import { BrowserChip, BrowserPanel } from "./BrowserPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
 import { StatusLine } from "./StatusLine.js"
@@ -193,6 +193,15 @@ export function Detail({
   const [screenOpen, setScreenOpen] = useState(false)
   const [browserOpen, setBrowserOpen] = useState(false)
   const [nativeTerminalOpen,setNativeTerminalOpen] = useState(false)
+  useEffect(() => {
+    const open = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== row?.sessionId) return
+      setNativeTerminalOpen(false); setScreenOpen(false); setBrowserOpen(true)
+    }
+    window.addEventListener("clawdline:browser-takeover", open)
+    return () => window.removeEventListener("clawdline:browser-takeover", open)
+  }, [row?.sessionId])
+
   const actionsTrigger = useRef<HTMLButtonElement>(null)
   const [toolOpen, setToolOpen] = useState(false)
   const [toolDraft, setToolDraft] = useState<ToolDraft | null>(null)
@@ -882,6 +891,7 @@ function Tools({
           `webShowOnMacOff` on a `write: false` health, which this daemon's
           health does not carry — the same gap the composer has, and a refusal
           arrives in the toast rather than in the title. */}
+      <BrowserChip row={row} hidden={!row || ending} onOpen={onBrowser} />
       <button
         className="chip"
         id="tx-focus"

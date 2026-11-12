@@ -374,3 +374,49 @@ export function writeWorkflowSettings(change: Partial<WorkflowSettingsRequest>, 
     body: JSON.stringify(change),
   }, request)
 }
+
+/** The Browser block's two machine switches (`/v1/browser/settings`, chrome-settings over Cloud). */
+export type ChromeSettings = { browser_enabled: boolean; browser_notify_new_site: boolean }
+
+export function readChromeSettings(signal?: AbortSignal): Promise<ChromeSettings> {
+  return call<ChromeSettings>({ method: "GET" }, "/v1/browser/settings", signal)
+}
+
+export function writeChromeSettings(change: Partial<ChromeSettings>): Promise<ChromeSettings> {
+  return call<ChromeSettings>({ method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify(change),
+  }, "/v1/browser/settings")
+}
+
+/** What `/v1/browser/status` says about the extension and the stop. */
+export type BrowserStatus = {
+  status: { connected: boolean; stopped: boolean; state_error?: boolean; host?: { version?: string; browser?: string } }
+}
+
+export function readBrowserStatus(signal?: AbortSignal): Promise<BrowserStatus> {
+  return call<BrowserStatus>({ method: "GET" }, "/v1/browser/status", signal)
+}
+
+/** The emergency stop for every agent's browser use; only a person resumes it. */
+export function writeBrowserStop(stopped: boolean): Promise<{ stopped: boolean }> {
+  return call<{ stopped: boolean }>({ method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ stopped }),
+  }, "/v1/browser/stop")
+}
+
+export type BrowserAuditRow = {
+  at: number; conversation: string; op: string; tab?: number; url?: string; site?: string; target?: string
+  text?: string; text_length?: number; text_cut?: boolean; password?: boolean; ok: boolean; error?: string
+}
+export type BrowserAudit = { rows: BrowserAuditRow[]; pruned: number; journal_error?: string }
+export type BrowserAuditFilter = { conversation?: string; site?: string; since?: number; limit: number }
+
+export function readBrowserAudit(filter: BrowserAuditFilter, signal?: AbortSignal): Promise<BrowserAudit> {
+  const query = new URLSearchParams({ limit: String(filter.limit) })
+  if (filter.conversation) query.set("conversation", filter.conversation)
+  if (filter.site) query.set("site", filter.site)
+  if (filter.since) query.set("since", String(filter.since))
+  return call<BrowserAudit>({ method: "GET" }, "/v1/browser/audit?" + query, signal)
+}

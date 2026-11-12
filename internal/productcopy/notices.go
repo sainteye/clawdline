@@ -17,6 +17,10 @@ var Languages = []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", 
 // Later secondary-language additions may be empty: Format falls back on that
 // key alone, and Coverage reports the untranslated count.
 var notices = map[string][9]string{
+	"browser.reminder.title":     {"Set up the browser when you return to the computer", "回到電腦後設定瀏覽器"},
+	"browser.reminder.summary":   {"You asked on your phone to keep this setup reminder in the Session.", "你已在手機上要求將這則設定提醒留在 Session。"},
+	"browser.reminder.action":    {"Open the browser panel and follow the setup guide when you return to this computer.", "回到這台電腦後，開啟瀏覽器面板並依引導完成設定。"},
+	"browser.reminder.reason":    {"The browser runs on this computer; the reminder does not start it or enable browser use.", "瀏覽器會在這台電腦執行；提醒本身不會啟動瀏覽器或開啟瀏覽器功能。"},
 	"notice.native_wait":         {"The Gemini conversation is busy or awaiting an answer; the notice has not been sent.", "Gemini 對話正在處理或等待回答，通知尚未傳送。"},
 	"notice.native_uncertain":    {"Gemini may have received this notice. Automatic resending stopped to avoid another model input; read the task result directly.", "Gemini 可能已收到通知。為避免重複輸入，已停止自動重送；請直接讀取任務結果。"},
 	"delivery.title":             {"Session delivered", "Session 已交件", "セッションの完了報告を記録しました", "会话已提交交付报告", "세션 완료 보고 등록", "Entrega de la sesión registrada", "Entrega da sessão registrada", "Livraison de la session enregistrée", "Sitzungsergebnis gemeldet"},

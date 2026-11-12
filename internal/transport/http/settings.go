@@ -43,6 +43,8 @@ var browserSettings = map[string]bool{
 	"orchestrator_notify_root": true, "orchestrator_child_linger": true,
 	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true, "grok_full_permission": true,
 	"setup_mode": true, "setup_completed_at": true, "setup_app_device": true, "setup_skipped": true,
+	// The browser setup guide (web/console/src/session/BrowserSetup.tsx).
+	"browser_enabled": true, "browser_notify_new_site": true,
 }
 
 // notificationSettings is the machine-wide event policy. A device's ability

@@ -6,7 +6,7 @@ alias. The other seven translations are `ja`, `zh-Hans`, `ko`, `es`,
 `pt-BR`, `fr` and `de`.
 
 `freshness.json` pins the SHA-256 of both the English and translated bytes
-for the preamble and each of the 20 named parts. `skills.Guide`,
+for the preamble and each of the 21 named parts. `skills.Guide`,
 `skills.Section` and `skills.Core` print current translated parts. If
 either side changes without a reviewed new pin, they print the current
 English part instead and list its name in a visible pending-translation

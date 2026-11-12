@@ -1,6 +1,6 @@
 # 此 build 的 Agent 路由索引
 
-由已註冊的路由與 `api/v1/agent-routes.json` 產生；API 等級：50。請先讀 `clawdline guide`，再讀表格指定的部分。路由出現在此只表示可以探索，**不授權呼叫，也不代表操作完成**。每個前綴下的具體動作、輸入、權限、拒絕與收據，必須由該部分及本 build 的 schema 明示；若未載明該動作，Agent 就不得呼叫。缺少能力或版本、身分不符、結果未知時停止，不改走另一台機器或舊介面。
+由已註冊的路由與 `api/v1/agent-routes.json` 產生；API 等級：55。請先讀 `clawdline guide`，再讀表格指定的部分。路由出現在此只表示可以探索，**不授權呼叫，也不代表操作完成**。每個前綴下的具體動作、輸入、權限、拒絕與收據，必須由該部分及本 build 的 schema 明示；若未載明該動作，Agent 就不得呼叫。缺少能力或版本、身分不符、結果未知時停止，不改走另一台機器或舊介面。
 
 | 方法 | 已註冊路由 | 起始 API 等級 | Agent 指南 | 使用者目標 |
 | --- | --- | ---: | --- | --- |
@@ -11,13 +11,19 @@
 | `*` | `/v1/auth/` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/board` | 1 | `clawdline guide board` | `docs/user/board.md` |
 | `*` | `/v1/board/tracks` | 1 | `clawdline guide board` | `docs/user/board.md` |
+| `*` | `/v1/browser/activity` | 52 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/audit` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/commands` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/control` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/host/poll` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/host/results` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/launch` | 54 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/mute` | 51 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/person` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/reminder` | 55 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/screenshot` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/settings` | 54 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/setup` | 54 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/status` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/stop` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/capacity` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |

@@ -165,8 +165,11 @@ async function main() {
     const bin = opt("--browser")
     if (!bin) throw new Error("--browser <binary> is required unless --no-launch")
     profile = mkdtempSync(join(tmpdir(), "browser-probe-"))
-    browser = spawn(bin, [`--user-data-dir=${profile}`, `--load-extension=${join(here, "extension")}`,
-      `--disable-extensions-except=${join(here, "extension")}`, "--no-first-run", "--no-default-browser-check",
+    // --holder also loads a second extension that holds chrome.debugger on
+    // every tab, as another debugging extension would (the coexist test).
+    const exts = [join(here, "extension"), ...(flag("--holder") ? [join(here, "holder")] : [])].join(",")
+    browser = spawn(bin, [`--user-data-dir=${profile}`, `--load-extension=${exts}`,
+      `--disable-extensions-except=${exts}`, "--no-first-run", "--no-default-browser-check",
       "--window-size=1280,860", `http://127.0.0.1:${PORT}/static`], { stdio: "ignore" })
     const v = spawn(bin, ["--version"]); v.stdout.on("data", (d) => (results.browser = String(d).trim()))
   }
@@ -254,6 +257,22 @@ async function main() {
       let alive = false, err = null
       try { await call("ping", {}, 3000); alive = true } catch (e) { err = e.message }
       results.idle45s = { alive, err, waitedS: round((Date.now() - before) / 1000) }
+    }
+
+    if (want("holder")) {
+      // A tab another extension already debugs: can this one attach, read and act?
+      const t = await tab("/input"); await sleep(1500)
+      const out = { tab: t.id }
+      out.attachedBefore = (await call("targets")).filter((x) => x.tabId === t.id).map((x) => x.attached)
+      try { await call("attach", { tabId: t.id }); out.attach = "ok" } catch (e) { out.attach = e.message }
+      if (out.attach === "ok") {
+        try { const r = await cdp(t.id, "Runtime.evaluate", { expression: "document.title", returnByValue: true }); out.read = r.result.value } catch (e) { out.read = e.message }
+        out.screenshot = await shot(t.id)
+        try { await cdp(t.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: 200, y: 140, button: "left", clickCount: 1 }); await cdp(t.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: 200, y: 140, button: "left", clickCount: 1 }); out.click = "ok" } catch (e) { out.click = e.message }
+      }
+      const targets = await call("targets")
+      out.targetAttached = targets.filter((x) => x.tabId === t.id).map((x) => x.attached)
+      results.holder = out
     }
 
     if (want("coexist")) {

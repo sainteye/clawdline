@@ -1477,7 +1477,7 @@ clawdline note create --requested-by-person --body-file note.json
 
 For a password, credential, or API key, use **Secret Handoff**. Create a `kind: "secret"` Note with a non-secret title, action and reason. Put the exact credential name (such as "Production API key") in `summary`; it appears as the label immediately above the dedicated multi-line field. Leave `detail`, `options`, and `document_url` empty. The person pastes the value into that field, even for a one-line value. Never request it in a suggested reply, normal message, document, or command argument. After the person submits, the target Session may run `clawdline secret run <note-id> -- <command> [args...]`; the command receives the one-time value on standard input, and its output is suppressed. The value expires in 15 minutes or on daemon restart. A failed consumer still consumes it. Ask for a new handoff when needed, and never print the value or pipe it through a shell transcript. See `docs/secret-handoff.md` for the boundary and person-facing steps.
 
-`kind` is `read`, `answer`, `action`, `report`, or `secret`; `title`, `summary`, `action`, and `reason` are required. An `answer` can offer two to four choices. Each `draft` is the suggested reply shown on its button. When the person taps it, the Console sends it right away as a conversation message to the note's Session, followed by a context line with the note ID, title, and action so the receiving Session knows which request the person answered; the context is not shown on the button. Only after the send succeeds does the note move to recently handled. If the send fails, the note stays pending and the attention control says the reply was not sent. `detail` can hold longer text. `document_url` can link to a real, readable Cloud document; verify the document route and file before posting it. Act on the conversation message that arrives, not on the note's state: a note the person marked handled by hand sent nothing. Use `--requested-by-person` only for an explicit request to create the note, not for a broader request to complete work. That flag keeps the note visible without sending a note push. If your work is actually blocked on the answer, record the waiting-user state; an agent-initiated note already sends the attention push, so do not duplicate it. A note does not wake an Agent.
+`kind` is `read`, `answer`, `action`, `report`, `secret`, or `browser`; `title`, `summary`, `action`, and `reason` are required. An `answer` can offer two to four choices. Each `draft` is the suggested reply shown on its button. When the person taps it, the Console sends it right away as a conversation message to the note's Session, followed by a context line with the note ID, title, and action so the receiving Session knows which request the person answered; the context is not shown on the button. Only after the send succeeds does the note move to recently handled. If the send fails, the note stays pending and the attention control says the reply was not sent. `detail` can hold longer text. `document_url` can link to a real, readable Cloud document; verify the document route and file before posting it. Act on the conversation message that arrives, not on the note's state: a note the person marked handled by hand sent nothing. Use `--requested-by-person` only for an explicit request to create the note, not for a broader request to complete work. That flag keeps the note visible without sending a note push. If your work is actually blocked on the answer, record the waiting-user state; an agent-initiated note already sends the attention push, so do not duplicate it. A note does not wake an Agent. A `browser` Note offers **Take over**, which opens its target Session's live browser panel. The person then takes control in that panel; opening it grants no browser input or approval.
 
 **Withdraw an obsolete Note**
 
@@ -1486,6 +1486,41 @@ Run `clawdline note list` to read only Notes attributed to your live Session (in
 `clawdline note withdraw --id <note-id> --version <version> --reason "The prerequisite is now satisfied."`
 
 The reason is required. Use `--from <live-session-conversation>` only when the environment cannot identify your Session. The CLI prints an idempotency key; reuse it with `--key` after an uncertain result. A stale version returns `version_conflict`: reread before deciding to retry. Another source's Note returns `intervention_not_found`; an already closed Note returns `intervention_already_closed` and preserves its outcome. Withdrawal removes the attention dot and moves the Note to recent history, in gray with its reason and an Agent-withdrawn label. It is never a person's answer or approval. The person can reopen it. Do not withdraw another Session's Notes or pretend a named source is cryptographically isolated: the machine credential remains shared.
+
+## 9b. Use the browser
+
+Only when the person has turned on browser use for this machine (Settings → Browser); a new
+Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
+from the person's Chrome. Every action is recorded for the person, and they may watch and take
+over from this machine or their phone.
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
+  see the layout.
+- `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
+- `browser_stopped`: the person stopped all browser use. Do not retry.
+- `browser_extension_missing` or `browser_disabled`: continue another way, and tell the person
+  that Settings → Browser sets it up.
+- When a page needs the person — sign-in, CAPTCHA, payment, or any confirmation with
+  consequences — create a note (`clawdline guide note`) asking them to take over the Chrome tab,
+  and wait.
+- Never ask for a password in chat. For a secret, use a Secret Handoff and type it with
+  `clawdline secret run <note> -- clawdline browser type --stdin`.
+- Do not buy, send messages, publish, delete or accept terms in the browser unless the person
+  asked for that exact action.
+- The setting does not authorize installing software, changing the person's Chrome or spending
+  money.
 
 ## 10. The board
 

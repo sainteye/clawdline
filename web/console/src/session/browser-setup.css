@@ -1,0 +1,82 @@
+/* The browser setup guide (BrowserSetup.tsx), on top of the setup wizard's
+   own classes (setup/setup.css), and the Chrome panel's way into it. */
+
+.browser-setup-ask { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 0 0 12px; }
+.browser-setup-ask .browser-setup-start {
+  min-height: 44px; padding: 0 20px; border: 0; border-radius: 10px;
+  background: var(--accent); color: #141413; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+
+.browser-setup .setup-track { gap: 6px 10px; }
+.browser-setup .setup-track li + li::before { width: 10px; margin-right: 4px; }
+
+.browser-setup-features { margin-top: 24px; gap: 16px; }
+.browser-setup-plain {
+  margin: 24px 0 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card-hi); font-size: 14px; line-height: 1.6; color: var(--ink);
+}
+
+.browser-setup-state { min-height: 28px; margin-top: 20px; }
+.browser-setup-ok, .browser-setup-wait { margin: 0; display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.browser-setup-ok { color: var(--ok); font-weight: 600; }
+.browser-setup-wait { color: var(--dim); }
+.browser-setup-spin {
+  flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--accent-ed); border-top-color: var(--accent);
+  animation: setup-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .browser-setup-spin { animation: none; } }
+
+.browser-setup-causes { margin-top: 16px; padding: 4px 16px 8px; border: 1px solid var(--line); border-radius: 12px; }
+.browser-setup-causes > p { margin: 10px 0 4px; font-size: 13px; color: var(--dim); }
+.browser-setup-causes ul { list-style: none; margin: 0; padding: 0; }
+.browser-setup-causes li {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  min-height: 52px; padding: 8px 0; font-size: 14px; line-height: 1.5;
+}
+.browser-setup-causes li + li { border-top: 1px solid var(--line); }
+.browser-setup-causes li > span:first-child { flex: 1 1 220px; min-width: 0; }
+.browser-setup-causes li[data-cause="waiting"] { color: var(--dim); }
+.browser-setup-copy { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.browser-setup-copy input {
+  flex: 1 1 260px; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--accent);
+  font: 13px var(--mono);
+}
+
+.browser-setup-switches { margin-top: 24px; padding: 4px 20px; border: 1px solid var(--line); border-radius: 12px; }
+.browser-setup-switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 56px; font-size: 15px; cursor: pointer; position: relative;
+}
+.browser-setup-switch + .browser-setup-switch { border-top: 1px solid var(--line); }
+.browser-setup-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.browser-setup-switch i {
+  flex: 0 0 auto; width: 44px; height: 26px; border-radius: 999px; background: var(--line);
+  position: relative; transition: background 0.15s;
+}
+.browser-setup-switch i::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--ink); transition: transform 0.15s;
+}
+.browser-setup-switch input:checked + i { background: var(--accent); }
+.browser-setup-switch input:checked + i::after { transform: translateX(18px); background: #141413; }
+.browser-setup-switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.browser-setup .setup-ending .setup-summary { max-width: 400px; }
+.browser-setup .setup-ending .setup-lede { margin-top: 20px; max-width: 480px; }
+
+/* A phone: a full-width sheet from the bottom, every target 44 px. */
+@media (max-width: 520px) {
+  .browser-setup.setup-dialog {
+    width: 100vw; max-width: 100vw; min-height: 0; max-height: 92dvh;
+    margin: auto 0 0; border-radius: 16px 16px 0 0; border-bottom: 0;
+    padding: 12px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .browser-setup .setup-track li:not([data-current]) > span:last-child { display: none; }
+  .browser-setup .setup-body h2 { font-size: 21px; }
+  .browser-setup-features { gap: 14px; }
+  .browser-setup .setup-actions { flex-wrap: nowrap; }
+  .browser-setup .setup-primary { flex: 1 1 auto; }
+  .browser-setup-switches { padding: 4px 14px; }
+}

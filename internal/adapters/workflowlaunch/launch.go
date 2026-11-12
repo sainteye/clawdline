@@ -65,9 +65,10 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 	}
 	if resume == "" {
 		on, _ := values.Bool("space_saving_images")
+		browser, _ := values.Bool("browser_enabled")
 		if snap.ProfileID == "" {
 			// Legacy parents still cannot acquire today's workflow choice.
-			if !on {
+			if !on && !browser {
 				return Prepared{}, nil
 			}
 			snap, err = workflow.Seal(workflow.Snapshot{ProfileID: "clawdline", Version: "1", Source: "Clawdline"})
@@ -75,8 +76,9 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 				return Prepared{}, err
 			}
 		}
-		if snap.SpaceSavingImages != on {
+		if snap.SpaceSavingImages != on || snap.BrowserUse != browser {
 			snap.SpaceSavingImages = on
+			snap.BrowserUse = browser
 			// Historical schema 1 cannot encode new opt-ins.
 			snap.Schema = 2
 			snap, err = workflow.Seal(snap)
@@ -100,6 +102,9 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 		}
 		if snap.SpaceSavingImages {
 			parts = append(parts, workflow.SpaceSavingImageInstructions())
+		}
+		if snap.BrowserUse {
+			parts = append(parts, workflow.BrowserUseInstructions())
 		}
 		text = strings.Join(parts, "\n\n")
 	}

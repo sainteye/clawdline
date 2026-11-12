@@ -1068,6 +1068,48 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-chrome-control", method: "POST", path: "/v1/browser/control",
 		body2: `{"person":true,"tab":9}`,
 	}, {
+		word:    "chrome-tab-activity",
+		body:    map[string]any{"type": "chrome-tab-activity", "session": machine, "request": "req-chrome-activity", "conversation": "c1"},
+		session: machine, name: "read:req-chrome-activity", method: "GET", path: "/v1/browser/activity",
+		query: map[string]string{"conversation": "c1"},
+	}, {
+		word:    "chrome-tab-mute",
+		body:    map[string]any{"type": "chrome-tab-mute", "session": machine, "request": "req-chrome-mute", "conversation": "c1", "muted": true},
+		session: machine, name: "action:req-chrome-mute", method: "POST", path: "/v1/browser/mute",
+		body2: `{"conversation":"c1","muted":true}`,
+	}, {
+		word:    "chrome-settings",
+		body:    map[string]any{"type": "chrome-settings", "session": machine, "request": "req-chrome-settings"},
+		session: machine, name: "read:req-chrome-settings", method: "GET", path: "/v1/browser/settings",
+	}, {
+		word:    "chrome-settings-update",
+		body:    map[string]any{"type": "chrome-settings-update", "session": machine, "request": "req-chrome-settings-write", "changes": map[string]any{"browser_enabled": true}},
+		session: machine, name: "action:req-chrome-settings-write", method: "POST", path: "/v1/browser/settings",
+		body2: `{"browser_enabled":true}`,
+	}, {
+		word:    "chrome-stop",
+		body:    map[string]any{"type": "chrome-stop", "session": machine, "request": "req-chrome-stop", "stopped": true},
+		session: machine, name: "action:req-chrome-stop", method: "POST", path: "/v1/browser/stop",
+		body2: `{"stopped":true}`,
+	}, {
+		word:    "chrome-audit",
+		body:    map[string]any{"type": "chrome-audit", "session": machine, "request": "req-chrome-audit", "limit": 200, "conversation": "c1", "site": "example.com", "since": 1700000000},
+		session: machine, name: "read:req-chrome-audit", method: "GET", path: "/v1/browser/audit",
+		query: map[string]string{"limit": "200", "conversation": "c1", "site": "example.com", "since": "1700000000"},
+	}, {
+		word:    "chrome-remind",
+		body:    map[string]any{"type": "chrome-remind", "session": machine, "request": "req-chrome-remind", "conversation": "c1"},
+		session: machine, name: "action:req-chrome-remind", method: "POST", path: "/v1/browser/reminder", body2: `{"conversation":"c1"}`,
+	}, {
+		word:    "chrome-setup",
+		body:    map[string]any{"type": "chrome-setup", "session": machine, "request": "req-chrome-setup"},
+		session: machine, name: "read:req-chrome-setup", method: "GET", path: "/v1/browser/setup",
+	}, {
+		word:    "chrome-launch",
+		body:    map[string]any{"type": "chrome-launch", "session": machine, "request": "req-chrome-launch"},
+		session: machine, name: "action:req-chrome-launch", method: "POST", path: "/v1/browser/launch",
+		body2: `{}`,
+	}, {
 		word:    "github-connection",
 		body:    map[string]any{"type": "github-connection", "session": machine, "request": "req-gh"},
 		session: machine, name: "read:req-gh", method: "GET", path: "/v1/integrations/github",

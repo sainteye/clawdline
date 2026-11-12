@@ -1294,7 +1294,7 @@ clawdline note create --requested-by-person --body-file note.json
 
 密碼、憑證或 API key 請使用 **Secret Handoff／機密交付**。建立 `kind: "secret"` 的便條，標題、請求動作與原因都不得包含機密；在 `summary` 填入具體的憑證名稱（例如「正式環境 API key」），它會顯示為多行輸入欄位正上方的標籤。`detail`、`options`、`document_url` 留空。使用者在該欄位貼上內容，單行密碼也使用同一欄位。不要請使用者把機密放進建議回覆、一般訊息、文件或指令參數。送出後，目標 Session 可執行 `clawdline secret run <note-id> -- <command> [args...]`；指令會從標準輸入取得一次性的內容，輸出會被抑制。內容於 15 分鐘後或 daemon 重啟時失效；即使接收程式失敗，也已使用掉這次交付。需要時重新請使用者交付，切勿印出內容或透過 shell 對話紀錄傳遞。界線與使用步驟見 `docs/secret-handoff.md`。
 
-`kind` 可為 `read`、`answer`、`action`、`report` 或 `secret`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是按鈕顯示的建議回覆。使用者點一下，Console 就把它當成對話訊息直接送到便條所在的 Session，後面附上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條；按鈕不顯示這段脈絡。送出成功後，便條才會移到最近已處理。送出失敗時，便條維持待處理，關注按鈕會說明回覆沒有送出。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。依實際收到的對話訊息行事，不看便條狀態：使用者手動標記已處理的便條，並沒有送出任何訊息。只有使用者明確要求建立便條時才用 `--requested-by-person`；泛稱「完成工作」不算明確要求。加上此旗標時便條仍會顯示，但不會送便條推播。若工作確實卡在答覆上，另記錄等待使用者的狀態；Agent 主動建立的便條已負責關注通知，別再重複送一則。便條不會喚醒 Agent。
+`kind` 可為 `read`、`answer`、`action`、`report`、`secret` 或 `browser`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是按鈕顯示的建議回覆。使用者點一下，Console 就把它當成對話訊息直接送到便條所在的 Session，後面附上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條；按鈕不顯示這段脈絡。送出成功後，便條才會移到最近已處理。送出失敗時，便條維持待處理，關注按鈕會說明回覆沒有送出。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。依實際收到的對話訊息行事，不看便條狀態：使用者手動標記已處理的便條，並沒有送出任何訊息。只有使用者明確要求建立便條時才用 `--requested-by-person`；泛稱「完成工作」不算明確要求。加上此旗標時便條仍會顯示，但不會送便條推播。若工作確實卡在答覆上，另記錄等待使用者的狀態；Agent 主動建立的便條已負責關注通知，別再重複送一則。便條不會喚醒 Agent。`browser` 便條提供「接手」按鈕，開啟目標 Session 的即時瀏覽器面板；你仍須在面板中取得控制權，開啟本身不代表輸入操作或核准。
 
 **撤回不再需要關注的便條**
 
@@ -1303,6 +1303,36 @@ clawdline note create --requested-by-person --body-file note.json
 `clawdline note withdraw --id <便條ID> --version <版本> --reason "前置問題已解決，不再需要選擇。"`
 
 撤回原因必填。只有環境無法識別自己時才加 `--from <存活Session對話ID>`。結果不確定時，沿用 CLI 印出的冪等鍵加上 `--key` 重試。版本過期回傳 `version_conflict`，先重新讀取再判斷；其他來源的便條回傳 `intervention_not_found`；已結束的便條回傳 `intervention_already_closed`，保留原本結果。撤回會移除關注紅點，便條以灰色移到最近紀錄，顯示 Agent 已撤回與原因；這不代表使用者回答或批准。使用者可重新開啟。不要撤回其他 Session 的便條；機器憑證仍為共用，來源欄位不是密碼學上的 Session 隔離。
+
+## 9b. 使用瀏覽器
+
+只有在使用者為這台機器開啟瀏覽器使用（設定 → 瀏覽器）時才適用；新 Session 啟動時會被告知。
+`clawdline browser` 操作的是 Clawdline 自己的 Chromium，和使用者自己的 Chrome 分開。每個動作都會
+記錄給使用者看，使用者也可以從這台機器或手機旁觀、接手。
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- 優先用 `read` 和它回傳的 label，不要用座標。只有非看版面不可時才截圖。
+- `browser_person_controlling`：使用者已經接手這個分頁。等待，不要迴圈重試。
+- `browser_stopped`：使用者停止了所有瀏覽器使用。不要重試。
+- `browser_extension_missing` 或 `browser_disabled`：改用別的方式繼續，並告訴使用者在
+  設定 → 瀏覽器 可以設定。
+- 頁面需要使用者本人時——登入、CAPTCHA、付款，或任何有後果的確認——建立一則便條
+  （`clawdline guide note`）請使用者接手 Chrome 分頁，然後等待。
+- 絕對不要在對話裡要密碼。機密用 Secret Handoff，並用
+  `clawdline secret run <note> -- clawdline browser type --stdin` 輸入。
+- 除非使用者要求的正是那個動作，否則不要在瀏覽器裡購買、送出訊息、發布、刪除或接受條款。
+- 這個設定不授權安裝軟體、更改使用者的 Chrome 或花錢。
 
 ## 10. 看板
 

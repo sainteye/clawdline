@@ -173,8 +173,23 @@ func init() {
 		// runs as the viewer's device, so the daemon's read and send checks apply.
 		op{name: "chrome-tab-status", read: true},
 		op{name: "chrome-tab-screenshot", read: true},
+		op{name: "chrome-tab-activity", read: true},
 		op{name: "chrome-tab-input"},
 		op{name: "chrome-tab-control"},
+		op{name: "chrome-tab-mute"},
+		// The browser setup guide: whether a Chromium is there, and starting
+		// Clawdline's own, so a phone can set up browser use without a terminal.
+		op{name: "chrome-setup", read: true},
+		op{name: "chrome-launch"},
+		op{name: "chrome-remind"},
+
+		// The Browser block on Settings (docs/browser.md): the two switches,
+		// the emergency stop and the audit. Each runs as the viewer's device,
+		// so reading needs read access and changing anything needs send.
+		op{name: "chrome-settings", read: true},
+		op{name: "chrome-settings-update"},
+		op{name: "chrome-stop"},
+		op{name: "chrome-audit", read: true},
 
 		// Issue sync's tracker connections and the person's Retry
 		// (docs/issue-sync.md). No answer carries a token; a Jira API token

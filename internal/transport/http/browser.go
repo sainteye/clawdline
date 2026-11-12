@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"strconv"
 
@@ -26,9 +27,15 @@ import (
 //   - POST /v1/browser/stop           {stopped}; the machine may only stop, a person may also resume
 //   - POST /v1/browser/control        {tab, person}; a person who may send
 //   - POST /v1/browser/person         {op, tab, args}; the person's own view and input
+//   - POST /v1/browser/mute           {conversation, muted}; one Session's new-site notification, a person who may send
+//   - GET  /v1/browser/activity       ?conversation=; a Session's recent actions with a picture of each, a person who may read
 //   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
+//   - GET/POST /v1/browser/settings   the two browser switches and nothing else; writing needs a person who may send
+//   - GET  /v1/browser/setup          the setup guide's read (browser_launch.go)
+//   - POST /v1/browser/launch         start Clawdline's own Chromium; a person who may send
 func (s *Server) browserRoutes() []route {
 	return []route{
+		{Route{"*", "/v1/browser/reminder"}, s.browserReminderRoute},
 		{Route{"*", "/v1/browser/commands"}, s.browserCommandRoute},
 		{Route{"*", "/v1/browser/host/poll"}, s.browserHostPollRoute},
 		{Route{"*", "/v1/browser/host/results"}, s.browserHostResultsRoute},
@@ -38,6 +45,11 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/control"}, s.browserControlRoute},
 		{Route{"*", "/v1/browser/person"}, s.browserPersonRoute},
 		{Route{"*", "/v1/browser/screenshot"}, s.browserScreenshotRoute},
+		{Route{"*", "/v1/browser/mute"}, s.browserMuteRoute},
+		{Route{"*", "/v1/browser/activity"}, s.browserActivityRoute},
+		{Route{"*", "/v1/browser/settings"}, s.browserSettingsRoute},
+		{Route{"*", "/v1/browser/setup"}, s.browserSetupRoute},
+		{Route{"*", "/v1/browser/launch"}, s.browserLaunchRoute},
 	}
 }
 
@@ -145,6 +157,10 @@ func (s *Server) browserCommandRoute(w http.ResponseWriter, r *http.Request) {
 func writeBrowserError(w http.ResponseWriter, err error) {
 	if refusal, ok := browserbridge.IsRefusal(err); ok {
 		switch refusal {
+		case browserbridge.StateWriteFailed:
+			writeRefusal(w, http.StatusServiceUnavailable, string(refusal), "The browser control state could not be saved. Keep Clawdline running and retry before restarting. Browser use remains paused.")
+		case browserbridge.SecretInputFailed:
+			writeRefusal(w, http.StatusUnprocessableEntity, string(refusal), "Secret input could not be confirmed. Check the field before trying again.")
 		case browserbridge.HostMissing:
 			writeRefusal(w, http.StatusServiceUnavailable, string(refusal), "The Clawdline Chrome extension is not connected. Ask the person to install it or open Chrome; continue another way meanwhile.")
 		case browserbridge.Stopped:
@@ -159,6 +175,8 @@ func writeBrowserError(w http.ResponseWriter, err error) {
 			writeRefusal(w, http.StatusGatewayTimeout, string(refusal), "The extension did not answer in time. The command may or may not have run; read the page before repeating it.")
 		case browserbridge.NotTakenOver:
 			writeRefusal(w, http.StatusConflict, string(refusal), "Take over the tab before typing or clicking in it.")
+		case browserbridge.OtherDebugger:
+			writeRefusal(w, http.StatusConflict, string(refusal), "Another program is already controlling this tab, so Clawdline cannot show or operate it. Close the other tool's control of the tab, or open a new tab.")
 		case browserbridge.NoTab:
 			writeRefusal(w, http.StatusConflict, string(refusal), "This Session has no tab yet. Open one first.")
 		default:
@@ -252,7 +270,21 @@ func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= browserbridge.MaxAuditRows {
 		limit = v
 	}
-	rows, pruned := s.browser().Records(r.URL.Query().Get("conversation"), limit)
+	q := r.URL.Query()
+	filter := browserbridge.AuditFilter{Conversation: q.Get("conversation"), Site: q.Get("site")}
+	if len(filter.Conversation) > 128 || len(filter.Site) > 253 {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "The Session or site to filter by is too long.")
+		return
+	}
+	if raw := q.Get("since"); raw != "" {
+		since, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || since < 0 {
+			writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "since is a Unix time in seconds.")
+			return
+		}
+		filter.Since = since
+	}
+	rows, pruned := s.browser().Find(filter, limit)
 	w.Header().Set("Cache-Control", "no-store")
 	saved := ""
 	if err := s.browser().JournalErr(); err != nil {
@@ -277,7 +309,10 @@ func (s *Server) browserStopRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
 		return
 	}
-	s.browser().SetStopped(in.Stopped)
+	if err := s.browser().SetStopped(in.Stopped); err != nil {
+		writeBrowserError(w, err)
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "stopped": in.Stopped})
 }
 
@@ -297,7 +332,10 @@ func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the tab to take over or hand back.")
 		return
 	}
-	s.browser().SetPersonControl(in.Tab, in.Person)
+	if err := s.browser().SetPersonControl(in.Tab, in.Person); err != nil {
+		writeBrowserError(w, err)
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "tab": in.Tab, "person": in.Person})
 }
 
@@ -362,4 +400,114 @@ func (s *Server) browserScreenshotRoute(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]any{"ok": true, "value": value})
+}
+
+func (s *Server) browserMuteRoute(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Conversation string `json:"conversation"`
+		Muted        bool   `json:"muted"`
+	}
+	if !readBrowserBody(w, r, 512, &in) {
+		return
+	}
+	if machineAuthed(r) || !maySend(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "Only a person's device that may send can change a Session's notifications.")
+		return
+	}
+	if in.Conversation == "" || len(in.Conversation) > 128 {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the Session's conversation.")
+		return
+	}
+	if err := s.browser().SetMuted(in.Conversation, in.Muted); err != nil {
+		writeBrowserError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "conversation": in.Conversation, "muted": in.Muted})
+}
+
+// browserActivityRoute is the panel's list of what the Session did, with the
+// small picture of the page after each action. The pictures are kept in
+// memory only (browserbridge.MaxActivityThumbs).
+func (s *Server) browserActivityRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET only")
+		return
+	}
+	if machineAuthed(r) || !mayReadBrowser(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a person's device that may read.")
+		return
+	}
+	conversation := r.URL.Query().Get("conversation")
+	if conversation == "" || len(conversation) > 128 {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the Session's conversation.")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"ok": true, "rows": s.browser().RecentActivity(conversation, browserbridge.MaxActivityThumbs)})
+}
+
+// browserSettingsRoute is the Settings page's Browser block: the two machine
+// switches and nothing else, so a phone through Clawdline Cloud
+// (chrome-settings, chrome-settings-update) can change only these. Both are
+// off on a new machine. An agent may not turn its own browser use on. (It is
+// not /v1/settings/browser, which is the local console's own settings.)
+func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
+	if machineAuthed(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "Only the person may read or change the browser settings.")
+		return
+	}
+	f := s.settingsFile()
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		if !mayReadBrowser(r) {
+			writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may read.")
+			return
+		}
+	case http.MethodPost:
+		if !maySend(r) {
+			writeRefusal(w, http.StatusForbidden, "forbidden", "This device may read, and not change the browser settings.")
+			return
+		}
+		if contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || contentType != "application/json" {
+			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "A browser settings write is application/json.")
+			return
+		}
+		var body map[string]json.RawMessage
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, settingsRequestBodyLimit))
+		if decoder.Decode(&body) != nil || body == nil || decoder.Decode(new(any)) != io.EOF {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "That body is not a browser settings change.")
+			return
+		}
+		changes := make(map[string]any, len(body))
+		for name, raw := range body {
+			if name != "browser_enabled" && name != "browser_notify_new_site" {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "Not a browser setting key: "+name)
+				return
+			}
+			var on bool
+			if string(raw) != "true" && string(raw) != "false" || json.Unmarshal(raw, &on) != nil {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "A browser setting must be a boolean.")
+				return
+			}
+			changes[name] = on
+		}
+		if len(changes) != 0 {
+			if _, err := f.Set(changes); err != nil {
+				writeSettingsFailure(w, f, err)
+				return
+			}
+		}
+	default:
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or POST")
+		return
+	}
+	values, err := f.Read()
+	if err != nil {
+		writeSettingsFailure(w, f, err)
+		return
+	}
+	enabled, _ := values.Bool("browser_enabled")
+	notify, _ := values.Bool("browser_notify_new_site")
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"browser_enabled": enabled, "browser_notify_new_site": notify})
 }

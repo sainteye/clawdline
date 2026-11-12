@@ -1,9 +1,35 @@
 /* The Session's Chrome tab (BrowserPanel.tsx), drawn in the console's tokens. */
 
 .browser-stage { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
-.browser-address {
-  font-size: 12px; color: var(--dim);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* The address bar that replaces the panel's title row. */
+.browser-bar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); background: var(--card);
+}
+.browser-url {
+  flex: 1 1 auto; min-width: 0; height: 36px; box-sizing: border-box;
+  display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  border-radius: 999px; background: var(--bg); border: 1px solid var(--line);
+  font-size: 13px; white-space: nowrap; overflow: hidden;
+}
+.browser-lock { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: var(--dim); stroke-width: 1.5; stroke-linecap: round; }
+.browser-host { color: var(--ink); font-weight: 600; flex: 0 0 auto; }
+.browser-path { color: var(--faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.browser-live { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--dim); }
+.browser-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: block; }
+.browser-close {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px;
+  border: none; background: transparent; color: var(--dim);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.browser-close:hover { background: var(--card-hi); color: var(--ink); }
+.browser-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+/* While the tab is up it has the whole space: the to-do and attention row
+   folds away with the transcript, and comes back when the panel closes. */
+.pane-detail[data-panel="browser"] .session-todos { display: none; }
+@media (max-width: 600px) {
+  .browser-live { display: none; }
+  .browser-bar { padding-left: 10px; }
 }
 /* The whole page stays in view: as wide as the panel allows, never taller
    than the space above the controls, and never stretched (a tap is mapped
@@ -30,3 +56,24 @@
   border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit;
 }
 .browser-keys { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.browser-activity { margin-top: 6px; }
+.browser-activity h3 { margin: 6px 0 8px; font-size: 12px; font-weight: 600; color: var(--dim); }
+.browser-activity ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.browser-activity li { display: flex; gap: 10px; align-items: center; }
+.browser-activity img { width: 96px; height: 60px; object-fit: cover; object-position: top; flex: 0 0 auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
+.browser-activity-words { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.browser-activity-words b { font-weight: 600; color: var(--ink); }
+.browser-activity-words span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.browser-activity-words time { color: var(--faint); font-size: 11.5px; }
+.browser-activity-empty { margin: 0; font-size: 13px; color: var(--dim); }
+.browser-who { flex-wrap: wrap; }
+.browser-who > span { flex: 1 1 auto; min-width: 0; }
+.browser-notify { font-size: 12.5px; color: var(--dim); }
+.browser-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.browser-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: block; }
+.browser-chip:hover { background: var(--card-hi); }

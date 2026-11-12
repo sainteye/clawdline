@@ -72,13 +72,30 @@ Input and control:
    stream instead of queueing frames.
 4. Typing Chinese from the phone through `Input.insertText` works as designed.
 
-## Not yet measured
+## Measured later the same day
 
-- Attaching while Claude in Chrome drives the same tab. It needs the probe loaded unpacked into
-  the person's Chrome 157.
-- Latency and throughput through Cloud. They need the relay channel (step 12).
-- Locked screen and sleeping display.
-- Grok. From `docs/grok-cli.md`, an ordinary Grok Session is supervised by default, so each
-  shell call to `clawdline browser` asks for permission unless "Grok full permission" is on. Its
-  first real input carries the frozen Project context, which is where usage guidance would go.
-  Neither point was observed in a live Grok Session.
+**Through Clawdline Cloud.** The hosted console at app.clawdline.com (build 26e0b72b3) showed the
+Chrome tab panel of a Session on this Mac while the machine ran v2.18.0-dev.0fbff55 and Clawdline's
+own Chromium held a DuckDuckGo results page. Over 20 seconds the panel's picture changed 19 times:
+median 1000 ms between pictures, p90 1192 ms, median picture 162 KB (quality 45 through the relay),
+about 154 KB/s. A takeover, a tap on the search box, typed `Clawdline 測試` and Enter produced the
+results page for that query through the relay. Each picture is a separate encrypted read word
+(`chrome-tab-screenshot`); this is a sampled view, not a stream.
+
+**Two debuggers on one tab.** `node tools/browser-probe/run.mjs --holder --only holder` loads a
+second, test-only extension (`tools/browser-probe/holder`) that attaches `chrome.debugger` to every
+tab as another debugging extension would. In Chromium 136 the tab was already attached before the
+probe attached (`attachedBefore: [true]`, against `[false]` without the holder), and the probe still
+attached, read the title, took a 53 ms screenshot and clicked. Chromium lets several extensions
+debug one tab, so Claude in Chrome and the Clawdline extension do not block each other at the
+debugger. The extension still names the case it cannot handle (`browser_other_debugger`) for a
+browser that refuses a second client. Not measured in branded Chrome 157, whose
+`--load-extension` is ignored.
+
+**Grok.** See the guidance work on the board item: an ordinary Grok Session is supervised by
+default (`docs/grok-cli.md`), so each `clawdline browser` shell call asks for permission unless
+"Grok full permission" is on.
+
+## Still not measured
+
+- A locked screen and a sleeping display.

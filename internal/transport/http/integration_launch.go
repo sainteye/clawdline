@@ -42,5 +42,8 @@ func (s *Server) integrationLaunchText(ctx context.Context, root string) (string
 	if on, _ := values.Bool("space_saving_images"); on {
 		parts = append(parts, workflow.SpaceSavingImageInstructions())
 	}
+	if on, _ := values.Bool("browser_enabled"); on {
+		parts = append(parts, workflow.BrowserUseInstructions())
+	}
 	return strings.Join(parts, "\n\n"), nil
 }

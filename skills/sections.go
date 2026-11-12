@@ -24,7 +24,7 @@ import (
 
 // section is one printable part: a name, and the heading that opens it in
 // each guide. Headings are matched by their order in the file: all guides
-// carry the same twenty, and TestBothGuidesHaveTheSameSections holds them
+// carry the same twenty-one, and TestBothGuidesHaveTheSameSections holds them
 // to it.
 type section struct {
 	Name    string
@@ -51,6 +51,7 @@ var sections = []section{
 	{"send", "talking to another session", false},
 	{"notify", "telling the person", true},
 	{"note", "leaving a durable human intervention above a Session", true},
+	{"browser", "using Clawdline's browser when the person has turned it on", false},
 	{"board", "the board: items, steps, proposals, decisions, to-dos", false},
 	{"epic", "an Epic you own: its plan, the child review of it, implementing, and its child items", false},
 	{"coordination", "coordination between sessions", false},

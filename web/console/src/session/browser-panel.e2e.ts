@@ -25,6 +25,7 @@ let person = false
 let clicks: { x: number; y: number }[] = []
 let typed: string[] = []
 let keys: string[] = []
+let muted = false
 
 const row = {
   id: SESSION, label: "Browser Session", backend: "owned", state: "working", work_state: "working",
@@ -45,8 +46,13 @@ function fixture(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
-    if (path === "/__fixture/reset") { person = false; clicks = []; typed = []; keys = []; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { person, clicks, typed, keys })
+    if (path === "/__fixture/reset") { person = false; muted = false; clicks = []; typed = []; keys = []; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/log") return json(res, 200, { person, muted, clicks, typed, keys })
+    if (path === "/v1/browser/activity") return json(res, 200, { ok: true, rows: [
+      { at: Math.floor(Date.now() / 1000), op: "click", target: "Continue", site: "example.com", url: "https://example.com/sign-in", ok: true, thumb: page.toString("base64") },
+      { at: Math.floor(Date.now() / 1000) - 5, op: "open", site: "example.com", url: "https://example.com/sign-in", ok: true, thumb: page.toString("base64") },
+    ] })
+    if (req.method === "POST" && path === "/v1/browser/mute") { const b = await body(req); muted = !!b.muted; return json(res, 200, { ok: true, conversation: b.conversation, muted }) }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { authed: true, version: "fixture", api_level: 99 })
     if (path === "/v1/strings") {
@@ -60,7 +66,7 @@ function fixture(): Server {
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "transcript", id: SESSION, signature: "fixture" })
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: true, notify_new_site: true,
-      status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, tabs: [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } })
+      status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } })
     if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
     if (path === "/v1/browser/screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
     if (req.method === "POST" && path === "/v1/browser/person") {
@@ -72,6 +78,11 @@ function fixture(): Server {
       if (b.op === "key") keys.push(b.args.key)
       return json(res, 200, { ok: true, value: {} })
     }
+    if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, { ok: true, rows: [{
+      id: "10000000-0000-4000-8000-000000000059", source_conversation: CONVERSATION, source_label: "Codex", target_conversation: CONVERSATION,
+      target_session: SESSION, kind: "browser", title: "Sign in", summary: "The page needs sign-in.", action: "Take over the browser.", reason: "Only the person signs in.",
+      options: [], created_at: Math.floor(Date.now() / 1000), read_at: null, resolved_at: null, version: 1,
+    }], pruned_resolved: 0 })
     if (path.startsWith("/v1/")) return json(res, 404, { error: "not_found", detail: path })
     if (path === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(document(url.searchParams.get("ui") || "zh-Hant")) }
     const file = normalize(join(dist, path))
@@ -136,7 +147,7 @@ after(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 
-for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["phone", 390, 844, "zh-Hant"], ["desktop", 1280, 800, "en"]] as const) {
+for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["phone", 390, 844, "zh-Hant"], ["desktop", 1280, 800, "en"], ["phone", 390, 844, "en"]] as const) {
   test(`${name} ${ui}: the Chrome tab is watched, taken over, used and handed back`, async () => {
     const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
     const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
@@ -163,6 +174,10 @@ for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["ph
       await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: width < 900 }, id)
       const mark = browser.loadCount; await browser.send("Page.navigate", { url: `${origin}/?ui=${ui}#session=${SESSION}` }, id); await browser.loaded(id, mark)
       await until(`!!document.getElementById("detail-actions-trigger") && !document.getElementById("detail-actions-trigger").disabled`)
+      await until(`document.querySelectorAll(".browser-action").length === 2`)
+      assert.equal(await run(`document.querySelectorAll(".browser-action img").length`), 2, "actions appear in the transcript before the panel opens")
+      await shot("transcript")
+      await until(`!!document.querySelector(".browser-chip")`)
       await run(`document.getElementById("detail-actions-trigger").click()`)
       await until(`!document.getElementById("session-actions").hidden && !document.getElementById("session-browser").hidden`)
       await shot("menu")
@@ -171,11 +186,20 @@ for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["ph
       const agent = ui === "en" ? "Codex is using this tab" : "Codex 正在使用這個分頁"
       await until(`document.querySelector("#browser-panel .browser-who")?.textContent?.includes(${JSON.stringify(agent)})`)
       assert.equal(await run(`!!document.getElementById("browser-text")`), false, "no typing before a takeover")
-      assert.equal(await run(`document.querySelector("#browser-panel .browser-address")?.textContent`), "https://example.com/sign-in")
+      assert.equal(await run(`document.querySelector("#browser-panel .browser-host")?.textContent`), "example.com")
+      assert.equal(await run(`document.querySelector("#browser-panel .browser-path")?.textContent`), "/sign-in")
+      assert.equal(await run(`!!document.querySelector("#browser-panel .panel-view-head")`), false, "no title row above the address bar")
+      assert.equal(await run(`(() => { const t = document.querySelector(".session-todos"); return !t || getComputedStyle(t).display === "none" })()`), true, "the to-do row is folded away")
       assert.ok(await run(`document.documentElement.scrollWidth <= innerWidth`), "no horizontal page scroll")
+      await until(`document.querySelectorAll("#browser-panel .browser-activity li").length === 2`)
+      const opWord = ui === "en" ? "Clicked" : "點擊"
+      assert.ok(await run(`document.querySelector("#browser-panel .browser-activity li b")?.textContent === ${JSON.stringify(opWord)}`))
+      await run(`document.querySelector("#browser-panel .browser-notify").click()`)
+      await until(`document.querySelector("#browser-panel .browser-notify")?.getAttribute("aria-pressed") === "false"`)
+      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).muted, true)
       await shot("watching")
 
-      await run(`document.querySelector("#browser-panel .browser-who button").click()`)
+      await run(`document.querySelector("#browser-panel .browser-who .browser-take").click()`)
       await until(`!!document.getElementById("browser-text")`)
       const paused = ui === "en" ? "You are in control · Codex is paused" : "你正在操作 · Codex 已暫停"
       assert.ok(await run(`document.querySelector("#browser-panel .browser-who")?.textContent?.includes(${JSON.stringify(paused)})`))
@@ -194,9 +218,18 @@ for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["ph
       assert.deepEqual(log.typed, ["王小明"])
       assert.deepEqual(log.keys, ["Enter"])
 
-      await run(`document.querySelector("#browser-panel .browser-who button").click()`)
+      await run(`document.querySelector("#browser-panel .browser-who .browser-take").click()`)
       await until(`!document.getElementById("browser-text")`)
       assert.equal((await (await fetch(origin + "/__fixture/log")).json()).person, false)
+      await run(`document.querySelector("#browser-panel .browser-close").click()`)
+      await until(`!!document.querySelector(".human-interventions-head")`)
+      await run(`(() => { const b = document.querySelector(".human-interventions-head"); if (b.getAttribute("aria-expanded") !== "true") b.click() })()`)
+      const take = ui === "en" ? "Take over" : "接手操作"
+      await until(`[...document.querySelectorAll(".human-intervention-card button")].some(b => b.textContent === ${JSON.stringify(take)})`)
+      await run(`[...document.querySelectorAll(".human-intervention-card button")].find(b => b.textContent === ${JSON.stringify(take)}).click()`)
+      await until(`!!document.querySelector("#browser-panel:not([hidden]) .browser-shot")`)
+      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).person, false, "opening a takeover Note sends no browser input")
+
     } finally {
       await browser.send("Target.closeTarget", { targetId }).catch(() => {})
     }
