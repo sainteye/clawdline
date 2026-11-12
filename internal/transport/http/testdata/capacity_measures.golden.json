@@ -236,6 +236,29 @@
     "Known": true
   },
   {
+    "Name": "browser.audit_rows",
+    "Known": true
+  },
+  {
+    "Name": "browser.command_arg_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.host_message_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.pending_commands",
+    "Known": true
+  },
+  {
+    "Name": "browser.result_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cache.assistant_quota",
     "Known": true,
     "WindowSeconds": true

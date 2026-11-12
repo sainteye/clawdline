@@ -411,6 +411,11 @@ func machineScoped(p string) bool {
 	if p == "/v1/snippets" || strings.HasPrefix(p, "/v1/snippets/") {
 		return true
 	}
+	// The browser bridge (browser.go): an agent's commands and the native
+	// messaging host's poll. Each handler says which of machine and person it takes.
+	if strings.HasPrefix(p, "/v1/browser/") {
+		return true
+	}
 	// A Session's Ops documents: `clawdline ops` reads and resolves them.
 	if p == "/v1/ops" || strings.HasPrefix(p, "/v1/ops/") {
 		return true

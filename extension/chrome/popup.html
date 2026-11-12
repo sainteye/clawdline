@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clawdline</title>
+<style>
+:root { color-scheme: light dark; --bg:#ffffff; --ink:#1f1f22; --dim:#5d5a54; --line:#e4e2dd; --ok:#2f7d4a; --warn:#9a6a1f; --card:#f6f5f2 }
+@media (prefers-color-scheme: dark) { :root { --bg:#0e0e11; --ink:#e8e6e3; --dim:#a8a59d; --line:#2a2a31; --ok:#7cc493; --warn:#d6b06a; --card:#16161a } }
+body { margin:0; width:360px; background:var(--bg); color:var(--ink); font:13px/1.55 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", system-ui, sans-serif }
+header { display:flex; gap:12px; align-items:center; padding:16px 16px 12px; border-bottom:1px solid var(--line) }
+header img { width:36px; height:36px; border-radius:8px }
+h1 { margin:0; font-size:15px; font-weight:650 }
+.status { margin:12px 16px 4px; padding:10px 12px; border-radius:10px; background:var(--card); display:flex; gap:10px; align-items:center }
+.dot { width:9px; height:9px; border-radius:50%; flex:none; background:var(--warn) }
+.status[data-ok="true"] .dot { background:var(--ok) }
+section { padding:10px 16px 2px }
+h2 { margin:0 0 4px; font-size:12px; font-weight:650; color:var(--dim) }
+p { margin:0 }
+ul { margin:0; padding-left:18px }
+li + li { margin-top:3px }
+footer { margin-top:10px; padding:10px 16px 14px; border-top:1px solid var(--line) }
+</style>
+</head>
+<body>
+<header><img src="icons/icon-128.png" alt=""><h1 data-i18n="extName"></h1></header>
+<div class="status" id="status" data-ok="false" role="status"><span class="dot" aria-hidden="true"></span><span id="status-text" data-i18n="statusConnecting"></span></div>
+<section><h2 data-i18n="whatTitle"></h2><ul><li data-i18n="what1"></li><li data-i18n="what2"></li><li data-i18n="what3"></li></ul></section>
+<section><h2 data-i18n="controlTitle"></h2><ul><li data-i18n="control1"></li><li data-i18n="control2"></li><li data-i18n="control3"></li></ul></section>
+<section><h2 data-i18n="privacyTitle"></h2><p data-i18n="privacy1"></p></section>
+<footer><h2 data-i18n="removeTitle"></h2><p data-i18n="removeBody"></p></footer>
+<script src="popup.js"></script>
+</body>
+</html>

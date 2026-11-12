@@ -992,6 +992,106 @@
     "Sources": null
   },
   {
+    "Register": "daemon",
+    "Name": "browser.audit_rows",
+    "Class": "journal",
+    "Unit": "rows",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Routine": true,
+    "Sources": [
+      "internal/app/browserbridge.MaxAuditRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.command_arg_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxArgBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.host_message_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "cmd/clawdline.nativeMessageLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.pending_commands",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxPendingCommands"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.result_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 6291456,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxResultBytes"
+    ]
+  },
+  {
     "Register": "tool",
     "Name": "build.disk_reserve_bytes",
     "Class": "buffer",

@@ -11279,5 +11279,15 @@
   "capacityRow.voice.copilot_decision_body_bytes.what": "機器判斷 Session 的 route 接受的最大請求。",
   "capacityRow.voice.copilot_decision_body_bytes.full": "請求會被拒絕，副駕駛改由自己從 Session 清單挑選。",
   "capacityRow.voice.copilot_decision_timeout_milliseconds.what": "機器等 OpenAI 判斷「這句話指的是哪個 Session」的最長時間。",
-  "capacityRow.voice.copilot_decision_timeout_milliseconds.full": "這次判斷會放棄，副駕駛改由自己從 Session 清單挑選。"
+  "capacityRow.voice.copilot_decision_timeout_milliseconds.full": "這次判斷會放棄，副駕駛改由自己從 Session 清單挑選。",
+  "capacityRow.browser.pending_commands.what": "Agent 送出的瀏覽器指令，最多能同時有幾個在等 Clawdline Chrome 擴充功能執行。",
+  "capacityRow.browser.pending_commands.full": "再多一個指令會被拒絕，Agent 會收到稍後再試的通知；已經在等的指令不會被丟掉。",
+  "capacityRow.browser.audit_rows.what": "Clawdline 保留多少筆瀏覽器操作紀錄讓你事後查看：哪個 Session 開了哪個網頁、點了什麼、輸入了什麼。",
+  "capacityRow.browser.audit_rows.full": "最舊的紀錄會被移除以騰出空間，列表會註明移除了幾筆。輸入到密碼欄位的內容從來不會被記錄。",
+  "capacityRow.browser.command_arg_bytes.what": "Agent 送出的單一瀏覽器指令最大可以多大，例如要求輸入的文字。",
+  "capacityRow.browser.command_arg_bytes.full": "更大的指令在送到 Chrome 之前就會被拒絕；Agent 會收到通知，可以分段送出文字。",
+  "capacityRow.browser.result_bytes.what": "Chrome 擴充功能回傳的單一結果最大可以多大，通常截圖最大。",
+  "capacityRow.browser.result_bytes.full": "更大的結果會被拒絕，Agent 的指令會失敗並收到說明，避免單一巨大頁面塞滿這台電腦的記憶體。",
+  "capacityRow.browser.host_message_bytes.what": "Chrome 本身對 Clawdline 送給擴充功能的單一訊息所設的上限。",
+  "capacityRow.browser.host_message_bytes.full": "更大的訊息不會送出；指令失敗並通知 Agent。送給擴充功能的指令通常遠小於這個上限。"
 }

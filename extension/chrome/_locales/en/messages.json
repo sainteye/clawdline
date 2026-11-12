@@ -1,0 +1,21 @@
+{
+  "extName": { "message": "Clawdline" },
+  "extDescription": { "message": "Lets your Clawdline agents use Chrome while you watch from your Mac or phone and take over at any time." },
+  "actionTitle": { "message": "Clawdline: connection and what this extension does" },
+  "statusReady": { "message": "Connected to Clawdline on this computer" },
+  "statusNoDaemon": { "message": "Clawdline is not running on this computer" },
+  "statusNoHost": { "message": "Not connected yet. Finish the install guide in the Clawdline console." },
+  "statusConnecting": { "message": "Connecting to Clawdline…" },
+  "whatTitle": { "message": "What it does" },
+  "what1": { "message": "Your agents (Claude Code, Codex, Gemini, Grok) can open pages, read them, click and type, through Clawdline only." },
+  "what2": { "message": "Their tabs open in a separate Clawdline window, so your own windows stay as they are." },
+  "what3": { "message": "While a tab is in use, Chrome shows a bar saying it is being debugged. That bar is Chrome's own safeguard." },
+  "controlTitle": { "message": "You stay in control" },
+  "control1": { "message": "Every action is recorded in Clawdline, with text typed into password fields left out." },
+  "control2": { "message": "Take over any tab from the Clawdline console or your phone; the agent cannot see or act on it until you hand it back." },
+  "control3": { "message": "Stop all browser use at once in Clawdline, Settings, Browser." },
+  "privacyTitle": { "message": "Where data goes" },
+  "privacy1": { "message": "Only to the Clawdline app on this computer, through Chrome's native messaging. The extension itself connects to no server." },
+  "removeTitle": { "message": "To remove it" },
+  "removeBody": { "message": "Open chrome://extensions and choose Remove under Clawdline." }
+}

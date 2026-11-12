@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"log"
 	"net"
 	"net/http"
@@ -61,6 +62,8 @@ import (
 
 type Server struct {
 	codegraphMu      sync.Mutex
+	browserMu        sync.Mutex
+	browserBridge    *browserbridge.Bridge
 	codegraphBuilder *codegraph.Builder
 	githubMu         sync.Mutex
 	githubConn       *githubissues.Connection
@@ -653,6 +656,7 @@ func (s *Server) routeTable() []route {
 		// Where a person takes part: proposals, decisions, digests (proposals.go, T4).
 	}
 	table = append(table, s.participationRoutes()...)
+	table = append(table, s.browserRoutes()...)
 	table = append(table, []route{
 		{Route{"*", "/v1/orchestrator/schedules"}, s.schedules},
 		// One schedule, its save, its removal and its run; the Cloud bind

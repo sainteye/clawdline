@@ -2301,7 +2301,7 @@
         },
         {
           "path": "internal/adapters/nextconfig/nextconfig.go",
-          "line": 663
+          "line": 667
         }
       ],
       "original": [],
@@ -2351,7 +2351,7 @@
         },
         {
           "path": "cmd/clawdline/main.go",
-          "line": 326
+          "line": 330
         },
         {
           "path": "internal/adapters/projects/launch.go",
@@ -3257,7 +3257,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "fd476f8f7efe3c725d9aae1072c330e9039e49a7c3dde9e66197d3cb8d194fb7",
+    "cmd/clawdline/main.go": "6eb0044c3777d91957f07a0fac4df5d887b05109852fbacc50bdfa2f0f927c87",
     "cmd/clawdline/session.go": "cafde1e2256317a25731543da5579b293cc47a83e48f0ff9c98fbf46309e283b",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3284,7 +3284,7 @@
     "internal/adapters/codegraph/source-types.json": "287697b047382abca0e03a1dfa07ae8c0848e8efc8c991a7eec0cf10a0367731",
     "internal/adapters/codegraph/view.go": "06e470cce95ba9f95553d4f618e53df5157479832f5ec50dfa2617ebe55c9289",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
-    "internal/adapters/nextconfig/nextconfig.go": "6ad923c49a050feeb7796acf3bb5050f00458ee1382e2175f9a2eb2183e2ad7e",
+    "internal/adapters/nextconfig/nextconfig.go": "75c732da333f468857e4705bd66c24309e2748fcc3740c6f56ace2d67958c4bb",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",

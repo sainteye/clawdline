@@ -6877,7 +6877,9 @@ type SettingsRequest struct {
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// 0 to 1.
-	Backdrop *float64 `json:"backdrop"`
+	Backdrop             *float64 `json:"backdrop"`
+	BrowserEnabled       *bool    `json:"browser_enabled"`
+	BrowserNotifyNewSite *bool    `json:"browser_notify_new_site"`
 
 	// 0 to 1.
 	CardOpacity *float64 `json:"card_opacity"`
@@ -7114,7 +7116,9 @@ type SettingsSnapshot struct {
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// How much the bar blurs what is behind it.
-	Backdrop *float64 `json:"backdrop"`
+	Backdrop             *float64 `json:"backdrop"`
+	BrowserEnabled       *bool    `json:"browser_enabled"`
+	BrowserNotifyNewSite *bool    `json:"browser_notify_new_site"`
 
 	// The bar card's opacity.
 	CardOpacity *float64 `json:"card_opacity"`

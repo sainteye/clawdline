@@ -8218,6 +8218,8 @@ export interface SettingsRequest {
    * 0 to 1.
    */
   backdrop: number | null
+  browser_enabled: boolean | null
+  browser_notify_new_site: boolean | null
 
   /**
    * 0 to 1.
@@ -8593,6 +8595,8 @@ export interface SettingsSnapshot {
    * How much the bar blurs what is behind it.
    */
   backdrop: number | null
+  browser_enabled: boolean | null
+  browser_notify_new_site: boolean | null
 
   /**
    * The bar card's opacity.

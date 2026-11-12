@@ -1,0 +1,21 @@
+{
+  "extName": { "message": "Clawdline" },
+  "extDescription": { "message": "讓 Clawdline 的 Agent 使用 Chrome，你在 Mac 或手機上隨時看得到，也能隨時接手。" },
+  "actionTitle": { "message": "Clawdline：連線狀態與擴充功能說明" },
+  "statusReady": { "message": "已連上這台電腦的 Clawdline" },
+  "statusNoDaemon": { "message": "這台電腦的 Clawdline 沒有在執行" },
+  "statusNoHost": { "message": "尚未連線。請在 Clawdline console 完成安裝引導。" },
+  "statusConnecting": { "message": "正在連線到 Clawdline…" },
+  "whatTitle": { "message": "它會做什麼" },
+  "what1": { "message": "你的 Agent（Claude Code、Codex、Gemini、Grok）只能透過 Clawdline 開啟網頁、讀取內容、點擊與輸入。" },
+  "what2": { "message": "Agent 的分頁會開在獨立的 Clawdline 視窗，不會動到你自己的視窗。" },
+  "what3": { "message": "分頁使用期間，Chrome 頂端會顯示「正在偵錯」的提示列，這是 Chrome 本身的安全機制。" },
+  "controlTitle": { "message": "主控權在你手上" },
+  "control1": { "message": "每個動作都會記錄在 Clawdline；輸入到密碼欄位的內容不會被記錄。" },
+  "control2": { "message": "可以從 Clawdline console 或手機接手任何分頁；交回之前，Agent 看不到也不能操作。" },
+  "control3": { "message": "在 Clawdline 的「設定 → 瀏覽器」可以一鍵停止所有瀏覽器操作。" },
+  "privacyTitle": { "message": "資料會送到哪裡" },
+  "privacy1": { "message": "只透過 Chrome 的 Native Messaging 送到這台電腦上的 Clawdline。擴充功能本身不連線到任何伺服器。" },
+  "removeTitle": { "message": "如何移除" },
+  "removeBody": { "message": "開啟 chrome://extensions，在 Clawdline 下方按「移除」。" }
+}

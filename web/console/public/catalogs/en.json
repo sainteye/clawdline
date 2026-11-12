@@ -11279,5 +11279,15 @@
   "capacityRow.voice.copilot_decision_body_bytes.what": "The largest request the machine's Session decision route reads.",
   "capacityRow.voice.copilot_decision_body_bytes.full": "The request is refused and the copilot chooses from the Session list itself.",
   "capacityRow.voice.copilot_decision_timeout_milliseconds.what": "How long the machine waits for OpenAI to decide which Session a sentence means.",
-  "capacityRow.voice.copilot_decision_timeout_milliseconds.full": "The decision is abandoned and the copilot chooses from the Session list itself."
+  "capacityRow.voice.copilot_decision_timeout_milliseconds.full": "The decision is abandoned and the copilot chooses from the Session list itself.",
+  "capacityRow.browser.pending_commands.what": "How many browser commands from agents may wait at once for the Clawdline Chrome extension to carry them out.",
+  "capacityRow.browser.pending_commands.full": "One more command is refused and the agent is told to try again shortly; nothing already waiting is dropped.",
+  "capacityRow.browser.audit_rows.what": "How many recorded browser actions Clawdline keeps for you to review: which Session opened which page, what it clicked and what it typed.",
+  "capacityRow.browser.audit_rows.full": "The oldest record is removed to make room, and the list says how many were removed. Text typed into password fields is never recorded.",
+  "capacityRow.browser.command_arg_bytes.what": "How large one browser command from an agent may be, such as the text it asks to type.",
+  "capacityRow.browser.command_arg_bytes.full": "A larger command is refused before it reaches Chrome; the agent is told and can send the text in smaller parts.",
+  "capacityRow.browser.result_bytes.what": "How large one answer from the Chrome extension may be. A screenshot is usually the largest.",
+  "capacityRow.browser.result_bytes.full": "A larger answer is refused and the agent's command fails with a message, so one huge page cannot fill this computer's memory.",
+  "capacityRow.browser.host_message_bytes.what": "Chrome's own limit on one message from Clawdline to the extension.",
+  "capacityRow.browser.host_message_bytes.full": "A larger message is not sent; the command fails and the agent is told. Commands to the extension are normally far smaller."
 }
