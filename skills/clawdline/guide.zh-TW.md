@@ -1308,7 +1308,7 @@ clawdline note create --requested-by-person --body-file note.json
 
 只有在使用者為這台機器開啟瀏覽器使用（設定 → 瀏覽器）時才適用；新 Session 啟動時會被告知。
 `clawdline browser` 操作的是 Clawdline 自己的 Chromium，和使用者自己的 Chrome 分開。每個動作都會
-記錄給使用者看，使用者也可以從 Mac 或手機旁觀、接手。
+記錄給使用者看，使用者也可以從這台機器或手機旁觀、接手。
 
 ```sh
 clawdline browser open <url>

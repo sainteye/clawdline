@@ -592,7 +592,7 @@ clawdline note create --body-file note.json
 Only when the person has turned on browser use for this machine (Settings → Browser); a new
 Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
 from the person's Chrome. Every action is recorded for the person, and they may watch and take
-over from their Mac or phone.
+over from this machine or their phone.
 
 ```sh
 clawdline browser open <url>

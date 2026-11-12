@@ -60,6 +60,7 @@
 | `browser.host_message_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.pending_commands` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.result_bytes` | 6291456 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `browser.stdin_text_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.claude_usage_refresh_seconds` | 900 | `seconds` | `evict_oldest` | `diagnostics` | — |
