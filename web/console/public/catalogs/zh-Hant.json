@@ -9288,6 +9288,7 @@
   "next.copilotLogFocus": "已要求交接「{name}」",
   "next.copilotCallFromSession": "長按：打給語音 Copilot，交接這個 Session",
   "next.sessionVoiceCopilot": "語音 Copilot",
+  "next.copilotLogMicRetry": "放開長按時再要一次麥克風",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

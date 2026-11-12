@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11290,
+  "englishContentKeys": 11291,
   "riskKeys": 4960,
-  "nonRiskCount": 6330,
+  "nonRiskCount": 6331,
   "groups": [
     {
       "name": "acp / other",
@@ -3824,7 +3824,7 @@
     },
     {
       "name": "next / other",
-      "count": 810,
+      "count": 811,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3921,6 +3921,7 @@
         "next.copilotLogHeard",
         "next.copilotLogInfo",
         "next.copilotLogMemory",
+        "next.copilotLogMicRetry",
         "next.copilotLogOpenAIError",
         "next.copilotLogSnapshot",
         "next.copilotLogStarting",

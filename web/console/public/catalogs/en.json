@@ -9288,6 +9288,7 @@
   "next.copilotLogFocus": "Asked for a handover of {name}",
   "next.copilotCallFromSession": "Hold: call the Voice Copilot about this Session",
   "next.sessionVoiceCopilot": "Voice Copilot",
+  "next.copilotLogMicRetry": "Asked for the microphone again when the hold was released",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

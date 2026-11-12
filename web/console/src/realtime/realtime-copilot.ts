@@ -140,6 +140,8 @@ export class RealtimeCopilotClient {
   private dc: RTCDataChannel | null = null
   private mediaStream: MediaStream | null = null
   private audioEl: HTMLAudioElement | null = null
+  /** The last attempt's microphone was refused (NotAllowedError); `wake` may ask once more. */
+  private micRefused = false
   /** How loud each side is, for the orb; measured here, never recorded. */
   private meter = new CallMeter()
   /** Stops the ringback that plays while the call connects (`CallMeter.ring`). */
@@ -312,6 +314,7 @@ export class RealtimeCopilotClient {
       if (origin) this.turnTo(origin)
       return
     }
+    this.micRefused = false
 
     // Before any await: iOS keeps an audio context made later in this tap suspended.
     const meterRefused = this.meter.open()
@@ -372,6 +375,7 @@ export class RealtimeCopilotClient {
       // 1. The microphone asked for in the tap.
       own.stream = await microphone.catch((error: unknown) => {
         const name = error instanceof DOMException || error instanceof Error ? error.name : ''
+        if (name === 'NotAllowedError') this.micRefused = true
         throw new Error(nextWord(microphoneProblem(name), { name: name || String(error) }))
       })
       check()
@@ -629,6 +633,23 @@ export class RealtimeCopilotClient {
 
     if (this.dc && this.dc.readyState === 'open') {
       for (const message of toolReplyEvents(event.call_id, output)) this.dc.send(JSON.stringify(message))
+    }
+  }
+
+  /**
+   * Called inside a user activation that follows a call started from a timer
+   * (the lift of a hold): iOS may have kept the call's audio suspended, or
+   * refused its microphone, because the start was not itself a tap. Resumes
+   * the audio, and asks for the microphone once more by starting again when
+   * that refusal is what ended the attempt.
+   */
+  wake(origin?: CallOrigin) {
+    this.meter.wake()
+    void this.audioEl?.play().catch(() => undefined)
+    if (this.state.status === 'error' && this.micRefused) {
+      this.micRefused = false
+      this.addLog('info', nextWord('copilotLogMicRetry'))
+      void this.start(origin)
     }
   }
 

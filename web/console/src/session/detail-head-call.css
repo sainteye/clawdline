@@ -13,7 +13,7 @@
     touch-action: manipulation;
 }
 
-/* Held long enough: lifting now calls, so the icon says so before the lift. */
+/* Held long enough: the call has been placed, and the icon says so until the lift. */
 .detail-head .detail-mark-go[data-held="1"] {
     background: var(--accent-in);
     box-shadow: inset 0 0 0 1px var(--accent);
