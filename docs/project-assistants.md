@@ -36,6 +36,13 @@ memory authority. A directory is an internal resolver result, never client cwd.
 The requested Project ID must already be the canonical registered ID; clients
 do not resolve arbitrary path aliases themselves.
 
+The additive [registered Project catalog](project-assistants-targets.md) at
+API level 58 supplies source-owned metadata through a dedicated paged endpoint.
+It preserves the retired empty `/v1/projects` route. Its Agent options name
+accepted configuration kinds, never native readiness. Project resolution still
+runs before Create and execution; UI and Cloud consumption have separate
+integration acceptance.
+
 ## Approved journey and fixed inputs
 
 | Approved frame | Contract and fixed input/output | Owner |

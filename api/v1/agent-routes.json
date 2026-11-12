@@ -1,6 +1,7 @@
 {
   "description": "Exact registered route to Agent guide part map. A row is discoverability, never authorization or proof of success. tools/contract-gen checks it against the daemon route table.",
   "routes": [
+    { "method": "*", "pattern": "/v1/project-assistant-targets", "guide": "project" },
     { "method": "*", "pattern": "/v1/project-assistants", "guide": "project" },
     { "method": "*", "pattern": "/v1/project-assistants/", "guide": "project" },
     { "method": "*", "pattern": "/v1/project-assistants/status", "guide": "project" },
