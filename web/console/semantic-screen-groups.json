@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11622,
+  "englishContentKeys": 11625,
   "riskKeys": 5081,
-  "nonRiskCount": 6541,
+  "nonRiskCount": 6544,
   "groups": [
     {
       "name": "acp / other",
@@ -3857,7 +3857,7 @@
     },
     {
       "name": "next / other",
-      "count": 912,
+      "count": 915,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4069,6 +4069,7 @@
         "next.copilotModelHint",
         "next.copilotModelLabel",
         "next.copilotOrb",
+        "next.copilotOrbResize",
         "next.copilotReady",
         "next.copilotRemembered",
         "next.copilotSaid",
@@ -4088,6 +4089,8 @@
         "next.copilotToolAsked",
         "next.copilotToolMany",
         "next.copilotToolsUsed",
+        "next.copilotTranscript",
+        "next.copilotTranscriptWaiting",
         "next.copilotVoiceLabel",
         "next.copilotVoicePreview",
         "next.copilotVoicePreviewCost",

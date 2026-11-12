@@ -287,3 +287,9 @@ have no startup effects: settings and history do not initialize a native process
 Production HTTP/Cloud authorization, source identity and Project resolution must
 still be wired and verified by the integration owner. Merely importing these
 modules does not enable the default-off feature or install its tables.
+
+The [broker bridge](project-assistants-broker.md) supplies a separate private Bot
+capability, the existing isolated task admission path, and durable work-result
+projections. It preserves the human approval boundary. Its current verified
+module tests use a real temporary broker and fake worker launch; installing the
+bridge in a production source host is a separate integration requirement.

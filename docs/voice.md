@@ -84,6 +84,14 @@ The phone button in the Session list's toolbar opens a voice call with OpenAI Re
 reports on this machine's Sessions. The call can shrink to a draggable bubble that stays above
 every page; its red mark ends it.
 
+**Reading a live call.** The sheet reserves a stable, scrollable region for the latest exchange.
+Incoming captions, tool chips, notices and cost updates do not resize or move it. New captions
+follow the bottom while the person is there; scrolling back pauses following. The smaller orb
+can be dragged vertically to resize it (or adjusted with arrow keys), giving space back to the
+conversation. Cost and remembered-call information sit below as unboxed secondary text; the
+pricing explanation opens from the cost line. Tool chips keep their own scrollable space, and
+opening the execution log does not displace the conversation.
+
 **What the machine keeps.** Settings › Voice copilot writes `<state>/copilot.json` (mode 0600)
 through `/v1/settings/copilot`: the OpenAI API key, the model (`gpt-realtime-mini` by default,
 or `gpt-realtime`), semantic VAD's eagerness (`low` by default, which waits through pauses

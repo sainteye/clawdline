@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { nextWord } from '../next-strings.js'
 import { BRAND_MARK } from '../brand-mark.js'
 import { formatUSD } from './copilot-cost.js'
@@ -28,6 +28,16 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
   const [copilotState, setCopilotState] = useState<RealtimeCopilotState>(realtimeCopilot.getState())
   const [showLogs, setShowLogs] = useState(false)
   const [demoOpen, setDemoOpen] = useState(false)
+  const [orbSize, setOrbSize] = useState(112)
+  const drag = useRef<{ y: number; size: number } | null>(null)
+  const transcript = useRef<HTMLDivElement>(null)
+  const following = useRef(true)
+  const resizeOrb = (size: number) => setOrbSize(Math.max(80, Math.min(220, size)))
+
+  useLayoutEffect(() => {
+    const box = transcript.current
+    if (box && following.current) box.scrollTop = box.scrollHeight
+  }, [copilotState.lastTranscript, copilotState.lastAssistantSpeech, open])
 
   useEffect(() => {
     return realtimeCopilot.subscribe((state) => {
@@ -72,7 +82,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
       if (isConnected || isConnecting) onMinimize?.()
       else onClose()
     }}>
-      <div className="realtime-modal-sheet" role="dialog" aria-modal="true" aria-label={nextWord('copilotCallTitle')}>
+      <div className={`realtime-modal-sheet${isConnected ? " in-call" : ""}`} style={{ "--copilot-orb-size": `${orbSize}px` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label={nextWord('copilotCallTitle')}>
         <div className="realtime-header">
           <div className="realtime-title-row">
             <span className="realtime-badge">Realtime Copilot</span>
@@ -101,17 +111,40 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
 
         {/* The cloud orb, moving with both voices */}
         <div className="realtime-visual-box">
-          <CopilotOrb
-            mode={isConnected ? copilotState.speakingState : isConnecting ? 'connecting' : 'idle'}
-            levels={isConnected ? readCallLevels : undefined}
-          />
+          <div className="realtime-orb-resize" role="slider" tabIndex={0}
+            aria-label={nextWord('copilotOrbResize')} aria-valuemin={80} aria-valuemax={220} aria-valuenow={orbSize}
+            aria-orientation="vertical" title={nextWord('copilotOrbResize')}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              drag.current = { y: e.clientY, size: orbSize }
+              e.currentTarget.setPointerCapture(e.pointerId)
+            }}
+            onPointerMove={(e) => { if (drag.current) resizeOrb(drag.current.size + e.clientY - drag.current.y) }}
+            onPointerUp={() => { drag.current = null }}
+            onPointerCancel={() => { drag.current = null }}
+            onLostPointerCapture={() => { drag.current = null }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); resizeOrb(orbSize + 8) }
+              else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); resizeOrb(orbSize - 8) }
+              else if (e.key === 'Home') { e.preventDefault(); resizeOrb(80) }
+              else if (e.key === 'End') { e.preventDefault(); resizeOrb(220) }
+            }}>
+            <CopilotOrb
+              mode={isConnected ? copilotState.speakingState : isConnecting ? 'connecting' : 'idle'}
+              levels={isConnected ? readCallLevels : undefined}
+            />
+            <span className="realtime-orb-grip" aria-hidden="true" />
+          </div>
           <div className="realtime-status-label">{stateLabel}</div>
           <CopilotNotice notice={copilotState.notice} className="copilot-notice" />
         </div>
 
         {/* Live speech / transcript display */}
         {isConnected && (
-          <div className="realtime-transcript-box">
+          <div className="realtime-transcript-box" ref={transcript} role="region" tabIndex={0}
+            aria-label={nextWord('copilotTranscript')}
+            onScroll={(e) => { const box = e.currentTarget; following.current = box.scrollHeight - box.scrollTop - box.clientHeight < 24 }}>
+            {!copilotState.lastTranscript && !copilotState.lastAssistantSpeech && <span className="realtime-transcript-empty">{nextWord('copilotTranscriptWaiting')}</span>}
             {copilotState.lastTranscript && (
               <div className="realtime-bubble user">
                 <span className="bubble-label">{nextWord('copilotYouSaid')}</span>
@@ -133,9 +166,9 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           </div>
         )}
 
-        {copilotState.tools && copilotState.tools.length > 0 && (
+        {isConnected && (
           <ol className="copilot-tools-trail" aria-label={nextWord('copilotToolsUsed')}>
-            {copilotState.tools.map((t, i) => (
+            {(copilotState.tools ?? []).map((t, i) => (
               <li key={i} className={t.outcome} title={`${t.name}${t.target ? ` · ${t.target}` : ''} · ${nextWord(TOOL_OUTCOME_WORD[t.outcome])} · ${(t.ms / 1000).toFixed(1)} s`}>
                 <span className="copilot-tool-mark" aria-hidden="true">{TOOL_OUTCOME_MARK[t.outcome]}</span>
                 <code>{t.name}</code>
@@ -147,51 +180,57 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           </ol>
         )}
 
-        {copilotState.cost && copilotState.cost.responses > 0 && (
-          <div className="realtime-cost-row" aria-live="polite">
-            <span className="realtime-cost-total">
-              {nextWord(copilotState.cost.priced ? 'copilotCost' : 'copilotCostUnpriced', {
-                cost: formatUSD(copilotState.cost.usd),
-                responses: copilotState.cost.responses,
-              })}
-            </span>
-            <span className="realtime-cost-note">{nextWord('copilotCostNote', { model: copilotState.cost.model })}</span>
-          </div>
-        )}
+        <div className="realtime-secondary">
+          {copilotState.cost && copilotState.cost.responses > 0 && (
+            <details className="realtime-cost-row">
+              <summary>
+                <span className="realtime-cost-total">
+                  {nextWord(copilotState.cost.priced ? 'copilotCost' : 'copilotCostUnpriced', {
+                    cost: formatUSD(copilotState.cost.usd),
+                    responses: copilotState.cost.responses,
+                  })}
+                </span>
+                <span aria-hidden="true"> ⓘ</span>
+              </summary>
+              <span className="realtime-cost-note">{nextWord('copilotCostNote', { model: copilotState.cost.model })}</span>
+            </details>
+          )}
 
-        {copilotState.remembered > 0 && (
-          <div className="realtime-memory-row">
-            <span>{nextWord('copilotRemembered', { count: copilotState.remembered })}</span>
-            <button type="button" className="realtime-forget-btn" onClick={() => realtimeCopilot.forgetMemory()}>
-              {nextWord('copilotForget')}
-            </button>
-          </div>
-        )}
+          {copilotState.remembered > 0 && (
+            <div className="realtime-memory-row">
+              <span>{nextWord('copilotRemembered', { count: copilotState.remembered })}</span>
+              <button type="button" className="realtime-forget-btn" onClick={() => realtimeCopilot.forgetMemory()}>
+                {nextWord('copilotForget')}
+              </button>
+            </div>
+          )}
 
-        {/* Realtime Event & Tool Call Logs */}
-        {copilotState.logs && copilotState.logs.length > 0 && (
-          <div className="realtime-logs-container">
-            <button
-              type="button"
-              className="realtime-logs-toggle-btn"
-              onClick={() => setShowLogs(!showLogs)}
-            >
-              <span>{nextWord(showLogs ? 'copilotLogsHide' : 'copilotLogsShow')}</span>
-              <span className="logs-count">({copilotState.logs.length})</span>
-            </button>
-            {showLogs && (
-              <div className="realtime-logs-list" role="log" aria-label={nextWord('copilotLogsLabel')}>
-                {copilotState.logs.map((item) => (
-                  <div key={item.id} className={`log-item log-level-${item.level}`}>
-                    <span className="log-time">[{item.timestamp}]</span>
-                    <span className="log-tag">[{nextWord(item.level === 'tool' ? 'copilotLogTool' : item.level === 'error' ? 'copilotLogError' : 'copilotLogInfo')}]</span>
-                    <span className="log-text">{item.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          {/* Realtime Event & Tool Call Logs */}
+          {copilotState.logs && copilotState.logs.length > 0 && (
+            <div className="realtime-logs-container">
+              <button
+                type="button"
+                className="realtime-logs-toggle-btn"
+                onClick={() => setShowLogs(!showLogs)}
+              >
+                <span>{nextWord(showLogs ? 'copilotLogsHide' : 'copilotLogsShow')}</span>
+                <span className="logs-count">({copilotState.logs.length})</span>
+              </button>
+              {showLogs && (
+                <div className="realtime-logs-list" role="log" aria-label={nextWord('copilotLogsLabel')}>
+                  {copilotState.logs.map((item) => (
+                    <div key={item.id} className={`log-item log-level-${item.level}`}>
+                      <span className="log-time">[{item.timestamp}]</span>
+                      <span className="log-tag">[{nextWord(item.level === 'tool' ? 'copilotLogTool' : item.level === 'error' ? 'copilotLogError' : 'copilotLogInfo')}]</span>
+                      <span className="log-text">{item.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
 
         {copilotState.error && (
           <div className="realtime-error-box" role="alert">
