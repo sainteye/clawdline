@@ -60,6 +60,9 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* Its parts keep their height while it scrolls; a flex column would otherwise
+   squeeze the caption box, the one part that can scroll, down to two lines. */
+.realtime-modal-sheet > * { flex-shrink: 0; }
 
 @media (min-width: 640px) {
   .realtime-modal-sheet {
