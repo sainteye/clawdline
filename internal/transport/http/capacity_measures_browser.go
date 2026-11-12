@@ -7,6 +7,12 @@ import (
 // browserCapacityMeasures measures every row of the register's "browser" area.
 func (s *Server) browserCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		capacity.BrowserCloseReceipts: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-native-host close receipt guard; ACK clears the spool, live occupancy is not measured by the daemon"}
+		},
+		capacity.BrowserCloseReceiptBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-native-host close receipt file guard"}
+		},
 		"browser.keyboard_pending_edits": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-viewer native input queue; live browser occupancy is not measured by the daemon"}
 		},

@@ -39,7 +39,7 @@ func (s *Server) browserSetupRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]any{
 		"ok": true, "mode": s.browserMode(), "chromium_found": chromium != "", "chromium": chromium, "profile": profile,
-		"running": running, "connected": s.browser().Status().Connected,
+		"running": running, "connected": s.browser().SetupConnected(),
 		"enabled": s.browserSetting("browser_enabled"), "notify_new_site": s.browserSetting("browser_notify_new_site"),
 		"install_command": browserlaunch.InstallCommand,
 	})

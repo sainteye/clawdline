@@ -3489,7 +3489,7 @@
     "web/console/src/next-strings.ts": "6082b5a08aa7cc41c5776eeb02fd41deacc6eab97d54e91164365cea391efe77",
     "web/console/src/overlays/info.ts": "afee5b67146a062576bef9a06e2531329d275899e5d4a23965ee2e419c9d8c30",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
-    "web/console/src/realtime/copilot-tools.ts": "5a242405e1ec2f77a6edf22bc6b39cbd7904faa916ec7fc75f83eb6e78756233",
+    "web/console/src/realtime/copilot-tools.ts": "b442b27f5dddf1e250499eeb4744b31462109e14ed7c329d16b9ea69da8ebe7e",
     "web/console/src/session/Composer.tsx": "7bba0e78b8295c16bbad0542415b38977767e3d835bf1284b753909aa982489f",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "1f1f0c58d2c3814e5f7d133b1ae154bdb31d1b9f49a8c10346d6fa2bc768115f",

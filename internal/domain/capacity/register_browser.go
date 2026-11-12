@@ -2,20 +2,28 @@ package capacity
 
 // Rows of the browser bridge (internal/app/browserbridge, docs/browser.md).
 const (
-	BrowserPendingCommands = "browser.pending_commands"
-	BrowserAuditRows       = "browser.audit_rows"
-	BrowserArgBytes        = "browser.command_arg_bytes"
-	BrowserResultBytes     = "browser.result_bytes"
-	BrowserHostMessage     = "browser.host_message_bytes"
-	BrowserAuditText       = "browser.audit_text_characters"
-	BrowserStdinText       = "browser.stdin_text_bytes"
-	BrowserActivityRows    = "browser.activity_picture_rows"
-	BrowserActivityBytes   = "browser.activity_picture_bytes"
+	BrowserCloseReceipts     = "browser.close_receipt_rows"
+	BrowserCloseReceiptBytes = "browser.close_receipt_bytes"
+	BrowserPendingCommands   = "browser.pending_commands"
+	BrowserAuditRows         = "browser.audit_rows"
+	BrowserArgBytes          = "browser.command_arg_bytes"
+	BrowserResultBytes       = "browser.result_bytes"
+	BrowserHostMessage       = "browser.host_message_bytes"
+	BrowserAuditText         = "browser.audit_text_characters"
+	BrowserStdinText         = "browser.stdin_text_bytes"
+	BrowserActivityRows      = "browser.activity_picture_rows"
+	BrowserActivityBytes     = "browser.activity_picture_bytes"
 )
 
 // browserBounds is every registered row named browser.*.
 func browserBounds() []Entry {
 	return []Entry{
+		{Name: BrowserCloseReceipts, Class: Buffer, Unit: Rows, Limit: 32, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"cmd/clawdline.maxBrowserCloseReceipts"}},
+		{Name: BrowserCloseReceiptBytes, Class: Buffer, Unit: Bytes, Limit: 6 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"cmd/clawdline.maxBrowserCloseReceiptBytes"}},
 		{
 			// The viewer serializes native keyboard input and coalesces text.
 			// A full buffer pauses input visibly, never retries unknown edits.

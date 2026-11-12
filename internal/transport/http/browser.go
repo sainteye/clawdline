@@ -249,6 +249,11 @@ func (s *Server) browserHostPollRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	bridge := s.browser()
 	if !bridge.AcceptsHost(info) {
+		if s.browserMode() == "native" && bridge.ProbeSetupHost(r.Context(), info) {
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, map[string]any{"commands": []browserbridge.Command{}})
+			return
+		}
 		writeRefusal(w, http.StatusForbidden, "browser_wrong_mode", "This Chrome profile is not the selected browser mode.")
 		return
 	}
@@ -281,7 +286,10 @@ func (s *Server) browserHostResultsRoute(w http.ResponseWriter, r *http.Request)
 	if !readBrowserBody(w, r, browserbridge.MaxResultBytes, &in) {
 		return
 	}
-	s.browser().Deliver(in.Results)
+	if err := s.browser().Deliver(in.Results); err != nil {
+		writeBrowserError(w, err)
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 

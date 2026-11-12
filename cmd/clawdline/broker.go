@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -132,6 +133,12 @@ func (a answer) ok() bool { return a.Status >= 200 && a.Status < 300 }
 // request sends one request. body is JSON-encoded when it is not nil. A
 // non-empty key goes out as Idempotency-Key.
 func (b *broker) request(method, path string, query url.Values, body any, key string) (answer, error) {
+	return b.requestContext(context.Background(), method, path, query, body, key)
+}
+
+// requestContext lets a native host cancel an outstanding poll or receipt POST
+// when Chrome closes its port; ordinary CLI requests keep their usual timeout.
+func (b *broker) requestContext(ctx context.Context, method, path string, query url.Values, body any, key string) (answer, error) {
 	target := b.base + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
@@ -144,7 +151,7 @@ func (b *broker) request(method, path string, query url.Values, body any, key st
 		}
 		reader = bytes.NewReader(data)
 	}
-	req, err := http.NewRequest(method, target, reader)
+	req, err := http.NewRequestWithContext(ctx, method, target, reader)
 	if err != nil {
 		return answer{}, err
 	}

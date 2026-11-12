@@ -11597,5 +11597,9 @@
   "capacityRow.voice.work_plan_rounds.what": "每個原始要求的規劃輪數，包含查詢後自動接續。",
   "capacityRow.voice.work_plan_rounds.full": "四輪後停止規劃，保留可見的原始要求。只有明確重試才開始另一輪有上限的嘗試。",
   "capacityRow.voice.work_progress.what": "每次任務嘗試保留的已備妥結果，讓其他裝置能逐項播報。",
-  "capacityRow.voice.work_progress.full": "達八項後拒絕更多進度；最終結果及任務狀態仍分開記錄。"
+  "capacityRow.voice.work_progress.full": "達八項後拒絕更多進度；最終結果及任務狀態仍分開記錄。",
+  "capacityRow.browser.close_receipt_rows.what": "單一原生瀏覽器 Host 可以保留幾筆尚未確認的關頁收據。收據只含指令與分頁身分，不含網頁內容。",
+  "capacityRow.browser.close_receipt_rows.full": "達到上限時，Host 會停止接收更多關頁指令，不會丟掉結果不明的收據。確認後才移除；重送收據不會重新關頁。",
+  "capacityRow.browser.close_receipt_bytes.what": "單一原生 Host 的關頁收據檔案大小上限，各瀏覽器模式與設定檔分開保存。",
+  "capacityRow.browser.close_receipt_bytes.full": "過大或損壞的檔案會被拒絕恢復並保留供檢查；Clawdline 不會因此認定關頁失敗，也不會重新關頁。"
 }
