@@ -350,7 +350,7 @@ for (const [width, ui] of [[320, "zh-Hant"], [390, "zh-Hant"], [390, "en"], [128
         await fetch(origin + "/__fixture/header?count=" + count)
         await browser.send("Page.navigate", { url: `${origin}/?ui=${ui}&header=${count}#session=${SESSION}` }, id)
         await until(`document.querySelector('#detail-name')?.textContent === 'Browser Session'`)
-        if (count) await until(shown(".browser-chip"))
+        if (count) await until(`!!document.querySelector('.browser-chip')`)
         if (count >= 2) await until(`!!document.querySelector('.output-entry')`)
         if (count === 3) await until(`!!document.querySelector('.skill-bot-toggle')`)
         if (count <= 1) {
@@ -367,19 +367,30 @@ for (const [width, ui] of [[320, "zh-Hant"], [390, "zh-Hant"], [390, "en"], [128
         const nameWidth = await run(`document.querySelector('#detail-name').clientWidth`)
         assert.ok(nameWidth > 0, "the Session name remains visible")
         assert.equal(await run(`(()=>{
-          const button=document.querySelector('.header-options-current');
-          const r=button.getBoundingClientRect(), arrow=document.querySelector('.header-options-toggle').getBoundingClientRect();
+          const button=document.querySelector('.header-options-toggle');
+          const r=button.getBoundingClientRect(), arrow=document.querySelector('.header-options-arrow').getBoundingClientRect();
           return parseFloat(getComputedStyle(button).borderTopWidth)>0 &&
             arrow.left>=r.left && arrow.right<=r.right && arrow.top>=r.top && arrow.bottom<=r.bottom;
         })()`), true, "the disclosure is inside the visible button outline")
-        await run(`document.querySelector('.header-options-toggle').click()`)
+        assert.equal(await run(`(()=>{
+          const chip=document.querySelector('.header-options-label'), range=document.createRange();
+          range.selectNodeContents(chip.lastChild);
+          const text=range.getBoundingClientRect(), arrow=document.querySelector('.header-options-arrow').getBoundingClientRect();
+          const target=document.querySelector('.header-options-toggle').getBoundingClientRect();
+          return arrow.left-text.right>=0 && arrow.left-text.right<=3 && target.height>=44;
+        })()`), true, "the arrow sits close to the label with a full-height touch target")
+        const labelPoint = await run(`(()=>{const r=document.querySelector('.header-options-label').getBoundingClientRect();return {x:r.left+2,y:r.top+r.height/2}})()`)
+        await browser.send("Input.dispatchMouseEvent", { type: "mousePressed", ...labelPoint, button: "left", clickCount: 1 }, id)
+        await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...labelPoint, button: "left", clickCount: 1 }, id)
+        await until(shown(".output-entry"))
+        assert.equal(await run(shown("#browser-panel")), false, "pressing the left side only opens choices")
         assert.equal(await run(shown(".output-entry")), true)
         assert.equal(await run(shown(".browser-chip")), true)
         if (count === 3) assert.equal(await run(shown(".skill-bot-toggle")), true)
-        if (count === 3) assert.equal(await run(`(()=>{
+        assert.equal(await run(`(()=>{
           const rows=[...document.querySelector('.header-options-extra').children].map(el=>el.getBoundingClientRect());
-          return rows.length===2 && rows[1].top>=rows[0].bottom && Math.abs(rows[0].left-rows[1].left)<1;
-        })()`), true, "expanded options form vertical rows")
+          return rows.length===${count} && rows.every((row,i)=>i===0 || (row.top>=rows[i-1].bottom && Math.abs(row.left-rows[i-1].left)<1));
+        })()`), true, "all options, including the previewed one, form vertical rows")
         const bounds = await run(`(()=>{const r=document.querySelector('.header-options-extra').getBoundingClientRect();return {left:r.left,right:r.right}})()`)
         assert.ok(bounds.left >= 0 && bounds.right <= width, "expanded choices fit the viewport")
         assert.equal(await run(`document.querySelector('#detail-name').clientWidth`), nameWidth, "expanding choices does not squeeze the name")
@@ -391,6 +402,12 @@ for (const [width, ui] of [[320, "zh-Hant"], [390, "zh-Hant"], [390, "en"], [128
         await until(shown(".output-entry"))
         await run(`document.querySelector('#detail-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`)
         assert.equal(await run(shown(".output-entry")), false)
+        await run(`document.querySelector('.header-options-toggle').click()`)
+        await until(shown(".output-entry"))
+        await run(`document.querySelector('.browser-chip').click()`)
+        await until(shown("#browser-panel"))
+        assert.equal(await run(shown(".header-options-extra")), false)
+        await run(`document.querySelector('.browser-close').click()`)
         await run(`document.querySelector('.header-options-toggle').click()`)
         await until(shown(".output-entry"))
         await run(`document.querySelector('.output-entry').click()`)
