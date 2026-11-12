@@ -26,6 +26,7 @@ import (
 //   - POST /v1/browser/stop           {stopped}; the machine may only stop, a person may also resume
 //   - POST /v1/browser/control        {tab, person}; a person who may send
 //   - POST /v1/browser/person         {op, tab, args}; the person's own view and input
+//   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
 func (s *Server) browserRoutes() []route {
 	return []route{
 		{Route{"*", "/v1/browser/commands"}, s.browserCommandRoute},
@@ -36,6 +37,7 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/stop"}, s.browserStopRoute},
 		{Route{"*", "/v1/browser/control"}, s.browserControlRoute},
 		{Route{"*", "/v1/browser/person"}, s.browserPersonRoute},
+		{Route{"*", "/v1/browser/screenshot"}, s.browserScreenshotRoute},
 	}
 }
 
@@ -325,6 +327,35 @@ func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.browser().PersonDo(r.Context(), in.Op, in.Tab, in.Args)
+	if err != nil {
+		writeBrowserError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"ok": true, "value": value})
+}
+
+// browserScreenshotRoute is the person's view as a GET, so Clawdline Cloud can
+// carry it as a read word (chrome-tab-screenshot) for a device that may read.
+func (s *Server) browserScreenshotRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET only")
+		return
+	}
+	if machineAuthed(r) || !mayReadBrowser(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a person's device that may read.")
+		return
+	}
+	tab, err := strconv.Atoi(r.URL.Query().Get("tab"))
+	if err != nil || tab <= 0 {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the tab to look at.")
+		return
+	}
+	args := json.RawMessage(`{}`)
+	if q, err := strconv.Atoi(r.URL.Query().Get("quality")); err == nil && q >= 20 && q <= 80 {
+		args = json.RawMessage(`{"quality":` + strconv.Itoa(q) + `}`)
+	}
+	value, err := s.browser().PersonDo(r.Context(), "screenshot", tab, args)
 	if err != nil {
 		writeBrowserError(w, err)
 		return

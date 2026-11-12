@@ -76,8 +76,28 @@ the agent's commands to that tab; only then does a tap on the picture become a c
 point of the page, and the text box, Tab, Enter, Delete and scroll reach it. What the person types
 is not recorded. **Hand back** returns the tab to the agent.
 
-Through Clawdline Cloud the panel says it works only in this computer's console: the relay does
-not carry the browser routes yet.
+Through Clawdline Cloud the panel uses the same routes as four words of
+`internal/domain/cloudvocab/vocabulary.json`, each end-to-end encrypted like every other word and
+run on the machine as the viewer's device (`local.device`), so a phone needs read access to look
+and send access to take over and act:
+
+| Word | Kind | Local route |
+|---|---|---|
+| `chrome-tab-status` | read | `GET /v1/browser/status` |
+| `chrome-tab-screenshot` | read | `GET /v1/browser/screenshot?tab=N&quality=Q` (asked at quality 45 through the relay) |
+| `chrome-tab-input` | command | `POST /v1/browser/person` (click, type, key, scroll) |
+| `chrome-tab-control` | command | `POST /v1/browser/control` |
+
+## Clawdline's own Chromium
+
+`clawdline browser launch [--browser PATH]` needs nothing installed into the person's Chrome. It
+writes the extension carried in the binary (`extension/embed.go`) to
+`<CLAWDLINE_NEXT_DIR>/chrome-extension`, registers the native messaging host inside
+`<CLAWDLINE_NEXT_DIR>/chrome-profile`, and starts Chromium (`CLAWDLINE_CHROMIUM`, else the newest
+Playwright Chromium) on that profile with the extension loaded. Sign-ins made there stay in that
+profile and are separate from the person's Chrome. It passes `--use-mock-keychain`, so its cookies
+are not protected by the macOS keychain; it is meant for sites the person chooses to sign in to
+there.
 
 ## Testing
 
@@ -91,4 +111,4 @@ panel against a stand-in daemon at desktop and phone widths, in English and Chin
 
 The install guide, the Settings page with the audit list and the stop switch, usage guidance in
 new Sessions, typing a Secret Handoff into a password field, the per-Session notification mute,
-streaming instead of screenshots when the tab is drawn, and the Cloud channel for the phone.
+and streaming instead of screenshots when the tab is drawn.

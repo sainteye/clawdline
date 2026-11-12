@@ -11297,7 +11297,6 @@
   "next.browserPanelSampled": "約每秒更新",
   "next.browserPanelNoTab": "這個 Session 還沒有開啟 Chrome 分頁。",
   "next.browserPanelNotConnected": "Clawdline Chrome 擴充功能尚未連線。請在這台電腦打開 Chrome，或安裝擴充功能。",
-  "next.browserPanelCloud": "Chrome 分頁目前只能在這台電腦的 console 查看，Clawdline Cloud 還不能傳送。",
   "next.browserPanelAgentActs": "{assistant} 正在使用這個分頁",
   "next.browserPanelPersonActs": "你正在操作 · {assistant} 已暫停",
   "next.browserPanelTakeOver": "接手操作",

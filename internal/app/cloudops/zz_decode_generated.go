@@ -18,6 +18,10 @@ var generatedDecoders = map[string]genDecoder{
 	"browser-invite-start":               genDecodeBrowserInviteStart,
 	"browser-invite-status":              genDecodeBrowserInviteStatus,
 	"capacity":                           genDecodeCapacity,
+	"chrome-tab-control":                 genDecodeChromeTabControl,
+	"chrome-tab-input":                   genDecodeChromeTabInput,
+	"chrome-tab-screenshot":              genDecodeChromeTabScreenshot,
+	"chrome-tab-status":                  genDecodeChromeTabStatus,
 	"codegraph-guidance":                 genDecodeCodegraphGuidance,
 	"coordination.leases":                genDecodeCoordinationLeases,
 	"coordination.pauses":                genDecodeCoordinationPauses,
@@ -595,6 +599,99 @@ func genDecodeCapacity(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/capacity"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeChromeTabControl is the `chrome-tab-control` row's decode.
+func genDecodeChromeTabControl(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "person", "request", "session", "tab"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("person", genRule{kind: "bool"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("tab", genRule{kind: "integer", min: genInt(1), max: genInt(2147483647)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/control"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genFields(map[string]genValue{"person": genValue{from: "person"}, "tab": genValue{from: "tab"}})
+	return p, req, true
+}
+
+// genDecodeChromeTabInput is the `chrome-tab-input` row's decode.
+func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "args", "op", "request", "session", "tab"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("args", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"direction": genRule{kind: "string", enum: []string{"up", "down"}}, "key": genRule{kind: "string", enum: []string{"Enter", "Tab", "Backspace", "Escape", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp"}}, "text": genRule{kind: "string", maxBytes: 16384}, "x": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}, "y": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}}, closed: true, maxKeys: 3}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("op", genRule{kind: "string", enum: []string{"click", "type", "key", "scroll"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("tab", genRule{kind: "integer", min: genInt(1), max: genInt(2147483647)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/person"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genFields(map[string]genValue{"args": genValue{from: "args"}, "op": genValue{from: "op"}, "tab": genValue{from: "tab"}})
+	return p, req, true
+}
+
+// genDecodeChromeTabScreenshot is the `chrome-tab-screenshot` row's decode.
+func genDecodeChromeTabScreenshot(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "quality", "request", "session", "tab"},
+		[]string{"type", "request", "session", "tab"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("quality", genRule{kind: "string", enum: []string{"30", "45", "55", "70"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("tab", genRule{kind: "string", nonEmpty: true, maxBytes: 12}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/screenshot"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"quality": genValue{from: "quality"}, "tab": genValue{from: "tab"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeChromeTabStatus is the `chrome-tab-status` row's decode.
+func genDecodeChromeTabStatus(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/status"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Header = asDevice()
 	return p, req, true
 }
 

@@ -28,6 +28,7 @@ func browserCommand(args []string) {
 
 const browserUsage = `usage: clawdline browser <command>
   status                         whether the extension is connected and browser use is on
+  launch [--browser PATH]        start Clawdline's own Chromium with the extension already in it
   open <url>                     open a new tab for this Session
   tabs                           list the tabs this Session may use
   read [--tab N]                 the page's text and the elements that can be pressed or filled
@@ -50,6 +51,9 @@ func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer
 	}
 	if args[0] == "install-host" {
 		return browserInstallHost(args[1:], out, errOut)
+	}
+	if args[0] == "launch" {
+		return browserLaunch(args[1:], out, errOut)
 	}
 	b, err := openBroker(0)
 	if err != nil {

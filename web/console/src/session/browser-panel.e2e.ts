@@ -62,6 +62,7 @@ function fixture(): Server {
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: true, notify_new_site: true,
       status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, tabs: [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } })
     if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
+    if (path === "/v1/browser/screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
     if (req.method === "POST" && path === "/v1/browser/person") {
       const b = await body(req)
       if (b.op === "screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })

@@ -11297,7 +11297,6 @@
   "next.browserPanelSampled": "Updated about every second",
   "next.browserPanelNoTab": "This Session has not opened a Chrome tab yet.",
   "next.browserPanelNotConnected": "The Clawdline Chrome extension is not connected. Open Chrome on this computer, or install the extension.",
-  "next.browserPanelCloud": "The Chrome tab can be watched in this computer's own console for now; Clawdline Cloud does not carry it yet.",
   "next.browserPanelAgentActs": "{assistant} is using this tab",
   "next.browserPanelPersonActs": "You are in control · {assistant} is paused",
   "next.browserPanelTakeOver": "Take over",

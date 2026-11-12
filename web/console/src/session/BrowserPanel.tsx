@@ -19,8 +19,9 @@ import "./browser-panel.css"
  * only after Take over, which the daemon records and which stops the agent's
  * commands to that tab until Hand back. What the person types is not recorded.
  *
- * Clawdline Cloud does not carry the browser routes yet; through the relay the
- * panel says so instead of asking.
+ * Through Clawdline Cloud the same four routes are carried as the
+ * chrome-tab-* words (internal/domain/cloudvocab/vocabulary.json), end to end
+ * encrypted like every other word, so the phone sees and acts on the tab too.
  */
 
 type TabInfo = { tab: number; conversation: string; person: boolean; current: boolean }
@@ -90,7 +91,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const name = assistantName(row)
 
   useEffect(() => {
-    if (!open || relay) return
+    if (!open) return
     let alive = true
     const read = () => call<Status>("GET", "/v1/browser/status").then(
       (s) => { if (alive) { setStatus(s); setStatusError(null) } },
@@ -104,13 +105,15 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   useEffect(() => {
     setShot(null)
     setShotError(null)
-    if (!open || relay || !tabID) return
+    if (!open || !tabID) return
     let alive = true
     let inFlight = false
     const read = () => {
       if (inFlight || document.hidden) return
       inFlight = true
-      call<{ value: Shot }>("POST", "/v1/browser/person", { op: "screenshot", tab: tabID, args: { quality: 55 } }).then(
+      // Through Clawdline Cloud the picture travels encrypted through the
+      // relay, so it is asked for at a lower quality there.
+      call<{ value: Shot }>("GET", "/v1/browser/screenshot?tab=" + tabID + "&quality=" + (relay ? "45" : "55")).then(
         (r) => { if (alive) { setShot(r.value); setShotError(null) } },
         (e: unknown) => { if (alive) setShotError(e) },
       ).finally(() => { inFlight = false })
@@ -152,8 +155,8 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const clickPicture = (e: MouseEvent<HTMLImageElement>) => {
     if (!person || !shot) return
     const box = e.currentTarget.getBoundingClientRect()
-    const x = ((e.clientX - box.left) / box.width) * shot.width
-    const y = ((e.clientY - box.top) / box.height) * shot.height
+    const x = Math.round(((e.clientX - box.left) / box.width) * shot.width)
+    const y = Math.round(((e.clientY - box.top) / box.height) * shot.height)
     void act("click", { x, y })
   }
 
@@ -164,7 +167,6 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   }
 
   const body = () => {
-    if (relay) return <div className="screen-note" role="status">{nextWord("browserPanelCloud")}</div>
     if (statusError) return <div className="screen-note err" role="alert">{said(statusError, "browserPanelReadFailed")}</div>
     if (!status) return <div className="screen-note" role="status">…</div>
     if (!status.status.connected) return <div className="screen-note" role="status">{nextWord("browserPanelNotConnected")}</div>
@@ -187,7 +189,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     )
   }
 
-  const ready = !relay && !!tab && !!status?.status.connected
+  const ready = !!tab && !!status?.status.connected
   return (
     <section className="panel-view" id="browser-panel" aria-labelledby="browser-title" hidden={!open}>
       <div className="panel-view-head">
