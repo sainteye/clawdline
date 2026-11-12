@@ -14,7 +14,7 @@ import { machineManager } from "./machine-manager.js"
 import { createPortal, flushSync } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import App from "../App.js"
-import { CLOSE_EXECUTION_CHANGED, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
+import { CLOSE_EXECUTION_CHANGED, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
 import { NAVIGATION_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
@@ -1779,8 +1779,9 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // current execution of it, opened the way a started Session is.
   useEffect(() => {
     const onOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionID: string; answer?: (opened: boolean) => void }>).detail
-      const machine = reader.current?.machine
+      const detail = (event as CustomEvent<{ sessionID: string; machineID?: string; answer?: (opened: boolean) => void }>).detail
+      // A Session from every machine's list names its machine; otherwise it is the reading one's.
+      const machine = detail?.machineID || reader.current?.machine
       if (!detail?.sessionID || !detail.answer || !machine) return
       const answer = detail.answer
       detail.answer = undefined
@@ -1813,6 +1814,28 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     }
     document.addEventListener(COPILOT_MACHINES, onAsk)
     return () => document.removeEventListener(COPILOT_MACHINES, onAsk)
+  }, [])
+
+  // The voice copilot asking for every machine's Sessions: on 所有機器 the
+  // page's own list, each row with its machine and the display facts the same
+  // per-machine read carried. Off that view, no answer, and the copilot reads
+  // the reading machine's list as before.
+  useEffect(() => {
+    const onAsk = (event: Event) => {
+      const detail = (event as CustomEvent<{ answer?: (rows: unknown) => void }>).detail
+      if (!detail?.answer || !fleetScopeRef.current) return
+      const answer = detail.answer
+      detail.answer = undefined
+      const names = new Map(copilotMachines.current.map((m) => [m.id, m.name]))
+      const rows = [...fleetPresentations.current.values()].map((p) => ({
+        machine: p.destination.machineID,
+        machineName: names.get(p.destination.machineID) ?? p.destination.machineID,
+        row: { ...(p.status ?? {}), id: p.destination.sessionID, label: p.title, assistant: p.assistant ?? p.status?.assistant ?? "" },
+      }))
+      answer(rows)
+    }
+    document.addEventListener(COPILOT_FLEET, onAsk)
+    return () => document.removeEventListener(COPILOT_FLEET, onAsk)
   }, [])
 
   // The row the header names: the machine the console is reading, under the

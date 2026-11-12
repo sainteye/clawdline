@@ -121,11 +121,26 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		"voice.copilot_decision_said_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-decision guard on the person's sentence"}
 		},
+		"voice.copilot_decision_sessions": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-decision guard on the list a call hands over"}
+		},
 		"voice.copilot_decision_body_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-decision guard on the request body"}
 		},
 		"voice.copilot_decision_timeout_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-decision deadline; a slower decision leaves the copilot's own choice"}
+		},
+		"voice.copilot_journal_body_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard on a call's journal lines"}
+		},
+		"voice.copilot_journal_entries": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard on a call's journal lines"}
+		},
+		"voice.copilot_journal_text_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-line clip of a call's journal"}
+		},
+		"voice.copilot_journal_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "days of call journals kept on this machine"}
 		},
 		"voice.copilot_key_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-settings-write guard on the pasted key"}

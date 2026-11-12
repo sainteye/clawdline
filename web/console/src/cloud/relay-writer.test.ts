@@ -3268,6 +3268,11 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
   client.calls.length = 0
   await reader.fetch("/v1/voice/copilot-decide", post({ said: "the clothes photo one", extra: 1 }, { "Idempotency-Key": "decide-1" }))
   assert.deepEqual(client.calls[0].slice(1, 5), ["decide-1", "mac-b", "copilot-decide", { decision: { said: "the clothes photo one" } }])
+
+  // And the call's journal lines are kept there too.
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-journal", post({ call: "call-0001", entries: [{ at: 1, kind: "heard", text: "hi" }] }, { "Idempotency-Key": "journal-1" }))
+  assert.deepEqual(client.calls[0].slice(1, 5), ["journal-1", "mac-b", "copilot-journal", { journal: { call: "call-0001", entries: [{ at: 1, kind: "heard", text: "hi" }] } }])
 })
 
 test("a call pass no machine can give names the missing key, in the flat spelling the page reads", async () => {
@@ -3282,4 +3287,30 @@ test("a call pass no machine can give names the missing key, in the flat spellin
   const { reader } = seam(new Keyless())
   const refused = await reader.fetch("/v1/voice/copilot-session", post({}, { "Idempotency-Key": "call-2" }))
   assert.equal((await json<{ error: string }>(refused)).error, "copilot_key_missing")
+})
+
+test("on a page showing every machine, the copilot reads a Session on the machine it names", async () => {
+  const generation = "e".repeat(32)
+  class PinnedClient extends FakeClient {
+    async readForGeneration(target: { machineID: string; sessionID: string; executionGeneration: string }, word: string) {
+      this.calls.push(["readForGeneration", target, word])
+      if (word === "screen") return { screen: { id: target.sessionID, pending: false, readable: true, text: "linux\n" } }
+      return { id: target.sessionID, entries: [{ role: "assistant", text: "on linux" }], signature: "s", evidence: "transcript" }
+    }
+  }
+  const client = new PinnedClient()
+  const asked: string[] = []
+  const reader = new RelayReader("mac-a", {
+    resolveSession: async (machine, session) => { asked.push(machine); return machine === "box-b" && session === "%2" ? { machineID: "box-b", sessionID: "%2", executionGeneration: generation } : null },
+  })
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "fleet-read" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const headers = { "X-Clawdline-Unopened-Read": "1", "X-Clawdline-Unopened-Machine": "box-b" }
+  assert.equal((await reader.fetch("/v1/transcript?session=%252", { headers })).status, 200)
+  assert.equal((await reader.fetch("/v1/sessions/%252/screen", { headers })).status, 200)
+  assert.deepEqual(client.calls.map((c) => (c[1] as { machineID: string }).machineID), ["box-b", "box-b"])
+  assert.deepEqual(asked, ["box-b", "box-b"])
+  // Without the machine the reading one is asked, which has no such Session.
+  assert.equal((await reader.fetch("/v1/transcript?session=%252", { headers: { "X-Clawdline-Unopened-Read": "1" } })).status, 409)
 })

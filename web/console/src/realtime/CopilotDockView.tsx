@@ -4,7 +4,8 @@ import { nextWord } from "../next-strings.js"
 import { realtimeCopilot, type RealtimeCopilotState } from "./realtime-copilot.js"
 import { RealtimeCopilotModal } from "./RealtimeCopilotModal.js"
 import { CopilotNotice } from "./CopilotNotice.js"
-import { copilotDock, firstPoint, isTap, restingPoint, type DockMode, type Insets, type Point } from "./copilot-dock.js"
+import { DevStackModal } from "./DevStackModal.js"
+import { bubbleSide, copilotDock, firstPoint, isTap, restingPoint, type DockMode, type Insets, type Point } from "./copilot-dock.js"
 import "./realtime.css"
 
 const POSITION_KEY = "clawdline.copilot.bubble"
@@ -64,6 +65,7 @@ export function CopilotDockView() {
     <RealtimeCopilotModal open={mode === "sheet"} onClose={() => copilotDock.close()}
       onMinimize={() => copilotDock.minimize(inCall)} />
     {mode === "bubble" && inCall ? <CopilotBubble call={call} /> : null}
+    <DevStackModal />
   </>
 }
 
@@ -117,7 +119,7 @@ function CopilotBubble({ call }: { call: RealtimeCopilotState }) {
   }, [])
 
   const speaking = call.status === "connected" ? call.speakingState : "connecting"
-  return <div className={`copilot-bubble${dragging ? " dragging" : ""}`} style={{ transform: `translate3d(${at.x}px, ${at.y}px, 0)` }}>
+  return <div className={`copilot-bubble side-${bubbleSide(at, viewport())}${dragging ? " dragging" : ""}`} style={{ transform: `translate3d(${at.x}px, ${at.y}px, 0)` }}>
     <button type="button" className={`copilot-bubble-body state-${speaking}`} aria-label={nextWord("copilotExpand")}
       title={nextWord("copilotExpand")} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copilotDock.open() } }}>

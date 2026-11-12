@@ -264,6 +264,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.community_share_fetch_seconds` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `console.community_share_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
+| `console.copilot_help_section_characters` | 2500 | `characters` | `coalesce` | `diagnostics` | — |
+| `console.copilot_help_sections` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_list_transcript_reads` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_memory_turns` | 24 | `rows` | `evict_oldest` | `sender, diagnostics` | — |
 | `console.copilot_orb_frames_per_second` | 30 | `rows` | `coalesce` | `diagnostics` | — |
@@ -664,10 +666,15 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `voice.copilot_briefing_input_characters` | 60000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_briefing_reply_characters` | 1500 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_briefing_timeout_milliseconds` | 90000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
-| `voice.copilot_decision_body_bytes` | 16384 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_decision_body_bytes` | 65536 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_decision_said_characters` | 1000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_decision_sessions` | 200 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_decision_timeout_milliseconds` | 8000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_extra_instructions_characters` | 2000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_journal_body_bytes` | 65536 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_journal_entries` | 200 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_journal_seconds` | 1209600 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `voice.copilot_journal_text_characters` | 4000 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_key_bytes` | 400 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `voice.polish_characters` | 4000 | `characters` | `refuse` | `sender, diagnostics` | — |

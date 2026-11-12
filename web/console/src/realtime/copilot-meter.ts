@@ -23,6 +23,15 @@ export class CallMeter {
    * the call: iOS Safari leaves a context made after an `await` suspended.
    * Returns the reason when this browser cannot measure, so the call can say so.
    */
+  /**
+   * Resumes a context iOS left suspended because the call started from a
+   * timer (a hold that reached its length) rather than a tap. Call it inside
+   * a user activation, such as the hold's lift.
+   */
+  wake() {
+    if (this.context && this.context.state === "suspended") void this.context.resume().catch(() => undefined)
+  }
+
   open(): string | null {
     if (this.context) return null
     const Ctor = typeof window === "undefined" ? undefined

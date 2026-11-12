@@ -237,6 +237,23 @@ From a terminal, `clawdline interrupt <session-id>` and `clawdline close <sessio
 close the terminal directly, **without** these checks. Use them for testing, not as the normal way
 to close a session.
 
+## Archive a session and bring it back
+
+Archiving ends a Session's process to free its memory and keeps its conversation, so you can come
+back to it later. **⋯** → **Archive Session**, or on a phone, swipe the row left and press
+**Archive**. The same checks as closing apply: when something is still owed, the dialog says so
+and **Archive anyway** archives it after a second, explicit press.
+
+Archived Sessions are under **Archive** in the sidebar. **Restore** opens one again in the same
+folder with the same assistant. **Remove from Archive** deletes only the archive record.
+
+## See every machine's sessions on a phone or in a browser
+
+On Clawdline Cloud with two or more machines, the machine name at the top of the Session list is
+a switch. Press it and choose **All machines** to list the Sessions of every machine together;
+each row says which machine it is on, and opening one opens it on its own machine. Choose a single
+machine from the same menu to go back to one machine's list.
+
 ## Troubleshooting
 
 - A session is missing, or you cannot type into one: [troubleshooting.md](troubleshooting.md).

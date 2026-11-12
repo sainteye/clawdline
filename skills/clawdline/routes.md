@@ -1,6 +1,6 @@
 # Agent routes in this build
 
-Generated from the registered routes and `api/v1/agent-routes.json`; API level: 49. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
+Generated from the registered routes and `api/v1/agent-routes.json`; API level: 50. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
 
 | Method | Registered route | Since API level | Agent guide | Human goal |
 | --- | --- | ---: | --- | --- |
@@ -11,15 +11,15 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/auth/` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/board` | 1 | `clawdline guide board` | `docs/user/board.md` |
 | `*` | `/v1/board/tracks` | 1 | `clawdline guide board` | `docs/user/board.md` |
-| `*` | `/v1/browser/audit` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/commands` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/control` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/host/poll` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/host/results` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/person` | 48 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/screenshot` | 49 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/status` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/browser/stop` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/audit` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/commands` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/control` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/host/poll` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/host/results` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/person` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/screenshot` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/status` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/stop` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/capacity` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/cloud/browser-invites` | 44 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/browser-invites/` | 44 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
@@ -157,6 +157,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/voice` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-briefing` | 45 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-decide` | 46 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/voice/copilot-journal` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-session` | 45 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/language` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/setup` | 17 | `clawdline guide connect` | `docs/user/first-session.md` |

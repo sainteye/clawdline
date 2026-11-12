@@ -1275,6 +1275,16 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_help_section_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_help_sections",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_list_transcript_reads",
     "Known": true,
     "Note": true
@@ -3246,12 +3256,37 @@
     "Note": true
   },
   {
+    "Name": "voice.copilot_decision_sessions",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "voice.copilot_decision_timeout_milliseconds",
     "Known": true,
     "Note": true
   },
   {
     "Name": "voice.copilot_extra_instructions_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_journal_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_journal_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_journal_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_journal_text_characters",
     "Known": true,
     "Note": true
   },

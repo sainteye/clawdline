@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11310,
-  "riskKeys": 4969,
-  "nonRiskCount": 6341,
+  "englishContentKeys": 11328,
+  "riskKeys": 4973,
+  "nonRiskCount": 6355,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 467,
+      "count": 477,
       "sources": [
         null
       ],
@@ -568,6 +568,10 @@
         "capacityRow.console.community_share_response_bytes.what",
         "capacityRow.console.community_share_text_characters.full",
         "capacityRow.console.community_share_text_characters.what",
+        "capacityRow.console.copilot_help_section_characters.full",
+        "capacityRow.console.copilot_help_section_characters.what",
+        "capacityRow.console.copilot_help_sections.full",
+        "capacityRow.console.copilot_help_sections.what",
         "capacityRow.console.copilot_list_transcript_reads.full",
         "capacityRow.console.copilot_list_transcript_reads.what",
         "capacityRow.console.copilot_memory_turns.full",
@@ -850,8 +854,14 @@
         "capacityRow.voice.copilot_briefing_reply_characters.what",
         "capacityRow.voice.copilot_decision_body_bytes.what",
         "capacityRow.voice.copilot_decision_said_characters.what",
+        "capacityRow.voice.copilot_decision_sessions.what",
         "capacityRow.voice.copilot_decision_timeout_milliseconds.full",
         "capacityRow.voice.copilot_decision_timeout_milliseconds.what",
+        "capacityRow.voice.copilot_journal_body_bytes.what",
+        "capacityRow.voice.copilot_journal_entries.what",
+        "capacityRow.voice.copilot_journal_seconds.what",
+        "capacityRow.voice.copilot_journal_text_characters.full",
+        "capacityRow.voice.copilot_journal_text_characters.what",
         "capacityRow.voice.copilot_key_bytes.what",
         "capacityRow.voice.polish_characters.what",
         "capacityRow.voice.polish_terms.what",
@@ -3825,7 +3835,7 @@
     },
     {
       "name": "next / other",
-      "count": 820,
+      "count": 824,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3900,6 +3910,7 @@
         "next.copilotBriefingCodex",
         "next.copilotBriefingLabel",
         "next.copilotCall",
+        "next.copilotCallFromSession",
         "next.copilotCallTitle",
         "next.copilotClose",
         "next.copilotConnecting",
@@ -3928,11 +3939,13 @@
         "next.copilotLogConfiguring",
         "next.copilotLogConnected",
         "next.copilotLogError",
+        "next.copilotLogFocus",
         "next.copilotLogForgot",
         "next.copilotLogGreeting",
         "next.copilotLogHeard",
         "next.copilotLogInfo",
         "next.copilotLogMemory",
+        "next.copilotLogMicRetry",
         "next.copilotLogOpenAIError",
         "next.copilotLogSnapshot",
         "next.copilotLogStarting",
@@ -4353,6 +4366,7 @@
         "next.sessionStateShowAll",
         "next.sessionStop",
         "next.sessionTrySendingAgain",
+        "next.sessionVoiceCopilot",
         "next.sessionWaitHeavyQueued",
         "next.sessionWriteDisabled",
         "next.sessionsListWaitTitle",

@@ -169,6 +169,38 @@ when the call asked only after its pass came back over Cloud, seconds after the 
 now asked before the first await, beside the pass, and released when the call does not start.
 A refusal is said by its reason (`microphoneProblem`), not by the browser's sentence.
 
+**How Clawdline is used, and a Project's links.** `clawdline_help` answers from the user guide
+(`docs/user/*.md`, bundled as its own chunk and loaded the first time a call asks): it first hands
+the copilot the guide's contents, one id per section, and the copilot picks up to three sections
+by meaning, then reads them (`copilot-help.ts`). On 2026-11-12 a word match of a Chinese question
+against the mostly English guide picked unrelated sections, and offered beside the contents it was
+picked over the right one; it is not offered. The guide then gained the sections it was asked for
+and lacked: archiving a Session, every machine's Sessions, and the voice copilot itself.
+`get_devstack_links` reads a Project's Dev Stack links by its whole name and, with `open`, opens
+that Project's Dev Stack links in a modal over the page the person is on (`DevStackModal`, held at
+the page's root with the copilot's bubble, `COPILOT_DEVSTACK`). It first switched to the Projects
+page and its setup dialog; the person asked to see the links without leaving their page.
+
+**Every machine.** On a page showing every machine (所有機器) the call reads the page's own list
+(`COPILOT_FLEET`, CloudGate): each machine's Sessions, a Session's id being its id on its machine
+with the machine's name beside it (`%2@Studio`) and its label naming the machine. Every read and
+write of one Session names its machine (`X-Clawdline-Unopened-Machine`), so the seam resolves its
+current execution there; the Decision API is handed that list; and the one-machine briefing is
+skipped. On 2026-11-12, read from the journal, a phone on 所有機器 heard about one Linux Session
+only, because `/v1/sessions` over Cloud is the reading machine's list, and the briefing it
+waited for was this Mac's. A pending briefing reaches a phone as 200 with `pending`, and is now
+waited for rather than called failed; the remembered call's greeting no longer brings up an
+earlier topic, which it had invented ("上次提到的會議議程"). Snippets and Notes of a Session on
+another machine are still read from the reading machine.
+
+**The call journal.** What a call heard (the transcribed sentence), said, and did (each tool, its
+arguments, outcome, time and the start of its answer), with its errors and notices, is handed a
+turn at a time to the machine that gave the call its pass (`POST /v1/voice/copilot-journal`,
+Cloud word `copilot-journal`, API level 47). The machine appends it to
+`<state>/copilot-calls/<date>.jsonl` (mode 0600) and keeps 14 days. On 2026-11-12 the person
+said a call "did not understand anything"; the turns were only in the phone's browser, and the
+machine's log showed only that no tool had been called.
+
 **What the person sees the copilot do.** Every send, answer, close, Snippet or Playbook run and
 new Session the machine confirmed shows a small notice in the sheet and above the bubble for five
 seconds, with a short two-note chime (`actionNotice`, `CopilotNotice.tsx`); a refusal never does.

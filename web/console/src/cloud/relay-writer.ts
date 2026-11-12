@@ -40,7 +40,7 @@ import { authenticatedRefusalKey } from "./refusal-client.js"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { machineCommands } from "./machine-commands.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { isUnopenedRead } from "./unopened-read.ts"
+import { isUnopenedRead, unopenedMachine } from "./unopened-read.ts"
 
 // One admitted request may wait behind one turn, and each turn may try two
 // 30-second CLIs. Ten seconds leaves the relay enough room to deliver either
@@ -321,6 +321,7 @@ export type WriteRoute =
   | { op: "copilot-session"; word: Carried<"copilot-session"> }
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
+  | { op: "copilot-journal"; word: Carried<"copilot-journal"> }
   | { op: "notification-rules"; word: Carried<"notification-rules"> }
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
@@ -795,6 +796,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-decide" && segments.length === 2) {
     return { op: "copilot-decide", word: "copilot-decide" }
   }
+  if (head === "voice" && a === "copilot-journal" && segments.length === 2) {
+    return { op: "copilot-journal", word: "copilot-journal" }
+  }
   if (head === "notification-rules" && segments.length === 1) return { op: "notification-rules-update", word: "notification-rules-update" }
   if (head === "update" && a === "apply" && segments.length === 2) {
     return { op: "update-apply", word: "update-apply" }
@@ -1061,6 +1065,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-session":
     case "copilot-briefing":
     case "copilot-decide":
+    case "copilot-journal":
     case "notification-rules":
     case "notification-rules-update":
     case "work-gate-settings":
@@ -1285,7 +1290,7 @@ export class RelayWriter {
         const body = await bodyOf(init)
         const text = typeof body.text === "string" ? body.text : ""
         const images = Array.isArray(body.images) ? body.images.filter((x): x is string => typeof x === "string") : []
-        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init))
+        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init), unopenedMachine(init))
         // F2: use the card's current request, so an unanswered attempt keeps
         // its receipt. A confirmed terminal failure may use a new request
         // after the person checks for a turn and accepts duplicate risk.
@@ -1299,12 +1304,12 @@ export class RelayWriter {
         const body = await bodyOf(init)
         const expect = typeof body.expect === "string" ? body.expect : ""
         const typed = typeof body.typed === "string" ? body.typed : undefined
-        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init))
+        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init), unopenedMachine(init))
         return this.press(current, identity, String(body.key ?? ""), expect, headerOf(init, "idempotency-key"), generation, typed)
       }
       case "end": {
         const body = await bodyOf(init)
-        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init))
+        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init), unopenedMachine(init))
         // What the page last read of this session's close gates. The Go daemon
         // carries it and does not compare it yet (cloudops `Divergences`); a
         // Swift Mac refuses a close against a reading that has moved.
@@ -1468,7 +1473,7 @@ export class RelayWriter {
         // the copied client names a tmux screen `on-demand`, which is what
         // keeps the panel asking at the machine's floor (`screen`).
         if (isUnopenedRead(init)) {
-          const target = await this.contentTarget(route.session, null, true)
+          const target = await this.contentTarget(route.session, null, true, unopenedMachine(init) ?? this.host.machine)
           if (!target) throw failure("execution_target_required", "This screen read needs an exact Session execution.", 409)
           return this.contentRead(client, target, "screen", {}, init?.signal)
         }
@@ -2042,7 +2047,16 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         }
         const sent = await bodyOf(init)
-        return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? "") } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+        const sessions = Array.isArray(sent.sessions) ? sent.sessions : []
+        return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? ""), ...(sessions.length ? { sessions } : {}) } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+      }
+      case "copilot-journal": {
+        // A call's lines for the journal of the machine that gave it its pass.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        }
+        const sent = await bodyOf(init)
+        return this.machineWorkV2(client, route.word, { journal: { call: String(sent.call ?? ""), entries: Array.isArray(sent.entries) ? sent.entries : [] } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
       }
       case "update-apply": {
         // The press installs the newest release of the machine's channel and
@@ -2398,11 +2412,11 @@ export class RelayWriter {
     return { machine: this.host.machine, session: typeof row.session === "string" ? row.session : session }
   }
 
-  private async mutationTarget(client: CloudWriteClient, session: string, word: string, unopened = false): Promise<{ identity: CloudIdentity; generation: string; client: CloudWriteClient }> {
+  private async mutationTarget(client: CloudWriteClient, session: string, word: string, unopened = false, machine: string | null = null): Promise<{ identity: CloudIdentity; generation: string; client: CloudWriteClient }> {
     // The voice copilot acting on a Session other than the opened one
     // (`unopened-read.ts`): that Session's current execution, resolved and
     // admitted exactly as a newly started Session's is, never the opened one's.
-    const exact = unopened ? await this.unopenedMutationTarget(session) : this.fleetTarget(session)
+    const exact = unopened ? await this.unopenedMutationTarget(session, machine ?? this.host.machine) : this.fleetTarget(session)
     // The opened fleet detail is pinned to an exact execution. Its current
     // status projection is checked below. The legacy rich-row replay is a
     // separate stream and can temporarily omit that Session during recovery;
@@ -2503,9 +2517,10 @@ export class RelayWriter {
     return this.fleetTarget(session) ?? (this.host.resolveSession ? this.contentTarget(session, signal, true) : null)
   }
 
-  private async unopenedMutationTarget(session: string): Promise<{ machineID: string; sessionID: string; executionGeneration: string }> {
-    const target = await this.host.resolveSession?.(this.host.machine, session)
-    if (!target || target.machineID !== this.host.machine || target.sessionID !== session ||
+  private async unopenedMutationTarget(session: string, machine = this.host.machine): Promise<{ machineID: string; sessionID: string; executionGeneration: string }> {
+    // `machine` is the Session's own on a page showing every machine (`UNOPENED_MACHINE_HEADER`).
+    const target = await this.host.resolveSession?.(machine, session)
+    if (!target || target.machineID !== machine || target.sessionID !== session ||
       !/^[0-9a-f]{32}$/.test(target.executionGeneration)) {
       throw failure("execution_target_required", "This Session's current execution cannot be verified.", 409)
     }
@@ -2527,15 +2542,15 @@ export class RelayWriter {
    * must fail on replacement instead of silently resolving another execution.
    * Weak keys release pins with their callers; retries use a new signal.
    */
-  private async contentTarget(session: string, signal?: AbortSignal | null, resolveUnopened = false): Promise<SessionContentTarget | null> {
+  private async contentTarget(session: string, signal?: AbortSignal | null, resolveUnopened = false, machine = this.host.machine): Promise<SessionContentTarget | null> {
     if (signal?.aborted) throw failure("abandoned_read", "The content read was cancelled.", 499)
     const held = signal ? this.contentPins.get(signal)?.get(session) : null
     const opened = this.host.exactTarget?.()
     if (!opened && !held && !resolveUnopened) return null
     const resolve = async (): Promise<SessionContentTarget> => {
-      const target = opened?.machineID === this.host.machine && opened.sessionID === session
-        ? opened : await this.host.resolveSession?.(this.host.machine, session)
-      if (!target || target.machineID !== this.host.machine || target.sessionID !== session ||
+      const target = opened?.machineID === machine && opened.sessionID === session
+        ? opened : await this.host.resolveSession?.(machine, session)
+      if (!target || target.machineID !== machine || target.sessionID !== session ||
         !/^[0-9a-f]{32}$/.test(target.executionGeneration)) {
         throw failure("execution_generation_changed", "The linked Session execution cannot be verified.", 409)
       }

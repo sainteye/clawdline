@@ -28,6 +28,7 @@ var generatedDecoders = map[string]genDecoder{
 	"coordination.waits":                 genDecodeCoordinationWaits,
 	"copilot-briefing":                   genDecodeCopilotBriefing,
 	"copilot-decide":                     genDecodeCopilotDecide,
+	"copilot-journal":                    genDecodeCopilotJournal,
 	"copilot-session":                    genDecodeCopilotSession,
 	"copilot-settings":                   genDecodeCopilotSettings,
 	"copilot-settings-update":            genDecodeCopilotSettingsUpdate,
@@ -800,7 +801,7 @@ func genDecodeCopilotDecide(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("decision", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"said": genRule{kind: "string", maxBytes: 4000}}, closed: true, maxKeys: 1}) {
+	if !b.genValid("decision", genRule{kind: "object", maxBytes: 65536}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -811,6 +812,27 @@ func genDecodeCopilotDecide(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("decision")
+	return p, req, true
+}
+
+// genDecodeCopilotJournal is the `copilot-journal` row's decode.
+func genDecodeCopilotJournal(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "journal", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("journal", genRule{kind: "object", maxBytes: 65536}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-journal"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("journal")
 	return p, req, true
 }
 

@@ -35,6 +35,9 @@ Set up the phone first, in the place you will keep using. Safari, the Home Scree
 
 ## Read, act, and reconnect
 
+With two or more machines, press the machine name at the top of the Session list and choose **All
+machines** to see every machine's Sessions together ([Sessions](sessions.md#see-every-machines-sessions-on-a-phone-or-in-a-browser)).
+
 Pairing supplies a browser's keys. Sending also requires this machine's Cloud command switch and the browser's local grant to allow operation; see [Let paired devices act](remote-access.md#let-paired-devices-act).
 
 If the machine is offline, Cloud may retain an older view. Restore its connection before treating the view as fresh. If the machine is visible but this browser still asks to pair, check the GitHub account, browser profile, and whether you opened Safari or the Home Screen app.

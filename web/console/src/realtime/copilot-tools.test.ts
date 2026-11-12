@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -185,7 +185,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -938,4 +938,82 @@ test("a group summary reads the working, the idle, or all Sessions, newest activ
   assert.ok(idle.sessions.length > 0 && idle.sessions.every((s: { state: string }) => s.state !== "working" && s.state !== "needs_you"))
   const all = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
   assert.equal(all.count, working.count + idle.count)
+})
+
+test("a call placed from a Session opens with that Session's handover, by its id, through tools the call has", () => {
+  const origin = { id: "%7", label: "Landing page" }
+  const placed = (sessionUpdateEvent("", "", { origin }) as { session: { instructions: string; tools: { name: string }[] } }).session
+  assert.match(placed.instructions, /Session「Landing page」/)
+  assert.match(placed.instructions, /session_id 是 %7/)
+  assert.match(placed.instructions, /需要使用者處理/)
+  const opening = (originGreetingEvent(origin, "en") as { type: string; response: { instructions: string } })
+  assert.equal(opening.type, "response.create")
+  assert.match(opening.response.instructions, /session_id 填 %7/)
+  assert.match(opening.response.instructions, /英文/)
+  const tools = new Set(placed.tools.map((t) => t.name))
+  for (const name of opening.response.instructions.match(/get_[a-z_]+/g) ?? []) assert.ok(tools.has(name), `${name} is a tool of the call`)
+  // A call from the Session list says nothing of a Session.
+  assert.doesNotMatch((sessionUpdateEvent("", "", {}) as { session: { instructions: string } }).session.instructions, /打來的/)
+})
+
+test("a Session's goal is told as the person's request to it, not as words about the person", () => {
+  assert.match(COPILOT_INSTRUCTIONS, /goal 是使用者最近交代那個 Session 的原話/)
+  assert.match(COPILOT_INSTRUCTIONS, /不要把不同 Session 的內容混在一起/)
+})
+
+test("on a page showing every machine, every machine's Sessions are read, each at its own machine", async () => {
+  const fleet = [
+    { machine: "m-mac", machineName: "Studio", row: { id: "%2", label: "Prepare screenshots", state: "idle", assistant: "codex" } },
+    { machine: "m-linux", machineName: "Build box", row: { id: "%2", label: "Content review", state: "working", assistant: "claude" } },
+  ]
+  const rows = fleetRowsOf(fleet)
+  assert.deepEqual(rows.map((r) => [r.id, r.session, r.machine, r.label]), [
+    ["%2@Studio", "%2", "m-mac", "Prepare screenshots（Studio）"],
+    ["%2@Build box", "%2", "m-linux", "Content review（Build box）"],
+  ], "two machines' %2 stay two Sessions, each named with its machine")
+  const seen: { path: string; machine?: string }[] = []
+  const deps: ToolDeps = {
+    async fetch(path, init) {
+      seen.push({ path, machine: (init?.headers as Record<string, string> | undefined)?.["X-Clawdline-Unopened-Machine"] })
+      if (path.startsWith("/v1/transcript?")) return Response.json({ entries: [{ role: "assistant", text: "Reviewing the second page." }] })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    fleet: async () => fleet,
+  }
+  const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"%2@Build box","said":"the review one"}', deps)).output)
+  assert.equal(out.label, "Content review（Build box）")
+  assert.deepEqual(seen.filter((s) => s.path.startsWith("/v1/transcript")).map((s) => [s.path, s.machine]), [["/v1/transcript?session=%252", "m-linux"]])
+  assert.equal(seen.some((s) => s.path === "/v1/sessions"), false, "the reading machine's list is not what is read")
+  const list = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
+  assert.equal(list.count, 2)
+})
+
+test("a Project's Dev Stack links are read by its whole name, said by state, and opened on request", async () => {
+  const opened: string[] = []
+  const deps: ToolDeps = {
+    async fetch(path) {
+      if (path === "/v1/places") return Response.json({ places: [{ id: "p1", label: "clawdline", path: "/repo/clawdline" }, { id: "p2", label: "festly", path: "/repo/festly" }] })
+      if (path === "/v1/projects/p1/devstack") return Response.json({ links: [{ kind: "site", label: "clawdline.com", state: "ok", url: "https://clawdline.com/" }, { kind: "server", label: "guide", state: "down", url: "http://127.0.0.1:7337/", local: true }] })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    devstack: async (place) => { opened.push(place.id); return true },
+  }
+  const out = JSON.parse((await runCopilotTool("get_devstack_links", '{"project":"Clawdline","open":true}', deps)).output)
+  assert.deepEqual(out.links.map((l: { name: string; state?: string }) => [l.name, l.state]), [["clawdline.com", "正常"], ["guide", "沒有回應"]])
+  assert.equal(out.opened, true)
+  assert.deepEqual(opened, ["p1"])
+  const loose = JSON.parse((await runCopilotTool("get_devstack_links", '{"project":"the blog one"}', deps)).output)
+  assert.deepEqual(loose.projects, ["clawdline", "festly"], "a loose name is handed back with every Project to choose from")
+})
+
+test("a Clawdline help question is answered only from the guide's sections", async () => {
+  const guide = [{ doc: "sessions", heading: "Pin", text: "Long-press a row and choose Pin." }, { doc: "notifications", heading: "Turn notifications on", text: "Open Settings, then Notifications." }]
+  const deps: ToolDeps = { async fetch() { return new Response("", { status: 404 }) }, async sleep() {}, help: async () => guide }
+  const contents = JSON.parse((await runCopilotTool("clawdline_help", '{"question":"通知要怎麼開？"}', deps)).output)
+  assert.deepEqual(contents.contents, ["s0 sessions › Pin", "s1 notifications › Turn notifications on"])
+  assert.match(contents.next, /不要猜/)
+  const read = JSON.parse((await runCopilotTool("clawdline_help", '{"question":"通知要怎麼開？","sections":["s1","s9"]}', deps)).output)
+  assert.deepEqual(read.sections.map((s: { heading: string }) => s.heading), ["Turn notifications on"])
 })

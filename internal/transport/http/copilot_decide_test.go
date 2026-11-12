@@ -83,3 +83,19 @@ func TestADecisionOnSeveralSessionsSaysSo(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestADecisionUsesTheListTheCallReads(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	copilotCall(t, s, s.copilotSettingsRoute, http.MethodPost, "/v1/settings/copilot", `{"openai_key":"`+testCopilotKey+`"}`)
+	seen := fakeDecision(t, `{"id":"%2@Build box","candidates":[],"many":false}`)
+	rec := copilotCall(t, s, s.copilotDecideRoute, http.MethodPost, "/v1/voice/copilot-decide",
+		`{"said":"the review one","sessions":[{"id":"%2@Build box","label":"Content review","state":"working","assistant":"claude"}]}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"%2@Build box"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	msgs, _ := (*seen)[0]["messages"].([]any)
+	user, _ := msgs[1].(map[string]any)
+	if !strings.Contains(user["content"].(string), "Content review") {
+		t.Fatalf("the decision was not shown the call's list: %v", user["content"])
+	}
+}

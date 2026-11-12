@@ -19,3 +19,22 @@ export function isUnopenedRead(init?: RequestInit): boolean {
   if (Array.isArray(headers)) return headers.some(([k, v]) => k.toLowerCase() === lower && v === "1")
   return Object.entries(headers).some(([k, v]) => k.toLowerCase() === lower && v === "1")
 }
+
+/**
+ * The machine an unopened read or write is for, when the page shows every
+ * machine's Sessions: the voice copilot names it beside `UNOPENED_READ_HEADER`
+ * so a Session on another machine is resolved there, not on the reading one.
+ */
+export const UNOPENED_MACHINE_HEADER = "X-Clawdline-Unopened-Machine"
+
+/** The machine an unopened request names, or null for the reading machine. */
+export function unopenedMachine(init?: RequestInit): string | null {
+  const headers = init?.headers
+  if (!headers) return null
+  const lower = UNOPENED_MACHINE_HEADER.toLowerCase()
+  let value: string | null = null
+  if (headers instanceof Headers) value = headers.get(UNOPENED_MACHINE_HEADER)
+  else if (Array.isArray(headers)) value = headers.find(([k]) => k.toLowerCase() === lower)?.[1] ?? null
+  else value = Object.entries(headers).find(([k]) => k.toLowerCase() === lower)?.[1] as string | undefined ?? null
+  return value && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : null
+}

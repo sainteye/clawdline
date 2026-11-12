@@ -5160,6 +5160,41 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_help_section_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 2500,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_help_sections",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_list_transcript_reads",
     "Class": "buffer",
     "Unit": "rows",
@@ -12797,7 +12832,7 @@
     "Name": "voice.copilot_decision_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",
-    "Limit": 16384,
+    "Limit": 65536,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -12830,6 +12865,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/transport/http.maxCopilotDecisionSaidRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_decision_sessions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotDecisionSessions"
     ]
   },
   {
@@ -12870,6 +12925,84 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/copilot.MaxExtraInstructionsRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_journal_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.copilotJournalBodyLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_journal_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotJournalEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_journal_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 1209600,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotJournalAge"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_journal_text_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotJournalTextRunes"
     ]
   },
   {

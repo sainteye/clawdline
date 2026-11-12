@@ -8,12 +8,12 @@ console as it is built, not drawn screens: the call sheet, the cloud orb and its
 captions, the cost and memory rows, the bubble, and the copilot's own tools all run unchanged.
 
 ```sh
-tools/copilot-demo.sh <output directory> [en] [zh-Hant]
+tools/copilot-demo.sh <output directory> [en] [zh-Hant] [--phone]
 ```
 
 The script builds the console through `tools/heavy.sh`, then runs
 `tools/copilot-demo/record.mjs` once per language (both when none is named) and writes
-`clawdline-voice-copilot-demo-<lang>.mp4`. It needs Google Chrome (or `CHROME=<path>`) and
+`clawdline-voice-copilot-demo-<lang>.mp4`, or `<lang>-phone.mp4` with `--phone`. It needs Google Chrome (or `CHROME=<path>`) and
 ffmpeg, and spends nothing. It exits 1 unless the call ran as written: `open_session`,
 `get_session_recap`, `open_session`, `send_message_to_session`, and the message reached the
 stand-in daemon. Watch both films before publishing them.
@@ -65,6 +65,12 @@ That is one paid request per missing line, a fraction of a cent each; `--force` 
 line again. The recorder refuses to run while a line has no voice.
 
 ## How the recording is made
+
+`--phone` records a 390 × 844 phone at device scale 3 with touch, as a portrait 1080 × 2338
+film. A tap shows a ring where it lands instead of a pointer. The page reports itself as opened
+from the Home Screen, as the console is used on an iPhone, so the sidebar does not ask to be
+added there. After the sheet shrinks, a finger drags the bubble down beside the composer, and
+the finished Session's conversation is scrolled by the page rather than a wheel.
 
 Chrome runs headless at 1600 × 900 CSS pixels and device scale 1.2 through the DevTools
 protocol. The screencast's frames keep their own timestamps and become a constant 30 fps H.264

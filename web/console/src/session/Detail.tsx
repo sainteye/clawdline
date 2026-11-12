@@ -27,6 +27,9 @@ import { SNIPPET_PROJECT_KNOWN, requestSnippets, snippetProjectFor } from "../le
 import { askFocus, askInterrupt } from "../legacy/screen-bridge.js"
 import type { FleetDetailProblem } from "../cloud/all-machine-sessions.js"
 import { Transcript } from "./Transcript.js"
+import { HoldGesture } from "./hold-gesture.js"
+import { callCopilotAbout, wakeCopilotCall } from "./copilot-call.js"
+import "./detail-head-call.css"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
 import { composerDraftKey } from "./composer-drafts.js"
@@ -297,6 +300,24 @@ export function Detail({
   // The role's Skills, from this Session's own launch snapshot (SkillUse.tsx).
   const skills = useDetailSkills(row, !!role)
   const skillToggle = !!role && !!skills.snapshot?.skills.length && !selectedAgent
+  // A hold on the title's icon calls the voice copilot about this Session; a
+  // tap still opens Snippets (`hold-gesture.ts`).
+  const [markHeld, setMarkHeld] = useState(false)
+  const markHold = useRef<HoldGesture | null>(null)
+  const markRow = useRef(row)
+  markRow.current = row
+  if (!markHold.current) {
+    markHold.current = new HoldGesture({
+      call: () => {
+        setMarkHeld(true)
+        try { navigator.vibrate?.(15) } catch { /* refusal-ok: a phone without vibration still calls. */ }
+        const r = markRow.current
+        if (r) callCopilotAbout(r)
+      },
+      lifted: () => { const r = markRow.current; wakeCopilotCall(r) },
+      released: () => setMarkHeld(false),
+    }, { now: () => Date.now(), after: (ms, run) => setTimeout(run, ms), cancel: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) })
+  }
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const snippetsSays = steward
     ? suggestionsTitle()
@@ -340,14 +361,24 @@ export function Detail({
             hidden={!row}
             disabled={!row || ending || (!steward && !SNIPPETS_READABLE)}
             data-plain={SNIPPETS_READABLE ? "off" : "on"}
-            title={snippetsSays}
+            title={[snippetsSays, nextWord("copilotCallFromSession")].filter(Boolean).join("\n")}
             aria-label={snippetsSays || undefined}
+            aria-description={nextWord("copilotCallFromSession")}
+            data-held={markHeld ? "1" : undefined}
+            onPointerDown={(e) => { if (e.button === 0) markHold.current?.down(e.clientX, e.clientY) }}
+            onPointerMove={(e) => markHold.current?.move(e.clientX, e.clientY)}
+            onPointerUp={() => markHold.current?.up()}
+            onPointerCancel={() => markHold.current?.abort()}
+            onPointerLeave={() => markHold.current?.abort()}
+            // A hold must not open the browser's own menu for the icon.
+            onContextMenu={(e) => e.preventDefault()}
             onClick={(event) => {
               // The second entrance, and the reason the sheet is asked for by an
               // event rather than called: the header owns whether this button is
               // enabled and what it is called, and only says what it does.
               event.preventDefault()
               event.stopPropagation()
+              if (!markHold.current?.tap()) return
               requestSnippets()
             }}
           >
@@ -932,6 +963,8 @@ function Tools({
                 {T.webShowOnMac}
               </button>
               <button type="button" role="menuitem" id="session-tool-library" disabled={!row || ending} onClick={() => {closeMenu(false); onTools()}}>{nextWord("toolLibraryTitle")}</button>
+              {/* Placed inside the press, which iOS needs before it lets the call's audio start. */}
+              <button type="button" role="menuitem" id="session-voice-copilot" disabled={!row || ending} onClick={() => {closeMenu(false); if (row) callCopilotAbout(row)}}>{nextWord("sessionVoiceCopilot")}</button>
               <button
                 id="session-info"
                 type="button"
