@@ -871,7 +871,11 @@ export function Composer({
           title={(voiceLive ? T.webVoiceStop : T.webVoiceStart) + (callable ? "\n" + nextWord("copilotCallFromSession") : "")}
           aria-pressed={voiceLive ? "true" : "false"}
           data-held={micHeld ? "1" : undefined}
-          disabled={voiceLive ? false : !on || sending || voiceBusy}
+          // While dictation is still opening the microphone the button stays
+          // live where a call can be placed: the second press of a double press
+          // lands in exactly that moment, and a disabled button never sees it.
+          // A press then is a no-op for dictation (`V.press` waits for "off").
+          disabled={voiceLive || (callable && voice === "opening") ? false : !on || sending || voiceBusy}
           onClick={() => { if (callable) micGesture.current?.click(); else if (voiceJob.current) V.press(voiceJob.current) }}
           onPointerDown={callable ? (e) => { if (e.button === 0) micGesture.current?.down(e.clientX, e.clientY) } : undefined}
           onPointerMove={callable ? (e) => micGesture.current?.move(e.clientX, e.clientY) : undefined}
