@@ -3306,6 +3306,77 @@
       "locations": [
         "Grok agent stdio → session/prompt → first user turn only"
       ]
+    },
+    {
+      "id": "persistent-bots",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general",
+        "memory",
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/projectassistantacp/client.go",
+          "line": 237
+        },
+        {
+          "path": "internal/app/projectassistant/runtime.go",
+          "line": 391
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/capabilities.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {\n",
+        "\tif err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tif err := pa.ValidateMessage(q.Text); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tc.mu.Lock()\n",
+        "\tif c.turnID != \"\" {\n",
+        "\t\tc.mu.Unlock()\n",
+        "\t\treturn nil, refusal(pa.CapacityFull, \"active_prompt\")\n",
+        "\t}\n",
+        "\tc.turnID = q.Turn.ID\n",
+        "\tc.partial = \"\"\n",
+        "\tsid := c.sessionID\n",
+        "\tc.mu.Unlock()\n",
+        "\t// Only fresh filtered context is sent. Displayed history is never implicit\n",
+        "\t// model input. Instructions belong to this turn's immutable snapshot.\n",
+        "\ttext := q.Turn.Instructions.Text + \"\\n\" + q.Context.Text + \"\\n\" + q.Text\n",
+        "\tblocks := []any{}\n",
+        "\tif q.Quote != nil {\n",
+        "\t\tif err := pa.ValidateMessage(q.Quote.Text); err != nil {\n",
+        "\t\t\treturn nil, err\n",
+        "\t\t}\n",
+        "\t\tif q.Quote.MessageID == \"\" {\n",
+        "\t\t\treturn nil, refusal(pa.Invalid, \"quote_id\")\n",
+        "\t\t}\n",
+        "\t\tblocks = append(blocks, map[string]string{\"type\": \"text\", \"text\": \"Referenced message (\" + q.Quote.MessageID + \"):\\n\" + q.Quote.Text})\n",
+        "\t}\n",
+        "\tblocks = append(blocks, map[string]string{\"type\": \"text\", \"text\": text})\n",
+        "\tp, err := c.begin(ctx, \"session/prompt\", map[string]any{\"sessionId\": sid, \"prompt\": blocks})\n",
+        "\tif err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\treturn &promptPending{rpc: p}, nil\n"
+      ],
+      "locations": [
+        "Source-machine persistent Bot turn snapshot",
+        "ACP session/prompt text blocks"
+      ]
     }
   ],
   "sourceChecks": {
@@ -3341,6 +3412,9 @@
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
+    "internal/adapters/projectassistantacp/capabilities.go": "8f41f5b889d4f1d2dbdd0681ae3a946e338584f251fdf4ae6df95d77795a75e0",
+    "internal/adapters/projectassistantacp/client.go": "846e9a4f0803f36f2dbb884a6b59c280f639293de2b20987392ae994d33af328",
+    "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "42be85313d854b53a9983e1d62b2221c8e288893532573ab4221670221908c18",
@@ -3367,6 +3441,7 @@
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
+    "internal/app/projectassistant/runtime.go": "b78206aa0ccb3e65b9e00409800dc4e4c163a44e3cf04616b91023b780b31f28",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
     "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
@@ -3432,7 +3507,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "6b509f458d1e46db7e56d61b9652a39d8fb1cd91ffcc3ddd907e4ce32942f91b",
-    "zh-Hant": "92f7cab1a718c687fbb1bdc8f56d959a4b19aa0f89d8df6f45081a7e51d57b54"
+    "en": "08f0c2d4981e76784ca9132947f0fd55d790e266dc2b053653a247042a8d1dac",
+    "zh-Hant": "7f2c4ceb4026054f8b1cc4d645de4a2578eb0f5d3aa1871d23e9bb5e2b7b4210"
   }
 }

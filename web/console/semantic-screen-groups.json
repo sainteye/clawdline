@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11484,
-  "riskKeys": 5033,
-  "nonRiskCount": 6451,
+  "englishContentKeys": 11521,
+  "riskKeys": 5052,
+  "nonRiskCount": 6469,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 483,
+      "count": 499,
       "sources": [
         null
       ],
@@ -450,9 +450,25 @@
         "capacityRow.artifacts.report_image_side.what",
         "capacityRow.artifacts.report_total_image_pixels.full",
         "capacityRow.artifacts.video_chunk_bytes.what",
+        "capacityRow.bots.actors.what",
+        "capacityRow.bots.capture_bytes.what",
+        "capacityRow.bots.chat_gap_ms.what",
+        "capacityRow.bots.cleanup_ms.what",
         "capacityRow.bots.event_rows.what",
+        "capacityRow.bots.frame_bytes.full",
+        "capacityRow.bots.frame_bytes.what",
         "capacityRow.bots.instruction_bytes.what",
         "capacityRow.bots.name_runes.what",
+        "capacityRow.bots.notice_rows.what",
+        "capacityRow.bots.owned_children.what",
+        "capacityRow.bots.processes.what",
+        "capacityRow.bots.prompt_ms.what",
+        "capacityRow.bots.refresh_ms.what",
+        "capacityRow.bots.rpc_ms.what",
+        "capacityRow.bots.rpc_rows.what",
+        "capacityRow.bots.stderr_bytes.full",
+        "capacityRow.bots.stderr_bytes.what",
+        "capacityRow.bots.survey_ms.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
@@ -6606,7 +6622,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 162,
+      "count": 164,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6707,6 +6723,8 @@
         "transparency.card.notice.effect",
         "transparency.card.notice.summary",
         "transparency.card.notice.title",
+        "transparency.card.persistent-bots.summary",
+        "transparency.card.persistent-bots.title",
         "transparency.card.playbook.condition",
         "transparency.card.playbook.effect",
         "transparency.card.playbook.title",
