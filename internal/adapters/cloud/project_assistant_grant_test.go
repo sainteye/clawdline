@@ -328,6 +328,46 @@ func TestProjectAssistantGrantDoesNotWriteOrExposePinMaterial(t *testing.T) {
 	}
 }
 
+func TestProjectAssistantGrantReloadsAnUnchangedFileStamp(t *testing.T) {
+	store := NewPinnedStore(t.TempDir())
+	pin := assistantPin(t, "viewer")
+	if err := store.Pin("account", pin); err != nil {
+		t.Fatal(err)
+	}
+	before := requireAssistantGrant(t, store, "account", "viewer")
+	info, err := os.Stat(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := assistantPin(t, "viewer")
+	body = bytes.ReplaceAll(body, []byte(pin.PublicKey), []byte(replacement.PublicKey))
+	body = bytes.ReplaceAll(body, []byte(pin.Fingerprint), []byte(replacement.Fingerprint))
+	if int64(len(body)) != info.Size() {
+		t.Fatal("fixture did not preserve file size")
+	}
+	if err := writeFileAtomically(store.dir, store.Path(), body); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(store.Path(), info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	afterInfo, err := os.Stat(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterInfo.Size() != info.Size() || !afterInfo.ModTime().Equal(info.ModTime()) {
+		t.Fatal("fixture did not preserve the stamp")
+	}
+	after := requireAssistantGrant(t, store, "account", "viewer")
+	if after.AuthorizationRevision == before.AuthorizationRevision || after.ReaderID != before.ReaderID {
+		t.Fatal("same-stamp key replacement did not refresh authority with the same reader")
+	}
+}
+
 func TestProjectAssistantGrantSerializesWithScopeChanges(t *testing.T) {
 	store := NewPinnedStore(t.TempDir())
 	if err := store.Pin("account", assistantPin(t, "viewer")); err != nil {

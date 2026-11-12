@@ -26,25 +26,28 @@ type AssistantViewerGrant struct {
 // carries the authenticated envelope sender. Neither argument may come from a
 // browser body or header. This adapter checks the pin, not envelope signatures.
 //
-// All pin facts are read under the store lock. The grant is only a snapshot:
-// callers must revalidate authority when applying a protected operation. Other
-// processes can replace the file after this call, and loadLocked's existing
-// size/mtime stamp cannot detect an external edit that preserves both values.
+// All pin facts are freshly read under the store lock, without changing the
+// receiver's cache or relying on its size/mtime stamp. The grant is only a
+// snapshot: callers must revalidate authority when applying a protected
+// operation. Other processes can replace the file after this call.
 func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender string) (AssistantViewerGrant, error) {
 	if s == nil || expectedAccountID == "" || verifiedSender == "" {
 		return AssistantViewerGrant{}, ErrViewerNotPinned
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.loadLocked(); err != nil {
+	// Reuse the pin parser with an unloaded snapshot. Only this API bypasses
+	// the stamp cache; existing PinnedStore readers keep their own semantics.
+	snapshot := PinnedStore{dir: s.dir}
+	if err := snapshot.loadLocked(); err != nil {
 		return AssistantViewerGrant{}, err
 	}
-	if s.record.AccountID != expectedAccountID {
+	if snapshot.record.AccountID != expectedAccountID {
 		return AssistantViewerGrant{}, ErrViewerNotPinned
 	}
 	var pin PinnedDevice
 	found := false
-	for _, row := range s.record.Devices {
+	for _, row := range snapshot.record.Devices {
 		if row.DeviceID != verifiedSender {
 			continue
 		}
@@ -66,15 +69,15 @@ func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender st
 	}
 	// Only account-paired devices share the owner. Invitations have their own
 	// namespace, even if a sender's spelling happens to equal an account id.
-	identity := []string{"owner", s.record.AccountID}
+	identity := []string{"owner", snapshot.record.AccountID}
 	if pin.Invited {
-		identity = []string{"invited", s.record.AccountID, pin.DeviceID}
+		identity = []string{"invited", snapshot.record.AccountID, pin.DeviceID}
 	}
 	return AssistantViewerGrant{
 		PrincipalID: assistantGrantDigest("principal", identity...),
 		ReaderID:    assistantGrantDigest("reader", identity...),
 		AuthorizationRevision: assistantGrantDigest("authorization",
-			s.record.AccountID, pin.DeviceID, pin.PublicKey, pin.Fingerprint,
+			snapshot.record.AccountID, pin.DeviceID, pin.PublicKey, pin.Fingerprint,
 			pin.Scope, strconv.FormatInt(pin.PairedAt, 10),
 			strconv.FormatInt(pin.RevokedAt, 10), strconv.FormatInt(pin.ExpiresAt, 10),
 			strconv.FormatBool(pin.Invited), strconv.FormatBool(pin.PairingPending)),
