@@ -17,6 +17,17 @@ const (
 func browserBounds() []Entry {
 	return []Entry{
 		{
+			// The viewer serializes native keyboard input and coalesces text.
+			// A full buffer pauses input visibly, never retries unknown edits.
+			// browser_keyboard_test.go links these frontend bounds to the register.
+			Name: "browser.keyboard_pending_edits", Class: Buffer, Unit: Rows,
+			Limit: 32, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+		},
+		{
+			Name: "browser.keyboard_pending_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 16384, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+		},
+		{
 			// Commands waiting for the native messaging host. One more is
 			// refused browser_queue_full and the agent is told to retry.
 			Name: BrowserPendingCommands, Class: Buffer, Unit: Rows,

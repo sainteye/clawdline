@@ -34,7 +34,8 @@ function allRows() {
   ]
 }
 
-let settings = { browser_enabled: false, browser_notify_new_site: false }
+let settings = { browser_mode:"native", browser_enabled: false, browser_notify_new_site: false }
+let launches = 0
 let stopped = false
 let saveFailed = false
 let stateError = false
@@ -60,11 +61,11 @@ function fixture(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
-    if (path === "/__fixture/reset") { settings = { browser_enabled: false, browser_notify_new_site: false }; stopped = false; saveFailed = false; stateError = false; empty = false; queries = []; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { settings = { browser_mode:"native", browser_enabled: false, browser_notify_new_site: false }; launches=0; stopped = false; saveFailed = false; stateError = false; empty = false; queries = []; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/fail-stop") {saveFailed = true; return json(res,200,{ok:true})}
     if (path === "/__fixture/recover-stop") {saveFailed = false; return json(res,200,{ok:true})}
     if (path === "/__fixture/empty") { empty = true; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { settings, stopped, queries })
+    if (path === "/__fixture/log") return json(res, 200, { settings, stopped, queries, launches })
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { authed: true, version: "fixture", api_level: 99 })
     if (path === "/v1/strings") {
@@ -76,13 +77,16 @@ function fixture(): Server {
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
       return
     }
+    if (path === "/v1/settings/integrations") return json(res,200,{codegraph_enabled:false,workflow_skills_enabled:false,workflow_profile:"clawdline",space_saving_images:false})
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: settings.browser_enabled, notify_new_site: settings.browser_notify_new_site,
       status: { connected: true, stopped, state_error: stateError, host: { version: "0.1.0", browser: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36", last_poll: now() }, person_tabs: [], pending: 0, tabs: [], muted: [] } })
+    if (path === "/v1/browser/setup") return json(res,200,{mode:settings.browser_mode,chromium_found:true,connected:true})
+    if (path === "/v1/browser/launch" && req.method==="POST") {launches++;return json(res,200,{ok:true})}
     if (path === "/v1/browser/settings") {
       if (req.method === "POST") {
         const b = await body(req)
-        for (const k of Object.keys(b)) if (k !== "browser_enabled" && k !== "browser_notify_new_site") return json(res, 400, { error: "bad_request", detail: "Not a browser setting key: " + k })
-        settings = { ...settings, ...b }
+        for (const k of Object.keys(b)) if (k !== "browser_mode" && k !== "browser_enabled" && k !== "browser_notify_new_site") return json(res, 400, { error: "bad_request", detail: "Not a browser setting key: " + k })
+        settings = { ...settings, ...b }; if (b.browser_mode) settings.browser_enabled=b.browser_mode!=="native"
       }
       return json(res, 200, settings)
     }
@@ -164,10 +168,10 @@ after(async () => {
 
 const WORDS = {
   "zh-Hant": { connected: "Chrome 擴充功能已連線", host: "Chrome 131 · 擴充功能 0.1.0", password: "密碼欄位 · 8 個字", cut: "（已截斷）",
-    pruned: "較舊的 3 筆紀錄已刪除", journal: "紀錄無法寫入磁碟", empty: "還沒有任何瀏覽器操作紀錄", stop: "停止所有 Agent 的瀏覽器操作",
+    pruned: "較舊的 3 筆紀錄已刪除", journal: "紀錄無法寫入磁碟", empty: "還沒有任何瀏覽器操作紀錄", stop: "停止 Clawdline 瀏覽器操作",
     resume: "恢復", click: "點擊", refused: "未完成：瀏覽器操作已停止" },
   en: { connected: "Chrome extension connected", host: "Chrome 131 · extension 0.1.0", password: "Password field · 8 characters", cut: "(truncated)",
-    pruned: "3 older records were deleted", journal: "could not be written to disk", empty: "No browser activity yet", stop: "Stop all agents' browser use",
+    pruned: "3 older records were deleted", journal: "could not be written to disk", empty: "No browser activity yet", stop: "Stop Clawdline browser actions",
     resume: "Resume", click: "Click", refused: "Not done: browser use was stopped" },
 } as const
 
@@ -210,19 +214,33 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await until(`!!document.getElementById("settings-tab-3")`)
       await run(`document.getElementById("settings-tab-3").click()`)
       await until(`!!document.querySelector("#settings-pane-3:not([hidden]) #settings-browser")`)
-      await until(`document.getElementById("settings-browser").innerText.includes(${JSON.stringify(w.connected)})`)
-      assert.ok((await text()).includes(w.host), await text())
       await until(`document.querySelectorAll("#settings-browser .browser-audit-row").length === 5`)
 
-      // Both switches start off, and each press changes only its own value.
-      assert.equal(await run(`document.getElementById("browser-setting-browser_enabled").getAttribute("aria-checked")`), "false")
-      assert.equal(await run(`document.getElementById("browser-setting-browser_notify_new_site").getAttribute("aria-checked")`), "false")
-      await run(`document.getElementById("browser-setting-browser_enabled").click()`)
-      await until(`document.getElementById("browser-setting-browser_enabled").getAttribute("aria-checked") === "true"`)
+      // Exactly one mode is selected; choosing user Chrome opens instructions
+      // without launching or installing anything in that browser.
+      const choose = async (mode:string) => {
+        await run(`document.querySelector('input[name="browser-mode"][value="${mode}"]').click()`)
+        await until(`document.querySelector('input[name="browser-mode"][value="${mode}"]').checked && !document.querySelector('.browser-modes').disabled`)
+      }
+      assert.equal(await run(`document.querySelectorAll('input[name="browser-mode"]').length`),3)
+      assert.equal(await run(`document.querySelector('input[name="browser-mode"]:checked').value`),"native")
+      await choose("user_chrome")
       let log = await (await fetch(origin + "/__fixture/log")).json()
-      assert.deepEqual(log.settings, { browser_enabled: true, browser_notify_new_site: false })
+      assert.deepEqual(log.settings,{browser_mode:"user_chrome",browser_enabled:true,browser_notify_new_site:false})
+      await run(`document.querySelector('#settings-browser > button.chip').click()`)
+      await until(`document.querySelector('.browser-setup')?.innerText.includes('chrome://extensions')`)
+      assert.ok(await run(`document.querySelector('.browser-setup input[readonly]').value.includes('prepare --mode user_chrome')`))
+      await run(`document.querySelector('.browser-setup .setup-x').click()`)
+      await until(`!document.querySelector('.browser-setup')`)
+      await choose("native")
+      await choose("isolated")
+      log = await (await fetch(origin + "/__fixture/log")).json()
+      assert.deepEqual(log.settings,{browser_mode:"isolated",browser_enabled:true,browser_notify_new_site:false})
+      assert.equal(log.launches,0,"mode changes never launch or install Chrome")
+      await until(`document.getElementById("settings-browser").innerText.includes(${JSON.stringify(w.connected)})`)
+      assert.ok((await text()).includes(w.host), await text())
+      assert.equal(await run(`document.getElementById("browser-setting-browser_notify_new_site").getAttribute("aria-checked")`), "false")
 
-      // The audit: names, the password row, the cut text, the notes.
       const all = await text()
       for (const want of [w.password, w.cut, w.pruned, w.journal, w.click, w.refused, "Browser Session", "abcdef12", "example.com", "/sign-in?next=/home", "github.com"]) {
         assert.ok(all.includes(want), `missing ${want}: ${all}`)
@@ -235,6 +253,7 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       const small = await run(`[...document.querySelectorAll("#settings-browser button, #settings-browser select")].filter((e) => e.getBoundingClientRect().height < 44).map((e) => e.id || e.className)`)
       assert.deepEqual(small, [], "touch targets under 44 px")
       await shot("top")
+      await shot("modes", "#settings-browser .browser-modes")
       await shot("list", "#settings-browser .browser-audit-list")
       await shot("list-end", "#settings-browser .browser-audit-row:last-child")
 

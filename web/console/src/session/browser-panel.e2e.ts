@@ -22,6 +22,8 @@ const TYPES: Record<string, string> = { ".js": "text/javascript", ".css": "text/
 let page = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../public/icon-192.png"))
 let mobilePage = page
 
+let channelMode = "isolated"
+let shotModes: string[] = []
 let person = false
 let clicks: { x: number; y: number }[] = []
 let typed: string[] = []
@@ -29,6 +31,10 @@ let keys: string[] = []
 let muted = false
 let layout = "desktop"
 let frames = 0
+let heldControl: (() => void) | null = null
+let holdControl = false
+let desktopFields: {x:number;y:number;width:number;height:number;kind:string}[] = []
+let mobileFields: typeof desktopFields = []
 
 const row = {
   id: SESSION, label: "Browser Session", backend: "owned", state: "working", work_state: "working",
@@ -53,11 +59,15 @@ function fixture(): Server {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
       return res.end(`<!doctype html><html><meta name=viewport content="width=device-width,initial-scale=1"><style>body{margin:0;font:18px system-ui;color:#1e293b;background:#f2f5f8}header{padding:22px 28px;background:#17344d;color:white}main{max-width:850px;margin:36px auto;padding:0 24px}article{background:white;border-radius:12px;padding:28px;border:1px solid #d7e0e9}h1{font-size:28px;margin-top:0}label{display:block;margin-top:20px}input{display:block;box-sizing:border-box;width:100%;padding:14px;border:1px solid #a7b5c5;border-radius:6px;font:inherit;margin:8px 0 20px}button{background:#167349;color:white;border:0;border-radius:6px;padding:14px 24px;font:inherit}@media(min-width:700px){main{display:grid;grid-template-columns:220px 1fr;gap:24px}}small{color:#596b7e}</style><header>Example · Browser trial</header><main><aside><h2>Welcome</h2><p>Use the form to try the page.</p><small>This is a local test page.</small></aside><article><h1>Try the browser</h1><p>Zoom in, move the picture, then tap a field.</p><label>Your name<input placeholder="Enter a name"></label><button>Continue</button></article></main></html>`)
     }
-    if (path === "/__fixture/reset") { person = false; muted = false; clicks = []; typed = []; keys = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { person, muted, clicks, typed, keys, layout, frames })
+    if (path === "/__fixture/reset") { person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
+    if (path === "/__fixture/hold-control") { holdControl = true; return json(res, 200, {}) }
+    if (path === "/__fixture/admit") { holdControl = false; heldControl?.(); heldControl = null; return json(res, 200, {}) }
+    if (path === "/__fixture/log") return json(res, 200, { person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes })
     if (path === "/v1/browser/activity") return json(res, 200, { ok: true, rows: [
-      { at: Math.floor(Date.now() / 1000), op: "click", target: "Continue", site: "example.com", url: "https://example.com/sign-in", ok: true, thumb: page.toString("base64") },
-      { at: Math.floor(Date.now() / 1000) - 5, op: "open", site: "example.com", url: "https://example.com/sign-in", ok: true, thumb: page.toString("base64") },
+      { at: Math.floor(Date.now() / 1000), op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
+      { at: Math.floor(Date.now() / 1000) - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
+      ...["release", "release", "close", "read", "screenshot", "takeover", "handback"].map((op, i) => ({ id: "quiet-"+i, at: Math.floor(Date.now()/1000)-i-10, op, site:"example.com", ok:true, thumb:"" })),
     ] })
     if (req.method === "POST" && path === "/v1/browser/mute") { const b = await body(req); muted = !!b.muted; return json(res, 200, { ok: true, conversation: b.conversation, muted }) }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
@@ -72,19 +82,21 @@ function fixture(): Server {
       return
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "transcript", id: SESSION, signature: "fixture" })
-    if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: true, notify_new_site: true,
+    if (path === "/v1/browser/status") return json(res, 200, { ok: true, mode:channelMode, enabled: true, notify_new_site: true,
       status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } })
-    if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
-    if (path === "/v1/browser/screenshot") { frames++; return json(res, 200, { ok: true, value: { tab: TAB, url: "https://example.com/sign-in", title: "Sign in", width: layout === "mobile" ? 390 : 1280, height: 720, layout, data: (layout === "mobile" ? mobilePage : page).toString("base64") } }) }
+    if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); if (b.browser_mode!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); if (holdControl && b.person) await new Promise<void>(resolve => { heldControl = resolve }); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
+    if (path === "/v1/browser/screenshot") { if (url.searchParams.get("browser_mode")!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); shotModes.push(channelMode);frames++; return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: layout === "mobile" ? 390 : 1280, height: 720, layout, editables: layout === "mobile" ? mobileFields : desktopFields, data: (layout === "mobile" ? mobilePage : page).toString("base64") } }) }
     if (req.method === "POST" && path === "/v1/browser/person") {
       const b = await body(req)
-      if (b.op === "screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
+      if (b.browser_mode!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"})
+      if (b.op === "screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
       if (!person) return json(res, 409, { error: "browser_take_over_first", detail: "Take over the tab before typing or clicking in it." })
       if (b.op === "click") clicks.push({ x: b.args.x, y: b.args.y })
       if (b.op === "type") typed.push(b.args.text)
       if (b.op === "key") keys.push(b.args.key)
       if (b.op === "viewport") layout = b.args.mode
-      return json(res, 200, { ok: true, value: {} })
+      const field = b.op === "click" ? (layout === "mobile" ? mobileFields : desktopFields).find(f=>b.args.x>=f.x && b.args.x<=f.x+f.width && b.args.y>=f.y && b.args.y<=f.y+f.height) : null
+      return json(res, 200, { ok: true, value: b.op === "click" ? {editable:field?.kind ?? null} : b.op === "key" ? {editable:"text"} : {} })
     }
     if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, { ok: true, rows: [{
       id: "10000000-0000-4000-8000-000000000059", source_conversation: CONVERSATION, source_label: "Codex", target_conversation: CONVERSATION,
@@ -157,8 +169,9 @@ before(async () => {
     await browser.send("Page.navigate", { url: origin + "/__fixture/page" }, sessionId)
     await browser.loaded(sessionId, mark)
     const { data } = await browser.send("Page.captureScreenshot", { format: "jpeg", quality: 80 }, sessionId)
-    if (width === 1280) page = Buffer.from(data, "base64")
-    else mobilePage = Buffer.from(data, "base64")
+    const fields = await browser.send("Runtime.evaluate", { expression: `Array.from(document.querySelectorAll('input')).map(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,kind:'text'}})`, returnByValue: true }, sessionId)
+    if (width === 1280) { page = Buffer.from(data, "base64"); desktopFields = fields.result.value }
+    else { mobilePage = Buffer.from(data, "base64"); mobileFields = fields.result.value }
   }
   await browser.send("Target.closeTarget", { targetId })
 })
@@ -170,164 +183,131 @@ after(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 
-for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["phone", 390, 844, "zh-Hant"], ["desktop", 1280, 800, "en"], ["phone", 390, 844, "en"], ["phone", 360, 640, "zh-Hant"]] as const) {
-  test(`${name} ${ui}: the Chrome tab is watched, taken over, used and handed back`, async () => {
-    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
-    const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
-    const run = async (expression: string) => {
-      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
-      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone",390,844,"zh-Hant"],["desktop",1280,800,"en"],["phone",390,844,"en"],["phone",360,640,"zh-Hant"]] as const) {
+  test(`${name} ${ui} ${width}: direct takeover, native input, safe controls and zoom`, async () => {
+    const { targetId } = await browser.send("Target.createTarget", { url:"about:blank" })
+    const { sessionId:id } = await browser.send("Target.attachToTarget", { targetId,flatten:true })
+    const run = async (expression:string) => {
+      const {result,exceptionDetails}=await browser.send("Runtime.evaluate",{expression,returnByValue:true,awaitPromise:true},id)
+      if(exceptionDetails)throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
       return result.value
     }
-    const until = async (expression: string) => {
-      const deadline = Date.now() + 8_000
-      while (!(await run(expression))) {
-        if (Date.now() > deadline) assert.fail("did not reach " + expression + ": " + await run(`document.getElementById("browser-panel")?.innerText ?? "(no panel)"`))
-        await new Promise((r) => setTimeout(r, 50))
+    const until = async (expression:string) => {
+      const deadline=Date.now()+8000
+      while(!await run(expression)){if(Date.now()>deadline)assert.fail("did not reach "+expression+": "+await run(`document.getElementById('browser-panel')?.innerText`));await new Promise(r=>setTimeout(r,30))}
+    }
+    const shot = async (label:string) => {if(!shots)return;const {data}=await browser.send("Page.captureScreenshot",{format:"png"},id);writeFileSync(join(shots,`browser-panel-${label}-${ui}-${name}-${width}.png`),Buffer.from(data,"base64"))}
+    const tap = async (x:number,y:number) => {
+      if(name==="phone"){
+        await browser.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x,y,id:1}]},id)
+        await browser.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]},id)
+      }else{
+        await browser.send("Input.dispatchMouseEvent",{type:"mousePressed",x,y,button:"left",clickCount:1},id)
+        await browser.send("Input.dispatchMouseEvent",{type:"mouseReleased",x,y,button:"left",clickCount:1},id)
       }
     }
-    const shot = async (label: string) => {
-      if (!shots) return
-      const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id)
-      writeFileSync(join(shots, `browser-panel-${label}-${ui}-${name}-${width}.png`), Buffer.from(data, "base64"))
-    }
-    try {
-      await fetch(origin + "/__fixture/reset")
-      await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
-      await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: width < 900 }, id)
-      await browser.send("Emulation.setTouchEmulationEnabled", { enabled: name === "phone", maxTouchPoints: 5 }, id)
-      const mark = browser.loadCount; await browser.send("Page.navigate", { url: `${origin}/?ui=${ui}#session=${SESSION}` }, id); await browser.loaded(id, mark)
-      await until(`!!document.getElementById("detail-actions-trigger") && !document.getElementById("detail-actions-trigger").disabled`)
-      await until(`document.querySelectorAll(".browser-action").length === 2`)
-      assert.equal(await run(`document.querySelectorAll(".browser-action img").length`), 2, "actions appear in the transcript before the panel opens")
-      await shot("transcript")
-      await until(`!!document.querySelector(".browser-chip")`)
-      await run(`document.getElementById("detail-actions-trigger").click()`)
-      await until(`!document.getElementById("session-actions").hidden && !document.getElementById("session-browser").hidden`)
-      await shot("menu")
-      await run(`document.getElementById("session-browser").click()`)
-      await until(`!!document.querySelector("#browser-panel:not([hidden]) .browser-shot")`)
-      if (name === "phone") {
-        assert.ok(await run(`document.querySelector("#browser-panel .browser-shot").getBoundingClientRect().width >= 1279`), "phone opens at a readable original size instead of shrinking the desktop to a thumbnail")
-        assert.ok(await run(`document.querySelector("#browser-panel .browser-viewport")?.getBoundingClientRect().height >= innerHeight / 2`), "the picture receives at least half the phone before takeover")
-        assert.ok(await run(`(() => { const r=document.getElementById('browser-panel').getBoundingClientRect();return r.x===0 && r.y===0 && r.width===innerWidth && r.height===innerHeight })()`), "mobile viewing fills the screen")
+    const pointerCentre = async (selector:string) => run(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
+    try{
+      await fetch(origin+"/__fixture/reset")
+      await browser.send("Page.enable",{},id)
+      await browser.send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:2,mobile:name==="phone"},id)
+      await browser.send("Emulation.setTouchEmulationEnabled",{enabled:name==="phone",maxTouchPoints:5},id)
+      const mark=browser.loadCount;await browser.send("Page.navigate",{url:`${origin}/?ui=${ui}#session=${SESSION}`},id);await browser.loaded(id,mark)
+      await until(`!!document.querySelector('.browser-chip')`)
+      await until(`document.querySelectorAll('.browser-action').length===2`)
+      assert.ok(await run(`Array.from(document.querySelectorAll('.browser-action span')).some(el=>el.textContent==='www.console.example.com')`), "the transcript preserves the subdomain instead of showing the notification grouping domain")
+      await run(`document.getElementById('detail-actions-trigger').click()`)
+      await until(`!document.getElementById('session-browser').hidden`)
+      await run(`document.getElementById('session-browser').click()`)
+      await until(`document.querySelector('.browser-shot')?.getBoundingClientRect().width>0`)
+      assert.equal(await run(`document.querySelector('.browser-host').textContent`), "www.console.example.com")
+      assert.equal(await run(`!!document.querySelector('.browser-type')`),false,"no separate text entry row")
+      assert.equal(await run(`document.getElementById('browser-tools').hidden`),true)
+      if(name==="phone"){
+        assert.ok(await run(`document.querySelector('.browser-shot').getBoundingClientRect().width>=1279`),"readable original-size page")
+        assert.ok(await run(`parseFloat(getComputedStyle(document.querySelector('.browser-controls')).paddingBottom)>=42`),"home indicator has its full safe touch margin even when env() is zero")
+        assert.ok(await run(`document.querySelector('.browser-viewport').getBoundingClientRect().height>=innerHeight*.6`),"one compact footer leaves the page most of the screen")
       }
-      const agent = ui === "en" ? "Codex is using this tab" : "Codex 正在使用這個分頁"
-      await until(`document.querySelector("#browser-panel .browser-who")?.textContent?.includes(${JSON.stringify(agent)})`)
-      assert.equal(await run(`!!document.getElementById("browser-text")`), false, "no typing before a takeover")
-      assert.equal(await run(`document.querySelector('.browser-layout button').disabled`), true, "watching does not grant device-emulation control")
-      assert.equal(await run(`document.querySelector("#browser-panel .browser-host")?.textContent`), "example.com")
-      assert.equal(await run(`document.querySelector("#browser-panel .browser-path")?.textContent`), "/sign-in")
-      assert.equal(await run(`!!document.querySelector("#browser-panel .panel-view-head")`), false, "no title row above the address bar")
-      assert.equal(await run(`(() => { const t = document.querySelector(".session-todos"); return !t || getComputedStyle(t).display === "none" })()`), true, "the to-do row is folded away")
-      assert.ok(await run(`document.documentElement.scrollWidth <= innerWidth`), "no horizontal page scroll")
-      await until(`document.querySelectorAll("#browser-panel .browser-activity li").length === 2`)
-      const opWord = ui === "en" ? "Clicked" : "點擊"
-      assert.ok(await run(`document.querySelector("#browser-panel .browser-activity li b")?.textContent === ${JSON.stringify(opWord)}`))
-      await run(`document.querySelector("#browser-panel .browser-notify").click()`)
-      await until(`document.querySelector("#browser-panel .browser-notify")?.getAttribute("aria-pressed") === "false"`)
-      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).muted, true)
-      await shot("watching")
-
-      await run(`document.querySelector("#browser-panel .browser-who .browser-take").click()`)
-      await until(`!!document.getElementById("browser-text")`)
-      const paused = ui === "en" ? "You are in control · Codex is paused" : "你正在操作 · Codex 已暫停"
-      assert.ok(await run(`document.querySelector("#browser-panel .browser-who")?.textContent?.includes(${JSON.stringify(paused)})`))
-      await run(`document.querySelector('.browser-layout button').click()`)
-      await until(`document.querySelector('.browser-layout button').getAttribute('aria-pressed')==='true'`)
-      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).layout, "mobile")
-      await shot("mobile-site")
-      await run(`document.querySelectorAll('.browser-layout button')[1].click()`)
-      await until(`document.querySelectorAll('.browser-layout button')[1].getAttribute('aria-pressed')==='true'`)
-      const tap = async (x: number, y: number) => {
-        if (name === "phone") {
-          await browser.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, id: 1 }] }, id)
-          await browser.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, id)
-        } else {
-          await browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 }, id)
-          await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }, id)
-        }
+      await shot("watching-redesign")
+      await run(`[...document.querySelectorAll('.browser-zoom button')].find(b=>b.textContent===${JSON.stringify(ui==="en"?"Fit":"符合畫面")}).click()`)
+      await fetch(origin+"/__fixture/hold-control")
+      const f=desktopFields[0]
+      const hit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${f.x+f.width/2}/1280*r.width,y:r.top+${f.y+f.height/2}/720*r.height}})()`)
+      await tap(hit.x,hit.y)
+      assert.equal(await run(`document.activeElement?.id`),"browser-native-keyboard","native input is focused synchronously, before Cloud approves takeover")
+      await browser.send("Input.insertText",{text:"中文試用"},id)
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,[],"typing cannot pass an unconfirmed takeover")
+      await fetch(origin+"/__fixture/admit")
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed[0]==='中文試用')`)
+      assert.equal((await(await fetch(origin+"/__fixture/log")).json()).person,true,"tapping the page takes over and clicks once")
+      await until(`!document.querySelector('.browser-input-pending')`)
+      await browser.send("Input.imeSetComposition",{text:"測",selectionStart:1,selectionEnd:1},id)
+      await browser.send("Input.insertText",{text:"測試"},id)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed.length===2)`)
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,["中文試用","測試"],"IME sends the committed Chinese once")
+      await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+      await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.keys.includes('Backspace'))`)
+      if(name==="phone"){
+        await run(`Object.defineProperty(window.visualViewport,'height',{configurable:true,value:Math.round(innerHeight*.58)});window.visualViewport.dispatchEvent(new Event('resize'))`)
+        await until(`document.getElementById('browser-panel').getBoundingClientRect().height<innerHeight*.7`)
+        assert.ok(await run(`document.querySelector('.browser-controls').getBoundingClientRect().bottom<=visualViewport.height+1`),"toolbar stays above a raised keyboard")
+        await shot("keyboard-redesign")
+        await run(`delete window.visualViewport.height;window.visualViewport.dispatchEvent(new Event('resize'))`)
       }
-      await run(`[...document.querySelectorAll('.browser-zoom button')].find(b=>b.textContent===${JSON.stringify(ui === "en" ? "Fit" : "符合畫面")}).click()`)
-      const centre = await run(`(() => { const r=document.querySelector('.browser-shot').getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2} })()`)
-      // Trusted pointer input, rather than a synthetic click that skips touch handlers.
-      await tap(centre.x, centre.y)
-      await until(`!document.querySelector('.browser-take').disabled`)
-      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).clicks.length, 1)
-
-      await run(`document.querySelector('.browser-zoom button[aria-label=${JSON.stringify(ui === "en" ? "Zoom in" : "放大")} ]').click()`)
-      const beforePan = await run(`document.querySelector('.browser-shot').getBoundingClientRect().left`)
-      const bounds = await run(`(() => {const r=document.querySelector('.browser-viewport').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`)
-      const dragPoints = (dx: number) => [{ x: bounds.x + dx, y: bounds.y, id: 1 }]
-      if (name === "phone") {
-        await browser.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: dragPoints(0) }, id)
-        await browser.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: dragPoints(-70) }, id)
-        await browser.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, id)
-      } else {
-        await browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: bounds.x, y: bounds.y, button: "left", clickCount: 1 }, id)
-        await browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: bounds.x-70, y: bounds.y, button: "left", buttons: 1 }, id)
-        await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: bounds.x-70, y: bounds.y, button: "left", clickCount: 1 }, id)
+      await run(`document.querySelector('.browser-tools-toggle').click()`)
+      await until(`!document.getElementById('browser-tools').hidden`)
+      await run(`document.querySelector('.browser-notify').click()`)
+      await until(`document.querySelector('.browser-notify').getAttribute('aria-pressed')==='false'`)
+      await shot("tools-redesign")
+      await run(`document.querySelector('.browser-tools-toggle').click()`)
+      await run(`document.querySelector('.browser-take').click()`)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>!log.person)`)
+      assert.notEqual(await run(`document.activeElement?.id`),"browser-native-keyboard","handback closes native input")
+      const beforeClicks=(await(await fetch(origin+"/__fixture/log")).json()).clicks.length
+      await run(`document.querySelector('.browser-zoom button[aria-label=${JSON.stringify(ui==="en"?"Zoom in":"放大")} ]').click()`)
+      const c=await pointerCentre('.browser-viewport')
+      if(name==="phone"){
+        const points=(d:number)=>[{x:c.x-d,y:c.y,id:1},{x:c.x+d,y:c.y,id:2}]
+        const before=await run(`document.querySelector('.browser-shot').getBoundingClientRect().width`)
+        await browser.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:points(25)},id)
+        await browser.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:points(50)},id)
+        await browser.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]},id)
+        assert.ok(await run(`document.querySelector('.browser-shot').getBoundingClientRect().width>${before+20}`))
+        await browser.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:c.x,y:c.y,id:1}]},id)
+        await browser.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:c.x-70,y:c.y,id:1}]},id)
+        await browser.send("Input.dispatchTouchEvent",{type:"touchCancel",touchPoints:[]},id)
       }
-      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).clicks.length, 1, "dragging sends no page click")
-      assert.ok(await run(`document.querySelector('.browser-shot').getBoundingClientRect().left <= ${beforePan}`), "the picture moves or stays at its edge")
-      if (name === "phone") {
-        const beforePinch = await run(`document.querySelector('.browser-shot').getBoundingClientRect().width`)
-        const fingers = (span: number) => [{ x: bounds.x - span, y: bounds.y, id: 1 }, { x: bounds.x + span, y: bounds.y, id: 2 }]
-        await browser.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: fingers(30) }, id)
-        await browser.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: fingers(60) }, id)
-        await browser.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, id)
-        assert.ok(await run(`document.querySelector('.browser-shot').getBoundingClientRect().width > ${beforePinch + 30}`), "two fingers enlarge the picture")
-        assert.equal((await (await fetch(origin + "/__fixture/log")).json()).clicks.length, 1, "pinching sends no page click")
+      const afterGestures=await(await fetch(origin+"/__fixture/log")).json()
+      assert.equal(afterGestures.clicks.length,beforeClicks);assert.equal(afterGestures.person,false,"gestures never take over or click")
+      await run(`(()=>{const s=document.querySelector('.browser-mode select');s.value='mobile';s.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.layout==='mobile'&&log.person)`)
+      await until(`document.querySelector('.browser-mode select')?.value==='mobile'`)
+      await shot("mobile-site-redesign")
+      assert.ok(await run(`document.documentElement.scrollWidth<=innerWidth`),"zoom stays inside the picture")
+      if (name==="phone" && width===390 && ui==="zh-Hant") {
+        await run(`document.querySelector('.browser-tools-toggle').click()`)
+        await run(`[...document.querySelectorAll('#browser-tools button')].find(b=>b.textContent==='鍵盤').click()`)
+        assert.equal(await run(`document.activeElement?.id`),"browser-native-keyboard")
+        await fetch(origin+"/__fixture/channel-mode",{method:"POST",body:JSON.stringify({mode:"user_chrome"})})
+        await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.shotModes.includes('user_chrome'))`)
+        await until(`!!document.querySelector('.browser-shot')`)
+        assert.notEqual(await run(`document.activeElement?.id`),"browser-native-keyboard","a new profile with the same tab ID closes the old field's keyboard")
+        const field=mobileFields[0]
+        const nextHit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${field.x+field.width/2}/390*r.width,y:r.top+${field.y+field.height/2}/720*r.height}})()`)
+        await tap(nextHit.x,nextHit.y)
+        await browser.send("Input.insertText",{text:"新模式輸入"},id)
+        await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed.includes('新模式輸入'))`)
       }
-      // A point inside the clipped, zoomed picture maps back to its remote CSS pixels.
-      const mapped = await run(`(() => {const r=document.querySelector('.browser-shot').getBoundingClientRect(), v=document.querySelector('.browser-viewport').getBoundingClientRect();const x=v.left+v.width/2+15,y=v.top+v.height/2+10;return {x,y,remoteX:Math.floor((x-r.left)/r.width*1280),remoteY:Math.floor((y-r.top)/r.height*720)}})()`)
-      await tap(mapped.x, mapped.y)
-      await until(`!document.querySelector('.browser-take').disabled`)
-      const mappedLog = (await (await fetch(origin + "/__fixture/log")).json()).clicks
-      assert.equal(mappedLog.length, 2)
-      assert.ok(Math.abs(mappedLog[1].x-mapped.remoteX)<=1 && Math.abs(mappedLog[1].y-mapped.remoteY)<=1, "tap uses the zoomed and panned image bounds")
 
-      await run(`[...document.querySelectorAll('.browser-zoom button')].find(b=>b.textContent==='100%').click()`)
-      assert.equal(await run(`document.querySelector('.browser-zoom output').textContent`), "100%")
-      if (name === "phone") {
-        const frameCount = (await (await fetch(origin + "/__fixture/log")).json()).frames
-        await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.frames>${frameCount})`)
-        assert.equal(await run(`document.querySelector('.browser-zoom output').textContent`), "100%", "new screenshots keep the chosen zoom")
-        await browser.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{x:bounds.x,y:bounds.y,id:1}] }, id)
-        await browser.send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] }, id)
-        assert.equal((await (await fetch(origin + "/__fixture/log")).json()).clicks.length, 2, "cancelled touches send no click")
-        await browser.send("Emulation.setDeviceMetricsOverride", { width: 844, height: 390, deviceScaleFactor: 2, mobile: true }, id)
-        await until(`document.querySelector('.browser-viewport').getBoundingClientRect().height > 100`)
-        assert.ok(await run(`document.documentElement.scrollWidth<=innerWidth`), "landscape keeps panning inside the picture")
-        await shot("landscape")
-        await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: true }, id)
+      if(name==="phone"){
+        await browser.send("Emulation.setDeviceMetricsOverride",{width:844,height:390,deviceScaleFactor:2,mobile:true},id)
+        await until(`document.querySelector('.browser-viewport').getBoundingClientRect().height>100`)
+        await shot("landscape-redesign")
       }
-      await run(`(() => { const input = document.getElementById("browser-text"); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-        set.call(input, "王小明"); input.dispatchEvent(new Event("input", { bubbles: true })) })()`)
-      await run(`document.querySelector("#browser-panel .browser-type button[type=submit]").click()`)
-      await until(`document.getElementById("browser-text").value === ""`)
-      await run(`[...document.querySelectorAll("#browser-panel .browser-keys button")].find((b) => b.textContent === "Enter").click()`)
-      await shot("in-control")
-      const log = await (await fetch(origin + "/__fixture/log")).json()
-      assert.equal(log.clicks.length, 2)
-      assert.ok(Math.abs(log.clicks[0].x - 640) < 2 && Math.abs(log.clicks[0].y - 360) < 2, JSON.stringify(log.clicks))
-      assert.deepEqual(log.typed, ["王小明"])
-      assert.deepEqual(log.keys, ["Enter"])
-
-      await run(`document.querySelector("#browser-panel .browser-who .browser-take").click()`)
-      await until(`!document.getElementById("browser-text")`)
-      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).person, false)
-      await run(`document.querySelector("#browser-panel .browser-close").click()`)
-      await until(`!!document.querySelector(".human-interventions-head")`)
-      await run(`(() => { const b = document.querySelector(".human-interventions-head"); if (b.getAttribute("aria-expanded") !== "true") b.click() })()`)
-      const take = ui === "en" ? "Take over" : "接手操作"
-      await until(`[...document.querySelectorAll(".human-intervention-card button")].some(b => b.textContent === ${JSON.stringify(take)})`)
-      await run(`[...document.querySelectorAll(".human-intervention-card button")].find(b => b.textContent === ${JSON.stringify(take)}).click()`)
-      await until(`!!document.querySelector("#browser-panel:not([hidden]) .browser-shot")`)
-      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).person, false, "opening a takeover Note sends no browser input")
-
-    } finally {
-      await browser.send("Target.closeTarget", { targetId }).catch(() => {})
+    }finally{
+      await fetch(origin+"/__fixture/admit").catch(()=>{})
+      await browser.send("Target.closeTarget",{targetId}).catch(()=>{})
     }
   })
 }

@@ -3318,3 +3318,16 @@ test("on a page showing every machine, the copilot reads a Session on the machin
   // Without the machine the reading one is asked, which has no such Session.
   assert.equal((await reader.fetch("/v1/transcript?session=%252", { headers: { "X-Clawdline-Unopened-Read": "1" } })).status, 409)
 })
+
+test("browser picture requests preserve their selected Chrome mode over Cloud", async () => {
+  const client = new FakeClient()
+  const descriptor = { machine: { commands: ["chrome-tab-screenshot"] } }
+  client.machineDescriptors.set("mac-a", descriptor)
+  client.descriptors.set("mac-a", descriptor)
+  const { reader } = seam(client)
+  const result = await reader.fetch("/v1/browser/screenshot?tab=9&quality=45&browser_mode=user_chrome")
+  assert.equal(result.status, 200)
+  const request = client.calls.find(call => call[0] === "_machineRequest")
+  assert.equal(request?.[2], "chrome-tab-screenshot")
+  assert.deepEqual(request?.[3], { tab: "9", quality: "45", browser_mode: "user_chrome" })
+})

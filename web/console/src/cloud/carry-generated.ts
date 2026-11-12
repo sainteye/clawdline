@@ -46,10 +46,11 @@ export const CARRIED = {
   // Save a browser setup reminder in the current Session for the person's
   // return to the computer.
   "chrome-remind": "POST /v1/browser/reminder",
-  // The Browser block's two switches: whether new Sessions may use the browser,
-  // and the new-site notification.
+  // The Browser block's selected mode, its legacy enabled projection, and the
+  // new-site notification.
   "chrome-settings": "GET /v1/browser/settings",
-  // Change one or both browser switches, and no other machine setting.
+  // Change the browser mode or notification setting, and no other machine
+  // setting.
   "chrome-settings-update": "POST /v1/browser/settings",
   // The browser setup guide (`session/BrowserSetup.tsx`): whether a Chromium
   // was found, its profile, and whether the extension is connected.

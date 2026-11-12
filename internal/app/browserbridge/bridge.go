@@ -52,6 +52,9 @@ const (
 type Refusal string
 
 const (
+	WrongMode         Refusal = "browser_wrong_mode"
+	Closing           Refusal = "browser_tab_closing"
+	Disabled          Refusal = "browser_disabled"
 	HostMissing       Refusal = "browser_extension_missing"
 	Stopped           Refusal = "browser_stopped"
 	PersonControlling Refusal = "browser_person_controlling"
@@ -72,7 +75,7 @@ func (r Refusal) Error() string { return string(r) }
 // Ops an agent may send. Each is executed by the extension.
 var agentOps = map[string]bool{
 	"open": true, "tabs": true, "read": true, "click": true, "type": true,
-	"key": true, "screenshot": true, "scroll": true, "release": true, "viewport": true,
+	"key": true, "screenshot": true, "scroll": true, "release": true, "viewport": true, "close": true,
 }
 
 // Command is one request handed to the host.
@@ -109,6 +112,7 @@ type Activity struct {
 
 // HostInfo is what the host says about itself when it polls.
 type HostInfo struct {
+	Mode     string `json:"mode,omitempty"`
 	Version  string `json:"version"`
 	Browser  string `json:"browser,omitempty"`
 	Profile  string `json:"profile,omitempty"`
@@ -143,36 +147,42 @@ type NewSite struct {
 
 // Bridge is safe for concurrent use.
 type Bridge struct {
-	mu           sync.Mutex
-	queue        []Command
-	waiting      map[string]chan Result
-	wake         chan struct{}
-	host         HostInfo
-	stopped      bool
-	stopEpoch    uint64
-	controlEpoch map[int]uint64
-	person       map[int]bool   // tabs the person has taken over
-	owner        map[int]string // tab → conversation that opened it
-	current      map[string]int // conversation → the tab it last used
-	sites        map[string]map[string]bool
-	muted        map[string]bool // conversations whose new-site notification is off
-	audit        []AuditRow
-	pruned       int
-	journal      *journal
-	tabsPath     string
-	stateErr     error
-	thumbs       []Activity // newest last, at most MaxActivityThumbs
-	seq          int64
-	now          func() time.Time
-	onSite       func(NewSite)
-	timeout      time.Duration
-	pollWait     time.Duration
+	mu              sync.Mutex
+	queue           []Command
+	waiting         map[string]chan Result
+	wake            chan struct{}
+	mode            string // active Chrome profile kind; native mode only disables this channel
+	host            HostInfo
+	stopped         bool
+	stopEpoch       uint64
+	disabled        bool
+	permissionEpoch uint64
+	controlEpoch    map[int]uint64
+	person          map[int]bool   // tabs the person has taken over
+	owner           map[int]string // tab → conversation that opened it
+	closing         map[int]string // outstanding destructive operations, bounded by owned tabs
+	current         map[string]int // conversation → the tab it last used
+	sites           map[string]map[string]bool
+	muted           map[string]bool // conversations whose new-site notification is off
+	audit           []AuditRow
+	pruned          int
+	journal         *journal
+	tabsPath        string
+	stateErr        error
+	thumbs          []Activity // newest last, at most MaxActivityThumbs
+	seq             int64
+	now             func() time.Time
+	onSite          func(NewSite)
+	timeout         time.Duration
+	pollWait        time.Duration
 }
 
 // New makes an empty bridge. onSite may be nil.
 func New(onSite func(NewSite)) *Bridge {
 	return &Bridge{
 		waiting:      map[string]chan Result{},
+		mode:         "isolated",
+		closing:      map[int]string{},
 		wake:         make(chan struct{}),
 		person:       map[int]bool{},
 		controlEpoch: map[int]uint64{},
@@ -231,7 +241,7 @@ func (b *Bridge) Status() Status {
 		muted = append(muted, c)
 	}
 	sort.Strings(muted)
-	return Status{Connected: b.hostConnected(), Host: b.host, Stopped: b.stopped, StateError: b.stateErr != nil, PersonTabs: people, Pending: len(b.queue), Tabs: tabs, Muted: muted}
+	return Status{Connected: b.hostConnected() && !b.disabled, Host: b.host, Stopped: b.stopped, StateError: b.stateErr != nil, PersonTabs: people, Pending: len(b.queue), Tabs: tabs, Muted: muted}
 }
 
 // SetMuted turns one Session's new-site notification off or back on. It is
@@ -249,6 +259,113 @@ func (b *Bridge) SetMuted(conversation string, on bool) error {
 		return StateWriteFailed
 	}
 	return nil
+}
+
+// CheckMode is a read-only preflight. Use ApplyMode to coordinate a settings
+// write with command admission; checking and then writing separately can race.
+func (b *Bridge) CheckMode(mode string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.checkMode(mode)
+}
+func (b *Bridge) checkMode(mode string) error {
+	if mode != "native" && mode != "isolated" && mode != "user_chrome" {
+		return BadRequest
+	}
+	if mode != "native" && mode != b.mode && len(b.closing) > 0 {
+		return Closing
+	}
+	return nil
+}
+
+// ApplyMode orders validation, config persistence and profile selection with
+// command admission. persist must not call back into the bridge. A rejected
+// precondition never writes config; a config write error leaves runtime intact.
+// A later control-state write error leaves access paused and is reported separately.
+func (b *Bridge) ApplyMode(mode string, persist func() error) error {
+	b.mu.Lock()
+	if err := b.checkMode(mode); err != nil {
+		b.mu.Unlock()
+		return err
+	}
+	if persist != nil {
+		if err := persist(); err != nil {
+			b.mu.Unlock()
+			return err
+		}
+	}
+	dropped, err := b.setModeLocked(mode)
+	b.mu.Unlock()
+	for _, c := range dropped {
+		b.deliver(Result{ID: c.ID, Error: string(Disabled)})
+	}
+	return err
+}
+
+// SetMode selects one native host. Old pages stay open when profiles change.
+func (b *Bridge) SetMode(mode string) error { return b.ApplyMode(mode, nil) }
+
+func (b *Bridge) setModeLocked(mode string) ([]Command, error) {
+	var dropped []Command
+	if mode != "native" && mode != b.mode {
+		dropped = b.queue
+		b.queue = nil
+		b.mode = mode
+		b.host = HostInfo{}
+		b.permissionEpoch++
+		b.owner = map[int]string{}
+		b.current = map[string]int{}
+		b.person = map[int]bool{}
+		b.controlEpoch = map[int]uint64{}
+		b.signal()
+		if b.saveTabs() != nil {
+			dropped = append(dropped, b.setEnabledLocked(false)...)
+			return dropped, StateWriteFailed
+		}
+	}
+	dropped = append(dropped, b.setEnabledLocked(mode != "native")...)
+	return dropped, nil
+}
+
+// AcceptsHost prevents another profile from consuming this mode's commands.
+// Older launchers without a mode belong only to the isolated profile.
+func (b *Bridge) AcceptsHost(info HostInfo) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.acceptsHost(info)
+}
+func (b *Bridge) acceptsHost(info HostInfo) bool {
+	mode := info.Mode
+	if mode == "" {
+		mode = "isolated"
+	}
+	return !b.disabled && mode == b.mode
+}
+
+// SetEnabled revokes the Clawdline channel, including queued viewer input. An
+// off/on cycle invalidates old replies without resuming an emergency stop.
+func (b *Bridge) SetEnabled(on bool) {
+	b.mu.Lock()
+	dropped := b.setEnabledLocked(on)
+	b.mu.Unlock()
+	for _, c := range dropped {
+		b.deliver(Result{ID: c.ID, Error: string(Disabled)})
+	}
+}
+
+func (b *Bridge) setEnabledLocked(on bool) []Command {
+	if b.disabled == !on {
+		return nil
+	}
+	b.disabled = !on
+	b.permissionEpoch++
+	b.signal()
+	if on {
+		return nil
+	}
+	dropped := b.queue
+	b.queue = nil
+	return dropped
 }
 
 // SetStopped is the person's emergency stop. Stopping fails every queued command.
@@ -289,7 +406,31 @@ func (b *Bridge) SetStopped(on bool) error {
 // SetPersonControl marks a tab taken over by the person, or handed back,
 // and records the change in the audit under the tab's Session.
 func (b *Bridge) SetPersonControl(tab int, on bool) error {
+	return b.SetPersonControlForMode(tab, on, "isolated")
+}
+
+// SetPersonControlForMode binds a viewer's intent to the profile it saw.
+func (b *Bridge) SetPersonControlForMode(tab int, on bool, mode string) error {
 	b.mu.Lock()
+	if mode == "" {
+		mode = "isolated"
+	}
+	if on && b.disabled {
+		b.mu.Unlock()
+		return Disabled
+	}
+	if (!b.disabled || on) && mode != b.mode {
+		b.mu.Unlock()
+		return WrongMode
+	}
+
+	// A close already admitted to the host must settle before takeover can be
+	// acknowledged. A timeout is uncertain, so its reservation survives restart.
+	if b.closing[tab] != "" {
+		b.mu.Unlock()
+		return Closing
+	}
+
 	was := b.person[tab]
 	if on {
 		b.person[tab] = true
@@ -347,6 +488,11 @@ const NotTakenOver Refusal = "browser_take_over_first"
 // agent's command: ownership and the agent stop do not apply, and what the
 // person types is never recorded.
 func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.RawMessage) (json.RawMessage, error) {
+	return b.PersonDoForMode(ctx, op, tab, args, "isolated")
+}
+
+// PersonDoForMode rejects stale viewer actions even when profiles reuse tab IDs.
+func (b *Bridge) PersonDoForMode(ctx context.Context, op string, tab int, args json.RawMessage, mode string) (json.RawMessage, error) {
 	if !personOps[op] || tab <= 0 || len(args) > MaxArgBytes {
 		return nil, BadRequest
 	}
@@ -354,6 +500,18 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 		return nil, BadRequest
 	}
 	b.mu.Lock()
+	if mode == "" {
+		mode = "isolated"
+	}
+	if b.disabled {
+		b.mu.Unlock()
+		return nil, Disabled
+	}
+	if mode != b.mode {
+		b.mu.Unlock()
+		return nil, WrongMode
+	}
+
 	if !b.hostConnected() {
 		b.mu.Unlock()
 		return nil, HostMissing
@@ -366,7 +524,7 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 		b.mu.Unlock()
 		return nil, QueueFull
 	}
-	controlEpoch := b.controlEpoch[tab]
+	controlEpoch, permissionEpoch := b.controlEpoch[tab], b.permissionEpoch
 	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, Person: true, conversation: ""}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
@@ -386,14 +544,18 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 	b.mu.Lock()
 	delete(b.waiting, c.ID)
 	b.dropQueued(c.ID)
-	if op != "screenshot" && (!b.person[tab] || b.controlEpoch[tab] != controlEpoch) {
+	if mode != b.mode {
+		res = Result{Error: string(WrongMode)}
+	} else if b.disabled || b.permissionEpoch != permissionEpoch {
+		res = Result{Error: string(Disabled)}
+	} else if op != "screenshot" && (!b.person[tab] || b.controlEpoch[tab] != controlEpoch) {
 		res = Result{Error: string(NotTakenOver)}
 	}
 	b.mu.Unlock()
 	if res.OK {
 		return res.Value, nil
 	}
-	if Refusal(res.Error) == TimedOut || Refusal(res.Error) == NotTakenOver {
+	if Refusal(res.Error) == TimedOut || Refusal(res.Error) == NotTakenOver || Refusal(res.Error) == Disabled || Refusal(res.Error) == WrongMode {
 		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
@@ -499,6 +661,10 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		return nil, BadRequest
 	}
 	b.mu.Lock()
+	if b.disabled {
+		b.mu.Unlock()
+		return nil, Disabled
+	}
 	if b.stateErr != nil {
 		b.mu.Unlock()
 		return nil, StateWriteFailed
@@ -519,6 +685,15 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		}
 	}
 	if tab != 0 {
+		if b.closing[tab] != "" {
+			b.mu.Unlock()
+			return nil, Closing
+		}
+
+		if (op == "close" || b.mode == "user_chrome") && b.owner[tab] != conversation {
+			b.mu.Unlock()
+			return nil, OtherSessionsTab
+		}
 		if owner := b.owner[tab]; owner != "" && owner != conversation {
 			b.mu.Unlock()
 			return nil, OtherSessionsTab
@@ -532,8 +707,17 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		b.mu.Unlock()
 		return nil, QueueFull
 	}
-	stopEpoch, controlEpoch := b.stopEpoch, b.controlEpoch[tab]
+	stopEpoch, controlEpoch, permissionEpoch := b.stopEpoch, b.controlEpoch[tab], b.permissionEpoch
+	ownerAtStart := b.owner[tab]
 	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, conversation: conversation}
+	if op == "close" {
+		b.closing[tab] = c.ID
+		if b.saveTabs() != nil {
+			delete(b.closing, tab)
+			b.mu.Unlock()
+			return nil, StateWriteFailed
+		}
+	}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
 	b.queue = append(b.queue, c)
@@ -552,22 +736,46 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 	}
 	b.mu.Lock()
 	delete(b.waiting, c.ID)
+	if op == "close" {
+		for _, queued := range b.queue {
+			if queued.ID == c.ID {
+				delete(b.closing, tab)
+				b.saveTabs()
+				break
+			}
+		}
+	}
 	b.dropQueued(c.ID)
 	// A late answer cannot cross a stop or control handoff, even if control
 	// was handed back before the extension answered. Discard frames and text.
-	if b.stopped || b.stopEpoch != stopEpoch {
+	if b.disabled || b.permissionEpoch != permissionEpoch {
+		res = Result{ID: c.ID, Tab: tab, Error: string(Disabled)}
+	} else if b.stopped || b.stopEpoch != stopEpoch {
 		res = Result{ID: c.ID, Tab: tab, Error: string(Stopped)}
-	} else if tab != 0 && (b.person[tab] || b.controlEpoch[tab] != controlEpoch) {
+	} else if tab != 0 && ownerAtStart != "" && b.owner[tab] != ownerAtStart && !(op == "close" && res.OK && res.Tab == tab) {
+		res = Result{ID: c.ID, Tab: tab, Error: string(NoTab)}
+	} else if tab != 0 && (b.person[tab] || b.controlEpoch[tab] != controlEpoch) && !(op == "close" && res.OK && res.Tab == tab) {
 		res = Result{ID: c.ID, Tab: tab, Error: string(PersonControlling)}
 	}
 	if res.OK && res.Tab != 0 {
 		if op == "open" {
 			b.owner[res.Tab] = conversation
 		}
-		if op == "release" {
+		if op == "release" || op == "close" {
 			delete(b.owner, res.Tab)
+			if op == "close" {
+				delete(b.person, res.Tab)
+				delete(b.controlEpoch, res.Tab)
+			}
 			if b.current[conversation] == res.Tab {
 				delete(b.current, conversation)
+				if op == "close" {
+					for other, owner := range b.owner {
+						if owner == conversation && other > b.current[conversation] {
+							b.current[conversation] = other
+						}
+					}
+				}
 			}
 		} else if op != "tabs" {
 			b.current[conversation] = res.Tab
@@ -598,7 +806,7 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		return res.Value, nil
 	}
 	switch Refusal(res.Error) {
-	case Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed:
+	case Closing, Disabled, Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed, NoTab:
 		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
@@ -626,6 +834,11 @@ func IsRefusal(err error) (Refusal, bool) {
 // commands, or none after the poll wait.
 func (b *Bridge) Poll(ctx context.Context, info HostInfo) []Command {
 	b.mu.Lock()
+	if !b.acceptsHost(info) {
+		b.mu.Unlock()
+		return []Command{}
+	}
+
 	info.LastPoll = b.now().Unix()
 	b.host = info
 	if len(b.queue) == 0 && !b.stopped {
@@ -639,8 +852,12 @@ func (b *Bridge) Poll(ctx context.Context, info HostInfo) []Command {
 		}
 		timer.Stop()
 		b.mu.Lock()
-		b.host.LastPoll = b.now().Unix()
 	}
+	if !b.acceptsHost(info) {
+		b.mu.Unlock()
+		return []Command{}
+	}
+	b.host.LastPoll = b.now().Unix()
 	out := b.queue
 	b.queue = nil
 	b.mu.Unlock()
@@ -659,6 +876,25 @@ func (b *Bridge) Deliver(results []Result) {
 
 func (b *Bridge) deliver(r Result) {
 	b.mu.Lock()
+	for tab, id := range b.closing {
+		if id != r.ID {
+			continue
+		}
+		// Only an actual host answer (or a queued cancellation) releases this
+		// reservation. The caller's timeout never passes through deliver.
+		delete(b.closing, tab)
+		if r.OK {
+			owner := b.owner[tab]
+			b.forgetLocked(tab)
+			for other, conversation := range b.owner {
+				if conversation == owner && other > b.current[owner] {
+					b.current[owner] = other
+				}
+			}
+		}
+		b.saveTabs()
+		break
+	}
 	ch := b.waiting[r.ID]
 	b.mu.Unlock()
 	if ch != nil {
@@ -785,7 +1021,7 @@ func newID() string {
 // are safe to retain for a sensitive operation.
 func secretSafeError(raw string) string {
 	switch Refusal(raw) {
-	case HostMissing, Stopped, PersonControlling, OtherSessionsTab, QueueFull, TimedOut, BadRequest, NoTab, OtherDebugger, StateWriteFailed, SecretInputFailed:
+	case Disabled, WrongMode, Closing, HostMissing, Stopped, PersonControlling, OtherSessionsTab, QueueFull, TimedOut, BadRequest, NoTab, OtherDebugger, StateWriteFailed, SecretInputFailed:
 		return raw
 	}
 	return string(SecretInputFailed)

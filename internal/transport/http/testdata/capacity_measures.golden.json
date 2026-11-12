@@ -265,6 +265,16 @@
     "Note": true
   },
   {
+    "Name": "browser.keyboard_pending_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.keyboard_pending_edits",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "browser.pending_commands",
     "Known": true
   },

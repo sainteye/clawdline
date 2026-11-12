@@ -128,6 +128,11 @@ func (v Values) String(key string) (string, bool) {
 
 // Bool returns a key's value when it is a JSON boolean, and whether it was.
 func (v Values) Bool(key string) (bool, bool) {
+	if key == "browser_enabled" {
+		if _, explicit := v.Raw["browser_mode"]; explicit {
+			return v.BrowserMode() != BrowserModeNative, true
+		}
+	}
 	raw, ok := v.Raw[key]
 	if !ok {
 		return false, false
@@ -232,6 +237,11 @@ func (f *File) Change(change func(Values) (map[string]any, error)) (Values, erro
 
 // set merges changes onto a reading taken under f.mu and writes the result.
 func (f *File) set(current Values, changes map[string]any) (Values, error) {
+	var err error
+	changes, err = browserChanges(current, changes)
+	if err != nil {
+		return Values{}, err
+	}
 	changes = workflowChanges(changes)
 	next := make(map[string]json.RawMessage, len(current.Raw)+len(changes))
 	for k, v := range current.Raw {
@@ -618,6 +628,7 @@ var Settables = []Settable{
 	{Name: "codegraph_enabled", Kind: "bool"},
 	// Browser use through the Clawdline Chrome extension (docs/browser.md); absent is off.
 	{Name: "browser_enabled", Kind: "bool"},
+	{Name: "browser_mode", Kind: "string", Choices: []string{BrowserModeNative, BrowserModeUserChrome, BrowserModeIsolated}, Refusal: "invalid_browser_mode", Because: "native, user_chrome or isolated"},
 	// One notification each time a Session starts operating a new site; absent is off.
 	{Name: "browser_notify_new_site", Kind: "bool"},
 	{Name: "space_saving_images", Kind: "bool"},

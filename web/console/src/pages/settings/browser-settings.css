@@ -54,3 +54,12 @@
   .browser-audit-filters { grid-template-columns: minmax(0, 1fr); }
   .browser-stop { width: 100%; }
 }
+
+.browser-modes { display: grid; gap: 8px; padding: 0; margin: 18px 0 8px; border: 0; min-width: 0; }
+.browser-modes legend { margin-bottom: 10px; font-weight: 600; }
+.browser-mode-choice { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.browser-mode-choice:has(input:checked) { border-color: var(--accent); background: var(--hover); }
+.browser-mode-choice input { flex: 0 0 20px; width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent); }
+.browser-mode-choice > span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.browser-mode-choice span span { color: var(--dim); font-size: 13px; line-height: 1.5; }
+.browser-modes:disabled .browser-mode-choice { opacity: .6; cursor: default; }

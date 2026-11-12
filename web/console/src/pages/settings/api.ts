@@ -376,7 +376,8 @@ export function writeWorkflowSettings(change: Partial<WorkflowSettingsRequest>, 
 }
 
 /** The Browser block's two machine switches (`/v1/browser/settings`, chrome-settings over Cloud). */
-export type ChromeSettings = { browser_enabled: boolean; browser_notify_new_site: boolean }
+export type BrowserMode = "native" | "user_chrome" | "isolated"
+export type ChromeSettings = { browser_mode?: BrowserMode; browser_enabled: boolean; browser_notify_new_site: boolean }
 
 export function readChromeSettings(signal?: AbortSignal): Promise<ChromeSettings> {
   return call<ChromeSettings>({ method: "GET" }, "/v1/browser/settings", signal)

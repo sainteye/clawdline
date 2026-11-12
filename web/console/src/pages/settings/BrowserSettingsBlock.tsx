@@ -7,7 +7,7 @@ import * as L from "../../legacy/bridge.js"
 import { nextWord, type NextWord } from "../../next-strings.js"
 import {
   readBrowserAudit, readChromeSettings, readBrowserStatus, writeChromeSettings, writeBrowserStop,
-  type BrowserAudit, type BrowserAuditRow, type ChromeSettings, type BrowserStatus,
+  type BrowserMode, type BrowserAudit, type BrowserAuditRow, type ChromeSettings, type BrowserStatus,
 } from "./api.js"
 import { Switch } from "./Switch.js"
 import "./workflow-settings.css"
@@ -30,10 +30,11 @@ const AUDIT_MS = 15000
 const AUDIT_ROWS = 200
 
 type Range = "today" | "week" | "all"
-type SettingKey = keyof ChromeSettings
+type SettingKey = "browser_notify_new_site"
 
 const OP_WORDS: Record<string, NextWord> = {
   viewport: "browserOpViewport",
+  close: "browserOpClose",
   open: "browserAuditOpOpen", read: "browserAuditOpRead", click: "browserAuditOpClick", type: "browserAuditOpType",
   key: "browserAuditOpKey", scroll: "browserAuditOpScroll", screenshot: "browserAuditOpScreenshot",
   takeover: "browserAuditOpTakeover", handback: "browserAuditOpHandback", release: "browserAuditOpRelease",
@@ -75,7 +76,7 @@ function pathOf(raw: string | undefined): { host: string; path: string } {
     const path = (u.pathname === "/" ? "" : u.pathname) + u.search
     let shown = path
     try { shown = decodeURIComponent(path) } catch { /* keep the encoded path */ }
-    return { host: u.host.replace(/^www\./, ""), path: shown }
+    return { host: u.host, path: shown }
   } catch {
     return { host: raw, path: "" }
   }
@@ -92,12 +93,13 @@ function timeOf(at: number): string {
 }
 
 const WHY: Record<string, NextWord> = {
+ browser_disabled:"browserAuditWhyDisabled", browser_wrong_mode:"browserAuditWhyMode",browser_tab_closing:"browserAuditWhyClosing",
   browser_stopped: "browserAuditWhyStopped", browser_person_controlling: "browserAuditWhyPerson", browser_timeout: "browserAuditWhyTimeout",
 }
 
 /** Why an action was not done: the bridge's own refusals in words, the extension's message as it said it. */
 function whyNot(error: string): string {
-  return WHY[error] ? nextWord(WHY[error]) : error
+  return Object.hasOwn(WHY,error) ? nextWord(WHY[error]) : error
 }
 
 function AuditEntry({ row }: { row: BrowserAuditRow }) {
@@ -132,7 +134,7 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
   const [readError, setReadError] = useState("")
   const [auditError, setAuditError] = useState("")
   const [said, setSaid] = useState("")
-  const [busy, setBusy] = useState<SettingKey | "stop" | null>(null)
+  const [busy, setBusy] = useState<SettingKey | "mode" | "stop" | null>(null)
   const [retry, setRetry] = useState(0)
   const [conversation, setConversation] = useState("")
   const [site, setSite] = useState("")
@@ -199,6 +201,24 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
     }
   }
 
+  const saveMode = async (mode: BrowserMode) => {
+    if (!settings || busy) return
+    const started = ++generation.current
+    setBusy("mode"); setSaid("")
+    try {
+      const saved = await writeChromeSettings(settings.browser_mode === undefined ? { browser_enabled: mode !== "native" } : { browser_mode: mode })
+      if (started === generation.current) {
+        setSettings(saved); setSaid(nextWord("browserSettingsSaved"))
+        void readBrowserStatus().then(value => { if (started === generation.current) setStatus(value) }, () => {})
+      }
+    } catch (error) {
+      if (started === generation.current) {
+        setSaid(failed("browserSettingsSaveFailed", error))
+        void readChromeSettings().then(value => { if (started === generation.current) setSettings(value) }, () => {})
+      }
+    } finally { if (started === generation.current) setBusy(null) }
+  }
+
   const stop = async (stopped: boolean) => {
     if (busy) return
     const started = ++generation.current
@@ -230,16 +250,29 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
   const rows = audit?.rows ?? []
 
   const switches: { key: SettingKey; title: NextWord; help: NextWord }[] = [
-    { key: "browser_enabled", title: "browserSettingsEnabled", help: "browserSettingsEnabledHelp" },
     { key: "browser_notify_new_site", title: "browserSettingsNotify", help: "browserSettingsNotifyHelp" },
   ]
 
+  const mode = settings?.browser_mode ?? (settings?.browser_enabled ? "isolated" : "native")
+  const modes: { value: BrowserMode; title: NextWord; help: NextWord }[] = [
+    { value: "native", title: "browserModeNative", help: "browserModeNativeHelp" },
+    { value: "user_chrome", title: "browserModeUserChrome", help: "browserModeUserChromeHelp" },
+    { value: "isolated", title: "browserModeIsolated", help: "browserModeIsolatedHelp" },
+  ]
   return <div className="block settings-workflow settings-browser" id="settings-browser" aria-busy={busy !== null}>
     <b>{nextWord("browserSettingsTitle")}</b>
     <p className="say">{nextWord("browserSettingsIntro")}</p>
-    <button type="button" className="chip" onClick={openBrowserSetup}>{nextWord("browserSetupOpen")}</button>
+    <fieldset className="browser-modes" disabled={!settings || busy !== null}>
+      <legend>{nextWord("browserModeTitle")}</legend>
+      {modes.map(choice => <label className="browser-mode-choice" key={choice.value}>
+        <input type="radio" name="browser-mode" value={choice.value} checked={mode === choice.value} disabled={choice.value === "user_chrome" && settings?.browser_mode === undefined} onChange={() => void saveMode(choice.value)} />
+        <span><strong>{nextWord(choice.title)}</strong><span>{nextWord(choice.help)}</span></span>
+      </label>)}
+    </fieldset>
+    <p className="say">{nextWord("browserModeSwitchHelp")}</p>
+    {settings && mode !== "native" && <button type="button" className="chip" onClick={openBrowserSetup}>{nextWord("browserSetupOpen")}</button>}
 
-    <div className={connected ? "browser-connection connected" : "browser-connection"} role="status" aria-live="polite">
+    {mode !== "native" && <div className={connected ? "browser-connection connected" : "browser-connection"} role="status" aria-live="polite">
       <span className="browser-connection-dot" aria-hidden="true" />
       <div>
         <strong>{status ? nextWord(connected ? "browserSettingsConnected" : "browserSettingsNotConnected") : nextWord("browserSettingsLoading")}</strong>
@@ -247,7 +280,7 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
           browser: browserName(host?.browser) || "Chrome", version: host?.version || "?" })}</p>}
         {status && !connected && <p>{nextWord("browserSettingsNotConnectedHint")}</p>}
       </div>
-    </div>
+    </div>}
 
     {switches.map(({ key, title, help }) => {
       const id = "browser-setting-" + key

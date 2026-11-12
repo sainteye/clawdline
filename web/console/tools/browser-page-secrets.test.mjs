@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { pathToFileURL } from "node:url"
-const { readPage, locate } = await import(process.env.BROWSER_PAGE_MODULE ? pathToFileURL(process.env.BROWSER_PAGE_MODULE).href : "../../../extension/chrome/page.js")
+const { readPage, locate, editableRects, focusedEditableKind } = await import(process.env.BROWSER_PAGE_MODULE ? pathToFileURL(process.env.BROWSER_PAGE_MODULE).href : "../../../extension/chrome/page.js")
 
 test("page reads and element targeting use labels without retaining field values", () => {
   const field = (type, value, placeholder) => ({
@@ -20,4 +20,19 @@ test("page reads and element targeting use labels without retaining field values
   } finally {
     delete globalThis.document; delete globalThis.location; delete globalThis.getComputedStyle
   }
+})
+
+test("keyboard geometry contains only visible editable rectangles and kinds, never values", () => {
+  const field = (type, disabled = false) => ({ tagName: "INPUT", type, disabled, readOnly: false,
+    get value() { throw new Error("field value was read") },
+    getBoundingClientRect: () => ({ left: 20, top: 40, width: 120, height: 44 }),
+  })
+  const password = field("password"), inputs = [password, field("text"), field("submit"), field("text", true)]
+  globalThis.document = { querySelectorAll: () => inputs, activeElement: password }
+  globalThis.getComputedStyle = () => ({ visibility: "visible", display: "block" })
+  try {
+    assert.deepEqual(editableRects(1), [{ x: 20, y: 40, width: 120, height: 44, kind: "password" }])
+    assert.equal(editableRects(10).length, 2)
+    assert.equal(focusedEditableKind(), "password")
+  } finally { delete globalThis.document; delete globalThis.getComputedStyle }
 })

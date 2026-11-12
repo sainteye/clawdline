@@ -67,7 +67,47 @@ func (s *Server) browser() *browserbridge.Bridge {
 			s.browserBridge = b
 		}
 	}
+	if err := s.browserBridge.SetMode(s.browserMode()); err != nil {
+		s.browserBridge.SetEnabled(false)
+	}
 	return s.browserBridge
+}
+
+// setBrowserAwareSettings serializes permission changes with bridge refreshes.
+// The config remains the only persisted source of the enabled setting.
+func (s *Server) setBrowserAwareSettings(f *nextconfig.File, changes map[string]any) (nextconfig.Values, error) {
+	s.browserMu.Lock()
+	defer s.browserMu.Unlock()
+	_, modeChanged := changes["browser_mode"]
+	_, enabledChanged := changes["browser_enabled"]
+	if s.browserBridge == nil || (!modeChanged && !enabledChanged) {
+		return f.Set(changes)
+	}
+	current, err := f.Read()
+	if err != nil {
+		return current, err
+	}
+	mode := current.BrowserMode()
+	if value, ok := changes["browser_mode"].(string); ok {
+		mode = value
+	} else if enabled, ok := changes["browser_enabled"].(bool); ok {
+		if !enabled {
+			mode = nextconfig.BrowserModeNative
+		} else if mode == nextconfig.BrowserModeNative {
+			mode = nextconfig.BrowserModeIsolated
+		}
+	}
+	values := current
+	err = s.browserBridge.ApplyMode(mode, func() error { var writeErr error; values, writeErr = f.Set(changes); return writeErr })
+	return values, err
+}
+
+func (s *Server) browserMode() string {
+	values, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err != nil {
+		return nextconfig.BrowserModeNative
+	}
+	return values.BrowserMode()
 }
 
 func (s *Server) browserSetting(key string) bool {
@@ -134,7 +174,7 @@ func (s *Server) browserCommandRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.browserSetting("browser_enabled") {
-		writeRefusal(w, http.StatusForbidden, "browser_disabled", "Browser use is turned off on this machine. The person can turn it on in Settings, Browser.")
+		writeRefusal(w, http.StatusForbidden, "browser_disabled", "Clawdline browser access is off. The person can choose a mode in Settings, Sessions and access, Clawdline browser.")
 		return
 	}
 	if s.broker == nil {
@@ -157,6 +197,12 @@ func (s *Server) browserCommandRoute(w http.ResponseWriter, r *http.Request) {
 func writeBrowserError(w http.ResponseWriter, err error) {
 	if refusal, ok := browserbridge.IsRefusal(err); ok {
 		switch refusal {
+		case browserbridge.WrongMode:
+			writeRefusal(w, http.StatusConflict, string(refusal), "This Chrome profile is not the selected browser mode.")
+		case browserbridge.Closing:
+			writeRefusal(w, http.StatusConflict, string(refusal), "This tab is closing. Wait for its result before taking over or sending another command.")
+		case browserbridge.Disabled:
+			writeRefusal(w, http.StatusForbidden, string(refusal), "Clawdline browser access is off. The person can choose a mode in Settings, Sessions and access, Clawdline browser.")
 		case browserbridge.StateWriteFailed:
 			writeRefusal(w, http.StatusServiceUnavailable, string(refusal), "The browser control state could not be saved. Keep Clawdline running and retry before restarting. Browser use remains paused.")
 		case browserbridge.SecretInputFailed:
@@ -164,7 +210,7 @@ func writeBrowserError(w http.ResponseWriter, err error) {
 		case browserbridge.HostMissing:
 			writeRefusal(w, http.StatusServiceUnavailable, string(refusal), "The Clawdline Chrome extension is not connected. Ask the person to install it or open Chrome; continue another way meanwhile.")
 		case browserbridge.Stopped:
-			writeRefusal(w, http.StatusConflict, string(refusal), "The person stopped all browser use. Do not retry until they resume it.")
+			writeRefusal(w, http.StatusConflict, string(refusal), "The person stopped the Clawdline browser channel. Do not retry until they resume it.")
 		case browserbridge.PersonControlling:
 			writeRefusal(w, http.StatusConflict, string(refusal), "The person has taken over this tab. Wait until they hand it back.")
 		case browserbridge.OtherSessionsTab:
@@ -201,7 +247,12 @@ func (s *Server) browserHostPollRoute(w http.ResponseWriter, r *http.Request) {
 	if !readBrowserBody(w, r, 4096, &info) {
 		return
 	}
-	commands := s.browser().Poll(r.Context(), info)
+	bridge := s.browser()
+	if !bridge.AcceptsHost(info) {
+		writeRefusal(w, http.StatusForbidden, "browser_wrong_mode", "This Chrome profile is not the selected browser mode.")
+		return
+	}
+	commands := bridge.Poll(r.Context(), info)
 	if !s.browserSetting("browser_enabled") && len(commands) > 0 {
 		// The setting was turned off while commands waited; none of them runs.
 		s.browser().Deliver(refuseAll(commands))
@@ -214,7 +265,7 @@ func (s *Server) browserHostPollRoute(w http.ResponseWriter, r *http.Request) {
 func refuseAll(commands []browserbridge.Command) []browserbridge.Result {
 	out := make([]browserbridge.Result, 0, len(commands))
 	for _, c := range commands {
-		out = append(out, browserbridge.Result{ID: c.ID, Error: string(browserbridge.Stopped)})
+		out = append(out, browserbridge.Result{ID: c.ID, Error: string(browserbridge.Disabled)})
 	}
 	return out
 }
@@ -253,7 +304,7 @@ func (s *Server) browserStatusRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	st := s.browser().Status()
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"ok": true, "enabled": s.browserSetting("browser_enabled"),
+	writeJSON(w, map[string]any{"ok": true, "mode": s.browserMode(), "enabled": s.browserSetting("browser_enabled"),
 		"notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
 }
 
@@ -318,8 +369,9 @@ func (s *Server) browserStopRoute(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Tab    int  `json:"tab"`
-		Person bool `json:"person"`
+		Mode   string `json:"browser_mode"`
+		Tab    int    `json:"tab"`
+		Person bool   `json:"person"`
 	}
 	if !readBrowserBody(w, r, 256, &in) {
 		return
@@ -332,7 +384,7 @@ func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the tab to take over or hand back.")
 		return
 	}
-	if err := s.browser().SetPersonControl(in.Tab, in.Person); err != nil {
+	if err := s.browser().SetPersonControlForMode(in.Tab, in.Person, in.Mode); err != nil {
 		writeBrowserError(w, err)
 		return
 	}
@@ -344,6 +396,7 @@ func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 // the person has taken over.
 func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
 	var in struct {
+		Mode string          `json:"browser_mode"`
 		Op   string          `json:"op"`
 		Tab  int             `json:"tab"`
 		Args json.RawMessage `json:"args"`
@@ -364,7 +417,7 @@ func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
 		return
 	}
-	value, err := s.browser().PersonDo(r.Context(), in.Op, in.Tab, in.Args)
+	value, err := s.browser().PersonDoForMode(r.Context(), in.Op, in.Tab, in.Args, in.Mode)
 	if err != nil {
 		writeBrowserError(w, err)
 		return
@@ -393,7 +446,7 @@ func (s *Server) browserScreenshotRoute(w http.ResponseWriter, r *http.Request) 
 	if q, err := strconv.Atoi(r.URL.Query().Get("quality")); err == nil && q >= 20 && q <= 80 {
 		args = json.RawMessage(`{"quality":` + strconv.Itoa(q) + `}`)
 	}
-	value, err := s.browser().PersonDo(r.Context(), "screenshot", tab, args)
+	value, err := s.browser().PersonDoForMode(r.Context(), "screenshot", tab, args, r.URL.Query().Get("browser_mode"))
 	if err != nil {
 		writeBrowserError(w, err)
 		return
@@ -480,9 +533,18 @@ func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		changes := make(map[string]any, len(body))
 		for name, raw := range body {
-			if name != "browser_enabled" && name != "browser_notify_new_site" {
+			if name != "browser_mode" && name != "browser_enabled" && name != "browser_notify_new_site" {
 				writeRefusal(w, http.StatusBadRequest, "bad_request", "Not a browser setting key: "+name)
 				return
+			}
+			if name == "browser_mode" {
+				var mode string
+				if json.Unmarshal(raw, &mode) != nil || (mode != nextconfig.BrowserModeNative && mode != nextconfig.BrowserModeUserChrome && mode != nextconfig.BrowserModeIsolated) {
+					writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Choose native, user_chrome or isolated browser mode.")
+					return
+				}
+				changes[name] = mode
+				continue
 			}
 			var on bool
 			if string(raw) != "true" && string(raw) != "false" || json.Unmarshal(raw, &on) != nil {
@@ -492,7 +554,7 @@ func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			changes[name] = on
 		}
 		if len(changes) != 0 {
-			if _, err := f.Set(changes); err != nil {
+			if _, err := s.setBrowserAwareSettings(f, changes); err != nil {
 				writeSettingsFailure(w, f, err)
 				return
 			}
@@ -509,5 +571,5 @@ func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	enabled, _ := values.Bool("browser_enabled")
 	notify, _ := values.Bool("browser_notify_new_site")
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"browser_enabled": enabled, "browser_notify_new_site": notify})
+	writeJSON(w, map[string]any{"browser_mode": values.BrowserMode(), "browser_enabled": enabled, "browser_notify_new_site": notify})
 }

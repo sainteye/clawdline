@@ -60,6 +60,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `browser.audit_text_characters` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
 | `browser.command_arg_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.host_message_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `browser.keyboard_pending_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `browser.keyboard_pending_edits` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.pending_commands` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.result_bytes` | 6291456 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.stdin_text_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |

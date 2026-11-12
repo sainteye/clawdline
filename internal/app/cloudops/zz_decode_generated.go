@@ -712,7 +712,7 @@ func genDecodeChromeSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 4096, properties: map[string]genRule{"browser_enabled": genRule{kind: "bool"}, "browser_notify_new_site": genRule{kind: "bool"}}, closed: true, minKeys: 1, maxKeys: 2}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 4096, properties: map[string]genRule{"browser_enabled": genRule{kind: "bool"}, "browser_mode": genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}, "browser_notify_new_site": genRule{kind: "bool"}}, closed: true, minKeys: 1, maxKeys: 2}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -789,7 +789,11 @@ func genDecodeChromeTabActivity(b body) (plan, LocalRequest, bool) {
 func genDecodeChromeTabControl(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "person", "request", "session", "tab"},
+		[]string{"type", "browser_mode", "person", "request", "session", "tab"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("person", genRule{kind: "bool"}) {
@@ -805,7 +809,7 @@ func genDecodeChromeTabControl(b body) (plan, LocalRequest, bool) {
 	path := "/v1/browser/control"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
-	req.Body = b.genFields(map[string]genValue{"person": genValue{from: "person"}, "tab": genValue{from: "tab"}})
+	req.Body = b.genFields(map[string]genValue{"browser_mode": genValue{from: "browser_mode"}, "person": genValue{from: "person"}, "tab": genValue{from: "tab"}})
 	return p, req, true
 }
 
@@ -813,13 +817,17 @@ func genDecodeChromeTabControl(b body) (plan, LocalRequest, bool) {
 func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "args", "op", "request", "session", "tab"},
+		[]string{"type", "args", "browser_mode", "op", "request", "session", "tab"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("args", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"direction": genRule{kind: "string", enum: []string{"up", "down"}}, "key": genRule{kind: "string", enum: []string{"Enter", "Tab", "Backspace", "Escape", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp"}}, "text": genRule{kind: "string", maxBytes: 16384}, "x": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}, "y": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}}, closed: true, maxKeys: 3}) {
+	if !b.genValid("args", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"direction": genRule{kind: "string", enum: []string{"up", "down"}}, "key": genRule{kind: "string", enum: []string{"Enter", "Tab", "Backspace", "Escape", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp"}}, "mode": genRule{kind: "string", enum: []string{"mobile", "desktop"}}, "text": genRule{kind: "string", maxBytes: 16384}, "x": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}, "y": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}}, closed: true, maxKeys: 3}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("op", genRule{kind: "string", enum: []string{"click", "type", "key", "scroll"}}) {
+	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("op", genRule{kind: "string", enum: []string{"click", "type", "key", "scroll", "viewport"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("tab", genRule{kind: "integer", min: genInt(1), max: genInt(2147483647)}) {
@@ -832,7 +840,7 @@ func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
 	path := "/v1/browser/person"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
-	req.Body = b.genFields(map[string]genValue{"args": genValue{from: "args"}, "op": genValue{from: "op"}, "tab": genValue{from: "tab"}})
+	req.Body = b.genFields(map[string]genValue{"args": genValue{from: "args"}, "browser_mode": genValue{from: "browser_mode"}, "op": genValue{from: "op"}, "tab": genValue{from: "tab"}})
 	return p, req, true
 }
 
@@ -864,8 +872,13 @@ func genDecodeChromeTabMute(b body) (plan, LocalRequest, bool) {
 func genDecodeChromeTabScreenshot(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "quality", "request", "session", "tab"},
+		[]string{"type", "browser_mode", "quality", "request", "session", "tab"},
 		[]string{"type", "request", "session", "tab"},
+		[]string{"type", "browser_mode", "request", "session", "tab"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("quality", genRule{kind: "string", enum: []string{"30", "45", "55", "70"}}) {
@@ -880,7 +893,7 @@ func genDecodeChromeTabScreenshot(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/browser/screenshot"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"quality": genValue{from: "quality"}, "tab": genValue{from: "tab"}})
+	req.Query = b.genQuery(map[string]genValue{"browser_mode": genValue{from: "browser_mode"}, "quality": genValue{from: "quality"}, "tab": genValue{from: "tab"}})
 	req.Header = asDevice()
 	return p, req, true
 }

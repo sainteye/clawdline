@@ -50,3 +50,31 @@ export function focusedIsPassword() {
   const el = document.activeElement
   return !!(el && el.tagName === "INPUT" && el.type === "password")
 }
+
+/* Geometry for a phone's native keyboard. No field text, value, name or label
+   crosses this boundary. Shadow-root fields use the same viewport coordinates. */
+export function editableRects(limit) {
+  const fields = []
+  const visit = (root) => {
+    for (const el of root.querySelectorAll("*")) {
+      if (fields.length >= limit) return
+      if (el.shadowRoot) visit(el.shadowRoot)
+      if (fields.length >= limit) return
+      const tag = el.tagName, type = String(el.type || "text").toLowerCase()
+      if (el.disabled || el.readOnly || !(tag === "TEXTAREA" || el.isContentEditable || (tag === "INPUT" && /^(text|password|search|email|url|tel|number)$/.test(type)))) continue
+      const r = el.getBoundingClientRect(), style = getComputedStyle(el)
+      if (r.width <= 0 || r.height <= 0 || style.display === "none" || style.visibility === "hidden") continue
+      fields.push({ x: r.left, y: r.top, width: r.width, height: r.height, kind: tag === "TEXTAREA" || el.isContentEditable ? "multiline" : type })
+    }
+  }
+  visit(document)
+  return fields
+}
+
+export function focusedEditableKind() {
+  let el = document.activeElement
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement
+  if (!el || el.disabled || el.readOnly) return null
+  if (el.tagName === "TEXTAREA" || el.isContentEditable) return "multiline"
+  return el.tagName === "INPUT" && /^(text|password|search|email|url|tel|number)$/.test(el.type) ? el.type : null
+}

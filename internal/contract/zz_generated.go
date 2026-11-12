@@ -6879,6 +6879,7 @@ type SettingsRequest struct {
 	// 0 to 1.
 	Backdrop             *float64 `json:"backdrop"`
 	BrowserEnabled       *bool    `json:"browser_enabled"`
+	BrowserMode          *string  `json:"browser_mode"`
 	BrowserNotifyNewSite *bool    `json:"browser_notify_new_site"`
 
 	// 0 to 1.
@@ -7118,6 +7119,7 @@ type SettingsSnapshot struct {
 	// How much the bar blurs what is behind it.
 	Backdrop             *float64 `json:"backdrop"`
 	BrowserEnabled       *bool    `json:"browser_enabled"`
+	BrowserMode          *string  `json:"browser_mode"`
 	BrowserNotifyNewSite *bool    `json:"browser_notify_new_site"`
 
 	// The bar card's opacity.

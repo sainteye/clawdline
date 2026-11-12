@@ -35,6 +35,7 @@ const STEP_WORD: Record<Step, NextWord> = {
 }
 
 type Setup = {
+  mode?: "native" | "user_chrome" | "isolated"
   chromium_found: boolean
   connected: boolean
   running?: boolean
@@ -87,13 +88,20 @@ export function BrowserSetup({ onClose }: { onClose: () => void }) {
   const [enabled, setEnabled] = useState(true)
   const [notify, setNotify] = useState(true)
   const [connected, setConnected] = useState(false)
+  const [mode, setMode] = useState<string | null>(null)
+  const [modeError, setModeError] = useState<unknown>(null)
+  useEffect(() => {
+    let alive = true
+    void browserCall<Setup>("GET", "/v1/browser/setup").then(value => { if (alive) setMode(value.mode ?? "isolated") }, error => { if (alive) setModeError(error) })
+    return () => { alive = false }
+  }, [])
   useEffect(() => { showModalWithoutChoice(dialog.current) }, [])
   const at = step === "done" ? STEPS.length : STEPS.indexOf(step)
   return (
     <dialog ref={dialog} className="setup-dialog browser-setup" aria-label={nextWord("browserSetupDialog")}
       onCancel={(event) => { event.preventDefault(); onClose() }}>
       <div className="setup-top">
-        <ol className="setup-track browser-setup-track">
+        {mode !== "user_chrome" && <ol className="setup-track browser-setup-track">
           {STEPS.map((item, i) => (
             <li key={item} data-current={item === step ? "true" : undefined} data-done={i < at ? "true" : undefined}
               aria-current={item === step ? "step" : undefined}>
@@ -101,11 +109,12 @@ export function BrowserSetup({ onClose }: { onClose: () => void }) {
               <span>{nextWord(STEP_WORD[item])}</span>
             </li>
           ))}
-        </ol>
+        </ol>}
         <button type="button" className="setup-x" aria-label={nextWord("browserSetupClose")} onClick={onClose}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
+      {modeError ? <p className="setup-said" role="alert">{said(modeError, "browserSetupReadFailed")}</p> : mode === null ? <p className="setup-body">{nextWord("browserSettingsLoading")}</p> : mode === "user_chrome" ? <UserChromeGuide onClose={onClose} /> : <>
       {step === "benefits" && <Benefits onLater={onClose} onNext={() => setStep("prepare")} />}
       {step === "prepare" && <Prepare onBack={() => setStep("benefits")}
         onConnected={() => { setConnected(true); setStep("confirm") }} />}
@@ -113,8 +122,22 @@ export function BrowserSetup({ onClose }: { onClose: () => void }) {
       {step === "start" && <Start enabled={enabled} notify={notify} onEnabled={setEnabled} onNotify={setNotify}
         onBack={() => setStep("confirm")} onDone={() => setStep("done")} />}
       {step === "done" && <Done connected={connected} enabled={enabled} notify={notify} onClose={onClose} />}
+      </>}
     </dialog>
   )
+}
+
+function UserChromeGuide({ onClose }: { onClose: () => void }) {
+  return <div className="setup-body">
+    <h2>{nextWord("browserUserChromeTitle")}</h2>
+    <p>{nextWord("browserUserChromeIntro")}</p>
+    <ol>
+      <li><p>{nextWord("browserUserChromePrepare")}</p><CopyLine text="clawdline browser prepare --mode user_chrome" /></li>
+      <li><p>{nextWord("browserUserChromeLoad")}</p></li>
+      <li><p>{nextWord("browserUserChromeConnect")}</p></li>
+    </ol>
+    <div className="setup-actions"><button type="button" className="setup-primary" onClick={onClose}>{nextWord("browserSetupClose")}</button></div>
+  </div>
 }
 
 function Benefits({ onLater, onNext }: { onLater: () => void; onNext: () => void }) {

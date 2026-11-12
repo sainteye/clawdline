@@ -6,7 +6,7 @@
 // tabs never rearrange the person's own windows, and answers each command
 // with one result. It holds no secret and opens no network connection.
 
-import { readPage, locate, focusedIsPassword } from "./page.js"
+import { readPage, locate, focusedIsPassword, editableRects, focusedEditableKind } from "./page.js"
 
 const HOST = "com.clawdline.browser"
 const TEXT_LIMIT = 200 * 1024
@@ -193,6 +193,13 @@ async function run(c) {
   const tab = c.tab
   if (!tab) throw new Error("no tab")
   await chrome.tabs.get(tab).catch(() => { throw new Error("the tab was closed") })
+  if (c.op === "close") {
+    await ensureAttached(tab)
+    const url = await tabURL(tab)
+    await chrome.tabs.remove(tab)
+    attached.delete(tab); layouts.delete(tab)
+    return { tab, url, value: { tab, closed: true } }
+  }
   if (c.op === "release") {
     if (attached.has(tab)) await chrome.debugger.detach({ tabId: tab }).catch(() => {})
     attached.delete(tab)
@@ -230,7 +237,7 @@ async function run(c) {
       }
       await click(tab, x, y)
       await new Promise((r) => setTimeout(r, 300))
-      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y) } }
+      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y), editable: c.person ? await evaluate(tab, focusedEditableKind) : undefined } }
     }
     case "type": {
       const password = await evaluate(tab, focusedIsPassword)
@@ -242,7 +249,7 @@ async function run(c) {
     case "key": {
       await key(tab, a.key)
       await new Promise((r) => setTimeout(r, 200))
-      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: a.key, value: { tab, key: a.key } }
+      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: a.key, value: { tab, key: a.key, editable: c.person ? await evaluate(tab, focusedEditableKind) : undefined } }
     }
     case "scroll": {
       const m = await cdp(tab, "Page.getLayoutMetrics")
@@ -259,7 +266,7 @@ async function run(c) {
       const quality = Number.isFinite(a.quality) ? Math.max(20, Math.min(80, a.quality)) : 60
       const shot = await cdp(tab, "Page.captureScreenshot", { format: "jpeg", quality })
       const t = await chrome.tabs.get(tab)
-      return { tab, url: t.url || "", value: { tab, url: t.url || "", title: t.title || "", width, height, layout: layouts.get(tab) || "desktop", data: shot.data } }
+      return { tab, url: t.url || "", value: { tab, url: t.url || "", title: t.title || "", width, height, layout: layouts.get(tab) || "desktop", editables: await evaluate(tab, editableRects, ELEMENT_LIMIT), data: shot.data } }
     }
   }
   throw new Error(`unknown command ${c.op}`)

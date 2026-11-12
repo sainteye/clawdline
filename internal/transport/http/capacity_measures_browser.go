@@ -7,6 +7,12 @@ import (
 // browserCapacityMeasures measures every row of the register's "browser" area.
 func (s *Server) browserCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"browser.keyboard_pending_edits": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-viewer native input queue; live browser occupancy is not measured by the daemon"}
+		},
+		"browser.keyboard_pending_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-viewer native input byte guard; live browser occupancy is not measured by the daemon"}
+		},
 		capacity.BrowserPendingCommands: func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(s.browser().Status().Pending)}
 		},

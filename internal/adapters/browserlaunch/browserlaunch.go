@@ -1,8 +1,7 @@
-// Package browserlaunch starts Clawdline's own Chromium: the extension carried
-// in this binary already loaded, and its native messaging host registered in
-// a profile of its own inside the daemon's directory, so nothing is installed
-// into the person's Chrome (docs/browser.md). `clawdline browser launch` and
-// the console's POST /v1/browser/launch both call it.
+// Package browserlaunch starts isolated Chromium and registers native hosts
+// for the person's explicitly selected browser profile (docs/browser.md).
+// The ordinary launch path uses Clawdline's own profile. Registering the
+// person's usual Chrome is a separate, explicit install-host operation.
 package browserlaunch
 
 import (
@@ -19,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/sainteye/clawdline/extension"
 )
@@ -36,8 +36,45 @@ var ErrChromiumMissing = errors.New("no Chromium found; install one with `" + In
 // in Clawdline's own Chromium.
 func ProfileDir(dir string) string { return filepath.Join(dir, "chrome-profile") }
 
-// ExtensionDir is where the carried extension is written before each launch.
-func ExtensionDir(dir string) string { return filepath.Join(dir, "chrome-extension") }
+// An unpacked extension keeps its installed worker across browser restarts.
+// A distinct payload needs a distinct identity, even if its manifest version
+// was not changed. Old directories stay intact while a browser may use them.
+var extensionRevision = sync.OnceValue(func() string {
+	digest, err := extensionDigest(extension.Chrome)
+	if err != nil {
+		panic("the embedded browser extension cannot be read: " + err.Error())
+	}
+	return digest
+})
+
+// ExtensionDir is where this exact carried extension is written before launch.
+func ExtensionDir(dir string) string {
+	return filepath.Join(dir, "chrome-extension-"+extensionRevision())
+}
+
+func extensionDigest(files fs.FS) (string, error) {
+	hash := sha256.New()
+	err := fs.WalkDir(files, "chrome", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		hash.Write([]byte(path))
+		hash.Write([]byte{0})
+		hash.Write(data)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
 
 // FindChromium is the Chromium to start: explicit, else CLAWDLINE_CHROMIUM,
 // else the newest Chromium Playwright downloaded, else "".
@@ -178,22 +215,82 @@ type Host struct {
 // a Chrome user-data directory, and a launcher (`<dir>/browser-host.sh`) that
 // pins the daemon's directory and port and runs exe's `browser-host`.
 func InstallHost(dir string, port int, exe, extensionID, chromeDir string) (Host, error) {
+	return InstallHostForMode(dir, port, exe, extensionID, chromeDir, "isolated")
+}
+
+// ValidHostMode excludes native, which has no Clawdline native messaging host.
+func ValidHostMode(mode string) bool { return mode == "isolated" || mode == "user_chrome" }
+
+// UserChromeDir computes Chrome's ordinary user-data directory without reading
+// or creating it. Only an explicit install-host command uses the result.
+func UserChromeDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return userChromeDir(runtime.GOOS, home, os.Getenv)
+}
+
+func userChromeDir(platform, home string, getenv func(string) string) (string, error) {
+	switch platform {
+	case "darwin":
+		if home != "" {
+			return filepath.Join(home, "Library", "Application Support", "Google", "Chrome"), nil
+		}
+	case "windows":
+		if local := getenv("LOCALAPPDATA"); local != "" {
+			return filepath.Join(local, "Google", "Chrome", "User Data"), nil
+		}
+	case "linux":
+		if config := getenv("XDG_CONFIG_HOME"); config != "" {
+			return filepath.Join(config, "google-chrome"), nil
+		}
+		if home != "" {
+			return filepath.Join(home, ".config", "google-chrome"), nil
+		}
+	}
+	return "", errors.New("Chrome's user-data directory is unavailable; name it with --chrome-dir")
+}
+
+// InstallHostForMode pins the host to one browser mode and profile. Separate
+// launcher paths keep installing one mode from changing the other's process.
+func InstallHostForMode(dir string, port int, exe, extensionID, chromeDir, mode string) (Host, error) {
+	if !ValidHostMode(mode) {
+		return Host{}, errors.New("use isolated or user_chrome for the browser host")
+	}
 	if !ValidExtensionID(extensionID) || chromeDir == "" || !filepath.IsAbs(chromeDir) {
 		return Host{}, errors.New("the extension id must be 32 letters a-p and the Chrome directory an absolute path")
 	}
 	if port <= 0 || port > 65535 || exe == "" {
 		return Host{}, errors.New("the daemon's port and the clawdline binary are required")
 	}
-	launcher := filepath.Join(dir, "browser-host.sh")
+	name, otherName := "browser-host.sh", "browser-host-user-chrome.sh"
+	if mode == "user_chrome" {
+		name, otherName = otherName, name
+	}
+	launcher := filepath.Join(dir, name)
+	hosts := filepath.Join(chromeDir, "NativeMessagingHosts")
+	path := filepath.Join(hosts, HostName+".json")
+	// A user-data directory can register this host name only once. Refuse an
+	// accidental cross-mode target before touching either launcher or manifest.
+	if data, err := os.ReadFile(path); err == nil {
+		var previous struct {
+			Path string `json:"path"`
+		}
+		if json.Unmarshal(data, &previous) == nil && filepath.Base(previous.Path) == otherName {
+			return Host{}, errors.New("that Chrome directory already has the other browser mode's host")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Host{}, err
+	}
 	var script bytes.Buffer
-	fmt.Fprintf(&script, "#!/bin/sh\nCLAWDLINE_NEXT_DIR=%s CLAWDLINE_NEXT_PORT=%d exec %s browser-host\n", shellQuote(dir), port, shellQuote(exe))
+	fmt.Fprintf(&script, "#!/bin/sh\nCLAWDLINE_BROWSER_MODE=%s CLAWDLINE_BROWSER_PROFILE=%s CLAWDLINE_NEXT_DIR=%s CLAWDLINE_NEXT_PORT=%d exec %s browser-host\n", shellQuote(mode), shellQuote(chromeDir), shellQuote(dir), port, shellQuote(exe))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Host{}, err
 	}
 	if err := os.WriteFile(launcher, script.Bytes(), 0o700); err != nil {
 		return Host{}, err
 	}
-	hosts := filepath.Join(chromeDir, "NativeMessagingHosts")
 	if err := os.MkdirAll(hosts, 0o755); err != nil {
 		return Host{}, err
 	}
@@ -201,7 +298,6 @@ func InstallHost(dir string, port int, exe, extensionID, chromeDir string) (Host
 		"name": HostName, "description": "Clawdline browser bridge", "path": launcher,
 		"type": "stdio", "allowed_origins": []string{"chrome-extension://" + extensionID + "/"},
 	}, "", "  ")
-	path := filepath.Join(hosts, HostName+".json")
 	if err := os.WriteFile(path, append(manifest, '\n'), 0o644); err != nil {
 		return Host{}, err
 	}

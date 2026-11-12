@@ -1306,9 +1306,10 @@ clawdline note create --requested-by-person --body-file note.json
 
 ## 9b. 使用瀏覽器
 
-只有在使用者為這台機器開啟瀏覽器使用（設定 → 瀏覽器）時才適用；新 Session 啟動時會被告知。
-`clawdline browser` 操作的是 Clawdline 自己的 Chromium，和使用者自己的 Chrome 分開。每個動作都會
-記錄給使用者看，使用者也可以從這台機器或手機旁觀、接手。
+只有在使用者選擇 Clawdline 瀏覽器模式時才適用（設定 → Session 與存取 → Clawdline 瀏覽器）；
+新 Session 啟動時會被告知。三個選項為 Agent 原生工具（不開放 Clawdline 通道）、日常 Chrome
+（需另外連接授權），以及獨立測試 Chrome。既有啟用設定會保留獨立模式。每個 Clawdline 瀏覽器動作
+都會記錄，使用者可以在這台機器或手機上查看及接手。
 
 ```sh
 clawdline browser open <url>
@@ -1319,16 +1320,18 @@ clawdline browser key <name>
 clawdline browser scroll
 clawdline browser viewport mobile
 clawdline browser screenshot
+clawdline browser close
 clawdline browser release
 clawdline browser --help
 ```
 
 - `viewport mobile` 切成網站手機版；`viewport desktop` 恢復視窗版面。
+- `close` 關閉自己目前的分頁，或用 `--tab N` 指定自己持有的分頁。`release` 只交回控制權，分頁仍開著。使用者已接手的分頁不能關閉。
 - 優先用 `read` 和它回傳的 label，不要用座標。只有非看版面不可時才截圖。
 - `browser_person_controlling`：使用者已經接手這個分頁。等待，不要迴圈重試。
-- `browser_stopped`：使用者停止了所有瀏覽器使用。不要重試。
+- `browser_stopped`：使用者停止了 Clawdline 瀏覽器通道。不要重試。
 - `browser_extension_missing` 或 `browser_disabled`：改用別的方式繼續，並告訴使用者在
-  設定 → 瀏覽器 可以設定。
+  設定 → Session 與存取 → Clawdline 瀏覽器 可以選擇；各助理原生的瀏覽器工具仍可使用。
 - 頁面需要使用者本人時——登入、CAPTCHA、付款，或任何有後果的確認——建立一則便條
   （`clawdline guide note`）請使用者接手 Chrome 分頁，然後等待。
 - 絕對不要在對話裡要密碼。機密用 Secret Handoff，並用

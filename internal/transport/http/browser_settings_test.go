@@ -1,12 +1,14 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/config"
@@ -29,7 +31,7 @@ func TestBrowserSettingsAreTwoSwitchesOffByDefault(t *testing.T) {
 		return answer.Code, got
 	}
 	code, got := send(f.send, "GET", "")
-	if code != 200 || got["browser_enabled"] != false || got["browser_notify_new_site"] != false || len(got) != 2 {
+	if code != 200 || got["browser_enabled"] != false || got["browser_notify_new_site"] != false || len(got) != 3 || got["browser_mode"] != "native" {
 		t.Fatalf("a new machine: %d %v", code, got)
 	}
 	code, got = send(f.send, "POST", `{"browser_enabled":true}`)
@@ -84,7 +86,11 @@ func TestTheBrowserAuditFiltersBySiteAndTime(t *testing.T) {
 	if code, rows := read(url.Values{"limit": {"10"}}); code != 200 || len(rows) != 3 {
 		t.Fatalf("refusals without a host: %d %+v", code, rows)
 	}
-	b.SetPersonControl(7, true)
+	// Enable the bridge before recording a successful takeover.
+	b.SetEnabled(true)
+	if err := b.SetPersonControl(7, true); err != nil {
+		t.Fatal(err)
+	}
 	if code, rows := read(url.Values{"since": {"0"}, "limit": {"10"}}); code != 200 || len(rows) != 4 || rows[0].Op != "takeover" {
 		t.Fatalf("since=0: %d %+v", code, rows)
 	}
@@ -140,5 +146,53 @@ func TestBrowserStopRefusesAnUnsavedControlState(t *testing.T) {
 	again := send()
 	if again.Code != http.StatusOK || s.browser().Status().StateError {
 		t.Fatalf("retry: %d %s", again.Code, again.Body)
+	}
+}
+
+func TestBothSettingsEntrypointsWithdrawQueuedBrowserCommands(t *testing.T) {
+	for _, narrow := range []bool{true, false} {
+		t.Run(map[bool]string{true: "browser", false: "general"}[narrow], func(t *testing.T) {
+			f, _ := newGateFixture(t)
+			s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+			route, path := s.settingsRoute, "/v1/settings"
+			if narrow {
+				route, path = s.browserSettingsRoute, "/v1/browser/settings"
+			}
+			handler := f.g.wrap(http.HandlerFunc(route))
+			headers := map[string]string{"Authorization": "Bearer " + f.send, "Content-Type": "application/json", actorHeader: actorDevice}
+			if !narrow {
+				headers = map[string]string{"Origin": "http://127.0.0.1:7757", "Cookie": "clawdline-next=" + f.local, "Content-Type": "application/json"}
+			}
+			set := func(body string) {
+				t.Helper()
+				result := (call{method: "POST", path: path, body: body, headers: headers}).do(handler)
+				if result.Code != 200 {
+					t.Fatalf("setting: %d %s", result.Code, result.Body)
+				}
+			}
+			set(`{"browser_enabled":true}`)
+			bridge := s.browser()
+			canceled, cancel := context.WithCancel(t.Context())
+			cancel()
+			bridge.Poll(canceled, browserbridge.HostInfo{Version: "test"})
+			done := make(chan error, 1)
+			go func() { _, err := bridge.Do(t.Context(), "c1", "tabs", nil); done <- err }()
+			deadline := time.Now().Add(time.Second)
+			for bridge.Status().Pending == 0 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if bridge.Status().Pending != 1 {
+				t.Fatal("command did not queue")
+			}
+			set(`{"browser_enabled":false}`)
+			select {
+			case err := <-done:
+				if err != browserbridge.Disabled {
+					t.Fatalf("queued command: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("setting acknowledged without withdrawing queued command")
+			}
+		})
 	}
 }

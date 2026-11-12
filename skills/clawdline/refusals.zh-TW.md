@@ -28,13 +28,15 @@
 | `board_unavailable` | `internal/transport/http/board.go` |
 | `body_too_large` | `internal/transport/http/body.go`, `internal/transport/http/ops_documents.go`, `internal/transport/http/project_files.go`, `internal/transport/http/project_memory.go`, `internal/transport/http/project_sync.go`, `internal/transport/http/projects.go`, `internal/transport/http/session_restore.go`, `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/squad_packages.go`, `internal/transport/http/squad_role_draft.go`, `internal/transport/http/tool_library.go`, `internal/transport/http/work.go`, `internal/transport/http/work_v2.go`, `internal/transport/http/work_v2_session_name.go` |
 | `broker_unavailable` | `internal/transport/http/cloud_agent.go` |
-| `browser_bad_request` | `internal/transport/http/browser.go`, `internal/transport/http/browser_launch.go` |
+| `browser_bad_request` | `internal/transport/http/browser.go`, `internal/transport/http/browser_launch.go`, `internal/transport/http/settings.go` |
 | `browser_chromium_missing` | `internal/transport/http/browser_launch.go` |
 | `browser_disabled` | `internal/transport/http/browser.go` |
 | `browser_launch_failed` | `internal/transport/http/browser_launch.go` |
 | `browser_page_error` | `internal/transport/http/browser.go` |
 | `browser_resume_person_only` | `internal/transport/http/browser.go` |
 | `browser_setting_unavailable` | `internal/transport/http/settings.go` |
+| `browser_user_chrome_setup_required` | `internal/transport/http/browser_launch.go` |
+| `browser_wrong_mode` | `internal/transport/http/browser.go` |
 | `builtin_read_only` | `internal/transport/http/squad.go` |
 | `busy` | `internal/transport/http/intent.go`, `internal/transport/http/session_smart_title.go`, `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/squad_role_draft.go`, `internal/transport/http/voice.go`, `internal/transport/http/work_v2_persona_suggestion.go` |
 | `capacity_full` | `internal/transport/http/squad.go`, `internal/transport/http/tool_library.go` |

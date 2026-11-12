@@ -1,11 +1,12 @@
 import type { SessionRow } from "@clawdline/contract"
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { followsRelay } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { browserCall as call } from "./browser-call.js"
 import { openBrowserSetup } from "./BrowserSetup.js"
-import { BrowserViewport } from "./BrowserViewport.js"
+import { BrowserViewport, type BrowserKeyboardHandle } from "./BrowserViewport.js"
+import type { InputReceipt } from "./browser-keyboard.js"
 import "./browser-panel.css"
 
 /**
@@ -28,15 +29,16 @@ import "./browser-panel.css"
  */
 
 type TabInfo = { tab: number; conversation: string; person: boolean; current: boolean }
-type Status = { enabled: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[] } }
+type Status = { mode?: string; enabled: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[] } }
 type Activity = { at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; thumb: string }
 
 const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
   open: "browserOpOpen", read: "browserOpRead", click: "browserOpClick", type: "browserOpType", key: "browserOpKey",
   scroll: "browserOpScroll", screenshot: "browserOpScreenshot", takeover: "browserOpTakeover", handback: "browserOpHandback", release: "browserOpRelease",
   viewport: "browserOpViewport",
+  close: "browserOpClose",
 }
-type Shot = { data: string; width: number; height: number; url: string; title: string; layout?: "mobile" | "desktop" }
+type Shot = { data: string; width: number; height: number; url: string; title: string; layout?: "mobile" | "desktop"; editables?: { x: number; y: number; width: number; height: number; kind: string }[] }
 
 const SHOT_MS = 1000
 const STATUS_MS = 3000
@@ -52,7 +54,7 @@ function address(raw: string | undefined): { host: string; rest: string; secure:
   try {
     const u = new URL(raw)
     const rest = (u.pathname === "/" ? "" : u.pathname) + u.search
-    return { host: u.host.replace(/^www\./, ""), rest: decodeURIComponent(rest), secure: u.protocol === "https:" }
+    return { host: u.host, rest: decodeURIComponent(rest), secure: u.protocol === "https:" }
   } catch {
     return { host: raw, rest: "", secure: false }
   }
@@ -73,20 +75,27 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const conversation = row?.sessionId ?? ""
   const [status, setStatus] = useState<Status | null>(null)
   const [statusError, setStatusError] = useState<unknown>(null)
-  const [shot, setShot] = useState<Shot | null>(null)
+  const [shotRecord, setShotRecord] = useState<{ value: Shot; tab: number; mode?: string } | null>(null)
   const [shotError, setShotError] = useState<unknown>(null)
   const [actError, setActError] = useState<unknown>(null)
-  const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
+  const [controlBusy, setControlBusy] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(false)
   const [reminded, setReminded] = useState(false)
   const [activity, setActivity] = useState<Activity[]>([])
   const closeRef = useRef<HTMLButtonElement>(null)
+  const nativeKeyboard = useRef<BrowserKeyboardHandle>(null)
 
   const mine = status?.status.tabs.filter((t) => t.conversation === conversation) ?? []
   const tab = mine.find((t) => t.current) ?? mine[mine.length - 1] ?? null
   const tabID = tab?.tab ?? 0
+  const browserMode = status?.mode
+  const scopeKey = (browserMode ?? "legacy") + ":" + tabID
+  const scope = useRef(scopeKey)
+  scope.current = scopeKey
+  const shot = shotRecord?.tab === tabID && shotRecord.mode === browserMode ? shotRecord.value : null
   const otherDebugger = (shotError as { code?: string } | null)?.code === "browser_other_debugger"
-  const person = !!tab?.person && !otherDebugger
+  const person = !!tab?.person && status?.enabled !== false && !otherDebugger
   const name = assistantName(row)
 
   useEffect(() => {
@@ -103,7 +112,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
 
   useEffect(() => {
     setReminded(false)
-    setShot(null)
+    setShotRecord(null)
     setShotError(null)
     if (!open || !tabID) return
     let alive = true
@@ -113,15 +122,15 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
       inFlight = true
       // Through Clawdline Cloud the picture travels encrypted through the
       // relay, so it is asked for at a lower quality there.
-      call<{ value: Shot }>("GET", "/v1/browser/screenshot?tab=" + tabID + "&quality=" + (relay ? "45" : "55")).then(
-        (r) => { if (alive) { setShot(r.value); setShotError(null) } },
+      call<{ value: Shot }>("GET", "/v1/browser/screenshot?tab=" + tabID + "&quality=" + (relay ? "45" : "55") + (browserMode ? "&browser_mode=" + encodeURIComponent(browserMode) : "")).then(
+        (r) => { if (alive) { setShotRecord({ value: r.value, tab: tabID, mode: browserMode }); setShotError(null) } },
         (e: unknown) => { if (alive) setShotError(e) },
       ).finally(() => { inFlight = false })
     }
     read()
     const timer = window.setInterval(read, SHOT_MS)
     return () => { alive = false; window.clearInterval(timer) }
-  }, [open, relay, tabID])
+  }, [open, relay, tabID, browserMode])
 
   // What the agent did, with the picture of the page after each action.
   useEffect(() => {
@@ -141,19 +150,25 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   }, [open, conversation, tabID])
 
   useEffect(() => { if (open) closeRef.current?.focus({ preventScroll: true }) }, [open])
+  useEffect(() => {
+    setToolsOpen(false); setBusy(false); setControlBusy(false); setActError(null)
+    nativeKeyboard.current?.close()
+  }, [open, scopeKey])
 
-  const act = useCallback(async (op: string, args: Record<string, unknown>) => {
-    if (!tabID) return
+  const act = useCallback(async (op: string, args: Record<string, unknown>): Promise<InputReceipt> => {
+    if (!tabID || scope.current !== scopeKey) return { ok: false }
     setBusy(true)
     setActError(null)
     try {
-      await call("POST", "/v1/browser/person", { op, tab: tabID, args })
+      const result = await call<{ value?: { editable?: string | null } }>("POST", "/v1/browser/person", { op, tab: tabID, args, ...(browserMode ? {browser_mode:browserMode} : {}) })
+      return scope.current === scopeKey ? { ok: true, editable: result.value?.editable } : { ok: false }
     } catch (e) {
-      setActError(e)
+      if (scope.current === scopeKey) setActError(e)
+      return { ok: false }
     } finally {
-      setBusy(false)
+      if (scope.current === scopeKey) setBusy(false)
     }
-  }, [tabID])
+  }, [tabID, browserMode, scopeKey])
 
   const muted = !!status?.status.muted?.includes(conversation)
   const mute = async (on: boolean) => {
@@ -169,25 +184,50 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     }
   }
 
-  const control = async (on: boolean) => {
-    if (!tabID) return
-    setBusy(true)
+  const control = async (on: boolean): Promise<boolean> => {
+    if (!tabID || scope.current !== scopeKey) return false
+    if (!on) nativeKeyboard.current?.close()
+    setControlBusy(true)
     setActError(null)
     try {
-      await call("POST", "/v1/browser/control", { tab: tabID, person: on })
+      await call("POST", "/v1/browser/control", { tab: tabID, person: on, ...(browserMode ? {browser_mode:browserMode} : {}) })
+      if (scope.current !== scopeKey) return false
       setStatus((s) => s && { ...s, status: { ...s.status, tabs: s.status.tabs.map((t) => t.tab === tabID ? { ...t, person: on } : t) } })
+      return true
     } catch (e) {
-      setActError(e)
+      if (scope.current === scopeKey) setActError(e)
+      return false
     } finally {
-      setBusy(false)
+      if (scope.current === scopeKey) setControlBusy(false)
     }
   }
 
-  const send = (e: FormEvent) => {
-    e.preventDefault()
-    if (!text) return
-    void act("type", { text }).then(() => setText(""))
+  const ensureControl = () => person ? Promise.resolve(true) : control(true)
+  const tap = async (x: number, y: number): Promise<InputReceipt> => await ensureControl() ? act("click", { x, y }) : { ok: false }
+  const changeLayout = async (mode: string) => {
+    nativeKeyboard.current?.close()
+    if (await ensureControl()) await act("viewport", { mode })
   }
+
+  const activityList = () => (
+        <details className="browser-activity">
+          <summary>{nextWord("browserPanelActivity")}</summary>
+          {activity.length === 0 ? <p className="browser-activity-empty">{nextWord("browserPanelActivityEmpty")}</p> : (
+            <ol>
+              {activity.map((row, i) => (
+                <li key={row.at + ":" + i}>
+                  {row.thumb && <img src={"data:image/jpeg;base64," + row.thumb} alt="" />}
+                  <span className="browser-activity-words">
+                    <b>{OP_WORD[row.op] ? nextWord(OP_WORD[row.op]) : row.op}</b>
+                    <span>{row.op === "type" ? (row.password ? "••••" : "") : row.op === "viewport" && (row.target === "mobile" || row.target === "desktop") ? nextWord(row.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : row.target || address(row.url).host}</span>
+                    <time dateTime={new Date(row.at * 1000).toISOString()}>{new Date(row.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </details>
+  )
 
   const body = () => {
     if (statusError) return <div className="screen-note err" role="alert">{said(statusError, "browserPanelReadFailed")}</div>
@@ -214,25 +254,14 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         {status.status.stopped && <div className="screen-note" role="status">{nextWord("browserPanelStopped")}</div>}
         {shotError ? <div className="screen-note err" role="alert">{(shotError as { code?: string })?.code === "browser_other_debugger" ? nextWord("browserPanelOtherDebugger") : said(shotError, "browserPanelReadFailed")}</div> : null}
         {shot && !otherDebugger && (
-          <BrowserViewport key={tabID + ":" + (shot.layout || "desktop")} shot={shot} canClick={person && !busy} onTap={(x, y) => void act("click", { x, y })} />
+          <BrowserViewport key={scopeKey + ":" + (shot.layout || "desktop")} shot={shot} canClick={!busy && !controlBusy} person={person} onTap={tap}
+            onEdit={edit => act(edit.op, edit.args)} onPrepareKeyboard={ensureControl} keyboardRef={nativeKeyboard}
+            layoutControl={<label className="browser-mode"><span className="sr-only">{nextWord("browserPanelLayout")}</span>
+              <select aria-label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy} onChange={e => void changeLayout(e.target.value)}>
+                <option value="mobile">{nextWord("browserPanelMobile")}</option><option value="desktop">{nextWord("browserPanelDesktop")}</option>
+              </select></label>} />
         )}
-        <details className="browser-activity">
-          <summary>{nextWord("browserPanelActivity")}</summary>
-          {activity.length === 0 ? <p className="browser-activity-empty">{nextWord("browserPanelActivityEmpty")}</p> : (
-            <ol>
-              {activity.map((row, i) => (
-                <li key={row.at + ":" + i}>
-                  {row.thumb && <img src={"data:image/jpeg;base64," + row.thumb} alt="" />}
-                  <span className="browser-activity-words">
-                    <b>{OP_WORD[row.op] ? nextWord(OP_WORD[row.op]) : row.op}</b>
-                    <span>{row.op === "type" ? (row.password ? "••••" : "") : row.op === "viewport" && (row.target === "mobile" || row.target === "desktop") ? nextWord(row.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : row.target || address(row.url).host}</span>
-                    <time dateTime={new Date(row.at * 1000).toISOString()}>{new Date(row.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </details>
+
       </div>
     )
   }
@@ -256,39 +285,29 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
       </div>
-      {open && ready && <div className="browser-layout" role="group" aria-label={nextWord("browserPanelLayout")}>
-        <button type="button" className="chip" aria-pressed={shot?.layout === "mobile"} disabled={!person || busy} onClick={() => void act("viewport", { mode: "mobile" })}>{nextWord("browserPanelMobile")}</button>
-        <button type="button" className="chip" aria-pressed={!!shot && shot.layout !== "mobile"} disabled={!person || busy} onClick={() => void act("viewport", { mode: "desktop" })}>{nextWord("browserPanelDesktop")}</button>
-        {!person && <span>{nextWord("browserPanelLayoutTakeover")}</span>}
-      </div>}
       <div className="scroller panel-view-body" aria-live="polite">{open ? body() : null}</div>
       {open && ready && (
         <div className="browser-controls">
           <div className="browser-who" data-person={person ? "true" : undefined}>
-            <span aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelAgentActs", { assistant: name })}</span>
-            <button type="button" className="chip browser-notify" aria-pressed={!muted} disabled={busy} onClick={() => void mute(!muted)}>
-              {muted ? nextWord("browserPanelNotifyOff") : nextWord("browserPanelNotifyOn")}
+            <span aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</span>
+            <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={controlBusy || otherDebugger} onClick={() => void control(!person)}>
+              {person ? nextWord("browserPanelHandBackShort") : nextWord("browserPanelTakeOverShort")}
             </button>
-            <button type="button" className={person ? "chip browser-take" : "chip browser-take browser-primary"} disabled={busy || otherDebugger} onClick={() => void control(!person)}>
-              {person ? nextWord("browserPanelHandBack", { assistant: name }) : nextWord("browserPanelTakeOver")}
-            </button>
+            <button type="button" className="browser-tools-toggle" aria-expanded={toolsOpen} aria-controls="browser-tools" onClick={() => setToolsOpen(v => !v)}>{nextWord("browserPanelTools")}</button>
           </div>
-          {person && (
-            <>
-              <form className="browser-type" onSubmit={send}>
-                <label className="sr-only" htmlFor="browser-text">{nextWord("browserPanelTypeLabel")}</label>
-                <input id="browser-text" value={text} autoComplete="off" placeholder={nextWord("browserPanelTypePlaceholder")} onChange={(e) => setText(e.target.value)} />
-                <button type="submit" className="chip browser-primary" disabled={busy || !text}>{nextWord("browserPanelSend")}</button>
-              </form>
-              <div className="browser-keys">
-                <button type="button" className="chip" disabled={busy} onClick={() => void act("key", { key: "Tab" })}>Tab</button>
-                <button type="button" className="chip" disabled={busy} onClick={() => void act("key", { key: "Enter" })}>Enter</button>
-                <button type="button" className="chip" disabled={busy} onClick={() => void act("key", { key: "Backspace" })}>{nextWord("browserPanelKeyBackspace")}</button>
-                <button type="button" className="chip" disabled={busy} onClick={() => void act("scroll", { direction: "up" })}>{nextWord("browserPanelScrollUp")}</button>
-                <button type="button" className="chip" disabled={busy} onClick={() => void act("scroll", { direction: "down" })}>{nextWord("browserPanelScrollDown")}</button>
-              </div>
-            </>
-          )}
+          <div id="browser-tools" className="browser-tools" hidden={!toolsOpen}>
+            <div className="browser-tools-head"><b>{nextWord("browserPanelTools")}</b><button type="button" onClick={() => setToolsOpen(false)} aria-label={L.strings.webClose}>×</button></div>
+            <div className="browser-keys">
+              <button type="button" className="browser-keyboard-open" disabled={busy || controlBusy || otherDebugger} onClick={() => { nativeKeyboard.current?.open(); setToolsOpen(false) }}>{nextWord("browserPanelKeyboard")}</button>
+              <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Tab" })}>Tab</button>
+              <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Enter" })}>Enter</button>
+              <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Backspace" })}>{nextWord("browserPanelKeyBackspace")}</button>
+              <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "up" })}>{nextWord("browserPanelScrollUp")}</button>
+              <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "down" })}>{nextWord("browserPanelScrollDown")}</button>
+            </div>
+            <button type="button" className="browser-notify" aria-pressed={!muted} disabled={busy} onClick={() => void mute(!muted)}>{nextWord(muted ? "browserPanelNotifyOff" : "browserPanelNotifyOn")}</button>
+            {activityList()}
+          </div>
           {actError ? <div className="screen-note err" role="alert">{said(actError, "browserPanelActFailed")}</div> : null}
         </div>
       )}

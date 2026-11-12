@@ -15,6 +15,8 @@ import (
 const TabsFile = "browser-tabs.json"
 
 type tabsState struct {
+	Mode    string            `json:"mode,omitempty"`
+	Closing map[int]string    `json:"closing,omitempty"`
 	Stopped bool              `json:"stopped"`
 	Owner   map[string]string `json:"owner"`
 	Current map[string]int    `json:"current"`
@@ -29,7 +31,7 @@ func (b *Bridge) saveTabs() (err error) {
 	if b.tabsPath == "" {
 		return nil
 	}
-	st := tabsState{Stopped: b.stopped, Owner: map[string]string{}, Current: b.current, Person: []int{}, Muted: []string{}}
+	st := tabsState{Mode: b.mode, Closing: b.closing, Stopped: b.stopped, Owner: map[string]string{}, Current: b.current, Person: []int{}, Muted: []string{}}
 	for t, c := range b.owner {
 		st.Owner[strconv.Itoa(t)] = c
 	}
@@ -82,6 +84,14 @@ func (b *Bridge) loadTabs(path string) (err error) {
 		return err
 	}
 	b.stopped = st.Stopped
+	if st.Mode == "user_chrome" {
+		b.mode = st.Mode
+	}
+	for tab, id := range st.Closing {
+		if tab > 0 && id != "" {
+			b.closing[tab] = id
+		}
+	}
 	for k, c := range st.Owner {
 		if t, err := strconv.Atoi(k); err == nil && t > 0 && c != "" {
 			b.owner[t] = c
@@ -106,6 +116,12 @@ func (b *Bridge) loadTabs(path string) (err error) {
 func (b *Bridge) Forget(tab int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.forgetLocked(tab)
+	b.saveTabs()
+}
+
+func (b *Bridge) forgetLocked(tab int) {
+	delete(b.closing, tab)
 	c := b.owner[tab]
 	delete(b.owner, tab)
 	delete(b.person, tab)
@@ -113,5 +129,4 @@ func (b *Bridge) Forget(tab int) {
 	if c != "" && b.current[c] == tab {
 		delete(b.current, c)
 	}
-	b.saveTabs()
 }

@@ -1709,7 +1709,7 @@ export class RelayWriter {
       case "chrome-tab-screenshot": {
         const fields: Record<string, unknown> = {}
         for (const [key, value] of url.searchParams) {
-          if (key in fields || (key !== "tab" && key !== "quality")) throw failure("invalid_query", "A tab picture takes one tab and one quality.", 400)
+          if (key in fields || (key !== "tab" && key !== "quality" && key !== "browser_mode")) throw failure("invalid_query", "A tab picture takes one tab and one quality.", 400)
           fields[key] = value
         }
         if (typeof fields.tab !== "string" || !/^\d{1,10}$/.test(fields.tab)) throw failure("invalid_query", "Name the tab to look at.", 400)

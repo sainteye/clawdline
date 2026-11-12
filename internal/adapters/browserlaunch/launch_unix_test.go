@@ -4,6 +4,7 @@ package browserlaunch
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,5 +77,28 @@ func TestLaunchStartsChromiumOnClawdlinesOwnProfile(t *testing.T) {
 func TestAChromiumThatCannotStartIsAnError(t *testing.T) {
 	if _, err := Launch(Options{Dir: t.TempDir(), Port: 7791, Browser: filepath.Join(t.TempDir(), "missing")}); err == nil {
 		t.Fatal("a missing binary started")
+	}
+}
+
+func TestEachHostLauncherExecutesWithItsOwnModeAndProfile(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(t.TempDir(), "fake clawdline")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\nprintf '%s\\n' \"$CLAWDLINE_BROWSER_MODE\" \"$CLAWDLINE_BROWSER_PROFILE\" \"$CLAWDLINE_NEXT_DIR\" \"$CLAWDLINE_NEXT_PORT\" \"$@\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"isolated", "user_chrome"} {
+		profile := filepath.Join(t.TempDir(), "person's Chrome")
+		host, err := InstallHostForMode(dir, 7791, exe, strings.Repeat("a", 32), profile, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := exec.Command(host.Launcher).Output()
+		if err != nil {
+			t.Fatalf("%s: %v", mode, err)
+		}
+		want := strings.Join([]string{mode, profile, dir, "7791", "browser-host", ""}, "\n")
+		if string(got) != want {
+			t.Fatalf("%s host environment: %q, want %q", mode, got, want)
+		}
 	}
 }

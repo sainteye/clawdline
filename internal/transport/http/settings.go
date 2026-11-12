@@ -14,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/contract"
 )
 
@@ -44,7 +45,7 @@ var browserSettings = map[string]bool{
 	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true, "grok_full_permission": true,
 	"setup_mode": true, "setup_completed_at": true, "setup_app_device": true, "setup_skipped": true,
 	// The browser setup guide (web/console/src/session/BrowserSetup.tsx).
-	"browser_enabled": true, "browser_notify_new_site": true,
+	"browser_mode": true, "browser_enabled": true, "browser_notify_new_site": true,
 }
 
 // notificationSettings is the machine-wide event policy. A device's ability
@@ -142,7 +143,7 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 		if len(changes) == 0 {
 			v, err = f.Read()
 		} else {
-			v, err = f.Set(changes)
+			v, err = s.setBrowserAwareSettings(f, changes)
 		}
 		if err != nil {
 			writeSettingsFailure(w, f, err)
@@ -628,6 +629,17 @@ func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) settingsSnapshotW
 			continue
 		}
 		raw, ok := v.Raw[name]
+		if name == "browser_mode" {
+			raw, _ = json.Marshal(v.BrowserMode())
+			ok = true
+		}
+		if name == "browser_enabled" {
+			if _, explicit := v.Raw["browser_mode"]; explicit {
+				on, _ := v.Bool(name)
+				raw, _ = json.Marshal(on)
+				ok = true
+			}
+		}
 		if !ok {
 			continue
 		}
@@ -648,6 +660,15 @@ func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) settingsSnapshotW
 // broke by hand is theirs to fix and says where it is; the rest are this
 // daemon's.
 func writeSettingsFailure(w http.ResponseWriter, f *nextconfig.File, err error) {
+	if _, ok := browserbridge.IsRefusal(err); ok {
+		writeBrowserError(w, err)
+		return
+	}
+	if errors.Is(err, nextconfig.ErrBrowserMode) {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Choose one browser mode without conflicting enable settings.")
+		return
+	}
+
 	switch {
 	case errors.Is(err, nextconfig.ErrNotObject):
 		writeRawRefusal(w, http.StatusConflict, "settings_file_invalid", f.Path()+" is not a JSON object; it was left as it is")

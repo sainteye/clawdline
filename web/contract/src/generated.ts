@@ -8219,6 +8219,7 @@ export interface SettingsRequest {
    */
   backdrop: number | null
   browser_enabled: boolean | null
+  browser_mode: string | null
   browser_notify_new_site: boolean | null
 
   /**
@@ -8596,6 +8597,7 @@ export interface SettingsSnapshot {
    */
   backdrop: number | null
   browser_enabled: boolean | null
+  browser_mode: string | null
   browser_notify_new_site: boolean | null
 
   /**

@@ -1489,10 +1489,11 @@ The reason is required. Use `--from <live-session-conversation>` only when the e
 
 ## 9b. Use the browser
 
-Only when the person has turned on browser use for this machine (Settings → Browser); a new
-Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
-from the person's Chrome. Every action is recorded for the person, and they may watch and take
-over from this machine or their phone.
+Only when the person has selected a Clawdline browser mode (Settings → Sessions and access →
+Clawdline browser); a new Session is told so when it starts. The choices are agents' native tools
+(no Clawdline channel), the person's usual Chrome (a separate connection), or an isolated test
+Chrome. Existing opt-ins keep the isolated profile. Every Clawdline browser action is recorded,
+and the person may watch and take over from this machine or their phone.
 
 ```sh
 clawdline browser open <url>
@@ -1503,17 +1504,19 @@ clawdline browser key <name>
 clawdline browser scroll
 clawdline browser viewport mobile
 clawdline browser screenshot
+clawdline browser close
 clawdline browser release
 clawdline browser --help
 ```
 
 - `viewport mobile` switches to a responsive phone layout; `viewport desktop` restores the window layout.
+- `close` closes your current tab (`--tab N` names another tab you own). `release` only gives up control and leaves the tab open. Neither may close a tab the person has taken over.
 - Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
   see the layout.
 - `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
-- `browser_stopped`: the person stopped all browser use. Do not retry.
+- `browser_stopped`: the person stopped the Clawdline browser channel. Do not retry.
 - `browser_extension_missing` or `browser_disabled`: continue another way, and tell the person
-  that Settings → Browser sets it up.
+  that Settings → Sessions and access → Clawdline browser selects it. Agents' native tools remain available.
 - When a page needs the person — sign-in, CAPTCHA, payment, or any confirmation with
   consequences — create a note (`clawdline guide note`) asking them to take over the Chrome tab,
   and wait.

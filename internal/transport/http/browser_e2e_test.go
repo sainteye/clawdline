@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -30,10 +31,18 @@ import (
 //	CLAWDLINE_BROWSER_E2E_BIN=<built clawdline> CLAWDLINE_BROWSER_E2E_CHROMIUM=<Chromium binary> \
 //	  go test ./internal/transport/http -run TestBrowserBridgeEndToEnd -v
 //
-// Branded Chrome ignores --load-extension, so this needs Chromium. Nothing
+// The isolated harness uses Chromium or Chrome for Testing with --load-extension. Nothing
 // touches the person's daemon or Chrome profile: the profile is a temporary
 // directory and the host is registered inside it.
 func TestBrowserBridgeEndToEnd(t *testing.T) {
+	for _, mode := range []string{"isolated", "user_chrome"} {
+		t.Run(mode, func(t *testing.T) { testBrowserBridgeEndToEnd(t, mode) })
+	}
+}
+
+// Both modes use a temporary Chrome for Testing profile. No manifest is
+// installed into the person's usual Chrome by this acceptance test.
+func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	bin, chromium := os.Getenv("CLAWDLINE_BROWSER_E2E_BIN"), os.Getenv("CLAWDLINE_BROWSER_E2E_CHROMIUM")
 	if bin == "" || chromium == "" {
 		t.Skip("set CLAWDLINE_BROWSER_E2E_BIN and CLAWDLINE_BROWSER_E2E_CHROMIUM to run")
@@ -56,7 +65,7 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 	if _, err := s.gate().files.MachineToken(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_enabled": true}); err != nil {
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_mode": mode}); err != nil {
 		t.Fatal(err)
 	}
 	srv := &http.Server{Handler: s.Handler()}
@@ -80,8 +89,10 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 	t.Cleanup(func() { pageSrv.Close() })
 	formURL := "http://" + pageListener.Addr().String() + "/form"
 
-	repo, _ := filepath.Abs("../../..")
-	ext, _ := filepath.EvalSymlinks(filepath.Join(repo, "extension", "chrome"))
+	ext := browserlaunch.ExtensionDir(dir)
+	if err := browserlaunch.WriteExtension(ext); err != nil {
+		t.Fatal(err)
+	}
 	sum := sha256.Sum256([]byte(ext))
 	id := []byte(hex.EncodeToString(sum[:16]))
 	for i, c := range id {
@@ -105,7 +116,7 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 		}
 		return out.String(), errOut.String(), code
 	}
-	if out, errOut, code := run("browser", "install-host", "--extension-id", string(id), "--chrome-dir", profile); code != 0 {
+	if out, errOut, code := run("browser", "install-host", "--extension-id", string(id), "--chrome-dir", profile, "--mode", mode); code != 0 {
 		t.Fatalf("install-host: %d %s %s", code, out, errOut)
 	}
 	if _, errOut, code := run("browser", "open", formURL); code == 0 || !strings.Contains(errOut, "browser_extension_missing") {
@@ -160,6 +171,10 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
+	host := s.browser().Status().Host
+	if host.Mode != mode || host.Profile != profile {
+		t.Fatalf("native host binding: %+v, expected %s %s", host, mode, profile)
+	}
 	mustJSON := func(name, out, errOut string, code int, into any) {
 		t.Helper()
 		if code != 0 {
@@ -248,27 +263,54 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 
 	// The live panel's own view: the page's CSS size comes with the picture,
 	// so a tap on it can become a click at the same point.
-	raw, err := s.browser().PersonDo(context.Background(), "screenshot", opened.Value.Tab, nil)
+	raw, err := s.browser().PersonDoForMode(context.Background(), "screenshot", opened.Value.Tab, nil, mode)
 	var view struct {
 		Width, Height int
 		Data, Title   string
+		Editables     []struct {
+			X, Y, Width, Height float64
+			Kind                string
+		}
 	}
 	if err != nil || json.Unmarshal(raw, &view) != nil || view.Width < 300 || view.Height < 200 || view.Data == "" || view.Title != "Form" {
 		t.Fatalf("person screenshot: %v %d×%d title %q", err, view.Width, view.Height, view.Title)
 	}
-	if _, err := s.browser().PersonDo(context.Background(), "click", opened.Value.Tab, json.RawMessage(`{"x":10,"y":10}`)); err == nil {
+	if len(view.Editables) < 4 {
+		t.Fatalf("native keyboard geometry is missing: %+v", view.Editables)
+	}
+	geometry, _ := json.Marshal(view.Editables)
+	for _, secret := range []string{"hunter2", "synthetic-unlabelled-password", "synthetic-unlabelled-code"} {
+		if strings.Contains(string(geometry), secret) {
+			t.Fatal("keyboard geometry exposed a field value")
+		}
+	}
+	if _, err := s.browser().PersonDoForMode(context.Background(), "click", opened.Value.Tab, json.RawMessage(`{"x":10,"y":10}`), mode); err == nil {
 		t.Fatal("the person clicked without taking the tab over")
 	}
 
 	// The person takes the tab over: the agent is refused and learns why.
-	s.browser().SetPersonControl(opened.Value.Tab, true)
-	if _, err := s.browser().PersonDo(context.Background(), "key", opened.Value.Tab, json.RawMessage(`{"key":"Tab"}`)); err != nil {
+	s.browser().SetPersonControlForMode(opened.Value.Tab, true, mode)
+	for _, field := range view.Editables {
+		if field.Kind != "password" {
+			continue
+		}
+		args, _ := json.Marshal(map[string]float64{"x": field.X + field.Width/2, "y": field.Y + field.Height/2})
+		answer, err := s.browser().PersonDoForMode(context.Background(), "click", opened.Value.Tab, args, mode)
+		var focus struct {
+			Editable string `json:"editable"`
+		}
+		if err != nil || json.Unmarshal(answer, &focus) != nil || focus.Editable != "password" {
+			t.Fatalf("native focused field: %s %v", answer, err)
+		}
+		break
+	}
+	if _, err := s.browser().PersonDoForMode(context.Background(), "key", opened.Value.Tab, json.RawMessage(`{"key":"Tab"}`), mode); err != nil {
 		t.Fatalf("the person's key during takeover: %v", err)
 	}
 	if _, errOut, code := run("browser", "read"); code == 0 || !strings.Contains(errOut, "browser_person_controlling") {
 		t.Fatalf("during takeover: %d %s", code, errOut)
 	}
-	s.browser().SetPersonControl(opened.Value.Tab, false)
+	s.browser().SetPersonControlForMode(opened.Value.Tab, false, mode)
 	// The emergency stop: an agent may stop, but not resume.
 	if out, errOut, code := run("browser", "stop"); code != 0 {
 		t.Fatalf("stop: %s %s", out, errOut)
@@ -306,4 +348,19 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 		t.Fatalf("audit is missing a row (name %v, password %v, continue %v): %s", typedName, typedPassword, clickedContinue, out)
 	}
 	t.Logf("audit rows: %d", len(audit.Rows))
+	out, errOut, code = run("browser", "close")
+	mustJSON("close", out, errOut, code, nil)
+	var remaining struct {
+		Value struct {
+			Tabs []struct{ Tab int } `json:"tabs"`
+		} `json:"value"`
+	}
+	out, errOut, code = run("browser", "tabs")
+	mustJSON("tabs after close", out, errOut, code, &remaining)
+	if len(remaining.Value.Tabs) != 0 {
+		t.Fatalf("Chrome kept the closed tab: %s", out)
+	}
+	if len(s.browser().Status().Tabs) != 0 {
+		t.Fatal("closed tab ownership remained")
+	}
 }
