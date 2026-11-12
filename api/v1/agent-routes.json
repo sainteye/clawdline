@@ -850,6 +850,11 @@
       "method": "*",
       "pattern": "/v1/browser/reminder",
       "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/voice/copilot-work",
+      "guide": "connect"
     }
   ]
 }

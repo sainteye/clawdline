@@ -92,7 +92,9 @@ conversation. Cost and remembered-call information sit below as unboxed secondar
 pricing explanation opens from the cost line. Tool chips keep their own scrollable space, and
 opening the execution log does not displace the conversation.
 
-**What the machine keeps.** Settings › Voice copilot writes `<state>/copilot.json` (mode 0600)
+**Assistant workspace.** The sidebar Voice assistant page owns the persistent inbox, work list and copilot settings. Background planning is opt-in; its execution and verification boundaries are documented in [voice-assistant-workspace.md](voice-assistant-workspace.md). Dictation settings remain in Settings.
+
+**What the machine keeps.** Voice assistant › Settings writes `<state>/copilot.json` (mode 0600)
 through `/v1/settings/copilot`: the OpenAI API key, the model (`gpt-realtime-mini` by default,
 or `gpt-realtime`), semantic VAD's eagerness (`low` by default, which waits through pauses
 mid-sentence), the person's extra instructions, and whether and with which assistant a briefing
@@ -103,7 +105,7 @@ device needs Send to change these, as for the voice cards.
 Realtime client secret with its key (`POST /v1/realtime/client_secrets`, 600 seconds) and
 answers it with the settings; the browser opens the call with that secret, so the key never
 reaches a phone or Cloud. Meanwhile the browser reads the Session list into the instructions,
-so the first question needs no tool, and asks `POST /v1/voice/copilot-briefing`.
+so the first question needs no tool. The directory does not fetch transcripts. Legacy calls may also ask `POST /v1/voice/copilot-briefing`; managed calls use the work pipeline instead, avoiding a duplicate briefing.
 
 The call button dials at once: the sheet opens ringing (a 440 and 480 Hz ringback, one second
 on and two off, on the audio context the press opened) until the call connects, fails or is

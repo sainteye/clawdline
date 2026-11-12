@@ -137,7 +137,7 @@ func consoleBounds() []Entry {
 			Limit: 24, AtLimit: EvictOldest, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
 		{
-			// LIST_LATEST_READS in realtime/copilot-tools.ts: how many busy
+			// LIST_LATEST_READS in realtime/copilot-tools.ts: how many group
 			// Sessions' newest words one Session list carries, one transcript
 			// read each. Further Sessions are listed without them.
 			Name: "console.copilot_list_transcript_reads", Class: Buffer, Unit: Rows,

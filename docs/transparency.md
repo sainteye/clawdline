@@ -487,3 +487,11 @@ entrance executes its action. The arrow stays close to the preview. Its expand/c
 labels are UI copy only. The reviewed English and Traditional Chinese `session-rotation`
 explanations, handoff trigger and original excerpt remain applicable; the shared
 `next-strings.ts` source receipt follows this UI change.
+
+The voice-work entry also covers explicitly awaited discovery continuations:
+original requests, recorded results and real tool contracts can be sent to the
+selected CLI for up to four planning rounds per request. GET and startup still
+never call a model. Both language explanations name the additional trigger and
+quota boundary. Versioned question approval, effect admission, capability-scoped
+claims and durable cross-browser narration are deterministic execution boundaries,
+not authority granted to the planning model.

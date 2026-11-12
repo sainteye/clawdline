@@ -1,8 +1,12 @@
 package http
 
 import (
+	"context"
+	"encoding/json"
 	"github.com/sainteye/clawdline/internal/adapters/sessionfiles"
+	"github.com/sainteye/clawdline/internal/domain/voicework"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
@@ -11,6 +15,28 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"voice.work_request_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-workspace-request transport deadline; no automatic retry of a mutation"}
+		},
+		"voice.work_execution_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-tool execution deadline; an expired write stays unknown"}
+		},
+		"voice.work_poll_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "client refresh interval while the workspace or a call is open"}
+		},
+		"voice.work_heartbeat_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "client heartbeat interval while executing a task"}
+		},
+		"voice.work_plan_rounds":     func() capacity.Reading { return s.voiceWorkCapacity("plan_rounds") },
+		"voice.work_progress":        func() capacity.Reading { return s.voiceWorkCapacity("progress") },
+		"voice.work_records":         func() capacity.Reading { return s.voiceWorkCapacity("records") },
+		"voice.work_text_characters": func() capacity.Reading { return s.voiceWorkCapacity("text_characters") },
+		"voice.work_state_bytes":     func() capacity.Reading { return s.voiceWorkCapacity("state_bytes") },
+		"voice.work_plan_inputs":     func() capacity.Reading { return s.voiceWorkCapacity("plan_inputs") },
+		"voice.work_parallel_reads":  func() capacity.Reading { return s.voiceWorkCapacity("parallel_reads") },
+		"voice.work_lease_seconds":   func() capacity.Reading { return s.voiceWorkCapacity("lease_seconds") },
+		"voice.work_request_bytes":   func() capacity.Reading { return s.voiceWorkCapacity("request_bytes") },
+
 		"artifacts.output_files": func() capacity.Reading {
 			sessions, bytes, largest, files, path, err := sessionfiles.New(s.cfg.Dir).Usage()
 			values := []int64{int64(sessions), bytes, largest, files, path}
@@ -175,4 +201,56 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 			return s.pictures.drops.YoungReading()
 		},
 	}
+}
+
+func (s *Server) voiceWorkCapacity(kind string) capacity.Reading {
+	if kind == "request_bytes" {
+		return capacity.Reading{Known: true, Note: "per-request body guard"}
+	}
+	if s.store == nil {
+		return capacity.Unmeasured("the assistant store is unavailable")
+	}
+	state, err := s.store.VoiceWork(context.Background())
+	if err != nil {
+		return capacity.Unmeasured("the assistant work list cannot be read")
+	}
+	var used int64
+	switch kind {
+	case "plan_rounds":
+		for _, in := range state.Inputs {
+			used = max(used, int64(in.PlanRounds))
+		}
+	case "progress":
+		for _, task := range state.Tasks {
+			used = max(used, int64(len(task.Progress)))
+		}
+	case "records":
+		used = int64(max(len(state.Inputs), len(state.Tasks)))
+	case "text_characters":
+		for _, in := range state.Inputs {
+			used = max(used, int64(utf8.RuneCountInString(in.Text)))
+		}
+		for _, t := range state.Tasks {
+			used = max(used, int64(utf8.RuneCountInString(t.Text)), int64(utf8.RuneCountInString(t.Result)), int64(utf8.RuneCountInString(t.Error)))
+		}
+	case "state_bytes":
+		raw, _ := json.Marshal(state)
+		used = int64(len(raw))
+	case "plan_inputs":
+		used = int64(len(state.Pending()))
+	case "parallel_reads":
+		for _, t := range state.Tasks {
+			if t.Status == "running" || t.Status == "cancel_requested" {
+				used++
+			}
+		}
+	case "lease_seconds":
+		for _, t := range state.Tasks {
+			if t.Status == "running" || t.Status == "cancel_requested" {
+				used = max(used, t.LeaseUntil-time.Now().Unix())
+			}
+		}
+		used = min(used, voicework.LeaseSecondsLimit)
+	}
+	return capacity.Reading{Known: true, Used: used, Note: "voice assistant ledger on this machine"}
 }

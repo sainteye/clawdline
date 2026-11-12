@@ -113,6 +113,8 @@ type copilotSettingsAnswer struct {
 	Briefing           bool     `json:"briefing"`
 	Brief              bool     `json:"brief"`
 	BriefingAssistant  string   `json:"briefing_assistant"`
+	WorkEnabled        bool     `json:"work_enabled"`
+	WorkAssistant      string   `json:"work_assistant"`
 	Models             []string `json:"models"`
 	Eagernesses        []string `json:"eagernesses"`
 	Voices             []string `json:"voices"`
@@ -126,7 +128,7 @@ func copilotAnswer(v copilot.Settings) copilotSettingsAnswer {
 	return copilotSettingsAnswer{
 		KeySet: strings.TrimSpace(v.Key) != "", KeyHint: v.KeyHint(),
 		Model: e.Model, Eagerness: e.Eagerness, Voice: e.Voice, Speed: e.Speed, ExtraInstructions: e.ExtraInstructions,
-		Briefing: !e.BriefingOff, Brief: !e.LongAnswers, BriefingAssistant: e.BriefingAssistant,
+		Briefing: !e.BriefingOff, Brief: !e.LongAnswers, BriefingAssistant: e.BriefingAssistant, WorkEnabled: e.WorkEnabled, WorkAssistant: e.WorkAssistant,
 		Models: copilot.Models, Eagernesses: copilot.Eagerness, Voices: copilot.Voices, Speeds: copilot.Speeds, BriefingAssistants: copilot.BriefingAssistants,
 		MaxInstructions: copilot.MaxExtraInstructionsRunes,
 	}
@@ -176,6 +178,7 @@ func (s *Server) copilotSettingsRoute(w http.ResponseWriter, r *http.Request) {
 // copilotSessionAnswer opens one call: a client secret for its model, and
 // the person's choices the call's session.update carries.
 type copilotSessionAnswer struct {
+	WorkEnabled       bool   `json:"work_enabled"`
 	ClientSecret      string `json:"client_secret"`
 	ExpiresAt         int64  `json:"expires_at"`
 	Model             string `json:"model"`
@@ -216,7 +219,7 @@ func (s *Server) copilotSessionRoute(w http.ResponseWriter, r *http.Request) {
 		writeRawRefusal(w, http.StatusBadGateway, code, "OpenAI did not open a voice copilot call: "+detail)
 		return
 	}
-	writeJSON(w, copilotSessionAnswer{ClientSecret: secret, ExpiresAt: expires, Model: e.Model,
+	writeJSON(w, copilotSessionAnswer{WorkEnabled: e.WorkEnabled, ClientSecret: secret, ExpiresAt: expires, Model: e.Model,
 		Eagerness: e.Eagerness, Voice: e.Voice, Speed: e.Speed, ExtraInstructions: e.ExtraInstructions, Briefing: !e.BriefingOff, Brief: !e.LongAnswers})
 }
 

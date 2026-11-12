@@ -152,6 +152,8 @@ func init() {
 		op{name: "copilot-briefing"},
 		op{name: "copilot-decide"},
 		op{name: "copilot-journal"},
+		op{name: "copilot-work", read: true},
+		op{name: "copilot-work-update"},
 
 		// A paired phone may edit only notification timing rules, through the
 		// same narrow route exposed by the local console.

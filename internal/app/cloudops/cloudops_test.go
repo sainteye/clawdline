@@ -981,6 +981,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/voice/copilot-briefing",
 		body2: `{}`,
 	}, {
+		word:    "copilot-work",
+		body:    map[string]any{"type": "copilot-work", "session": machine, "request": "req-work"},
+		session: machine, name: "read:req-work", method: "GET", path: "/v1/voice/copilot-work",
+	}, {
+		word:    "copilot-work-update",
+		body:    map[string]any{"type": "copilot-work-update", "session": machine, "request": "req-work-update", "work": map[string]any{"action": "input", "id": "utterance-one", "text": "List Sessions"}},
+		session: machine, name: "action:req-work-update", method: "POST", path: "/v1/voice/copilot-work", body2: `{"action":"input","id":"utterance-one","text":"List Sessions"}`,
+	}, {
 		word: "copilot-journal",
 		body: map[string]any{"type": "copilot-journal", "session": machine, "request": "req-journal",
 			"journal": map[string]any{"call": "call-0001", "entries": []any{}}},

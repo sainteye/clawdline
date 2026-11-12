@@ -1,3 +1,8 @@
+import { loadCopilotHelp } from './copilot-help-loader.js'
+import { WorkObservations } from '../voice-work/observations.js'
+import { onMachineChanged } from '../cloud/machine-switch.js'
+import { voiceWork, receiveVoiceWork, useCallWorkTools } from '../voice-work/runtime.js'
+import { WorkNarrator } from '../voice-work/narrator.js'
 /**
  * Clawdline Voice Copilot - OpenAI Realtime API WebRTC Client.
  * Enables two-way voice conversation from mobile browser to control and inspect
@@ -10,7 +15,6 @@ import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
-import type { HelpSection } from './copilot-help.js'
 import { nextWord } from '../next-strings.js'
 
 export interface CopilotLogItem {
@@ -153,8 +157,14 @@ export class RealtimeCopilotClient {
    * decision never judges the sentence before.
    */
   private heardNow = ''
+  private releaseWork?: () => void
+  private workReply = ''
+  private narrator = new WorkNarrator(event => {
+    if(this.dc?.readyState==='open')this.dc.send(JSON.stringify(event))
+  },()=>consoleLanguage()||'zh-Hant')
+  private workUnsubscribe?: () => void
   /** The user guide's sections, read the first time a call asks how something is used. */
-  private helpSections?: HelpSection[]
+
   /** What the machine confirmed since the person last spoke (`unbackedClaims`). */
   private doneSinceHeard = new Set<ActionKind>()
   /** A correction is under way, so its own words are not checked again. */
@@ -186,11 +196,7 @@ export class RealtimeCopilotClient {
       snippets: (id, request, machine) => openSnippetsOnThisPage(id, request, machine),
       fleet: () => fleetOnThisPage(),
       devstack: (place) => openDevStackOnThisPage(place),
-      help: async () => {
-        const [{ loadHelpDocs }, { helpSections }] = await Promise.all([import('./copilot-help-docs.js'), import('./copilot-help.js')])
-        this.helpSections ??= helpSections(await loadHelpDocs(), consoleLanguage() || 'en')
-        return this.helpSections
-      },
+      help: loadCopilotHelp,
       heard: () => this.heardNow,
       decide: (said, sessions) => decideOnMachine(said, sessions),
       machines: () => machinesOnThisPage(),
@@ -354,6 +360,7 @@ export class RealtimeCopilotClient {
     this.journal('start', navigator.userAgent)
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
+    const workspaceSettings = fetch('/v1/settings/copilot').then(async res=>res.ok?await res.json():null).catch(()=>null)
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
     this.updateState({ status: 'connecting', error: undefined, toolCallLog: undefined, remembered: this.memory.length })
     this.addLog('info', nextWord('copilotLogStarting'))
@@ -367,7 +374,7 @@ export class RealtimeCopilotClient {
       })
       check()
       const grant = (await opened.json().catch(() => null)) as {
-        client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean
+        client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean; work_enabled?: boolean
       } | null
       if (!opened.ok || !grant?.client_secret) {
         const { code, message } = copilotRefusal(grant, opened.status)
@@ -377,15 +384,27 @@ export class RealtimeCopilotClient {
           : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
           : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
       }
-      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
+      const managed = (await workspaceSettings)?.work_enabled === true
+      check()
+      this.call = { memory: '', snapshot: '', options: { workEnabled: managed, eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       // The briefing is the deciding machine's own Sessions; on a page showing
       // several machines the call reads every machine's list instead.
       const fleet = await fleetOnThisPage().catch(() => null)
       const machines = new Set((fleet ?? []).map((f) => f.machine))
-      this.briefing = grant.briefing && machines.size <= 1 ? this.pollBriefing() : Promise.resolve(null)
+      this.briefing = !managed && grant.briefing && machines.size <= 1 ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
+      if(managed) {
+        this.narrator.reset();this.narrator.setReady(false);this.workReply=voiceWork.state?.reply??''
+        useCallWorkTools(this.toolDeps(),this.journalCall);this.releaseWork=voiceWork.activate()
+        const observed=new WorkObservations(voiceWork.state)
+        this.workUnsubscribe=voiceWork.subscribe(()=>{
+          for(const evidence of observed.update(voiceWork.state))this.narrator.prepared(evidence.key,evidence.value)
+          const reply=voiceWork.state?.reply
+          if(reply&&reply!==this.workReply){this.workReply=reply;this.narrator.prepared('plan',JSON.stringify({planner_reply:reply,tasks:voiceWork.state?.tasks.filter(t=>t.status==='waiting_confirmation').map(t=>({text:t.text,status:t.status}))}))}
+        })
+      }
       check()
       // 1. The microphone asked for in the tap.
       own.stream = await microphone.catch((error: unknown) => {
@@ -514,7 +533,11 @@ export class RealtimeCopilotClient {
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
     const origin = this.call.options.origin
-    this.dc.send(JSON.stringify(origin ? originGreetingEvent(origin, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
+    if(this.call.options.workEnabled) {
+      this.narrator.prepared('greeting',JSON.stringify({greeting:'A short hello. New requests will be saved in the voice assistant workspace.'}))
+      this.narrator.setReady(true)
+      if(origin) void receiveVoiceWork(`請交接 Session「${origin.label}」目前做完的事和需要我處理的問題。`,this.journalCall).catch(error=>this.addLog('error',String(error)))
+    } else this.dc.send(JSON.stringify(origin ? originGreetingEvent(origin, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
     this.addLog('info', origin ? nextWord('copilotLogFocus', { name: origin.label || origin.id }) : nextWord('copilotLogGreeting'))
   }
 
@@ -538,6 +561,7 @@ export class RealtimeCopilotClient {
   // Both spellings of the output events are handled: GA names them
   // `response.output_audio*`, the beta `response.audio*`.
   private async handleRealtimeEvent(event: any) {
+    if(this.call.options.workEnabled)this.narrator.event(event.type)
     switch (event.type) {
       case 'session.updated':
         this.addLog('info', nextWord('copilotLogConfigured', { count: Array.isArray(event.session?.tools) ? event.session.tools.length : 0 }))
@@ -567,7 +591,12 @@ export class RealtimeCopilotClient {
         break
       case 'response.output_audio.done':
       case 'response.audio.done':
+        if(this.call.options.workEnabled)break
         this.updateState({ speakingState: 'listening' })
+        break
+      case 'output_audio_buffer.stopped':
+      case 'output_audio_buffer.cleared':
+        this.updateState({speakingState:'listening'})
         break
       case 'response.output_audio_transcript.delta':
       case 'response.audio_transcript.delta':
@@ -582,8 +611,19 @@ export class RealtimeCopilotClient {
           this.heardNow = event.transcript
           this.updateState({ lastTranscript: event.transcript })
           this.keep('user', event.transcript)
+          if(this.call.options.workEnabled) {
+            try {
+              await receiveVoiceWork(event.transcript,this.journalCall,String(event.item_id||crypto.randomUUID()))
+              this.narrator.prepared('received',JSON.stringify({received:event.transcript,meaning:'Saved. Planning and execution are still pending.'}))
+            } catch(error) {
+              this.narrator.prepared('receive-error',JSON.stringify({error:String(error),meaning:'The request was not confirmed saved. Ask the person to check the workspace.'}))
+            } finally {this.narrator.received()}
+          }
           this.addLog('info', nextWord('copilotLogHeard', { text: event.transcript }))
         }
+        break
+      case 'conversation.item.input_audio_transcription.failed':
+        if(this.call.options.workEnabled){this.narrator.prepared('transcription-error',JSON.stringify({error:'Could not transcribe this utterance. It was not saved as a request.'}));this.narrator.received()}
         break
       case 'response.done': {
         const spoken = this.state.lastAssistantSpeech
@@ -592,7 +632,7 @@ export class RealtimeCopilotClient {
         // Said it did something the machine never confirmed: say so on screen,
         // and have the copilot correct itself before the person relies on it.
         const unbacked = spoken ? unbackedClaims(spoken, this.doneSinceHeard) : []
-        if (unbacked.length && !this.correcting) {
+        if (!this.call.options.workEnabled && unbacked.length && !this.correcting) {
           this.correcting = true
           this.updateState({ notice: { text: nextWord('copilotClaimNotDone'), at: Date.now(), warn: true } })
           this.addLog('error', nextWord('copilotClaimNotDone'))
@@ -628,6 +668,7 @@ export class RealtimeCopilotClient {
   }
 
   private async handleToolCall(event: { call_id: string; name: string; arguments: string }) {
+    if(this.call.options.workEnabled)return
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: event.name }), speakingState: 'thinking' })
     const startedAt = performance.now()
     const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
@@ -674,6 +715,9 @@ export class RealtimeCopilotClient {
   }
 
   disconnect() {
+    this.releaseWork?.();this.releaseWork=undefined;this.workUnsubscribe?.();this.workUnsubscribe=undefined
+    voiceWork.onPrepared=undefined;useCallWorkTools(undefined);this.narrator.reset()
+
     this.journal('end', this.state.status)
     this.flushJournal()
     this.journalCall = ''
@@ -726,6 +770,7 @@ export class RealtimeCopilotClient {
 }
 
 export const realtimeCopilot = new RealtimeCopilotClient()
+onMachineChanged(()=>realtimeCopilot.disconnect())
 
 /** The longest a voice preview stays connected. */
 const PREVIEW_MAX_MS = 20000

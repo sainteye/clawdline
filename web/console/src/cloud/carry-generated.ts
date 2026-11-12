@@ -99,6 +99,12 @@ export const CARRIED = {
   // and whether an OpenAI key is set, never the key.
   "copilot-settings": "GET /v1/settings/copilot",
   "copilot-settings-update": "POST /v1/settings/copilot",
+  // The voice assistant workspace on the selected machine. Reads never start a
+  // model; changes require Send and an idempotency receipt.
+  "copilot-work": "GET /v1/voice/copilot-work",
+  // The voice assistant workspace on the selected machine. Reads never start a
+  // model; changes require Send and an idempotency receipt.
+  "copilot-work-update": "POST /v1/voice/copilot-work",
   "default-models": "GET /v1/settings/default-models",
   "default-models-update": "POST /v1/settings/default-models",
   // A page's own failures, delivered by the copied client with nobody pressing
