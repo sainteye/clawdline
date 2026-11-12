@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11279,
-  "riskKeys": 4957,
-  "nonRiskCount": 6322,
+  "englishContentKeys": 11289,
+  "riskKeys": 4960,
+  "nonRiskCount": 6329,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 461,
+      "count": 466,
       "sources": [
         null
       ],
@@ -846,6 +846,11 @@
         "capacityRow.voice.copilot_decision_said_characters.what",
         "capacityRow.voice.copilot_decision_timeout_milliseconds.full",
         "capacityRow.voice.copilot_decision_timeout_milliseconds.what",
+        "capacityRow.voice.copilot_journal_body_bytes.what",
+        "capacityRow.voice.copilot_journal_entries.what",
+        "capacityRow.voice.copilot_journal_seconds.what",
+        "capacityRow.voice.copilot_journal_text_characters.full",
+        "capacityRow.voice.copilot_journal_text_characters.what",
         "capacityRow.voice.copilot_key_bytes.what",
         "capacityRow.voice.polish_characters.what",
         "capacityRow.voice.polish_terms.what",
@@ -3819,7 +3824,7 @@
     },
     {
       "name": "next / other",
-      "count": 807,
+      "count": 809,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3881,6 +3886,7 @@
         "next.copilotBriefingCodex",
         "next.copilotBriefingLabel",
         "next.copilotCall",
+        "next.copilotCallFromSession",
         "next.copilotCallTitle",
         "next.copilotClose",
         "next.copilotConnecting",
@@ -3909,6 +3915,7 @@
         "next.copilotLogConfiguring",
         "next.copilotLogConnected",
         "next.copilotLogError",
+        "next.copilotLogFocus",
         "next.copilotLogForgot",
         "next.copilotLogGreeting",
         "next.copilotLogHeard",

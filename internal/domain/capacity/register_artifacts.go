@@ -208,6 +208,30 @@ func artifactsBounds() []Entry {
 			Sources: []string{"internal/transport/http.maxCopilotDecisionDuration"},
 		},
 		{
+			// One call journal request: a turn or two of lines.
+			Name: "voice.copilot_journal_body_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 65536, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.copilotJournalBodyLimit"},
+		},
+		{
+			// How many lines one journal request may append.
+			Name: "voice.copilot_journal_entries", Class: Buffer, Unit: Rows,
+			Limit: 200, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotJournalEntries"},
+		},
+		{
+			// How much of one journal line is kept; the rest is cut.
+			Name: "voice.copilot_journal_text_characters", Class: Buffer, Unit: Characters,
+			Limit: 4000, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotJournalTextRunes"},
+		},
+		{
+			// How long call journals are kept; an older day's file is removed.
+			Name: "voice.copilot_journal_seconds", Class: Observation, Unit: Seconds,
+			Limit: 1209600, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotJournalAge"},
+		},
+		{
 			// A pasted OpenAI key longer than this is refused by the settings route.
 			Name: "voice.copilot_key_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 400, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,

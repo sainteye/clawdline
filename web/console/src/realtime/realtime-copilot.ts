@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -265,7 +265,31 @@ export class RealtimeCopilotClient {
     }
   }
 
+  /**
+   * Lines of this call for the machine's journal (`copilot_journal.go`),
+   * handed over after each answer and when the call ends, so what a call
+   * heard, said and did can be read on the machine.
+   */
+  private journalCall = ''
+  private journalLines: { at: number; kind: string; text: string; tool?: Record<string, unknown> }[] = []
+
+  private journal(kind: 'heard' | 'said' | 'tool' | 'error' | 'notice' | 'start' | 'end', text: string, tool?: Record<string, unknown>) {
+    if (!this.journalCall) return
+    this.journalLines.push({ at: Date.now(), kind, text, ...(tool ? { tool } : {}) })
+  }
+
+  private flushJournal() {
+    if (!this.journalCall || this.journalLines.length === 0) return
+    const entries = this.journalLines.splice(0, this.journalLines.length)
+    void fetch('/v1/voice/copilot-journal', {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({ call: this.journalCall, entries }),
+    }).catch(() => undefined) // refusal-ok: the journal is a record for later; a lost turn costs the call nothing.
+  }
+
   private addLog(level: 'info' | 'tool' | 'error', text: string) {
+    if (level === 'error') this.journal('error', text)
     const time = new Date().toLocaleTimeString(consoleLanguage() || undefined, { hour12: false })
     const item: CopilotLogItem = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -278,8 +302,14 @@ export class RealtimeCopilotClient {
     this.updateState({ logs: nextLogs })
   }
 
-  async start(): Promise<void> {
+  /**
+   * Starts a call. With `origin` the call was placed from that Session, and its
+   * first words hand that Session over instead of greeting. A call already
+   * going (or connecting) is turned to the Session instead of starting again.
+   */
+  async start(origin?: CallOrigin): Promise<void> {
     if (this.state.status === 'connected' || this.state.status === 'connecting') {
+      if (origin) this.turnTo(origin)
       return
     }
 
@@ -301,7 +331,13 @@ export class RealtimeCopilotClient {
     microphone.catch(() => undefined)
 
     this.memory = readMemory()
-    this.focus = undefined
+    // A fresh call: nothing of the last one's options, only where this one
+    // was placed from, and that Session is the one under discussion.
+    this.call = { memory: '', snapshot: '', options: { origin } }
+    this.focus = origin?.id
+    this.journalCall = crypto.randomUUID()
+    this.journalLines = []
+    this.journal('start', navigator.userAgent)
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
@@ -327,7 +363,7 @@ export class RealtimeCopilotClient {
           : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
           : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
       }
-      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions } }
+      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
@@ -458,9 +494,27 @@ export class RealtimeCopilotClient {
     if (section) this.addLog('info', nextWord('copilotLogMemory', { count: this.memory.length }))
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
-    this.dc.send(JSON.stringify(greetingEvent(!!section, consoleLanguage())))
-    this.addLog('info', nextWord('copilotLogGreeting'))
+    const origin = this.call.options.origin
+    this.dc.send(JSON.stringify(origin ? originGreetingEvent(origin, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
+    this.addLog('info', origin ? nextWord('copilotLogFocus', { name: origin.label || origin.id }) : nextWord('copilotLogGreeting'))
   }
+
+  /**
+   * Turns a call to one Session. Before the channel opens, the focus is kept
+   * for the configuration it is about to send; once open, the instructions
+   * are resent with it and the copilot is asked for the handover now.
+   */
+  private turnTo(origin: CallOrigin) {
+    this.call.options = { ...this.call.options, origin }
+    this.focus = origin.id
+    if (!this.dc || this.dc.readyState !== 'open') return
+    this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    // Only a response in progress can be cancelled; cancelling none is an error event.
+    if (this.state.speakingState === 'speaking' || this.state.speakingState === 'thinking') this.dc.send(JSON.stringify({ type: 'response.cancel' }))
+    this.dc.send(JSON.stringify(originGreetingEvent(origin, consoleLanguage())))
+    this.addLog('info', nextWord('copilotLogFocus', { name: origin.label || origin.id }))
+  }
+
 
   // Both spellings of the output events are handled: GA names them
   // `response.output_audio*`, the beta `response.audio*`.
@@ -505,6 +559,7 @@ export class RealtimeCopilotClient {
         break
       case 'conversation.item.input_audio_transcription.completed':
         if (event.transcript) {
+          this.journal('heard', event.transcript)
           this.heardNow = event.transcript
           this.updateState({ lastTranscript: event.transcript })
           this.keep('user', event.transcript)
@@ -514,6 +569,7 @@ export class RealtimeCopilotClient {
       case 'response.done': {
         const spoken = this.state.lastAssistantSpeech
         if (spoken) this.keep('assistant', spoken)
+        if (spoken) this.journal('said', spoken)
         // Said it did something the machine never confirmed: say so on screen,
         // and have the copilot correct itself before the person relies on it.
         const unbacked = spoken ? unbackedClaims(spoken, this.doneSinceHeard) : []
@@ -525,6 +581,7 @@ export class RealtimeCopilotClient {
         } else {
           this.correcting = false
         }
+        this.flushJournal()
         if (event.response?.usage) {
           const cost = addUsage(this.state.cost ?? emptyCost(this.model), event.response.usage)
           this.updateState({ cost })
@@ -555,7 +612,9 @@ export class RealtimeCopilotClient {
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: event.name }), speakingState: 'thinking' })
     const startedAt = performance.now()
     const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
-    this.updateState({ tools: [...(this.state.tools ?? []), toolTrace(event.name, output, performance.now() - startedAt)] })
+    const trace = toolTrace(event.name, output, performance.now() - startedAt)
+    this.updateState({ tools: [...(this.state.tools ?? []), trace] })
+    this.journal('tool', event.name, { args: event.arguments.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500) })
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
     // Only what the machine confirmed is shown and chimed, never what the
@@ -564,6 +623,7 @@ export class RealtimeCopilotClient {
     if (done) {
       this.doneSinceHeard.add(NOTICE_KIND[done.key])
       this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
+      this.journal('notice', nextWord(done.key, done.params))
       this.meter.chime()
     }
 
@@ -578,6 +638,9 @@ export class RealtimeCopilotClient {
   }
 
   disconnect() {
+    this.journal('end', this.state.status)
+    this.flushJournal()
+    this.journalCall = ''
     this.attempt += 1
     if (this.dc) {
       try {

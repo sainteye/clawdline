@@ -173,6 +173,10 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 匯報要先講需要使用者處理的事，再講進行中的、最近完成的；這一段可以比平常長。
 - 有【整理好的現況匯報】時，第一句就用它的整體結論（例如有幾件事要使用者處理），不要改用快照的 summary 數字：快照只看得出狀態，匯報才判斷了哪些事要使用者處理，兩者混用會前後矛盾。
 
+【讀懂 Session 的資料】
+- goal 是使用者最近交代那個 Session 的原話，裡面的「你」指的是那個 Session 的 AI，不是使用者。轉述時改成第三人稱，例如原話「把你的配音改成 ash」要說成「你請它把配音改成 ash」，絕對不要說成「把你改成 ash」。
+- recent 是那個 Session 自己回報做完的事，latest 是它最近說的一句話，delivered 是它的交付摘要；講的時候只用這些欄位裡有的內容，不要把不同 Session 的內容混在一起，不要補沒寫的事。
+
 【回報清單】
 - 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」數量是 0 的分類不要講。
 - 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用兩到三句講：它的目標（goal）、最近完成了什麼（recent）、現在正在做什麼（latest）。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
@@ -499,6 +503,32 @@ export interface CallOptions {
   briefing?: string
   /** The language the console is shown in (`<html lang>`), which the copilot speaks. */
   language?: string
+  /** The Session the call was placed from (a long press or double press on its microphone). */
+  origin?: CallOrigin
+}
+
+/** The Session a call was placed from: the id `/v1/sessions` gives it, and its name. */
+export interface CallOrigin {
+  id: string
+  label: string
+}
+
+/**
+ * The instructions' section for a call placed from one Session. It names the
+ * Session once, with its id, so the opening summary needs no list_sessions
+ * call and cannot land on a Session with a similar name.
+ */
+export function originSection(origin?: CallOrigin): string {
+  if (!origin?.id) return ''
+  const name = origin.label.trim() || origin.id
+  return ['【這通電話是從一個 Session 打來的】',
+    `使用者在 Session「${name}」的畫面上撥了這通電話（session_id 是 ${origin.id}，原樣照填）。`,
+    '通話一開始就要交接這個 Session，不打招呼、不自我介紹：',
+    '- 先講它做完了哪些事：依 get_session_recap 的 deliveries 和 requests，用總結一個 Session 的經過的講法，大約四到六句。',
+    '- 再講有什麼事需要使用者處理：它在等的問題（念出選項）、最後一則回覆裡要使用者決定或確認的事、它留給使用者的便條紙。',
+    '- 沒有要使用者處理的事，就明說「這個 Session 沒有要你處理的事」，並說它現在的狀態。',
+    '- 交接完就停，等使用者說話。之後使用者說「它」「這個」，指的就是這個 Session。',
+  ].join('\n')
 }
 
 /** The instructions' section holding the machine's briefing, or "". */
@@ -553,7 +583,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -588,6 +618,24 @@ export function greetingEvent(remembered = false, language = ''): Record<string,
       instructions: remembered
         ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。像熟悉他的秘書一樣，用一句很短、自然的${name}打招呼；如果之前的通話裡有還沒講完或使用者在意的事，就用半句提起它。`
         : `像私人秘書一樣，用一句自然的${name}問候，說你可以幫他看這台電腦上各個 Session 的狀況。不要超過一句。`,
+    },
+  }
+}
+
+/**
+ * The first words of a call placed from one Session: read that Session's
+ * whole story and its notes, then hand it over (`originSection` says how).
+ * Response instructions replace the session's for this one response, so the
+ * tool names and the id are spelt out here again.
+ */
+export function originGreetingEvent(origin: CallOrigin, language = ''): Record<string, unknown> {
+  const name = spokenLanguage(language) || '繁體中文'
+  const label = origin.label.trim() || origin.id
+  return {
+    type: 'response.create',
+    response: {
+      output_modalities: ['audio'],
+      instructions: `使用者剛從 Session「${label}」打來，要你交接這個 Session。先不要說話：呼叫 get_session_recap，session_id 填 ${origin.id}；它有便條紙就再呼叫 get_session_notes。拿到結果後用${name}講它做完了什麼、有什麼事需要使用者處理；沒有就明說沒有。`,
     },
   }
 }

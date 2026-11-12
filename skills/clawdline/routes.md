@@ -1,6 +1,6 @@
 # Agent routes in this build
 
-Generated from the registered routes and `api/v1/agent-routes.json`; API level: 46. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
+Generated from the registered routes and `api/v1/agent-routes.json`; API level: 47. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
 
 | Method | Registered route | Since API level | Agent guide | Human goal |
 | --- | --- | ---: | --- | --- |
@@ -148,6 +148,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/voice` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-briefing` | 45 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-decide` | 46 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/voice/copilot-journal` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-session` | 45 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/language` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/setup` | 17 | `clawdline guide connect` | `docs/user/first-session.md` |
