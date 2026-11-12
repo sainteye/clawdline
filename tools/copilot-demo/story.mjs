@@ -180,7 +180,7 @@ export function story(lang) {
  * sheet to its bubble); `tool` is run by the console's own client against the
  * stand-in daemon, and the copilot's next line waits for its result.
  */
-export function steps(send) {
+export function steps(send, label) {
   return [
     { copilot: 'c0' }, { pause: 900, person: 'p1' }, { pause: 300, copilot: 'c1' },
     { pause: 700, hold: 'minimize' },
@@ -188,7 +188,7 @@ export function steps(send) {
     { pause: 300, tool: 'get_session_recap', args: { session_id: IDS.search } }, { pause: 600, copilot: 'cS' },
     { pause: 1300, person: 'p2o' }, { tool: 'open_session', args: { session_id: IDS.release } }, { pause: 300, copilot: 'c5' },
     { pause: 1200, person: 'p3o' }, { pause: 300, copilot: 'c3' }, { pause: 700, person: 'p4' },
-    { tool: 'send_message_to_session', args: { session_id: IDS.release, message: send } }, { pause: 500, copilot: 'c4' },
+    { tool: 'send_message_to_session', args: { session_id: IDS.release, session_label: label, message: send } }, { pause: 500, copilot: 'c4' },
     { pause: 1300, person: 'p6' }, { pause: 300, copilot: 'c6' },
   ]
 }
