@@ -74,7 +74,7 @@ func TestPublicACPReceivesExplicitToolApprovalPolicy(t *testing.T) {
 			}
 			settings(t, dir, body)
 			exe := filepath.Join(dir, "peer")
-			if err := os.WriteFile(exe, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$GEMINI_HOME/argv\"\ncat >/dev/null\n"), 0700); err != nil {
+			if err := os.WriteFile(exe, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$GEMINI_HOME/argv.tmp\"\nmv \"$GEMINI_HOME/argv.tmp\" \"$GEMINI_HOME/argv\"\ncat >/dev/null\n"), 0700); err != nil {
 				t.Fatal(err)
 			}
 			c, err := Start(context.Background(), Options{Executable: exe, Args: []string{"acp", "--app-data-dir", "antigravity-acp"}, AccountDir: dir, WorkingDir: dir, MaxFrameBytes: 4096, CallTimeout: time.Second})

@@ -1,0 +1,113 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Bots App host synthetic acceptance</title><link rel="stylesheet" href="/host.css"><style>html,body,#root{margin:0;height:100%;background:#080808}#root{height:100dvh}#fixture-label{position:fixed;bottom:0;left:4px;z-index:10000;font:9px monospace;color:#999;pointer-events:none}</style></head><body><div id="root"></div><small id="fixture-label">Synthetic App host · no daemon, microphone or provider</small><script type="module" src="/host.js"></script>
+<script type="text/fixture-tsx">
+import React from "react"
+import { createRoot } from "react-dom/client"
+import App from "./App"
+import { activateCatalog } from "./catalog"
+import { loadStrings } from "./legacy/bridge"
+import { fixtureSource } from "./project-assistants/fixtures"
+import { ProjectAssistantRegistry, assistantRelayRequest } from "./cloud/project-assistants"
+import { copilotDock } from "./realtime/copilot-dock"
+import { realtimeCopilot } from "./realtime/realtime-copilot"
+import "./loading-skeleton.css"
+import "./legacy/tokens.css"
+import "./legacy/base.css"
+import "./legacy/header.css"
+import "./legacy/shell.css"
+import "./legacy/list.css"
+import "./legacy/detail.css"
+import "./legacy/transcript.css"
+import "./legacy/composer.css"
+import "./legacy/live.css"
+import "./legacy/agents.css"
+import "./legacy/status-line.css"
+import "./legacy/sheets.css"
+import "./legacy/responsive.css"
+import "./legacy/pages.css"
+import "./shell.css"
+import "./sidebar-scroll.css"
+import "./brand-handle.css"
+
+const lang = new URLSearchParams(location.search).get("lang") || "en"
+localStorage.setItem("ui_language",lang)
+const originalFetch = window.fetch.bind(window)
+const words = await originalFetch("/catalogs/"+lang+".json").then(answer => answer.json())
+activateCatalog(words,lang); await loadStrings(async () => words)
+const requests = [], log = [], a = fixtureSource("studio",log), b = fixtureSource("notebook",log)
+const registry = new ProjectAssistantRegistry("synthetic-account","synthetic-principal")
+let active = "studio", feature = new URLSearchParams(location.search).get("feature") !== "off", mediaOpens = 0, sessionSends = 0, grantMode="interactive"
+const boardItem = machine => ({id:"PA-01",project:{id:"project",label:"Synthetic Project",path:"/synthetic/project",available:true},kind:"feature",title:"Board result "+machine,description:"Captured source "+machine,
+  acceptance_criteria:"Synthetic only",acceptance_version:1,acceptance_digest:"fixture",gate_snapshot_cycle:0,gate_snapshot_at:null,planning_gate:false,verify_gate:false,
+  phase:"unassigned",condition:null,user_action:"",area:"unassigned",deployment_policy:"not_required",review_required:false,owner_session:null,
+  created_at:1,updated_at:1,closed_at:null,cycle:1,version:1,documents:[],images:[],steps:[]})
+const grants = () => [a,b].map(source => ({accountKey:registry.accountKey,readerID:registry.readerID,machineID:source.machineID,
+  authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:56,paired:true,online:true,writable:true}))
+const transport = grant => async (path,init) => {
+  const source = grant.machineID === "studio" ? a : b
+  const request = assistantRelayRequest(path,init), signal = init?.signal || new AbortController().signal
+  if (request.word === "work.v2.item") {log.push({method:"workItem",machine:grant.machineID,request:request.fields});return Response.json({item:boardItem(grant.machineID)})}
+  const name = request.word.replace("project-assistants.","")
+  const method = {read:"markRead",observed:"observe",memory:"saveMemory"}[name] || name
+  if (method === "status" && !feature) log.push({method:"status",machine:grant.machineID,request:null})
+  try {
+    const answer = method === "status" && !feature ? {contract_version:"project-assistants.v1",sources:[{machine_id:grant.machineID,state:"online",access:"hidden",readable:false,writable:false,fresh:true,observed_at:"",capabilities:[]}]} :
+      ["status","projects"].includes(method) ? await source[method](signal) : await source[method](request.fields,signal)
+    return Response.json(answer)
+  } catch (error) { if (error?.error) return Response.json(error,{status:409}); throw error }
+}
+const sync = values => registry.sync(values || grants(),transport)
+sync()
+Object.defineProperty(navigator,"mediaDevices",{configurable:true,value:{getUserMedia:async () => {mediaOpens++;throw new Error("Physical media forbidden in fixture")}}})
+class FixtureEvents extends EventTarget {onopen = null;onerror = null; constructor(){super();queueMicrotask(() => this.onopen?.())} close(){} }
+window.EventSource = FixtureEvents
+const at = Math.floor(Date.now()/1000)
+const row = index => ({id:"%fixture-"+index,label:index ? "Synthetic Session "+index : "Original Session",assistant:"claude",backend:"tmux",state:"idle",work_state:"idle",cwd:"/synthetic/project",isClaude:true,lastActivityAt:at,evidence:{},agents:[],shells:[],
+  closeability:{state:"unknown",reasons:[],activity_generation:0,session_generation:0,obligation_generation:0,observed_at:at,provenance:[],source:{freshness:"unknown",provenance:"fixture",observed_at:at,max_age_seconds:0}}})
+const rows = Array.from({length:40},(_,index) => row(index))
+window.fetch = async (input,init) => {
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url,location.href)
+  if (!url.pathname.startsWith("/v1/")) return originalFetch(input,init)
+  requests.push({path:url.pathname,method:init?.method || "GET"})
+  if (url.pathname.endsWith("/send")) sessionSends++
+  if (url.pathname === "/v1/strings") return Response.json(words)
+  if (url.pathname === "/v1/health") return Response.json({ok:true,version:"fixture",api_level:56,cloud:{enabled:false},integrations:{}})
+  if (url.pathname === "/v1/sessions") return Response.json({at,scan:{complete:true,emptyAuthoritative:false,epoch:1,generation:1,provenance:"fixture",sources:[]},sessions:rows})
+  if (url.pathname === "/v1/transcript") return Response.json({id:"%fixture-0",entries:[{role:"user",text:"Original Session message",at},{role:"assistant",text:"Synthetic answer",at}]})
+  if (url.pathname === "/v1/projects") return Response.json(await a.projects(new AbortController().signal))
+  if (url.pathname === "/v1/tasks") return Response.json({tasks:[],live:[],callbacks:[]})
+  if (url.pathname === "/v1/personas") return Response.json({personas:[]})
+  if (url.pathname === "/v1/schedules") return Response.json({schedules:[]})
+  if (url.pathname === "/v1/notifications") return Response.json({notifications:[],unread:0})
+  if (url.pathname === "/v1/settings") return Response.json({product_language:lang})
+  if (url.pathname === "/v1/places") return Response.json({places:[{id:"project",label:"Synthetic Project",path:"/synthetic/project"}]})
+  if (url.pathname.startsWith("/v1/work/v2/items/")) return Response.json({item:boardItem(active)})
+  if (url.pathname === "/v1/work/v2/cards" || url.pathname === "/v1/work/v2/items" || url.pathname === "/v1/work/proposals" || url.pathname === "/v1/work/decisions") return Response.json({rows:[],next_cursor:null,counts:{}})
+  if (url.pathname.includes("/squad/")) return Response.json({events:[],snapshots:[],next_after:0,has_more:false,motion:{value:false}})
+  return Response.json({error:{code:"not_found",message:"Synthetic route unavailable"}},{status:404})
+}
+const root = createRoot(document.getElementById("root"))
+let appKey = "initial"
+let pendingWork = null
+const openWork = async work => {
+  const captured = await registry.captureWorkItem(work,new AbortController().signal)
+  if (!captured.current()) return
+  active=captured.machineID;appKey="board-"+active;pendingWork={...captured,token:crypto.randomUUID()};paint()
+}
+const workOpened = token => {if(pendingWork?.token === token){pendingWork=null;paint()}}
+const paint = () => root.render(<React.StrictMode><App key={appKey} projectAssistants={registry} fleetReaderMachine={active}
+  onOpenAssistantWork={openWork} assistantWorkIntent={pendingWork} onAssistantWorkOpened={workOpened}/></React.StrictMode>)
+const fixture = {a,b,registry,requests,log,paint,
+  remount(){appKey = active = active === "studio" ? "notebook" : "studio";paint()},
+  revoke(){registry.revoke("studio")},
+  offline(){a.setState("offline");sync(grants().map(grant => grant.machineID === "studio" ? {...grant,online:false} : grant))},
+  unsupported(){sync(grants().map(grant => grant.machineID === "studio" ? {...grant,apiLevel:55} : grant))},
+  readOnly(){grantMode="history";a.setState("online","history_only");sync()},
+  disabled(){feature=false;registry.revoke();sync()},
+  stats(){return {mediaOpens,sessionSends,active}},
+  beginSyntheticCall(){realtimeCopilot.updateState({status:"connected",speakingState:"listening"});copilotDock.minimize(true)},
+  showVoice(){copilotDock.open()},closeVoice(){copilotDock.minimize(realtimeCopilot.getState().status === "connected")},
+  voiceState(){return realtimeCopilot.getState()},
+}
+window.fixtureHost = fixture
+paint()
+</script></body></html>

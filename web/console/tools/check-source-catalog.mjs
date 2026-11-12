@@ -63,12 +63,14 @@ const dispatchPolicy = table("src/pages/settings/window/DispatchPolicyPane.tsx",
 const promo = table("src/pages/plan/promo.ts", "export { promoSourceWords as sourceWords }", "en", ["promoEn", "promoZh", "promoSourceWords"]).sourceWords
 const planSimulation = table("src/legacy/js/net/billing.js", "export { planSimulationSourceWords as sourceWords }", "en", ["simulationEn", "simulationZh", "planSimulationSourceWords"]).sourceWords
 const transcript = table("src/session/Transcript.tsx", "export { planWords as sourceWords }", "en", ["planWords"]).sourceWords
+const projectAssistants = table("src/project-assistants/words.ts", "export { en as sourceEn, zhHant as sourceZh }", "en", ["en", "zhHant"])
 
 // `english: false` where the table's "English" column is already translated
 // copy (settings carries Chinese, the bar one word for both), so only the key
 // is required there, never the value.
 const survey = table("src/onboarding/words.ts", "export { surveyEn as en, surveyZh as zh }", "en", ["surveyEn", "surveyZh"])
 const domains = [
+  { name: "projectAssistants", en: projectAssistants.sourceEn, zh: projectAssistants.sourceZh, english: true },
   { name: "survey", en: survey.en, zh: survey.zh, english: true },
   { name: "promo", en: promo.en, zh: promo["zh-Hant"], english: true },
   { name: "planSimulation", en: planSimulation.en, zh: planSimulation["zh-Hant"], english: true },

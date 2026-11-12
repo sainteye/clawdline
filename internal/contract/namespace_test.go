@@ -39,8 +39,11 @@ const (
 )
 
 var sessionFields = map[string]string{
-	"usage-overview#UsageOverviewCoverage.sessions_read":  "count: transcript sources with a daily reading, never a session identity",
-	"usage-overview#UsageOverviewCoverage.sessions_total": "count: known transcript sources, never a session identity",
+	// Provider-native conversation handle, never a Clawdline Session or
+	// terminal identity. A new execution binding/generation retires it.
+	"project-assistants#ProjectAssistantExecutionBinding.native_session_id": "native: ACP adapter's opaque conversation handle; retires with its execution binding/generation",
+	"usage-overview#UsageOverviewCoverage.sessions_read":                    "count: transcript sources with a daily reading, never a session identity",
+	"usage-overview#UsageOverviewCoverage.sessions_total":                   "count: known transcript sources, never a session identity",
 	// The coordination plane (W5): conversation ids only, and a terminal-shaped
 	// value is refused as 409 session_id_is_terminal.
 	"coordination#CoordinatorSession.session_id":            conversation,

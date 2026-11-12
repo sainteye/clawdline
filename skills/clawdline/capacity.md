@@ -54,6 +54,28 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `artifacts.video_chunk_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `audit.security` | 8388608 | `bytes` | `rotate` | `diagnostics, notice, health` | — |
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
+| `bots.actors` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.capture_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.frame_bytes` | 1048576 | `bytes` | `disconnect` | `diagnostics, sender` | — |
+| `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `bots.notice_rows` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
+| `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
+| `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.pending_turns` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.perm_rows` | 8 | `rows` | `disconnect` | `diagnostics, sender` | — |
+| `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.prompt_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.rpc_ms` | 120000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
+| `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.write_ms` | 2000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |
