@@ -297,6 +297,21 @@
       "decode": {"reply": "action", "fields": {"decision": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 1, "properties": {"said": {"type": "string", "max_bytes": 4000}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-decide", "body": {"object": "decision"}}}
     },
     {
+      "op": "copilot-journal",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/voice/copilot-journal",
+      "console_seam": "writer",
+      "console_note": "The voice copilot's call journal (`realtime/realtime-copilot.ts`): what a call heard, said and did, appended a turn at a time to the machine that gave it its pass.",
+      "local": {"method": "POST", "device": true},
+      "example": {"journal": {"call": "call-0001", "entries": []}, "request": "req-journal", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["journal", "request", "session"], "path": "/v1/voice/copilot-journal", "local_body": ["call", "entries"]}
+      ],
+      "decode": {"reply": "action", "fields": {"journal": {"type": "object", "max_bytes": 65536, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-journal", "body": {"object": "journal"}}}
+    },
+    {
       "op": "copilot-session",
       "kind": "command",
       "write_gate": true,

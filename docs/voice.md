@@ -169,6 +169,14 @@ when the call asked only after its pass came back over Cloud, seconds after the 
 now asked before the first await, beside the pass, and released when the call does not start.
 A refusal is said by its reason (`microphoneProblem`), not by the browser's sentence.
 
+**The call journal.** What a call heard (the transcribed sentence), said, and did (each tool, its
+arguments, outcome, time and the start of its answer), with its errors and notices, is handed a
+turn at a time to the machine that gave the call its pass (`POST /v1/voice/copilot-journal`,
+Cloud word `copilot-journal`, API level 47). The machine appends it to
+`<state>/copilot-calls/<date>.jsonl` (mode 0600) and keeps 14 days. On 2026-11-12 the person
+said a call "did not understand anything"; the turns were only in the phone's browser, and the
+machine's log showed only that no tool had been called.
+
 **What the person sees the copilot do.** Every send, answer, close, Snippet or Playbook run and
 new Session the machine confirmed shows a small notice in the sheet and above the bubble for five
 seconds, with a short two-note chime (`actionNotice`, `CopilotNotice.tsx`); a refusal never does.

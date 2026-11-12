@@ -317,6 +317,7 @@ export type WriteRoute =
   | { op: "copilot-session"; word: Carried<"copilot-session"> }
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
+  | { op: "copilot-journal"; word: Carried<"copilot-journal"> }
   | { op: "notification-rules"; word: Carried<"notification-rules"> }
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
@@ -786,6 +787,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-decide" && segments.length === 2) {
     return { op: "copilot-decide", word: "copilot-decide" }
   }
+  if (head === "voice" && a === "copilot-journal" && segments.length === 2) {
+    return { op: "copilot-journal", word: "copilot-journal" }
+  }
   if (head === "notification-rules" && segments.length === 1) return { op: "notification-rules-update", word: "notification-rules-update" }
   if (head === "update" && a === "apply" && segments.length === 2) {
     return { op: "update-apply", word: "update-apply" }
@@ -1045,6 +1049,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-session":
     case "copilot-briefing":
     case "copilot-decide":
+    case "copilot-journal":
     case "notification-rules":
     case "notification-rules-update":
     case "work-gate-settings":
@@ -2012,6 +2017,14 @@ export class RelayWriter {
         }
         const sent = await bodyOf(init)
         return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? "") } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+      }
+      case "copilot-journal": {
+        // A call's lines for the journal of the machine that gave it its pass.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        }
+        const sent = await bodyOf(init)
+        return this.machineWorkV2(client, route.word, { journal: { call: String(sent.call ?? ""), entries: Array.isArray(sent.entries) ? sent.entries : [] } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
       }
       case "update-apply": {
         // The press installs the newest release of the machine's channel and

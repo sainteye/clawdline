@@ -3228,6 +3228,26 @@
     "Note": true
   },
   {
+    "Name": "voice.copilot_journal_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_journal_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_journal_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_journal_text_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "voice.copilot_key_bytes",
     "Known": true,
     "Note": true

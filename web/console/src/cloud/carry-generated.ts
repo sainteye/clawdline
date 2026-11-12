@@ -49,6 +49,10 @@ export const CARRIED = {
   // `resolveRead`): the person's transcribed sentence, which the machine judges
   // against its own Sessions with a text model on its key.
   "copilot-decide": "POST /v1/voice/copilot-decide",
+  // The voice copilot's call journal (`realtime/realtime-copilot.ts`): what a
+  // call heard, said and did, appended a turn at a time to the machine that
+  // gave it its pass.
+  "copilot-journal": "POST /v1/voice/copilot-journal",
   // The voice copilot's call start (`realtime/realtime-copilot.ts`): a Realtime
   // client secret minted with the machine's key, a machine command with no
   // body.

@@ -939,3 +939,8 @@ test("a group summary reads the working, the idle, or all Sessions, newest activ
   const all = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
   assert.equal(all.count, working.count + idle.count)
 })
+
+test("a Session's goal is told as the person's request to it, not as words about the person", () => {
+  assert.match(COPILOT_INSTRUCTIONS, /goal 是使用者最近交代那個 Session 的原話/)
+  assert.match(COPILOT_INSTRUCTIONS, /不要把不同 Session 的內容混在一起/)
+})
