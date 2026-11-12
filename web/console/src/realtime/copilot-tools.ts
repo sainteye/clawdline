@@ -1673,3 +1673,23 @@ export function toolReplyEvents(callID: string, output: string): Record<string, 
     { type: 'response.create' },
   ]
 }
+
+/**
+ * The refusal in a `/v1/voice/copilot-session` answer, in either spelling the
+ * route reaches a page with: the machine's own `{error:{code,message}}`, or
+ * the Cloud seam's flat `{error:"code", detail}` (`spellingOf` in
+ * cloud/relay-writer.ts names this word "flat"). Reading only the first
+ * spelling showed a phone "HTTP 501" with the cause dropped.
+ */
+export function copilotRefusal(body: unknown, status: number): { code: string; message: string } {
+  const answer = (body && typeof body === 'object' ? body : {}) as { error?: unknown; detail?: unknown }
+  if (typeof answer.error === 'string' && answer.error) {
+    return { code: answer.error, message: typeof answer.detail === 'string' && answer.detail !== answer.error ? answer.detail : '' }
+  }
+  const nested = (answer.error && typeof answer.error === 'object' ? answer.error : {}) as { code?: unknown; message?: unknown }
+  const code = typeof nested.code === 'string' && nested.code ? nested.code : `HTTP ${status}`
+  return { code, message: typeof nested.message === 'string' && nested.message !== code ? nested.message : '' }
+}
+
+/** Codes meaning the chosen machine's Clawdline has no copilot word yet (`MACHINE_LACKS_WORD`, cloud/relay-reader.ts). */
+export const COPILOT_MACHINE_LACKS: ReadonlySet<string> = new Set(['unknown_command', 'cloud_feature_unavailable', 'cloud_machine_unsupported'])

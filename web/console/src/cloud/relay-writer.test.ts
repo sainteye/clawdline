@@ -3236,3 +3236,43 @@ test("the copilot closes another Session while one Session is open, at that Sess
   assert.deepEqual(sent?.[1], { machine: "mac-a", session: "s2" })
   assert.equal((sent?.[3] as { execution_generation?: string })?.execution_generation, other)
 })
+
+test("a call pass is asked only of machines that offer the voice copilot, passing on one without a key", async () => {
+  class Fleet extends FakeClient {
+    _machinesFor(type: string) {
+      assert.equal(type, "copilot-session")
+      return { capable: [{ id: "mac-a", freshness: "current" }, { id: "mac-stale", freshness: "stale" }, { id: "mac-b", freshness: "current" }] }
+    }
+    _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action") {
+      this.calls.push(["_machineRequestAs", request, machine, word, body, kind])
+      if (machine === "mac-a") return Promise.reject(refusal("copilot_key_missing", { status: 412, layer: "mac_route", message: "no key" }))
+      return Promise.resolve({ client_secret: "ek_test", model: "gpt-realtime-mini" })
+    }
+  }
+  const client = new Fleet()
+  const { reader } = seam(client)
+  const opened = await reader.fetch("/v1/voice/copilot-session", post({}, { "Idempotency-Key": "call-1" }))
+  assert.equal(opened.status, 200)
+  assert.equal((await json<{ client_secret: string }>(opened)).client_secret, "ek_test")
+  assert.deepEqual(client.calls.map((call) => call[2]), ["mac-a", "mac-b"])
+  assert.equal(client.calls[0][1], "call-1")
+
+  // The briefing is prepared by the machine that gave the pass.
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-briefing", post({}, { "Idempotency-Key": "brief-1" }))
+  assert.deepEqual(client.calls[0].slice(1, 4), ["brief-1", "mac-b", "copilot-briefing"])
+})
+
+test("a call pass no machine can give names the missing key, in the flat spelling the page reads", async () => {
+  class Keyless extends FakeClient {
+    _machinesFor() { return { capable: [{ id: "mac-b", freshness: "current" }] } }
+    _machineRequestAs(_request: string, machine: string) {
+      return Promise.reject(machine === "mac-a"
+        ? refusal("unknown_command", { status: 501, layer: "mac_route", message: "copilot-session" })
+        : refusal("copilot_key_missing", { status: 412, layer: "mac_route", message: "no key" }))
+    }
+  }
+  const { reader } = seam(new Keyless())
+  const refused = await reader.fetch("/v1/voice/copilot-session", post({}, { "Idempotency-Key": "call-2" }))
+  assert.equal((await json<{ error: string }>(refused)).error, "copilot_key_missing")
+})

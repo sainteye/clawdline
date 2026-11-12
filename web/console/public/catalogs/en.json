@@ -9265,6 +9265,7 @@
   "next.copilotLogHeard": "Speech recognised: “{text}”",
   "next.copilotLogForgot": "Earlier calls are forgotten",
   "next.copilotLogEnded": "The call has ended and its media streams are closed",
+  "next.copilotErrorMachineLacks": "This machine's Clawdline has no voice copilot yet ({code}): update it, or pick the machine that holds the OpenAI key.",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

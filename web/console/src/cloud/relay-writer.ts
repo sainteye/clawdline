@@ -106,6 +106,8 @@ export interface CloudWriteClient extends CloudReadClient {
   startPlace(place: string, assistant: string, model: string): Promise<unknown>
   resumePlace(place: string, past: string, assistant: string, requestId?: string): Promise<unknown>
   voice(audio: string, rate: number): Promise<unknown>
+  /** The paired machines that declare `type` (cloud-client.js; status-client.js adds freshness). */
+  _machinesFor?(type: string): { capable: { id: string; freshness?: string }[] }
   /** The fleet-wide fallback, including a person's explicit choice. */
   voiceHost?(): Promise<{ machine: string }>
   /** The voice host for the Session currently shown by this relay reader. */
@@ -1123,6 +1125,8 @@ export class RelayWriter {
   private readonly now: () => number
   private readonly requestID: () => string
   private readonly contentPins = new WeakMap<AbortSignal, Map<string, Promise<SessionContentTarget>>>()
+  /** The machine that gave this page's last voice copilot call pass (`copilotSession`). */
+  private copilotMachine: string | null = null
 
   constructor(host: WriteHost, options: RelayWriterOptions = {}) {
     this.host = host
@@ -1989,7 +1993,11 @@ export class RelayWriter {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         }
-        return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
+        if (route.op === "copilot-briefing") {
+          // The briefing is prepared by the machine that opened the call.
+          return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+        }
+        return this.copilotSession(client, headerOf(init, "idempotency-key"))
       }
       case "update-apply": {
         // The press installs the newest release of the machine's channel and
@@ -2226,6 +2234,32 @@ export class RelayWriter {
       case "uncarried":
         throw failure("cloud_not_carried", route.word, 501)
     }
+  }
+
+  /**
+   * A call pass from a machine that can give one, as dictation asks only a
+   * machine that transcribes (`_machinesFor("voice")`, status-client.js): the
+   * reading machine first, then each other current machine that declares
+   * `copilot-session`. A machine without the word, or without an OpenAI key,
+   * passes the call to the next; the first other refusal is the answer. The
+   * machine that answers also prepares the call's briefing.
+   */
+  private async copilotSession(client: CloudWriteClient, request: string): Promise<unknown> {
+    const machines = copilotMachines(client, this.host.machine)
+    let refused: unknown = null
+    for (const [index, machine] of machines.entries()) {
+      try {
+        const answer = await this.machineWorkV2(client, "copilot-session", {}, index === 0 ? request : this.requestID(), machine)
+        this.copilotMachine = machine
+        return answer
+      } catch (error) {
+        const code = (error as CloudFailureLike)?.code
+        if (!COPILOT_PASSES_ON.has(String(code))) throw error
+        // A missing key says what to do (Settings); prefer it over "lacks the word".
+        if (!refused || code === "copilot_key_missing") refused = error
+      }
+    }
+    throw refused ?? failure("cloud_machine_unsupported", "No machine here offers the voice copilot.", 501)
   }
 
   private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>, request: string, machine = this.host.machine): Promise<unknown> {
@@ -2592,6 +2626,25 @@ export class RelayWriter {
 }
 
 /** The words the machine's descriptor lists, or null when it lists none. */
+/** Refusals that hand a call pass request on to the next machine (`copilotSession`). */
+const COPILOT_PASSES_ON: ReadonlySet<string> = new Set(["copilot_key_missing", "unknown_command", "cloud_feature_unavailable", "cloud_machine_unsupported", "offline"])
+
+/**
+ * The machines to ask for a call pass, in order: `reading` first, then every
+ * current machine that declares `copilot-session`. Without a fleet view the
+ * reading machine alone is asked.
+ */
+export function copilotMachines(client: Pick<CloudWriteClient, "_machinesFor">, reading: string): string[] {
+  const found = typeof client._machinesFor === "function" ? client._machinesFor("copilot-session") : null
+  const out = [reading]
+  for (const row of found?.capable ?? []) {
+    if (!row?.id || out.includes(row.id)) continue
+    if (row.freshness !== undefined && row.freshness !== "current") continue
+    out.push(row.id)
+  }
+  return out
+}
+
 function declaredCommands(client: CloudWriteClient, machine: string): string[] | null {
   return machineCommands(client, machine).commands
 }

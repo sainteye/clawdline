@@ -6,6 +6,11 @@ import { QUIET, levelFromSamples, type OrbLevels } from "./copilot-orb.js"
 
 type Side = { source: MediaStreamAudioSourceNode; analyser: AnalyserNode; samples: Uint8Array<ArrayBuffer> }
 
+/** The ringback's loudness, its tone length and its whole period (a Taiwan and North America ring cadence). */
+const RING_LEVEL = 0.08
+const RING_ON_S = 1
+const RING_PERIOD_MS = 3000
+
 export class CallMeter {
   private context: AudioContext | null = null
   private input: Side | null = null
@@ -53,6 +58,52 @@ export class CallMeter {
   read(): OrbLevels {
     if (!this.context) return QUIET
     return { input: this.level(this.input), output: this.level(this.output) }
+  }
+
+  /**
+   * Plays a ringback, as a telephone does while the far end rings: 440 and
+   * 480 Hz together, one second on and two off, until the returned stop is
+   * called. It plays on the context `open` made in the tap, so iOS lets it
+   * sound; with no context it is silent.
+   */
+  ring(): () => void {
+    const context = this.context
+    if (!context) return () => undefined
+    let gain: GainNode
+    let tones: OscillatorNode[]
+    try {
+      gain = context.createGain()
+      gain.gain.value = 0
+      gain.connect(context.destination)
+      tones = [440, 480].map((hz) => {
+        const tone = context.createOscillator()
+        tone.frequency.value = hz
+        tone.connect(gain)
+        tone.start()
+        return tone
+      })
+    } catch {
+      return () => undefined
+    }
+    const cycle = () => {
+      const at = context.currentTime + 0.02
+      gain.gain.setValueAtTime(0, at)
+      gain.gain.linearRampToValueAtTime(RING_LEVEL, at + 0.02)
+      gain.gain.setValueAtTime(RING_LEVEL, at + RING_ON_S - 0.02)
+      gain.gain.linearRampToValueAtTime(0, at + RING_ON_S)
+    }
+    cycle()
+    const timer = setInterval(cycle, RING_PERIOD_MS)
+    let stopped = false
+    return () => {
+      if (stopped) return
+      stopped = true
+      clearInterval(timer)
+      for (const tone of tones) {
+        try { tone.stop() } catch { /* refusal-ok: a tone that has stopped stops again silently. */ }
+      }
+      try { gain.disconnect() } catch { /* refusal-ok: an already disconnected node is fine. */ }
+    }
   }
 
   close(): void {

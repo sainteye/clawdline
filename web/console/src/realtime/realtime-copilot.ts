@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { adjustEvent, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { machinesOnThisPage, openOnThisPage } from './copilot-open.js'
@@ -128,6 +128,9 @@ function consoleLanguage(): string {
   return typeof document === 'undefined' ? '' : document.documentElement.lang || ''
 }
 
+/** Thrown inside `start` when the person hung up while the call rang. */
+const CALL_HUNG_UP = new Error('hung up while ringing')
+
 export class RealtimeCopilotClient {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
@@ -135,6 +138,10 @@ export class RealtimeCopilotClient {
   private audioEl: HTMLAudioElement | null = null
   /** How loud each side is, for the orb; measured here, never recorded. */
   private meter = new CallMeter()
+  /** Stops the ringback that plays while the call connects (`CallMeter.ring`). */
+  private stopRing: (() => void) | null = null
+  /** Which start this is; `disconnect` moves it on so a ringing start stops. */
+  private attempt = 0
   private listeners: Set<RealtimeListener> = new Set()
 
   private state: RealtimeCopilotState = {
@@ -203,7 +210,7 @@ export class RealtimeCopilotClient {
         continue
       }
       if (res.ok && typeof body?.briefing === 'string' && body.briefing.trim()) return body.briefing
-      const code = typeof body?.error?.code === 'string' ? body.error.code : `HTTP ${res.status}`
+      const { code } = copilotRefusal(body, res.status)
       if (code !== 'copilot_briefing_off') this.addLog('error', nextWord('copilotLogBriefingFailed', { code }))
       return null
     }
@@ -232,6 +239,10 @@ export class RealtimeCopilotClient {
 
   private updateState(patch: Partial<RealtimeCopilotState>) {
     this.state = { ...this.state, ...patch }
+    if (this.state.status !== 'connecting' && this.stopRing) {
+      this.stopRing()
+      this.stopRing = null
+    }
     for (const listener of this.listeners) {
       listener(this.state)
     }
@@ -257,6 +268,13 @@ export class RealtimeCopilotClient {
 
     // Before any await: iOS keeps an audio context made later in this tap suspended.
     const meterRefused = this.meter.open()
+    // The call rings until it connects, fails or is hung up (`updateState`).
+    this.stopRing = this.meter.ring()
+    // A hang-up while it rings ends this attempt: `disconnect` moves `attempt`
+    // on, and every step below checks it before the call goes any further.
+    const attempt = ++this.attempt
+    const own: { stream?: MediaStream; pc?: RTCPeerConnection } = {}
+    const check = () => { if (attempt !== this.attempt) throw CALL_HUNG_UP }
 
     this.memory = readMemory()
     this.focus = undefined
@@ -273,29 +291,34 @@ export class RealtimeCopilotClient {
       const opened = await fetch('/v1/voice/copilot-session', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
       })
+      check()
       const grant = (await opened.json().catch(() => null)) as {
         client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean
-        error?: { code?: string; message?: string }
       } | null
       if (!opened.ok || !grant?.client_secret) {
-        const code = grant?.error?.code ?? `HTTP ${opened.status}`
-        // refusal-ok: only a missing key has an action here (Settings); every other refusal is shown with its own code and the machine's sentence.
+        const { code, message } = copilotRefusal(grant, opened.status)
+        // refusal-ok: a missing key points to Settings, an older machine to its update; every other refusal is shown with its own code and the machine's sentence.
         throw new Error(code === 'copilot_key_missing'
           ? nextWord('copilotErrorKeyMissing')
-          : grant?.error?.message ? nextWord('copilotErrorNoPassDetail', { code, message: grant.error.message }) : nextWord('copilotErrorNoPass', { code }))
+          : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
+          : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
       }
       this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
+      check()
       // 1. Get microphone audio stream
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      own.stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      check()
+      this.mediaStream = own.stream
       const inputRefused = meterRefused ? null : this.meter.attachInput(this.mediaStream)
       if (inputRefused) this.addLog('info', nextWord('copilotLogNoInputMeter', { reason: inputRefused }))
 
       // 2. Setup RTCPeerConnection
-      this.pc = new RTCPeerConnection()
+      own.pc = new RTCPeerConnection()
+      this.pc = own.pc
 
       // 3. Audio output for assistant voice
       this.audioEl = document.createElement('audio')
@@ -319,8 +342,10 @@ export class RealtimeCopilotClient {
       this.setupDataChannel(this.dc)
 
       // 5. Create WebRTC Offer
-      const offer = await this.pc.createOffer()
-      await this.pc.setLocalDescription(offer)
+      const offer = await own.pc.createOffer()
+      check()
+      await own.pc.setLocalDescription(offer)
+      check()
 
       // 6. Connect with OpenAI Realtime API endpoint (GA)
       const baseUrl = 'https://api.openai.com/v1/realtime/calls'
@@ -334,17 +359,29 @@ export class RealtimeCopilotClient {
         },
       })
 
+      check()
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(nextWord('copilotErrorRealtime', { status: response.status, detail: errorText }))
       }
 
       const answerSdp = await response.text()
-      await this.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+      check()
+      await own.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+      check()
 
       this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
       this.addLog('info', nextWord('copilotLogConnected'))
     } catch (err) {
+      if (err === CALL_HUNG_UP || attempt !== this.attempt) {
+        // Hung up while it rang: `disconnect` already said so. Only what this
+        // attempt itself opened is released; a newer call keeps its own.
+        for (const track of own.stream?.getTracks() ?? []) track.stop()
+        own.pc?.close()
+        if (this.mediaStream === own.stream) this.mediaStream = null
+        if (own.pc && this.pc === own.pc) { this.pc = null; this.dc = null }
+        return
+      }
       // refusal-ok: every error thrown above already names the machine's code and sentence; it is shown whole.
       this.disconnect()
       const msg = err instanceof Error ? err.message : String(err)
@@ -485,6 +522,7 @@ export class RealtimeCopilotClient {
   }
 
   disconnect() {
+    this.attempt += 1
     if (this.dc) {
       try {
         this.dc.close()
@@ -546,10 +584,10 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
   const opened = await fetch('/v1/voice/copilot-session', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
   })
-  const grant = (await opened.json().catch(() => null)) as { client_secret?: string; model?: string; error?: { code?: string } } | null
+  const grant = (await opened.json().catch(() => null)) as { client_secret?: string; model?: string } | null
   if (!opened.ok || !grant?.client_secret) {
     // refusal-ok: the preview names the machine's refusal code to the person; there is no other action to take here.
-    throw new Error(grant?.error?.code ?? `HTTP ${opened.status}`)
+    throw new Error(copilotRefusal(grant, opened.status).code)
   }
   const model = grant.model || 'gpt-realtime-mini'
   const pc = new RTCPeerConnection()

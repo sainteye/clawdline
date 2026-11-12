@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11253,
+  "englishKeys": 11254,
   "counts": {
-    "negation": 3114,
+    "negation": 3115,
     "state": 1854,
     "permission": 669,
     "deletion": 255,
     "uncertainty": 422
   },
-  "unionCount": 4943,
+  "unionCount": 4944,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2303,6 +2303,7 @@
       "next.copilotCostNote",
       "next.copilotCostUnpriced",
       "next.copilotErrorKeyMissing",
+      "next.copilotErrorMachineLacks",
       "next.copilotErrorNoPass",
       "next.copilotErrorNoPassDetail",
       "next.copilotKeyUnset",
@@ -9895,6 +9896,7 @@
     "next.copilotEagernessLabel",
     "next.copilotErrorChannel",
     "next.copilotErrorKeyMissing",
+    "next.copilotErrorMachineLacks",
     "next.copilotErrorNoPass",
     "next.copilotErrorNoPassDetail",
     "next.copilotErrorRealtime",

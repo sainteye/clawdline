@@ -13,7 +13,12 @@ export function CopilotCallButton() {
   useEffect(() => realtimeCopilot.subscribe((s) => setActive(s.status === "connected" || s.status === "connecting")), [])
   const label = nextWord(active ? "copilotInCall" : "copilotCall")
   return <button className={`start copilot-call${active ? " in-call" : ""}`} id="copilot-call" type="button"
-    title={label} aria-label={label} aria-pressed={active} onClick={() => copilotDock.open()}>
+    title={label} aria-label={label} aria-pressed={active} onClick={() => {
+      // A press dials at once, as a phone does: the sheet opens ringing and the
+      // person hangs up there to not start. A press during a call only opens it.
+      copilotDock.open()
+      if (!active) void realtimeCopilot.start()
+    }}>
     <svg className="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
       <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
     </svg>

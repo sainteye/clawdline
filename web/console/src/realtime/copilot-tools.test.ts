@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -727,4 +727,11 @@ test("a just-started Session is waited for before it is opened", async () => {
   const out = JSON.parse((await runCopilotTool("open_session", '{"session_id":"%77"}', deps)).output)
   assert.deepEqual(out, { opened: true, label: "New one" })
   assert.equal(reads, 3)
+})
+
+test("a copilot-session refusal is read in the Cloud seam's flat spelling and the machine's nested one", () => {
+  assert.deepEqual(copilotRefusal({ error: "cloud_machine_unsupported", detail: "copilot-session", route: "/v1/voice/copilot-session" }, 501), { code: "cloud_machine_unsupported", message: "copilot-session" })
+  assert.deepEqual(copilotRefusal({ error: "copilot_key_missing", detail: "copilot_key_missing" }, 412), { code: "copilot_key_missing", message: "" })
+  assert.deepEqual(copilotRefusal({ error: { code: "copilot_key_missing", message: "no key" } }, 412), { code: "copilot_key_missing", message: "no key" })
+  assert.deepEqual(copilotRefusal(null, 501), { code: "HTTP 501", message: "" })
 })

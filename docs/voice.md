@@ -97,6 +97,19 @@ answers it with the settings; the browser opens the call with that secret, so th
 reaches a phone or Cloud. Meanwhile the browser reads the Session list into the instructions,
 so the first question needs no tool, and asks `POST /v1/voice/copilot-briefing`.
 
+The call button dials at once: the sheet opens ringing (a 440 and 480 Hz ringback, one second
+on and two off, on the audio context the press opened) until the call connects, fails or is
+hung up. A hang-up while it rings ends that attempt at its next step, so no call starts after
+it (`start` in `realtime/realtime-copilot.ts`).
+
+Over Cloud the call pass is asked only of machines that offer it, as dictation is asked only of
+a machine that transcribes: the reading machine first, then each current machine whose
+descriptor lists `copilot-session`. A machine without the word or without an OpenAI key passes
+the request on; the machine that answers also prepares the briefing (`copilotSession` in
+`cloud/relay-writer.ts`). The seam's refusals for this word are flat (`{error, detail}`), and the
+page reads both spellings (`copilotRefusal`), so a refusal shows its own code. Before this a
+phone saw only "HTTP 501".
+
 **The briefing.** The machine reads its own Sessions through the handlers `/v1/sessions` and
 `/v1/transcript` answer with (at most 10, most urgent first: waiting, working, delivered, idle),
 keeps each one's waiting question, the person's recent asks, the summaries it recorded with
