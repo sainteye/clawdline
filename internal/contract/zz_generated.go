@@ -4918,6 +4918,14 @@ const (
 // ProjectAssistantProjectKindValues is every value the contract allows, in contract order.
 var ProjectAssistantProjectKindValues = []ProjectAssistantProjectKind{ProjectAssistantProjectKindRepository, ProjectAssistantProjectKindPlace}
 
+// A source-registered choice for Bot configuration. The label is metadata, not
+// proof that a directory or native provider is currently usable. Creation and
+// execution resolve the selected ID again.
+type ProjectAssistantProjectOption struct {
+	Label  string                           `json:"label"`
+	Target ProjectAssistantProjectSelection `json:"target"`
+}
+
 // Linked worktrees resolve to the existing canonical repository. Non-repository
 // places retain their own identity.
 type ProjectAssistantProjectScope struct {
@@ -4932,6 +4940,29 @@ type ProjectAssistantProjectScope struct {
 type ProjectAssistantProjectSelection struct {
 	MachineID string `json:"machine_id"`
 	ProjectID string `json:"project_id"`
+}
+
+// Read the source-owned Bot Project catalog. Page size uses the existing 1..100
+// row bound. The opaque cursor binds the source, principal, grant and complete
+// catalog revision; this does not read the retired /v1/projects catalog.
+type ProjectAssistantProjectsRequest struct {
+	Cursor    string `json:"cursor"`
+	MachineID string `json:"machine_id"`
+	PageSize  int64  `json:"page_size"`
+}
+
+// A complete-row page from one fresh registered-choice revision. Agent values
+// identify configuration kinds accepted by Create and do not assert CLI
+// installation, authentication or native readiness. A byte-limited page
+// advances only through complete returned choices.
+type ProjectAssistantProjectsResponse struct {
+	Agents          []ProjectAssistantAgent         `json:"agents"`
+	ContractVersion string                          `json:"contract_version"`
+	HasMore         bool                            `json:"has_more"`
+	Items           []ProjectAssistantProjectOption `json:"items"`
+	NextCursor      string                          `json:"next_cursor"`
+	Revision        string                          `json:"revision"`
+	Source          ProjectAssistantSourceStatus    `json:"source"`
 }
 
 // reader_id is the authenticated Cloud principal, shared across its devices.
