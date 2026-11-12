@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { actionNotice, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -292,6 +292,13 @@ export class RealtimeCopilotClient {
     const attempt = ++this.attempt
     const own: { stream?: MediaStream; pc?: RTCPeerConnection } = {}
     const check = () => { if (attempt !== this.attempt) throw CALL_HUNG_UP }
+    // The microphone is asked for in the tap itself, beside the call pass:
+    // iOS Safari refused it (NotAllowedError) when it was asked only after
+    // the pass came back over Cloud, seconds after the press.
+    const microphone: Promise<MediaStream> = navigator.mediaDevices?.getUserMedia
+      ? navigator.mediaDevices.getUserMedia({ audio: true })
+      : Promise.reject(new DOMException('This browser offers no microphone.', 'NotSupportedError'))
+    microphone.catch(() => undefined)
 
     this.memory = readMemory()
     this.focus = undefined
@@ -326,8 +333,11 @@ export class RealtimeCopilotClient {
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
       check()
-      // 1. Get microphone audio stream
-      own.stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // 1. The microphone asked for in the tap.
+      own.stream = await microphone.catch((error: unknown) => {
+        const name = error instanceof DOMException || error instanceof Error ? error.name : ''
+        throw new Error(nextWord(microphoneProblem(name), { name: name || String(error) }))
+      })
       check()
       this.mediaStream = own.stream
       const inputRefused = meterRefused ? null : this.meter.attachInput(this.mediaStream)
@@ -390,6 +400,8 @@ export class RealtimeCopilotClient {
       this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
       this.addLog('info', nextWord('copilotLogConnected'))
     } catch (err) {
+      // A call that did not start keeps no microphone, even one granted late.
+      void microphone.then((stream) => { if (stream !== this.mediaStream) for (const track of stream.getTracks()) track.stop() }, () => undefined)
       if (err === CALL_HUNG_UP || attempt !== this.attempt) {
         // Hung up while it rang: `disconnect` already said so. Only what this
         // attempt itself opened is released; a newer call keeps its own.
@@ -692,6 +704,7 @@ async function decideOnMachine(said: string): Promise<{ id?: string; candidates?
   if (!res.ok || !body) throw new Error(copilotRefusal(body, res.status).code)
   return {
     ...(typeof body.id === 'string' && body.id ? { id: body.id } : {}),
+    ...((body as { many?: unknown }).many === true ? { many: true } : {}),
     candidates: Array.isArray(body.candidates) ? body.candidates.filter((c): c is string => typeof c === 'string') : [],
   }
 }

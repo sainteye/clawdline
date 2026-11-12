@@ -127,6 +127,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 
 【工具】
 - list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，附 latest 最近一句進度）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
+- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
 - get_session_summary：某個 Session 現在的摘要（最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」用這個。
 - get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
@@ -209,7 +210,19 @@ export const COPILOT_TOOLS = [
     description:
       '查詢目前這台電腦上所有運作中或閒置的 Sessions 清單與狀態。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先主動呼叫此工具。',
     parameters: { type: 'object', properties: {} },
+  },  {
+    type: 'function',
+    name: 'get_sessions_summary',
+    description: '一群 Session 各自的摘要（目標、最近完成什麼、現在在做什麼、交付摘要），依最近活動排序、最近的在最前面。使用者要「工作中的都在做什麼」「最近完成／閒置的那些做了什麼」「全部的摘要」時呼叫。',
+    parameters: {
+      type: 'object',
+      required: ['which'],
+      properties: {
+        which: { type: 'string', enum: ['working', 'idle', 'all'], description: 'working：工作中與等使用者回應的；idle：閒置與最近完成的；all：全部' },
+      },
+    },
   },
+
   {
     type: 'function',
     name: 'get_session_recap',
@@ -744,7 +757,7 @@ export function resolveSession(
 export interface DecisionSession { id: string; label: string; state: string; assistant: string; delivered?: string; question?: string }
 
 /** What the Decision API decided: one id, or the few it could not tell apart. */
-export interface SessionDecision { id?: string; candidates?: string[] }
+export interface SessionDecision { id?: string; candidates?: string[]; many?: boolean }
 
 /**
  * A read's Session. An id or a whole name is taken as it is; any other words
@@ -780,8 +793,19 @@ export async function resolveRead(
   // match was said to the person as "not found".
   const row = (decided.id ? rows.find((r) => r.id === decided.id) : undefined) ?? (near.length === 1 ? near[0] : undefined)
   if (row) return { row }
-  // Words that point nowhere ("它") leave the copilot's own choice standing.
-  if ('row' in direct && (near.length === 0 || near.includes(direct.row))) return direct
+  // Words that point nowhere ("它") leave the copilot's own choice standing,
+  // and so does a question about several Sessions read one at a time.
+  if ('row' in direct && (near.length === 0 || near.includes(direct.row) || decided.many)) return direct
+  if (near.length && decided.many) {
+    // Asked about several at once (「他們做了什麼」): every one is read, not
+    // put back to the person as a choice. On 2026-11-12 such a question was
+    // answered with "which one do you mean?".
+    return {
+      error: `使用者問的是這幾個 Session：${near.map((r) => r.label).join('、')}。不要問他要哪一個：改呼叫 get_sessions_summary（選對應的範圍），或對每一個用它的 id 各呼叫一次這個工具，再一起回答`,
+      candidates: near.map((r) => ({ id: r.id, label: r.label, state: r.state })),
+      many: true,
+    } as ReturnType<typeof resolveSession>
+  }
   if (near.length) {
     return {
       error: `「${wanted}」可能是：${near.map((r) => r.label).join('、')}。唸出這幾個名稱，問使用者是哪一個`,
@@ -910,6 +934,46 @@ function waits(r: CopilotSessionRow): boolean {
   return r.state === 'waiting' || r.work_state === 'waiting' || !!r.question
 }
 
+/** When a Session last did something, for the newest-first order of a group summary. */
+function lastMoved(r: CopilotSessionRow): number {
+  return Math.max(r.last_activity_at ?? 0, r.delivered_at ?? 0, r.working_since ?? 0)
+}
+
+/**
+ * Each Session of a group, newest activity first, with what it set out to do,
+ * what it finished lately and what it is doing now. The person asked for the
+ * working ones, the idle and lately finished ones, or all, told in that order.
+ * Only the newest LIST_LATEST_READS are read; the rest are counted.
+ */
+async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working' | 'idle' | 'all'): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
+  const busy = (r: CopilotSessionRow) => waits(r) || r.state === 'working'
+  const group = read.rows
+    .filter((r) => which === 'all' || (which === 'working' ? busy(r) : !busy(r)))
+    .sort((a, b) => lastMoved(b) - lastMoved(a))
+  const shown = group.slice(0, LIST_LATEST_READS)
+  const progress = await Promise.all(shown.map((r) => latestWords(deps, r)))
+  logs.push({ level: 'info', text: `讀了 ${shown.length} 個 Session 的摘要（共 ${group.length} 個）` })
+  return {
+    which,
+    count: group.length,
+    sessions: shown.map((r, i) => ({
+      label: r.label,
+      state: waits(r) ? 'needs_you' : r.state,
+      ...(whenPhrase(lastMoved(r) || undefined, now) ? { last_active: whenPhrase(lastMoved(r) || undefined, now) } : {}),
+      ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
+      ...(r.question ? { question: r.question } : {}),
+      ...progressFields(progress[i]),
+    })),
+    ...(group.length > shown.length ? { not_read: group.length - shown.length } : {}),
+  }
+}
+
 async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
@@ -984,7 +1048,7 @@ async function sessionScreen(deps: ToolDeps, logs: ToolLog[], wanted: string): P
   const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   deps.focus?.set(row.id)
@@ -1158,7 +1222,7 @@ async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   deps.focus?.set(row.id)
@@ -1208,7 +1272,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
   const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   deps.focus?.set(row.id)
@@ -1255,7 +1319,7 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
@@ -1315,7 +1379,7 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
   const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   deps.focus?.set(row.id)
@@ -1404,7 +1468,7 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
   const found = resolveForWrite(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates }
+    return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   const refused = writeGuard(deps, row, said, switchConfirmed)
@@ -1471,7 +1535,7 @@ async function sessionForReusable(deps: ToolDeps, logs: ToolLog[], wanted: strin
   const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates }
+    return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
   }
   return found
 }
@@ -1526,7 +1590,7 @@ async function runSnippet(deps: ToolDeps, logs: ToolLog[], wanted: string, name:
   const found = resolveForWrite(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates }
+    return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   const refused = writeGuard(deps, row, said, switchConfirmed)
@@ -1585,7 +1649,7 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
   }
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   deps.focus?.set(row.id)
@@ -1628,7 +1692,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
   const found = resolveForWrite(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates }
+    return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   const refused = writeGuard(deps, row, said, switchConfirmed)
@@ -1681,7 +1745,7 @@ async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     const found = await resolveRead(deps, read.rows, wanted)
     if ('error' in found) {
       logs.push({ level: 'error', text: found.error })
-      return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
+      return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
     }
     rows = [found.row]
   } else {
@@ -1770,7 +1834,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
   const found = resolveForWrite(read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
-    return { error: found.error, candidates: found.candidates }
+    return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
   const refused = writeGuard(deps, row, said, switchConfirmed)
@@ -1935,6 +1999,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
   try {
     if (name === 'get_status_briefing') result = await statusBriefing(deps, logs)
     else if (name === 'list_sessions') result = await listSessions(deps, logs)
+    else if (name === 'get_sessions_summary') result = await sessionsSummary(deps, logs, args.which === 'working' || args.which === 'idle' ? args.which : 'all')
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
@@ -2060,7 +2125,7 @@ export function unbackedClaimEvents(kinds: readonly ActionKind[]): Record<string
 }
 
 /** One tool the copilot used in the current turn, as the call sheet shows it. */
-export interface ToolTrace { name: string; target?: string; ok: boolean; ms: number }
+export interface ToolTrace { name: string; target?: string; ok: boolean; ms: number; outcome: 'done' | 'asked' | 'many' | 'failed' }
 
 /**
  * What a tool call was, for the sheet's tool line: its own name, the Session
@@ -2073,5 +2138,30 @@ export function toolTrace(name: string, output: string, ms: number): ToolTrace {
   try { o = (JSON.parse(output) ?? {}) as Record<string, unknown> } catch { /* refusal-ok: a reply that is not JSON is shown as a failed call. */ }
   const status = (o.status && typeof o.status === 'object' ? o.status : {}) as Record<string, unknown>
   const target = str(o.label) || str(o.sent_to) || str(o.session) || str(status.label) || str(o.project)
-  return { name, ...(target ? { target } : {}), ok: !!o && typeof o === 'object' && !('error' in o) && output.trim().startsWith('{'), ms: Math.max(0, Math.round(ms)) }
+  const ok = !!o && typeof o === 'object' && !('error' in o) && output.trim().startsWith('{')
+  // A list of Sessions to choose from, or to read one by one, is no failure.
+  const outcome = ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'
+  return { name, ...(target ? { target } : {}), ok, ms: Math.max(0, Math.round(ms)), outcome }
+}
+
+/** What the call says when the microphone cannot be opened, by the browser's error name. */
+export type MicrophoneProblem = 'copilotMicDenied' | 'copilotMicMissing' | 'copilotMicBusy' | 'copilotMicUnavailable' | 'copilotMicFailed'
+
+/**
+ * The person's reason a microphone did not open (`getUserMedia`'s DOMException
+ * name), instead of the browser's own sentence. iOS answers NotAllowedError
+ * both for a refusal and for an ask made outside the tap that started the call.
+ */
+export function microphoneProblem(name: string): MicrophoneProblem {
+  switch (name) {
+    case 'NotAllowedError': return 'copilotMicDenied'
+    case 'NotFoundError':
+    case 'OverconstrainedError': return 'copilotMicMissing'
+    case 'NotReadableError':
+    case 'AbortError': return 'copilotMicBusy'
+    case 'SecurityError':
+    case 'NotSupportedError':
+    case 'TypeError': return 'copilotMicUnavailable'
+    default: return 'copilotMicFailed'
+  }
 }

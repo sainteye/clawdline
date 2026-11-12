@@ -749,6 +749,8 @@
 .copilot-tools-trail code { font-size: 11px; color: inherit; background: none; padding: 0; }
 .copilot-tools-trail .copilot-tool-target { overflow: hidden; text-overflow: ellipsis; max-width: 12em; }
 .copilot-tools-trail .copilot-tool-ms { opacity: 0.75; font-variant-numeric: tabular-nums; }
-.copilot-tools-trail li.ok .copilot-tool-mark { color: #16a34a; }
+.copilot-tools-trail li.done .copilot-tool-mark { color: #16a34a; }
+.copilot-tools-trail li.asked .copilot-tool-mark, .copilot-tools-trail li.many .copilot-tool-mark { color: #f59e0b; }
 .copilot-tools-trail li.failed { border-color: color-mix(in srgb, #ef4444 45%, var(--line)); }
-.copilot-tools-trail li.failed .copilot-tool-mark { color: #ef4444; }
+.copilot-tools-trail li.failed .copilot-tool-mark, .copilot-tools-trail li.failed .copilot-tool-outcome { color: #ef4444; }
+.copilot-tools-trail .copilot-tool-outcome { font-weight: 600; }

@@ -156,6 +156,19 @@ anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only t
 explicit yes (`force_confirmed`) sends `force: true`, pinned to the version those reasons came
 from, and the machine still decides.
 
+**A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
+person), the idle and lately finished ones, or all, newest activity first, each with its goal,
+what it finished lately and what it is doing; only the newest `LIST_LATEST_READS` are read and
+the rest are counted. A sentence about several Sessions at once ("最近做完的告訴我他們做的事情")
+is marked `many` by the Decision API and sent there, never put back as "which one?". On
+2026-11-12 such a question was answered with three candidates to choose from; live, five group
+questions then chose the right group each time.
+
+**The microphone is asked for in the tap.** iOS Safari refused `getUserMedia` (NotAllowedError)
+when the call asked only after its pass came back over Cloud, seconds after the press; it is
+now asked before the first await, beside the pass, and released when the call does not start.
+A refusal is said by its reason (`microphoneProblem`), not by the browser's sentence.
+
 **What the person sees the copilot do.** Every send, answer, close, Snippet or Playbook run and
 new Session the machine confirmed shows a small notice in the sheet and above the bubble for five
 seconds, with a short two-note chime (`actionNotice`, `CopilotNotice.tsx`); a refusal never does.

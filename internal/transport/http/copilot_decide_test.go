@@ -40,7 +40,7 @@ var decisionSessions = []copilotDecisionSession{
 func TestADecisionKeepsOnlySessionsFromTheMachinesOwnList(t *testing.T) {
 	seen := fakeDecision(t, `{"id":"owned:acp:AAAA","candidates":["%2","%88"]}`)
 	got, _, detail := decideCopilotSession(context.Background(), testCopilotKey, "the clothes photo one", decisionSessions)
-	if detail != "" || got.ID != "owned:acp:AAAA" || len(got.Candidates) != 1 || got.Candidates[0] != "%2" {
+	if detail != "" || got.ID != "owned:acp:AAAA" || len(got.Candidates) != 1 || got.Candidates[0] != "%2" || got.Many {
 		t.Fatalf("%+v %q", got, detail)
 	}
 	sent := (*seen)[0]
@@ -73,5 +73,13 @@ func TestADecisionRefusesWithoutASentenceOrAKey(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), code) {
 			t.Errorf("%.40s: %d %s, want %s", body, rec.Code, rec.Body, code)
 		}
+	}
+}
+
+func TestADecisionOnSeveralSessionsSaysSo(t *testing.T) {
+	fakeDecision(t, `{"id":null,"candidates":["%2","owned:acp:AAAA"],"many":true}`)
+	got, _, _ := decideCopilotSession(context.Background(), testCopilotKey, "what did the finished ones do", decisionSessions)
+	if !got.Many || len(got.Candidates) != 2 {
+		t.Fatalf("%+v", got)
 	}
 }

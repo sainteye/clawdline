@@ -9,6 +9,10 @@ import {
   type RealtimeCopilotState,
 } from './realtime-copilot.js'
 
+/** How each tool outcome is marked on its chip, and the word said beside it (`toolTrace`). */
+const TOOL_OUTCOME_MARK = { done: '✓', asked: '?', many: '⋯', failed: '✗' } as const
+const TOOL_OUTCOME_WORD = { done: 'copilotToolDone', asked: 'copilotToolAsked', many: 'copilotToolMany', failed: 'copilotToolFailed' } as const
+
 /** One stable reader, so the orb is not woken by every render. */
 const readCallLevels = () => realtimeCopilot.readLevels()
 
@@ -130,10 +134,11 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
         {copilotState.tools && copilotState.tools.length > 0 && (
           <ol className="copilot-tools-trail" aria-label={nextWord('copilotToolsUsed')}>
             {copilotState.tools.map((t, i) => (
-              <li key={i} className={t.ok ? 'ok' : 'failed'} title={`${t.name}${t.target ? ` · ${t.target}` : ''} · ${(t.ms / 1000).toFixed(1)} s`}>
-                <span className="copilot-tool-mark" aria-hidden="true">{t.ok ? '✓' : '✗'}</span>
+              <li key={i} className={t.outcome} title={`${t.name}${t.target ? ` · ${t.target}` : ''} · ${nextWord(TOOL_OUTCOME_WORD[t.outcome])} · ${(t.ms / 1000).toFixed(1)} s`}>
+                <span className="copilot-tool-mark" aria-hidden="true">{TOOL_OUTCOME_MARK[t.outcome]}</span>
                 <code>{t.name}</code>
                 {t.target ? <span className="copilot-tool-target">{t.target}</span> : null}
+                {t.outcome === 'done' ? null : <span className="copilot-tool-outcome">{nextWord(TOOL_OUTCOME_WORD[t.outcome])}</span>}
                 <span className="copilot-tool-ms">{(t.ms / 1000).toFixed(1)}s</span>
               </li>
             ))}

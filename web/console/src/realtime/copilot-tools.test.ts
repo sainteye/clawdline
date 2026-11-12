@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -185,7 +185,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -899,8 +899,43 @@ test("saying a message was sent without the machine confirming a send is caught;
 })
 
 test("a tool call is traced by its name, the Session it named, whether it answered, and its time", () => {
-  assert.deepEqual(toolTrace("get_session_summary", JSON.stringify({ session_id: "%2", label: "Prepare screenshots" }), 812.4), { name: "get_session_summary", target: "Prepare screenshots", ok: true, ms: 812 })
-  assert.deepEqual(toolTrace("open_session", JSON.stringify({ opened: true, label: "x", status: { label: "x" } }), 5), { name: "open_session", target: "x", ok: true, ms: 5 })
-  assert.deepEqual(toolTrace("send_message_to_session", JSON.stringify({ error: "refused" }), 40), { name: "send_message_to_session", ok: false, ms: 40 })
+  assert.deepEqual(toolTrace("get_session_summary", JSON.stringify({ session_id: "%2", label: "Prepare screenshots" }), 812.4), { name: "get_session_summary", target: "Prepare screenshots", ok: true, ms: 812, outcome: "done" })
+  assert.deepEqual(toolTrace("open_session", JSON.stringify({ opened: true, label: "x", status: { label: "x" } }), 5), { name: "open_session", target: "x", ok: true, ms: 5, outcome: "done" })
+  assert.deepEqual(toolTrace("send_message_to_session", JSON.stringify({ error: "refused" }), 40), { name: "send_message_to_session", ok: false, ms: 40, outcome: "failed" })
   assert.equal(toolTrace("list_sessions", "not json", 1).ok, false)
+})
+
+test("a microphone that does not open is said by its reason, not by the browser's sentence", () => {
+  assert.equal(microphoneProblem("NotAllowedError"), "copilotMicDenied")
+  assert.equal(microphoneProblem("NotFoundError"), "copilotMicMissing")
+  assert.equal(microphoneProblem("NotReadableError"), "copilotMicBusy")
+  assert.equal(microphoneProblem("SecurityError"), "copilotMicUnavailable")
+  assert.equal(microphoneProblem("WeirdError"), "copilotMicFailed")
+})
+
+test("a question about several Sessions has every one read, and its tool is not marked failed", async () => {
+  const { deps } = fakeMachine({ "%7": [{ pending: false, readable: true, text: "a" }], "%9": [{ pending: false, readable: true, text: "b" }] })
+  deps.heard = () => "what did the test ones do"
+  deps.decide = async () => ({ candidates: ["%7", "%9"], many: true })
+  const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"tests","said":"the test ones"}', deps)).output)
+  assert.match(out.error, /不要問他要哪一個/)
+  assert.equal(toolTrace("get_session_screen", JSON.stringify(out), 10).outcome, "many")
+  // Each one read by its id is read, not sent back into the same question.
+  const one = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%9","said":"the test ones"}', deps)).output)
+  assert.equal(one.session_id, "%9")
+  assert.equal(toolTrace("get_session_summary", JSON.stringify({ error: "可能是", candidates: [{ id: "%7" }] }), 1).outcome, "asked")
+})
+
+test("a group summary reads the working, the idle, or all Sessions, newest activity first", async () => {
+  const { deps } = fakeMachine({}, { transcripts: {
+    "%7": { entries: [{ role: "user", text: "fix the flaky test" }, { role: "assistant", text: "Twenty runs pass now." }] },
+    "%2": { entries: [{ role: "assistant", text: "All six screenshots are taken." }] },
+  } })
+  deps.now = () => 1_000_600
+  const working = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"working"}', deps)).output)
+  assert.ok(working.sessions.every((s: { state: string }) => s.state === "working" || s.state === "needs_you"))
+  const idle = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"idle"}', deps)).output)
+  assert.ok(idle.sessions.length > 0 && idle.sessions.every((s: { state: string }) => s.state !== "working" && s.state !== "needs_you"))
+  const all = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
+  assert.equal(all.count, working.count + idle.count)
 })

@@ -37,6 +37,9 @@ const (
 	// copilotDecisionTextRunes is how much of a delivery or a question each
 	// Session is shown by.
 	copilotDecisionTextRunes = 200
+	// copilotDecisionCandidates is how many Sessions one decision may name:
+	// the few it cannot tell apart, or the several a question is about.
+	copilotDecisionCandidates = 5
 )
 
 type copilotDecisionSession struct {
@@ -51,9 +54,12 @@ type copilotDecisionSession struct {
 type copilotDecisionAnswer struct {
 	ID         string   `json:"id"`
 	Candidates []string `json:"candidates"`
+	// Many says the sentence asks about several Sessions at once ("他們"),
+	// so the candidates are all of them, not a choice to put to the person.
+	Many bool `json:"many"`
 }
 
-const copilotDecisionPrompt = "下面是使用者在語音通話裡說的一句話（語音辨識的結果，會有同音字、錯字、中英混雜，或只講主題），裡面提到他電腦上的一個 AI 程式開發 Session。從清單裡挑出他指的那一個，依名稱、狀態、助理與交付摘要的意思判斷，不是只比對字面。很確定就填 id；有兩三個都說得通就把它們放進 candidates、id 填 null；清單裡沒有相符的、或這句話沒有指向任何特定 Session（例如只說「它」「這個」或在問整體狀況），就兩個都留空。"
+const copilotDecisionPrompt = "下面是使用者在語音通話裡說的一句話（語音辨識的結果，會有同音字、錯字、中英混雜，或只講主題），裡面提到他電腦上的一個 AI 程式開發 Session。從清單裡挑出他指的那一個，依名稱、狀態、助理與交付摘要的意思判斷，不是只比對字面。很確定就填 id；有兩三個都說得通就把它們放進 candidates、id 填 null；清單裡沒有相符的、或這句話沒有指向任何特定 Session（例如只說「它」「這個」或在問整體狀況），就兩個都留空。如果他一次問的是好幾個 Session（例如「它們」「那幾個」「處理中的那些」「最近做完的」），把符合的都放進 candidates（最多五個）、id 填 null、many 填 true；只問一個時 many 填 false。"
 
 // copilotDecisionRequest is the Chat Completions body for one sentence.
 func copilotDecisionRequest(said string, sessions []copilotDecisionSession) map[string]any {
@@ -72,8 +78,9 @@ func copilotDecisionRequest(said string, sessions []copilotDecisionSession) map[
 					"properties": map[string]any{
 						"id":         map[string]any{"type": []string{"string", "null"}},
 						"candidates": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"many":       map[string]any{"type": "boolean"},
 					},
-					"required": []string{"id", "candidates"},
+					"required": []string{"id", "candidates", "many"},
 				},
 			},
 		},
@@ -205,6 +212,7 @@ func decideCopilotSession(ctx context.Context, key, said string, sessions []copi
 	var chose struct {
 		ID         *string  `json:"id"`
 		Candidates []string `json:"candidates"`
+		Many       bool     `json:"many"`
 	}
 	if json.Unmarshal([]byte(reply.Choices[0].Message.Content), &chose) != nil {
 		return copilotDecisionAnswer{}, res.StatusCode, "the decision was not JSON"
@@ -213,12 +221,12 @@ func decideCopilotSession(ctx context.Context, key, said string, sessions []copi
 	for _, s := range sessions {
 		known[s.ID] = true
 	}
-	out := copilotDecisionAnswer{Candidates: []string{}}
+	out := copilotDecisionAnswer{Candidates: []string{}, Many: chose.Many}
 	if chose.ID != nil && known[*chose.ID] {
 		out.ID = *chose.ID
 	}
 	for _, id := range chose.Candidates {
-		if known[id] && id != out.ID && len(out.Candidates) < 3 {
+		if known[id] && id != out.ID && len(out.Candidates) < copilotDecisionCandidates {
 			out.Candidates = append(out.Candidates, id)
 		}
 	}
