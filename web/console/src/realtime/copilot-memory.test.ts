@@ -31,7 +31,7 @@ test("with nothing remembered the instructions are unchanged", () => {
 test("a remembered call opens without the introduction", () => {
   const first = (greetingEvent(false) as { response: { instructions: string } }).response.instructions
   const again = (greetingEvent(true) as { response: { instructions: string } }).response.instructions
-  assert.match(first, /說你可以回報/)
+  assert.match(first, /說你可以幫他看/)
   assert.match(again, /不要自我介紹/)
 })
 

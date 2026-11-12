@@ -289,6 +289,11 @@
     "Note": true
   },
   {
+    "Name": "cache.provider_quota_renew_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cache.provider_quota_request_seconds",
     "Known": true,
     "Note": true
@@ -3199,6 +3204,21 @@
   },
   {
     "Name": "voice.copilot_briefing_timeout_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_decision_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_decision_said_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_decision_timeout_milliseconds",
     "Known": true,
     "Note": true
   },

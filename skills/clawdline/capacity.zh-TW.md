@@ -65,6 +65,7 @@
 | `cache.pinned_read` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.provider_quota` | 4 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.provider_quota_refresh_seconds` | 900 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `cache.provider_quota_renew_seconds` | 30 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `cache.provider_quota_request_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `cache.provider_quota_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `cache.reclaim_summary` | 30 | `seconds` | `expire` | `diagnostics` | — |
@@ -657,6 +658,9 @@
 | `voice.copilot_briefing_input_characters` | 60000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_briefing_reply_characters` | 1500 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_briefing_timeout_milliseconds` | 90000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_decision_body_bytes` | 16384 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_decision_said_characters` | 1000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_decision_timeout_milliseconds` | 8000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_extra_instructions_characters` | 2000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_key_bytes` | 400 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |

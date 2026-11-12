@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -67,7 +68,7 @@ type copilotBriefingSession struct {
 	Requests   []string `json:"requests,omitempty"`
 	Deliveries []string `json:"deliveries,omitempty"`
 	LastReply  string   `json:"last_reply,omitempty"`
-	MinutesAgo int64    `json:"minutes_since_activity,omitempty"`
+	LastActive string   `json:"last_active,omitempty"`
 }
 
 var copilotReportCommand = regexp.MustCompile(`clawdline\s+session\s+report\b[^\n]*?--summary\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')`)
@@ -92,6 +93,29 @@ func clipRunes(s string, n int) string {
 	}
 	r := []rune(s)
 	return string(r[:n]) + "…"
+}
+
+// whenPhrase says when something happened as a person says it, so the
+// briefing never reads out a count of minutes: 剛剛, 12 分鐘前, 3 小時前,
+// 昨天 18:20, 11/9 14:30. It is the browser's whenPhrase (copilot-tools.ts).
+func whenPhrase(at, now time.Time) string {
+	d := now.Sub(at)
+	switch {
+	case d < 90*time.Second:
+		return "剛剛"
+	case d < time.Hour:
+		return fmt.Sprintf("%d 分鐘前", int(d.Round(time.Minute)/time.Minute))
+	}
+	at, now = at.Local(), now.Local()
+	y1, m1, d1 := at.Date()
+	y2, m2, d2 := now.Date()
+	if y1 == y2 && m1 == m2 && d1 == d2 {
+		return fmt.Sprintf("%d 小時前", int((d+30*time.Minute)/time.Hour))
+	}
+	if yy, ym, yd := now.AddDate(0, 0, -1).Date(); y1 == yy && m1 == ym && d1 == yd {
+		return "昨天 " + at.Format("15:04")
+	}
+	return fmt.Sprintf("%d/%d %s", int(m1), d1, at.Format("15:04"))
 }
 
 // copilotOwnRead answers one of this daemon's own read routes in-process.
@@ -174,7 +198,7 @@ func copilotBriefingFrom(read func(target string, into any) bool) ([]copilotBrie
 			}
 		}
 		if r.Activity != nil && r.Activity.Known && r.Activity.At > 0 && r.Activity.At <= now {
-			b.MinutesAgo = (now - r.Activity.At) / 60
+			b.LastActive = whenPhrase(time.Unix(r.Activity.At, 0), time.Unix(now, 0))
 		}
 		var page struct {
 			Entries []struct {

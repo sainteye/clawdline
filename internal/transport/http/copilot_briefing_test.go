@@ -218,3 +218,25 @@ func TestABriefingKeepsTheQuestionALongReplyEndsOn(t *testing.T) {
 		t.Fatalf("the reply is %d runes, over its bound", n)
 	}
 }
+
+func TestTheBriefingSaysWhenInWordsNotMinutes(t *testing.T) {
+	zone, err := time.LoadLocation("Asia/Taipei")
+	if err != nil {
+		t.Skip("no zone data")
+	}
+	was := time.Local
+	time.Local = zone
+	t.Cleanup(func() { time.Local = was })
+	now := time.Date(2026, 11, 12, 14, 0, 0, 0, zone)
+	for at, want := range map[time.Time]string{
+		now.Add(-30 * time.Second):                  "剛剛",
+		now.Add(-12 * time.Minute):                  "12 分鐘前",
+		now.Add(-3 * time.Hour):                     "3 小時前",
+		time.Date(2026, 11, 11, 18, 20, 0, 0, zone): "昨天 18:20",
+		time.Date(2026, 11, 9, 14, 30, 0, 0, zone):  "11/9 14:30",
+	} {
+		if got := whenPhrase(at, now); got != want {
+			t.Errorf("%v: %q, want %q", at, got, want)
+		}
+	}
+}

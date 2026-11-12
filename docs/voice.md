@@ -97,6 +97,19 @@ answers it with the settings; the browser opens the call with that secret, so th
 reaches a phone or Cloud. Meanwhile the browser reads the Session list into the instructions,
 so the first question needs no tool, and asks `POST /v1/voice/copilot-briefing`.
 
+The call button dials at once: the sheet opens ringing (a 440 and 480 Hz ringback, one second
+on and two off, on the audio context the press opened) until the call connects, fails or is
+hung up. A hang-up while it rings ends that attempt at its next step, so no call starts after
+it (`start` in `realtime/realtime-copilot.ts`).
+
+Over Cloud the call pass is asked only of machines that offer it, as dictation is asked only of
+a machine that transcribes: the reading machine first, then each current machine whose
+descriptor lists `copilot-session`. A machine without the word or without an OpenAI key passes
+the request on; the machine that answers also prepares the briefing (`copilotSession` in
+`cloud/relay-writer.ts`). The seam's refusals for this word are flat (`{error, detail}`), and the
+page reads both spellings (`copilotRefusal`), so a refusal shows its own code. Before this a
+phone saw only "HTTP 501".
+
 **The briefing.** The machine reads its own Sessions through the handlers `/v1/sessions` and
 `/v1/transcript` answer with (at most 10, most urgent first: waiting, working, delivered, idle),
 keeps each one's waiting question, the person's recent asks, the summaries it recorded with
@@ -117,7 +130,77 @@ Session is idle: such a question is prose, not a menu, so the Session's state do
 `send_message_to_session`. `answer_session_question` presses one option of a waiting Session's
 question only after the person names it; the press carries the question's fingerprint, so the
 machine refuses it if the screen asks something else by then. Over Cloud it resolves that
-Session's current execution as a newly started Session's is. `get_session_notes` reads the unresolved
+Session's current execution as a newly started Session's is. **Starting a Session.** `list_machines` names the machines the page offers (on Cloud, CloudGate
+answers with each machine's freshness; the local console has its own only) and carries the
+current machine's projects, installed assistants and their default and offered models
+(`/v1/places`, `/v1/settings/default-models`); `list_projects` reads another machine's with
+`?machine=`. `start_session` posts `/v1/places/<id>/start/<assistant>[/<model>]` only after the
+copilot has asked for whatever of machine, project, assistant and model it did not know, one at a
+time, and read the whole choice back; the project it names must be that id's. `open_session` waits
+up to five seconds for a just-started Session to reach the list. On 2026-11-12, before the
+projects came with the machine list, the copilot asked "專案A 還是專案B"; with them it named real
+projects and started codex in clawdline.
+
+**Writes go to the Session under discussion.** `send_message_to_session`,
+`answer_session_question` and `close_session` accept only a Session's id or its whole name (never
+an assistant type or part of a name), and require `session_label`, the
+name the copilot said aloud, which must be that Session's. The call remembers the Session it last
+read, opened or acted on; a write to another one is refused until the person confirms the switch
+(`switch_confirmed`). On 2026-11-12 a message went to the wrong Session; replayed against this
+machine's Sessions, the copilot asked to send to an unrelated one when the named Session had been
+closed, and after the rule "a Session not in the list is said to be missing, never replaced" it
+said so instead. `close_session` closes a Session the person named and confirmed, with `force:
+false` and that reading's version when its row's closeability is `safe`. When it is not, or the
+machine answers 409 with reasons, the copilot says the reasons and asks again whether to close
+anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only the person's
+explicit yes (`force_confirmed`) sends `force: true`, pinned to the version those reasons came
+from, and the machine still decides.
+
+**A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
+person), the idle and lately finished ones, or all, newest activity first, each with its goal,
+what it finished lately and what it is doing; only the newest `LIST_LATEST_READS` are read and
+the rest are counted. A sentence about several Sessions at once ("最近做完的告訴我他們做的事情")
+is marked `many` by the Decision API and sent there, never put back as "which one?". On
+2026-11-12 such a question was answered with three candidates to choose from; live, five group
+questions then chose the right group each time.
+
+**The microphone is asked for in the tap.** iOS Safari refused `getUserMedia` (NotAllowedError)
+when the call asked only after its pass came back over Cloud, seconds after the press; it is
+now asked before the first await, beside the pass, and released when the call does not start.
+A refusal is said by its reason (`microphoneProblem`), not by the browser's sentence.
+
+**What the person sees the copilot do.** Every send, answer, close, Snippet or Playbook run and
+new Session the machine confirmed shows a small notice in the sheet and above the bubble for five
+seconds, with a short two-note chime (`actionNotice`, `CopilotNotice.tsx`); a refusal never does.
+When the copilot says it did one of these ("已經幫你送過去了") and the machine confirmed none since
+the person last spoke, an amber notice says so and the copilot is told to correct itself and ask
+again (`unbackedClaims`). On 2026-11-12 it told the person a message was sent without calling the
+send; only the second ask sent it, and nothing on screen told the two apart. A Session's own work
+reported in the third person ("它已經發布了") is not a claim.
+
+**Which Session the person means is the copilot's call.** The read tools take an id or a whole
+name; anything else answers with every Session (id, name, state) and the copilot picks the id
+from what the person said. On 2026-11-12 the person asked for "Task 或 TimeTree 相關的" Session;
+the label-substring match found nothing for "[Task] Foyer 每日 TimeTree 日程整理" and the copilot
+said it did not exist. Matching what was meant is left to the model rather than to a looser rule
+in this code.
+
+The voice model alone still read the wrong Session, or none, too often: across eleven spoken
+descriptions of this machine's Sessions on 2026-11-12, gpt-realtime-mini read the right one for 7
+(gpt-realtime, about four times the price, for 8). So a read that names a Session by neither id
+nor whole name, and every read the person described in words, also asks the **Decision API**:
+`POST /v1/voice/copilot-decide` with the person's transcribed sentence (`heard`, never the voice
+model's paraphrase, which handed over its own pick of a label). The machine that gave the call its
+pass reads its own Session list and asks `gpt-4.1-mini` on its key for one id, the two or three it
+cannot tell apart, or neither (`copilot_decide.go`). Only an id from that list is used; a lone
+candidate is the Session; a sentence that points nowhere ("它"), a refusal or a slow answer leave
+the voice model's own choice standing (`resolveRead`). Writes never take a decision. With it, 10
+of the 11 descriptions read the right Session, at a median of 0.7 s per decision. The sentence is
+bounded (`voice.copilot_decision_said_characters`) and so is the wait
+(`voice.copilot_decision_timeout_milliseconds`). Over Cloud the close resolves that
+Session's current execution as `answer_session_question` does. Times reach the copilot already
+said as a person says them (剛剛, 12 分鐘前, 3 小時前, 昨天 18:20, 11/9 14:30; 1 小時 20 分 for a
+duration), in the briefing's input too, never as a count of minutes. `get_session_notes` reads the unresolved
 notes agents left for the person (secret handoffs excepted) and does not reply to them. `open_session` opens the
 Session on the page the call runs in, whichever browser that is: the local console opens it as a
 press in the list would, and on Cloud the reading machine's current execution of it is resolved
@@ -131,7 +214,7 @@ person is asked to decide with each choice's cost.
 
 **Speed and length.** `audio.output.speed` is the machine's choice of 0.8, 0.9 (the default),
 1.0 or 1.1; it slows the generated audio, and the instructions also ask for a pause between
-sentences. Ordinary answers stay at three sentences while **Short answers** is on (the default; off lets them
+sentences. The Session summary names only the kinds it has (no "0 個已完成"). Ordinary answers stay at three sentences while **Short answers** is on (the default; off lets them
 run in full); a report on Sessions goes through each one in
 two or three (its goal, what it delivered recently, what it is doing now), from each busy row's
 `goal` (the person's newest ask), `recent` (its last two delivery summaries) and `latest`. On

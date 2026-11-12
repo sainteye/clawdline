@@ -282,6 +282,21 @@
       "decode": {"reply": "action", "route": {"path": "/v1/voice/copilot-briefing", "body": {"empty": true}}}
     },
     {
+      "op": "copilot-decide",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/voice/copilot-decide",
+      "console_seam": "writer",
+      "console_note": "The voice copilot's Decision API (`realtime/copilot-tools.ts`, `resolveRead`): the person's transcribed sentence, which the machine judges against its own Sessions with a text model on its key.",
+      "local": {"method": "POST", "device": true},
+      "example": {"decision": {"said": "做衣服圖片的那個"}, "request": "req-decide", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["decision", "request", "session"], "path": "/v1/voice/copilot-decide", "local_body": ["said"]}
+      ],
+      "decode": {"reply": "action", "fields": {"decision": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 1, "properties": {"said": {"type": "string", "max_bytes": 4000}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-decide", "body": {"object": "decision"}}}
+    },
+    {
       "op": "copilot-session",
       "kind": "command",
       "write_gate": true,

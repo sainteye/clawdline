@@ -45,6 +45,10 @@ export const CARRIED = {
   // machine reads its own Sessions and has the chosen assistant write one
   // spoken briefing, a machine command with no body.
   "copilot-briefing": "POST /v1/voice/copilot-briefing",
+  // The voice copilot's Decision API (`realtime/copilot-tools.ts`,
+  // `resolveRead`): the person's transcribed sentence, which the machine judges
+  // against its own Sessions with a text model on its key.
+  "copilot-decide": "POST /v1/voice/copilot-decide",
   // The voice copilot's call start (`realtime/realtime-copilot.ts`): a Realtime
   // client secret minted with the machine's key, a machine command with no
   // body.

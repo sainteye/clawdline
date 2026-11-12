@@ -3,10 +3,15 @@ import { nextWord } from '../next-strings.js'
 import { BRAND_MARK } from '../brand-mark.js'
 import { formatUSD } from './copilot-cost.js'
 import { CopilotOrb } from './CopilotOrb.js'
+import { CopilotNotice } from './CopilotNotice.js'
 import {
   realtimeCopilot,
   type RealtimeCopilotState,
 } from './realtime-copilot.js'
+
+/** How each tool outcome is marked on its chip, and the word said beside it (`toolTrace`). */
+const TOOL_OUTCOME_MARK = { done: '✓', asked: '?', many: '⋯', failed: '✗' } as const
+const TOOL_OUTCOME_WORD = { done: 'copilotToolDone', asked: 'copilotToolAsked', many: 'copilotToolMany', failed: 'copilotToolFailed' } as const
 
 /** One stable reader, so the orb is not woken by every render. */
 const readCallLevels = () => realtimeCopilot.readLevels()
@@ -99,6 +104,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
             levels={isConnected ? readCallLevels : undefined}
           />
           <div className="realtime-status-label">{stateLabel}</div>
+          <CopilotNotice notice={copilotState.notice} className="copilot-notice" />
         </div>
 
         {/* Live speech / transcript display */}
@@ -112,14 +118,31 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
             )}
             {copilotState.lastAssistantSpeech && (
               <div className="realtime-bubble assistant">
-                <svg className="bubble-mark" viewBox="0 0 16 11" role="img" aria-label="Clawdline" shapeRendering="crispEdges">
-                  {BRAND_MARK.cells.flatMap((row, y) => row.map((color, x) => color &&
-                    <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={color} />))}
-                </svg>
+                <span className="bubble-label">
+                  <svg className="bubble-mark" viewBox="0 0 16 11" role="img" aria-label="Clawdline" shapeRendering="crispEdges">
+                    {BRAND_MARK.cells.flatMap((row, y) => row.map((color, x) => color &&
+                      <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={color} />))}
+                  </svg>
+                  {nextWord('copilotMarkSaid')}
+                </span>
                 {copilotState.lastAssistantSpeech}
               </div>
             )}
           </div>
+        )}
+
+        {copilotState.tools && copilotState.tools.length > 0 && (
+          <ol className="copilot-tools-trail" aria-label={nextWord('copilotToolsUsed')}>
+            {copilotState.tools.map((t, i) => (
+              <li key={i} className={t.outcome} title={`${t.name}${t.target ? ` · ${t.target}` : ''} · ${nextWord(TOOL_OUTCOME_WORD[t.outcome])} · ${(t.ms / 1000).toFixed(1)} s`}>
+                <span className="copilot-tool-mark" aria-hidden="true">{TOOL_OUTCOME_MARK[t.outcome]}</span>
+                <code>{t.name}</code>
+                {t.target ? <span className="copilot-tool-target">{t.target}</span> : null}
+                {t.outcome === 'done' ? null : <span className="copilot-tool-outcome">{nextWord(TOOL_OUTCOME_WORD[t.outcome])}</span>}
+                <span className="copilot-tool-ms">{(t.ms / 1000).toFixed(1)}s</span>
+              </li>
+            ))}
+          </ol>
         )}
 
         {copilotState.cost && copilotState.cost.responses > 0 && (

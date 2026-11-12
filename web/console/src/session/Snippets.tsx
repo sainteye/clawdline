@@ -51,6 +51,7 @@ import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { RefusalError } from "@clawdline/core"
 import { createDirectTodoV2 } from "../pages/work/api.js"
 import { playbookSendText, playbookTodoText } from "./playbook-run.js"
+import { snippetsRequestOf, type SnippetsOutcome, type SnippetsRequest } from "./snippets-request.js"
 import { playbookWord as W } from "../playbook-words.js"
 import { readProjectFile } from "../pages/projects/project-files-api.js"
 import { playbookSourceMatches, playbookSourceText, playbookSourceTitle } from "../playbook-source.js"
@@ -134,6 +135,7 @@ function snippetSentence(failure: unknown, fallback: string): string {
  */
 export function Snippets({ row, steward = false, machine }: { row: SessionRow | null; steward?: boolean; machine?: string | null }) {
   const [open, setOpen] = useState(false)
+  const [request, setRequest] = useState<SnippetsRequest | null>(null)
   const openedOn = useRef<string | null>(null)
 
   // A different session, or none, closes the sheet: it is that session's
@@ -144,9 +146,11 @@ export function Snippets({ row, steward = false, machine }: { row: SessionRow | 
   }, [open, row])
 
   useEffect(() => {
-    const ask = () => {
+    const ask = (event: Event) => {
       if (!row) return
       openedOn.current = row.id
+      // The voice copilot's ask, if any: a tab, and a Playbook to start.
+      setRequest(snippetsRequestOf(event))
       setOpen(true)
     }
     document.addEventListener(OPEN_SNIPPETS, ask)
@@ -155,7 +159,7 @@ export function Snippets({ row, steward = false, machine }: { row: SessionRow | 
 
   return createPortal(
     <div className="overlay" id="snippets" hidden={!open} onClick={() => setOpen(false)}>
-      {open && row ? <Sheet row={row} steward={steward} machine={machine} onClose={() => setOpen(false)} /> : null}
+      {open && row ? <Sheet row={row} steward={steward} machine={machine} request={request} onClose={() => setOpen(false)} /> : null}
     </div>,
     document.body,
   )
@@ -174,10 +178,10 @@ const TRANSCRIPT_LIMIT = 200
 
 type SheetTab = "clawdfather" | "snippet" | "playbook"
 
-function Sheet({ row, steward, machine: machineProp, onClose }: { row: SessionRow; steward: boolean; machine?: string | null; onClose: () => void }) {
+function Sheet({ row, steward, machine: machineProp, request = null, onClose }: { row: SessionRow; steward: boolean; machine?: string | null; request?: SnippetsRequest | null; onClose: () => void }) {
   const T = L.strings
   const tabs: SheetTab[] = steward ? ["clawdfather", "snippet", "playbook"] : ["snippet", "playbook"]
-  const [tab, setTab] = useState<SheetTab>(tabs[0])
+  const [tab, setTab] = useState<SheetTab>(request?.tab ?? tabs[0])
   const [coordination, setCoordination] = useState(false)
   const [clawdfatherDraft, setClawdfatherDraft] = useState<{ id: string; title: string; body: string } | null>(null)
   const [clawdfatherSaid, setClawdfatherSaid] = useState("")
@@ -265,28 +269,28 @@ function Sheet({ row, steward, machine: machineProp, onClose }: { row: SessionRo
     return () => { live = false }
   }, [currentPlaybook])
 
-  const startPlaybook = async () => {
-    if (error || !currentPlaybook || (projectUnresolved && (!!currentPlaybook.project || !!currentPlaybook.builtin)) || launching.current) return
+  const startPlaybook = async (onSent?: () => void): Promise<SnippetsOutcome> => {
+    if (error || !currentPlaybook || (projectUnresolved && (!!currentPlaybook.project || !!currentPlaybook.builtin)) || launching.current) return "not_ready"
     launching.current = true
     setStartingPlaybook(true); setPlaybookError("")
     let launchBody = currentPlaybook.body
     if (currentPlaybook.source) {
       if (!currentPlaybook.project && currentPlaybook.source.scope === "project") {
-        setPlaybookError(W("sourceScopeConflict")); launching.current = false; setStartingPlaybook(false); return
+        setPlaybookError(W("sourceScopeConflict")); launching.current = false; setStartingPlaybook(false); return "source_scope_conflict"
       }
       try {
         const source = currentPlaybook.source
         const answer = await readProjectFile(source.place_id, source.file_id)
         if (!playbookSourceMatches({ source }, answer.file)) {
-          setPlaybookError(W("sourceStartUnavailable")); launching.current = false; setStartingPlaybook(false); return
+          setPlaybookError(W("sourceStartUnavailable")); launching.current = false; setStartingPlaybook(false); return "source_unavailable"
         }
         launchBody = playbookSourceText(answer.file).body
         if (!playbookPreview || playbookPreview.id !== currentPlaybook.id || playbookPreview.body !== launchBody ||
             playbookPreview.name !== playbookSourceTitle(answer.file) || playbookPreview.version !== answer.version) {
           setPlaybookPreview({ id: currentPlaybook.id, name: playbookSourceTitle(answer.file), version: answer.version, body: launchBody })
-          setPlaybookError(W("sourceChangedReview")); launching.current = false; setStartingPlaybook(false); return
+          setPlaybookError(W("sourceChangedReview")); launching.current = false; setStartingPlaybook(false); return "source_changed"
         }
-      } catch { setPlaybookError(W("sourceStartUnavailable")); launching.current = false; setStartingPlaybook(false); return }
+      } catch { setPlaybookError(W("sourceStartUnavailable")); launching.current = false; setStartingPlaybook(false); return "source_unavailable" }
     }
     try {
       const text = playbookTodoText(currentPlaybook.id, currentPlaybook.title, launchBody)
@@ -294,18 +298,46 @@ function Sheet({ row, steward, machine: machineProp, onClose }: { row: SessionRo
       const card = pendingSends.add(row.id, playbookSendText(created.todo.id, text), [], Date.now(), false,
         typeof row.sessionId === "string" ? row.sessionId : undefined, created.todo.id)
       document.dispatchEvent(new CustomEvent("clawdline:playbook-started"))
+      onSent?.()
       onClose()
       await deliverUntilSeen(card)
       document.dispatchEvent(new CustomEvent("clawdline:playbook-started"))
+      return "started"
     } catch (e) {
       // The machine keeps one Playbook running per Session; nothing was written.
-      if (e instanceof RefusalError && e.code === "playbook_running") { setPlaybookError(W("alreadyRunning")); return }
+      if (e instanceof RefusalError && e.code === "playbook_running") { setPlaybookError(W("alreadyRunning")); return "already_running" }
       // A created row is durable even when the send was refused or its answer
       // was lost. The to-do fold shows it and offers Send without recreating it.
       document.dispatchEvent(new CustomEvent("clawdline:playbook-started"))
       setPlaybookError(W("startUnknown"))
+      return "start_unknown"
     } finally { launching.current = false; setStartingPlaybook(false) }
   }
+
+  // The voice copilot's request (`snippets-request.ts`): select the Playbook it
+  // named once the list is read, and start it through Start above once its
+  // project file has been checked. Answered exactly once.
+  const answeredRequest = useRef(false)
+  const tell = (outcome: SnippetsOutcome) => {
+    if (answeredRequest.current) return
+    answeredRequest.current = true
+    request?.answer?.(outcome)
+  }
+  useEffect(() => {
+    if (!request || answeredRequest.current || loading) return
+    if (!request.playbook) { tell("opened"); return }
+    const named = playbooks.find((item) => item.id === request.playbook)
+    if (!named) { tell("playbook_not_found"); return }
+    if (selectedPlaybook?.id !== named.id) { setSelectedPlaybook(named); return }
+    if (!request.start) { tell("opened"); return }
+    if (currentPlaybook?.id !== named.id || playbookSourceStatus === "checking") return
+    // Started once its to-do is made and its words are handed to the send;
+    // the send's delivery is the to-do card's to show, as for a press.
+    let said = false
+    const once = (outcome: SnippetsOutcome) => { if (!said) { said = true; request.answer?.(outcome) } }
+    answeredRequest.current = true
+    void startPlaybook(() => once("started")).then(once)
+  })
   const editorOpen = !!draft || !!playbookDraft || !!clawdfatherDraft
 
   const refresh = (options: { keepScroll?: boolean } = {}) => {

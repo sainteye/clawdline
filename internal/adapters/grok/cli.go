@@ -2,6 +2,8 @@
 package grok
 
 import (
+	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,4 +37,16 @@ func AccountDir() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".grok")
+}
+
+// Renew asks the official CLI to renew an expired access token with its saved
+// refresh token. `grok models` signs in silently before listing models (its log
+// records "oidc refresh ... PreRequest"), takes the CLI's own auth.json lock and
+// sends no prompt. Clawdline neither reads nor writes the refresh token here.
+func Renew(ctx context.Context, path string) error {
+	command := exec.CommandContext(ctx, path, "models")
+	command.Dir = os.TempDir() // No project configuration is discovered.
+	command.Stdin = nil
+	command.Stdout, command.Stderr = io.Discard, io.Discard
+	return command.Run()
 }
