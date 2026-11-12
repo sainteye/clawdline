@@ -136,6 +136,7 @@ export function SkillBotToggle({ persona, name, skills }: { persona: Persona; na
       <span className="skill-bot-hop" key={hop} data-hop={hop ? "on" : undefined}>
         <PersonaBot persona={persona} cellPx={2} className="skill-bot" />
       </span>
+      <span className="header-menu-label">{nextWord("skillStripLabel")}</span>
     </button>
   )
 }

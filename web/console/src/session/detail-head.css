@@ -12,7 +12,7 @@
 .session-actions button[hidden], #tx-focus[hidden] { display: none; }
 
 .header-options, .header-options-extra { display: flex; align-items: center; gap: 6px; }
-.header-options-toggle { display: none; }
+.header-options-toggle, .header-menu-label { display: none; }
 @media (max-width: 520px) {
   .header-options { position: relative; }
   .header-options-extra { display: none; }
@@ -23,7 +23,22 @@
     background: var(--card); border: 1px solid var(--line); border-radius: 8px;
     box-shadow: 0 8px 24px #0006;
   }
-  .detail-head .header-options-extra > button { width: 100%; margin: 0; }
+  .detail-head .header-options-extra > button {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center;
+    justify-items: start; gap: 10px; width: 100%; min-height: 44px; height: auto;
+    margin: 0; padding: 10px 12px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--ink); font: inherit; font-size: 12px;
+    text-align: left; white-space: nowrap;
+  }
+  .detail-head .header-options-extra > button:hover,
+  .detail-head .header-options-extra > button[aria-expanded="true"] { background: var(--card-hi); }
+  .header-options-extra .header-menu-label, .header-options-extra .output-entry span { display: inline; }
+  .header-options-extra .browser-chip-name { display: none; }
+  .header-options-extra > button > :first-child { justify-self: center; }
+  .header-options-extra > button > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .detail-head .header-options-extra #tx-focus-label {
+    position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto;
+  }
   .header-options-toggle {
     display: inline-flex; align-items: center; gap: 2px;
     min-height: 44px; padding: 0 10px;
