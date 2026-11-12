@@ -5728,6 +5728,37 @@ export interface ProjectAssistantReadCursor {
   reader_id: string
 }
 
+/**
+ * Exactly one item payload must match this kind.
+ */
+export type ProjectAssistantReadItemKind =
+    "message"
+  | "work"
+  | "permission_summary"
+  | "trace_summary"
+  | "permission"
+  | "trace"
+  | "event"
+
+export const ProjectAssistantReadItemKindValues: readonly ProjectAssistantReadItemKind[] = ["message", "work", "permission_summary", "trace_summary", "permission", "trace", "event"] as const
+
+export interface ProjectAssistantReadPermissionSummary {
+  /**
+   * Read reference for the complete stored offer. Summary alone never enables an
+   * answer.
+   */
+  detail_cursor: string
+
+  /**
+   * RFC3339 UTC
+   */
+  expires_at: string
+  fence: ProjectAssistantFence
+  id: string
+  state: ProjectAssistantPermissionState
+  turn_id: string
+}
+
 export interface ProjectAssistantReadRequest {
   command: ProjectAssistantCommand
   cursor: ProjectAssistantReadCursor
@@ -5736,6 +5767,177 @@ export interface ProjectAssistantReadRequest {
 export interface ProjectAssistantReadResponse {
   contract_version: string
   cursor: ProjectAssistantReadCursor
+}
+
+/**
+ * Complete mandatory snapshot. Counted pending turns and queued user messages obey
+ * the existing16-turn bound; unknown barriers are counted in head.
+ * Permissions/traces are separate bounded collections.
+ */
+export interface ProjectAssistantReadSnapshot {
+  bot: ProjectAssistantBot
+  last_turn?: ProjectAssistantReadTurnSummary
+  pending_turns: ProjectAssistantReadTurnSummary[]
+  queued_messages: ProjectAssistantMessage[]
+}
+
+export interface ProjectAssistantReadTraceSummary {
+  category: string
+  complete: boolean
+
+  /**
+   * Read reference for the complete current-fence trace.
+   */
+  detail_cursor: string
+
+  /**
+   * Stable identity of the exact turn/category tuple.
+   */
+  id: string
+  turn_id: string
+}
+
+export interface ProjectAssistantReadTurnSummary {
+  /**
+   * Empty when absent; no captured instructions or failure narrative.
+   */
+  failure_code: string
+  fence: ProjectAssistantFence
+  id: string
+  message_id: string
+  state: ProjectAssistantTurnState
+}
+
+/**
+ * One SQL snapshot. Only a successful snapshot-mode response may replace the replay
+ * cursor; other page heads never advance it.
+ */
+export interface ProjectAssistantReadViewHead {
+  bot_version: number
+  conversation: ProjectAssistantConversation
+  current_fence: ProjectAssistantFence
+
+  /**
+   * Machine log high-water mark from the same transaction, not a message sequence.
+   */
+  event_frontier: number
+  key: ProjectAssistantBotKey
+  memory_revision: number
+
+  /**
+   * Stored pending offers under the current complete execution fence, including
+   * expired display state.
+   */
+  pending_permission_count: number
+  project: ProjectAssistantProjectScope
+
+  /**
+   * Latest current-fence trace groups; full text is fetched by reference.
+   */
+  trace_category_count: number
+
+  /**
+   * Exact blocking count across execution generations; no old execution authority.
+   */
+  unknown_turn_count: number
+}
+
+/**
+ * Exactly one payload matching kind. Internal per-prefix cursor/failure data are
+ * omitted.
+ */
+export interface ProjectAssistantReadViewItem {
+  /**
+   * Immutable admission message anchor for timeline rows; zero for other
+   * collections.
+   */
+  anchor_message_seq: number
+  event?: ProjectAssistantEvent
+  id: string
+  kind: ProjectAssistantReadItemKind
+  message?: ProjectAssistantMessage
+
+  /**
+   * Observation frontier, or the event sequence. An older page cannot downgrade a
+   * newer work fact.
+   */
+  observed_event_seq: number
+  permission?: ProjectAssistantPermissionOffer
+  permission_summary?: ProjectAssistantReadPermissionSummary
+  trace?: ProjectAssistantTrace
+  trace_summary?: ProjectAssistantReadTraceSummary
+  work?: ProjectAssistantWorkLink
+}
+
+/**
+ * One optional source-owned read projection; never native authority.
+ */
+export type ProjectAssistantReadViewMode =
+    "snapshot"
+  | "history"
+  | "events"
+  | "permissions"
+  | "traces"
+  | "detail"
+
+export const ProjectAssistantReadViewModeValues: readonly ProjectAssistantReadViewMode[] = ["snapshot", "history", "events", "permissions", "traces", "detail"] as const
+
+/**
+ * Additive read operation. Query modes enforce their own unused-field/epoch rules.
+ * Trusted authority binding and byte budget are not wire inputs.
+ */
+export interface ProjectAssistantReadViewRequest {
+  after_seq: number
+  conversation_id: string
+
+  /**
+   * Signed collection position or detail reference, at most4096 UTF-8 bytes; never
+   * authorization.
+   */
+  cursor: string
+  key: ProjectAssistantBotKey
+  mode: ProjectAssistantReadViewMode
+
+  /**
+   * Events up to256; other pages up to100; detail exactly1.
+   */
+  page_size: number
+
+  /**
+   * Empty only for a new snapshot; otherwise the read-adapter incarnation from that
+   * source.
+   */
+  source_epoch: string
+}
+
+/**
+ * Snapshot mode alone includes snapshot; collections are always non-null arrays.
+ * Every item is complete and full HTTP/Cloud serialization fits the existing8MiB
+ * ceiling.
+ */
+export interface ProjectAssistantReadViewResponse {
+  /**
+   * project-assistants.v1
+   */
+  contract_version: string
+  has_more: boolean
+  head: ProjectAssistantReadViewHead
+  items: ProjectAssistantReadViewItem[]
+  mode: ProjectAssistantReadViewMode
+  next_cursor: string
+
+  /**
+   * Events last included seq; zero in other modes. Never advance to
+   * head.event_frontier on a partial events page.
+   */
+  next_seq: number
+  snapshot?: ProjectAssistantReadSnapshot
+  source: ProjectAssistantSourceStatus
+
+  /**
+   * Read-adapter incarnation, not a credential or native binding.
+   */
+  source_epoch: string
 }
 
 export interface ProjectAssistantReceipt {

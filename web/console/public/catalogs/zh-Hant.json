@@ -813,6 +813,8 @@
   "capacityRow.bots.processes.what": "同時執行的自有原生助理程序。",
   "capacityRow.bots.prompt_ms.full": "取消自有程序路徑，保留未知效果並顯示明確失敗。",
   "capacityRow.bots.prompt_ms.what": "助理提示回合的期限。",
+  "capacityRow.bots.read_view_cursor_bytes.full": "過大的游標或無法分割的參照會以明確容量錯誤拒絕，不會截斷內容或偽裝成歷史已讀完。",
+  "capacityRow.bots.read_view_cursor_bytes.what": "一個 Bot 無狀態讀取位置或詳細內容參照的 UTF-8 大小上限。限制請求游標，不刪除已保存的歷史。",
   "capacityRow.bots.refresh_ms.full": "隱藏、來源撤銷或切換時中止；失敗後停止，等待手動更新。",
   "capacityRow.bots.refresh_ms.what": "聊天可見且來源在線時，逐次更新事件的間隔。",
   "capacityRow.bots.rpc_ms.full": "逾時且可能已產生的效果保留未知狀態，不自動重播。",

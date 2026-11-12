@@ -1315,6 +1315,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.read_view_cursor_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxReadViewCursorBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.refresh_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

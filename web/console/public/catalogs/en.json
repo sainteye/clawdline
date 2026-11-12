@@ -813,6 +813,8 @@
   "capacityRow.bots.processes.what": "Concurrent owned native assistant processes.",
   "capacityRow.bots.prompt_ms.full": "Cancel the owned process path, preserve unknown effects and show the explicit failure.",
   "capacityRow.bots.prompt_ms.what": "Deadline for an assistant prompt turn.",
+  "capacityRow.bots.read_view_cursor_bytes.full": "An oversized cursor or indivisible reference is refused with a typed capacity error. It is never truncated or replaced with a false end-of-history cursor.",
+  "capacityRow.bots.read_view_cursor_bytes.what": "The maximum UTF-8 size of one stateless Bot read-view position or detail reference. It bounds a request cursor, not stored history.",
   "capacityRow.bots.refresh_ms.full": "Abort on hiding, source revocation or selection changes. A failed refresh stops until a manual refresh.",
   "capacityRow.bots.refresh_ms.what": "Interval for serial event refresh while an online chat is visible.",
   "capacityRow.bots.rpc_ms.full": "A timed-out possible effect remains unknown and is not automatically replayed.",

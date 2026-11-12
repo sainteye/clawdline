@@ -4975,6 +4975,35 @@ type ProjectAssistantReadCursor struct {
 	ReaderID       string                 `json:"reader_id"`
 }
 
+// Exactly one item payload must match this kind.
+type ProjectAssistantReadItemKind string
+
+const (
+	ProjectAssistantReadItemKindMessage           ProjectAssistantReadItemKind = "message"
+	ProjectAssistantReadItemKindWork              ProjectAssistantReadItemKind = "work"
+	ProjectAssistantReadItemKindPermissionSummary ProjectAssistantReadItemKind = "permission_summary"
+	ProjectAssistantReadItemKindTraceSummary      ProjectAssistantReadItemKind = "trace_summary"
+	ProjectAssistantReadItemKindPermission        ProjectAssistantReadItemKind = "permission"
+	ProjectAssistantReadItemKindTrace             ProjectAssistantReadItemKind = "trace"
+	ProjectAssistantReadItemKindEvent             ProjectAssistantReadItemKind = "event"
+)
+
+// ProjectAssistantReadItemKindValues is every value the contract allows, in contract order.
+var ProjectAssistantReadItemKindValues = []ProjectAssistantReadItemKind{ProjectAssistantReadItemKindMessage, ProjectAssistantReadItemKindWork, ProjectAssistantReadItemKindPermissionSummary, ProjectAssistantReadItemKindTraceSummary, ProjectAssistantReadItemKindPermission, ProjectAssistantReadItemKindTrace, ProjectAssistantReadItemKindEvent}
+
+type ProjectAssistantReadPermissionSummary struct {
+	// Read reference for the complete stored offer. Summary alone never enables an
+	// answer.
+	DetailCursor string `json:"detail_cursor"`
+
+	// RFC3339 UTC
+	ExpiresAt string                          `json:"expires_at"`
+	Fence     ProjectAssistantFence           `json:"fence"`
+	ID        string                          `json:"id"`
+	State     ProjectAssistantPermissionState `json:"state"`
+	TurnID    string                          `json:"turn_id"`
+}
+
 type ProjectAssistantReadRequest struct {
 	Command ProjectAssistantCommand    `json:"command"`
 	Cursor  ProjectAssistantReadCursor `json:"cursor"`
@@ -4983,6 +5012,139 @@ type ProjectAssistantReadRequest struct {
 type ProjectAssistantReadResponse struct {
 	ContractVersion string                     `json:"contract_version"`
 	Cursor          ProjectAssistantReadCursor `json:"cursor"`
+}
+
+// Complete mandatory snapshot. Counted pending turns and queued user messages
+// obey the existing16-turn bound; unknown barriers are counted in head.
+// Permissions/traces are separate bounded collections.
+type ProjectAssistantReadSnapshot struct {
+	Bot            ProjectAssistantBot               `json:"bot"`
+	LastTurn       *ProjectAssistantReadTurnSummary  `json:"last_turn,omitempty"`
+	PendingTurns   []ProjectAssistantReadTurnSummary `json:"pending_turns"`
+	QueuedMessages []ProjectAssistantMessage         `json:"queued_messages"`
+}
+
+type ProjectAssistantReadTraceSummary struct {
+	Category string `json:"category"`
+	Complete bool   `json:"complete"`
+
+	// Read reference for the complete current-fence trace.
+	DetailCursor string `json:"detail_cursor"`
+
+	// Stable identity of the exact turn/category tuple.
+	ID     string `json:"id"`
+	TurnID string `json:"turn_id"`
+}
+
+type ProjectAssistantReadTurnSummary struct {
+	// Empty when absent; no captured instructions or failure narrative.
+	FailureCode string                    `json:"failure_code"`
+	Fence       ProjectAssistantFence     `json:"fence"`
+	ID          string                    `json:"id"`
+	MessageID   string                    `json:"message_id"`
+	State       ProjectAssistantTurnState `json:"state"`
+}
+
+// One SQL snapshot. Only a successful snapshot-mode response may replace the
+// replay cursor; other page heads never advance it.
+type ProjectAssistantReadViewHead struct {
+	BotVersion   int64                        `json:"bot_version"`
+	Conversation ProjectAssistantConversation `json:"conversation"`
+	CurrentFence ProjectAssistantFence        `json:"current_fence"`
+
+	// Machine log high-water mark from the same transaction, not a message sequence.
+	EventFrontier  int64                  `json:"event_frontier"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	MemoryRevision int64                  `json:"memory_revision"`
+
+	// Stored pending offers under the current complete execution fence, including
+	// expired display state.
+	PendingPermissionCount int64                        `json:"pending_permission_count"`
+	Project                ProjectAssistantProjectScope `json:"project"`
+
+	// Latest current-fence trace groups; full text is fetched by reference.
+	TraceCategoryCount int64 `json:"trace_category_count"`
+
+	// Exact blocking count across execution generations; no old execution authority.
+	UnknownTurnCount int64 `json:"unknown_turn_count"`
+}
+
+// Exactly one payload matching kind. Internal per-prefix cursor/failure data
+// are omitted.
+type ProjectAssistantReadViewItem struct {
+	// Immutable admission message anchor for timeline rows; zero for other
+	// collections.
+	AnchorMessageSeq int64                        `json:"anchor_message_seq"`
+	Event            *ProjectAssistantEvent       `json:"event,omitempty"`
+	ID               string                       `json:"id"`
+	Kind             ProjectAssistantReadItemKind `json:"kind"`
+	Message          *ProjectAssistantMessage     `json:"message,omitempty"`
+
+	// Observation frontier, or the event sequence. An older page cannot downgrade a
+	// newer work fact.
+	ObservedEventSeq  int64                                  `json:"observed_event_seq"`
+	Permission        *ProjectAssistantPermissionOffer       `json:"permission,omitempty"`
+	PermissionSummary *ProjectAssistantReadPermissionSummary `json:"permission_summary,omitempty"`
+	Trace             *ProjectAssistantTrace                 `json:"trace,omitempty"`
+	TraceSummary      *ProjectAssistantReadTraceSummary      `json:"trace_summary,omitempty"`
+	Work              *ProjectAssistantWorkLink              `json:"work,omitempty"`
+}
+
+// One optional source-owned read projection; never native authority.
+type ProjectAssistantReadViewMode string
+
+const (
+	ProjectAssistantReadViewModeSnapshot    ProjectAssistantReadViewMode = "snapshot"
+	ProjectAssistantReadViewModeHistory     ProjectAssistantReadViewMode = "history"
+	ProjectAssistantReadViewModeEvents      ProjectAssistantReadViewMode = "events"
+	ProjectAssistantReadViewModePermissions ProjectAssistantReadViewMode = "permissions"
+	ProjectAssistantReadViewModeTraces      ProjectAssistantReadViewMode = "traces"
+	ProjectAssistantReadViewModeDetail      ProjectAssistantReadViewMode = "detail"
+)
+
+// ProjectAssistantReadViewModeValues is every value the contract allows, in contract order.
+var ProjectAssistantReadViewModeValues = []ProjectAssistantReadViewMode{ProjectAssistantReadViewModeSnapshot, ProjectAssistantReadViewModeHistory, ProjectAssistantReadViewModeEvents, ProjectAssistantReadViewModePermissions, ProjectAssistantReadViewModeTraces, ProjectAssistantReadViewModeDetail}
+
+// Additive read operation. Query modes enforce their own unused-field/epoch
+// rules. Trusted authority binding and byte budget are not wire inputs.
+type ProjectAssistantReadViewRequest struct {
+	AfterSeq       int64  `json:"after_seq"`
+	ConversationID string `json:"conversation_id"`
+
+	// Signed collection position or detail reference, at most4096 UTF-8 bytes; never
+	// authorization.
+	Cursor string                       `json:"cursor"`
+	Key    ProjectAssistantBotKey       `json:"key"`
+	Mode   ProjectAssistantReadViewMode `json:"mode"`
+
+	// Events up to256; other pages up to100; detail exactly1.
+	PageSize int64 `json:"page_size"`
+
+	// Empty only for a new snapshot; otherwise the read-adapter incarnation from that
+	// source.
+	SourceEpoch string `json:"source_epoch"`
+}
+
+// Snapshot mode alone includes snapshot; collections are always non-null
+// arrays. Every item is complete and full HTTP/Cloud serialization fits the
+// existing8MiB ceiling.
+type ProjectAssistantReadViewResponse struct {
+	// project-assistants.v1
+	ContractVersion string                         `json:"contract_version"`
+	HasMore         bool                           `json:"has_more"`
+	Head            ProjectAssistantReadViewHead   `json:"head"`
+	Items           []ProjectAssistantReadViewItem `json:"items"`
+	Mode            ProjectAssistantReadViewMode   `json:"mode"`
+	NextCursor      string                         `json:"next_cursor"`
+
+	// Events last included seq; zero in other modes. Never advance to
+	// head.event_frontier on a partial events page.
+	NextSeq  int64                         `json:"next_seq"`
+	Snapshot *ProjectAssistantReadSnapshot `json:"snapshot,omitempty"`
+	Source   ProjectAssistantSourceStatus  `json:"source"`
+
+	// Read-adapter incarnation, not a credential or native binding.
+	SourceEpoch string `json:"source_epoch"`
 }
 
 type ProjectAssistantReceipt struct {

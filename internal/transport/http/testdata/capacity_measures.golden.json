@@ -316,6 +316,11 @@
     "Note": true
   },
   {
+    "Name": "bots.read_view_cursor_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.refresh_ms",
     "Known": true,
     "Note": true

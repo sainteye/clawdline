@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11753,
+  "englishKeys": 11755,
   "counts": {
-    "negation": 3211,
-    "state": 1959,
+    "negation": 3213,
+    "state": 1960,
     "permission": 697,
     "deletion": 264,
     "uncertainty": 452
   },
-  "unionCount": 5132,
+  "unionCount": 5134,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -163,6 +163,8 @@
       "capacityRow.bots.page_rows.what",
       "capacityRow.bots.pending_turns.full",
       "capacityRow.bots.processes.full",
+      "capacityRow.bots.read_view_cursor_bytes.full",
+      "capacityRow.bots.read_view_cursor_bytes.what",
       "capacityRow.bots.rpc_ms.full",
       "capacityRow.bots.rpc_rows.full",
       "capacityRow.bots.survey_ms.full",
@@ -3331,6 +3333,7 @@
       "capacityRow.bots.pending_turns.full",
       "capacityRow.bots.pending_turns.what",
       "capacityRow.bots.processes.full",
+      "capacityRow.bots.read_view_cursor_bytes.full",
       "capacityRow.bots.refresh_ms.full",
       "capacityRow.bots.rpc_rows.full",
       "capacityRow.bots.survey_ms.full",
@@ -6885,6 +6888,8 @@
     "capacityRow.bots.perm_rows.what",
     "capacityRow.bots.processes.full",
     "capacityRow.bots.prompt_ms.full",
+    "capacityRow.bots.read_view_cursor_bytes.full",
+    "capacityRow.bots.read_view_cursor_bytes.what",
     "capacityRow.bots.refresh_ms.full",
     "capacityRow.bots.rpc_ms.full",
     "capacityRow.bots.rpc_rows.full",

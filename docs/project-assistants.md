@@ -46,6 +46,12 @@ in the creation form and configuration Agents independent of native capability
 admission. API58 is required; the retired catalog is not a fallback. Production
 Cloud/device and native execution acceptance remain separate.
 
+The [bounded read-view contract](project-assistants-read-views.md) adds an
+optional read port and generated projections. Its proposed API59 route and
+17th SourceClient method are not mounted by the schema/foundation. The existing
+16-operation surface remains intact. This work replaces chat recovery through
+a whole Export only after the producer and consumer are implemented together.
+
 ## Approved journey and fixed inputs
 
 | Approved frame | Contract and fixed input/output | Owner |

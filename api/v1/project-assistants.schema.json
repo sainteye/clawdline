@@ -1853,6 +1853,386 @@
         "next_cursor",
         "has_more"
       ]
+    },
+    "ProjectAssistantReadViewMode": {
+      "type": "string",
+      "enum": [
+        "snapshot",
+        "history",
+        "events",
+        "permissions",
+        "traces",
+        "detail"
+      ],
+      "description": "One optional source-owned read projection; never native authority."
+    },
+    "ProjectAssistantReadItemKind": {
+      "type": "string",
+      "enum": [
+        "message",
+        "work",
+        "permission_summary",
+        "trace_summary",
+        "permission",
+        "trace",
+        "event"
+      ],
+      "description": "Exactly one item payload must match this kind."
+    },
+    "ProjectAssistantReadViewRequest": {
+      "type": "object",
+      "description": "Additive read operation. Query modes enforce their own unused-field/epoch rules. Trusted authority binding and byte budget are not wire inputs.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string",
+          "description": ""
+        },
+        "mode": {
+          "$ref": "#/$defs/ProjectAssistantReadViewMode"
+        },
+        "source_epoch": {
+          "type": "string",
+          "description": "Empty only for a new snapshot; otherwise the read-adapter incarnation from that source."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Signed collection position or detail reference, at most4096 UTF-8 bytes; never authorization."
+        },
+        "after_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": ""
+        },
+        "page_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "description": "Events up to256; other pages up to100; detail exactly1."
+        }
+      },
+      "required": [
+        "key",
+        "conversation_id",
+        "mode",
+        "source_epoch",
+        "cursor",
+        "after_seq",
+        "page_size"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReadViewHead": {
+      "type": "object",
+      "description": "One SQL snapshot. Only a successful snapshot-mode response may replace the replay cursor; other page heads never advance it.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation": {
+          "$ref": "#/$defs/ProjectAssistantConversation"
+        },
+        "current_fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "bot_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": ""
+        },
+        "memory_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": ""
+        },
+        "event_frontier": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Machine log high-water mark from the same transaction, not a message sequence."
+        },
+        "unknown_turn_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Exact blocking count across execution generations; no old execution authority."
+        },
+        "pending_permission_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Stored pending offers under the current complete execution fence, including expired display state."
+        },
+        "trace_category_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Latest current-fence trace groups; full text is fetched by reference."
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "conversation",
+        "current_fence",
+        "bot_version",
+        "memory_revision",
+        "event_frontier",
+        "unknown_turn_count",
+        "pending_permission_count",
+        "trace_category_count"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReadTurnSummary": {
+      "type": "object",
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": ""
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "message_id": {
+          "type": "string",
+          "description": ""
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantTurnState"
+        },
+        "failure_code": {
+          "type": "string",
+          "description": "Empty when absent; no captured instructions or failure narrative."
+        }
+      },
+      "required": [
+        "id",
+        "fence",
+        "message_id",
+        "state",
+        "failure_code"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReadSnapshot": {
+      "type": "object",
+      "description": "Complete mandatory snapshot. Counted pending turns and queued user messages obey the existing16-turn bound; unknown barriers are counted in head. Permissions/traces are separate bounded collections.",
+      "properties": {
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBot"
+        },
+        "pending_turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantReadTurnSummary"
+          }
+        },
+        "queued_messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMessage"
+          }
+        },
+        "last_turn": {
+          "$ref": "#/$defs/ProjectAssistantReadTurnSummary"
+        }
+      },
+      "required": [
+        "bot",
+        "pending_turns",
+        "queued_messages"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReadPermissionSummary": {
+      "type": "object",
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": ""
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "turn_id": {
+          "type": "string",
+          "description": ""
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantPermissionState"
+        },
+        "expires_at": {
+          "type": "string",
+          "description": "RFC3339 UTC"
+        },
+        "detail_cursor": {
+          "type": "string",
+          "description": "Read reference for the complete stored offer. Summary alone never enables an answer."
+        }
+      },
+      "required": [
+        "id",
+        "fence",
+        "turn_id",
+        "state",
+        "expires_at",
+        "detail_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReadTraceSummary": {
+      "type": "object",
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable identity of the exact turn/category tuple."
+        },
+        "turn_id": {
+          "type": "string",
+          "description": ""
+        },
+        "category": {
+          "type": "string",
+          "description": ""
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "detail_cursor": {
+          "type": "string",
+          "description": "Read reference for the complete current-fence trace."
+        }
+      },
+      "required": [
+        "id",
+        "turn_id",
+        "category",
+        "complete",
+        "detail_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReadViewItem": {
+      "type": "object",
+      "description": "Exactly one payload matching kind. Internal per-prefix cursor/failure data are omitted.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": ""
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectAssistantReadItemKind"
+        },
+        "anchor_message_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Immutable admission message anchor for timeline rows; zero for other collections."
+        },
+        "observed_event_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Observation frontier, or the event sequence. An older page cannot downgrade a newer work fact."
+        },
+        "message": {
+          "$ref": "#/$defs/ProjectAssistantMessage"
+        },
+        "work": {
+          "$ref": "#/$defs/ProjectAssistantWorkLink"
+        },
+        "permission_summary": {
+          "$ref": "#/$defs/ProjectAssistantReadPermissionSummary"
+        },
+        "trace_summary": {
+          "$ref": "#/$defs/ProjectAssistantReadTraceSummary"
+        },
+        "permission": {
+          "$ref": "#/$defs/ProjectAssistantPermissionOffer"
+        },
+        "trace": {
+          "$ref": "#/$defs/ProjectAssistantTrace"
+        },
+        "event": {
+          "$ref": "#/$defs/ProjectAssistantEvent"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "anchor_message_seq",
+        "observed_event_seq"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReadViewResponse": {
+      "type": "object",
+      "description": "Snapshot mode alone includes snapshot; collections are always non-null arrays. Every item is complete and full HTTP/Cloud serialization fits the existing8MiB ceiling.",
+      "properties": {
+        "contract_version": {
+          "type": "string",
+          "description": "project-assistants.v1"
+        },
+        "mode": {
+          "$ref": "#/$defs/ProjectAssistantReadViewMode"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        },
+        "source_epoch": {
+          "type": "string",
+          "description": "Read-adapter incarnation, not a credential or native binding."
+        },
+        "head": {
+          "$ref": "#/$defs/ProjectAssistantReadViewHead"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/ProjectAssistantReadSnapshot"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantReadViewItem"
+          }
+        },
+        "next_cursor": {
+          "type": "string",
+          "description": ""
+        },
+        "next_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Events last included seq; zero in other modes. Never advance to head.event_frontier on a partial events page."
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "mode",
+        "source",
+        "source_epoch",
+        "head",
+        "items",
+        "next_cursor",
+        "next_seq",
+        "has_more"
+      ],
+      "additionalProperties": false
     }
   }
 }
