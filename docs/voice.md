@@ -169,6 +169,16 @@ when the call asked only after its pass came back over Cloud, seconds after the 
 now asked before the first await, beside the pass, and released when the call does not start.
 A refusal is said by its reason (`microphoneProblem`), not by the browser's sentence.
 
+**How Clawdline is used, and a Project's links.** `clawdline_help` answers from the user guide
+(`docs/user/*.md`, bundled as its own chunk and loaded the first time a call asks): it first hands
+the copilot the guide's contents, one id per section, and the copilot picks up to three sections
+by meaning, then reads them (`copilot-help.ts`). On 2026-11-12 a word match of a Chinese question
+against the mostly English guide picked unrelated sections, and offered beside the contents it was
+picked over the right one; it is not offered. The guide then gained the sections it was asked for
+and lacked: archiving a Session, every machine's Sessions, and the voice copilot itself.
+`get_devstack_links` reads a Project's Dev Stack links by its whole name and, with `open`, opens
+that Project's Dev Stack tab on the page (`COPILOT_DEVSTACK`).
+
 **Every machine.** On a page showing every machine (所有機器) the call reads the page's own list
 (`COPILOT_FLEET`, CloudGate): each machine's Sessions, a Session's id being its id on its machine
 with the machine's name beside it (`%2@Studio`) and its label naming the machine. Every read and

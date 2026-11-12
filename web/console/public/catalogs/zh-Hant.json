@@ -11293,5 +11293,9 @@
   "capacityRow.voice.copilot_journal_seconds.what": "這台機器保留幾天的語音副駕駛通話紀錄。",
   "capacityRow.voice.copilot_journal_seconds.full": "最舊那天的紀錄會被刪除。",
   "capacityRow.voice.copilot_decision_sessions.what": "語音副駕駛一次交給機器判斷的 Session 最多數量。",
-  "capacityRow.voice.copilot_decision_sessions.full": "這次不做判斷，副駕駛改由自己從清單挑選。"
+  "capacityRow.voice.copilot_decision_sessions.full": "這次不做判斷，副駕駛改由自己從清單挑選。",
+  "capacityRow.console.copilot_help_sections.what": "語音副駕駛回答使用問題時，一次帶上的使用說明段落數。",
+  "capacityRow.console.copilot_help_sections.full": "只帶最相關的幾段，可以再問一次。",
+  "capacityRow.console.copilot_help_section_characters.what": "語音副駕駛每段使用說明帶上的最長長度。",
+  "capacityRow.console.copilot_help_section_characters.full": "超過的部分會被截掉。"
 }

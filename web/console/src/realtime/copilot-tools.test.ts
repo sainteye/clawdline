@@ -185,7 +185,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -987,4 +987,33 @@ test("on a page showing every machine, every machine's Sessions are read, each a
   assert.equal(seen.some((s) => s.path === "/v1/sessions"), false, "the reading machine's list is not what is read")
   const list = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
   assert.equal(list.count, 2)
+})
+
+test("a Project's Dev Stack links are read by its whole name, said by state, and opened on request", async () => {
+  const opened: string[] = []
+  const deps: ToolDeps = {
+    async fetch(path) {
+      if (path === "/v1/places") return Response.json({ places: [{ id: "p1", label: "clawdline", path: "/repo/clawdline" }, { id: "p2", label: "festly", path: "/repo/festly" }] })
+      if (path === "/v1/projects/p1/devstack") return Response.json({ links: [{ kind: "site", label: "clawdline.com", state: "ok", url: "https://clawdline.com/" }, { kind: "server", label: "guide", state: "down", url: "http://127.0.0.1:7337/", local: true }] })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    devstack: async (path) => { opened.push(path); return true },
+  }
+  const out = JSON.parse((await runCopilotTool("get_devstack_links", '{"project":"Clawdline","open":true}', deps)).output)
+  assert.deepEqual(out.links.map((l: { name: string; state?: string }) => [l.name, l.state]), [["clawdline.com", "正常"], ["guide", "沒有回應"]])
+  assert.equal(out.opened, true)
+  assert.deepEqual(opened, ["/repo/clawdline"])
+  const loose = JSON.parse((await runCopilotTool("get_devstack_links", '{"project":"the blog one"}', deps)).output)
+  assert.deepEqual(loose.projects, ["clawdline", "festly"], "a loose name is handed back with every Project to choose from")
+})
+
+test("a Clawdline help question is answered only from the guide's sections", async () => {
+  const guide = [{ doc: "sessions", heading: "Pin", text: "Long-press a row and choose Pin." }, { doc: "notifications", heading: "Turn notifications on", text: "Open Settings, then Notifications." }]
+  const deps: ToolDeps = { async fetch() { return new Response("", { status: 404 }) }, async sleep() {}, help: async () => guide }
+  const contents = JSON.parse((await runCopilotTool("clawdline_help", '{"question":"通知要怎麼開？"}', deps)).output)
+  assert.deepEqual(contents.contents, ["s0 sessions › Pin", "s1 notifications › Turn notifications on"])
+  assert.match(contents.next, /不要猜/)
+  const read = JSON.parse((await runCopilotTool("clawdline_help", '{"question":"通知要怎麼開？","sections":["s1","s9"]}', deps)).output)
+  assert.deepEqual(read.sections.map((s: { heading: string }) => s.heading), ["Turn notifications on"])
 })

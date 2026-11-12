@@ -1247,6 +1247,16 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_help_section_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_help_sections",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_list_transcript_reads",
     "Known": true,
     "Note": true

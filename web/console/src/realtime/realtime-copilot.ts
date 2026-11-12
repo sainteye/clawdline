@@ -9,7 +9,8 @@ import type { OrbLevels } from './copilot-orb.js'
 import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
-import { fleetOnThisPage, machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
+import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
+import type { HelpSection } from './copilot-help.js'
 import { nextWord } from '../next-strings.js'
 
 export interface CopilotLogItem {
@@ -152,6 +153,8 @@ export class RealtimeCopilotClient {
    * decision never judges the sentence before.
    */
   private heardNow = ''
+  /** The user guide's sections, read the first time a call asks how something is used. */
+  private helpSections?: HelpSection[]
   /** What the machine confirmed since the person last spoke (`unbackedClaims`). */
   private doneSinceHeard = new Set<ActionKind>()
   /** A correction is under way, so its own words are not checked again. */
@@ -182,6 +185,12 @@ export class RealtimeCopilotClient {
       openSession: (id, machine) => openOnThisPage(id, machine),
       snippets: (id, request, machine) => openSnippetsOnThisPage(id, request, machine),
       fleet: () => fleetOnThisPage(),
+      devstack: (path) => openDevStackOnThisPage(path),
+      help: async () => {
+        const [{ loadHelpDocs }, { helpSections }] = await Promise.all([import('./copilot-help-docs.js'), import('./copilot-help.js')])
+        this.helpSections ??= helpSections(await loadHelpDocs(), consoleLanguage() || 'en')
+        return this.helpSections
+      },
       heard: () => this.heardNow,
       decide: (said, sessions) => decideOnMachine(said, sessions),
       machines: () => machinesOnThisPage(),

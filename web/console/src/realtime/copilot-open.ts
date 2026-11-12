@@ -1,4 +1,5 @@
-import { COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
+import { COPILOT_DEVSTACK, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
+import { requestPage } from "../overlays/index.js"
 import type { CopilotFleetRow } from "./copilot-tools.js"
 import { OPEN_SNIPPETS } from "../legacy/snippets-bridge.js"
 import type { SnippetsOutcome } from "../session/snippets-request.js"
@@ -61,5 +62,28 @@ export function fleetOnThisPage(): Promise<CopilotFleetRow[] | null> {
     document.dispatchEvent(new CustomEvent(COPILOT_FLEET, { detail }))
     // A page that does not answer at once is not showing every machine.
     queueMicrotask(() => { if (detail.answer) { clearTimeout(timer); resolve(null) } })
+  })
+}
+
+/** How often the copilot asks again while the Projects page loads. */
+const DEVSTACK_ASK_MS = 200
+
+/**
+ * Opens the Projects page and the Dev Stack tab of the Project at `path`.
+ * The page module loads the first time it is opened, so the ask is repeated
+ * until it answers or COPILOT_OPEN_WAIT_MS passes.
+ */
+export function openDevStackOnThisPage(path: string): Promise<boolean> {
+  requestPage({ page: "projects", hash: false })
+  return new Promise((resolve) => {
+    const until = Date.now() + COPILOT_OPEN_WAIT_MS
+    const ask = () => {
+      const detail: { path: string; answer?: (opened: boolean) => void } = { path, answer: (opened) => resolve(opened) }
+      document.dispatchEvent(new CustomEvent(COPILOT_DEVSTACK, { detail }))
+      if (!detail.answer) return
+      if (Date.now() > until) { resolve(false); return }
+      setTimeout(ask, DEVSTACK_ASK_MS)
+    }
+    ask()
   })
 }

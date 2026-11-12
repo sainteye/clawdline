@@ -11293,5 +11293,9 @@
   "capacityRow.voice.copilot_journal_seconds.what": "How many days of voice copilot call journals this machine keeps.",
   "capacityRow.voice.copilot_journal_seconds.full": "The oldest day's file is removed.",
   "capacityRow.voice.copilot_decision_sessions.what": "The most Sessions the voice copilot hands the machine to decide among at once.",
-  "capacityRow.voice.copilot_decision_sessions.full": "The decision is not made; the copilot chooses from the list itself."
+  "capacityRow.voice.copilot_decision_sessions.full": "The decision is not made; the copilot chooses from the list itself.",
+  "capacityRow.console.copilot_help_sections.what": "How many sections of the user guide one voice copilot help answer carries.",
+  "capacityRow.console.copilot_help_sections.full": "The best matches are carried; the copilot can ask again.",
+  "capacityRow.console.copilot_help_section_characters.what": "How much of one user guide section a voice copilot help answer carries.",
+  "capacityRow.console.copilot_help_section_characters.full": "The rest of that section is cut."
 }

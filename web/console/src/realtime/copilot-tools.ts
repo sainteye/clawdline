@@ -19,6 +19,8 @@
 
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { UNOPENED_MACHINE_HEADER, UNOPENED_READ_HEADER } from "../cloud/unopened-read.ts"
+// @ts-expect-error -- Node's strip-types runner needs source extensions.
+import { helpContents, helpRead, type HelpSection } from "./copilot-help.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { menuFingerprint } from "../session/fingerprint.ts"
 
@@ -58,6 +60,10 @@ export interface ToolDeps {
   machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
   /** The Session this call is talking about: the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
+  /** The user guide's sections a question is about (`copilot-help.ts`); loaded only when asked. */
+  help?: () => Promise<HelpSection[]>
+  /** Opens a Project's Dev Stack tab on this page (`copilot-open.ts`). */
+  devstack?: (path: string) => Promise<boolean>
   /** Every machine's Session rows, on a page that shows them all; null elsewhere. */
   fleet?: () => Promise<CopilotFleetRow[] | null>
   /**
@@ -114,6 +120,7 @@ export const REPLY_CHARS = 8000
 export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也是使用者的私人秘書。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
 
 【最重要的三條】
+- 使用者問 Clawdline 本身怎麼用（任何功能、設定、畫面、按鈕在哪、能不能做某件事），一定先呼叫 clawdline_help，只照它回傳的說明講；你自己對 Clawdline 的印象一律不能用，因為很可能是錯的。
 - 回答問題的第一個字就是答案本身：絕對不要用「好」「好的」「我來說明」「我來跟你說」開頭。
 - 講多個 Session 時用它的簡稱帶出每一個，絕對不要說「第一個是」「第二個是」。
 - 最後一個重點講完就停：絕對不要加「這就是目前的狀況」「以上」「這兩個都在進行中」這類收尾。
@@ -153,6 +160,8 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
 - send_message_to_session：替使用者把文字送進某個 Session。
+- clawdline_help：使用者問 Clawdline 怎麼用、功能在哪、怎麼設定時呼叫，只依回傳的說明段落回答，兩三句講出步驟與位置；沒有回傳任何段落，就說說明文件沒有寫到這個，不要自己猜。
+- get_devstack_links：使用者要看或打開某個專案的 Dev Stack（連結清單、網站、伺服器）時呼叫；要在畫面上打開就填 open=true。專案名稱不確定就先呼叫 list_projects。念連結時只說名稱和狀態，絕對不要念網址（使用者要網址時才念）。
 【開新的 Session】
 - 使用者要開新 Session 時，第一步一定先呼叫 list_machines，接著呼叫 list_projects，然後才開口問。機器、專案、助理、模型的名稱只能用這兩個工具回傳的，絕對不要自己編名稱或舉不存在的例子。
 - 要確定四件事：哪台機器、哪個專案、用哪個助理、用哪個模型。缺哪一項就問哪一項，一次只問一項，不要自己猜。
@@ -405,6 +414,32 @@ export const COPILOT_TOOLS = [
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
       },
       required: ['session_id', 'session_label', 'name'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'clawdline_help',
+    description: 'Clawdline 使用說明。使用者問 Clawdline 怎麼用、某個功能在哪、怎麼設定時呼叫：第一次只填 question，會拿到說明目錄（contents，每行是 id、頁面與標題，多半是英文）；再依問題的意思從目錄挑最多三個 id，填進 sections 呼叫第二次，拿到那幾段的內容，只依內容回答。',
+    parameters: {
+      type: 'object',
+      required: ['question'],
+      properties: {
+        question: { type: 'string', description: '使用者的問題，照他的意思寫成一句' },
+        sections: { type: 'array', items: { type: 'string' }, description: '從 contents 挑出的 id（例如 s12），最多三個；第一次呼叫不填' },
+      },
+    },
+  },
+  {
+    type: 'function',
+    name: 'get_devstack_links',
+    description: '某個專案的 Dev Stack 連結清單：每個連結的名稱、種類（網站、部署、測試、本機伺服器）、狀態與網址。使用者問某專案有哪些連結、網站或伺服器時呼叫；open 填 true 會同時在這個畫面打開那個專案的 Dev Stack 分頁。',
+    parameters: {
+      type: 'object',
+      required: ['project'],
+      properties: {
+        project: { type: 'string', description: 'list_projects 回傳的專案名稱或 id，一字不差照抄' },
+        open: { type: 'boolean', description: '使用者要你在畫面上打開 Dev Stack 列表時填 true' },
+      },
     },
   },
   {
@@ -1986,6 +2021,65 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
   return { closed: true, label: row.label, ...(force ? { forced: true } : {}) }
 }
 
+/**
+ * The user guide in two steps: its contents, from which the copilot picks the
+ * sections a question means (most of the guide is English, so a Chinese
+ * question matched no words of it), then those sections' text.
+ */
+async function clawdlineHelp(deps: ToolDeps, logs: ToolLog[], question: string, ids: string[]): Promise<unknown> {
+  if (!question.trim() && !ids.length) return { error: '沒有說要問什麼' }
+  if (!deps.help) return { error: '這個畫面讀不到 Clawdline 使用說明' }
+  const guide = await deps.help()
+  if (ids.length) {
+    const sections = helpRead(guide, ids)
+    logs.push({ level: 'info', text: `讀了使用說明 ${sections.length} 段` })
+    // Asked "how do I archive a Session", the copilot answered from the to-do
+    // sections it had picked: the guide has no archive section at all.
+    return sections.length
+      ? { sections, check: '先確認這幾段真的回答了使用者的問題：有，就只照內容講步驟與位置；沒有，就說「使用說明沒有寫到這個」，可以再說最接近的是哪一段，絕對不要拿不相關的內容湊答案' }
+      : { error: '這些 id 不在目錄裡；從 contents 重新挑' }
+  }
+  // Only the contents: a word match listed beside them, which a Chinese question
+  // made against an English guide, was picked every time over the right section.
+  logs.push({ level: 'info', text: `給了使用說明目錄（${guide.length} 段）` })
+  return {
+    contents: helpContents(guide),
+    next: '依問題的意思從 contents 挑最多三個 id，再呼叫一次 clawdline_help 並填 sections；目錄裡沒有相關的，就照實說說明文件沒有寫到，不要猜',
+  }
+}
+
+/** What a Dev Stack link's state means aloud. */
+const LINK_STATE_WORDS: Record<string, string> = { ok: '正常', fail: '失敗', down: '沒有回應', running: '執行中' }
+
+async function devstackLinks(deps: ToolDeps, logs: ToolLog[], wanted: string, open: boolean): Promise<unknown> {
+  const listed = await deps.fetch('/v1/places')
+  if (!listed.ok) return { error: `讀不到專案清單（HTTP ${listed.status}）` }
+  const places = (((await listed.json()) as { places?: { id?: unknown; label?: unknown; path?: unknown }[] }).places ?? [])
+    .map((p) => ({ id: str(p.id), label: str(p.label) || str(p.id), path: str(p.path) })).filter((p) => p.id)
+  const w = wanted.trim().toLowerCase()
+  const place = places.find((p) => p.id.toLowerCase() === w || p.label.toLowerCase() === w)
+  // Only a whole name or id is a Project; which one was meant is the copilot's to choose.
+  if (!place) return { error: `沒有名稱剛好是「${wanted}」的專案。從下面的專案依使用者的意思挑一個再查`, projects: places.map((p) => p.label) }
+  const res = await deps.fetch(`/v1/projects/${encodeURIComponent(place.id)}/devstack`)
+  if (!res.ok) {
+    const why = await refusalText(res)
+    const error = `讀不到「${place.label}」的 Dev Stack（HTTP ${res.status}）${why ? `：${why}` : ''}`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  const body = (await res.json()) as { links?: { kind?: unknown; label?: unknown; state?: unknown; url?: unknown; local?: unknown }[]; serverCount?: unknown }
+  const links = (body.links ?? []).map((l) => ({
+    name: str(l.label), kind: str(l.kind),
+    ...(LINK_STATE_WORDS[str(l.state)] ? { state: LINK_STATE_WORDS[str(l.state)] } : {}),
+    ...(str(l.url) ? { url: str(l.url) } : {}),
+    ...(l.local === true ? { local: true } : {}),
+  }))
+  let opened: boolean | undefined
+  if (open) opened = deps.devstack && place.path ? await deps.devstack(place.path) : false
+  logs.push({ level: 'info', text: `讀到「${place.label}」的 ${links.length} 個 Dev Stack 連結${opened ? '，已在畫面上打開' : ''}` })
+  return { project: place.label, links, ...(open ? { opened: !!opened } : {}) }
+}
+
 async function listMachines(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const machines = deps.machines ? await deps.machines() : []
   logs.push({ level: 'info', text: `可以開 Session 的機器：${machines.length || 1} 台` })
@@ -2100,6 +2194,8 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
   try {
     if (name === 'get_status_briefing') result = await statusBriefing(deps, logs)
     else if (name === 'list_sessions') result = await listSessions(deps, logs)
+    else if (name === 'clawdline_help') result = await clawdlineHelp(deps, logs, str(args.question), Array.isArray(args.sections) ? args.sections.map(str) : [])
+    else if (name === 'get_devstack_links') result = await devstackLinks(deps, logs, str(args.project), args.open === true)
     else if (name === 'get_sessions_summary') result = await sessionsSummary(deps, logs, args.which === 'working' || args.which === 'idle' ? args.which : 'all')
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))

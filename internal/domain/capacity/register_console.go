@@ -144,6 +144,18 @@ func consoleBounds() []Entry {
 			Limit: 6, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
 		{
+			// HELP_SECTIONS in realtime/copilot-help.ts: how many user guide
+			// sections one Clawdline help answer carries.
+			Name: "console.copilot_help_sections", Class: Buffer, Unit: Rows,
+			Limit: 3, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// HELP_SECTION_CHARS in realtime/copilot-help.ts: how much of one
+			// guide section is carried; a longer one is cut at a line.
+			Name: "console.copilot_help_section_characters", Class: Buffer, Unit: Characters,
+			Limit: 2500, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// RECAP_PAGES in realtime/copilot-tools.ts: how far back a Session
 			// recap pages; a longer Session is recapped from its recent part
 			// and the answer says so.
