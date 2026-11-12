@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/config"
 )
 
@@ -298,6 +299,8 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 		return err
 	}
 	var resultsPending atomic.Bool
+	// Recover prior receipts before polling can admit fresh commands or tab IDs.
+	resultsPending.Store(true)
 	resultsDone := make(chan struct{}, 1)
 	resultsSettled := func() {
 		resultsPending.Store(false)
@@ -346,8 +349,8 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 				fmt.Fprintln(errOut, err)
 				return
 			}
-			resultsSettled()
 		}
+		resultsSettled()
 		for msg := range messages {
 			var m struct {
 				Hello   map[string]string `json:"hello"`
@@ -439,13 +442,20 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 		}
 		_ = send(map[string]any{"daemon": "connected"})
 		for _, c := range polled.Commands {
-			var command struct{ ID, Op string }
+			var command struct {
+				ID, Op string
+				Tab    int
+			}
 			if json.Unmarshal(c, &command) == nil && command.Op == "close" {
 				closeMu.Lock()
 				if len(closes) >= maxBrowserCloseReceipts {
 					closeMu.Unlock()
 					fmt.Fprintln(errOut, cliCopy("core", "browser_host.too_many_closes", "browser-host: too many unsettled close commands"))
-					return 1
+					refused, _ := json.Marshal([]browserbridge.Result{{ID: command.ID, Tab: command.Tab, Error: string(browserbridge.QueueFull)}})
+					if !postBrowserHostResults(hostCtx, b, refused, errOut) {
+						return 1
+					}
+					continue
 				}
 				closes[command.ID] = true
 				closeMu.Unlock()

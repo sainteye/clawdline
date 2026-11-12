@@ -6,7 +6,7 @@
 // tabs never rearrange the person's own windows, and answers each command
 // with one result. It holds no secret and opens no network connection.
 
-import { readPage, locate, focusedIsPassword, editableRects, focusedEditableKind } from "./page.js"
+import { readPage, locate, editableRects, focusedEditableKind } from "./page.js"
 
 const HOST = "com.clawdline.browser"
 const TEXT_LIMIT = 200 * 1024
@@ -240,11 +240,15 @@ async function run(c) {
       return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y), editable: c.person ? await evaluate(tab, focusedEditableKind) : undefined } }
     }
     case "type": {
-      const password = await evaluate(tab, focusedIsPassword)
       await cdp(tab, "Input.insertText", { text: String(a.text) })
-      // No picture after typing a secret or into a password field.
-      const picture = password || a.secret || c.person ? undefined : await thumb(tab)
-      return { tab, url: await tabURL(tab), password, thumb: picture, value: { tab, typed: [...String(a.text)].length } }
+      // Input.insertText targets Chrome's current focus, which may be inside
+      // closed shadow DOM or another frame. A separate Runtime.evaluate can
+      // neither inspect every target nor freeze focus/type until insertion.
+      // Mark all typing private, including ordinary text, rather than let a
+      // stale or inaccessible focus snapshot authorize plaintext persistence.
+      // The bridge's password flag also strips URL/target metadata; never
+      // capture a post-input picture or query the page for its typed content.
+      return { tab, password: true, value: { tab, typed: [...String(a.text)].length } }
     }
     case "key": {
       await key(tab, a.key)

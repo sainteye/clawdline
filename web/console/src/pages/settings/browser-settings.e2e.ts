@@ -167,10 +167,10 @@ after(async () => {
 })
 
 const WORDS = {
-  "zh-Hant": { connected: "Chrome 擴充功能已連線", host: "Chrome 131 · 擴充功能 0.1.0", password: "密碼欄位 · 8 個字", cut: "（已截斷）",
+  "zh-Hant": { connected: "Chrome 擴充功能已連線", host: "Chrome 131 · 擴充功能 0.1.0", password: "私密輸入 · 8 個字", cut: "（已截斷）",
     pruned: "較舊的 3 筆紀錄已刪除", journal: "紀錄無法寫入磁碟", empty: "還沒有任何瀏覽器操作紀錄", stop: "停止 Clawdline 瀏覽器操作",
     resume: "恢復", click: "點擊", refused: "未完成：瀏覽器操作已停止" },
-  en: { connected: "Chrome extension connected", host: "Chrome 131 · extension 0.1.0", password: "Password field · 8 characters", cut: "(truncated)",
+  en: { connected: "Chrome extension connected", host: "Chrome 131 · extension 0.1.0", password: "Private input · 8 characters", cut: "(truncated)",
     pruned: "3 older records were deleted", journal: "could not be written to disk", empty: "No browser activity yet", stop: "Stop Clawdline browser actions",
     resume: "Resume", click: "Click", refused: "Not done: browser use was stopped" },
 } as const

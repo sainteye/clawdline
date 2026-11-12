@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -196,6 +197,8 @@ func TestBrowserHostReplaysSavedCloseReceiptAfterHostRestart(t *testing.T) {
 	defer input.Close()
 	defer writer.Close()
 	received := make(chan string, 1)
+	var orderMu sync.Mutex
+	acked := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/browser/host/results" {
 			var body struct{ Results []browserbridge.Result }
@@ -204,8 +207,17 @@ func TestBrowserHostReplaysSavedCloseReceiptAfterHostRestart(t *testing.T) {
 				received <- body.Results[0].ID
 			}
 			w.Write([]byte(`{"ok":true}`))
+			orderMu.Lock()
+			acked = true
+			orderMu.Unlock()
 			writer.Close()
 			return
+		}
+		orderMu.Lock()
+		ready := acked
+		orderMu.Unlock()
+		if !ready {
+			t.Error("host polled before replaying its saved close receipts")
 		}
 		time.Sleep(10 * time.Millisecond)
 		w.Write([]byte(`{"commands":[]}`))
@@ -230,5 +242,88 @@ func TestBrowserHostReplaysSavedCloseReceiptAfterHostRestart(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("host did not stop")
+	}
+}
+
+func TestBrowserHostRefusesCloseOverflowWithoutDiscardingTheResult(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
+	input, writer := io.Pipe()
+	defer input.Close()
+	defer writer.Close()
+	output, sink := io.Pipe()
+	defer output.Close()
+	defer sink.Close()
+	received := make(chan browserbridge.Result, 1)
+	var mu sync.Mutex
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/browser/host/results" {
+			var body struct{ Results []browserbridge.Result }
+			json.NewDecoder(r.Body).Decode(&body)
+			if len(body.Results) == 1 {
+				received <- body.Results[0]
+			}
+			w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		mu.Lock()
+		polls++
+		n := polls
+		mu.Unlock()
+		var commands []browserbridge.Command
+		if n == 1 {
+			for i := 0; i < maxBrowserCloseReceipts; i++ {
+				commands = append(commands, browserbridge.Command{ID: fmt.Sprint(i), Op: "close", Tab: i + 1})
+			}
+		}
+		if n == 2 {
+			commands = append(commands, browserbridge.Command{ID: "overflow", Op: "close", Tab: 99})
+		}
+		if n >= 3 {
+			writer.Close()
+		}
+		json.NewEncoder(w).Encode(map[string]any{"commands": commands})
+	}))
+	defer server.Close()
+	delivered := make(chan string, 1)
+	go func() {
+		for {
+			raw, err := readNativeMessage(output)
+			if err != nil {
+				return
+			}
+			var msg struct{ Command browserbridge.Command }
+			json.Unmarshal(raw, &msg)
+			if msg.Command.ID == "overflow" {
+				delivered <- msg.Command.ID
+			}
+		}
+	}()
+	done := make(chan int, 1)
+	go func() {
+		done <- relayBrowserHost(&broker{base: server.URL, client: server.Client()}, "isolated", filepath.Join(state, "profile"), input, sink, io.Discard)
+	}()
+	select {
+	case r := <-received:
+		if r.ID != "overflow" || r.Tab != 99 || r.Error != string(browserbridge.QueueFull) {
+			t.Fatal(r)
+		}
+	case <-time.After(time.Second):
+		writer.Close()
+		t.Fatal("overflow close disappeared without a refusal result")
+	}
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatal(code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("host did not stop")
+	}
+	select {
+	case <-delivered:
+		t.Fatal("refused close was sent to Chrome")
+	default:
 	}
 }

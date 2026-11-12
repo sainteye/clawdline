@@ -178,3 +178,15 @@ func TestCloseReceiptIsNotAcknowledgedBeforeControlStateIsSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCloseCapacityRefusalSettlesWithoutLosingOwnership(t *testing.T) {
+	b, ctx := connected(t)
+	b.owner[5], b.current["c1"] = "c1", 5
+	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, Tab: c.Tab, Error: string(QueueFull)} })
+	if _, err := b.Do(ctx, "c1", "close", nil); err != QueueFull {
+		t.Fatalf("close capacity was not a typed refusal: %v", err)
+	}
+	if b.closing[5] != "" || b.owner[5] != "c1" {
+		t.Fatal("refused close remained uncertain or forgot ownership")
+	}
+}

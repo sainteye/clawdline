@@ -45,12 +45,6 @@ export function locate(target) {
   return { found: true, name: hit.name.slice(0, 120), x: r.left + r.width / 2, y: r.top + r.height / 2, count: candidates.length }
 }
 
-/* Whether the focused field is a password field. */
-export function focusedIsPassword() {
-  const el = document.activeElement
-  return !!(el && el.tagName === "INPUT" && el.type === "password")
-}
-
 /* Geometry for a phone's native keyboard. No field text, value, name or label
    crosses this boundary. Shadow-root fields use the same viewport coordinates. */
 export function editableRects(limit) {

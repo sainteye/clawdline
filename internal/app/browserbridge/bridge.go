@@ -822,7 +822,8 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 	if !res.OK && tab != 0 && res.Error == "the tab was closed" {
 		b.Forget(tab)
 	}
-	if a.Secret {
+	// The daemon also protects results from an older or stale worker.
+	if a.Secret || op == "type" {
 		res.Password = true
 	}
 	if res.Password {
@@ -840,7 +841,7 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		return res.Value, nil
 	}
 	switch Refusal(res.Error) {
-	case Closing, Disabled, Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed, NoTab:
+	case Closing, Disabled, Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed, NoTab, QueueFull:
 		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
