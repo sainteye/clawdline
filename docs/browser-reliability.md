@@ -10,7 +10,7 @@ cannot use this dedicated setup probe.
 
 An emergency stop still admits the person's input after takeover. An empty host
 poll waits for work, cancellation or the normal deadline, including while stopped.
-Stop, resume, settings changes and person input wake an outstanding poll. Agent
+Browser permission changes and person input wake an outstanding poll. Agent
 admission and permission epochs remain unchanged.
 
 A native host waits for an explicit successful result acknowledgment, including
@@ -21,7 +21,11 @@ Closing Chrome cancels outstanding HTTP requests and retries.
 
 Before posting a close result, the host atomically saves a minimal receipt in
 `browser-close-results-<profile-hash>.json` in the daemon directory. The hash binds
-it to the mode and absolute profile path. The file contains command IDs, tab IDs,
+it to the mode and absolute profile path. A kernel lock grants one host ownership
+of each mode/profile before loading receipts
+or polling, and stays held until that host ends. Another port waits without polling;
+closing its port cancels that wait. The lock file stays in place, and process exit
+releases ownership. The receipt file contains command IDs, tab IDs,
 success flags and a generic failure classification, never page content, URLs,
 input text or pictures. Its row and byte limits are registered in the capacity
 inventory. A host restart replays these receipts until the daemon acknowledges
@@ -54,3 +58,11 @@ original command ID. Mode switching is then possible. Another test replays a
 saved receipt after a host restart. `close_test.go` injects a control-state write
 failure and proves that a receipt is not acknowledged before durable recovery.
 All fixtures use synthetic tabs and isolated directories.
+
+`TestOverlappingBrowserHostsKeepUnacknowledgedReceiptsAcrossRestart` keeps one
+host's ACK pending while a second port waits, then disconnects the new owner
+before its own result is acknowledged. A third host recovers that result without
+repeating the operation. The process-lock regression also kills its own holder
+and checks that the kernel releases ownership; an abandoned lock file is safe.
+Unmeasured receipt occupancy remains unknown in diagnostics rather than appearing
+as an empty queue.

@@ -23,6 +23,8 @@
   "broker.machine_token_not_file": "%s is not a plain file; it was not read",
   "broker.refused": "clawdline %s: refused, %d %s: %s\n",
   "browser_host.invalid_spool": "browser-host: invalid close receipt spool",
+  "browser_host.profile_lock_failed": "browser-host: profile ownership failed: %v",
+  "browser_host.profile_lock_not_regular": "browser profile lock is not a regular file",
   "browser_host.receipt_recovery_failed": "browser-host: close receipt recovery failed: %v",
   "browser_host.receipt_save_failed": "browser-host: save close receipts: %v",
   "browser_host.result_pending": "browser-host: result not acknowledged; retrying",

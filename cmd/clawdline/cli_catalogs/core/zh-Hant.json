@@ -23,6 +23,8 @@
   "broker.machine_token_not_file": "%s 不是一般檔案；未讀取其內容",
   "broker.refused": "clawdline %s：遭拒，%d %s：%s\n",
   "browser_host.invalid_spool": "browser-host：關頁收據檔案無效",
+  "browser_host.profile_lock_failed": "browser-host：無法取得此瀏覽器設定檔的操作權：%v",
+  "browser_host.profile_lock_not_regular": "瀏覽器設定檔的操作鎖不是一般檔案",
   "browser_host.receipt_recovery_failed": "browser-host：無法恢復關頁收據：%v",
   "browser_host.receipt_save_failed": "browser-host：無法儲存關頁收據：%v",
   "browser_host.result_pending": "browser-host：結果尚未獲得確認，將重送結果",

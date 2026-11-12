@@ -53,7 +53,8 @@ func capacityServer(t *testing.T) *Server {
 }
 
 // The register guard's other half (limits §4.1): every registered row has a
-// measurement wired, and on a fresh directory every one of them can be read.
+// measurement wired. Daemon-owned usage is readable on a fresh directory;
+// native-host receipt occupancy stays explicitly unknown until it is measured.
 func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 	s := capacityServer(t)
 	measures := s.capacityMeasures()
@@ -64,6 +65,12 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 			continue
 		}
 		r := m()
+		if e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes {
+			if r.Known || r.Err == "" {
+				t.Errorf("%s must explain its unavailable native-host measurement: %+v", e.Name, r)
+			}
+			continue
+		}
 		if !r.Known {
 			t.Errorf("%s could not be read on a fresh directory: %s", e.Name, r.Err)
 		}

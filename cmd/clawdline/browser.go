@@ -333,9 +333,19 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 			}
 		}
 	}()
+	var workerExit atomic.Int32
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		lock, err := browserProfileLock(hostCtx, spool+".lock")
+		if err != nil {
+			if hostCtx.Err() == nil {
+				workerExit.Store(1)
+				fmt.Fprintf(errOut, cliCopy("core", "browser_host.profile_lock_failed", "browser-host: profile ownership failed: %v")+"\n", err)
+			}
+			return
+		}
+		defer lock.Close()
 		// Replay only result receipts. Never repeat a destructive command.
 		if saved, err := loadBrowserCloseResults(spool); err != nil {
 			fmt.Fprintf(errOut, cliCopy("core", "browser_host.receipt_recovery_failed", "browser-host: close receipt recovery failed: %v")+"\n", err)
@@ -351,7 +361,17 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 			}
 		}
 		resultsSettled()
-		for msg := range messages {
+		for {
+			var msg []byte
+			select {
+			case <-hostCtx.Done():
+				return
+			case next, ok := <-messages:
+				if !ok {
+					return
+				}
+				msg = next
+			}
 			var m struct {
 				Hello   map[string]string `json:"hello"`
 				Results json.RawMessage   `json:"results"`
@@ -407,13 +427,13 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 	for {
 		select {
 		case <-done:
-			return 0
+			return int(workerExit.Load())
 		default:
 		}
 		if resultsPending.Load() {
 			select {
 			case <-done:
-				return 0
+				return int(workerExit.Load())
 			case <-resultsDone:
 			}
 			continue
@@ -429,7 +449,7 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 			_ = send(map[string]any{"daemon": "unreachable"})
 			select {
 			case <-done:
-				return 0
+				return int(workerExit.Load())
 			case <-time.After(3 * time.Second):
 			}
 			continue
