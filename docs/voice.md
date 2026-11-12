@@ -198,8 +198,10 @@ with a phone's portrait cut on a narrow screen; only the poster loads when it op
 when play is pressed (`CopilotDemoFilm.tsx`, `copilot-demo-films.ts`).
 
 **Every machine.** On a page showing every machine (所有機器) the call reads the page's own list
-(`COPILOT_FLEET`, CloudGate): each machine's Sessions, a Session's id being its id on its machine
-with the machine's name beside it (`%2@Studio`) and its label naming the machine. Every read and
+(`COPILOT_FLEET`, CloudGate): each machine's Sessions, with tool IDs made from separately
+URI-encoded stable machine and Session IDs (`fleet:machine-a:%252` for `%2` on `machine-a`).
+Machine names remain in display labels; duplicate names and renames do not change identity.
+Selectors refuse repeated IDs instead of choosing the first row. Every read and
 write of one Session names its machine (`X-Clawdline-Unopened-Machine`), so the seam resolves its
 current execution there; the Decision API is handed that list; and the one-machine briefing is
 skipped. On 2026-11-12, read from the journal, a phone on 所有機器 heard about one Linux Session

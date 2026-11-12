@@ -1513,6 +1513,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "browser.close_receipt_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 6291456,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "cmd/clawdline.maxBrowserCloseReceiptBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.close_receipt_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "cmd/clawdline.maxBrowserCloseReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "browser.command_arg_bytes",
     "Class": "buffer",
     "Unit": "bytes",

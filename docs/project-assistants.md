@@ -292,9 +292,11 @@ it neither holds an external grant-store lock across the effect nor replaces
 runtime execution fences or HTTP publication checks. A new request after grant
 renewal keeps the original principal-derived idempotency hash. Replaying an
 existing receipt still does not repeat the external effect.
-Production HTTP/Cloud authorization, source identity and Project resolution must
-still be wired and verified by the integration owner. Merely importing these
-modules does not enable the default-off feature or install its tables.
+The [Server composition](project-assistants-server.md) mounts the HTTP module
+at API level 57 and supplies current gate authority, source identity, selected
+registered Project resolution and an explicit local opt-in. Isolated Server
+fixtures do not establish production Cloud, native or device acceptance. Merely
+importing these modules does not enable the default-off feature or install tables.
 
 The [broker bridge](project-assistants-broker.md) supplies a separate private Bot
 capability, the existing isolated task admission path, and durable work-result
@@ -314,8 +316,9 @@ reader cursors and unknown intents independently of the host schema. The
 [lazy runtime host](project-assistants-runtime-host.md) composes this Store,
 Service, Engine and Broker, and owns native entry lifetime and bounded durable
 queue shutdown. Its real Store/Broker fixtures and fake providers prove module
-behavior; production settings, Server/Cloud/MCP wiring, native admission and
-complete removal remain integration acceptance work.
+behavior. The Server composition supplies settings and HTTP lifecycle wiring;
+production Cloud, MCP, native admission and complete removal remain integration
+acceptance work.
 
 
 The [Cloud wire module](project-assistants-cloud-wire.md) carries complete Bot
@@ -323,4 +326,4 @@ requests and typed failures through the existing device-scoped bridge. Reader
 acknowledgements remain read-level actions; content changes keep their write
 gate. A whole archive that exceeds the existing plaintext ceiling is explicitly
 refused rather than truncated. Transport module evidence is separate from
-production route mounting, long-history UI recovery and phone acceptance.
+production Cloud rollout, long-history UI recovery and phone acceptance.

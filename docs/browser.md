@@ -60,8 +60,13 @@ replaces; otherwise it runs the binary that wrote it.
 | No answer in 30 s | `browser_timeout`; the command may or may not have run |
 
 Every command, refused or not, is an audit row: time, Session, op, tab, URL, site, the element
-pressed, and the text typed (cut to 2,000 characters, with its full length kept). Text typed into
-a password field is recorded only as its length. Takeover and hand-back are rows too. The audit
+pressed, and the length of text typed. All typing is private: no typed text, URL, target or
+post-input thumbnail is retained for that action, including ordinary text fields. Chrome can
+change focus or field type between inspection and insertion, and opaque frames and closed shadow
+roots cannot be classified reliably. This deliberately uses the same private result for every
+input instead of letting a stale focus snapshot authorize plaintext audit. The daemon applies
+the same rule when an older worker still reports a non-password field. Takeover and hand-back
+are rows too. The audit
 is `<CLAWDLINE_NEXT_DIR>/browser-audit.jsonl` (mode 0600): 2,000 rows are kept, the file is
 rewritten to them when it reaches twice that, and the route reports how many were pruned and
 whether the last write to disk failed.
@@ -193,6 +198,13 @@ panel, and `browser-install.e2e.ts` the setup guide, against a stand-in daemon a
 widths, in English and Chinese. `internal/adapters/browserlaunch` is tested with a shell script
 standing in for Chromium.
 
+`node --test web/console/tools/browser-worker.test.mjs` exercises the real worker with a local native-port
+substitute. Setting `CLAWDLINE_BROWSER_E2E_CHROMIUM` also runs that worker inside a fresh Chrome
+for Testing profile with actual `chrome.debugger` input. Synthetic fixtures cover ordinary text,
+passwords, nested and closed shadow roots, same-origin and opaque frames, and a focus switch
+between inspection and insertion. The native transport is substituted in this narrow regression;
+the full bridge test remains responsible for audit-to-disk acceptance.
+
 ## Transcript actions and takeover Notes
 
 The transcript interleaves meaningful page changes with conversation turns. Reads, screenshots,
@@ -299,3 +311,8 @@ failures after a saved choice are reported separately and pause access; the
 settings UI reads back the actual saved choice instead of guessing it rolled
 back. Viewer action callbacks, frames and keyboard lifetime are scoped by mode
 and tab, so profiles reusing a tab number cannot reuse an old callback or image.
+
+Setup transport readiness does not grant browser access. Close result receipts survive
+service and host restarts without replaying the destructive operation. The protocol,
+limits, failure boundaries and regression fixtures are described in
+[browser setup and close result recovery](browser-reliability.md).

@@ -365,6 +365,14 @@
     "Note": true
   },
   {
+    "Name": "browser.close_receipt_bytes",
+    "Err": true
+  },
+  {
+    "Name": "browser.close_receipt_rows",
+    "Err": true
+  },
+  {
     "Name": "browser.command_arg_bytes",
     "Known": true,
     "Note": true

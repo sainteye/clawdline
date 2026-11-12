@@ -46,7 +46,7 @@ export function useBrowserActivity(conversation: string | undefined): { at: numb
     <div className="who"><span className="speaker">{nextWord("browserChip")}</span><time dateTime={new Date(action.at * 1000).toISOString()}>{new Date(action.at * 1000).toLocaleTimeString()}</time></div>
     <div className="body">
       <b>{words[action.op] ? nextWord(words[action.op]) : action.op}</b>
-      <span>{action.op === "type" ? (action.password ? nextWord("browserAuditPassword", { count: action.text_length ?? 0 }) : "") : action.op === "viewport" && (action.target === "mobile" || action.target === "desktop") ? nextWord(action.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : action.target || hostOf(action)}</span>
+      <span>{action.op === "type" ? (action.password ? nextWord("browserAuditPrivateInput", { count: action.text_length ?? 0 }) : "") : action.op === "viewport" && (action.target === "mobile" || action.target === "desktop") ? nextWord(action.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : action.target || hostOf(action)}</span>
       {!action.ok && <p role="status">{action.error && Object.hasOwn(reasons,action.error) ? nextWord(reasons[action.error as keyof typeof reasons]) : action.error}</p>}
       {action.thumb && <img src={"data:image/jpeg;base64," + action.thumb} alt={nextWord("browserPanelImageAlt", { title: action.site || "" })} loading="lazy" />}
     </div>

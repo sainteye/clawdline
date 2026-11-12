@@ -11,6 +11,24 @@ import (
 	"testing"
 )
 
+func TestProjectAssistantsRequiresAnExplicitTrue(t *testing.T) {
+	f := Open(t.TempDir())
+	v, err := f.Read()
+	if err != nil || v.ProjectAssistantsEnabled() {
+		t.Fatal("fresh source opted in")
+	}
+	for _, raw := range []string{"false", "null", "0", `"true"`, "{}", "true"} {
+		v.Raw["project_assistants_enabled"] = json.RawMessage(raw)
+		if got := v.ProjectAssistantsEnabled(); got != (raw == "true") {
+			t.Fatalf("%s enabled=%v", raw, got)
+		}
+	}
+	key, ok := SettableByName("project_assistants_enabled")
+	if !ok || key.Kind != "bool" || !key.Allows(true) || key.Allows("true") {
+		t.Fatal("opt-in is not a boolean setting")
+	}
+}
+
 // A control changes one key. Everything else in the file — keys this daemon has
 // never heard of, a hand edit made a second ago — comes through as it was, and
 // the file is the person's alone.

@@ -5722,6 +5722,14 @@ export interface ProjectAssistantSendRequest {
 }
 
 /**
+ * GET/POST /v1/settings/project-assistants. The response reports actual admitted
+ * Host state; POST accepts exactly one local-owner boolean opt-in.
+ */
+export interface ProjectAssistantSettings {
+  enabled: boolean
+}
+
+/**
  * Codync outline vocabulary. Global entry is always blob/#e39567; it never
  * identifies the selected Bot.
  */
@@ -9088,6 +9096,12 @@ export interface SettingsRequest {
   product_language: string | null
 
   /**
+   * Explicit local-owner opt-in coordinated with Bot enable and durable disable.
+   * Null is refused.
+   */
+  project_assistants_enabled?: boolean
+
+  /**
    * Notify after the app release is verified.
    */
   push_on_app_release_success: boolean | null
@@ -9498,6 +9512,12 @@ export interface SettingsSnapshot {
    * unsupported saved values render as English.
    */
   product_language: string | null
+
+  /**
+   * Explicit local-owner Bot opt-in; absent or malformed means false. Actual
+   * runtime state and retained history are reported by Bot status.
+   */
+  project_assistants_enabled: boolean | null
 
   /**
    * Notify after the app release is verified.

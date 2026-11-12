@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/pbkdf2"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -11,6 +12,76 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+func TestRevalidateKeepsTheOriginalProofAndNarrowing(t *testing.T) {
+	a, err := New(&memStore{}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, token, err := a.AddDevice("fixture", NewCaps(Read, Send), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := a.Verify(token)
+	if !a.Revalidate(v).Caps.Has(Send) {
+		t.Fatal("verified sender was lost")
+	}
+	if a.Revalidate(Verdict{Allowed: true, Device: id, Caps: NewCaps(Read, Send), Local: true}).Allowed {
+		t.Fatal("fabricated verdict gained proof")
+	}
+	other, _ := New(&memStore{}, Options{})
+	if other.Revalidate(v).Allowed {
+		t.Fatal("proof crossed authority")
+	}
+	if err := a.SetPermission(id, true); err != nil {
+		t.Fatal(err)
+	}
+	read := a.Revalidate(v)
+	if !read.Allowed || read.Caps.Has(Send) || read.AuthorizationRevision() == v.AuthorizationRevision() {
+		t.Fatal("capability downgrade did not refresh proof")
+	}
+	if _, err := a.SetCapabilities(id, NewCaps(Read, Send)); err != nil {
+		t.Fatal(err)
+	}
+	if a.Revalidate(read).Caps.Has(Send) {
+		t.Fatal("narrowed proof regained send")
+	}
+	for _, replace := range []func(*Device){
+		func(d *Device) { d.Hash = Hash("rotated") },
+		func(d *Device) { d.Created = d.Created.Add(time.Nanosecond) },
+	} {
+		original := a.devices[id]
+		d := original
+		replace(&d)
+		a.devices[id] = d
+		if a.Revalidate(v).Allowed {
+			t.Fatal("replacement inherited old proof")
+		}
+		a.devices[id] = original
+	}
+	local, err := a.LocalToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lv := a.Verify(local)
+	lv.Local = false
+	if got := a.Revalidate(lv); !got.Allowed || got.Local {
+		t.Fatal("actorDevice narrowing was reversed")
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), token) || strings.Contains(string(b), Hash(token)) || strings.Contains(string(b), "witness") {
+		t.Fatal("proof or bearer serialized")
+	}
+	if err := a.Revoke(id); err != nil {
+		t.Fatal(err)
+	}
+	if a.Revalidate(v).Allowed {
+		t.Fatal("revoked proof remained live")
+	}
+}
 
 type memStore struct {
 	state  State

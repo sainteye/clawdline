@@ -1,6 +1,7 @@
 package browserbridge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -141,5 +142,40 @@ func TestPasswordFieldSuccessDropsStrayError(t *testing.T) {
 	out, _ := json.Marshal([]any{rows, b.RecentActivity("c1", 1)})
 	if strings.Contains(string(out), "synthetic-password") || rows[0].Error != "" {
 		t.Fatal("a successful password input retained arbitrary error metadata")
+	}
+}
+
+func TestTypingFromAnOlderHostIsStillPrivateOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	b, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.pollWait = time.Millisecond
+	b.Poll(t.Context(), HostInfo{Version: "old-worker"})
+	fakeHost(t.Context(), b, func(c Command) Result {
+		return Result{ID: c.ID, Tab: 1, OK: true, Password: false, URL: "https://example.com/?q=synthetic-private-input", Target: "synthetic-private-input", Thumb: "AAAA", Value: json.RawMessage(`{"typed":23}`)}
+	})
+	if _, err := b.Do(t.Context(), "c1", "open", json.RawMessage(`{"url":"https://example.com"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Do(t.Context(), "c1", "type", json.RawMessage(`{"text":"synthetic-private-input"}`)); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := b.Records("c1", 1)
+	if len(rows) != 1 || !rows[0].Password || rows[0].Text != "" || rows[0].TextLen != 23 || rows[0].URL != "" || rows[0].Target != "" {
+		t.Fatalf("old worker input was not private: %+v", rows)
+	}
+	// Check the last disk entry; the synthetic open action is not input.
+	disk, err := os.ReadFile(filepath.Join(dir, JournalFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(disk), []byte("\n"))
+	if bytes.Contains(lines[len(lines)-1], []byte("synthetic-private-input")) {
+		t.Fatal("old worker plaintext reached disk")
+	}
+	if got := b.RecentActivity("c1", 1); len(got) != 1 || got[0].Thumb != "" {
+		t.Fatal("old worker input picture was retained")
 	}
 }

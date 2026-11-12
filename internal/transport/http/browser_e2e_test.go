@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,9 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -65,7 +68,11 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	if _, err := s.gate().files.MachineToken(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_mode": mode}); err != nil {
+	initialMode := mode
+	if mode == "isolated" {
+		initialMode = "native"
+	}
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_mode": initialMode}); err != nil {
 		t.Fatal(err)
 	}
 	srv := &http.Server{Handler: s.Handler()}
@@ -81,7 +88,7 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 <label>Name <input id=name aria-label="Name"></label><br><br>
 <label>Password <input id=pw type=password aria-label="Password"></label><br><br>
 <button id=go onclick="document.getElementById('out').textContent='Hello, '+document.getElementById('name').value">Continue</button>
-<input type=password value="synthetic-unlabelled-password"><input placeholder="Code" value="synthetic-unlabelled-code"><p id=out></p><p id=layout></p><script>function layout(){document.getElementById('layout').textContent='Viewport '+innerWidth+' '+(/Android.*Mobile/.test(navigator.userAgent)?'mobile':'desktop')}window.onresize=layout;layout()</script></body>`))
+<input type=password value="synthetic-unlabelled-password"><input placeholder="Code" value="synthetic-unlabelled-code"><p id=out></p><p id=layout></p><script>function layout(){document.getElementById('layout').textContent='Viewport '+innerWidth+' '+(/Android.*Mobile/.test(navigator.userAgent)?'mobile':'desktop')}window.onresize=layout;layout()</script><div id=shadowhost></div><button onclick="shadowhost.shadowRoot.firstChild.focus()">Focus custom password</button><button onclick="document.getElementById('out').textContent='Shadow length '+shadowhost.shadowRoot.firstChild.value.length">Check custom password</button><script>shadowhost.attachShadow({mode:'open'}).innerHTML='<input type=password>'</script></body>`))
 	})
 	pageListener, _ := net.Listen("tcp", "127.0.0.1:0")
 	pageSrv := &http.Server{Handler: pages}
@@ -119,7 +126,11 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	if out, errOut, code := run("browser", "install-host", "--extension-id", string(id), "--chrome-dir", profile, "--mode", mode); code != 0 {
 		t.Fatalf("install-host: %d %s %s", code, out, errOut)
 	}
-	if _, errOut, code := run("browser", "open", formURL); code == 0 || !strings.Contains(errOut, "browser_extension_missing") {
+	beforeHostRefusal := "browser_extension_missing"
+	if mode == "isolated" {
+		beforeHostRefusal = "browser_disabled"
+	}
+	if _, errOut, code := run("browser", "open", formURL); code == 0 || !strings.Contains(errOut, beforeHostRefusal) {
 		t.Fatalf("before Chromium starts, open should be refused browser_extension_missing: %d %s", code, errOut)
 	}
 	chrome := exec.Command(chromium, "--user-data-dir="+profile, "--load-extension="+ext, "--disable-extensions-except="+ext,
@@ -137,7 +148,13 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	}
 	t.Cleanup(func() { chrome.Process.Kill(); chrome.Wait() })
 	deadline := time.Now().Add(20 * time.Second)
-	for !s.browser().Status().Connected {
+	ready := func() bool {
+		if mode == "isolated" {
+			return s.browser().SetupConnected()
+		}
+		return s.browser().Status().Connected
+	}
+	for !ready() {
 		if time.Now().After(deadline) {
 			data, _ := os.ReadFile(logPath)
 			var lines []string
@@ -171,6 +188,26 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
+	if mode == "isolated" {
+		if _, err := s.browser().Do(t.Context(), conversation, "open", json.RawMessage(`{"url":"https://example.com"}`)); err != browserbridge.Disabled {
+			t.Fatalf("setup readiness granted Agent access: %v", err)
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v1/browser/settings", strings.NewReader(`{"browser_enabled":true,"browser_notify_new_site":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{verdict: auth.Verdict{Allowed: true, Caps: auth.NewCaps(auth.Read, auth.Send)}}))
+		s.browserSettingsRoute(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Finish settings: %d %s", rec.Code, rec.Body)
+		}
+		deadline = time.Now().Add(10 * time.Second)
+		for !s.browser().Status().Connected {
+			if time.Now().After(deadline) {
+				t.Fatal("host did not enter operational mode after consent")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
 	host := s.browser().Status().Host
 	if host.Mode != mode || host.Profile != profile {
 		t.Fatalf("native host binding: %+v, expected %s %s", host, mode, profile)
@@ -249,6 +286,19 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	mustJSON("read after", out, errOut, code, &page)
 	if !strings.Contains(page.Value.Text, "Hello, 王小明") {
 		t.Fatalf("the form did not receive the typed Chinese name: %s", page.Value.Text)
+	}
+
+	const shadowText = "shadow-audit-check"
+	out, errOut, code = run("browser", "click", "Focus custom password")
+	mustJSON("focus custom password", out, errOut, code, nil)
+	out, errOut, code = run("browser", "type", shadowText)
+	mustJSON("type custom password", out, errOut, code, nil)
+	out, errOut, code = run("browser", "click", "Check custom password")
+	mustJSON("check custom password", out, errOut, code, nil)
+	out, errOut, code = run("browser", "read")
+	mustJSON("read custom password length", out, errOut, code, &page)
+	if !strings.Contains(page.Value.Text, "Shadow length "+strconv.Itoa(len(shadowText))) {
+		t.Fatalf("custom field did not receive input: %s", page.Value.Text)
 	}
 	shot := filepath.Join(t.TempDir(), "tab.jpg")
 	out, errOut, code = run("browser", "screenshot", "--out", shot)
@@ -332,22 +382,37 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	}
 	out, errOut, code = run("browser", "audit", "--limit", "50")
 	mustJSON("audit", out, errOut, code, &audit)
-	var typedName, typedPassword, clickedContinue bool
+	var typedName, typedPassword, typedShadow, clickedContinue bool
 	for _, r := range audit.Rows {
-		if r.Op == "type" && r.Text == "王小明" && !r.Password {
+		if r.Op == "type" && r.Text == "" && r.Password && r.TextLen == 3 {
 			typedName = true
 		}
 		if r.Op == "type" && r.Password && r.Text == "" && r.TextLen == 7 {
 			typedPassword = true
 		}
+		if r.Op == "type" && r.Password && r.Text == "" && r.TextLen == len(shadowText) {
+			typedShadow = true
+		}
+		if r.Op == "type" && r.Text != "" {
+			t.Fatal("typing retained plaintext")
+		}
 		if r.Op == "click" && r.Target == "Continue" && r.Site == "127.0.0.1" {
 			clickedContinue = true
 		}
 	}
-	if !typedName || !typedPassword || !clickedContinue {
+	if !typedName || !typedPassword || !typedShadow || !clickedContinue {
 		t.Fatalf("audit is missing a row (name %v, password %v, continue %v): %s", typedName, typedPassword, clickedContinue, out)
 	}
-	t.Logf("audit rows: %d", len(audit.Rows))
+	disk, err := os.ReadFile(filepath.Join(dir, browserbridge.JournalFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"王小明", "hunter2", shadowText} {
+		if bytes.Contains(disk, []byte(text)) {
+			t.Fatal("typed text reached disk audit")
+		}
+	}
+	t.Logf("audit rows: %d; ordinary and custom password inputs remain private on disk", len(audit.Rows))
 	out, errOut, code = run("browser", "close")
 	mustJSON("close", out, errOut, code, nil)
 	var remaining struct {

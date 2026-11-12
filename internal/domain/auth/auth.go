@@ -150,6 +150,30 @@ type Verdict struct {
 	Device  string
 	Caps    Caps
 	Local   bool
+	// witness is minted only by Verify. It carries no bearer and is neither
+	// exported nor serialized. Feature composition can recheck a narrowed
+	// verdict without turning a device ID into authentication.
+	witness *verificationWitness
+}
+
+type verificationWitness struct {
+	issuer  *Authority
+	device  string
+	hash    string
+	created time.Time
+	local   bool
+	caps    Caps
+}
+
+// AuthorizationRevision identifies the witnessed identity and the narrowed
+// capability snapshot, without publishing a token or its stored digest.
+// It conveys no authority; Revalidate must precede its use as current evidence.
+func (v Verdict) AuthorizationRevision() string {
+	if v.witness == nil {
+		return ""
+	}
+	w := v.witness
+	return Hash(fmt.Sprintf("%q:%q:%q:%t:%q", w.device, w.hash, w.created.UTC().Format(time.RFC3339Nano), v.Local, v.Caps.Joined()))
 }
 
 // Refusals an Authority gives, each one a code a caller may branch on.

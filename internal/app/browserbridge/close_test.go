@@ -135,3 +135,58 @@ func TestUncertainCloseSurvivesTimeoutAndRestartUntilHostAnswers(t *testing.T) {
 		t.Fatal("late close result left stale tab")
 	}
 }
+
+func TestCloseReceiptIsNotAcknowledgedBeforeControlStateIsSaved(t *testing.T) {
+	b, err := Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.host.LastPoll = b.now().Unix()
+	b.owner[5], b.current["c1"] = "c1", 5
+	b.timeout = 20 * time.Millisecond
+	b.pollWait = time.Millisecond
+	done := make(chan error, 1)
+	go func() { _, err := b.Do(t.Context(), "c1", "close", nil); done <- err }()
+	var c Command
+	for c.ID == "" {
+		if commands := b.Poll(t.Context(), HostInfo{Version: "test"}); len(commands) > 0 {
+			c = commands[0]
+		}
+	}
+	<-done
+	path := b.tabsPath
+	b.tabsPath = filepath.Join(t.TempDir(), "missing", "state.json")
+	result := []Result{{ID: c.ID, Tab: 5, OK: true}}
+	if err := b.Deliver(result); err == nil {
+		t.Fatal("failed state save was acknowledged")
+	}
+	if err := b.SetPersonControl(5, true); err != Closing {
+		t.Fatalf("failed receipt released close: %v", err)
+	}
+	b.tabsPath = path
+	if err := b.Deliver(result); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(filepath.Dir(path), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Status().Tabs) != 0 {
+		t.Fatal("acknowledged receipt was not durable")
+	}
+	if err := again.Deliver(result); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCloseCapacityRefusalSettlesWithoutLosingOwnership(t *testing.T) {
+	b, ctx := connected(t)
+	b.owner[5], b.current["c1"] = "c1", 5
+	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, Tab: c.Tab, Error: string(QueueFull)} })
+	if _, err := b.Do(ctx, "c1", "close", nil); err != QueueFull {
+		t.Fatalf("close capacity was not a typed refusal: %v", err)
+	}
+	if b.closing[5] != "" || b.owner[5] != "c1" {
+		t.Fatal("refused close remained uncertain or forgot ownership")
+	}
+}

@@ -53,6 +53,13 @@ func TestProjectAssistantGrantSharesOwnerAcrossDevicesAndIsolatesInvites(t *test
 		}
 	}
 	desktop := requireAssistantGrant(t, store, "account-one", "desktop")
+	principal, reader := ProjectAssistantOwnerIdentity("account-one")
+	if principal != desktop.PrincipalID || reader != desktop.ReaderID {
+		t.Fatal("local owner namespace differs from paired account owner")
+	}
+	if p, r := ProjectAssistantOwnerIdentity(""); p != "" || r != "" {
+		t.Fatal("missing identity acquired an owner namespace")
+	}
 	phone := requireAssistantGrant(t, store, "account-one", "phone")
 	if desktop.PrincipalID != phone.PrincipalID || desktop.ReaderID != phone.ReaderID {
 		t.Fatal("one account's devices did not share the reader")

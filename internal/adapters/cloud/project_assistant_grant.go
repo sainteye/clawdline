@@ -85,6 +85,15 @@ func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender st
 	}, nil
 }
 
+// ProjectAssistantOwnerIdentity derives account-owner namespaces only. It is
+// not a grant: callers still need current gate proof and current source policy.
+func ProjectAssistantOwnerIdentity(accountID string) (principal, reader string) {
+	if accountID == "" {
+		return "", ""
+	}
+	return assistantGrantDigest("principal", "owner", accountID), assistantGrantDigest("reader", "owner", accountID)
+}
+
 // Length framing prevents account/sender boundary ambiguity. Domains and the
 // format version keep principals, cursors and authorization snapshots separate.
 func assistantGrantDigest(domain string, parts ...string) string {

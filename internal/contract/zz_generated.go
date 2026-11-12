@@ -4974,6 +4974,12 @@ type ProjectAssistantSendRequest struct {
 	Text           string                  `json:"text"`
 }
 
+// GET/POST /v1/settings/project-assistants. The response reports actual
+// admitted Host state; POST accepts exactly one local-owner boolean opt-in.
+type ProjectAssistantSettings struct {
+	Enabled bool `json:"enabled"`
+}
+
 // Codync outline vocabulary. Global entry is always blob/#e39567; it never
 // identifies the selected Bot.
 type ProjectAssistantShape string
@@ -7701,6 +7707,10 @@ type SettingsRequest struct {
 	// human-readable CLI copy only.
 	ProductLanguage *string `json:"product_language"`
 
+	// Explicit local-owner opt-in coordinated with Bot enable and durable disable.
+	// Null is refused.
+	ProjectAssistantsEnabled bool `json:"project_assistants_enabled,omitempty"`
+
 	// Notify after the app release is verified.
 	PushOnAppReleaseSuccess *bool `json:"push_on_app_release_success"`
 
@@ -7967,6 +7977,10 @@ type SettingsSnapshot struct {
 	// Daemon notifications and human-readable CLI copy. Absent, malformed or
 	// unsupported saved values render as English.
 	ProductLanguage *string `json:"product_language"`
+
+	// Explicit local-owner Bot opt-in; absent or malformed means false. Actual runtime
+	// state and retained history are reported by Bot status.
+	ProjectAssistantsEnabled *bool `json:"project_assistants_enabled"`
 
 	// Notify after the app release is verified.
 	PushOnAppReleaseSuccess *bool `json:"push_on_app_release_success"`

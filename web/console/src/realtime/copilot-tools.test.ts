@@ -968,8 +968,8 @@ test("on a page showing every machine, every machine's Sessions are read, each a
   ]
   const rows = fleetRowsOf(fleet)
   assert.deepEqual(rows.map((r) => [r.id, r.session, r.machine, r.label]), [
-    ["%2@Studio", "%2", "m-mac", "Prepare screenshots（Studio）"],
-    ["%2@Build box", "%2", "m-linux", "Content review（Build box）"],
+    ["fleet:m-mac:%252", "%2", "m-mac", "Prepare screenshots（Studio）"],
+    ["fleet:m-linux:%252", "%2", "m-linux", "Content review（Build box）"],
   ], "two machines' %2 stay two Sessions, each named with its machine")
   const seen: { path: string; machine?: string }[] = []
   const deps: ToolDeps = {
@@ -981,12 +981,159 @@ test("on a page showing every machine, every machine's Sessions are read, each a
     async sleep() {},
     fleet: async () => fleet,
   }
-  const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"%2@Build box","said":"the review one"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"fleet:m-linux:%252","said":"the review one"}', deps)).output)
   assert.equal(out.label, "Content review（Build box）")
   assert.deepEqual(seen.filter((s) => s.path.startsWith("/v1/transcript")).map((s) => [s.path, s.machine]), [["/v1/transcript?session=%252", "m-linux"]])
   assert.equal(seen.some((s) => s.path === "/v1/sessions"), false, "the reading machine's list is not what is read")
   const list = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
   assert.equal(list.count, 2)
+})
+
+function sameNameFleet() {
+  const fleet = ["machine-a", "machine-b"].map((machine) => ({ machine, machineName: "Office", row: {
+    id: "%2", label: "Review", state: "waiting", assistant: "codex", sessionId: "conversation-2",
+    closeability: { state: "safe", version: "cl1_test" },
+    menu: { question: "Continue?", options: [{ n: 1, label: "Yes", can: true }] },
+  } }))
+  const calls: Call[] = []
+  const opened: [string, string | undefined][] = []
+  let focus: string | undefined
+  const deps: ToolDeps = {
+    fleet: async () => fleet,
+    focus: { get: () => focus, set: (id) => { focus = id } },
+    openSession: async (id, machine) => { opened.push([id, machine]); return true },
+    snippets: async (id, request, machine) => { opened.push([id, machine]); return request.start ? "started" : "opened" },
+    async fetch(path, init) {
+      calls.push({ path, init })
+      if (init?.method === "POST") return Response.json({ ok: true })
+      if (path.startsWith("/v1/transcript?")) return Response.json({ entries: [{ role: "assistant", text: "Review ready." }] })
+      if (path.endsWith("/screen")) return Response.json({ screen: { pending: false, readable: true, text: "Ready" } })
+      if (path.startsWith("/v1/snippets?")) return Response.json({ snippets: [
+        { id: "snippet-1", title: "Check", scope: "global", body: "Check the result" },
+        { id: "playbook-1", title: "Ship", scope: "playbook", body: "Ship it" },
+      ] })
+      if (path.startsWith("/v1/work/v2/")) return Response.json({ rows: [] })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    newRequestID: () => "fleet-request",
+  }
+  return { fleet, deps, calls, opened }
+}
+
+test("same-name fleet tools select the second machine for reads, opens, writes and reusable actions", async () => {
+  const { deps, calls, opened } = sameNameFleet()
+  const list = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
+  const ids = list.needs_you.map((r: { id: string }) => r.id)
+  const sent = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: ids[1], session_label: "Review（Office）", message: "check second machine" }), deps)).output)
+  assert.equal(sent.success, true)
+  assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b", "selecting the second listed Session must send to the second machine")
+  assert.notEqual(ids[0], ids[1], "two Office machines must have distinct tool IDs")
+  for (const name of ["get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "get_session_notes", "list_snippets", "open_session", "open_snippets", "send_message_to_session", "answer_session_question", "close_session", "run_snippet"]) {
+    calls.length = 0
+    const out = JSON.parse((await runCopilotTool(name, JSON.stringify({ session_id: ids[1], session_label: "Review（Office）", message: "check", choice: "1", name: "Check" }), deps)).output)
+    assert.equal(out.error, undefined, `${name}: ${JSON.stringify(out)}`)
+    assert.equal(deps.focus?.get(), ids[1], `${name} keeps the canonical focus`)
+    for (const call of calls) {
+      assert.equal((call.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b", name)
+      assert.doesNotMatch(call.path, /fleet:/, "transport uses the raw Session ID")
+    }
+  }
+  const playbook = JSON.parse((await runCopilotTool("run_snippet", JSON.stringify({ session_id: ids[1], session_label: "Review（Office）", name: "Ship" }), deps)).output)
+  assert.equal(playbook.ran, true)
+  assert.ok(opened.length >= 3)
+  assert.ok(opened.every(([id, machine]) => id === "%2" && machine === "machine-b"))
+  calls.length = 0
+  const switched = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: ids[0], session_label: "Review（Office）", message: "check" }), deps)).output)
+  assert.ok(switched.error, "same display name does not bypass focus switch confirmation")
+  assert.equal(calls.length, 0)
+})
+
+test("fleet IDs survive machine renames and refused sends can retry the same destination", async () => {
+  const { fleet, deps, calls } = sameNameFleet()
+  const before = fleetRowsOf(fleet)
+  await runCopilotTool("get_session_screen", JSON.stringify({ session_id: before[1].id }), deps)
+  fleet[1].machineName = "Renamed"
+  const after = fleetRowsOf(fleet)
+  assert.equal(after[1].id, before[1].id)
+  assert.equal(after[1].machineName, "Renamed")
+  const fetch = deps.fetch
+  let refuse = true
+  deps.fetch = async (path, init) => {
+    if (init?.method === "POST" && refuse) { refuse = false; return new Response("", { status: 503 }) }
+    return fetch(path, init)
+  }
+  const args = JSON.stringify({ session_id: before[1].id, session_label: after[1].label, message: "check" })
+  assert.ok(JSON.parse((await runCopilotTool("send_message_to_session", args, deps)).output).error)
+  assert.equal(JSON.parse((await runCopilotTool("send_message_to_session", args, deps)).output).success, true)
+  assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b")
+})
+
+test("fleet decision selection and delayed open retries retain the second machine identity", async () => {
+  const { fleet, deps, calls, opened } = sameNameFleet()
+  const second = fleetRowsOf(fleet)[1]
+  deps.decide = async (_said, sessions) => {
+    assert.equal(sessions[1].id, second.id)
+    return { candidates: [second.id] }
+  }
+  const read = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"review","said":"the second one"}', deps)).output)
+  assert.equal(read.session_id, second.id)
+  assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b")
+  deps.decide = undefined
+  let snapshots = 0
+  deps.fleet = async () => ++snapshots === 1 ? [fleet[0]] : fleet
+  const waits: number[] = []
+  deps.sleep = async (ms) => { waits.push(ms) }
+  const out = JSON.parse((await runCopilotTool("open_session", JSON.stringify({ session_id: second.id }), deps)).output)
+  assert.equal(out.opened, true)
+  assert.equal(waits.length, 1)
+  assert.deepEqual(opened, [["%2", "machine-b"]])
+  assert.equal(deps.focus?.get(), second.id)
+})
+
+test("fleet selectors refuse legacy, malformed and ambiguous IDs without routing to the first row", async () => {
+  const { fleet, deps, calls, opened } = sameNameFleet()
+  const canonical = fleetRowsOf(fleet)[1].id
+  const invalid = ["%2@Office", "%2", "2", "Review（Office）", "fleet:machine-b:%2", canonical + ":extra"]
+  fleet.push({ ...fleet[1], row: { ...fleet[1].row, label: "Duplicate" } })
+  invalid.push(canonical, "Duplicate（Office）")
+  for (const session_id of invalid) {
+    for (const name of ["get_session_screen", "open_session", "send_message_to_session", "answer_session_question", "close_session", "run_snippet"]) {
+      const out = JSON.parse((await runCopilotTool(name, JSON.stringify({ session_id, session_label: "Review（Office）", message: "check", choice: "1", name: "Check" }), deps)).output)
+      assert.ok(out.error, `${name} refuses ${session_id}`)
+    }
+  }
+  // A model's decision must pass the same uniqueness check as a direct ID.
+  for (const decide of [async () => ({ id: canonical }), async () => ({ candidates: [canonical] })]) {
+    deps.decide = decide
+    const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"the second review","said":"review"}', deps)).output)
+    assert.ok(out.error)
+  }
+  assert.equal(calls.length, 0)
+  assert.equal(opened.length, 0)
+})
+
+test("fleet identity components cannot collide at separators and rows without machines are not routable", () => {
+  const rows = fleetRowsOf([
+    { machine: "b:c", machineName: "Office", row: { id: "a" } },
+    { machine: "c", machineName: "Office", row: { id: "a:b" } },
+    { machine: "", machineName: "Office", row: { id: "%2" } },
+  ])
+  assert.equal(rows.length, 2)
+  assert.notEqual(rows[0].id, rows[1].id)
+})
+
+test("duplicate local IDs and pane aliases cannot select a first row or fall through to a label", async () => {
+  const { deps, calls } = fakeMachine({})
+  const fetch = deps.fetch
+  const rows = [ROWS[1], { ...ROWS[1], label: "Other" }, { ...ROWS[2], label: "2" }]
+  deps.fetch = async (path, init) => path === "/v1/sessions" ? Response.json({ sessions: rows }) : fetch(path, init)
+  for (const session_id of ["%2", "2", "Other"]) {
+    assert.ok("error" in resolveSession(rows.map((row) => ({ ...row, work_state: row.work_state ?? "" })), session_id))
+    const out = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id, session_label: "Other", message: "check" }), deps)).output)
+    assert.ok(out.error)
+  }
+  assert.equal(calls.length, 0)
 })
 
 test("a Project's Dev Stack links are read by its whole name, said by state, and opened on request", async () => {

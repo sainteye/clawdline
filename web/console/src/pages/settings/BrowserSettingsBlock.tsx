@@ -107,7 +107,7 @@ function AuditEntry({ row }: { row: BrowserAuditRow }) {
   const op = OP_WORDS[row.op] ? nextWord(OP_WORDS[row.op]) : row.op
   let typed = ""
   if (row.op === "type") {
-    if (row.password) typed = nextWord("browserAuditPassword", { count: row.text_length ?? 0 })
+    if (row.password) typed = nextWord("browserAuditPrivateInput", { count: row.text_length ?? 0 })
     else if (row.text) typed = row.text
   }
   return <li className={row.ok ? "browser-audit-row" : "browser-audit-row refused"}>

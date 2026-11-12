@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11747,
-  "riskKeys": 5130,
-  "nonRiskCount": 6617,
+  "englishContentKeys": 11752,
+  "riskKeys": 5132,
+  "nonRiskCount": 6620,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 506,
+      "count": 508,
       "sources": [
         null
       ],
@@ -472,7 +472,9 @@
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
+        "capacityRow.browser.audit_text_characters.full",
         "capacityRow.browser.audit_text_characters.what",
+        "capacityRow.browser.close_receipt_bytes.what",
         "capacityRow.browser.command_arg_bytes.what",
         "capacityRow.browser.host_message_bytes.what",
         "capacityRow.browser.pending_commands.what",
@@ -3864,7 +3866,7 @@
     },
     {
       "name": "next / other",
-      "count": 979,
+      "count": 980,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3927,6 +3929,7 @@
         "next.browserAuditOpTakeover",
         "next.browserAuditOpType",
         "next.browserAuditPassword",
+        "next.browserAuditPrivateInput",
         "next.browserAuditSession",
         "next.browserAuditSite",
         "next.browserAuditTarget",
