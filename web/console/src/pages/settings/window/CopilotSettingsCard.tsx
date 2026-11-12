@@ -3,7 +3,7 @@ import { asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
 import { onMachineChanged } from "../../../cloud/machine-switch.js"
 import { NeedsUpdate } from "../../../machine/NeedsUpdate.js"
 import { nextWord } from "../../../next-strings.js"
-import { COPILOT_TOOLS, instructionsFor } from "../../../realtime/copilot-tools.js"
+import { COPILOT_TOOLS, instructionsFor, sessionUpdateEvent } from "../../../realtime/copilot-tools.js"
 import { getStoredOpenAIKey, previewVoice, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
 import { formatUSD } from "../../../realtime/copilot-cost.js"
 import { readCopilotSettings, writeCopilotSettings, type CopilotSettingsChange, type CopilotSettingsSnapshot } from "../api.js"
@@ -140,12 +140,22 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
           onPick={(picked) => { void change({ eagerness: picked }).catch(() => undefined) }} />
       </Row>
 
+      <Row label={nextWord("voiceWorkEnable")} hint={nextWord("voiceWorkEnableHint")}>
+        <Switch label={nextWord("voiceWorkEnable")} on={snapshot.work_enabled === true}
+          onChange={(on) => { void change({ work_enabled: on }).catch(() => undefined) }} />
+      </Row>
+      <Row label={nextWord("voiceWorkPlanner")}>
+        <PopUp label={nextWord("voiceWorkPlanner")} value={snapshot.work_assistant ?? snapshot.briefing_assistant}
+          options={[{value:"claude",label:nextWord("voiceWorkClaude")},{value:"codex",label:nextWord("voiceWorkCodex")}]}
+          onPick={(picked) => { void change({work_assistant:picked}).catch(() => undefined) }} />
+      </Row>
+      {snapshot.work_enabled ? <p className="sw-hint">{nextWord("voiceWorkBriefingReplaced")}</p> : null}
       <Row label={nextWord("copilotBriefingLabel")} hint={nextWord("copilotBriefingHint")}>
-        <Switch label={nextWord("copilotBriefingLabel")} on={snapshot.briefing}
+        <Switch label={nextWord("copilotBriefingLabel")} on={snapshot.briefing} disabled={snapshot.work_enabled}
           onChange={(on) => { void change({ briefing: on }).catch(() => undefined) }} />
       </Row>
       <Row label={nextWord("copilotBriefingAssistantLabel")}>
-        <PopUp label={nextWord("copilotBriefingAssistantLabel")} value={snapshot.briefing_assistant} disabled={!snapshot.briefing}
+        <PopUp label={nextWord("copilotBriefingAssistantLabel")} value={snapshot.briefing_assistant} disabled={!snapshot.briefing || snapshot.work_enabled}
           options={[
             { value: "claude", label: nextWord("copilotBriefingClaude") },
             { value: "codex", label: nextWord("copilotBriefingCodex") },
@@ -165,16 +175,16 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
       </div>
 
       <details className="sw-copilot-source">
-        <summary>{nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
-        <p className="sw-hint">{nextWord("copilotSourceHint")}</p>
+        <summary>{snapshot.work_enabled ? nextWord("voiceWorkManagedSource") : nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
+        <p className="sw-hint">{nextWord(snapshot.work_enabled ? "voiceWorkManagedSourceHint" : "copilotSourceHint")}</p>
         <h4>{nextWord("copilotSourceInstructions")}</h4>
-        <pre className="sw-copilot-pre">{instructionsFor(snapshot.brief !== false, document.documentElement.lang)}</pre>
-        <h4>{nextWord("copilotSourceTools")}</h4>
+        <pre className="sw-copilot-pre">{snapshot.work_enabled ? String((sessionUpdateEvent("","",{workEnabled:true}) as {session:{instructions:string}}).session.instructions) : instructionsFor(snapshot.brief !== false, document.documentElement.lang)}</pre>
+        {!snapshot.work_enabled ? <><h4>{nextWord("copilotSourceTools")}</h4>
         <ul className="sw-copilot-tools">
           {COPILOT_TOOLS.map((tool) => (
             <li key={tool.name}><code>{tool.name}</code><span>{tool.description}</span></li>
           ))}
-        </ul>
+        </ul></> : null}
       </details>
 
       {said ? <p className="sw-said sw-voice-saved" role="status">{said}</p> : null}

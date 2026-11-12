@@ -12,6 +12,11 @@ import (
 // stay the number its registration says.
 func TestTheVoiceCopilotConsoleBoundsMatchTheirRegistrations(t *testing.T) {
 	for _, c := range []struct{ file, constant, name string }{
+		{"../voice-work/engine.ts", "WORK_EXECUTION_MS", "voice.work_execution_milliseconds"},
+		{"../voice-work/engine.ts", "WORK_REQUEST_MS", "voice.work_request_milliseconds"},
+		{"../voice-work/engine.ts", "WORK_POLL_MS", "voice.work_poll_milliseconds"},
+		{"../voice-work/engine.ts", "WORK_HEARTBEAT_MS", "voice.work_heartbeat_milliseconds"},
+		{"../voice-work/engine.ts", "WORK_TEXT_RUNES", "voice.work_text_characters"},
 		{"copilot-memory.ts", "MEMORY_TURNS", "console.copilot_memory_turns"},
 		{"copilot-tools.ts", "LIST_LATEST_READS", "console.copilot_list_transcript_reads"},
 		{"copilot-tools.ts", "RECAP_PAGES", "console.copilot_recap_pages"},

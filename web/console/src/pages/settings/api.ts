@@ -223,6 +223,8 @@ async function callVoiceSettings(init: RequestInit): Promise<VoiceSettingsSnapsh
 
 /** Settings › Voice copilot, as `/v1/settings/copilot` answers it: never the key. */
 export interface CopilotSettingsSnapshot {
+  work_enabled?: boolean
+  work_assistant?: string
   key_set: boolean
   key_hint: string
   model: string
@@ -242,6 +244,8 @@ export interface CopilotSettingsSnapshot {
 }
 
 export interface CopilotSettingsChange {
+  work_enabled?: boolean
+  work_assistant?: string
   openai_key?: string
   model?: string
   eagerness?: string

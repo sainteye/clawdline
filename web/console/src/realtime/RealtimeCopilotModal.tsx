@@ -54,8 +54,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
 
   const openSettings = () => {
     onClose()
-    const row = document.querySelector<HTMLButtonElement>('#sidebar [data-page-to="settings"]')
-    if (row && !row.disabled) row.click()
+    location.hash = "#page=voice-assistant&tab=settings"
   }
 
   const handleHangup = () => {

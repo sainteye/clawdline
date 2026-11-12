@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11475,
-  "riskKeys": 5024,
-  "nonRiskCount": 6451,
+  "englishContentKeys": 11548,
+  "riskKeys": 5060,
+  "nonRiskCount": 6488,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 480,
+      "count": 485,
       "sources": [
         null
       ],
@@ -576,7 +576,6 @@
         "capacityRow.console.copilot_help_sections.full",
         "capacityRow.console.copilot_help_sections.what",
         "capacityRow.console.copilot_list_transcript_reads.full",
-        "capacityRow.console.copilot_list_transcript_reads.what",
         "capacityRow.console.copilot_memory_turns.full",
         "capacityRow.console.copilot_memory_turns.what",
         "capacityRow.console.copilot_orb_frames_per_second.full",
@@ -872,6 +871,12 @@
         "capacityRow.voice.vocabulary_project_terms.what",
         "capacityRow.voice.vocabulary_term_characters.what",
         "capacityRow.voice.vocabulary_terms.what",
+        "capacityRow.voice.work_execution_milliseconds.what",
+        "capacityRow.voice.work_parallel_reads.what",
+        "capacityRow.voice.work_records.what",
+        "capacityRow.voice.work_request_bytes.what",
+        "capacityRow.voice.work_request_milliseconds.what",
+        "capacityRow.voice.work_text_characters.what",
         "capacityRow.work.digests.what",
         "capacityRow.work.image_bytes.what",
         "capacityRow.work.image_request_body_bytes.what",
@@ -3838,7 +3843,7 @@
     },
     {
       "name": "next / other",
-      "count": 915,
+      "count": 946,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4756,6 +4761,37 @@
         "next.voiceStopping",
         "next.voiceTryPartial",
         "next.voiceWaitForAudio",
+        "next.voiceWorkBriefingReplaced",
+        "next.voiceWorkCancel",
+        "next.voiceWorkCancelRequested",
+        "next.voiceWorkClaude",
+        "next.voiceWorkCodex",
+        "next.voiceWorkConfirm",
+        "next.voiceWorkConfirmation",
+        "next.voiceWorkDepends",
+        "next.voiceWorkDetails",
+        "next.voiceWorkEnable",
+        "next.voiceWorkEnableReminder",
+        "next.voiceWorkHint",
+        "next.voiceWorkInput",
+        "next.voiceWorkList",
+        "next.voiceWorkLoading",
+        "next.voiceWorkManagedSource",
+        "next.voiceWorkPause",
+        "next.voiceWorkPaused",
+        "next.voiceWorkPlaceholder",
+        "next.voiceWorkPlanner",
+        "next.voiceWorkPlanning",
+        "next.voiceWorkQueued",
+        "next.voiceWorkReceive",
+        "next.voiceWorkResume",
+        "next.voiceWorkRunning",
+        "next.voiceWorkSaving",
+        "next.voiceWorkSettings",
+        "next.voiceWorkSettingsLink",
+        "next.voiceWorkSettingsMoved",
+        "next.voiceWorkTitle",
+        "next.voiceWorkUnknown",
         "next.workCreateItem",
         "next.worktreeRemoveClose"
       ]
@@ -6606,7 +6642,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 162,
+      "count": 163,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6737,6 +6773,7 @@
         "transparency.card.turn-todos.title",
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",
+        "transparency.card.voice-work.title",
         "transparency.claude",
         "transparency.codex",
         "transparency.common",

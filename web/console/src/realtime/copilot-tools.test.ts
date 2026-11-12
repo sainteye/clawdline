@@ -66,7 +66,7 @@ function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?
   return { deps, calls, sleeps }
 }
 
-test("list_sessions sorts Sessions by what they need and says what the busy ones are doing", async () => {
+test("list_sessions returns states and deliveries without reading transcripts", async () => {
   const { deps, calls } = fakeMachine({}, { transcripts: {
     "owned:acp:AAAA": { entries: [{ role: "user", text: "go" }, { role: "assistant", text: "Rewrote the invoice table; running the page tests." }] },
     "%7": { entries: [{ role: "assistant", text: "Twenty runs pass now. Should I push to main?" }] },
@@ -78,14 +78,14 @@ test("list_sessions sorts Sessions by what they need and says what the busy ones
   assert.deepEqual(out.needs_you.map((r: { id: string }) => r.id), ["%7"])
   assert.equal(out.needs_you[0].question, "Push to main?")
   assert.deepEqual(out.needs_you[0].options, ["1. Yes", "2. No"])
-  assert.equal(out.needs_you[0].latest, "Twenty runs pass now. Should I push to main?")
+  assert.equal(out.needs_you[0].latest, undefined)
   assert.deepEqual(out.working.map((r: { id: string }) => r.id), ["owned:acp:AAAA", "%9"])
   assert.equal(out.working[0].working_for, "10 分鐘")
-  assert.equal(out.working[0].latest, "Rewrote the invoice table; running the page tests.")
+  assert.equal(out.working[0].latest, undefined)
   assert.equal(out.working[1].latest, undefined, "an unreadable transcript leaves the row without a latest line")
   assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", delivered: "Captured six feature screenshots; abc123 is on main.", last_active: "5 分鐘前" }])
   const reads = calls.filter((c) => c.path.startsWith("/v1/transcript?"))
-  assert.equal(reads.length, 3)
+  assert.equal(reads.length, 0)
   for (const c of reads) assert.equal((c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
 })
 
@@ -786,7 +786,7 @@ test("idle and done Sessions are listed with a warning that their content was no
   const { deps } = fakeMachine({})
   const out = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
   assert.ok(out.idle.length > 0)
-  assert.equal(out.done_and_idle, CONTENT_NOT_READ)
+  assert.equal(out.content_not_read, CONTENT_NOT_READ)
 })
 
 test("an opened Session comes with what it did and what is left, for the copilot to tell", async () => {
@@ -1016,4 +1016,27 @@ test("a Clawdline help question is answered only from the guide's sections", asy
   assert.match(contents.next, /不要猜/)
   const read = JSON.parse((await runCopilotTool("clawdline_help", '{"question":"通知要怎麼開？","sections":["s1","s9"]}', deps)).output)
   assert.deepEqual(read.sections.map((s: { heading: string }) => s.heading), ["Turn notifications on"])
+})
+
+
+test("a transcript that never answers cannot delay the directory or opening snapshot", async () => {
+ const {deps,calls}=fakeMachine({})
+ const before=deps.fetch
+ deps.fetch=(path,init)=>path.startsWith('/v1/transcript?')?new Promise<Response>(()=>{}):before(path,init)
+ const timeout=AbortSignal.timeout(100)
+ const deadline=new Promise<never>((_,reject)=>timeout.addEventListener('abort',()=>reject(new Error('directory waited on a transcript'))))
+ const [list,snapshot]=await Promise.race([Promise.all([runCopilotTool('list_sessions','{}',deps),sessionsSnapshot(deps)]),deadline])
+ assert.ok(JSON.parse(list.output).working.length);assert.match(snapshot,/Refactor the billing page/)
+ assert.equal(calls.filter(c=>c.path.startsWith('/v1/transcript?')).length,0)
+})
+
+test("one prepared group member is available while another transcript is still pending", async () => {
+ const {deps}=fakeMachine({})
+ let slow!:()=>void;const waiting=new Promise<void>(r=>slow=r)
+ const before=deps.fetch;deps.fetch=async(path,init)=>{if(path.includes(encodeURIComponent('owned:acp:AAAA')))await waiting;return before(path,init)}
+ let ready!:()=>void;const prepared=new Promise<void>(r=>ready=r);const values:string[]=[]
+ deps.progress=async value=>{values.push(value);ready()}
+ let finished=false;const read=runCopilotTool('get_sessions_summary','{"which":"working"}',deps).then(x=>{finished=true;return x})
+ await prepared;assert.equal(finished,false);assert.ok(values.length)
+ slow();await read
 })

@@ -41,6 +41,8 @@ var generatedDecoders = map[string]genDecoder{
 	"copilot-session":                    genDecodeCopilotSession,
 	"copilot-settings":                   genDecodeCopilotSettings,
 	"copilot-settings-update":            genDecodeCopilotSettingsUpdate,
+	"copilot-work":                       genDecodeCopilotWork,
+	"copilot-work-update":                genDecodeCopilotWorkUpdate,
 	"default-models":                     genDecodeDefaultModels,
 	"default-models-update":              genDecodeDefaultModelsUpdate,
 	"diagnostics.events":                 genDecodeDiagnosticsEvents,
@@ -1083,7 +1085,7 @@ func genDecodeCopilotSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"brief": genRule{kind: "bool", nullable: true}, "briefing": genRule{kind: "bool", nullable: true}, "briefing_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "eagerness": genRule{kind: "string", enum: []string{"low", "auto", "high"}, nullable: true}, "extra_instructions": genRule{kind: "string", maxBytes: 8000, nullable: true}, "model": genRule{kind: "string", enum: []string{"gpt-realtime-mini", "gpt-realtime"}, nullable: true}, "openai_key": genRule{kind: "string", maxBytes: 400, nullable: true}, "speed": genRule{kind: "string", enum: []string{"0.8", "0.9", "1.0", "1.1"}, nullable: true}, "voice": genRule{kind: "string", enum: []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"}, nullable: true}}, closed: true, maxKeys: 9}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"brief": genRule{kind: "bool", nullable: true}, "briefing": genRule{kind: "bool", nullable: true}, "briefing_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "eagerness": genRule{kind: "string", enum: []string{"low", "auto", "high"}, nullable: true}, "extra_instructions": genRule{kind: "string", maxBytes: 8000, nullable: true}, "model": genRule{kind: "string", enum: []string{"gpt-realtime-mini", "gpt-realtime"}, nullable: true}, "openai_key": genRule{kind: "string", maxBytes: 400, nullable: true}, "speed": genRule{kind: "string", enum: []string{"0.8", "0.9", "1.0", "1.1"}, nullable: true}, "voice": genRule{kind: "string", enum: []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"}, nullable: true}, "work_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "work_enabled": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 11}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -1094,6 +1096,44 @@ func genDecodeCopilotSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("changes")
+	return p, req, true
+}
+
+// genDecodeCopilotWork is the `copilot-work` row's decode.
+func genDecodeCopilotWork(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-work"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeCopilotWorkUpdate is the `copilot-work-update` row's decode.
+func genDecodeCopilotWorkUpdate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session", "work"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("work", genRule{kind: "object", maxBytes: 65536}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-work"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("work")
 	return p, req, true
 }
 

@@ -46,6 +46,8 @@ export interface ToolLog {
 }
 
 export interface ToolDeps {
+  /** A prepared group member can be narrated while other reads continue. */
+  progress?: (value: string) => Promise<void>
   fetch: (input: string, init?: RequestInit) => Promise<Response>
   sleep: (ms: number) => Promise<void>
   /** A fresh key per send, so a retried POST is the same send to the machine. */
@@ -146,7 +148,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 全程台灣繁體中文。
 
 【工具】
-- list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，附 latest 最近一句進度）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
+- list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，未讀取逐字稿）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
 - get_sessions_summary：一群 Session 各自的摘要，依最近活動排序。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
 - get_session_summary：某個 Session 現在的摘要（最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」用這個。
 - get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
@@ -234,7 +236,7 @@ export const COPILOT_TOOLS = [
     type: 'function',
     name: 'list_sessions',
     description:
-      '查詢目前這台電腦上所有運作中或閒置的 Sessions 清單與狀態。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先主動呼叫此工具。',
+      '快速查詢所有 Sessions 的名稱、狀態及既有交付摘要；不讀逐字稿、不產生每個 Session 的摘要。要內容請用 get_session_summary 或 get_sessions_summary。當使用者詢問進度、有什麼任務在跑、或需要查看 session 時，必須優先主動呼叫此工具。',
     parameters: { type: 'object', properties: {} },
   },  {
     type: 'function',
@@ -537,6 +539,7 @@ export const COPILOT_TOOLS = [
  * tools or its instructions.
  */
 export interface CallOptions {
+  workEnabled?: boolean
   /** semantic_vad's eagerness: low (default), auto, high. */
   eagerness?: string
   /** The Realtime output voice; marin unless the machine says otherwise. */
@@ -631,7 +634,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [options.workEnabled ? "You are the voice assistant reporter. User utterances are saved and planned by a separate durable pipeline. Never execute tools or invent progress. Speak only when supplied with machine evidence, in the interface language." : instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -639,15 +642,15 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
           // Waits for the end of what the person means, not the first pause:
           // `server_vad` answered a mid-sentence breath. `low` is the most
           // patient of `semantic_vad`'s eagerness settings.
-          turn_detection: { type: 'semantic_vad', eagerness: EAGERNESS.includes(options.eagerness ?? '') ? options.eagerness : 'low', create_response: true, interrupt_response: true },
+          turn_detection: { type: 'semantic_vad', eagerness: EAGERNESS.includes(options.eagerness ?? '') ? options.eagerness : 'low', create_response: options.workEnabled !== true, interrupt_response: true },
         },
         output: {
           voice: VOICES.includes(options.voice ?? '') ? options.voice : VOICES[0],
           speed: SPEEDS.includes(options.speed ?? '') ? Number(options.speed) : DEFAULT_SPEED,
         },
       },
-      tools: COPILOT_TOOLS,
-      tool_choice: 'auto',
+      tools: options.workEnabled ? [] : COPILOT_TOOLS,
+      tool_choice: options.workEnabled ? 'none' : 'auto',
     },
   }
 }
@@ -841,7 +844,7 @@ async function refusalText(res: Response): Promise<string> {
   }
 }
 
-async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[] } | { error: string }> {
+export async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[] } | { error: string }> {
   // A page showing every machine hands its whole list over, each row with its
   // machine: on 2026-11-12 a phone on 所有機器 heard about one Linux Session
   // only, because /v1/sessions there is the one reading machine's list.
@@ -1091,7 +1094,11 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
     .filter((r) => which === 'all' || (which === 'working' ? busy(r) : !busy(r)))
     .sort((a, b) => lastMoved(b) - lastMoved(a))
   const shown = group.slice(0, LIST_LATEST_READS)
-  const progress = await Promise.all(shown.map((r) => latestWords(deps, r)))
+  const progress = await Promise.all(shown.map(async (r) => {
+    const words=await latestWords(deps,r)
+    if(deps.progress) await deps.progress(JSON.stringify({label:r.label,...progressFields(words)}))
+    return words
+  }))
   logs.push({ level: 'info', text: `讀了 ${shown.length} 個 Session 的摘要（共 ${group.length} 個）` })
   return {
     which,
@@ -1120,9 +1127,6 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const working = rows.filter((r) => !waits(r) && r.state === 'working')
   const done = rows.filter((r) => !waits(r) && r.state !== 'working' && r.work_state === 'milestone_complete')
   const idle = rows.filter((r) => !needs.includes(r) && !working.includes(r) && !done.includes(r))
-  const wanted = [...needs, ...working].slice(0, LIST_LATEST_READS)
-  const latest = new Map<string, Progress>()
-  await Promise.all(wanted.map(async (r) => latest.set(r.id, await latestWords(deps, r))))
   const brief = (r: CopilotSessionRow) => ({
     id: r.id, label: r.label, assistant: r.assistant,
     ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
@@ -1134,26 +1138,24 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
       ...brief(r),
       ...(r.question ? { question: r.question } : {}),
       ...(r.choices?.length ? { options: r.choices.map((c) => `${c.n}. ${c.label}`) } : r.options?.length ? { options: r.options } : {}),
-      ...progressFields(latest.get(r.id)),
     })),
     working: working.map((r) => ({
       ...brief(r),
       ...(workingFor(r.working_since, now) ? { working_for: workingFor(r.working_since, now) } : {}),
-      ...progressFields(latest.get(r.id)),
     })),
     done: done.map((r) => ({ ...brief(r), ...(whenPhrase(r.last_activity_at, now) ? { last_active: whenPhrase(r.last_activity_at, now) } : {}) })),
     idle: idle.map((r) => ({ ...brief(r), ...(whenPhrase(r.last_activity_at, now) ? { last_active: whenPhrase(r.last_activity_at, now) } : {}) })),
     // Read live with gpt-realtime-mini on 2026-11-12: asked what an idle
     // Session was doing, the copilot once invented its work from the name
     // alone. The warning sits beside the names it is about.
-    ...(done.length || idle.length ? { done_and_idle: CONTENT_NOT_READ } : {}),
+    content_not_read: CONTENT_NOT_READ,
   }
   logs.push({ level: 'info', text: `成功讀取 Sessions 清單：${out.summary}` })
   return out
 }
 
-/** Said beside the done and idle names, which carry no content of their own. */
-export const CONTENT_NOT_READ = 'done 與 idle 只有名稱和時間，沒有讀過內容。被問到它們在做什麼、做到哪、結果如何，一定先呼叫 get_session_summary，不可以從名稱猜'
+/** Every directory row is metadata; content requires an explicit read. */
+export const CONTENT_NOT_READ = '清單只有狀態、名稱、時間和既有交付摘要，未讀取逐字稿內容。被問到它們在做什麼、做到哪、結果如何，一定先呼叫 get_session_summary，不可以從名稱猜'
 
 /** A screen's text once its capture has arrived, or why it could not be had. */
 async function readScreen(deps: ToolDeps, row: CopilotSessionRow): Promise<{ text: string; attempt: number } | { error: string }> {

@@ -331,6 +331,8 @@ export type WriteRoute =
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
   | { op: "copilot-journal"; word: Carried<"copilot-journal"> }
+  | { op: "copilot-work"; word: Carried<"copilot-work"> }
+  | { op: "copilot-work-update"; word: Carried<"copilot-work-update"> }
   | { op: "notification-rules"; word: Carried<"notification-rules"> }
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
@@ -539,6 +541,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "archived",
   "machine-usage",
   "api-performance",
+  "copilot-work",
   "update",
   "update-fresh",
   "verification-read",
@@ -652,6 +655,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     // The dashboard behind the session counts: the machine's CPU and memory
     // and each session's share, on the machine's one reply channel.
+    if (head === "voice" && a === "copilot-work" && segments.length === 2) return { op: "copilot-work", word: "copilot-work" }
     if (head === "api-performance" && segments.length === 1) return { op: "api-performance", word: "api-performance" }
     if (head === "machine" && a === "usage" && segments.length === 2) {
       return { op: "machine-usage", word: "machine-usage" }
@@ -815,6 +819,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-decide" && segments.length === 2) {
     return { op: "copilot-decide", word: "copilot-decide" }
   }
+  if (head === "voice" && a === "copilot-work" && segments.length === 2) return { op: "copilot-work-update", word: "copilot-work-update" }
   if (head === "voice" && a === "copilot-journal" && segments.length === 2) {
     return { op: "copilot-journal", word: "copilot-journal" }
   }
@@ -1098,6 +1103,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-session":
     case "copilot-briefing":
     case "copilot-decide":
+    case "copilot-work":
+    case "copilot-work-update":
     case "copilot-journal":
     case "notification-rules":
     case "notification-rules-update":
@@ -2115,6 +2122,15 @@ export class RelayWriter {
         const sent = await bodyOf(init)
         const sessions = Array.isArray(sent.sessions) ? sent.sessions : []
         return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? ""), ...(sessions.length ? { sessions } : {}) } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+      }
+      case "copilot-work": {
+        if (url.search) throw failure("invalid_query", "Voice work has no query parameters.", 400)
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        return client._machineRequest(this.host.machine, route.word, {}, "read", undefined, {signal:init?.signal ?? undefined})
+      }
+      case "copilot-work-update": {
+        if (url.search) throw failure("invalid_query", "Voice work has no query parameters.", 400)
+        return this.machineWorkV2(client, route.word, {work:await bodyOf(init)}, headerOf(init,"idempotency-key"), this.host.machine)
       }
       case "copilot-journal": {
         // A call's lines for the journal of the machine that gave it its pass.

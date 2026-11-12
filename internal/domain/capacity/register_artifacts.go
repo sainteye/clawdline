@@ -4,6 +4,17 @@ package capacity
 // screens.* and voice.*: pictures, icons, screen captures and voice models.
 func artifactsBounds() []Entry {
 	return []Entry{
+		{Name: "voice.work_request_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 10000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		{Name: "voice.work_execution_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 120000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		{Name: "voice.work_poll_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 1000, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
+		{Name: "voice.work_heartbeat_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 30000, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
+		{Name: "voice.work_records", Class: Buffer, Unit: Rows, Limit: 256, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxRecords"}},
+		{Name: "voice.work_text_characters", Class: Buffer, Unit: Characters, Limit: 4000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxTextRunes"}},
+		{Name: "voice.work_state_bytes", Class: Buffer, Unit: Bytes, Limit: 2 << 20, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxStateBytes"}},
+		{Name: "voice.work_plan_inputs", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/voicework.MaxPlanInputs"}},
+		{Name: "voice.work_parallel_reads", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/voicework.MaxParallelReads"}},
+		{Name: "voice.work_lease_seconds", Class: Buffer, Unit: Seconds, Limit: 90, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/voicework.LeaseSecondsLimit"}},
+		{Name: "voice.work_request_bytes", Class: Buffer, Unit: Bytes, Limit: 65536, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxRequestBytes"}},
 		{Name: "artifacts.output_files", Class: Buffer, Unit: Rows, Limit: 200, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumFiles"}},
 		{Name: "artifacts.output_index_bytes", Class: Buffer, Unit: Bytes, Limit: 2097152, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumIndexBytes"}},
 		{Name: "artifacts.output_path_bytes", Class: Buffer, Unit: Bytes, Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/sessionfiles.MaximumPathBytes"}},

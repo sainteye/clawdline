@@ -2584,6 +2584,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/sessions/s1/skills", "skills"],
     // Settings › Voice copilot (pages/settings/window/CopilotSettingsCard.tsx).
     ["/v1/settings/copilot", "copilot-settings"],
+    ["/v1/voice/copilot-work", "copilot-work"],
   ]
   for (const [path, op] of reads) {
     const route = writeRoute("GET", path)
@@ -3317,4 +3318,15 @@ test("on a page showing every machine, the copilot reads a Session on the machin
   assert.deepEqual(asked, ["box-b", "box-b"])
   // Without the machine the reading one is asked, which has no such Session.
   assert.equal((await reader.fetch("/v1/transcript?session=%252", { headers: { "X-Clawdline-Unopened-Read": "1" } })).status, 409)
+})
+
+
+test("voice work reads and writes stay on the selected machine and keep their own bodies", async () => {
+ const client=new FakeClient();const {reader}=seam(client)
+ assert.equal((await reader.fetch("/v1/voice/copilot-work")).status,200)
+ assert.deepEqual(client.calls.pop(),["_machineRequest","mac-a","copilot-work",{},"read"])
+ const work={action:"input",id:"utterance-one",text:"List Sessions"}
+ assert.equal((await reader.fetch("/v1/voice/copilot-work",post(work))).status,200)
+ assert.deepEqual(client.calls.pop(),["_machineRequest","mac-a","copilot-work-update",{work},"action"])
+ assert.equal((await reader.fetch("/v1/voice/copilot-work?other=1")).status,400)
 })
