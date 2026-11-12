@@ -55,7 +55,7 @@ const WORDS = {
         ['user', 'No complaints after two days. Roll it out to everyone and delete the old search.', 4000], ['report', '{searchDelivered}', 3000],
         ['assistant', 'Done. New search is at 100%, the flag is removed, and the old SQL search code and its tests are deleted (1,240 lines).', 3000]],
     },
-    // What each voice says: [voice, words]. The copilot is marin, the person cedar.
+    // What each voice says: [voice, words]. The copilot is marin; the person is cedar here and ash in Chinese.
     lines: {
       c0: ['marin', 'Hi! I can tell you how every Session on this machine is doing.'],
       p1: ['cedar', "What's going on right now?"],
@@ -71,6 +71,8 @@ const WORDS = {
       p6: ['cedar', "Perfect, that's all for now."],
       c6: ['marin', 'Sounds good. Talk soon!'],
     },
+    // How much faster than spoken each voice is played (voices.mjs applies it).
+    tempo: 1,
     voiceStyle: {
       marin: 'You are a friendly, calm voice assistant on a phone call, reporting to a colleague. Natural, warm, conversational American English; clear but not slow; never sound like a narrator.',
       cedar: 'You are a software engineer talking casually to your assistant on a call. Relaxed, natural American English.',
@@ -111,22 +113,25 @@ const WORDS = {
     },
     lines: {
       c0: ['marin', '嗨，我可以跟你報告這台電腦上每個 Session 的狀況。'],
-      p1: ['cedar', '現在狀況怎麼樣？'],
+      p1: ['ash', '現在狀況怎麼樣？'],
       c1: ['marin', '有兩件事要你處理。結帳改版已經做完，在問要不要現在合併到 main。2.4 版發布有三個 iPad 測試沒過，在問要先略過還是先修好。金流 Webhook 還在做重試。'],
-      pS: ['cedar', '打開搜尋重建，跟我講它做了哪些事。'],
+      pS: ['ash', '打開搜尋重建，跟我講它做了哪些事。'],
       cS: ['marin', '一開始，它把很慢的 SQL 搜尋換成 Meilisearch。接著建好索引同步，又加上錯字容忍，還有尺寸跟顏色的篩選。後來壓力測試顯示，搜尋從 1.8 秒降到 120 毫秒，所以先用功能開關開給一成的顧客。最後全面上線，舊的搜尋程式也刪掉了。'],
-      p2o: ['cedar', '幫我打開 2.4 版發布。'],
+      p2o: ['ash', '幫我打開 2.4 版發布。'],
       c5: ['marin', '2.4 版發布已經打開了。'],
-      p3o: ['cedar', '跟它說先把 iPad 測試修好，不要略過。'],
+      p3o: ['ash', '跟它說先把 iPad 測試修好，不要略過。'],
       c3: ['marin', '我會傳給 2.4 版發布：先把三個 iPad UI 測試修好，不要略過。要送出嗎？'],
-      p4: ['cedar', '好，送出。'],
+      p4: ['ash', '好，送出。'],
       c4: ['marin', '送出了，2.4 版發布已經開始處理。'],
-      p6: ['cedar', '很好，先這樣。'],
+      p6: ['ash', '很好，先這樣。'],
       c6: ['marin', '好，有事再找我！'],
     },
+    // Spoken Chinese came out about 4.1 characters a second, slower than talk;
+    // asking for a quicker pace made it slower still, so it is played faster.
+    tempo: 1.15,
     voiceStyle: {
-      marin: '你是語音助理，在電話裡跟熟悉的同事報告。用台灣口音的自然口語中文，語氣親切、從容、清楚，不要播音腔，也不要太慢。',
-      cedar: '你是一位台灣的軟體工程師，在電話裡隨口跟助理講話。台灣口音、自然、放鬆、口語。',
+      marin: '你是語音助理，正在電話裡跟很熟的同事聊工作進度。用台灣人日常講話的口氣：輕鬆、自然、有溫度，帶一點笑意，句尾可以自然上揚或放軟；語速偏快、節奏流暢，像真人聊天，不要一字一字唸，也不要播音腔或念稿感。',
+      ash: '你是一位台灣的工程師，在電話裡隨口交代助理事情。口氣隨性、放鬆、自然，語速正常偏快，像平常講話。',
     },
   },
 }
