@@ -37,6 +37,17 @@ export const CARRIED = {
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",
+  // Take over a Session's Chrome tab, or hand it back.
+  "chrome-tab-control": "POST /v1/browser/control",
+  // A tap, typed text, a key or a scroll on a tab the person has taken over;
+  // the daemon refuses it otherwise.
+  "chrome-tab-input": "POST /v1/browser/person",
+  // One picture of the Session's Chrome tab, asked about once a second while
+  // the panel is open.
+  "chrome-tab-screenshot": "GET /v1/browser/screenshot",
+  // The Chrome tab panel (`session/BrowserPanel.tsx`): which Session uses which
+  // tab, and whether the person has taken one over.
+  "chrome-tab-status": "GET /v1/browser/status",
   "codegraph-guidance": "POST /v1/sessions/{id}/codegraph-guidance",
   "coordination.leases": "GET /v1/orchestrator/leases",
   "coordination.pauses": "GET /v1/orchestrator/pauses",

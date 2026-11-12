@@ -1,0 +1,32 @@
+/* The Session's Chrome tab (BrowserPanel.tsx), drawn in the console's tokens. */
+
+.browser-stage { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.browser-address {
+  font-size: 12px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The whole page stays in view: as wide as the panel allows, never taller
+   than the space above the controls, and never stretched (a tap is mapped
+   through the picture's own box, so its aspect must be the page's). */
+.browser-shot {
+  display: block; align-self: center;
+  width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 420px); min-height: 120px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: #fff;
+}
+.browser-shot[data-person="true"] { cursor: crosshair; outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.browser-controls {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-top: 1px solid var(--line); background: var(--card);
+}
+.browser-who { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--dim); }
+.browser-who[data-person="true"] { color: var(--ink); }
+.browser-controls .chip { min-height: 44px; padding: 0 14px; }
+.browser-primary { background: var(--accent); border-color: var(--accent); color: #141413; font-weight: 600; }
+.browser-type { display: flex; gap: 8px; }
+.browser-type input {
+  flex: 1; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit;
+}
+.browser-keys { display: flex; flex-wrap: wrap; gap: 8px; }

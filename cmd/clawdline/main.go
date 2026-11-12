@@ -110,6 +110,10 @@ func main() {
 		serve()
 	case "codegraph":
 		codegraphCommand(os.Args[2:])
+	case "browser":
+		browserCommand(os.Args[2:])
+	case "browser-host":
+		browserHostCommand()
 	case "doctor":
 		if len(os.Args) > 2 && os.Args[2] == "capacity" {
 			capacityCommand(os.Args[3:])

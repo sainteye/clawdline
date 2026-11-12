@@ -71,6 +71,8 @@ var settingKeys = map[string]struct {
 		takes: "a number of tokens from 50000 to 1000000, or off",
 	},
 	"planning_gate":                 {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"browser_enabled":               {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"browser_notify_new_site":       {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 	"verify_gate":                   {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 	"update_auto_apply":             {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 	"push_on_deploy":                {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},

@@ -2301,7 +2301,7 @@
         },
         {
           "path": "internal/adapters/nextconfig/nextconfig.go",
-          "line": 663
+          "line": 667
         }
       ],
       "original": [],
@@ -2351,7 +2351,7 @@
         },
         {
           "path": "cmd/clawdline/main.go",
-          "line": 326
+          "line": 330
         },
         {
           "path": "internal/adapters/projects/launch.go",
@@ -3167,7 +3167,7 @@
         },
         {
           "path": "web/console/src/next-strings.ts",
-          "line": 17
+          "line": 36
         },
         {
           "path": "internal/transport/http/session_rotation.go",
@@ -3257,7 +3257,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "fd476f8f7efe3c725d9aae1072c330e9039e49a7c3dde9e66197d3cb8d194fb7",
+    "cmd/clawdline/main.go": "6eb0044c3777d91957f07a0fac4df5d887b05109852fbacc50bdfa2f0f927c87",
     "cmd/clawdline/session.go": "cafde1e2256317a25731543da5579b293cc47a83e48f0ff9c98fbf46309e283b",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3284,7 +3284,7 @@
     "internal/adapters/codegraph/source-types.json": "287697b047382abca0e03a1dfa07ae8c0848e8efc8c991a7eec0cf10a0367731",
     "internal/adapters/codegraph/view.go": "06e470cce95ba9f95553d4f618e53df5157479832f5ec50dfa2617ebe55c9289",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
-    "internal/adapters/nextconfig/nextconfig.go": "6ad923c49a050feeb7796acf3bb5050f00458ee1382e2175f9a2eb2183e2ad7e",
+    "internal/adapters/nextconfig/nextconfig.go": "75c732da333f468857e4705bd66c24309e2748fcc3740c6f56ace2d67958c4bb",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
@@ -3364,9 +3364,9 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
-    "web/console/src/cloud/relay-writer.ts": "198bad72d260e0fdb351b3b249b3d6a69c4dabe8bcd336cc5133458b2e145e7a",
+    "web/console/src/cloud/relay-writer.ts": "beb8a12f4f73f8529e535edb7a45556206e0b7f8a8cf341783007470e02eb5fc",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "8d8099bdf1dbd2ce003b20d9e98820b82c2bc3b69896c7dd533c51161754028f",
+    "web/console/src/next-strings.ts": "b9c25b1ef7d5a5e4455d4650b6247ec384d190f922a9eda0cc78f873a2a10074",
     "web/console/src/overlays/info.ts": "afee5b67146a062576bef9a06e2531329d275899e5d4a23965ee2e419c9d8c30",
     "web/console/src/session/Composer.tsx": "7bba0e78b8295c16bbad0542415b38977767e3d835bf1284b753909aa982489f",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",

@@ -1049,6 +1049,25 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-integrations-write", method: "POST", path: "/v1/settings/integrations",
 		body2: `{"codegraph_enabled":false,"workflow_skills_enabled":true}`,
 	}, {
+		word:    "chrome-tab-status",
+		body:    map[string]any{"type": "chrome-tab-status", "session": machine, "request": "req-chrome-status"},
+		session: machine, name: "read:req-chrome-status", method: "GET", path: "/v1/browser/status",
+	}, {
+		word:    "chrome-tab-screenshot",
+		body:    map[string]any{"type": "chrome-tab-screenshot", "session": machine, "request": "req-chrome-shot", "tab": "9", "quality": "45"},
+		session: machine, name: "read:req-chrome-shot", method: "GET", path: "/v1/browser/screenshot",
+		query: map[string]string{"tab": "9", "quality": "45"},
+	}, {
+		word:    "chrome-tab-input",
+		body:    map[string]any{"type": "chrome-tab-input", "session": machine, "request": "req-chrome-input", "op": "type", "tab": 9, "args": map[string]any{"text": "王小明"}},
+		session: machine, name: "action:req-chrome-input", method: "POST", path: "/v1/browser/person",
+		body2: `{"args":{"text":"王小明"},"op":"type","tab":9}`,
+	}, {
+		word:    "chrome-tab-control",
+		body:    map[string]any{"type": "chrome-tab-control", "session": machine, "request": "req-chrome-control", "tab": 9, "person": true},
+		session: machine, name: "action:req-chrome-control", method: "POST", path: "/v1/browser/control",
+		body2: `{"person":true,"tab":9}`,
+	}, {
 		word:    "github-connection",
 		body:    map[string]any{"type": "github-connection", "session": machine, "request": "req-gh"},
 		session: machine, name: "read:req-gh", method: "GET", path: "/v1/integrations/github",

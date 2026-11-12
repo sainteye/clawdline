@@ -13,6 +13,7 @@ var capacityMeasureAreas = []struct {
 	{"artifacts", (*Server).artifactsCapacityMeasures},
 	{"board", (*Server).boardCapacityMeasures},
 	{"broker", (*Server).brokerCapacityMeasures},
+	{"browser", (*Server).browserCapacityMeasures},
 	{"cache", (*Server).cacheCapacityMeasures},
 	{"callback", (*Server).callbackCapacityMeasures},
 	{"cloud", (*Server).cloudCapacityMeasures},

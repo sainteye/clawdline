@@ -39,6 +39,7 @@ import { MenuHandoffNotice } from "./MenuHandoffNotice.js"
 import { menuHandoffDelay, unreadMenuSeen, type UnreadMenu } from "./menu-handoff.js"
 import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
+import { BrowserPanel } from "./BrowserPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
 import { StatusLine } from "./StatusLine.js"
@@ -190,6 +191,7 @@ export function Detail({
     return () => window.removeEventListener("hashchange", follow)
   }, [outputIdentity, row?.id])
   const [screenOpen, setScreenOpen] = useState(false)
+  const [browserOpen, setBrowserOpen] = useState(false)
   const [nativeTerminalOpen,setNativeTerminalOpen] = useState(false)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
   const [toolOpen, setToolOpen] = useState(false)
@@ -200,6 +202,7 @@ export function Detail({
   // terminal that was being watched (`followTerminal`).
   useEffect(() => {
     setScreenOpen(false)
+    setBrowserOpen(false)
     setNativeTerminalOpen(false)
   }, [row?.id,row?.execution_generation])
 
@@ -331,7 +334,7 @@ export function Detail({
     <DetailPane
       id="pane-detail"
       data-agent-view={selectedAgent ? "on" : undefined}
-      data-panel={nativeTerminalOpen ? "native-terminal" : screenOpen ? "screen" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
+      data-panel={nativeTerminalOpen ? "native-terminal" : screenOpen ? "screen" : browserOpen ? "browser" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
     >
       {selectedAgent ? (
         <AgentHead
@@ -429,7 +432,8 @@ export function Detail({
             onDid={onDid}
             triggerRef={actionsTrigger}
             onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}}
-            onScreen={() => {setNativeTerminalOpen(false);setScreenOpen(true)}}
+            onScreen={() => {setNativeTerminalOpen(false);setBrowserOpen(false);setScreenOpen(true)}}
+            onBrowser={() => {setNativeTerminalOpen(false);setScreenOpen(false);setGitOpen(false);setShellOpen(null);setBrowserOpen(true)}}
             onOpenGit={() => setGitOpen(true)}
             onSuggestions={requestSnippets}
             onTools={() => setToolOpen(true)}
@@ -455,6 +459,16 @@ export function Detail({
         }}
       />
 
+      <BrowserPanel
+        row={row}
+        open={browserOpen}
+        onClose={(restore) => {
+          setBrowserOpen(false)
+          if (restore && !actionsTrigger.current?.disabled) {
+            actionsTrigger.current?.focus({ preventScroll: true })
+          }
+        }}
+      />
       <GitPanel row={row} open={gitOpen} onClose={closeGit} />
       <ShellPanel
         row={row}
@@ -649,6 +663,7 @@ function Tools({
   onDid,
   triggerRef,
   onScreen,
+  onBrowser,
   onNativeTerminal,
   onOpenGit,
   onSuggestions,
@@ -660,6 +675,7 @@ function Tools({
   onDid: () => void
   triggerRef: RefObject<HTMLButtonElement | null>
   onScreen: () => void
+  onBrowser: () => void
   onNativeTerminal: () => void
   onOpenGit: () => void
   onSuggestions: () => void
@@ -981,6 +997,19 @@ function Tools({
                 }}
               >
                 {T.webSessionScreen}
+              </button>
+              <button
+                id="session-browser"
+                hidden={!row?.sessionId}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  onBrowser()
+                }}
+              >
+                {nextWord("browserPanelMenu")}
               </button>
               <button
                 id="session-more"

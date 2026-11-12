@@ -2541,6 +2541,8 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/usage/sessions/s1", "usage"],
     ["/v1/capacity", "capacity"],
     ["/v1/provider-quotas", "provider-quotas"],
+    ["/v1/browser/status", "chrome-tab-status"],
+    ["/v1/browser/screenshot", "chrome-tab-screenshot"],
     ["/v1/doctor", "doctor"],
     ["/v1/settings/default-models", "default-models"],
     ["/v1/settings/voice", "voice-settings"],

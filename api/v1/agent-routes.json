@@ -775,6 +775,51 @@
       "method": "*",
       "pattern": "/v1/orchestrator/codegraph/query",
       "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/audit",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/commands",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/control",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/host/poll",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/host/results",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/status",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/stop",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/person",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/screenshot",
+      "guide": "connect"
     }
   ]
 }
