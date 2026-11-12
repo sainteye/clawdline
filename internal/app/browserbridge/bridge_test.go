@@ -293,6 +293,34 @@ func TestThePersonActsOnlyOnATabTheyTookOver(t *testing.T) {
 	}
 }
 
+func TestViewportChangesRespectTheControlOwnerAndOnlyAcceptPresets(t *testing.T) {
+	b, ctx := connected(t)
+	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, OK: true, Tab: c.Tab, Value: json.RawMessage(`{}`)} })
+	args := json.RawMessage(`{"mode":"mobile"}`)
+	if _, err := b.PersonDo(ctx, "viewport", 5, args); err != NotTakenOver {
+		t.Fatalf("before takeover: %v", err)
+	}
+	b.SetPersonControl(5, true)
+	if _, err := b.PersonDo(ctx, "viewport", 5, args); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Do(ctx, "c1", "viewport", json.RawMessage(`{"tab":5,"mode":"desktop"}`)); err != PersonControlling {
+		t.Fatalf("agent during takeover: %v", err)
+	}
+	b.SetPersonControl(5, false)
+	if _, err := b.Do(ctx, "c1", "viewport", json.RawMessage(`{"tab":5,"mode":"desktop"}`)); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []json.RawMessage{nil, json.RawMessage(`{"mode":"unknown"}`), json.RawMessage(`{"width":999999}`)} {
+		if _, err := b.Do(ctx, "c1", "viewport", bad); err != BadRequest {
+			t.Fatalf("bad agent preset %s: %v", bad, err)
+		}
+		if _, err := b.PersonDo(ctx, "viewport", 5, bad); err != BadRequest {
+			t.Fatalf("bad person preset %s: %v", bad, err)
+		}
+	}
+}
+
 func TestASecretHandoffIsNeverAudited(t *testing.T) {
 	b, ctx := connected(t)
 	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, OK: true, Tab: 2, URL: "https://example.com/login"} })

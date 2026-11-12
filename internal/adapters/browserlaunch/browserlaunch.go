@@ -17,7 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/sainteye/clawdline/extension"
@@ -57,21 +57,39 @@ func PlaywrightChromium() string {
 	if err != nil {
 		return ""
 	}
-	var pattern string
+	var cache string
 	switch runtime.GOOS {
 	case "darwin":
-		pattern = filepath.Join(home, "Library", "Caches", "ms-playwright", "chromium-*", "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium")
+		cache = filepath.Join(home, "Library", "Caches", "ms-playwright")
 	case "linux":
-		pattern = filepath.Join(home, ".cache", "ms-playwright", "chromium-*", "chrome-linux", "chrome")
+		cache = filepath.Join(home, ".cache", "ms-playwright")
 	default:
 		return ""
 	}
-	found, _ := filepath.Glob(pattern)
-	sort.Strings(found)
-	if len(found) == 0 {
-		return ""
+	return playwrightChromium(cache, runtime.GOOS)
+}
+
+func playwrightChromium(cache, platform string) string {
+	layouts := []string{"chrome-linux/chrome", "chrome-linux64/chrome"}
+	if platform == "darwin" {
+		layouts = []string{"chrome-mac/Chromium.app/Contents/MacOS/Chromium", "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing", "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"}
 	}
-	return found[len(found)-1]
+	installed, _ := filepath.Glob(filepath.Join(cache, "chromium-*"))
+	newest, found := -1, ""
+	for _, directory := range installed {
+		revision, err := strconv.Atoi(strings.TrimPrefix(filepath.Base(directory), "chromium-"))
+		if err != nil || revision <= newest {
+			continue
+		}
+		for _, layout := range layouts {
+			file := filepath.Join(directory, filepath.FromSlash(layout))
+			if info, err := os.Stat(file); err == nil && info.Mode().IsRegular() {
+				newest, found = revision, file
+				break
+			}
+		}
+	}
+	return found
 }
 
 // Running reports whether a Chromium holds the profile now. Chromium keeps a

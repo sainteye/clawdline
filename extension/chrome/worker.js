@@ -16,6 +16,7 @@ const LOAD_WAIT_MS = 15000
 let port = null
 let state = { host: "connecting", daemon: "unknown", since: Date.now() }
 const attached = new Set()
+const layouts = new Map()
 
 function setState(next) {
   state = { ...state, ...next, since: Date.now() }
@@ -129,8 +130,8 @@ async function thumb(tabId) {
   }
 }
 
-chrome.debugger.onDetach.addListener((source) => attached.delete(source.tabId))
-chrome.tabs.onRemoved.addListener((tabId) => attached.delete(tabId))
+chrome.debugger.onDetach.addListener((source) => { attached.delete(source.tabId); layouts.delete(source.tabId) })
+chrome.tabs.onRemoved.addListener((tabId) => { attached.delete(tabId); layouts.delete(tabId) })
 
 const cdp = (tabId, method, params = {}) => chrome.debugger.sendCommand({ tabId }, method, params)
 
@@ -199,6 +200,22 @@ async function run(c) {
   }
   await ensureAttached(tab)
   switch (c.op) {
+    case "viewport": {
+      if (a.mode !== "mobile" && a.mode !== "desktop") throw new Error("use mobile or desktop")
+      const mobile = a.mode === "mobile"
+      if (mobile) {
+        const userAgent = await evaluate(tab, () => navigator.userAgent)
+        await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android" })
+        await cdp(tab, "Emulation.setDeviceMetricsOverride", { width: 390, height: 720, deviceScaleFactor: 1, mobile: true })
+      } else {
+        await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: "" })
+        await cdp(tab, "Emulation.clearDeviceMetricsOverride")
+      }
+      await cdp(tab, "Emulation.setTouchEmulationEnabled", { enabled: mobile })
+      layouts.set(tab, a.mode)
+      await new Promise((r) => setTimeout(r, 250))
+      return { tab, url: await tabURL(tab), target: a.mode, thumb: c.person ? undefined : await thumb(tab), value: { tab, mode: a.mode } }
+    }
     case "read": {
       const page = await evaluate(tab, readPage, TEXT_LIMIT, ELEMENT_LIMIT)
       return { tab, url: page.url, value: { tab, ...page } }
@@ -242,7 +259,7 @@ async function run(c) {
       const quality = Number.isFinite(a.quality) ? Math.max(20, Math.min(80, a.quality)) : 60
       const shot = await cdp(tab, "Page.captureScreenshot", { format: "jpeg", quality })
       const t = await chrome.tabs.get(tab)
-      return { tab, url: t.url || "", value: { tab, url: t.url || "", title: t.title || "", width, height, data: shot.data } }
+      return { tab, url: t.url || "", value: { tab, url: t.url || "", title: t.title || "", width, height, layout: layouts.get(tab) || "desktop", data: shot.data } }
     }
   }
   throw new Error(`unknown command ${c.op}`)

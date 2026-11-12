@@ -62,6 +62,36 @@ func TestAChromiumNamedWinsOverTheEnvironment(t *testing.T) {
 	}
 }
 
+func TestTheNewestInstalledBrowserIsFoundInBothPlaywrightLayouts(t *testing.T) {
+	for _, fixture := range []struct{ platform, old, current string }{
+		{"darwin", "chrome-mac/Chromium.app/Contents/MacOS/Chromium", "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"},
+		{"darwin", "chrome-mac/Chromium.app/Contents/MacOS/Chromium", "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"},
+		{"linux", "chrome-linux/chrome", "chrome-linux64/chrome"},
+	} {
+		t.Run(fixture.platform+fixture.current, func(t *testing.T) {
+			cache := t.TempDir()
+			write := func(revision, name string) string {
+				file := filepath.Join(cache, "chromium-"+revision, filepath.FromSlash(name))
+				if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(file, []byte("browser"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return file
+			}
+			old := write("999", fixture.old)
+			if got := playwrightChromium(cache, fixture.platform); got != old {
+				t.Fatalf("existing layout: %s, want %s", got, old)
+			}
+			current := write("1254", fixture.current)
+			if got := playwrightChromium(cache, fixture.platform); got != current {
+				t.Fatalf("newest download: %s, want %s", got, current)
+			}
+		})
+	}
+}
+
 // The daemon runs from a versioned release directory an update replaces; the
 // launcher Chrome keeps must name the stable binary when there is one.
 func TestTheLauncherNamesTheStableBinaryWhenItExists(t *testing.T) {

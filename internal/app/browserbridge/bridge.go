@@ -72,7 +72,7 @@ func (r Refusal) Error() string { return string(r) }
 // Ops an agent may send. Each is executed by the extension.
 var agentOps = map[string]bool{
 	"open": true, "tabs": true, "read": true, "click": true, "type": true,
-	"key": true, "screenshot": true, "scroll": true, "release": true,
+	"key": true, "screenshot": true, "scroll": true, "release": true, "viewport": true,
 }
 
 // Command is one request handed to the host.
@@ -338,7 +338,7 @@ func (b *Bridge) SetPersonControl(tab int, on bool) error {
 
 // personOps are what a person's own device may send to a tab: looking at it
 // at any time, and acting on it only while they have taken it over.
-var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true}
+var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true, "viewport": true}
 
 // NotTakenOver is a person's input to a tab they have not taken over.
 const NotTakenOver Refusal = "browser_take_over_first"
@@ -348,6 +348,9 @@ const NotTakenOver Refusal = "browser_take_over_first"
 // person types is never recorded.
 func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.RawMessage) (json.RawMessage, error) {
 	if !personOps[op] || tab <= 0 || len(args) > MaxArgBytes {
+		return nil, BadRequest
+	}
+	if op == "viewport" && !validViewport(args) {
 		return nil, BadRequest
 	}
 	b.mu.Lock()
@@ -471,6 +474,9 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		Secret bool   `json:"secret"`
 	}
 	if len(args) > 0 && json.Unmarshal(args, &a) != nil {
+		return nil, BadRequest
+	}
+	if op == "viewport" && !validViewport(args) {
 		return nil, BadRequest
 	}
 	tab := a.Tab

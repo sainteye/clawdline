@@ -1501,11 +1501,13 @@ clawdline browser click <label>        # or --x <x> --y <y>
 clawdline browser type <text>
 clawdline browser key <name>
 clawdline browser scroll
+clawdline browser viewport mobile
 clawdline browser screenshot
 clawdline browser release
 clawdline browser --help
 ```
 
+- `viewport mobile` switches to a responsive phone layout; `viewport desktop` restores the window layout.
 - Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
   see the layout.
 - `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.

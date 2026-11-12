@@ -33,6 +33,7 @@ type Range = "today" | "week" | "all"
 type SettingKey = keyof ChromeSettings
 
 const OP_WORDS: Record<string, NextWord> = {
+  viewport: "browserOpViewport",
   open: "browserAuditOpOpen", read: "browserAuditOpRead", click: "browserAuditOpClick", type: "browserAuditOpType",
   key: "browserAuditOpKey", scroll: "browserAuditOpScroll", screenshot: "browserAuditOpScreenshot",
   takeover: "browserAuditOpTakeover", handback: "browserAuditOpHandback", release: "browserAuditOpRelease",
@@ -117,7 +118,7 @@ function AuditEntry({ row }: { row: BrowserAuditRow }) {
       <span className="browser-audit-host">{where.host || row.site}</span>
       {where.path && <span className="browser-audit-path">{where.path}</span>}
     </div>}
-    {row.target && <div className="browser-audit-target">{nextWord("browserAuditTarget", { target: row.target })}</div>}
+    {row.target && <div className="browser-audit-target">{nextWord("browserAuditTarget", { target: row.op === "viewport" && (row.target === "mobile" || row.target === "desktop") ? nextWord(row.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : row.target })}</div>}
     {typed && <div className={row.password ? "browser-audit-typed secret" : "browser-audit-typed"}>{typed}</div>}
     {typed && row.text_cut && !row.password && <div className="browser-audit-cut">{nextWord("browserAuditCut")}</div>}
     {!row.ok && row.error && <div className="browser-audit-error">{nextWord("browserAuditRefused", { reason: whyNot(row.error) })}</div>}

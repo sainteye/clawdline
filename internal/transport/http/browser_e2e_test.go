@@ -1,10 +1,12 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"image/jpeg"
 	"net"
 	"net/http"
 	"os"
@@ -65,12 +67,12 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 	pages := http.NewServeMux()
 	pages.HandleFunc("/form", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(`<!doctype html><meta charset=utf-8><title>Form</title><body style="font:16px system-ui;margin:40px">
+		w.Write([]byte(`<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Form</title><body style="font:16px system-ui;margin:40px">
 <h1>Sign in to the test site</h1>
 <label>Name <input id=name aria-label="Name"></label><br><br>
 <label>Password <input id=pw type=password aria-label="Password"></label><br><br>
 <button id=go onclick="document.getElementById('out').textContent='Hello, '+document.getElementById('name').value">Continue</button>
-<input type=password value="synthetic-unlabelled-password"><input placeholder="Code" value="synthetic-unlabelled-code"><p id=out></p></body>`))
+<input type=password value="synthetic-unlabelled-password"><input placeholder="Code" value="synthetic-unlabelled-code"><p id=out></p><p id=layout></p><script>function layout(){document.getElementById('layout').textContent='Viewport '+innerWidth+' '+(/Android.*Mobile/.test(navigator.userAgent)?'mobile':'desktop')}window.onresize=layout;layout()</script></body>`))
 	})
 	pageListener, _ := net.Listen("tcp", "127.0.0.1:0")
 	pageSrv := &http.Server{Handler: pages}
@@ -178,6 +180,30 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 	if opened.Value.Tab == 0 || opened.Value.Title != "Form" {
 		t.Fatalf("open: %s", out)
 	}
+	out, errOut, code = run("browser", "viewport", "mobile")
+	mustJSON("mobile viewport", out, errOut, code, nil)
+	var mobilePage struct {
+		Value struct {
+			Text string `json:"text"`
+		} `json:"value"`
+	}
+	out, errOut, code = run("browser", "read")
+	mustJSON("mobile layout", out, errOut, code, &mobilePage)
+	if !strings.Contains(mobilePage.Value.Text, "Viewport 390 mobile") {
+		t.Fatalf("the site did not reflow into mobile mode: %s", mobilePage.Value.Text)
+	}
+	mobileShot := filepath.Join(t.TempDir(), "mobile.jpg")
+	out, errOut, code = run("browser", "screenshot", "--out", mobileShot)
+	mustJSON("mobile screenshot", out, errOut, code, nil)
+	mobileData, _ := os.ReadFile(mobileShot)
+	imageSize, err := jpeg.DecodeConfig(bytes.NewReader(mobileData))
+	if err != nil || imageSize.Width != 390 || imageSize.Height != 720 {
+		t.Fatalf("mobile screenshot: %+v %v", imageSize, err)
+	}
+	out, errOut, code = run("browser", "click", "Name")
+	mustJSON("mobile click Name", out, errOut, code, nil)
+	out, errOut, code = run("browser", "viewport", "desktop")
+	mustJSON("desktop viewport", out, errOut, code, nil)
 	var page struct {
 		Value struct {
 			Text     string `json:"text"`
