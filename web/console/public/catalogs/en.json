@@ -11355,5 +11355,10 @@
   "next.browserPanelNotifyOff": "New-site notification: off",
   "next.browserPanelOtherDebugger": "Another program is controlling this tab, so Clawdline cannot show or operate it. Stop that tool's control of the tab, or let the agent open a new tab.",
   "next.browserChip": "Chrome",
-  "next.browserChipTip": "This Session is using a Chrome tab. Open it."
+  "next.browserChipTip": "This Session is using a Chrome tab. Open it.",
+  "transparency.card.browser-use.title": "Browser use guidance",
+  "transparency.card.browser-use.summary": "Only when browser use is on. Tells the agent how to use clawdline browser, how to react when you take over or stop it, and what it must not do in a page.",
+  "transparency.card.browser-use.condition": "The machine browser setting (Settings → Browser) is on when a new Session or child starts.",
+  "transparency.card.browser-use.how": "Launch instructions name the clawdline browser commands, prefer reading the page over coordinates and screenshots, explain each refusal (you took over, you stopped browser use, the extension is missing, the setting is off), ask for sign-in, CAPTCHA, payment or other consequential steps through a Note, and route secrets through a Secret Handoff instead of chat.",
+  "transparency.card.browser-use.effect": "New executions read the machine setting independently of the inherited workflow. Existing Sessions and resumes keep their original context. When the setting is off the instruction bytes are unchanged. The text grants no authority: it does not allow buying, sending, publishing, deleting, accepting terms, installing software, changing your Chrome or spending money, and the daemon still refuses browser actions when the setting is off."
 }

@@ -588,6 +588,41 @@ clawdline note create --body-file note.json
 
 `kind` é `read`, `answer`, `action` ou `report`; `title`, `summary`, `action` e `reason` são necessários. Um `answer` pode oferecer de duas a quatro opções. Cada `draft` é a resposta sugerida mostrada em seu botão. Quando a pessoa toca nele, o Console a envia imediatamente como uma mensagem de conversa para a Sessão da nota, seguida por uma linha de contexto com o ID, título e ação da nota para que a Sessão receptora saiba qual solicitação a pessoa atendeu; o contexto não é mostrado no botão. Somente após o envio ser bem-sucedido é que a nota passa para o manipulado recentemente. Se o envio falhar, a nota fica pendente e o controle de atenção informa que a resposta não foi enviada. `detail` pode conter texto mais longo. `document_url` pode ser vinculado a um documento real e legível na nuvem; verifique a rota e o arquivo do documento antes de publicá-lo. Aja de acordo com a mensagem de conversa que chega, não com base no estado da nota: uma nota que a pessoa marcada como tratada manualmente não enviou nada. Se o seu trabalho estiver realmente bloqueado na resposta, registre o estado do usuário em espera e envie a notificação de atenção existente uma vez. Uma nota visível por si só não envia push e não desperta um Agente.
 
+## 9b. Use the browser
+
+Only when the person has turned on browser use for this machine (Settings → Browser); a new
+Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
+from the person's Chrome. Every action is recorded for the person, and they may watch and take
+over from this machine or their phone.
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
+  see the layout.
+- `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
+- `browser_stopped`: the person stopped all browser use. Do not retry.
+- `browser_extension_missing` or `browser_disabled`: continue another way, and tell the person
+  that Settings → Browser sets it up.
+- When a page needs the person — sign-in, CAPTCHA, payment, or any confirmation with
+  consequences — create a note (`clawdline guide note`) asking them to take over the Chrome tab,
+  and wait.
+- Never ask for a password in chat. For a secret, use a Secret Handoff and type it with
+  `clawdline secret run <note> -- clawdline browser type --stdin`.
+- Do not buy, send messages, publish, delete or accept terms in the browser unless the person
+  asked for that exact action.
+- The setting does not authorize installing software, changing the person's Chrome or spending
+  money.
+
 ## 10. O Board
 
 O Board tem três estruturas — itens do Board, o Backlog e a lista de tarefas de cada sessão — e **uma pessoa decide o que acontece nele**. Uma sessão cria um item do Board somente quando a própria mensagem da pessoa, enviada por meio de Clawdline, solicita; caso contrário, ele propõe. Nunca apresenta um cartão por iniciativa própria. A única exceção é o proprietário de uma Épica: após o plano revisado da Épica, ele pode dividir a Épica em itens de Recurso e Emissão e atribuí-los a Sessões (`clawdline guide pt-BR epic`).

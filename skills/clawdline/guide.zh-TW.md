@@ -1304,6 +1304,36 @@ clawdline note create --requested-by-person --body-file note.json
 
 撤回原因必填。只有環境無法識別自己時才加 `--from <存活Session對話ID>`。結果不確定時，沿用 CLI 印出的冪等鍵加上 `--key` 重試。版本過期回傳 `version_conflict`，先重新讀取再判斷；其他來源的便條回傳 `intervention_not_found`；已結束的便條回傳 `intervention_already_closed`，保留原本結果。撤回會移除關注紅點，便條以灰色移到最近紀錄，顯示 Agent 已撤回與原因；這不代表使用者回答或批准。使用者可重新開啟。不要撤回其他 Session 的便條；機器憑證仍為共用，來源欄位不是密碼學上的 Session 隔離。
 
+## 9b. 使用瀏覽器
+
+只有在使用者為這台機器開啟瀏覽器使用（設定 → 瀏覽器）時才適用；新 Session 啟動時會被告知。
+`clawdline browser` 操作的是 Clawdline 自己的 Chromium，和使用者自己的 Chrome 分開。每個動作都會
+記錄給使用者看，使用者也可以從這台機器或手機旁觀、接手。
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- 優先用 `read` 和它回傳的 label，不要用座標。只有非看版面不可時才截圖。
+- `browser_person_controlling`：使用者已經接手這個分頁。等待，不要迴圈重試。
+- `browser_stopped`：使用者停止了所有瀏覽器使用。不要重試。
+- `browser_extension_missing` 或 `browser_disabled`：改用別的方式繼續，並告訴使用者在
+  設定 → 瀏覽器 可以設定。
+- 頁面需要使用者本人時——登入、CAPTCHA、付款，或任何有後果的確認——建立一則便條
+  （`clawdline guide note`）請使用者接手 Chrome 分頁，然後等待。
+- 絕對不要在對話裡要密碼。機密用 Secret Handoff，並用
+  `clawdline secret run <note> -- clawdline browser type --stdin` 輸入。
+- 除非使用者要求的正是那個動作，否則不要在瀏覽器裡購買、送出訊息、發布、刪除或接受條款。
+- 這個設定不授權安裝軟體、更改使用者的 Chrome 或花錢。
+
 ## 10. 看板
 
 看板有三種結構——看板項目、Backlog，以及每個 session 自己的待辦清單——而且**上面放什麼由人決定**。

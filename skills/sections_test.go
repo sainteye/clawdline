@@ -38,8 +38,8 @@ func TestGuideCodeExamplesStayInSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := guideFence.FindAll(english, -1)
-	if len(want) != 49 {
-		t.Fatalf("English guide has %d code examples, expected 49", len(want))
+	if len(want) != 50 {
+		t.Fatalf("English guide has %d code examples, expected 50", len(want))
 	}
 	for _, lang := range Topics() {
 		guide, err := Guide(lang)
@@ -235,7 +235,7 @@ func proseLines(text string) []string {
 	return lines
 }
 
-// All guides cut into the same twenty parts, and the parts put back
+// All guides cut into the same twenty-one parts, and the parts put back
 // together are the whole guide, byte for byte: printing the guide in parts
 // must not lose a sentence that printing it whole carried.
 func TestThePartsAreTheWholeGuide(t *testing.T) {
@@ -267,7 +267,7 @@ func TestThePartsAreTheWholeGuide(t *testing.T) {
 func TestBothGuidesHaveTheSameSections(t *testing.T) {
 	want := map[string]string{"swift": "## 0.", "roles": "## 1.", "connect": "## 2.", "feature-root": "## 2a.", "inventory": "## 3.",
 		"dispatch": "## 4.", "running": "## 5.", "landing": "## 6.", "report": "## 7.", "send": "## 8.",
-		"notify": "## 9.", "board": "## 10.", "coordination": "## 11.", "refused": "## 12.",
+		"notify": "## 9.", "browser": "## 9b.", "board": "## 10.", "coordination": "## 11.", "refused": "## 12.",
 		"cloud": "### ", "project": "### ", "schedule": "### "}
 	for _, lang := range Topics() {
 		for _, name := range SectionNames() {

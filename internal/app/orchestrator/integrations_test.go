@@ -136,3 +136,21 @@ func TestChildrenReceiveImageReviewOnlyWhenTheirNewLaunchOptsIn(t *testing.T) {
 		}
 	}
 }
+
+func TestChildrenAreToldAboutTheBrowserOnlyWhenTheirNewLaunchHasItOn(t *testing.T) {
+	for _, assistant := range []string{"claude", "codex"} {
+		b, _ := newTestBroker(t)
+		dir := t.TempDir()
+		b.PrepareWorkflow = (workflowlaunch.Service{Store: b.Store, Dir: dir, Resolve: skills.ResolveWorkflow}).Prepare
+		for i, on := range []bool{false, true, false} {
+			if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_enabled": on}); err != nil {
+				t.Fatal(err)
+			}
+			id := fmt.Sprintf("c280004%d-0000-4000-8000-000000000040", i)
+			record, line := dispatchWith(t, b, id, assistant, nil)
+			if record.State == StateSpawnFailed || strings.Contains(line, "# Browser use through Clawdline") != on {
+				t.Fatalf("%s enabled=%v: %+v %s", assistant, on, record, line)
+			}
+		}
+	}
+}

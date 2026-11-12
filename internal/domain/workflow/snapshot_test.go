@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -25,7 +26,7 @@ func TestSnapshotSealsCanonicalCopyAndDetectsEveryFieldChange(t *testing.T) {
 	if err != nil || again.Digest != sealed.Digest {
 		t.Fatal("seal was not stable")
 	}
-	changes := []func(*Snapshot){func(s *Snapshot) { s.ProfileID = "other" }, func(s *Snapshot) { s.Version = "2" }, func(s *Snapshot) { s.Source = "remote" }, func(s *Snapshot) { s.Instructions = "changed" }, func(s *Snapshot) { s.CodeGraphEnabled = true }, func(s *Snapshot) { s.SpaceSavingImages = true }, func(s *Snapshot) { s.Stages[0].Acceptance = "changed" }, func(s *Snapshot) { s.Stages[0].ID = "changed" }, func(s *Snapshot) { s.Stages[0].Title = "changed" }, func(s *Snapshot) { s.Stages[0].Output = "changed" }, func(s *Snapshot) { s.Schema = 3 }}
+	changes := []func(*Snapshot){func(s *Snapshot) { s.ProfileID = "other" }, func(s *Snapshot) { s.Version = "2" }, func(s *Snapshot) { s.Source = "remote" }, func(s *Snapshot) { s.Instructions = "changed" }, func(s *Snapshot) { s.CodeGraphEnabled = true }, func(s *Snapshot) { s.SpaceSavingImages = true }, func(s *Snapshot) { s.BrowserUse = true }, func(s *Snapshot) { s.Stages[0].Acceptance = "changed" }, func(s *Snapshot) { s.Stages[0].ID = "changed" }, func(s *Snapshot) { s.Stages[0].Title = "changed" }, func(s *Snapshot) { s.Stages[0].Output = "changed" }, func(s *Snapshot) { s.Schema = 3 }}
 	for i, change := range changes {
 		s := sealed
 		s.Stages = append([]Stage(nil), sealed.Stages...)
@@ -90,5 +91,41 @@ func TestDisabledImageReviewRetainsPreFeatureSnapshotBytes(t *testing.T) {
 	got, err := json.Marshal(s)
 	if err != nil || string(got) != historical {
 		t.Fatalf("disabled snapshot bytes changed: %s %v", got, err)
+	}
+}
+
+func TestBrowserUseIsSealedInSchemaTwoAndRefusedBySchemaOne(t *testing.T) {
+	s := testSnapshot()
+	s.BrowserUse = true
+	sealed, err := Seal(s)
+	if err != nil || sealed.Schema != 2 || sealed.Validate() != nil {
+		t.Fatalf("browser use did not seal: %+v %v", sealed, err)
+	}
+	off, _ := Seal(testSnapshot())
+	if off.Digest == sealed.Digest {
+		t.Fatal("digest does not cover browser use")
+	}
+	encoded, _ := json.Marshal(sealed)
+	var decoded Snapshot
+	if err := json.Unmarshal(encoded, &decoded); err != nil || !decoded.BrowserUse || decoded.Validate() != nil {
+		t.Fatalf("browser use round trip: %s %v", encoded, err)
+	}
+	if offBytes, _ := json.Marshal(off); strings.Contains(string(offBytes), "browser_use") {
+		t.Fatalf("disabled browser use changed bytes: %s", offBytes)
+	}
+	var legacy Snapshot
+	raw := `{"schema":1,"profile_id":"clawdline","version":"1","source":"Clawdline","digest":"a1a213ab46b98ab69027f2cc6f6528de344bbc7de78fa111d515ca767ec7b9f3","instructions":"","stages":[],"graphify_enabled":true}`
+	if err := json.Unmarshal([]byte(raw), &legacy); err != nil || legacy.Validate() != nil {
+		t.Fatalf("historical receipt: %v", err)
+	}
+	legacy.BrowserUse = true
+	if legacy.Validate() == nil {
+		t.Fatal("schema 1 accepted browser use")
+	}
+	if _, err := Seal(legacy); err == nil {
+		t.Fatal("schema 1 sealed browser use")
+	}
+	if json.Unmarshal([]byte(`{"schema":1,"profile_id":"clawdline","version":"1","source":"Clawdline","digest":"","instructions":"","stages":[],"graphify_enabled":false,"browser_use":true}`), &legacy) == nil {
+		t.Fatal("schema 1 decoded browser use")
 	}
 }

@@ -1487,6 +1487,41 @@ Run `clawdline note list` to read only Notes attributed to your live Session (in
 
 The reason is required. Use `--from <live-session-conversation>` only when the environment cannot identify your Session. The CLI prints an idempotency key; reuse it with `--key` after an uncertain result. A stale version returns `version_conflict`: reread before deciding to retry. Another source's Note returns `intervention_not_found`; an already closed Note returns `intervention_already_closed` and preserves its outcome. Withdrawal removes the attention dot and moves the Note to recent history, in gray with its reason and an Agent-withdrawn label. It is never a person's answer or approval. The person can reopen it. Do not withdraw another Session's Notes or pretend a named source is cryptographically isolated: the machine credential remains shared.
 
+## 9b. Use the browser
+
+Only when the person has turned on browser use for this machine (Settings → Browser); a new
+Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
+from the person's Chrome. Every action is recorded for the person, and they may watch and take
+over from this machine or their phone.
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
+  see the layout.
+- `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
+- `browser_stopped`: the person stopped all browser use. Do not retry.
+- `browser_extension_missing` or `browser_disabled`: continue another way, and tell the person
+  that Settings → Browser sets it up.
+- When a page needs the person — sign-in, CAPTCHA, payment, or any confirmation with
+  consequences — create a note (`clawdline guide note`) asking them to take over the Chrome tab,
+  and wait.
+- Never ask for a password in chat. For a secret, use a Secret Handoff and type it with
+  `clawdline secret run <note> -- clawdline browser type --stdin`.
+- Do not buy, send messages, publish, delete or accept terms in the browser unless the person
+  asked for that exact action.
+- The setting does not authorize installing software, changing the person's Chrome or spending
+  money.
+
 ## 10. The board
 
 The board has three structures — board items, the Backlog, and each session's own to-do list — and

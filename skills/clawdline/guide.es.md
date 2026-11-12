@@ -1123,6 +1123,41 @@ clawdline note create --body-file note.json
 
 `kind` es `read`, `answer`, `action` o `report`; `title`, `summary`, `action` y `reason` son obligatorios. Un `answer` puede ofrecer de dos a cuatro opciones. Cada `draft` es la respuesta sugerida que se muestra en su botón. Cuando la persona lo toca, la Console lo envía de inmediato como un mensaje de la conversación a la Session de la nota, seguido de una línea de contexto con el ID, el título y la acción de la nota, para que la Session que lo recibe sepa a qué petición respondió la persona; el contexto no se muestra en el botón. Solo después de que el envío tenga éxito pasa la nota a atendidas recientemente. Si el envío falla, la nota sigue pendiente y el control de atención dice que la respuesta no se envió. `detail` puede contener un texto más largo. `document_url` puede enlazar a un documento real y legible de Cloud; verifica la ruta del documento y el archivo antes de publicarla. Actúa según el mensaje de la conversación que llegue, no según el estado de la nota: una nota que la persona marcó a mano como atendida no envió nada. Si tu trabajo está realmente bloqueado esperando la respuesta, registra el estado de espera al usuario y envía una vez la notificación de atención existente. Una nota visible por sí sola no envía ninguna notificación push ni despierta a un Agent.
 
+## 9b. Use the browser
+
+Only when the person has turned on browser use for this machine (Settings → Browser); a new
+Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
+from the person's Chrome. Every action is recorded for the person, and they may watch and take
+over from this machine or their phone.
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
+  see the layout.
+- `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
+- `browser_stopped`: the person stopped all browser use. Do not retry.
+- `browser_extension_missing` or `browser_disabled`: continue another way, and tell the person
+  that Settings → Browser sets it up.
+- When a page needs the person — sign-in, CAPTCHA, payment, or any confirmation with
+  consequences — create a note (`clawdline guide note`) asking them to take over the Chrome tab,
+  and wait.
+- Never ask for a password in chat. For a secret, use a Secret Handoff and type it with
+  `clawdline secret run <note> -- clawdline browser type --stdin`.
+- Do not buy, send messages, publish, delete or accept terms in the browser unless the person
+  asked for that exact action.
+- The setting does not authorize installing software, changing the person's Chrome or spending
+  money.
+
 ## 10. El tablero
 
 El tablero tiene tres estructuras —los ítems del tablero, el Backlog y la lista de tareas pendientes

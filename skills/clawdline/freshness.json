@@ -83,6 +83,10 @@
     "refused": {
       "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
       "translation": "8336dc7413c187fd31b164d22352c81093304c5d3713e5a1ee9f8a0fc7b70fcb"
+    },
+    "browser": {
+      "source": "5a33e535748337868d66460d5f7630d10c69116d8daa4da273c6ea6497c838f7",
+      "translation": "cbd3a760ec3bbef42fe49b8f079f3c0acd5a8adb0f867e165f051cbff0de2cda"
     }
   },
   "pt-BR": {

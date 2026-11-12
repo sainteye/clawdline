@@ -40,6 +40,7 @@ type Snapshot struct {
 	Stages            []Stage `json:"stages"`
 	CodeGraphEnabled  bool    `json:"codegraph_enabled"`
 	SpaceSavingImages bool    `json:"space_saving_images,omitempty"`
+	BrowserUse        bool    `json:"browser_use,omitempty"`
 	legacyGraphify    *bool
 }
 
@@ -69,7 +70,7 @@ func (s Snapshot) Validate() error {
 }
 
 func (s Snapshot) validateFields() error {
-	if (s.Schema != 2 && (s.Schema != 1 || s.legacyGraphify == nil || s.CodeGraphEnabled || s.SpaceSavingImages)) || !safeID.MatchString(s.ProfileID) || strings.TrimSpace(s.Version) == "" || strings.TrimSpace(s.Source) == "" {
+	if (s.Schema != 2 && (s.Schema != 1 || s.legacyGraphify == nil || s.CodeGraphEnabled || s.SpaceSavingImages || s.BrowserUse)) || !safeID.MatchString(s.ProfileID) || strings.TrimSpace(s.Version) == "" || strings.TrimSpace(s.Source) == "" {
 		return ErrInvalidSnapshot
 	}
 	for _, v := range []string{s.ProfileID, s.Version, s.Source, s.Instructions} {

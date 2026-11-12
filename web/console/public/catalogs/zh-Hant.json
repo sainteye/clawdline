@@ -11355,5 +11355,10 @@
   "next.browserPanelNotifyOff": "新網站通知：關",
   "next.browserPanelOtherDebugger": "另一個程式正在控制這個分頁，Clawdline 無法顯示或操作它。請停止那個工具對分頁的控制，或讓 Agent 開新分頁。",
   "next.browserChip": "Chrome",
-  "next.browserChipTip": "這個 Session 正在使用 Chrome 分頁，點一下打開。"
+  "next.browserChipTip": "這個 Session 正在使用 Chrome 分頁，點一下打開。",
+  "transparency.card.browser-use.title": "瀏覽器使用守則",
+  "transparency.card.browser-use.summary": "只在開啟瀏覽器功能時加入。告訴 agent 怎麼用 clawdline browser、你接手或停止時該怎麼做，以及在網頁上不能做的事。",
+  "transparency.card.browser-use.condition": "啟動新 Session 或 child 時，這台機器的瀏覽器設定（設定 → 瀏覽器）已開啟。",
+  "transparency.card.browser-use.how": "啟動指示列出 clawdline browser 指令，優先讀取網頁內容而不是座標或截圖；說明每種拒絕（你已接手、你停止了瀏覽器使用、缺少擴充功能、設定未開啟）該怎麼處理；遇到登入、CAPTCHA、付款或其他有後果的確認時用 Note 請你接手；密碼與機密走 Secret Handoff，不在對話裡要。",
+  "transparency.card.browser-use.effect": "新啟動的執行各自讀取機器設定，與繼承的工作流程分開。既有 Session 與恢復對話保留原上下文；關閉時指示位元組不變。這段文字不授予任何權限：不允許購買、送出訊息、發布、刪除、接受條款、安裝軟體、更改你的 Chrome 或花錢；設定關閉時 daemon 仍會拒絕瀏覽器動作。"
 }
