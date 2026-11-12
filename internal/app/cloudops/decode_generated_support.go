@@ -117,8 +117,9 @@ func genValueValid(b body, v any, r genRule) bool {
 			}
 		}
 		if r.sameAs != "" {
-			other, ok := b[r.sameAs].(string)
-			return ok && other == s
+			value, present := b.genLookup(r.sameAs)
+			other, ok := value.(string)
+			return present && ok && other == s
 		}
 		return true
 	case "integer":
@@ -192,6 +193,25 @@ func genText(v any) string {
 	return ""
 }
 
+// genLookup reads only a fixed field path emitted from the vocabulary table.
+// Direct names retain their original behavior; nested paths traverse objects.
+func (b body) genLookup(path string) (any, bool) {
+	var value any = map[string]any(b)
+	for _, part := range strings.Split(path, ".") {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		value, ok = object[part]
+		if !ok {
+			return nil, false
+		}
+	}
+	return value, true
+}
+
+func (b body) genAt(path string) any { value, _ := b.genLookup(path); return value }
+
 // genValue is where one local value comes from (`cloudvocab.Value`).
 type genValue struct {
 	from      string
@@ -207,7 +227,7 @@ type genValue struct {
 func (b body) genSource(v genValue) (any, bool) {
 	out := v.constant
 	if v.from != "" {
-		raw, present := b[v.from]
+		raw, present := b.genLookup(v.from)
 		if !present {
 			if v.fallback == nil {
 				return nil, false

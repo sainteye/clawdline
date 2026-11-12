@@ -55,6 +55,8 @@ export function pageAdmitted(
   name: string,
   { knows, peerAccess, operationsAccess }: { knows: (name: string) => boolean; peerAccess: boolean; operationsAccess: boolean },
 ): boolean {
+  // Bots is admitted only by its enabled Session entry and owns nested history there.
+  if (name === "project-assistants") return false
   if (name === "peer-access") return peerAccess
   if (name === "transparency") return operationsAccess && knows(name)
   return knows(name)
@@ -103,4 +105,18 @@ export function sessionsPageHash(terminal = false, open?: TerminalRoute): string
     hash += "&project=" + encodeURIComponent(open.project.trim()) + "&terminal=" + encodeURIComponent(open.terminal.trim())
   }
   return hash
+}
+
+/** Bots owns one roster entry and at most one chat entry above the Session origin. */
+export function assistantHistoryBackSteps(state: unknown, expectedView: string): number {
+  if (!expectedView || !state || typeof state !== "object" || !("paView" in state) || state.paView !== expectedView) return 0
+  return "paBot" in state && state.paBot ? 2 : 1
+}
+
+/** A work result is routed by its source, never by a terminal or the currently selected machine. */
+export function assistantWorkTarget(work: {fence:{key:{machine_id:string};project:{machine_id:string;project_id:string}};board_item_id:string;task_id:string}) {
+  if (!work.fence.key.machine_id || work.fence.project.machine_id !== work.fence.key.machine_id) return null
+  const kind = work.board_item_id ? "board" : work.task_id ? "task" : null
+  return kind ? {kind,machineID:work.fence.key.machine_id,projectID:work.fence.project.project_id,
+    id:work.board_item_id || work.task_id} : null
 }

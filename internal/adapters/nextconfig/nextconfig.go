@@ -103,6 +103,13 @@ func (v Values) SessionTodoAutoTake() bool {
 	return on
 }
 
+// ProjectAssistantsEnabled is an explicit opt-in. Missing, null and malformed
+// values keep Bot execution off.
+func (v Values) ProjectAssistantsEnabled() bool {
+	raw, ok := v.Raw["project_assistants_enabled"]
+	return ok && strings.TrimSpace(string(raw)) == "true"
+}
+
 // DispatchPermission follows the existing machine preference; absent means full.
 func (v Values) DispatchPermission() string {
 	mode, _ := v.String("orchestrator_permission")
@@ -515,6 +522,7 @@ func (k Settable) Allows(v any) bool {
 // tabs reach them. A key absent from here is a key the route will not take, so
 // adding a row to that window is adding a line here first.
 var Settables = []Settable{
+	{Name: "project_assistants_enabled", Kind: "bool"},
 	{Name: "hotkey", Kind: "string", Check: ValidHotkey, Refusal: "invalid_hotkey",
 		Because: "not a combination the shell can register"},
 	{Name: "scope_app", Kind: "string", Check: ValidScope, Refusal: "invalid_scope",

@@ -1334,6 +1334,7 @@
         "\t\"github.com/sainteye/clawdline/internal/adapters/projects\"\n",
         "\t\"github.com/sainteye/clawdline/internal/adapters/taskdir\"\n",
         "\t\"github.com/sainteye/clawdline/internal/contract\"\n",
+        "\t\"github.com/sainteye/clawdline/internal/domain/snippet\"\n",
         "\t\"github.com/sainteye/clawdline/internal/domain/work\"\n",
         ")\n",
         "\n",
@@ -1434,7 +1435,12 @@
         "\n",
         "\tw(\"# Clawdline child briefing — task %s\", r.ID)\n",
         "\tw(\"\")\n",
-        "\tif r.Root == nil && r.ScheduleID != \"\" {\n",
+        "\tif r.AssistantOwner != nil {\n",
+        "\t\tw(\"You are a CHILD worker for a persistent Bot, not a human or terminal Root.\")\n",
+        "\t\tw(\"The existing broker returns result.json and landing facts to the source Bot chat.\")\n",
+        "\t\tw(\"You have no authority to approve, claim or finish Board items for a person.\")\n",
+        "\t\tw(\"Your one job is the task under \\\"The task\\\" below.\")\n",
+        "\t} else if r.Root == nil && r.ScheduleID != \"\" {\n",
         "\t\t// A scheduled task has nobody to report back to (D07): it was started\n",
         "\t\t// by a clock, and saying \"a root session\" would send it looking for one.\n",
         "\t\tw(\"You are a CHILD session started by the schedule %q on this machine. No session\", r.ScheduleTitle)\n",
@@ -1630,6 +1636,21 @@
         "\tw(\"- criteria version: `%d`; SHA-256: `%s`\", g.Acceptance.Version, g.Acceptance.Digest)\n",
         "\tw(\"\")\n",
         "\tw(\"HEAD movement elsewhere has no authority here. Check only the detached commit and tree above.\")\n",
+        "\tw(\"\")\n",
+        "\tw(\"## Review scope and integration completeness\")\n",
+        "\tw(\"\")\n",
+        "\tw(\"Use the cycle base and candidate commits above as BASE and HEAD. %s\", snippet.ReviewAssessment)\n",
+        "\tw(\"\")\n",
+        "\tw(\"You remain this round's ONE checker. Do not dispatch additional reviewers or change the gate schema.\")\n",
+        "\tw(\"Always check ordinary correctness. In CROSS-SURFACE mode, also perform the full D pass:\")\n",
+        "\tw(\"%s\", snippet.IntegrationReviewInstructions)\n",
+        "\tw(\"\")\n",
+        "\tw(\"%s\", snippet.ReviewEvidenceLimits)\n",
+        "\tw(\"\")\n",
+        "\tw(\"Record scope, triggers, checked connections, intent questions and remaining gaps in the summary.\")\n",
+        "\tw(\"Map relevant findings to the existing acceptance claims and their evidence. Do not invent criteria or\")\n",
+        "\tw(\"treat unclear intent alone as a confirmed failure. Keep unrelated concerns explicit in the summary;\")\n",
+        "\tw(\"the closed verdict must still follow the specified claims and the evidence rules below.\")\n",
         "\tw(\"\")\n",
         "\tw(\"## Acceptance and required checks\")\n",
         "\tw(\"\")\n",
@@ -3369,11 +3390,82 @@
         "voice_assistant_workspace in the existing SQLite store",
         "Tool-less Claude Haiku or Codex Luna planning turn; OpenAI Realtime reports prepared evidence"
       ]
+    },
+    {
+      "id": "persistent-bots",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general",
+        "memory",
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/projectassistantacp/client.go",
+          "line": 237
+        },
+        {
+          "path": "internal/app/projectassistant/runtime.go",
+          "line": 391
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/capabilities.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {\n",
+        "\tif err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tif err := pa.ValidateMessage(q.Text); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tc.mu.Lock()\n",
+        "\tif c.turnID != \"\" {\n",
+        "\t\tc.mu.Unlock()\n",
+        "\t\treturn nil, refusal(pa.CapacityFull, \"active_prompt\")\n",
+        "\t}\n",
+        "\tc.turnID = q.Turn.ID\n",
+        "\tc.partial = \"\"\n",
+        "\tsid := c.sessionID\n",
+        "\tc.mu.Unlock()\n",
+        "\t// Only fresh filtered context is sent. Displayed history is never implicit\n",
+        "\t// model input. Instructions belong to this turn's immutable snapshot.\n",
+        "\ttext := q.Turn.Instructions.Text + \"\\n\" + q.Context.Text + \"\\n\" + q.Text\n",
+        "\tblocks := []any{}\n",
+        "\tif q.Quote != nil {\n",
+        "\t\tif err := pa.ValidateMessage(q.Quote.Text); err != nil {\n",
+        "\t\t\treturn nil, err\n",
+        "\t\t}\n",
+        "\t\tif q.Quote.MessageID == \"\" {\n",
+        "\t\t\treturn nil, refusal(pa.Invalid, \"quote_id\")\n",
+        "\t\t}\n",
+        "\t\tblocks = append(blocks, map[string]string{\"type\": \"text\", \"text\": \"Referenced message (\" + q.Quote.MessageID + \"):\\n\" + q.Quote.Text})\n",
+        "\t}\n",
+        "\tblocks = append(blocks, map[string]string{\"type\": \"text\", \"text\": text})\n",
+        "\tp, err := c.begin(ctx, \"session/prompt\", map[string]any{\"sessionId\": sid, \"prompt\": blocks})\n",
+        "\tif err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\treturn &promptPending{rpc: p}, nil\n"
+      ],
+      "locations": [
+        "Source-machine persistent Bot turn snapshot",
+        "ACP session/prompt text blocks"
+      ]
     }
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "4efec766e028d5296bb89f5b7510d3f6585509a0073d4cb72a622a1d4147de86",
+    "cmd/clawdline/main.go": "5577de4fd31130abc10f4fc057a9535791db81cbb3e2e2e9fefa6083ab3c5b40",
     "cmd/clawdline/session.go": "cafde1e2256317a25731543da5579b293cc47a83e48f0ff9c98fbf46309e283b",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3401,11 +3493,14 @@
     "internal/adapters/codegraph/view.go": "06e470cce95ba9f95553d4f618e53df5157479832f5ec50dfa2617ebe55c9289",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
     "internal/adapters/nextconfig/browser_mode.go": "d55a088d2551a6a79aa15206d8e23ea65c94f371b19ce6431926af849d1ed0ac",
-    "internal/adapters/nextconfig/nextconfig.go": "6f45c9f035499c18252880799b42e1f0cb919b9ae723795107edf5c7bc6f8d9f",
+    "internal/adapters/nextconfig/nextconfig.go": "b15f6d232413dfd031579a0b27f3eecd646439a803237e13de0e9b50fa3502b9",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/voice_work.go": "a687718d648d1924327a74a9a973dd7c34a8d94c7c7d8fb7cb14067019823595",
+    "internal/adapters/projectassistantacp/capabilities.go": "8f41f5b889d4f1d2dbdd0681ae3a946e338584f251fdf4ae6df95d77795a75e0",
+    "internal/adapters/projectassistantacp/client.go": "846e9a4f0803f36f2dbb884a6b59c280f639293de2b20987392ae994d33af328",
+    "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "42be85313d854b53a9983e1d62b2221c8e288893532573ab4221670221908c18",
@@ -3416,12 +3511,12 @@
     "internal/adapters/taskdir/broker.go": "c69b1984763af3106a7482e71984321f6e75351d4371a2567ea5060b9c879328",
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "d3477972d26a8abe22ae9fb88209b94508d6eda0f9fdf2cc9e0d97272c1b1afc",
-    "internal/app/orchestrator/brief.go": "4b777f33e9accfaec666cdc7ef838d400b3113b484ab64a28ff63c878b70411f",
+    "internal/app/orchestrator/brief.go": "fe7b695fe0617cfaaa91e98978630972648e257b8dfd1acb3026cfb01fedd4e7",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "baad265baa7f4f3c2a4a49f033e087b0f813fb0aa24aff035e13d839d7508e20",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
-    "internal/app/orchestrator/dispatch.go": "e11257b095450abde28d18d67ffe8024fef6ae7a29da94bd085e998012a350df",
+    "internal/app/orchestrator/dispatch.go": "5b4bee253c2f532f4abea577d050465f0e2d3823a42aa273f807c65ff50237e8",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
     "internal/app/orchestrator/handoffs.go": "c5bec8bf098e10112cff1bd9e4d034310eeb100c98c5d3ff7983e7a2bd53cdeb",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
@@ -3432,6 +3527,7 @@
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
+    "internal/app/projectassistant/runtime.go": "479ad6e485908348ad90a5892b8ff0ec37b560e90a0a45d48dee1285c81e40ec",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
     "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
@@ -3504,7 +3600,7 @@
     "web/console/src/voice-work/runtime.ts": "278b3b8bcfce334142062b98e37e8b9229de96dc1fdca92531ed863fea56f656"
   },
   "copyChecks": {
-    "en": "d6b4ba88b338c602debd34dd72dd22aa3eeb037cb28d8ab35042340ee2d8d509",
-    "zh-Hant": "1dddb15a9b1990d8ae10705bf1a594c7e95236bdbdf5e87ead4ed7647dcc4f39"
+    "en": "a051a9c6ea96eddcf8138f01b6193325616b3db48a1f178cf0abf87c76f199af",
+    "zh-Hant": "4a2836eefe876c018e9f903f143d498ccea193418abcbc5a44192834746f1ccf"
   }
 }

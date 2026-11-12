@@ -1,0 +1,1777 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project-assistants.v1",
+  "title": "Persistent project assistants",
+  "description": "Version 1 additive contract. No router or server is installed by this schema. All timestamps are RFC3339 UTC strings. Arrays are always arrays, never null.",
+  "$comment": "Source machine authority and feature opt-in are mandatory.",
+  "$defs": {
+    "ProjectAssistantAgent": {
+      "type": "string",
+      "enum": [
+        "claude",
+        "codex"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantShape": {
+      "type": "string",
+      "enum": [
+        "blob",
+        "squircle",
+        "wedge",
+        "pebble",
+        "tablet",
+        "hex",
+        "cloud",
+        "teardrop"
+      ],
+      "description": "Codync outline vocabulary. Global entry is always blob/#e39567; it never identifies the selected Bot."
+    },
+    "ProjectAssistantPermissionPolicy": {
+      "type": "string",
+      "enum": [
+        "ask",
+        "auto_read"
+      ],
+      "description": "Applies only inside the enforced read-only native sandbox. No native answer can authorize repository writes."
+    },
+    "ProjectAssistantSourceState": {
+      "type": "string",
+      "enum": [
+        "online",
+        "offline",
+        "unsupported",
+        "unpaired",
+        "revoked"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantTurnState": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "queued",
+        "running",
+        "waiting_permission",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "unknown"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantEffectState": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "executing",
+        "unknown",
+        "delivered",
+        "observed",
+        "read",
+        "failed"
+      ],
+      "description": "Acceptance is durable admission; delivery is a persisted reply; observation and read require separate device acknowledgements. Unknown is never automatically executed again."
+    },
+    "ProjectAssistantMessageKind": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "work",
+        "notice"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantWorkState": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "executing",
+        "failed",
+        "completed",
+        "landed",
+        "unknown"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantProjectKind": {
+      "type": "string",
+      "enum": [
+        "repository",
+        "place"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantErrorCode": {
+      "type": "string",
+      "enum": [
+        "pa_invalid",
+        "pa_disabled",
+        "pa_read_only",
+        "pa_not_found",
+        "pa_offline",
+        "pa_unsupported",
+        "pa_unpaired",
+        "pa_revoked",
+        "pa_stale_generation",
+        "pa_stale_version",
+        "pa_idempotency_conflict",
+        "pa_capacity_full",
+        "pa_outcome_unknown",
+        "pa_expired",
+        "pa_scope_denied",
+        "pa_context_stale",
+        "pa_cursor_expired",
+        "cli_not_installed",
+        "adapter_not_found",
+        "adapter_inventory_unknown",
+        "provider_version_unsupported",
+        "auth_required",
+        "auth_probe_unknown",
+        "auth_rejected",
+        "auth_unavailable_in_isolated_runtime",
+        "sandbox_unavailable",
+        "read_only_unverified",
+        "scope_expansion_denied",
+        "memory_isolation_unverified",
+        "resume_forbidden_after_forget",
+        "resume_unsupported",
+        "execution_effect_unknown"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantEventKind": {
+      "type": "string",
+      "enum": [
+        "bot_created",
+        "bot_updated",
+        "message_created",
+        "turn_updated",
+        "permission_offered",
+        "permission_answered",
+        "work_updated",
+        "memory_changed",
+        "read_advanced",
+        "trace_updated",
+        "source_updated",
+        "feature_disabled"
+      ],
+      "description": "Each event has exactly the corresponding typed payload. trace_updated uses Trace; event sequences never count as unread messages."
+    },
+    "ProjectAssistantNativeMemoryMode": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "disabled",
+        "isolated",
+        "unsafe"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantBotKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "bot_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id",
+        "bot_id"
+      ]
+    },
+    "ProjectAssistantProjectSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Only registered IDs, never an arbitrary cwd. Resolve on the source machine at creation and before execution.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id"
+      ]
+    },
+    "ProjectAssistantProjectScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Linked worktrees resolve to the existing canonical repository. Non-repository places retain their own identity.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "canonical_id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectAssistantProjectKind"
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "canonical_id",
+        "kind"
+      ]
+    },
+    "ProjectAssistantAppearance": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "shape": {
+          "$ref": "#/$defs/ProjectAssistantShape"
+        },
+        "color": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "shape",
+        "color"
+      ]
+    },
+    "ProjectAssistantInstructions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Captured at the next idle turn; running turn snapshots are immutable.",
+      "properties": {
+        "revision": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "role_snapshot_ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision",
+        "text",
+        "role_snapshot_ref"
+      ]
+    },
+    "ProjectAssistantCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Unknown version/capability is unavailable. Provider probes must supply actual evidence before native mode is enabled.",
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "cli_version": {
+          "type": "string"
+        },
+        "adapter_version": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "read_only_enforced": {
+          "type": "boolean"
+        },
+        "native_memory": {
+          "$ref": "#/$defs/ProjectAssistantNativeMemoryMode"
+        },
+        "native_memory_verified": {
+          "type": "boolean"
+        },
+        "resume": {
+          "type": "boolean"
+        },
+        "send_message": {
+          "type": "boolean"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "unavailable": {
+          "$ref": "#/$defs/ProjectAssistantFailure"
+        }
+      },
+      "required": [
+        "agent",
+        "cli_version",
+        "adapter_version",
+        "evidence",
+        "read_only_enforced",
+        "native_memory",
+        "native_memory_verified",
+        "resume",
+        "send_message",
+        "key",
+        "project"
+      ]
+    },
+    "ProjectAssistantBot": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "appearance": {
+          "$ref": "#/$defs/ProjectAssistantAppearance"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "permission_policy": {
+          "$ref": "#/$defs/ProjectAssistantPermissionPolicy"
+        },
+        "instructions": {
+          "$ref": "#/$defs/ProjectAssistantInstructions"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "conversation_id",
+        "name",
+        "appearance",
+        "agent",
+        "permission_policy",
+        "instructions",
+        "version",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "ProjectAssistantCreateSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Six settings. Creating, cancelling, reading, selecting and searching start no process or model. Only first send binds execution.",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/ProjectAssistantProjectSelection"
+        },
+        "name": {
+          "type": "string"
+        },
+        "appearance": {
+          "$ref": "#/$defs/ProjectAssistantAppearance"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "permission_policy": {
+          "$ref": "#/$defs/ProjectAssistantPermissionPolicy"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "role_snapshot_ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "name",
+        "appearance",
+        "agent",
+        "permission_policy",
+        "instructions",
+        "role_snapshot_ref"
+      ]
+    },
+    "ProjectAssistantEditSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Complete editable settings replacement. Agent/model/Project/policy changes, archive and deletion are outside v1.",
+      "properties": {
+        "expected_version": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "appearance": {
+          "$ref": "#/$defs/ProjectAssistantAppearance"
+        },
+        "instructions": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expected_version",
+        "name",
+        "appearance",
+        "instructions"
+      ]
+    },
+    "ProjectAssistantFence": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Must match current source authority on every RPC, permission answer, native event and tool call. Before first execution binding_id is empty and generation is zero; only send admission may replace that initial fence.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "binding_id": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "conversation_id",
+        "binding_id",
+        "generation"
+      ]
+    },
+    "ProjectAssistantConversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "id": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer"
+        },
+        "last_message_seq": {
+          "type": "integer"
+        },
+        "memory_revision": {
+          "type": "integer"
+        },
+        "active_turn_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "binding_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "id",
+        "generation",
+        "last_message_seq",
+        "memory_revision",
+        "active_turn_id",
+        "version",
+        "binding_id"
+      ]
+    },
+    "ProjectAssistantFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ProjectAssistantErrorCode"
+        },
+        "field": {
+          "type": "string"
+        },
+        "retry_after_seconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "field",
+        "retry_after_seconds"
+      ]
+    },
+    "ProjectAssistantTurn": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantTurnState"
+        },
+        "instructions": {
+          "$ref": "#/$defs/ProjectAssistantInstructions"
+        },
+        "memory_revision": {
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "failure": {
+          "$ref": "#/$defs/ProjectAssistantFailure"
+        }
+      },
+      "required": [
+        "id",
+        "fence",
+        "message_id",
+        "state",
+        "instructions",
+        "memory_revision",
+        "idempotency_key"
+      ]
+    },
+    "ProjectAssistantExecutionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Internal binding identity is safe to expose; native_session_id must be redacted from public roster projections.",
+      "properties": {
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "native_session_id": {
+          "type": "string"
+        },
+        "memory_revision": {
+          "type": "integer"
+        },
+        "forgotten_through": {
+          "type": "integer"
+        },
+        "instruction_revision": {
+          "type": "integer"
+        },
+        "revoked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fence",
+        "agent",
+        "native_session_id",
+        "memory_revision",
+        "forgotten_through",
+        "instruction_revision",
+        "revoked"
+      ]
+    },
+    "ProjectAssistantMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectAssistantMessageKind"
+        },
+        "text": {
+          "type": "string"
+        },
+        "quote_message_id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fence",
+        "seq",
+        "turn_id",
+        "kind",
+        "text",
+        "quote_message_id",
+        "at"
+      ]
+    },
+    "ProjectAssistantPermissionOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "allow": {
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectAssistantPermissionOptionKind"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "read_only",
+        "allow",
+        "kind"
+      ]
+    },
+    "ProjectAssistantPermissionOffer": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "native_request_id": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantPermissionOption"
+          }
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantPermissionState"
+        },
+        "selected_option_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fence",
+        "turn_id",
+        "native_request_id",
+        "options",
+        "expires_at",
+        "state",
+        "selected_option_id"
+      ]
+    },
+    "ProjectAssistantWorkLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "board_item_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantWorkState"
+        },
+        "result_message_id": {
+          "type": "string"
+        },
+        "landing_commit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fence",
+        "turn_id",
+        "task_id",
+        "board_item_id",
+        "state",
+        "result_message_id",
+        "landing_commit"
+      ]
+    },
+    "ProjectAssistantMemorySource": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "project",
+        "kind",
+        "revision"
+      ]
+    },
+    "ProjectAssistantMemoryRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Durable tombstones and revision fence future context. Does not claim to erase model training, independent external files or other copies.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "forgotten_through": {
+          "type": "integer"
+        },
+        "forgotten_source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "revision",
+        "forgotten_through",
+        "forgotten_source_ids"
+      ]
+    },
+    "ProjectAssistantContextSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A forgotten source in any provenance rejects the whole summary; never silently strip its ID while retaining the text.",
+      "properties": {
+        "memory": {
+          "$ref": "#/$defs/ProjectAssistantMemoryRevision"
+        },
+        "text": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMemorySource"
+          }
+        },
+        "provenance_complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "memory",
+        "text",
+        "sources",
+        "provenance_complete"
+      ]
+    },
+    "ProjectAssistantSourceStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Offline cached rows stay visibly stale; revoked and unpaired rows cannot be read. An offline source is never an authoritative empty list.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantSourceState"
+        },
+        "readable": {
+          "type": "boolean"
+        },
+        "writable": {
+          "type": "boolean"
+        },
+        "fresh": {
+          "type": "boolean"
+        },
+        "observed_at": {
+          "type": "string"
+        },
+        "access": {
+          "$ref": "#/$defs/ProjectAssistantAccess"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCapabilities"
+          }
+        }
+      },
+      "required": [
+        "machine_id",
+        "state",
+        "readable",
+        "writable",
+        "fresh",
+        "observed_at",
+        "access",
+        "capabilities"
+      ]
+    },
+    "ProjectAssistantReadCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "reader_id is the authenticated Cloud principal, shared across its devices. Source machine stores max(previous,incoming) bounded by last visible message sequence.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "reader_id": {
+          "type": "string"
+        },
+        "message_seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "conversation_id",
+        "reader_id",
+        "message_seq"
+      ]
+    },
+    "ProjectAssistantBotSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBot"
+        },
+        "latest_message": {
+          "type": "string"
+        },
+        "activity": {
+          "type": "string"
+        },
+        "activity_at": {
+          "type": "string"
+        },
+        "unread_count": {
+          "type": "integer"
+        },
+        "read_cursor": {
+          "$ref": "#/$defs/ProjectAssistantReadCursor"
+        },
+        "pending_permissions": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        }
+      },
+      "required": [
+        "bot",
+        "latest_message",
+        "activity",
+        "activity_at",
+        "unread_count",
+        "read_cursor",
+        "pending_permissions",
+        "version",
+        "source"
+      ]
+    },
+    "ProjectAssistantCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "SHA-256 of canonical validated content, recomputed by source. Scope is machine/Bot/operation/key, not device. At create, client chooses a stable opaque bot_id; same command returns same Bot.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "operation": {
+          "$ref": "#/$defs/ProjectAssistantOperation"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "content_hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "operation",
+        "idempotency_key",
+        "content_hash"
+      ]
+    },
+    "ProjectAssistantReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantEffectState"
+        },
+        "resource_id": {
+          "type": "string"
+        },
+        "event_seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command",
+        "id",
+        "state",
+        "resource_id",
+        "event_seq"
+      ]
+    },
+    "ProjectAssistantCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProjectAssistantCreateSettings"
+        }
+      },
+      "required": [
+        "command",
+        "settings"
+      ]
+    },
+    "ProjectAssistantEditRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProjectAssistantEditSettings"
+        }
+      },
+      "required": [
+        "command",
+        "settings"
+      ]
+    },
+    "ProjectAssistantBotResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBot"
+        },
+        "receipt": {
+          "$ref": "#/$defs/ProjectAssistantReceipt"
+        }
+      },
+      "required": [
+        "contract_version",
+        "bot",
+        "receipt"
+      ]
+    },
+    "ProjectAssistantListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Captured source-local machine_id is required. The UI obtains one client per authorized source and federates their pages; the selected global active machine is never substituted. Cursor is opaque and bound to filter/authorization revision. Page size 1..100.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "page_size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "machine_id",
+        "query",
+        "cursor",
+        "page_size"
+      ]
+    },
+    "ProjectAssistantListResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantBotSummary"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantSourceStatus"
+          }
+        },
+        "next_cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "items",
+        "sources",
+        "next_cursor"
+      ]
+    },
+    "ProjectAssistantSourcesResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantSourceStatus"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "sources"
+      ]
+    },
+    "ProjectAssistantHistoryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "before_seq=0 starts from latest. Items are ascending within a page. Page size 1..100.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "before_seq": {
+          "type": "integer"
+        },
+        "page_size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "conversation_id",
+        "before_seq",
+        "page_size"
+      ]
+    },
+    "ProjectAssistantHistoryResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "conversation": {
+          "$ref": "#/$defs/ProjectAssistantConversation"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMessage"
+          }
+        },
+        "next_before_seq": {
+          "type": "integer"
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "conversation",
+        "items",
+        "next_before_seq",
+        "has_more"
+      ]
+    },
+    "ProjectAssistantSendRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "text": {
+          "type": "string"
+        },
+        "quote_message_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "text",
+        "quote_message_id"
+      ]
+    },
+    "ProjectAssistantStopRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Cancels active and queued turns; a collapsed UI never sends this.",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "turn_id"
+      ]
+    },
+    "ProjectAssistantPermissionAnswerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "offer_id": {
+          "type": "string"
+        },
+        "option_id": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "offer_id",
+        "option_id",
+        "turn_id"
+      ]
+    },
+    "ProjectAssistantReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "cursor": {
+          "$ref": "#/$defs/ProjectAssistantReadCursor"
+        }
+      },
+      "required": [
+        "command",
+        "cursor"
+      ]
+    },
+    "ProjectAssistantReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "cursor": {
+          "$ref": "#/$defs/ProjectAssistantReadCursor"
+        }
+      },
+      "required": [
+        "contract_version",
+        "cursor"
+      ]
+    },
+    "ProjectAssistantReceiptResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "receipt": {
+          "$ref": "#/$defs/ProjectAssistantReceipt"
+        }
+      },
+      "required": [
+        "contract_version",
+        "receipt"
+      ]
+    },
+    "ProjectAssistantForgetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "expected_revision": {
+          "type": "integer"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "command",
+        "project",
+        "expected_revision",
+        "source_ids"
+      ]
+    },
+    "ProjectAssistantMemoryResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "memory": {
+          "$ref": "#/$defs/ProjectAssistantMemoryRevision"
+        }
+      },
+      "required": [
+        "contract_version",
+        "memory"
+      ]
+    },
+    "ProjectAssistantTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Trace is not a visible message and never advances unread. Secrets and raw provider credentials are redacted by source.",
+      "properties": {
+        "turn_id": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "turn_id",
+        "category",
+        "text",
+        "complete"
+      ]
+    },
+    "ProjectAssistantEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Exactly one payload matching kind, except feature_disabled which has none. Replay is deduplicated by source machine plus seq/id.",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectAssistantEventKind"
+        },
+        "at": {
+          "type": "string"
+        },
+        "message": {
+          "$ref": "#/$defs/ProjectAssistantMessage"
+        },
+        "turn": {
+          "$ref": "#/$defs/ProjectAssistantTurn"
+        },
+        "permission": {
+          "$ref": "#/$defs/ProjectAssistantPermissionOffer"
+        },
+        "work": {
+          "$ref": "#/$defs/ProjectAssistantWorkLink"
+        },
+        "memory": {
+          "$ref": "#/$defs/ProjectAssistantMemoryRevision"
+        },
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBotSummary"
+        },
+        "read": {
+          "$ref": "#/$defs/ProjectAssistantReadCursor"
+        },
+        "trace": {
+          "$ref": "#/$defs/ProjectAssistantTrace"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        }
+      },
+      "required": [
+        "version",
+        "id",
+        "seq",
+        "fence",
+        "kind",
+        "at"
+      ]
+    },
+    "ProjectAssistantEventsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Durable source-local cursor, page size 1..256; expired cursor is pa_cursor_expired and requires snapshot refresh.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "after_seq": {
+          "type": "integer"
+        },
+        "page_size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "after_seq",
+        "page_size"
+      ]
+    },
+    "ProjectAssistantEventsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantEvent"
+          }
+        },
+        "next_seq": {
+          "type": "integer"
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "items",
+        "next_seq",
+        "has_more"
+      ]
+    },
+    "ProjectAssistantErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/ProjectAssistantFailure"
+        }
+      },
+      "required": [
+        "contract_version",
+        "error"
+      ]
+    },
+    "ProjectAssistantExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Authenticated export only, never roster cache. SQLite remains authoritative. Restore refuses unsupported versions and retains receipt/tombstone identities.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBot"
+        },
+        "conversation": {
+          "$ref": "#/$defs/ProjectAssistantConversation"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMessage"
+          }
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantTurn"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExecutionBinding"
+          }
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantPermissionOffer"
+          }
+        },
+        "work_links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantWorkLink"
+          }
+        },
+        "memory": {
+          "$ref": "#/$defs/ProjectAssistantMemoryRevision"
+        },
+        "context": {
+          "$ref": "#/$defs/ProjectAssistantContextSnapshot"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantEvent"
+          }
+        },
+        "receipts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantReceipt"
+          }
+        },
+        "read_cursors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantReadCursor"
+          }
+        },
+        "memory_entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMemoryEntry"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "schema_version",
+        "bot",
+        "conversation",
+        "messages",
+        "turns",
+        "bindings",
+        "permissions",
+        "work_links",
+        "memory",
+        "context",
+        "events",
+        "receipts",
+        "read_cursors",
+        "memory_entries"
+      ]
+    },
+    "ProjectAssistantAccess": {
+      "type": "string",
+      "enum": [
+        "hidden",
+        "history_only",
+        "interactive"
+      ],
+      "description": "Default is hidden. Disabled with preserved data is history_only, allowing authenticated reads/export but no create/send/permission answer."
+    },
+    "ProjectAssistantPermissionState": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "answered",
+        "expired",
+        "cancelled",
+        "unknown"
+      ]
+    },
+    "ProjectAssistantMemoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "text": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMemorySource"
+          }
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "forgotten": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "project",
+        "text",
+        "sources",
+        "revision",
+        "forgotten"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantObserveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "receipt_id": {
+          "type": "string"
+        },
+        "event_seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command",
+        "receipt_id",
+        "event_seq"
+      ],
+      "description": "Authenticated device observation of a receipt/event. It does not advance read cursors or turn model text into human authorization."
+    },
+    "ProjectAssistantMemoryWriteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "expected_revision": {
+          "type": "integer"
+        },
+        "entry": {
+          "$ref": "#/$defs/ProjectAssistantMemoryEntry"
+        }
+      },
+      "required": [
+        "command",
+        "expected_revision",
+        "entry"
+      ],
+      "description": ""
+    },
+    "ProjectAssistantOperation": {
+      "type": "string",
+      "enum": [
+        "create",
+        "edit",
+        "send",
+        "stop",
+        "answer",
+        "read",
+        "observe",
+        "forget",
+        "memory_save",
+        "dispatch"
+      ]
+    },
+    "ProjectAssistantGetResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBot"
+        },
+        "conversation": {
+          "$ref": "#/$defs/ProjectAssistantConversation"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        }
+      },
+      "required": [
+        "contract_version",
+        "bot",
+        "conversation",
+        "source"
+      ]
+    },
+    "ProjectAssistantPermissionOptionKind": {
+      "type": "string",
+      "enum": [
+        "allow_once",
+        "reject_once",
+        "allow_always",
+        "reject_always"
+      ],
+      "description": "Native option kind is preserved. Persistent choices are never accepted in v1 and cannot widen authority."
+    }
+  }
+}

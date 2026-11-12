@@ -1,9 +1,23 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { pageAdmitted, pageFromHash, sessionsPageHash, sessionsTerminalMode, sessionsTerminalRoute, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
+import { assistantHistoryBackSteps, assistantWorkTarget, pageAdmitted, pageFromHash, sessionsPageHash, sessionsTerminalMode, sessionsTerminalRoute, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
 
 const knows = (name: string): name is "sessions" | "devices" => name === "sessions" || name === "devices"
+
+test("Bots returns through one owned history stack without consuming the original Session", () => {
+  assert.equal(assistantHistoryBackSteps({view:"detail"},"entry"),0)
+  assert.equal(assistantHistoryBackSteps({view:"detail",paView:"entry",paBot:null},"entry"),1)
+  assert.equal(assistantHistoryBackSteps({view:"detail",paView:"entry",paBot:'["one","bot"]'},"entry"),2)
+  assert.equal(assistantHistoryBackSteps({paView:"other",paBot:"bot"},"entry"),0)
+  assert.equal(assistantHistoryBackSteps(null,"entry"),0)
+})
+test("work results retain their machine and Project and reject a mixed-source fence", () => {
+  const work = {fence:{key:{machine_id:"one"},project:{machine_id:"one",project_id:"registered"}},board_item_id:"item",task_id:"task"}
+  assert.deepEqual(assistantWorkTarget(work),{kind:"board",machineID:"one",projectID:"registered",id:"item"})
+  assert.deepEqual(assistantWorkTarget({...work,board_item_id:""}),{kind:"task",machineID:"one",projectID:"registered",id:"task"})
+  assert.equal(assistantWorkTarget({...work,fence:{...work.fence,project:{machine_id:"two",project_id:"registered"}}}),null)
+})
 
 test("a removed Dashboard address lands on the session list", () => {
   assert.equal(pageFromHash("#page=dashboard", knows), "sessions")
