@@ -7,8 +7,9 @@ import { demoFilmFor } from './copilot-demo-films.js'
 
 /**
  * The voice copilot's demonstration film in a modal: for a person without an
- * OpenAI key, who can watch what a call does before deciding to add one. The
- * film loads only when this opens, and plays only when pressed.
+ * OpenAI key, who can watch what a call does before deciding to add one. Only
+ * its poster loads when this opens; the film (about 19 MB on a phone) is
+ * fetched when play is pressed.
  */
 export function CopilotDemoFilm({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -26,7 +27,7 @@ export function CopilotDemoFilm({ open, onClose }: { open: boolean; onClose: () 
       <h2 id="copilot-demo-title">{nextWord('copilotDemoTitle')}</h2>
       <button type="button" className="copilot-demo-close" aria-label={nextWord('copilotDemoClose')} onClick={onClose}>✕</button>
     </div>
-    <video className={narrow ? 'phone' : 'desktop'} src={film.video} poster={film.poster} controls playsInline preload="metadata" />
+    <video className={narrow ? 'phone' : 'desktop'} src={film.video} poster={film.poster} controls playsInline preload="none" />
     <p className="copilot-demo-note">{nextWord('copilotDemoNote')}</p>
   </dialog>, document.body)
 }

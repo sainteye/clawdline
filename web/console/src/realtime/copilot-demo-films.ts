@@ -16,8 +16,12 @@ export const DEMO_FILMS: Record<'desktop' | 'phone', Record<'en' | 'zh-Hant', De
     'en': { video: MEDIA + 'demo-en-b206a48a82f1.mp4', poster: MEDIA + 'poster-en-5433ddf1654e.jpg' },
     'zh-Hant': { video: MEDIA + 'demo-zh-Hant-9eac800f8c01.mp4', poster: MEDIA + 'poster-zh-Hant-e3afa4a1f41f.jpg' },
   },
-  // The phone cuts are being re-recorded; until they are published a phone plays the desktop cut.
-  phone: { 'en': null, 'zh-Hant': null },
+  // Portrait 1080×2338, 93.4 s and 96.2 s (about 19 MB each), re-recorded after the call sheet's
+  // phone fix and published and checked by the R2 Session on 2026-11-12.
+  phone: {
+    'en': { video: MEDIA + 'demo-en-phone-878bbbb83cbe.mp4', poster: MEDIA + 'poster-en-phone-70e64a1f73ed.jpg' },
+    'zh-Hant': { video: MEDIA + 'demo-zh-Hant-phone-3ee5cdfa57a9.mp4', poster: MEDIA + 'poster-zh-Hant-phone-d346e18373c0.jpg' },
+  },
 }
 
 /**
