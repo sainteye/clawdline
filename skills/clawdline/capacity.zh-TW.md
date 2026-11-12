@@ -55,6 +55,7 @@
 | `audit.security` | 8388608 | `bytes` | `rotate` | `diagnostics, notice, health` | — |
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `browser.audit_text_characters` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
 | `browser.command_arg_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.host_message_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.pending_commands` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |

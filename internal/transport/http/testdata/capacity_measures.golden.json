@@ -240,6 +240,11 @@
     "Known": true
   },
   {
+    "Name": "browser.audit_text_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "browser.command_arg_bytes",
     "Known": true,
     "Note": true

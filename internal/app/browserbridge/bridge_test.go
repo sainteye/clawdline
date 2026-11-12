@@ -3,6 +3,9 @@ package browserbridge
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -207,5 +210,85 @@ func TestOpenNeedsAWebAddress(t *testing.T) {
 	b, ctx := connected(t)
 	if _, err := b.Do(ctx, "c1", "open", json.RawMessage(`{"url":"file:///etc/passwd"}`)); err != BadRequest {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTheAuditSurvivesARestart(t *testing.T) {
+	dir := t.TempDir()
+	b, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.record("c1", "type", 3, "王小明", Result{OK: true, Tab: 3, URL: "https://example.com/a"})
+	b.record("c1", "type", 3, "hunter2", Result{OK: true, Tab: 3, URL: "https://example.com/a", Password: true})
+	again, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := again.Records("c1", 10)
+	if len(rows) != 2 || rows[0].Text != "" || rows[0].TextLen != 7 || rows[1].Text != "王小明" {
+		t.Fatalf("after reopening: %+v", rows)
+	}
+	info, err := os.Stat(filepath.Join(dir, JournalFile))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("journal file: %v %v", err, info.Mode())
+	}
+}
+
+func TestTheJournalIsCompactedAndCountsWhatItDropped(t *testing.T) {
+	dir := t.TempDir()
+	b, _ := Open(dir, nil)
+	total := 2*MaxAuditRows + 10
+	for i := 0; i < total; i++ {
+		b.record("c1", "tabs", 0, "", Result{OK: true})
+	}
+	again, _ := Open(dir, nil)
+	rows, pruned := again.Records("", MaxAuditRows+10)
+	if len(rows) != MaxAuditRows || pruned != total-MaxAuditRows {
+		t.Fatalf("rows %d pruned %d, want %d and %d", len(rows), pruned, MaxAuditRows, total-MaxAuditRows)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, JournalFile))
+	if lines := strings.Count(string(data), "\n"); lines > 2*MaxAuditRows {
+		t.Fatalf("the journal has %d lines; it was never compacted", lines)
+	}
+	if b.JournalErr() != nil {
+		t.Fatal(b.JournalErr())
+	}
+}
+
+func TestLongTypedTextIsCutInTheAudit(t *testing.T) {
+	b := New(nil)
+	long := strings.Repeat("字", MaxAuditTextRunes+5)
+	b.record("c1", "type", 1, long, Result{OK: true})
+	rows, _ := b.Records("c1", 1)
+	if len([]rune(rows[0].Text)) != MaxAuditTextRunes || !rows[0].TextCut || rows[0].TextLen != MaxAuditTextRunes+5 {
+		t.Fatalf("row: cut %v len %d", rows[0].TextCut, rows[0].TextLen)
+	}
+}
+
+func TestThePersonActsOnlyOnATabTheyTookOver(t *testing.T) {
+	b, ctx := connected(t)
+	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, OK: true, Tab: c.Tab, Value: json.RawMessage(`{}`)} })
+	if _, err := b.PersonDo(ctx, "screenshot", 5, nil); err != nil {
+		t.Fatalf("looking needs no takeover: %v", err)
+	}
+	if _, err := b.PersonDo(ctx, "click", 5, json.RawMessage(`{"x":1,"y":2}`)); err != NotTakenOver {
+		t.Fatalf("err = %v, want %s", err, NotTakenOver)
+	}
+	b.SetPersonControl(5, true)
+	if _, err := b.PersonDo(ctx, "type", 5, json.RawMessage(`{"text":"secret"}`)); err != nil {
+		t.Fatal(err)
+	}
+	b.SetPersonControl(5, false)
+	rows, _ := b.Records("", 10)
+	var ops []string
+	for _, r := range rows {
+		ops = append(ops, r.Op)
+		if r.Text != "" {
+			t.Fatalf("the person's typing was recorded: %+v", r)
+		}
+	}
+	if strings.Join(ops, ",") != "handback,takeover" {
+		t.Fatalf("audit ops = %v", ops)
 	}
 }

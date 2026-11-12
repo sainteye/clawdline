@@ -1013,6 +1013,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "browser.audit_text_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxAuditTextRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "browser.command_arg_bytes",
     "Class": "buffer",
     "Unit": "bytes",

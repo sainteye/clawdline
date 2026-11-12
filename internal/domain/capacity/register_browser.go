@@ -7,6 +7,7 @@ const (
 	BrowserArgBytes        = "browser.command_arg_bytes"
 	BrowserResultBytes     = "browser.result_bytes"
 	BrowserHostMessage     = "browser.host_message_bytes"
+	BrowserAuditText       = "browser.audit_text_characters"
 )
 
 // browserBounds is every registered row named browser.*.
@@ -27,6 +28,14 @@ func browserBounds() []Entry {
 			Limit: 2000, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon, Routine: true,
 			Sources: []string{"internal/app/browserbridge.MaxAuditRows"},
+		},
+		{
+			// Text one audit row keeps of what an agent typed. Longer text is
+			// cut to this and the row says so; its full length is kept.
+			Name: BrowserAuditText, Class: Buffer, Unit: Characters,
+			Limit: 2000, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/browserbridge.MaxAuditTextRunes"},
 		},
 		{
 			Name: BrowserArgBytes, Class: Buffer, Unit: Bytes,

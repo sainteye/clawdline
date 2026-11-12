@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -24,6 +25,7 @@ import (
 //   - GET  /v1/browser/audit          machine token, or a person who may read
 //   - POST /v1/browser/stop           {stopped}; the machine may only stop, a person may also resume
 //   - POST /v1/browser/control        {tab, person}; a person who may send
+//   - POST /v1/browser/person         {op, tab, args}; the person's own view and input
 func (s *Server) browserRoutes() []route {
 	return []route{
 		{Route{"*", "/v1/browser/commands"}, s.browserCommandRoute},
@@ -33,6 +35,7 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/audit"}, s.browserAuditRoute},
 		{Route{"*", "/v1/browser/stop"}, s.browserStopRoute},
 		{Route{"*", "/v1/browser/control"}, s.browserControlRoute},
+		{Route{"*", "/v1/browser/person"}, s.browserPersonRoute},
 	}
 }
 
@@ -40,7 +43,15 @@ func (s *Server) browser() *browserbridge.Bridge {
 	s.browserMu.Lock()
 	defer s.browserMu.Unlock()
 	if s.browserBridge == nil {
-		s.browserBridge = browserbridge.New(s.announceBrowserSite)
+		if s.cfg.Dir == "" {
+			s.browserBridge = browserbridge.New(s.announceBrowserSite)
+		} else {
+			b, err := browserbridge.Open(s.cfg.Dir, s.announceBrowserSite)
+			if err != nil {
+				log.Printf("browser: the audit journal could not be read: %v", err)
+			}
+			s.browserBridge = b
+		}
 	}
 	return s.browserBridge
 }
@@ -144,6 +155,8 @@ func writeBrowserError(w http.ResponseWriter, err error) {
 			writeRefusal(w, http.StatusTooManyRequests, string(refusal), "Too many browser commands are waiting. Try again shortly.")
 		case browserbridge.TimedOut:
 			writeRefusal(w, http.StatusGatewayTimeout, string(refusal), "The extension did not answer in time. The command may or may not have run; read the page before repeating it.")
+		case browserbridge.NotTakenOver:
+			writeRefusal(w, http.StatusConflict, string(refusal), "Take over the tab before typing or clicking in it.")
 		case browserbridge.NoTab:
 			writeRefusal(w, http.StatusConflict, string(refusal), "This Session has no tab yet. Open one first.")
 		default:
@@ -239,7 +252,11 @@ func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, pruned := s.browser().Records(r.URL.Query().Get("conversation"), limit)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"ok": true, "rows": rows, "pruned": pruned})
+	saved := ""
+	if err := s.browser().JournalErr(); err != nil {
+		saved = "The audit could not be written to disk; recent rows are kept only until the daemon restarts."
+	}
+	writeJSON(w, map[string]any{"ok": true, "rows": rows, "pruned": pruned, "journal_error": saved})
 }
 
 func (s *Server) browserStopRoute(w http.ResponseWriter, r *http.Request) {
@@ -280,4 +297,38 @@ func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	s.browser().SetPersonControl(in.Tab, in.Person)
 	writeJSON(w, map[string]any{"ok": true, "tab": in.Tab, "person": in.Person})
+}
+
+// browserPersonRoute is the live panel's: a screenshot needs a device that may
+// read; a click, typing, a key or a scroll needs one that may send, and a tab
+// the person has taken over.
+func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Op   string          `json:"op"`
+		Tab  int             `json:"tab"`
+		Args json.RawMessage `json:"args"`
+	}
+	if !readBrowserBody(w, r, browserbridge.MaxArgBytes+4096, &in) {
+		return
+	}
+	if machineAuthed(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "This is the person's own view of a tab; agents use clawdline browser.")
+		return
+	}
+	if in.Op == "screenshot" {
+		if !mayReadBrowser(r) {
+			writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may read.")
+			return
+		}
+	} else if !maySend(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
+		return
+	}
+	value, err := s.browser().PersonDo(r.Context(), in.Op, in.Tab, in.Args)
+	if err != nil {
+		writeBrowserError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"ok": true, "value": value})
 }

@@ -209,9 +209,14 @@ async function run(c) {
       return { tab, url: await tabURL(tab), value: { tab, direction: a.direction } }
     }
     case "screenshot": {
-      const shot = await cdp(tab, "Page.captureScreenshot", { format: "jpeg", quality: 60 })
-      const url = await tabURL(tab)
-      return { tab, url, value: { tab, url, data: shot.data } }
+      // The page's own size in CSS pixels comes with the image, so a viewer
+      // can turn a tap on the picture into a click on the page.
+      const m = await cdp(tab, "Page.getLayoutMetrics")
+      const width = m.cssLayoutViewport.clientWidth, height = m.cssLayoutViewport.clientHeight
+      const quality = Number.isFinite(a.quality) ? Math.max(20, Math.min(80, a.quality)) : 60
+      const shot = await cdp(tab, "Page.captureScreenshot", { format: "jpeg", quality })
+      const t = await chrome.tabs.get(tab)
+      return { tab, url: t.url || "", value: { tab, url: t.url || "", title: t.title || "", width, height, data: shot.data } }
     }
   }
   throw new Error(`unknown command ${c.op}`)

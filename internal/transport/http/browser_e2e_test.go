@@ -217,8 +217,25 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 		os.WriteFile(keep, data, 0o644)
 	}
 
+	// The live panel's own view: the page's CSS size comes with the picture,
+	// so a tap on it can become a click at the same point.
+	raw, err := s.browser().PersonDo(context.Background(), "screenshot", opened.Value.Tab, nil)
+	var view struct {
+		Width, Height int
+		Data, Title   string
+	}
+	if err != nil || json.Unmarshal(raw, &view) != nil || view.Width < 300 || view.Height < 200 || view.Data == "" || view.Title != "Form" {
+		t.Fatalf("person screenshot: %v %d×%d title %q", err, view.Width, view.Height, view.Title)
+	}
+	if _, err := s.browser().PersonDo(context.Background(), "click", opened.Value.Tab, json.RawMessage(`{"x":10,"y":10}`)); err == nil {
+		t.Fatal("the person clicked without taking the tab over")
+	}
+
 	// The person takes the tab over: the agent is refused and learns why.
 	s.browser().SetPersonControl(opened.Value.Tab, true)
+	if _, err := s.browser().PersonDo(context.Background(), "key", opened.Value.Tab, json.RawMessage(`{"key":"Tab"}`)); err != nil {
+		t.Fatalf("the person's key during takeover: %v", err)
+	}
 	if _, errOut, code := run("browser", "read"); code == 0 || !strings.Contains(errOut, "browser_person_controlling") {
 		t.Fatalf("during takeover: %d %s", code, errOut)
 	}

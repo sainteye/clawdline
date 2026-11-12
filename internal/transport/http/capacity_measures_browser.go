@@ -14,6 +14,7 @@ func (s *Server) browserCapacityMeasures() map[string]func() capacity.Reading {
 			rows, _ := s.browser().Records("", int(capacity.Default(capacity.BrowserAuditRows)))
 			return capacity.Reading{Known: true, Used: int64(len(rows))}
 		},
+		capacity.BrowserAuditText:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-row cut"} },
 		capacity.BrowserArgBytes:    func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-command guard"} },
 		capacity.BrowserResultBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-result guard"} },
 		capacity.BrowserHostMessage: func() capacity.Reading { return capacity.Reading{Known: true, Note: "checked by the host"} },

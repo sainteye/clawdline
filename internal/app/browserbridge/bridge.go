@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -106,6 +107,7 @@ type AuditRow struct {
 	// Text is what was typed, or empty when it went into a password field.
 	Text     string `json:"text,omitempty"`
 	TextLen  int    `json:"text_length,omitempty"`
+	TextCut  bool   `json:"text_cut,omitempty"`
 	Password bool   `json:"password,omitempty"`
 	OK       bool   `json:"ok"`
 	Error    string `json:"error,omitempty"`
@@ -132,6 +134,7 @@ type Bridge struct {
 	sites    map[string]map[string]bool
 	audit    []AuditRow
 	pruned   int
+	journal  *journal
 	now      func() time.Time
 	onSite   func(NewSite)
 	timeout  time.Duration
@@ -160,23 +163,38 @@ func (b *Bridge) hostConnected() bool {
 
 // Status is what the console and `clawdline browser status` show.
 type Status struct {
-	Connected  bool     `json:"connected"`
-	Host       HostInfo `json:"host"`
-	Stopped    bool     `json:"stopped"`
-	PersonTabs []int    `json:"person_tabs"`
-	Pending    int      `json:"pending"`
+	Connected  bool      `json:"connected"`
+	Host       HostInfo  `json:"host"`
+	Stopped    bool      `json:"stopped"`
+	PersonTabs []int     `json:"person_tabs"`
+	Pending    int       `json:"pending"`
+	Tabs       []TabInfo `json:"tabs"`
+}
+
+// TabInfo is one tab a Session has used: the console finds a Session's tab here.
+type TabInfo struct {
+	Tab          int    `json:"tab"`
+	Conversation string `json:"conversation"`
+	Person       bool   `json:"person"`
+	Current      bool   `json:"current"`
 }
 
 func (b *Bridge) Status() Status {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	tabs := []int{}
+	people := []int{}
 	for t, on := range b.person {
 		if on {
-			tabs = append(tabs, t)
+			people = append(people, t)
 		}
 	}
-	return Status{Connected: b.hostConnected(), Host: b.host, Stopped: b.stopped, PersonTabs: tabs, Pending: len(b.queue)}
+	sort.Ints(people)
+	tabs := []TabInfo{}
+	for t, c := range b.owner {
+		tabs = append(tabs, TabInfo{Tab: t, Conversation: c, Person: b.person[t], Current: b.current[c] == t})
+	}
+	sort.Slice(tabs, func(i, j int) bool { return tabs[i].Tab < tabs[j].Tab })
+	return Status{Connected: b.hostConnected(), Host: b.host, Stopped: b.stopped, PersonTabs: people, Pending: len(b.queue), Tabs: tabs}
 }
 
 // SetStopped is the person's emergency stop. Stopping fails every queued command.
@@ -193,15 +211,82 @@ func (b *Bridge) SetStopped(on bool) {
 	}
 }
 
-// SetPersonControl marks a tab taken over by the person, or handed back.
+// SetPersonControl marks a tab taken over by the person, or handed back,
+// and records the change in the audit under the tab's Session.
 func (b *Bridge) SetPersonControl(tab int, on bool) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	was := b.person[tab]
 	if on {
 		b.person[tab] = true
 	} else {
 		delete(b.person, tab)
 	}
+	owner := b.owner[tab]
+	b.mu.Unlock()
+	if was == on {
+		return
+	}
+	op := "handback"
+	if on {
+		op = "takeover"
+	}
+	b.record(owner, op, tab, "", Result{OK: true, Tab: tab})
+}
+
+// personOps are what a person's own device may send to a tab: looking at it
+// at any time, and acting on it only while they have taken it over.
+var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true}
+
+// NotTakenOver is a person's input to a tab they have not taken over.
+const NotTakenOver Refusal = "browser_take_over_first"
+
+// PersonDo carries one of the person's own commands to a tab. It is not an
+// agent's command: ownership and the agent stop do not apply, and what the
+// person types is never recorded.
+func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.RawMessage) (json.RawMessage, error) {
+	if !personOps[op] || tab <= 0 || len(args) > MaxArgBytes {
+		return nil, BadRequest
+	}
+	b.mu.Lock()
+	if !b.hostConnected() {
+		b.mu.Unlock()
+		return nil, HostMissing
+	}
+	if op != "screenshot" && !b.person[tab] {
+		b.mu.Unlock()
+		return nil, NotTakenOver
+	}
+	if len(b.queue) >= MaxPendingCommands {
+		b.mu.Unlock()
+		return nil, QueueFull
+	}
+	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, conversation: ""}
+	ch := make(chan Result, 1)
+	b.waiting[c.ID] = ch
+	b.queue = append(b.queue, c)
+	b.signal()
+	b.mu.Unlock()
+	timer := time.NewTimer(b.timeout)
+	defer timer.Stop()
+	var res Result
+	select {
+	case res = <-ch:
+	case <-timer.C:
+		res = Result{Error: string(TimedOut)}
+	case <-ctx.Done():
+		res = Result{Error: string(TimedOut)}
+	}
+	b.mu.Lock()
+	delete(b.waiting, c.ID)
+	b.dropQueued(c.ID)
+	b.mu.Unlock()
+	if res.OK {
+		return res.Value, nil
+	}
+	if Refusal(res.Error) == TimedOut {
+		return nil, TimedOut
+	}
+	return nil, &ExtensionError{Message: res.Error}
 }
 
 // Records returns up to limit audit rows, newest first, and how many were pruned.
@@ -382,7 +467,7 @@ func (b *Bridge) record(conversation, op string, tab int, text string, r Result)
 	if op == "type" {
 		row.TextLen = len([]rune(text))
 		if !r.Password {
-			row.Text = text
+			row.Text, row.TextCut = cutText(text)
 		}
 	}
 	var announce *NewSite
@@ -404,7 +489,15 @@ func (b *Bridge) record(conversation, op string, tab int, text string, r Result)
 		}
 	}
 	onSite := b.onSite
+	var keep []AuditRow
+	pruned := b.pruned
+	if b.journal != nil {
+		keep = append([]AuditRow(nil), b.audit...)
+	}
 	b.mu.Unlock()
+	if b.journal != nil {
+		b.journal.append(row, keep, pruned)
+	}
 	if announce != nil && onSite != nil {
 		onSite(*announce)
 	}

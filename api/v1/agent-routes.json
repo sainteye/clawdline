@@ -805,6 +805,11 @@
       "method": "*",
       "pattern": "/v1/browser/stop",
       "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/person",
+      "guide": "connect"
     }
   ]
 }

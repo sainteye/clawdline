@@ -57,22 +57,38 @@ and port. The console's install guide will run it with the person's consent.
 | No answer in 30 s | `browser_timeout`; the command may or may not have run |
 
 Every command, refused or not, is an audit row: time, Session, op, tab, URL, site, the element
-pressed, and the text typed. Text typed into a password field is recorded only as its length.
-The audit keeps 2,000 rows in memory and reports how many were pruned; it does not yet survive a
-daemon restart.
+pressed, and the text typed (cut to 2,000 characters, with its full length kept). Text typed into
+a password field is recorded only as its length. Takeover and hand-back are rows too. The audit
+is `<CLAWDLINE_NEXT_DIR>/browser-audit.jsonl` (mode 0600): 2,000 rows are kept, the file is
+rewritten to them when it reaches twice that, and the route reports how many were pruned and
+whether the last write to disk failed.
 
 When `browser_notify_new_site` is on, the first successful action of a Session on a site
 (registrable domain) sends one notification through the agent-notification path.
+
+## The live panel
+
+The Session's ⋯ menu has **Chrome tab** (`web/console/src/session/BrowserPanel.tsx`). It reads
+`/v1/browser/status` to find the Session's tab and asks `POST /v1/browser/person` for a screenshot
+about once a second while it is open and the page visible, because Chrome stops streaming a tab
+that is covered, minimized or behind another tab. **Take over** (`POST /v1/browser/control`) stops
+the agent's commands to that tab; only then does a tap on the picture become a click at the same
+point of the page, and the text box, Tab, Enter, Delete and scroll reach it. What the person types
+is not recorded. **Hand back** returns the tab to the agent.
+
+Through Clawdline Cloud the panel says it works only in this computer's console: the relay does
+not carry the browser routes yet.
 
 ## Testing
 
 `TestBrowserBridgeEndToEnd` (internal/transport/http) drives a real Chromium through the whole
 path when `CLAWDLINE_BROWSER_E2E_BIN` and `CLAWDLINE_BROWSER_E2E_CHROMIUM` are set. Branded Chrome
 ignores `--load-extension`, so it needs Chromium. It uses a temporary profile and a test server,
-never the person's daemon or Chrome.
+never the person's daemon or Chrome. `web/console/src/session/browser-panel.e2e.ts` exercises the
+panel against a stand-in daemon at desktop and phone widths, in English and Chinese.
 
 ## Not built yet
 
-The console's live panel, takeover and hand-back buttons, the install guide, the Settings page,
-the audit list, typing a Secret Handoff into a password field, persistence of the audit, and the
-Cloud channel for the phone.
+The install guide, the Settings page with the audit list and the stop switch, usage guidance in
+new Sessions, typing a Secret Handoff into a password field, the per-Session notification mute,
+streaming instead of screenshots when the tab is drawn, and the Cloud channel for the phone.
