@@ -5,6 +5,9 @@ import type * as W from "@clawdline/contract"
 import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayRequest, capturedAssistantRelayFetch, type AssistantGrant, type AssistantFetch } from "./project-assistants.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { command, errorCode } from "../project-assistants/client.ts"
+import { CloudClient } from "../legacy/js/net/cloud-client.js"
+// @ts-expect-error -- Node executes source extensions.
+import { CARRIED } from "./carry-generated.ts"
 
 const signal = () => new AbortController().signal
 const key = {machine_id:"one",bot_id:"same/id"}
@@ -190,5 +193,43 @@ test("reader acknowledgements require an observed fresh readable online source",
     await assert.rejects(source.markRead({command:command(key,"read"),cursor:{key,conversation_id:"chat",message_seq:2,reader_id:"reader"}},signal()),error => errorCode(error) === expected)
     await assert.rejects(source.observe({command:command(key,"observe"),event_seq:2,receipt_id:"receipt"},signal()),error => errorCode(error) === expected)
     assert.equal(writes,0)
+  }
+})
+
+test("generated PA errors survive the actual copied reply reader into the captured SourceClient",async () => {
+  const client = Object.create(CloudClient.prototype)
+  client.machineDescriptor = () => ({machine:{commands:Object.keys(CARRIED)}})
+  client.readWaiters = new Map()
+  client._emit = () => {}
+  let settled: unknown, rejected: unknown, calls = 0
+  client._settleRead = (_key:string,body:unknown,error:unknown) => {settled=body;rejected=error}
+  const refusal: W.ProjectAssistantErrorResponse = {contract_version:"project-assistants.v1",error:{code:"pa_capacity_full",field:"pending_turns",retry_after_seconds:7}}
+  client._read = async (identity:{machine:string;session:string},word:string,_fields:Record<string,unknown>,read:string) => {
+    calls++
+    client._applySnapshot({kind:"transcript",...identity},{read,status:word.endsWith(".status")?200:429,body:word.endsWith(".status")?sourceStatus():refusal},{seq:calls,ts:Date.now()},false)
+    if (rejected) throw rejected
+    return settled
+  }
+  const source = new ProjectAssistantSourceClient(grant(),capturedAssistantRelayFetch("one",() => client,Object.keys(CARRIED)),() => grant())
+  await source.status(signal())
+  for (const code of ["pa_stale_generation","pa_capacity_full","pa_outcome_unknown"] as const) {
+    refusal.error.code=code
+    const before=calls
+    await assert.rejects(source.send({command:command({machine_id:"one",bot_id:"bot"},"send","stable-receipt"),text:"hello",quote_message_id:""} as W.ProjectAssistantSendRequest,signal()),error => {assert.deepEqual(error,refusal);return true})
+    assert.equal(calls,before+1,"an unknown or capacity result is never automatically resent")
+  }
+})
+
+test("every Bot word is carried and read-only metadata retains action refs",async () => {
+  const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
+  assert.deepEqual(words.sort(),["answer","create","edit","events","export","forget","get","history","list","memory","observed","read","send","status","stop"].map(word => "project-assistants."+word).sort())
+  const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
+  const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
+  const relay=capturedAssistantRelayFetch("one",() => client,words)
+  for (const word of ["read","observed"]) {
+    const fields={command:command({machine_id:"one",bot_id:"bot"},word==="read"?"read":"observe","stable-"+word),cursor:{reader_id:"untrusted-hint"}}
+    await relay("/v1/project-assistants/bot/"+word,{method:"POST",body:JSON.stringify(fields),headers:{"Idempotency-Key":"stable-"+word}})
+    assert.equal(captured.at(-1)?.ref,"stable-"+word)
+    assert.deepEqual(captured.at(-1)?.fields,fields)
   }
 })

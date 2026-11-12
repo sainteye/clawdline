@@ -87,7 +87,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "usage" | "sessions" | "devices" | "projects" | "playbook" | "ops" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "documents" | "peer-access" | "transparency"
+type Page = "voice-assistant" | "usage" | "sessions" | "devices" | "projects" | "playbook" | "ops" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "documents" | "peer-access" | "transparency"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -98,6 +98,7 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 // disabled rather than missing, so what is not here can be seen.
 //
 const PAGES: { id: Page; nav: string; icon: SidebarIconName; key?: string; text?: string; ready: boolean }[] = [
+  { id: "voice-assistant", nav: "nav-voice-assistant", icon: "voice", key: "voiceWorkTitle", ready: true },
   { id: "sessions", nav: "nav-sessions", icon: "sessions", key: "webSessions", ready: true },
   { id: "projects", nav: "nav-projects", icon: "projects", key: "webProjects", ready: false },
   { id: "usage", nav: "nav-usage", icon: "usage", ready: false },
@@ -1168,7 +1169,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         <div className="sidebar-panel" id="sidebar-panel">
           <section className="sidebar-group" aria-label={nextWord("sidebarMain")}>
             <h2>{nextWord("sidebarMain")}</h2>
-            {sidebarPages.filter((p) => p.id === "sessions" || p.id === "projects" || p.id === "usage").map(sidebarPage)}
+            {sidebarPages.filter((p) => p.id === "voice-assistant" || p.id === "sessions" || p.id === "projects" || p.id === "usage").map(sidebarPage)}
             <button
               className="sidebar-item"
               id="nav-archive"

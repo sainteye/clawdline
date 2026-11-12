@@ -3465,6 +3465,71 @@
     "Known": true
   },
   {
+    "Name": "voice.work_execution_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_heartbeat_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_lease_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_parallel_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_plan_inputs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_plan_rounds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_poll_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_progress",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_records",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_request_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_request_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_state_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.work_text_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "waits.open",
     "Known": true
   },

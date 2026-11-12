@@ -308,3 +308,11 @@ Service, Engine and Broker, and owns native entry lifetime and bounded durable
 queue shutdown. Its real Store/Broker fixtures and fake providers prove module
 behavior; production settings, Server/Cloud/MCP wiring, native admission and
 complete removal remain integration acceptance work.
+
+
+The [Cloud wire module](project-assistants-cloud-wire.md) carries complete Bot
+requests and typed failures through the existing device-scoped bridge. Reader
+acknowledgements remain read-level actions; content changes keep their write
+gate. A whole archive that exceeds the existing plaintext ceiling is explicitly
+refused rather than truncated. Transport module evidence is separate from
+production route mounting, long-history UI recovery and phone acceptance.

@@ -45,13 +45,21 @@ const (
 	maxCopilotDecisionSessions = 200
 )
 
+type copilotDecisionOption struct {
+	N     int    `json:"n"`
+	Label string `json:"label"`
+}
 type copilotDecisionSession struct {
-	ID        string `json:"id"`
-	Label     string `json:"label"`
-	State     string `json:"state"`
-	Assistant string `json:"assistant"`
-	Delivered string `json:"delivered,omitempty"`
-	Question  string `json:"question,omitempty"`
+	MenuFingerprint string                  `json:"menu_fingerprint,omitempty"`
+	Options         []copilotDecisionOption `json:"options,omitempty"`
+	Conversation    string                  `json:"conversation,omitempty"`
+	Machine         string                  `json:"machine,omitempty"`
+	ID              string                  `json:"id"`
+	Label           string                  `json:"label"`
+	State           string                  `json:"state"`
+	Assistant       string                  `json:"assistant"`
+	Delivered       string                  `json:"delivered,omitempty"`
+	Question        string                  `json:"question,omitempty"`
 }
 
 type copilotDecisionAnswer struct {

@@ -344,7 +344,8 @@ export function useBrowserTab(row: SessionRow | null, hidden: boolean): boolean 
 export function BrowserChip({ onOpen }: { onOpen: () => void }) {
   return (
     <button type="button" className="browser-chip" title={nextWord("browserChipTip")} aria-label={nextWord("browserChipTip")} onClick={onOpen}>
-      <i aria-hidden="true" />{nextWord("browserChip")}
+      <i aria-hidden="true" /><span className="browser-chip-name">{nextWord("browserChip")}</span>
+      <span className="header-menu-label">{nextWord("browserPanelMenu")}</span>
     </button>
   )
 }

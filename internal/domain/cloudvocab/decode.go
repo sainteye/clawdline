@@ -241,6 +241,7 @@ var Checks = map[string]string{
 	"lower_hex":       "lowercase hexadecimal digits only",
 	"absolute_path":   "an absolute filesystem path",
 	"not_blank":       "something besides white space",
+	"pa_bot_id":       "a Bot id: one Unicode segment, excluding status, dot segments and control characters",
 }
 
 // Route is the local request a decoded body becomes. The method and the
@@ -316,7 +317,22 @@ type Idempotency struct {
 	Except string `json:"except"`
 }
 
-var templateField = regexp.MustCompile(`\{(/?)([a-z_]+)([*?]?)\}`)
+var templateField = regexp.MustCompile(`\{(/?)([a-z_]+(?:\.[a-z_]+)*)([*?]?)\}`)
+
+// FieldAt resolves a fixed schema path through declared object properties.
+// It never traverses lists or accepts a property absent from the table.
+func FieldAt(fields map[string]Field, path string) (Field, bool) {
+	var field Field
+	for _, part := range strings.Split(path, ".") {
+		var ok bool
+		field, ok = fields[part]
+		if !ok {
+			return Field{}, false
+		}
+		fields = field.Properties
+	}
+	return field, true
+}
 
 // TemplateFields is every field a path or name template names.
 func TemplateFields(template string) []string {
@@ -350,7 +366,7 @@ func validateDecode(o Operation) error {
 	if (d.Name != "") != (d.Reply == SessionRead) {
 		return fmt.Errorf("cloudvocab: %s names its answer and is not a session read, or the reverse", o.Op)
 	}
-	known := func(field string) bool { _, ok := d.Fields[field]; return ok || owned[field] }
+	known := func(field string) bool { _, ok := FieldAt(d.Fields, field); return ok || owned[field] }
 	named := map[string]bool{}
 	for _, s := range o.Shapes {
 		for _, field := range s.Body {
@@ -394,7 +410,7 @@ func validateDecode(o Operation) error {
 			return fmt.Errorf("cloudvocab: %s route path %q is not absolute", o.Op, r.Path)
 		}
 		for _, field := range TemplateFields(r.Path) {
-			if !named[field] {
+			if !named[strings.Split(field, ".")[0]] || !known(field) {
 				return fmt.Errorf("cloudvocab: %s route path names %s, which no shape names", o.Op, field)
 			}
 		}
@@ -437,7 +453,7 @@ func validateDecode(o Operation) error {
 			if (v.From == "") == (v.Const == nil) {
 				return fmt.Errorf("cloudvocab: %s has a value that is not exactly one of from or const", o.Op)
 			}
-			if v.From != "" && !named[v.From] {
+			if v.From != "" && (!named[strings.Split(v.From, ".")[0]] || !known(v.From)) {
 				return fmt.Errorf("cloudvocab: %s takes a value from %s, which no shape names", o.Op, v.From)
 			}
 		}

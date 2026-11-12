@@ -13703,6 +13703,256 @@
   },
   {
     "Register": "daemon",
+    "Name": "voice.work_execution_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 120000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_heartbeat_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 30000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_lease_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 90,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.LeaseSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_parallel_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxParallelReads"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_plan_inputs",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxPlanInputs"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_plan_rounds",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxPlanRounds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_poll_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_progress",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxProgress"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_records",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxRecords"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_request_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxRequestBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_request_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 10000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_state_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2097152,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxStateBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_text_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxTextRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "waits.open",
     "Class": "buffer",
     "Unit": "rows",

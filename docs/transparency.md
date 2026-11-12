@@ -481,11 +481,20 @@ The native-log reader also looks under `$HOME/.gemini/<app-data-dir>`, where AGY
 1.5 writes its conversation logs. It still only reads for display and sends
 nothing to the model.
 
-The mobile Session header now collapses optional entrances to the rightmost available
-control, with a disclosure for the remaining entrances. Its expand/collapse labels
-are UI copy only. The reviewed English and Traditional Chinese `session-rotation`
+The mobile Session header previews the rightmost available entrance. Pressing any
+part of that button lists every available entrance vertically; only choosing an
+entrance executes its action. The arrow stays close to the preview. Its expand/collapse
+labels are UI copy only. The reviewed English and Traditional Chinese `session-rotation`
 explanations, handoff trigger and original excerpt remain applicable; the shared
 `next-strings.ts` source receipt follows this UI change.
+
+The voice-work entry also covers explicitly awaited discovery continuations:
+original requests, recorded results and real tool contracts can be sent to the
+selected CLI for up to four planning rounds per request. GET and startup still
+never call a model. Both language explanations name the additional trigger and
+quota boundary. Versioned question approval, effect admission, capability-scoped
+claims and durable cross-browser narration are deterministic execution boundaries,
+not authority granted to the planning model.
 
 Persistent Bots have a separate conditional entry for Claude Code and Codex.
 The default-hidden module records configuration without opening a provider.

@@ -99,6 +99,12 @@ export const CARRIED = {
   // and whether an OpenAI key is set, never the key.
   "copilot-settings": "GET /v1/settings/copilot",
   "copilot-settings-update": "POST /v1/settings/copilot",
+  // The voice assistant workspace on the selected machine. Reads never start a
+  // model; changes require Send and an idempotency receipt.
+  "copilot-work": "GET /v1/voice/copilot-work",
+  // The voice assistant workspace on the selected machine. Reads never start a
+  // model; changes require Send and an idempotency receipt.
+  "copilot-work-update": "POST /v1/voice/copilot-work",
   "default-models": "GET /v1/settings/default-models",
   "default-models-update": "POST /v1/settings/default-models",
   // A page's own failures, delivered by the copied client with nobody pressing
@@ -172,6 +178,21 @@ export const CARRIED = {
   "project-add": "POST /v1/places?machine=",
   "project-antigravity-consent-change": "POST /v1/projects/{project}/antigravity-consent",
   "project-antigravity-consent-status": "GET /v1/projects/{project}/antigravity-consent",
+  "project-assistants.answer": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/permissions/{offer_id}/answer",
+  "project-assistants.create": "captured Bot source POST /v1/project-assistants",
+  "project-assistants.edit": "captured Bot source PATCH /v1/project-assistants/{command.key.bot_id}",
+  "project-assistants.events": "captured Bot source GET /v1/project-assistants/{key.bot_id}/events",
+  "project-assistants.export": "captured Bot source GET /v1/project-assistants/{bot_id}/export",
+  "project-assistants.forget": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/memory/forget",
+  "project-assistants.get": "captured Bot source GET /v1/project-assistants/{bot_id}",
+  "project-assistants.history": "captured Bot source GET /v1/project-assistants/{key.bot_id}/messages",
+  "project-assistants.list": "captured Bot source GET /v1/project-assistants",
+  "project-assistants.memory": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/memory",
+  "project-assistants.observed": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/observed",
+  "project-assistants.read": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/read",
+  "project-assistants.send": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
+  "project-assistants.status": "captured Bot source GET /v1/project-assistants/status",
+  "project-assistants.stop": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/stop",
   "project-codegraph": "GET /v1/projects/{project}/codegraph",
   "project-codegraph-build": "POST /v1/projects/{project}/codegraph",
   "project-devstack": "GET /v1/projects/{project}/devstack",

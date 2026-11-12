@@ -222,6 +222,9 @@ func (b Bridge) answer(cmd Command, p plan, o op, res LocalResponse) Answer {
 			if refusal.Code != "" {
 				return b.publish(cmd, p, refusal, nil)
 			}
+			if status, code, ok := projectAssistantShapedFailure(o.name, body); ok {
+				return b.settle(p, status, code, body, nil)
+			}
 			return b.settle(p, res.Status, "", body, nil)
 		}
 		var parsed map[string]any

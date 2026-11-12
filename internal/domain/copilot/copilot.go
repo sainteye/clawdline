@@ -54,6 +54,8 @@ type Settings struct {
 	Speed             string `json:"speed,omitempty"`
 	ExtraInstructions string `json:"extra_instructions,omitempty"`
 	BriefingAssistant string `json:"briefing_assistant,omitempty"`
+	WorkEnabled       bool   `json:"work_enabled,omitempty"`
+	WorkAssistant     string `json:"work_assistant,omitempty"`
 	// BriefingOff turns the machine's prepared briefing off; on unless set.
 	BriefingOff bool `json:"briefing_off,omitempty"`
 	// LongAnswers lifts the three-sentence limit on ordinary answers; off unless set.
@@ -77,6 +79,9 @@ func (s Settings) Effective() Settings {
 	if !contains(BriefingAssistants, s.BriefingAssistant) {
 		s.BriefingAssistant = BriefingAssistants[0]
 	}
+	if !contains(BriefingAssistants, s.WorkAssistant) {
+		s.WorkAssistant = s.BriefingAssistant
+	}
 	return s
 }
 
@@ -98,6 +103,8 @@ type Change struct {
 	Speed             *string `json:"speed"`
 	ExtraInstructions *string `json:"extra_instructions"`
 	BriefingAssistant *string `json:"briefing_assistant"`
+	WorkEnabled       *bool   `json:"work_enabled"`
+	WorkAssistant     *string `json:"work_assistant"`
 	Briefing          *bool   `json:"briefing"`
 	Brief             *bool   `json:"brief"`
 }
@@ -170,6 +177,15 @@ func apply(s Settings, c Change) (Settings, error) {
 	}
 	if c.Briefing != nil {
 		s.BriefingOff = !*c.Briefing
+	}
+	if c.WorkEnabled != nil {
+		s.WorkEnabled = *c.WorkEnabled
+	}
+	if c.WorkAssistant != nil {
+		if !contains(BriefingAssistants, *c.WorkAssistant) {
+			return s, ErrBadAssistant
+		}
+		s.WorkAssistant = *c.WorkAssistant
 	}
 	if c.Brief != nil {
 		s.LongAnswers = !*c.Brief

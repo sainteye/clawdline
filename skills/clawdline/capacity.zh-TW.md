@@ -710,6 +710,19 @@
 | `voice.vocabulary_project_terms` | 40 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.vocabulary_term_characters` | 64 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.vocabulary_terms` | 200 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_execution_milliseconds` | 120000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_heartbeat_milliseconds` | 30000 | `milliseconds` | `coalesce` | `diagnostics` | — |
+| `voice.work_lease_seconds` | 90 | `seconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_parallel_reads` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_plan_inputs` | 8 | `rows` | `coalesce` | `sender, diagnostics` | — |
+| `voice.work_plan_rounds` | 4 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_poll_milliseconds` | 1000 | `milliseconds` | `coalesce` | `diagnostics` | — |
+| `voice.work_progress` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_records` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_request_bytes` | 65536 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_request_milliseconds` | 10000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_state_bytes` | 2097152 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_text_characters` | 4000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `waits.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `work.assignments` | 4000 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `work.card_description_runes` | 200 | `characters` | `evict_oldest` | `diagnostics, sender` | — |

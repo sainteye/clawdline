@@ -188,7 +188,14 @@ func goStrings(values []string) string {
 	return "[]string{" + strings.Join(quoted, ", ") + "}"
 }
 
-var placeholder = regexp.MustCompile(`\{(/?)([a-z_]+)([*?]?)\}`)
+var placeholder = regexp.MustCompile(`\{(/?)([a-z_]+(?:\.[a-z_]+)*)([*?]?)\}`)
+
+func goField(field string) string {
+	if strings.Contains(field, ".") {
+		return fmt.Sprintf("b.genAt(%q)", field)
+	}
+	return fmt.Sprintf("b[%q]", field)
+}
 
 // goTemplate is a name template as a Go string expression.
 func goTemplate(template string) string {
@@ -205,7 +212,7 @@ func goTemplate(template string) string {
 		if at[0] > 0 {
 			parts = append(parts, strconv.Quote(rest[:at[0]]))
 		}
-		parts = append(parts, fmt.Sprintf("genText(b[%q])", rest[at[4]:at[5]]))
+		parts = append(parts, fmt.Sprintf("genText(%s)", goField(rest[at[4]:at[5]])))
 		rest = rest[at[1]:]
 	}
 	if len(parts) == 0 {
@@ -253,15 +260,15 @@ func goPath(template string) (string, error) {
 			if !declared {
 				return "", fmt.Errorf("path %s: an optional segment cannot come first", template)
 			}
-			fmt.Fprintf(&b, "if t := genText(b[%q]); t != \"\" {\npath += \"/\" + segment(t)\n}\n", field)
+			fmt.Fprintf(&b, "if t := genText(%s); t != \"\" {\npath += \"/\" + segment(t)\n}\n", goField(field))
 		case slash:
 			return "", fmt.Errorf("path %s: a {/field} segment must be optional", template)
 		case mark == "*":
-			terms = append(terms, fmt.Sprintf("escapedDocumentPath(genText(b[%q]))", field))
+			terms = append(terms, fmt.Sprintf("escapedDocumentPath(genText(%s))", goField(field)))
 		case mark == "?":
 			return "", fmt.Errorf("path %s: an optional segment carries its slash", template)
 		default:
-			terms = append(terms, fmt.Sprintf("segment(genText(b[%q]))", field))
+			terms = append(terms, fmt.Sprintf("segment(genText(%s))", goField(field)))
 		}
 		rest = rest[at[1]:]
 	}
@@ -336,6 +343,7 @@ var checkFuncs = map[string]string{
 	"lower_hex":       "genLowerHex",
 	"absolute_path":   "genAbsolutePath",
 	"not_blank":       "genNotBlank",
+	"pa_bot_id":       "projectAssistantBotID",
 }
 
 func goRule(f cloudvocab.Field) string {

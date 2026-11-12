@@ -430,8 +430,8 @@ export function Detail({
         <div className="tools">
           <Tools
             options={[
-              ...(row && role && skillToggle ? [{ id: "skills", control: <SkillBotToggle persona={role.persona} name={role.name} skills={skills} /> }] : []),
-              ...(row && hasOutputs ? [{ id: "outputs", control: <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
+              ...(row && role && skillToggle ? [{ id: "skills", preview: <PersonaBot persona={role.persona} cellPx={2} />, control: <SkillBotToggle persona={role.persona} name={role.name} skills={skills} /> }] : []),
+              ...(row && hasOutputs ? [{ id: "outputs", preview: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 7h7l2-3h8v16H3z"/><path d="M3 9h17"/></svg>, control: <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
                 aria-label={nextWord("outputsTitle")} title={nextWord("outputsTitle")} disabled={ending}
                 onClick={() => setOutputsFor(outputsOpen ? null : outputIdentity)}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 7h7l2-3h8v16H3z"/><path d="M3 9h17"/></svg>
@@ -888,8 +888,11 @@ function Tools({
     <>
       <HeaderOptions key={outputSessionKey(row)} options={[
         ...options,
-        ...(browserTab ? [{ id: "browser", control: <BrowserChip onOpen={onBrowser} /> }] : []),
-        ...(atMac() && menuVisibility.focus ? [{ id: "focus", control:
+        ...(browserTab ? [{ id: "browser", preview: <><i />{nextWord("browserChip")}</>, control: <BrowserChip onOpen={onBrowser} /> }] : []),
+        ...(atMac() && menuVisibility.focus ? [{ id: "focus", preview: <svg viewBox="0 0 14 14" aria-hidden="true">
+          <rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" strokeWidth="1.3" />
+          <path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>, control:
       <button
         className="chip"
         id="tx-focus"

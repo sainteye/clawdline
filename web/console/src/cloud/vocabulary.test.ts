@@ -13,6 +13,8 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { writeRoute } from "./relay-writer.ts"
+// @ts-expect-error -- Node executes source extensions.
+import { assistantRelayRequest } from "./project-assistants.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const tablePath = resolve(here, "../../../../internal/domain/cloudvocab/vocabulary.json")
@@ -23,6 +25,9 @@ interface Row {
   console_route?: string
   console_seam?: "writer" | "reader" | "client"
   console_parsed_as?: string
+  example: Record<string,unknown>
+  shapes: {path:string;query?:string[]}[]
+  local?: {method:string}
 }
 
 function rows(): Row[] {
@@ -58,6 +63,21 @@ test("every carried row's console route is parsed as its word", () => {
     const asked = sample(row.console_route!)
     if (row.console_seam === "client") {
       assert.equal(asked, null, `${row.op} says the copied client asks it, and names a route`)
+      if (row.op.startsWith("project-assistants.")) {
+        const example = row.example
+        const lookup = (path:string) => path.split(".").reduce<unknown>((value,key) => (value as Record<string,unknown>)[key],example)
+        let path = row.shapes[0].path.replace(/\{([^}]+)\}/g,(_match,field:string) => encodeURIComponent(String(lookup(field))))
+        const command = example.command as {key:{machine_id:string};idempotency_key:string} | undefined
+        const key = example.key as {machine_id:string} | undefined
+        const query = new URLSearchParams((row.shapes[0].query ?? []).map(field => [field,String(field === "machine_id" ? key?.machine_id ?? example.machine_id : example[field])]))
+        if (query.size) path += "?"+query
+        const {session:_session,request:_request,...fields} = example
+        const method = row.local!.method
+        const parsed = assistantRelayRequest(path,{method,...(command ? {body:JSON.stringify(fields),headers:{"Idempotency-Key":command.idempotency_key}} : {})})
+        assert.equal(parsed.word,row.op,`${row.op}: captured source parser`)
+        assert.deepEqual(parsed.fields,fields,`${row.op}: complete request fields`)
+        assert.equal(parsed.id,command?.idempotency_key ?? "",`${row.op}: stable command ref`)
+      }
       continue
     }
     assert.ok(asked, `${row.op}: no route for a ${row.console_seam} word`)

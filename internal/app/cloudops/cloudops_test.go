@@ -125,26 +125,28 @@ func errorOf(t *testing.T, a Answer) map[string]any {
 // written against is a word that quietly answers as a different word: the
 // Swift bridge's own comment records that a misspelled `info` would have
 // become a transcript if its switch had fallen through.
+type operationCase struct {
+	word string
+	body map[string]any
+	// where the answer goes
+	session string
+	name    string
+	// what this machine did
+	method string
+	path   string
+	query  map[string]string
+	body2  string
+	// or refused with
+	code   string
+	status int
+	// what this machine answers, when the default `{"ok":true}` is not
+	// something this word may carry.
+	answers *router
+}
+
 func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	machine := MachineReplySession
-	cases := []struct {
-		word string
-		body map[string]any
-		// where the answer goes
-		session string
-		name    string
-		// what this machine did
-		method string
-		path   string
-		query  map[string]string
-		body2  string
-		// or refused with
-		code   string
-		status int
-		// what this machine answers, when the default `{"ok":true}` is not
-		// something this word may carry.
-		answers *router
-	}{{
+	cases := []operationCase{{
 		word: "transcript",
 		body: map[string]any{"type": "transcript", "session": pane, "limit": 200,
 			"priority": "foreground"},
@@ -981,6 +983,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/voice/copilot-briefing",
 		body2: `{}`,
 	}, {
+		word:    "copilot-work",
+		body:    map[string]any{"type": "copilot-work", "session": machine, "request": "req-work"},
+		session: machine, name: "read:req-work", method: "GET", path: "/v1/voice/copilot-work",
+	}, {
+		word:    "copilot-work-update",
+		body:    map[string]any{"type": "copilot-work-update", "session": machine, "request": "req-work-update", "work": map[string]any{"action": "input", "id": "utterance-one", "text": "List Sessions"}},
+		session: machine, name: "action:req-work-update", method: "POST", path: "/v1/voice/copilot-work", body2: `{"action":"input","id":"utterance-one","text":"List Sessions"}`,
+	}, {
 		word: "copilot-journal",
 		body: map[string]any{"type": "copilot-journal", "session": machine, "request": "req-journal",
 			"journal": map[string]any{"call": "call-0001", "entries": []any{}}},
@@ -1520,6 +1530,7 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		code: "cloud_dispatch_unpinned", status: 409,
 	}}
 
+	cases = append(cases, projectAssistantOperationCases()...)
 	if len(cases) != len(Vocabulary()) {
 		t.Fatalf("the table covers %d words and the vocabulary has %d: %v",
 			len(cases), len(Vocabulary()), Vocabulary())

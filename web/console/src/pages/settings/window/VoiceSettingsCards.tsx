@@ -1,3 +1,4 @@
+import { nextWord } from "../../../next-strings.js"
 import { useCallback, useEffect, useState } from "react"
 import { asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
 import { followsRelay } from "../../../client.js"
@@ -8,7 +9,6 @@ import { Chip, Note, PopUp, Row, Switch } from "./controls.js"
 import { W, fill } from "./copy.js"
 import { settingsFailureSentence } from "./failure.js"
 import { cleanVocabulary, validTerm, VOICE_VOCABULARY_RUNES, VOICE_VOCABULARY_TERMS } from "./vocabulary.js"
-import { CopilotSettingsCard } from "./CopilotSettingsCard.js"
 
 /**
  * The LLM cleanup and personal vocabulary cards (docs/voice.md).
@@ -197,7 +197,7 @@ export function VoiceSettingsCards({ shown }: { shown: boolean }) {
         </ul>
         {failure ? <p className="sw-said" role="alert">{failure}</p> : null}
       </section>
-      <CopilotSettingsCard shown={shown} />
+      <a href="#page=voice-assistant&tab=settings">{nextWord("voiceWorkSettingsLink")}</a>
     </>
   )
 }

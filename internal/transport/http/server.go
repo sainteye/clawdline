@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"log"
@@ -61,15 +62,21 @@ import (
 )
 
 type Server struct {
-	codegraphMu      sync.Mutex
-	browserMu        sync.Mutex
-	browserBridge    *browserbridge.Bridge
-	codegraphBuilder *codegraph.Builder
-	githubMu         sync.Mutex
-	githubConn       *githubissues.Connection
-	jiraHTTP         *jiraissues.Client
-	issueSync        *issueSyncWorker
-	claudeRemote     interface {
+	voiceWorkMu        sync.Mutex
+	voiceWorkWake      uint64
+	voiceWorkSessions  []copilotDecisionSession
+	voiceWorkContracts json.RawMessage
+	voiceWorkRunning   bool
+	voiceWorkContext   context.Context
+	codegraphMu        sync.Mutex
+	browserMu          sync.Mutex
+	browserBridge      *browserbridge.Bridge
+	codegraphBuilder   *codegraph.Builder
+	githubMu           sync.Mutex
+	githubConn         *githubissues.Connection
+	jiraHTTP           *jiraissues.Client
+	issueSync          *issueSyncWorker
+	claudeRemote       interface {
 		SendRemote(context.Context, session.Session, string, func() error) error
 		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
 	}
@@ -783,6 +790,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/voice/copilot-briefing"}, s.copilotBriefingRoute},
 		{Route{"*", "/v1/voice/copilot-decide"}, s.copilotDecideRoute},
 		{Route{"*", "/v1/voice/copilot-journal"}, s.copilotJournalRoute},
+		{Route{"*", "/v1/voice/copilot-work"}, s.copilotWorkRoute},
 		{Route{"*", "/v1/voice/language"}, s.voiceLanguageRoute},
 		{Route{"*", "/v1/voice/source"}, s.voiceSourceRoute},
 		{Route{"*", "/v1/voice/setup"}, s.voiceSetupRoute},

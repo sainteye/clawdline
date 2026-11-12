@@ -308,6 +308,7 @@ func serve() {
 	// closed rather than abandoned mid-write.
 	cloudCtx, stopCloud := context.WithCancel(context.Background())
 	defer stopCloud()
+	srv.StartVoiceWork(cloudCtx)
 	stopAPIPerformance := srv.StartAPIPerformance(cloudCtx)
 	defer stopAPIPerformance()
 	stopCodeGraph := func() {
