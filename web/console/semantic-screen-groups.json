@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11548,
-  "riskKeys": 5060,
-  "nonRiskCount": 6488,
+  "englishContentKeys": 11553,
+  "riskKeys": 5061,
+  "nonRiskCount": 6492,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 485,
+      "count": 487,
       "sources": [
         null
       ],
@@ -873,6 +873,8 @@
         "capacityRow.voice.vocabulary_terms.what",
         "capacityRow.voice.work_execution_milliseconds.what",
         "capacityRow.voice.work_parallel_reads.what",
+        "capacityRow.voice.work_plan_rounds.what",
+        "capacityRow.voice.work_progress.what",
         "capacityRow.voice.work_records.what",
         "capacityRow.voice.work_request_bytes.what",
         "capacityRow.voice.work_request_milliseconds.what",
@@ -3843,7 +3845,7 @@
     },
     {
       "name": "next / other",
-      "count": 946,
+      "count": 947,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4785,6 +4787,7 @@
         "next.voiceWorkQueued",
         "next.voiceWorkReceive",
         "next.voiceWorkResume",
+        "next.voiceWorkRetryRead",
         "next.voiceWorkRunning",
         "next.voiceWorkSaving",
         "next.voiceWorkSettings",
@@ -6642,7 +6645,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 163,
+      "count": 164,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6773,6 +6776,7 @@
         "transparency.card.turn-todos.title",
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",
+        "transparency.card.voice-work.how",
         "transparency.card.voice-work.title",
         "transparency.claude",
         "transparency.codex",

@@ -152,3 +152,53 @@ web dependencies are reused or prepared by `node tools/ensure-web-deps.mjs` from
 the unchanged `web/package-lock.json`: Node 24.1.0, TypeScript 5.9.3, Vite 6.4.3,
 React 19.3.0. Installed provider CLIs reported Claude Code 2.1.322 and Codex CLI
 0.166.0; checking their versions does not establish live provider availability.
+
+## Review corrections and discovery continuation
+
+The corrected executor protocol (version 2) refuses claims from older browsers.
+Claims include supported tools and the current call identity. Call-scoped tasks
+stay with that call; another browser cannot consume its speed/length changes.
+Requests submitted outside a call update the next-call defaults, even if another
+browser happens to execute them during a call. The call and workspace share the
+same lazy guide loader, so help does not require an active call.
+
+An answer task seals the original menu fingerprint and resolved numbered option
+from its input directory. Its confirmation shows the original question and option.
+The tool checks the fingerprint again, and the final key POST retains that exact
+fingerprint. A replacement question requires a newly planned, confirmed task.
+
+Every active executor reconciles remote pause/cancel requests on state updates.
+Before any external mutation it also requests admission from the ledger, which
+serializes that decision against cancellation and unprocessed speech. Cancellation
+before admission prevents the effect. After admission, cancellation cannot promise
+rollback: an unacknowledged external effect stays unknown. A proven stop before an
+effect becomes paused/cancelled. Explicit retries get a new attempt key; late
+results from an earlier attempt cannot overwrite them. Known refusals are failed;
+a transport loss or failure after an accepted effect remains unknown. Unknown
+reads have a retry button; unknown writes, including navigation, do not.
+
+Each task attempt retains up to eight prepared updates plus a versioned final
+result. A call observes that durable evidence with its own watermark. Results
+prepared by another browser are narrated once, and multiple group members remain
+available even when a poll skips intermediate revisions. Earlier completed history
+is not replayed on connection. Actual WebRTC audio/device acceptance remains a
+separate runtime check from these deterministic state-machine tests.
+
+The planner receives the actual tool contracts, original requests and recorded
+tool results. It can return `wait_for` read task IDs. The ledger keeps the original
+request parked until those reads finish, then a finish receipt wakes one organizer
+for the next planning round. A project lookup can therefore produce a subsequent
+start proposal using its returned project ID; the start still requires confirmation.
+Each original request permits four planning rounds including the initial round.
+At that boundary the request remains visible with a typed error and an explicit
+retry action. Failed discovery is context for clarification, never an automatic
+read retry. Paused or unknown discovery waits for human reconciliation; cancelled
+discovery drops its continuation. GET, startup and mere polling never call a model.
+The continuation context is in memory; after a daemon restart, explicitly resubmit
+pending planning with a fresh directory/contracts before continuing.
+
+Regression evidence uses synthetic menus, two executor identities, a held
+operation, persisted progress and an injected tool-less planner. It proves the
+protocol transitions, not a production latency improvement, native provider
+availability or actual phone audio playback. No paid provider call is needed for
+these checks.

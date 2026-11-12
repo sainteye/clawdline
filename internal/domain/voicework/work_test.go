@@ -218,3 +218,172 @@ func TestNewUtterancesWaitForTheirOwnDirectoryWithoutOvertakingEarlierInput(t *t
 		t.Fatal(err)
 	}
 }
+
+func TestCancelledAdmissionCannotStartAndPausedExecutionCanStopHonestly(t *testing.T) {
+	s := New("work")
+	input(t, &s, "a", "Send later")
+	apply(t, &s, "a", add("send", "send_message_to_session", "one"))
+	_ = s.Edit("send", 1, "confirm", 3)
+	c := s.Claim("runner", 4)
+	_ = s.Edit("send", 1, "pause", 5)
+	if err := s.BeginEffect(c.ID, "runner", c.ActionKey, 6); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+	if err := s.Finish(c.ID, "runner", c.ActionKey, "", "voice_work_stopped", false, 7); err != nil {
+		t.Fatal(err)
+	}
+	if s.Tasks[0].Status != "paused" {
+		t.Fatal(s.Tasks[0])
+	}
+}
+func TestContinuationUsesOriginalInputAndOnlyReleasesAfterAllReads(t *testing.T) {
+	s := New("work")
+	input(t, &s, "a", "Start the project after looking it up")
+	if err := s.ApplyPlan(0, []string{"a"}, []Change{add("projects", "list_projects", "")}, "Looking up projects", []string{"projects"}, 2); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Pending()) != 0 {
+		t.Fatal("discovery not awaited")
+	}
+	c := s.Claim("runner", 3)
+	_ = s.Finish(c.ID, "runner", c.ActionKey, `{"projects":[{"id":"p"}]}`, "", false, 4)
+	if p := s.ReadyPending(); len(p) != 1 || p[0].Text != "Start the project after looking it up" || p[0].PlanRounds != 1 {
+		t.Fatal(p)
+	}
+	if err := s.ApplyPlan(s.PlanVersion, []string{"a"}, []Change{add("start", "start_session", "")}, "Confirm this start", nil, 5); err != nil {
+		t.Fatal(err)
+	}
+	if s.Tasks[1].Status != "waiting_confirmation" || len(s.Pending()) != 0 {
+		t.Fatal(s)
+	}
+}
+func TestCancelledDiscoveryDoesNotResurrectTheGoal(t *testing.T) {
+	s := New("work")
+	input(t, &s, "a", "Look up a project then start it")
+	_ = s.ApplyPlan(0, []string{"a"}, []Change{add("projects", "list_projects", "")}, "", []string{"projects"}, 2)
+	c := s.Claim("runner", 3)
+	_ = s.Edit(c.ID, 1, "cancel", 4)
+	_ = s.Finish(c.ID, "runner", c.ActionKey, "", "voice_work_stopped", false, 5)
+	if len(s.Pending()) != 0 || len(s.Inputs[0].WaitFor) != 0 {
+		t.Fatal(s)
+	}
+}
+func TestAnUnknownNavigationEffectCannotBeResumedAsARead(t *testing.T) {
+	s := New("work")
+	s.Tasks = []Task{{ID: "open", Version: 1, Tool: "get_devstack_links", Args: map[string]any{"open": true}, Status: "outcome_unknown"}}
+	if err := s.Edit("open", 1, "resume", 1); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+}
+func TestAnotherCallCannotStealCallSettingsAndRetriesGetNewAttemptKeys(t *testing.T) {
+	s := New("work")
+	_, _ = s.AddInput(Input{ID: "a", Text: "Speak slower", Call: "phone", Ready: true})
+	apply(t, &s, "a", add("speed", "set_speaking_speed", ""))
+	_ = s.Edit("speed", 1, "confirm", 3)
+	if s.ClaimFor("desktop", "", []string{"set_speaking_speed"}, 4) != nil {
+		t.Fatal("other browser claimed live-call work")
+	}
+	c := s.ClaimFor("phone", "phone", []string{"set_speaking_speed"}, 4)
+	if c == nil {
+		t.Fatal("capable call cannot claim")
+	}
+	_ = s.Finish(c.ID, "phone", c.ActionKey, "", "known refusal", false, 5)
+	_ = s.Edit(c.ID, 1, "resume", 6)
+	next := s.ClaimFor("phone", "phone", []string{"set_speaking_speed"}, 7)
+	if next == nil || next.ActionKey == c.ActionKey {
+		t.Fatal("retry reused a terminal receipt")
+	}
+}
+
+func TestProgressPersistsEveryPreparedMemberAndStaleAttemptsAreFenced(t *testing.T) {
+	s := New("work")
+	input(t, &s, "a", "Read the group")
+	apply(t, &s, "a", add("read", "get_sessions_summary", ""))
+	c := s.Claim("browser", 3)
+	for _, result := range []string{"first", "second"} {
+		if err := s.Progress(c.ID, "browser", c.ActionKey, result, 4); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = s.Finish(c.ID, "browser", c.ActionKey, "All returned", "", false, 5)
+	if len(s.Tasks[0].Progress) != 2 || s.Tasks[0].Progress[0].Value != "first" || s.Tasks[0].ResultRevision == 0 {
+		t.Fatal(s.Tasks[0])
+	}
+}
+
+func TestPausedAndUnknownDiscoveryWaitForExplicitResumeBeforeContinuing(t *testing.T) {
+	for _, stop := range []string{"pause", "unknown"} {
+		t.Run(stop, func(t *testing.T) {
+			s := New("work")
+			input(t, &s, "a", "Look up then start the project")
+			_ = s.ApplyPlan(0, []string{"a"}, []Change{add("lookup", "list_projects", "")}, "", []string{"lookup"}, 2)
+			c := s.Claim("runner", 3)
+			if stop == "pause" {
+				_ = s.Edit(c.ID, 1, "pause", 4)
+				_ = s.Finish(c.ID, "runner", c.ActionKey, "", "voice_work_stopped", false, 5)
+			} else {
+				_ = s.Finish(c.ID, "runner", c.ActionKey, "", "lost connection", true, 5)
+			}
+			if len(s.Pending()) != 0 || len(s.Inputs[0].WaitFor) != 1 {
+				t.Fatal("goal was resumed or forgotten", s)
+			}
+			_ = s.Edit(c.ID, 1, "resume", 6)
+			retry := s.Claim("runner", 7)
+			if retry == nil {
+				t.Fatal("retry not claimable")
+			}
+			_ = s.Finish(retry.ID, "runner", retry.ActionKey, `{"id":"exact-project"}`, "", false, 8)
+			if len(s.ReadyPending()) != 1 {
+				t.Fatal("explicitly recovered discovery did not continue", s)
+			}
+		})
+	}
+}
+func TestAmendingAFailedTaskDoesNotReplayOldEvidence(t *testing.T) {
+	s := New("work")
+	input(t, &s, "a", "Read progress")
+	apply(t, &s, "a", add("read", "get_session_summary", "one"))
+	c := s.Claim("runner", 3)
+	_ = s.Progress(c.ID, "runner", c.ActionKey, "old evidence", 4)
+	_ = s.Finish(c.ID, "runner", c.ActionKey, "old result", "known refusal", false, 5)
+	input(t, &s, "b", "Use another Session")
+	change := add("read", "get_session_summary", "two")
+	change.Op = "amend"
+	apply(t, &s, "b", change)
+	if s.Tasks[0].ResultRevision != 0 || len(s.Tasks[0].Progress) != 0 || s.Tasks[0].Result != "" {
+		t.Fatal("old evidence survived a changed spec", s.Tasks[0])
+	}
+}
+
+func TestLostAdmissionAcknowledgementCannotTurnCancellationIntoARetryableFailure(t *testing.T) {
+	s := New("work")
+	input(t, &s, "a", "Send the approved message")
+	apply(t, &s, "a", add("send", "send_message_to_session", "one"))
+	_ = s.Edit("send", 1, "confirm", 3)
+	c := s.Claim("runner", 4)
+	_ = s.BeginEffect(c.ID, "runner", c.ActionKey, 5)
+	_ = s.Edit(c.ID, 1, "cancel", 6)
+	// The executor was interrupted before it observed the admission response.
+	_ = s.Finish(c.ID, "runner", c.ActionKey, "", "voice_work_stopped", false, 7)
+	if s.Tasks[0].Status != "outcome_unknown" {
+		t.Fatal(s.Tasks[0])
+	}
+	if err := s.Edit(c.ID, 1, "resume", 8); !errors.Is(err, ErrConflict) {
+		t.Fatal("uncertain effect became retryable", err)
+	}
+}
+
+func TestOpeningADevStackStaysWithTheOriginatingCall(t *testing.T) {
+	s := New("work")
+	_, _ = s.AddInput(Input{ID: "a", Text: "Open this project's links", Call: "phone", Ready: true})
+	c := add("links", "get_devstack_links", "")
+	c.Args["open"] = true
+	apply(t, &s, "a", c)
+	_ = s.Edit("links", 1, "confirm", 3)
+	if s.ClaimFor("desktop", "", []string{"get_devstack_links"}, 4) != nil {
+		t.Fatal("navigation ran on another browser")
+	}
+	if s.ClaimFor("phone", "phone", []string{"get_devstack_links"}, 4) == nil {
+		t.Fatal("originating call could not execute navigation")
+	}
+}

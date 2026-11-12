@@ -13320,6 +13320,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "voice.work_plan_rounds",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxPlanRounds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "voice.work_poll_milliseconds",
     "Class": "buffer",
     "Unit": "milliseconds",
@@ -13334,6 +13354,26 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_progress",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxProgress"
+    ]
   },
   {
     "Register": "daemon",

@@ -480,3 +480,11 @@ changes.
 The native-log reader also looks under `$HOME/.gemini/<app-data-dir>`, where AGY
 1.5 writes its conversation logs. It still only reads for display and sends
 nothing to the model.
+
+The voice-work entry also covers explicitly awaited discovery continuations:
+original requests, recorded results and real tool contracts can be sent to the
+selected CLI for up to four planning rounds per request. GET and startup still
+never call a model. Both language explanations name the additional trigger and
+quota boundary. Versioned question approval, effect admission, capability-scoped
+claims and durable cross-browser narration are deterministic execution boundaries,
+not authority granted to the planning model.

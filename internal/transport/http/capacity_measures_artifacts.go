@@ -27,6 +27,8 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		"voice.work_heartbeat_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "client heartbeat interval while executing a task"}
 		},
+		"voice.work_plan_rounds":     func() capacity.Reading { return s.voiceWorkCapacity("plan_rounds") },
+		"voice.work_progress":        func() capacity.Reading { return s.voiceWorkCapacity("progress") },
 		"voice.work_records":         func() capacity.Reading { return s.voiceWorkCapacity("records") },
 		"voice.work_text_characters": func() capacity.Reading { return s.voiceWorkCapacity("text_characters") },
 		"voice.work_state_bytes":     func() capacity.Reading { return s.voiceWorkCapacity("state_bytes") },
@@ -214,6 +216,14 @@ func (s *Server) voiceWorkCapacity(kind string) capacity.Reading {
 	}
 	var used int64
 	switch kind {
+	case "plan_rounds":
+		for _, in := range state.Inputs {
+			used = max(used, int64(in.PlanRounds))
+		}
+	case "progress":
+		for _, task := range state.Tasks {
+			used = max(used, int64(len(task.Progress)))
+		}
 	case "records":
 		used = int64(max(len(state.Inputs), len(state.Tasks)))
 	case "text_characters":

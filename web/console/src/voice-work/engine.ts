@@ -2,7 +2,7 @@
 export interface VoiceTask {
   id: string; text: string; tool: string; args: Record<string, unknown>; sources: string[]; depends_on: string[]
   priority: number; version: number; approved_version?: number; status: string; result?: string; error?: string
-  runner?: string; action_key?: string; lease_until?: number
+  runner?: string; action_key?: string; lease_until?: number; call?: string; attempt?: number; effect_started?: boolean; progress?: {sequence:number;value:string}[]; result_revision?:number
 }
 export interface VoiceInput { id: string; text: string; call?: string; planned: boolean; at: number }
 export interface VoiceState { id: string; revision: number; plan_version: number; inputs: VoiceInput[]; tasks: VoiceTask[]; reply?: string; planner_error?: string }
@@ -36,9 +36,13 @@ export async function workRequest(fetcher: typeof fetch, change?: Record<string,
   } finally {clearTimeout(timer);signal?.removeEventListener('abort',aborted)}
 }
 
+export const readTask = (task: Pick<VoiceTask,'tool'|'args'>) => ['list_sessions','get_sessions_summary','get_session_summary','get_session_recap','get_session_activity','explain_session_reply','get_session_notes','get_session_screen','list_machines','list_projects','get_devstack_links','clawdline_help','list_snippets'].includes(task.tool) && !(task.tool==='get_devstack_links'&&task.args.open===true)
+export const retryableTask = (task: VoiceTask) => ['paused','failed'].includes(task.status) || task.status==='outcome_unknown'&&readTask(task)
+
 export interface WorkRuntimeDeps {
+  capabilities?: () => {call:string;tools:string[]}
   request: (change?: Record<string, unknown>, signal?: AbortSignal) => Promise<VoiceAnswer>
-  execute: (task: VoiceTask, signal: AbortSignal, progress: (value: string) => Promise<void>) => Promise<{result: string; error?: string; unknown?: boolean}>
+  execute: (task: VoiceTask, signal: AbortSignal, progress: (value: string) => Promise<void>, beginEffect: () => Promise<void>) => Promise<{result: string; error?: string; unknown?: boolean}>
 }
 
 /** One page owner, fenced by both machine generation and daemon claim receipts.
@@ -63,8 +67,19 @@ export class VoiceWorkRuntime {
   private publish() { for (const f of this.listeners) f() }
   private accept(answer: VoiceAnswer) {
     if (!this.state || answer.state.revision >= this.state.revision) this.state = answer.state
+    for(const [id,control] of this.active) {
+      const task=this.state?.tasks.find(t=>t.id===id)
+      if(task && ['cancel_requested','cancelled','paused'].includes(task.status)) control.abort(new Error('voice_work_stopped'))
+    }
     if (answer.planning !== undefined) this.planning = answer.planning
     this.failure = ''; this.publish()
+  }
+  capabilitiesChanged() {
+    const call=this.deps.capabilities?.().call??''
+    for(const [id,control] of this.active) {
+      const task=this.state?.tasks.find(t=>t.id===id)
+      if(task?.call&&task.call!==call)control.abort(new Error('voice_work_stopped'))
+    }
   }
   activate() {
     this.owners++; void this.refresh()
@@ -93,7 +108,7 @@ export class VoiceWorkRuntime {
       if(generation!==this.generation)return
       this.accept(answer)
       if(this.owners && answer.state.tasks.some(t=>t.status==='queued'||((t.status==='running'||t.status==='cancel_requested')&&(t.lease_until??0)<Date.now()/1000))) {
-        const claim=await this.deps.request({action:'claim',runner:this.runner},reading.signal)
+        const claim=await this.deps.request({action:'claim',runner:this.runner,executor_version:2,...this.deps.capabilities?.()},reading.signal)
         if(generation!==this.generation)return
         this.accept(claim)
         if(claim.claimed) this.run(claim.claimed,generation,this.runner)
@@ -115,14 +130,23 @@ export class VoiceWorkRuntime {
       if(current()) void this.deps.request({action:'heartbeat',runner}).catch(()=>undefined)
     },WORK_HEARTBEAT_MS)
     void (async()=>{
+      let effectStarted=false
       let result:{result:string;error?:string;unknown?:boolean}
       try {
         result=await Promise.race([this.deps.execute(task,control.signal,async(value)=>{
           if(!current())return
+          if(control.signal.aborted)throw new Error('voice_work_stopped')
           const answer=await this.deps.request({action:'progress',id:task.id,runner,key:task.action_key,result:shortResult(value)})
           if(current()){this.accept(answer);this.onPrepared?.(task,value,false)}
-        }),new Promise<never>((_,reject)=>control.signal.addEventListener('abort',()=>reject(control.signal.reason??new Error('voice_work_execution_stopped')),{once:true}))])
-      } catch(error) {result={result:'',error:shortResult(error instanceof Error?error.message:String(error)),unknown:true} }
+        },async()=>{
+          if(control.signal.aborted)throw new Error('voice_work_stopped')
+          const answer=await this.deps.request({action:'begin_effect',id:task.id,runner,key:task.action_key})
+          // An admitted effect can race with a cancellation response; retain its uncertainty.
+          effectStarted=true
+          if(current())this.accept(answer)
+          if(control.signal.aborted)throw new Error('voice_work_stopped')
+        }),new Promise<never>((_,reject)=>{const abort=()=>reject(control.signal.reason??new Error('voice_work_execution_stopped'));if(control.signal.aborted)abort();else control.signal.addEventListener('abort',abort,{once:true})})])
+      } catch(error) {result={result:'',error:shortResult(error instanceof Error?error.message:String(error)),unknown:effectStarted||!control.signal.aborted} }
       if(!current())return
       const answer=await this.deps.request({action:'finish',id:task.id,runner,key:task.action_key,...result,result:shortResult(result.result)})
       if(current()){this.accept(answer);this.onPrepared?.(task,result.result,true)}

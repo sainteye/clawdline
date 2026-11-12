@@ -1040,3 +1040,10 @@ test("one prepared group member is available while another transcript is still p
  await prepared;assert.equal(finished,false);assert.ok(values.length)
  slow();await read
 })
+
+test('a managed answer cannot approve a replacement question in the same conversation',async()=>{
+ const {deps,calls}=fakeMachine({})
+ const output=JSON.parse((await runCopilotTool('answer_session_question',JSON.stringify({session_id:'%7',session_label:'Fix the flaky test',choice:'1',switch_confirmed:true,expected_question:'0'.repeat(64)}),deps)).output)
+ assert.ok(output.error)
+ assert.equal(calls.filter(c=>c.path.endsWith('/key')).length,0)
+})

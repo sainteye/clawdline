@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"log"
@@ -61,20 +62,21 @@ import (
 )
 
 type Server struct {
-	voiceWorkMu       sync.Mutex
-	voiceWorkWake     uint64
-	voiceWorkSessions []copilotDecisionSession
-	voiceWorkRunning  bool
-	voiceWorkContext  context.Context
-	codegraphMu       sync.Mutex
-	browserMu         sync.Mutex
-	browserBridge     *browserbridge.Bridge
-	codegraphBuilder  *codegraph.Builder
-	githubMu          sync.Mutex
-	githubConn        *githubissues.Connection
-	jiraHTTP          *jiraissues.Client
-	issueSync         *issueSyncWorker
-	claudeRemote      interface {
+	voiceWorkMu        sync.Mutex
+	voiceWorkWake      uint64
+	voiceWorkSessions  []copilotDecisionSession
+	voiceWorkContracts json.RawMessage
+	voiceWorkRunning   bool
+	voiceWorkContext   context.Context
+	codegraphMu        sync.Mutex
+	browserMu          sync.Mutex
+	browserBridge      *browserbridge.Bridge
+	codegraphBuilder   *codegraph.Builder
+	githubMu           sync.Mutex
+	githubConn         *githubissues.Connection
+	jiraHTTP           *jiraissues.Client
+	issueSync          *issueSyncWorker
+	claudeRemote       interface {
 		SendRemote(context.Context, session.Session, string, func() error) error
 		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
 	}

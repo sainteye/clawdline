@@ -1,3 +1,5 @@
+import { loadCopilotHelp } from './copilot-help-loader.js'
+import { WorkObservations } from '../voice-work/observations.js'
 import { onMachineChanged } from '../cloud/machine-switch.js'
 import { voiceWork, receiveVoiceWork, useCallWorkTools } from '../voice-work/runtime.js'
 import { WorkNarrator } from '../voice-work/narrator.js'
@@ -13,7 +15,6 @@ import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
-import type { HelpSection } from './copilot-help.js'
 import { nextWord } from '../next-strings.js'
 
 export interface CopilotLogItem {
@@ -158,13 +159,12 @@ export class RealtimeCopilotClient {
   private heardNow = ''
   private releaseWork?: () => void
   private workReply = ''
-  private progressTasks = new Set<string>()
   private narrator = new WorkNarrator(event => {
     if(this.dc?.readyState==='open')this.dc.send(JSON.stringify(event))
   },()=>consoleLanguage()||'zh-Hant')
   private workUnsubscribe?: () => void
   /** The user guide's sections, read the first time a call asks how something is used. */
-  private helpSections?: HelpSection[]
+
   /** What the machine confirmed since the person last spoke (`unbackedClaims`). */
   private doneSinceHeard = new Set<ActionKind>()
   /** A correction is under way, so its own words are not checked again. */
@@ -196,11 +196,7 @@ export class RealtimeCopilotClient {
       snippets: (id, request, machine) => openSnippetsOnThisPage(id, request, machine),
       fleet: () => fleetOnThisPage(),
       devstack: (place) => openDevStackOnThisPage(place),
-      help: async () => {
-        const [{ loadHelpDocs }, { helpSections }] = await Promise.all([import('./copilot-help-docs.js'), import('./copilot-help.js')])
-        this.helpSections ??= helpSections(await loadHelpDocs(), consoleLanguage() || 'en')
-        return this.helpSections
-      },
+      help: loadCopilotHelp,
       heard: () => this.heardNow,
       decide: (said, sessions) => decideOnMachine(said, sessions),
       machines: () => machinesOnThisPage(),
@@ -400,13 +396,11 @@ export class RealtimeCopilotClient {
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
       if(managed) {
-        this.narrator.reset();this.narrator.setReady(false);this.progressTasks.clear();this.workReply=voiceWork.state?.reply??''
-        useCallWorkTools(this.toolDeps());this.releaseWork=voiceWork.activate()
-        voiceWork.onPrepared=(task,value,final)=>{
-          if(!final){this.progressTasks.add(task.id);this.narrator.prepared('progress:'+task.id+':'+String(JSON.parse(value).label??''),JSON.stringify({task:task.text,prepared:value}))}
-          else {const streamed=this.progressTasks.delete(task.id);this.narrator.prepared('task:'+task.id,JSON.stringify({task:task.text,status:voiceWork.state?.tasks.find(t=>t.id===task.id)?.status,result:streamed?'All requested reads have returned.':value}))}
-        }
+        this.narrator.reset();this.narrator.setReady(false);this.workReply=voiceWork.state?.reply??''
+        useCallWorkTools(this.toolDeps(),this.journalCall);this.releaseWork=voiceWork.activate()
+        const observed=new WorkObservations(voiceWork.state)
         this.workUnsubscribe=voiceWork.subscribe(()=>{
+          for(const evidence of observed.update(voiceWork.state))this.narrator.prepared(evidence.key,evidence.value)
           const reply=voiceWork.state?.reply
           if(reply&&reply!==this.workReply){this.workReply=reply;this.narrator.prepared('plan',JSON.stringify({planner_reply:reply,tasks:voiceWork.state?.tasks.filter(t=>t.status==='waiting_confirmation').map(t=>({text:t.text,status:t.status}))}))}
         })

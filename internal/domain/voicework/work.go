@@ -12,6 +12,8 @@ import (
 )
 
 const (
+	MaxPlanRounds     = 4
+	MaxProgress       = 8
 	MaxRecords        = 256
 	MaxTextRunes      = 4000
 	MaxStateBytes     = 2 << 20
@@ -29,15 +31,28 @@ var (
 )
 
 type Input struct {
-	ID      string `json:"id"`
-	Call    string `json:"call,omitempty"`
-	Text    string `json:"text"`
-	At      int64  `json:"at"`
-	Planned bool   `json:"planned"`
-	Ready   bool   `json:"ready"`
+	ID         string   `json:"id"`
+	Call       string   `json:"call,omitempty"`
+	Text       string   `json:"text"`
+	At         int64    `json:"at"`
+	Planned    bool     `json:"planned"`
+	Ready      bool     `json:"ready"`
+	WaitFor    []string `json:"wait_for,omitempty"`
+	PlanRounds int      `json:"plan_rounds,omitempty"`
+}
+
+type Prepared struct {
+	Sequence int64  `json:"sequence"`
+	Value    string `json:"value"`
 }
 
 type Task struct {
+	Call            string         `json:"call,omitempty"`
+	StopAction      string         `json:"stop_action,omitempty"`
+	EffectStarted   bool           `json:"effect_started,omitempty"`
+	Attempt         int64          `json:"attempt,omitempty"`
+	Progress        []Prepared     `json:"progress,omitempty"`
+	ResultRevision  int64          `json:"result_revision,omitempty"`
 	ID              string         `json:"id"`
 	Text            string         `json:"text"`
 	Tool            string         `json:"tool"`
@@ -86,6 +101,12 @@ func ValidText(s string) bool {
 // IsRead is deliberately closed: a model cannot turn an unknown tool into a read.
 func IsRead(tool string) bool {
 	return slices.Contains([]string{"list_sessions", "get_sessions_summary", "get_session_summary", "get_session_recap", "get_session_activity", "explain_session_reply", "get_session_notes", "get_session_screen", "list_machines", "list_projects", "get_devstack_links", "clawdline_help", "list_snippets"}, tool)
+}
+func ReadTask(t Task) bool {
+	return IsRead(t.Tool) && !(t.Tool == "get_devstack_links" && t.Args["open"] == true)
+}
+func CallScoped(tool string, args map[string]any) bool {
+	return slices.Contains([]string{"set_speaking_speed", "set_answer_length", "open_session", "open_snippets", "run_snippet"}, tool) || tool == "get_devstack_links" && args["open"] == true
 }
 func KnownTool(tool string) bool {
 	return IsRead(tool) || slices.Contains([]string{"send_message_to_session", "answer_session_question", "close_session", "start_session", "run_snippet", "open_session", "open_snippets", "set_speaking_speed", "set_answer_length"}, tool)
@@ -171,6 +192,10 @@ func (s *State) task(id string) *Task {
 // Apply changes a copy first. A malformed dependency or stale plan changes nothing.
 // New inbox entries do not invalidate an older plan for an already received prefix.
 func (s *State) Apply(expected int64, sources []string, changes []Change, reply string, now int64) error {
+	return s.ApplyPlan(expected, sources, changes, reply, nil, now)
+}
+
+func (s *State) ApplyPlan(expected int64, sources []string, changes []Change, reply string, waitFor []string, now int64) error {
 	if s.PlanVersion != expected {
 		return ErrConflict
 	}
@@ -191,6 +216,16 @@ func (s *State) Apply(expected int64, sources []string, changes []Change, reply 
 			return ErrConflict
 		}
 	}
+	call := ""
+	for _, in := range next.Inputs {
+		if slices.Contains(sources, in.ID) && in.Call != "" {
+			if call != "" && call != in.Call {
+				call = "ambiguous"
+				break
+			}
+			call = in.Call
+		}
+	}
 	for _, c := range changes {
 		t := next.task(c.ID)
 		switch c.Op {
@@ -202,10 +237,17 @@ func (s *State) Apply(expected int64, sources []string, changes []Change, reply 
 				return ErrFull
 			}
 			status := "queued"
-			if !IsRead(c.Tool) || c.Tool == "get_devstack_links" && c.Args["open"] == true {
+			if !ReadTask(Task{Tool: c.Tool, Args: c.Args}) {
 				status = "waiting_confirmation"
 			}
-			next.Tasks = append(next.Tasks, Task{ID: c.ID, Text: c.Text, Tool: c.Tool, Args: c.Args, Sources: slices.Clone(sources), DependsOn: c.DependsOn, Priority: c.Priority, Version: 1, Status: status, At: now, UpdatedAt: now})
+			taskCall := ""
+			if CallScoped(c.Tool, c.Args) {
+				if call == "ambiguous" {
+					return ErrInvalid
+				}
+				taskCall = call
+			}
+			next.Tasks = append(next.Tasks, Task{Call: taskCall, ID: c.ID, Text: c.Text, Tool: c.Tool, Args: c.Args, Sources: slices.Clone(sources), DependsOn: c.DependsOn, Priority: c.Priority, Version: 1, Status: status, At: now, UpdatedAt: now})
 		case "amend":
 			if t == nil || t.Status == "running" || t.Status == "cancel_requested" || t.Status == "done" || t.Status == "outcome_unknown" {
 				return ErrConflict
@@ -215,10 +257,27 @@ func (s *State) Apply(expected int64, sources []string, changes []Change, reply 
 			}
 			t.Text, t.Tool, t.Args, t.DependsOn, t.Priority = c.Text, c.Tool, c.Args, c.DependsOn, c.Priority
 			t.Sources = append(t.Sources, sources...)
+			if CallScoped(c.Tool, c.Args) {
+				if call == "ambiguous" {
+					return ErrInvalid
+				}
+				t.Call = call
+			} else {
+				t.Call = ""
+			}
 			t.Version++
+			t.Result = ""
+			t.Error = ""
+			t.Progress = nil
+			t.ResultRevision = 0
+			t.EffectStarted = false
+			t.Runner = ""
+			t.ActionKey = ""
+			t.LeaseUntil = 0
+			t.StopAction = ""
 			t.UpdatedAt = now
 			t.Status = "queued"
-			if !IsRead(t.Tool) || t.Tool == "get_devstack_links" && t.Args["open"] == true {
+			if !ReadTask(*t) {
 				t.Status = "waiting_confirmation"
 			}
 		case "pause", "cancel":
@@ -227,6 +286,7 @@ func (s *State) Apply(expected int64, sources []string, changes []Change, reply 
 			}
 			if t.Status == "running" || t.Status == "cancel_requested" {
 				t.Status = "cancel_requested"
+				t.StopAction = c.Op
 			} else if c.Op == "pause" {
 				t.Status = "paused"
 			} else {
@@ -271,8 +331,19 @@ func (s *State) Apply(expected int64, sources []string, changes []Change, reply 
 			return ErrInvalid
 		}
 	}
+	for _, id := range waitFor {
+		t := next.task(id)
+		if t == nil || !ReadTask(*t) || t.Status != "queued" && t.Status != "running" {
+			return ErrInvalid
+		}
+	}
 	for i := range next.Inputs {
 		if slices.Contains(sources, next.Inputs[i].ID) {
+			if next.Inputs[i].PlanRounds >= MaxPlanRounds {
+				return ErrFull
+			}
+			next.Inputs[i].PlanRounds++
+			next.Inputs[i].WaitFor = slices.Clone(waitFor)
 			next.Inputs[i].Planned = true
 		}
 	}
@@ -281,6 +352,7 @@ func (s *State) Apply(expected int64, sources []string, changes []Change, reply 
 	}
 	next.Reply, next.PlannerError = reply, ""
 	next.PlanVersion++
+	next.releaseContinuations()
 	next.Revision++
 	*s = next
 	return nil
@@ -303,7 +375,7 @@ func (s *State) Edit(id string, version int64, action string, now int64) error {
 		t.Status = "queued"
 		t.ApprovedVersion = t.Version
 	case "resume":
-		if t.Status != "paused" && t.Status != "failed" && !(t.Status == "outcome_unknown" && IsRead(t.Tool)) {
+		if t.Status != "paused" && t.Status != "failed" && !(t.Status == "outcome_unknown" && ReadTask(*t)) {
 			return ErrConflict
 		}
 		t.Status = "queued"
@@ -314,6 +386,7 @@ func (s *State) Edit(id string, version int64, action string, now int64) error {
 		}
 		if t.Status == "running" || t.Status == "cancel_requested" {
 			t.Status = "cancel_requested"
+			t.StopAction = action
 		} else if action == "pause" {
 			t.Status = "paused"
 		} else {
@@ -325,9 +398,11 @@ func (s *State) Edit(id string, version int64, action string, now int64) error {
 		}
 		t.Status = "done"
 		t.Result = "Completed by the person."
+		t.ResultRevision = s.Revision + 1
 	default:
 		return ErrInvalid
 	}
+	s.releaseContinuations()
 	t.UpdatedAt = now
 	s.PlanVersion++
 	s.Revision++
@@ -335,7 +410,10 @@ func (s *State) Edit(id string, version int64, action string, now int64) error {
 }
 
 // Claim captures the exact task version. A lost write is never made safe by a lease.
-func (s *State) Claim(runner string, now int64) *Task {
+func (s *State) Claim(runner string, now int64) *Task { return s.ClaimFor(runner, "", nil, now) }
+
+// ClaimFor skips work this browser cannot execute, including another live call's settings.
+func (s *State) ClaimFor(runner, call string, tools []string, now int64) *Task {
 	if runner == "" {
 		return nil
 	}
@@ -352,7 +430,7 @@ func (s *State) Claim(runner string, now int64) *Task {
 		}
 		if t.Status == "running" || t.Status == "cancel_requested" {
 			running++
-			writing = writing || !IsRead(t.Tool) || t.Tool == "get_devstack_links" && t.Args["open"] == true
+			writing = writing || !ReadTask(*t)
 			resources[resource(*t)] = true
 		}
 	}
@@ -362,10 +440,10 @@ func (s *State) Claim(runner string, now int64) *Task {
 	var picked *Task
 	for i := range s.Tasks {
 		t := &s.Tasks[i]
-		if t.Status != "queued" || resources[resource(*t)] {
+		if t.Status != "queued" || resources[resource(*t)] || tools != nil && !slices.Contains(tools, t.Tool) || t.Call != "" && t.Call != call {
 			continue
 		}
-		if !IsRead(t.Tool) || t.Tool == "get_devstack_links" && t.Args["open"] == true {
+		if !ReadTask(*t) {
 			if t.ApprovedVersion != t.Version {
 				t.Status = "waiting_confirmation"
 				s.Revision++
@@ -393,9 +471,16 @@ func (s *State) Claim(runner string, now int64) *Task {
 	if picked == nil {
 		return nil
 	}
+	picked.Attempt++
+	picked.Progress = nil
+	picked.Result = ""
+	picked.Error = ""
+	picked.ResultRevision = 0
+	picked.EffectStarted = false
+	picked.StopAction = ""
 	picked.Status = "running"
 	picked.Runner = runner
-	picked.ActionKey = fmt.Sprintf("voice:%s:%d", picked.ID, picked.Version)
+	picked.ActionKey = fmt.Sprintf("voice:%s:%d:%d", picked.ID, picked.Version, picked.Attempt)
 	picked.LeaseUntil = now + LeaseSecondsLimit
 	picked.UpdatedAt = now
 	s.Revision++
@@ -421,6 +506,10 @@ func (s *State) Progress(id, runner, key, result string, now int64) error {
 	if utf8.RuneCountInString(result) > MaxTextRunes {
 		return ErrInvalid
 	}
+	if len(t.Progress) >= MaxProgress {
+		return ErrFull
+	}
+	t.Progress = append(t.Progress, Prepared{Sequence: int64(len(t.Progress) + 1), Value: result})
 	t.Result = result
 	t.UpdatedAt = now
 	s.Revision++
@@ -436,8 +525,15 @@ func (s *State) Finish(id, runner, key, result, problem string, unknown bool, no
 		return ErrInvalid
 	}
 	t.Result, t.Error, t.UpdatedAt = result, problem, now
+	t.ResultRevision = s.Revision + 1
 	switch {
-	case unknown:
+	case t.Status == "cancel_requested" && problem == "voice_work_stopped" && !unknown && !t.EffectStarted:
+		t.Status = "cancelled"
+		if t.StopAction == "pause" {
+			t.Status = "paused"
+		}
+		t.Error = ""
+	case unknown || t.EffectStarted && problem == "voice_work_stopped":
 		t.Status = "outcome_unknown"
 	case problem != "":
 		t.Status = "failed"
@@ -446,6 +542,45 @@ func (s *State) Finish(id, runner, key, result, problem string, unknown bool, no
 	default:
 		t.Status = "done"
 	}
+	s.releaseContinuations()
 	s.Revision++
 	return nil
+}
+
+// BeginEffect serializes cancellation against admission to an external effect.
+// Admission is not execution: a lost response thereafter remains unknown.
+func (s *State) BeginEffect(id, runner, key string, now int64) error {
+	t := s.task(id)
+	if t == nil || t.Runner != runner || t.ActionKey != key || t.Status != "running" || t.ApprovedVersion != t.Version || len(s.Pending()) > 0 {
+		return ErrConflict
+	}
+	t.EffectStarted = true
+	t.UpdatedAt = now
+	s.Revision++
+	return nil
+}
+func (s *State) releaseContinuations() {
+	for i := range s.Inputs {
+		in := &s.Inputs[i]
+		if len(in.WaitFor) == 0 {
+			continue
+		}
+		ready := true
+		for _, id := range in.WaitFor {
+			t := s.task(id)
+			if t == nil || t.Status == "cancelled" || t.Status == "cancel_requested" && t.StopAction != "pause" {
+				in.WaitFor = nil
+				ready = false
+				break
+			}
+			if t.Status != "done" && t.Status != "failed" {
+				ready = false
+			}
+		}
+		if ready {
+			in.Planned = false
+			in.Ready = true
+			in.WaitFor = nil
+		}
+	}
 }

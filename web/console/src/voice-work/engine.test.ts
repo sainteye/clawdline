@@ -50,3 +50,60 @@ test('transport failure is typed and never retries an uncertain mutation',async(
  await assert.rejects(workRequest((async()=>{count++;throw new TypeError('disconnected')}) as typeof fetch,{action:'confirm'}),{code:'voice_work_transport_unknown',uncertain:true})
  assert.equal(count,1)
 })
+
+test('a cancellation observed from another browser aborts the current executor',async()=>{
+ const t=task('cancel');let claimed=false;let signal:AbortSignal|undefined;let stopped!:()=>void
+ const started=new Promise<void>(r=>stopped=r)
+ const runtime=new VoiceWorkRuntime({request:async(change)=>{
+  if(change?.action==='claim'&&!claimed){claimed=true;return {state:{...state(),revision:2,tasks:[t]},claimed:t}}
+  if(change?.action==='cancel')return {state:{...state(),revision:3,tasks:[{...t,status:'cancel_requested'}]}}
+  return {state:{...state(),revision:claimed?2:1,tasks:claimed?[t]:[{...t,status:'queued'}]}}
+ },execute:async(_,s)=>{signal=s;stopped();return new Promise(()=>{})}})
+ const release=runtime.activate();await started
+ await runtime.change({action:'cancel',id:t.id,version:1});release()
+ assert.equal(signal?.aborted,true)
+ await tick();runtime.switchMachine()
+})
+
+// @ts-expect-error -- Node executes TypeScript source.
+import {WorkObservations} from './observations.ts'
+// @ts-expect-error -- Node executes TypeScript source.
+import {retryableTask} from './engine.ts'
+test('durable progress from another browser preserves every member and is spoken once',()=>{
+ const observer=new WorkObservations(state())
+ const one={...task('group'),attempt:1,progress:[{sequence:1,value:'first'},{sequence:2,value:'second'}]}
+ const progress={...state(),revision:2,tasks:[one]}
+ assert.equal(observer.update(progress).length,2)
+ assert.equal(observer.update(progress).length,0)
+ const done={...progress,revision:3,tasks:[{...one,status:'done',result_revision:3,result:'finished'}]}
+ assert.equal(observer.update(done).length,1)
+ assert.equal(observer.update(done).length,0)
+ assert.equal(new WorkObservations(done).update(done).length,0,'old history is not replayed')
+})
+test('unknown reads offer retry, unknown writes and navigation effects do not',()=>{
+ assert.equal(retryableTask({...task('read'),status:'outcome_unknown'}),true)
+ assert.equal(retryableTask({...task('write'),tool:'send_message_to_session',status:'outcome_unknown'}),false)
+ assert.equal(retryableTask({...task('open'),tool:'get_devstack_links',args:{open:true},status:'outcome_unknown'}),false)
+})
+
+test('cancellation after effect admission retains an unknown outcome rather than claiming rollback',async()=>{
+ const t={...task('effect'),tool:'send_message_to_session'};let claimed=false;let ready!:()=>void;let finished!:(x:Record<string,unknown>)=>void
+ const admitted=new Promise<void>(r=>ready=r),done=new Promise<Record<string,unknown>>(r=>finished=r)
+ const runtime=new VoiceWorkRuntime({request:async(change)=>{
+  if(change?.action==='claim'&&!claimed){claimed=true;return {state:{...state(),revision:2,tasks:[t]},claimed:t}}
+  if(change?.action==='cancel')return {state:{...state(),revision:4,tasks:[{...t,status:'cancel_requested'}]}}
+  if(change?.action==='finish')finished(change)
+  return {state:{...state(),revision:claimed?3:1,tasks:claimed?[t]:[{...t,status:'queued'}]}}
+ },execute:async(_,__,___,beginEffect)=>{await beginEffect();ready();return new Promise(()=>{})}})
+ const stop=runtime.activate()
+ try {await admitted;await runtime.change({action:'cancel',id:t.id,version:1});const result=await done;assert.equal(result.unknown,true);assert.equal(result.error,'voice_work_stopped')}
+ finally {stop();runtime.switchMachine();await tick()}
+})
+
+test('partial progress followed by failure never claims that all reads returned',()=>{
+ const observer=new WorkObservations(state())
+ const events=observer.update({...state(),revision:2,tasks:[{...task('partial'),progress:[{sequence:1,value:'one member prepared'}],status:'outcome_unknown',error:'connection lost',result_revision:2}]})
+ assert.equal(events.length,2)
+ assert.doesNotMatch(events[1].value,/All requested reads have returned/)
+ assert.match(events[1].value,/outcome_unknown/)
+})

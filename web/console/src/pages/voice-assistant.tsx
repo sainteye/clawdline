@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react'
 import type { PageModule } from './types.js'
 import { nextWord as W } from '../next-strings.js'
 import { CopilotSettingsCard } from './settings/window/CopilotSettingsCard.js'
-import { voiceWork, receiveVoiceWork, workDirectory } from '../voice-work/runtime.js'
-import { WORK_TEXT_RUNES, type VoiceTask } from '../voice-work/engine.js'
+import { voiceWork, receiveVoiceWork, retryVoicePlanning } from '../voice-work/runtime.js'
+import { WORK_TEXT_RUNES, retryableTask, type VoiceTask } from '../voice-work/engine.js'
 import { COPILOT_OPEN } from '../overlays/events.js'
 import './voice-assistant.css'
 
 const statusWord:Record<string, Parameters<typeof W>[0]>={queued:'voiceWorkQueued',running:'voiceWorkRunning',waiting_confirmation:'voiceWorkConfirmation',waiting_result:'voiceWorkWaitingResult',paused:'voiceWorkPaused',cancel_requested:'voiceWorkCancelRequested',cancelled:'voiceWorkCancelled',outcome_unknown:'voiceWorkUnknown',failed:'voiceWorkFailed',done:'voiceWorkDone'}
+function approvedQuestion(task:VoiceTask):string {
+  const question=task.args._voice_question as {question?:unknown;option?:unknown}|undefined
+  return question&&typeof question==='object'?`${String(question.question??'')} · ${String(question.option??'')}`:''
+}
 function VoiceAssistant({shown}:{shown:boolean}) {
   const [,redraw]=useState(0)
   const [text,setText]=useState('')
@@ -42,7 +46,7 @@ function VoiceAssistant({shown}:{shown:boolean}) {
       </form>
       {voiceWork.state?.reply?<p className="voice-work-reply" role="status">{voiceWork.state.reply}</p>:null}
       {pending.length?<section className="voice-work-inbox"><h2>{W('voiceWorkInbox')} · {pending.length}</h2><ul>{pending.map(i=><li key={i.id}>{i.text}</li>)}</ul>
-        <button type="button" disabled={voiceWork.planning} onClick={()=>{setError('');void workDirectory().then(sessions=>voiceWork.change({action:'plan',sessions,input_ids:pending.map(i=>i.id),retry:true})).catch(e=>setError(String(e)))}}>{W(voiceWork.planning?'voiceWorkPlanning':'voiceWorkPlan')}</button>
+        <button type="button" disabled={voiceWork.planning} onClick={()=>{setError('');void retryVoicePlanning(pending.map(i=>i.id)).catch(e=>setError(String(e)))}}>{W(voiceWork.planning?'voiceWorkPlanning':'voiceWorkPlan')}</button>
         <p>{W('voiceWorkEnableReminder')}</p>
       </section>:null}
       {voiceWork.state?.planner_error?<p role="alert">{W('voiceWorkPlannerFailed',{reason:voiceWork.state.planner_error})}</p>:null}
@@ -53,12 +57,12 @@ function VoiceAssistant({shown}:{shown:boolean}) {
         <div className="voice-work-task-title"><h2>{task.text}</h2><span>{W(statusWord[task.status]??'voiceWorkUnknown')}</span></div>
         {task.depends_on.length?<p>{W('voiceWorkDepends',{tasks:task.depends_on.map(id=>tasks.find(t=>t.id===id)?.text??id).join(' · ')})}</p>:null}
         <details open={task.status==='waiting_confirmation'}><summary>{W('voiceWorkDetails')}</summary>
-          <code>{task.tool}</code><pre>{JSON.stringify(Object.fromEntries(Object.entries(task.args).filter(([k])=>!k.startsWith('_voice_'))),null,2)}</pre>
+          <code>{task.tool}</code>{approvedQuestion(task)?<p>{approvedQuestion(task)}</p>:null}<pre>{JSON.stringify(Object.fromEntries(Object.entries(task.args).filter(([k])=>!k.startsWith('_voice_'))),null,2)}</pre>
           {task.result?<pre>{task.result}</pre>:null}{task.error?<p role="alert">{task.error}</p>:null}
         </details>
         <div className="voice-work-actions">
           {task.status==='waiting_confirmation'?<button type="button" onClick={()=>{void change(task,'confirm')}}>{W('voiceWorkConfirm')}</button>:null}
-          {['paused','failed'].includes(task.status)?<button type="button" onClick={()=>{void change(task,'resume')}}>{W('voiceWorkResume')}</button>:null}
+          {retryableTask(task)?<button type="button" onClick={()=>{void change(task,'resume')}}>{W(task.status==='outcome_unknown'?'voiceWorkRetryRead':'voiceWorkResume')}</button>:null}
           {['queued','running'].includes(task.status)?<button type="button" onClick={()=>{void change(task,'pause')}}>{W('voiceWorkPause')}</button>:null}
           {['waiting_result','outcome_unknown'].includes(task.status)?<button type="button" onClick={()=>{void change(task,'complete')}}>{W('voiceWorkComplete')}</button>:null}
           {!['done','cancelled','cancel_requested','outcome_unknown'].includes(task.status)?<button type="button" onClick={()=>{void change(task,'cancel')}}>{W('voiceWorkCancel')}</button>:null}

@@ -691,7 +691,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `voice.work_lease_seconds` | 90 | `seconds` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_parallel_reads` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_plan_inputs` | 8 | `rows` | `coalesce` | `sender, diagnostics` | — |
+| `voice.work_plan_rounds` | 4 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_poll_milliseconds` | 1000 | `milliseconds` | `coalesce` | `diagnostics` | — |
+| `voice.work_progress` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_records` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_request_bytes` | 65536 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_request_milliseconds` | 10000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |

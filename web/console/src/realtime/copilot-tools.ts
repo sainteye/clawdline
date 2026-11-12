@@ -1821,7 +1821,7 @@ export function choiceOf(choices: { n: number; label: string }[], spoken: string
   return { error: `「${spoken}」對不到唯一的選項；選項是：${choices.map((c) => `${c.n}. ${c.label}`).join('、')}` }
 }
 
-async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, spoken: string, said = '', switchConfirmed = false): Promise<unknown> {
+async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, spoken: string, said = '', switchConfirmed = false, expectedQuestion = ''): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -1849,7 +1849,9 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
   }
   // The press names the question it answers; the machine refuses it if the
   // screen now asks something else.
-  const expect = menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0])
+  const currentQuestion = menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0])
+  if(expectedQuestion && expectedQuestion !== currentQuestion) return {error: 'voice_work_question_changed'}
+  const expect = expectedQuestion || currentQuestion
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/key`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
@@ -2205,7 +2207,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
-    else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true)
+    else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true, str(args.expected_question))
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
     else if (name === 'list_snippets') result = await listSnippets(deps, logs, str(args.session_id))
     else if (name === 'open_snippets') result = await openSnippets(deps, logs, str(args.session_id), args.kind === 'playbook' ? 'playbook' : 'snippet')
