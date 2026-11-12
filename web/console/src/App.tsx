@@ -95,10 +95,10 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 // disabled rather than missing, so what is not here can be seen.
 //
 const PAGES: { id: Page; nav: string; icon: SidebarIconName; key?: string; text?: string; ready: boolean }[] = [
-  { id: "voice-assistant", nav: "nav-voice-assistant", icon: "voice", key: "voiceWorkTitle", ready: true },
   { id: "sessions", nav: "nav-sessions", icon: "sessions", key: "webSessions", ready: true },
   { id: "projects", nav: "nav-projects", icon: "projects", key: "webProjects", ready: false },
   { id: "usage", nav: "nav-usage", icon: "usage", ready: false },
+  { id: "voice-assistant", nav: "nav-voice-assistant", icon: "voice", ready: true },
   { id: "playbook", nav: "nav-playbook", icon: "playbook", ready: false },
   { id: "ops", nav: "nav-ops", icon: "ops", ready: false },
   { id: "plan", nav: "nav-plan", icon: "plan", key: "webPlan", ready: false },
@@ -1067,7 +1067,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       aria-keyshortcuts={p.id === "sessions" ? shortcutAria("sessions") : undefined}
     >
       <SidebarIcon name={p.icon} />
-      {p.id === "usage" ? nextWord("usageOverview") : p.id === "notifications" ? nextWord("notificationNav") : p.id === "playbook" ? catalogWord("playbook", "playbook") : p.id === "ops" ? catalogWord("ops", "nav") : p.key ? T[p.key] : p.text}
+      {p.id === "voice-assistant" ? nextWord("voiceWorkTitle") : p.id === "usage" ? nextWord("usageOverview") : p.id === "notifications" ? nextWord("notificationNav") : p.id === "playbook" ? catalogWord("playbook", "playbook") : p.id === "ops" ? catalogWord("ops", "nav") : p.key ? T[p.key] : p.text}
       {tooOldMark(p.id)}
       {p.id === "sessions" && <kbd className="sidebar-shortcut" aria-hidden="true">{shortcutLabel("sessions")}</kbd>}
     </button>
