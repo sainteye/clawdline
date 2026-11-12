@@ -723,3 +723,23 @@ func Default(name string) int64 {
 	}
 	return 0
 }
+
+const (
+	BotsActors        = "bots.actors"
+	BotsProcesses     = "bots.processes"
+	BotsRPCPending    = "bots.rpc_rows"
+	BotsPermissions   = "bots.perm_rows"
+	BotsNotifications = "bots.notice_rows"
+	BotsFrames        = "bots.frame_bytes"
+	BotsCapture       = "bots.capture_bytes"
+	BotsStderr        = "bots.stderr_bytes"
+	BotsWrite         = "bots.write_ms"
+	BotsCleanup       = "bots.cleanup_ms"
+	BotsRPCDeadline   = "bots.rpc_ms"
+	BotsPrompt        = "bots.prompt_ms"
+	BotsSurvey        = "bots.survey_ms"
+	BotsChatGap       = "bots.chat_gap_ms"
+	BotsEventRefresh  = "bots.refresh_ms"
+)
+
+const BotsOwnedDescendants = "bots.owned_children"

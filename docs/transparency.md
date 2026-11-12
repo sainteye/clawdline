@@ -480,3 +480,20 @@ changes.
 The native-log reader also looks under `$HOME/.gemini/<app-data-dir>`, where AGY
 1.5 writes its conversation logs. It still only reads for display and sends
 nothing to the model.
+
+
+Persistent Bots have a separate conditional entry for Claude Code and Codex.
+The default-hidden module records configuration without opening a provider.
+Only an explicitly enabled, authorized send whose native readiness is verified
+may expand captured standing instructions and provenance-checked stored
+context into ACP text blocks. A selected quote is a separate checked block;
+forget revisions reject old or unknown-provenance quoted turns and unsafe
+opaque resume. Queued turns capture instructions at their next idle start.
+
+The reviewed sources include the runtime and native prompt producer. The
+scripted peer in testdata is registered by the conservative producer scan as
+verification code, not as an external provider or evidence of native loading.
+This inventory establishes no native read-only or memory-isolation proof.
+English and Taiwan Traditional Chinese describe the same conditional scope.
+The public website snapshot must be imported and deployed after the reviewed
+product commit lands; no website publication is performed by this change.

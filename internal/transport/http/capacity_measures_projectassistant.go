@@ -11,11 +11,27 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		return capacity.Reading{Known: true, Note: "contract only; Bot runtime and queues are not installed or allocated"}
 	}
 	return map[string]func() capacity.Reading{
+		capacity.BotsOwnedDescendants: unallocated,
 		capacity.BotsNameRunes:        unallocated,
 		capacity.BotsInstructionBytes: unallocated,
 		capacity.BotsMessageBytes:     unallocated,
 		capacity.BotsPendingTurns:     unallocated,
 		capacity.BotsPageRows:         unallocated,
 		capacity.BotsEventRows:        unallocated,
+		capacity.BotsActors:           unallocated,
+		capacity.BotsProcesses:        unallocated,
+		capacity.BotsRPCPending:       unallocated,
+		capacity.BotsPermissions:      unallocated,
+		capacity.BotsNotifications:    unallocated,
+		capacity.BotsFrames:           unallocated,
+		capacity.BotsCapture:          unallocated,
+		capacity.BotsStderr:           unallocated,
+		capacity.BotsWrite:            unallocated,
+		capacity.BotsCleanup:          unallocated,
+		capacity.BotsRPCDeadline:      unallocated,
+		capacity.BotsPrompt:           unallocated,
+		capacity.BotsSurvey:           unallocated,
+		capacity.BotsChatGap:          unallocated,
+		capacity.BotsEventRefresh:     unallocated,
 	}
 }
