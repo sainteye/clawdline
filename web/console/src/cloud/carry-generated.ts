@@ -37,6 +37,9 @@ export const CARRIED = {
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",
+  // The Chrome tab panel's recent actions, each with a small picture of the
+  // page after it.
+  "chrome-tab-activity": "GET /v1/browser/activity",
   // Take over a Session's Chrome tab, or hand it back.
   "chrome-tab-control": "POST /v1/browser/control",
   // A tap, typed text, a key or a scroll on a tab the person has taken over;

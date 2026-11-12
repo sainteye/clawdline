@@ -320,3 +320,50 @@ func TestAMutedSessionIsNotAnnounced(t *testing.T) {
 		t.Fatalf("muted = %v", st.Muted)
 	}
 }
+
+func TestTabOwnershipTakeoverAndMuteSurviveARestart(t *testing.T) {
+	dir := t.TempDir()
+	b, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.pollWait = 20 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.Poll(ctx, HostInfo{})
+	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, OK: true, Tab: 41, URL: "https://example.com"} })
+	if _, err := b.Do(ctx, "c1", "open", json.RawMessage(`{"url":"https://example.com"}`)); err != nil {
+		t.Fatal(err)
+	}
+	b.SetPersonControl(41, true)
+	b.SetMuted("c1", true)
+	again, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := again.Status()
+	if len(st.Tabs) != 1 || st.Tabs[0].Tab != 41 || st.Tabs[0].Conversation != "c1" || !st.Tabs[0].Person || !st.Tabs[0].Current {
+		t.Fatalf("tabs after restart = %+v", st.Tabs)
+	}
+	if len(st.Muted) != 1 {
+		t.Fatalf("muted after restart = %v", st.Muted)
+	}
+	again.Forget(41)
+	if len(again.Status().Tabs) != 0 {
+		t.Fatal("a forgotten tab is still listed")
+	}
+}
+
+func TestRecentActivityKeepsBoundedPictures(t *testing.T) {
+	b := New(nil)
+	for i := 0; i < MaxActivityThumbs+3; i++ {
+		b.record("c1", "click", 1, "", Result{OK: true, Tab: 1, URL: "https://example.com", Thumb: "AAAA"})
+	}
+	b.record("c1", "click", 1, "", Result{OK: true, Tab: 1, Thumb: strings.Repeat("A", MaxThumbBytes+1)})
+	if got := b.RecentActivity("c1", 100); len(got) != MaxActivityThumbs || got[0].Thumb != "AAAA" {
+		t.Fatalf("activity %d", len(got))
+	}
+	if len(b.RecentActivity("c2", 10)) != 0 {
+		t.Fatal("another Session's actions leaked")
+	}
+}

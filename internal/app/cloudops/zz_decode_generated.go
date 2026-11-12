@@ -18,6 +18,7 @@ var generatedDecoders = map[string]genDecoder{
 	"browser-invite-start":               genDecodeBrowserInviteStart,
 	"browser-invite-status":              genDecodeBrowserInviteStatus,
 	"capacity":                           genDecodeCapacity,
+	"chrome-tab-activity":                genDecodeChromeTabActivity,
 	"chrome-tab-control":                 genDecodeChromeTabControl,
 	"chrome-tab-input":                   genDecodeChromeTabInput,
 	"chrome-tab-mute":                    genDecodeChromeTabMute,
@@ -601,6 +602,27 @@ func genDecodeCapacity(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/capacity"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeChromeTabActivity is the `chrome-tab-activity` row's decode.
+func genDecodeChromeTabActivity(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "conversation", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/activity"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"conversation": genValue{from: "conversation"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

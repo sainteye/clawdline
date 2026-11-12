@@ -103,8 +103,30 @@ function waitForLoad(tabId) {
 
 async function ensureAttached(tabId) {
   if (attached.has(tabId)) return
-  await chrome.debugger.attach({ tabId }, "1.3")
+  try {
+    await chrome.debugger.attach({ tabId }, "1.3")
+  } catch (e) {
+    // Chrome lets one debugger client own a tab; another extension (Claude in
+    // Chrome, for one) or DevTools may already hold it. Say so by name.
+    const said = String(e && e.message || e)
+    if (/already attached|another debugger/i.test(said)) throw new Error("browser_other_debugger: another program is already controlling this tab")
+    throw e
+  }
   attached.add(tabId)
+}
+
+// A small picture of the page after an action, for the person's list of what
+// the agent did. Best effort: an action never fails for want of it.
+async function thumb(tabId) {
+  try {
+    const m = await cdp(tabId, "Page.getLayoutMetrics")
+    const w = m.cssLayoutViewport.clientWidth, h = m.cssLayoutViewport.clientHeight
+    const scale = Math.min(1, 320 / Math.max(1, w))
+    const shot = await cdp(tabId, "Page.captureScreenshot", { format: "jpeg", quality: 35, clip: { x: 0, y: 0, width: w, height: h, scale } })
+    return shot.data.length <= 96 * 1024 ? shot.data : undefined
+  } catch {
+    return undefined
+  }
 }
 
 chrome.debugger.onDetach.addListener((source) => attached.delete(source.tabId))
@@ -158,7 +180,9 @@ async function run(c) {
     const tab = await openTab(a.url)
     const url = await tabURL(tab)
     const t = await chrome.tabs.get(tab)
-    return { tab, url, value: { tab, url, title: t.title } }
+    let picture
+    try { await ensureAttached(tab); picture = await thumb(tab) } catch {}
+    return { tab, url, thumb: picture, value: { tab, url, title: t.title } }
   }
   if (c.op === "tabs") {
     const w = await agentWindow()
@@ -189,17 +213,19 @@ async function run(c) {
       }
       await click(tab, x, y)
       await new Promise((r) => setTimeout(r, 300))
-      return { tab, url: await tabURL(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y) } }
+      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y) } }
     }
     case "type": {
       const password = await evaluate(tab, focusedIsPassword)
       await cdp(tab, "Input.insertText", { text: String(a.text) })
-      return { tab, url: await tabURL(tab), password, value: { tab, typed: [...String(a.text)].length } }
+      // No picture after typing a secret or into a password field.
+      const picture = password || a.secret || c.person ? undefined : await thumb(tab)
+      return { tab, url: await tabURL(tab), password, thumb: picture, value: { tab, typed: [...String(a.text)].length } }
     }
     case "key": {
       await key(tab, a.key)
       await new Promise((r) => setTimeout(r, 200))
-      return { tab, url: await tabURL(tab), target: a.key, value: { tab, key: a.key } }
+      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: a.key, value: { tab, key: a.key } }
     }
     case "scroll": {
       const m = await cdp(tab, "Page.getLayoutMetrics")

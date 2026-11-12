@@ -148,6 +148,9 @@ func Open(dir string, onSite func(NewSite)) (*Bridge, error) {
 	j := &journal{path: filepath.Join(dir, JournalFile)}
 	rows, pruned, err := j.load()
 	b.audit, b.pruned, b.journal = rows, pruned, j
+	if terr := b.loadTabs(filepath.Join(dir, TabsFile)); err == nil {
+		err = terr
+	}
 	return b, err
 }
 

@@ -41,6 +41,11 @@ const (
 	MaxResultBytes = 6 << 20
 	// MaxArgBytes bounds one agent command's arguments.
 	MaxArgBytes = 64 << 10
+	// MaxActivityThumbs is how many recent actions keep a small picture of the
+	// page after them, in memory only, for the panel's recent-actions list.
+	MaxActivityThumbs = 40
+	// MaxThumbBytes bounds one such picture (base64).
+	MaxThumbBytes = 96 << 10
 )
 
 // Refusal is a typed reason a command was not carried out.
@@ -55,6 +60,9 @@ const (
 	TimedOut          Refusal = "browser_timeout"
 	BadRequest        Refusal = "browser_bad_request"
 	NoTab             Refusal = "browser_no_tab"
+	// OtherDebugger is a tab another program (another extension, DevTools)
+	// already controls; Chrome lets only one debugger client hold a tab.
+	OtherDebugger Refusal = "browser_other_debugger"
 )
 
 func (r Refusal) Error() string { return string(r) }
@@ -67,10 +75,12 @@ var agentOps = map[string]bool{
 
 // Command is one request handed to the host.
 type Command struct {
-	ID           string          `json:"id"`
-	Op           string          `json:"op"`
-	Tab          int             `json:"tab,omitempty"`
-	Args         json.RawMessage `json:"args,omitempty"`
+	ID   string          `json:"id"`
+	Op   string          `json:"op"`
+	Tab  int             `json:"tab,omitempty"`
+	Args json.RawMessage `json:"args,omitempty"`
+	// Person marks the person's own command: the extension keeps no picture of it.
+	Person       bool `json:"person,omitempty"`
 	conversation string
 }
 
@@ -85,6 +95,14 @@ type Result struct {
 	Target   string `json:"target,omitempty"`
 	Password bool   `json:"password,omitempty"`
 	Tab      int    `json:"tab,omitempty"`
+	// Thumb is a small JPEG (base64) of the page after the action.
+	Thumb string `json:"thumb,omitempty"`
+}
+
+// Activity is one recent action with the picture of the page after it.
+type Activity struct {
+	AuditRow
+	Thumb string `json:"thumb"`
 }
 
 // HostInfo is what the host says about itself when it polls.
@@ -136,6 +154,9 @@ type Bridge struct {
 	audit    []AuditRow
 	pruned   int
 	journal  *journal
+	tabsPath string
+	thumbs   []Activity // newest last, at most MaxActivityThumbs
+	seq      int64
 	now      func() time.Time
 	onSite   func(NewSite)
 	timeout  time.Duration
@@ -216,6 +237,7 @@ func (b *Bridge) SetMuted(conversation string, on bool) {
 	} else {
 		delete(b.muted, conversation)
 	}
+	b.saveTabs()
 }
 
 // SetStopped is the person's emergency stop. Stopping fails every queued command.
@@ -243,6 +265,9 @@ func (b *Bridge) SetPersonControl(tab int, on bool) {
 		delete(b.person, tab)
 	}
 	owner := b.owner[tab]
+	if was != on {
+		b.saveTabs()
+	}
 	b.mu.Unlock()
 	if was == on {
 		return
@@ -281,7 +306,7 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 		b.mu.Unlock()
 		return nil, QueueFull
 	}
-	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, conversation: ""}
+	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, Person: true, conversation: ""}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
 	b.queue = append(b.queue, c)
@@ -307,6 +332,9 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 	if Refusal(res.Error) == TimedOut {
 		return nil, TimedOut
 	}
+	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
+		return nil, OtherDebugger
+	}
 	return nil, &ExtensionError{Message: res.Error}
 }
 
@@ -321,6 +349,19 @@ func (b *Bridge) Records(conversation string, limit int) ([]AuditRow, int) {
 		}
 	}
 	return out, b.pruned
+}
+
+// RecentActivity is a Session's recent actions that carry a picture, newest first.
+func (b *Bridge) RecentActivity(conversation string, limit int) []Activity {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := []Activity{}
+	for i := len(b.thumbs) - 1; i >= 0 && len(out) < limit; i-- {
+		if b.thumbs[i].Conversation == conversation {
+			out = append(out, b.thumbs[i])
+		}
+	}
+	return out
 }
 
 // Do runs one agent command and waits for the extension's answer.
@@ -405,8 +446,12 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		} else if op != "tabs" {
 			b.current[conversation] = res.Tab
 		}
+		b.saveTabs()
 	}
 	b.mu.Unlock()
+	if !res.OK && tab != 0 && res.Error == "the tab was closed" {
+		b.Forget(tab)
+	}
 	if a.Secret {
 		// A Secret Handoff is never recorded, whatever field it went into.
 		res.Password = true
@@ -418,6 +463,9 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 	switch Refusal(res.Error) {
 	case Stopped, PersonControlling, TimedOut:
 		return nil, Refusal(res.Error)
+	}
+	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
+		return nil, OtherDebugger
 	}
 	return nil, &ExtensionError{Message: res.Error}
 }
@@ -498,6 +546,12 @@ func (b *Bridge) record(conversation, op string, tab int, text string, r Result)
 	}
 	var announce *NewSite
 	b.mu.Lock()
+	if r.Thumb != "" && len(r.Thumb) <= MaxThumbBytes && conversation != "" {
+		b.thumbs = append(b.thumbs, Activity{AuditRow: row, Thumb: r.Thumb})
+		if len(b.thumbs) > MaxActivityThumbs {
+			b.thumbs = append([]Activity(nil), b.thumbs[len(b.thumbs)-MaxActivityThumbs:]...)
+		}
+	}
 	b.audit = append(b.audit, row)
 	if len(b.audit) > MaxAuditRows {
 		b.pruned += len(b.audit) - MaxAuditRows

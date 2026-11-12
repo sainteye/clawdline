@@ -308,6 +308,7 @@ export type WriteRoute =
   | { op: "capacity"; word: Carried<"capacity"> }
   | { op: "provider-quotas"; word: Carried<"provider-quotas"> }
   | { op: "chrome-tab-status"; word: Carried<"chrome-tab-status"> }
+  | { op: "chrome-tab-activity"; word: Carried<"chrome-tab-activity"> }
   | { op: "chrome-tab-screenshot"; word: Carried<"chrome-tab-screenshot"> }
   | { op: "chrome-tab-input"; word: Carried<"chrome-tab-input"> }
   | { op: "chrome-tab-control"; word: Carried<"chrome-tab-control"> }
@@ -513,6 +514,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "provider-quotas",
   "chrome-tab-status",
   "chrome-tab-screenshot",
+  "chrome-tab-activity",
   "doctor",
   "default-models",
   "voice-settings",
@@ -596,6 +598,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // The Session's Chrome tab panel (session/BrowserPanel.tsx).
     if (head === "browser" && a === "status" && segments.length === 2) return { op: "chrome-tab-status", word: "chrome-tab-status" }
     if (head === "browser" && a === "screenshot" && segments.length === 2) return { op: "chrome-tab-screenshot", word: "chrome-tab-screenshot" }
+    if (head === "browser" && a === "activity" && segments.length === 2) return { op: "chrome-tab-activity", word: "chrome-tab-activity" }
     if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
     if (head === "settings" && a === "default-models" && segments.length === 2) {
       return { op: "default-models", word: "default-models" }
@@ -1027,6 +1030,7 @@ function spellingOf(route: WriteRoute): Spelling {
     // `/v1/browser/*` refuses with `writeRefusal` (internal/transport/http/browser.go).
     case "chrome-tab-status":
     case "chrome-tab-screenshot":
+    case "chrome-tab-activity":
     case "chrome-tab-input":
     case "chrome-tab-control":
     case "chrome-tab-mute":
@@ -1667,6 +1671,13 @@ export class RelayWriter {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
         return client._machineRequest(this.host.machine, route.word, {}, "read", undefined, { signal: init?.signal ?? undefined })
+      }
+      case "chrome-tab-activity": {
+        const conversation = url.searchParams.get("conversation") ?? ""
+        for (const [key] of url.searchParams) if (key !== "conversation") throw failure("invalid_query", "Recent actions take one conversation.", 400)
+        if (!conversation) throw failure("invalid_query", "Name the Session's conversation.", 400)
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        return client._machineRequest(this.host.machine, route.word, { conversation }, "read", undefined, { signal: init?.signal ?? undefined })
       }
       case "chrome-tab-screenshot": {
         const fields: Record<string, unknown> = {}

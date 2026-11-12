@@ -825,6 +825,11 @@
       "method": "*",
       "pattern": "/v1/browser/mute",
       "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/activity",
+      "guide": "connect"
     }
   ]
 }

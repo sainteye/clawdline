@@ -27,6 +27,7 @@ import (
 //   - POST /v1/browser/control        {tab, person}; a person who may send
 //   - POST /v1/browser/person         {op, tab, args}; the person's own view and input
 //   - POST /v1/browser/mute           {conversation, muted}; one Session's new-site notification, a person who may send
+//   - GET  /v1/browser/activity       ?conversation=; a Session's recent actions with a picture of each, a person who may read
 //   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
 func (s *Server) browserRoutes() []route {
 	return []route{
@@ -40,6 +41,7 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/person"}, s.browserPersonRoute},
 		{Route{"*", "/v1/browser/screenshot"}, s.browserScreenshotRoute},
 		{Route{"*", "/v1/browser/mute"}, s.browserMuteRoute},
+		{Route{"*", "/v1/browser/activity"}, s.browserActivityRoute},
 	}
 }
 
@@ -161,6 +163,8 @@ func writeBrowserError(w http.ResponseWriter, err error) {
 			writeRefusal(w, http.StatusGatewayTimeout, string(refusal), "The extension did not answer in time. The command may or may not have run; read the page before repeating it.")
 		case browserbridge.NotTakenOver:
 			writeRefusal(w, http.StatusConflict, string(refusal), "Take over the tab before typing or clicking in it.")
+		case browserbridge.OtherDebugger:
+			writeRefusal(w, http.StatusConflict, string(refusal), "Another program is already controlling this tab, so Clawdline cannot show or operate it. Close the other tool's control of the tab, or open a new tab.")
 		case browserbridge.NoTab:
 			writeRefusal(w, http.StatusConflict, string(refusal), "This Session has no tab yet. Open one first.")
 		default:
@@ -384,4 +388,25 @@ func (s *Server) browserMuteRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	s.browser().SetMuted(in.Conversation, in.Muted)
 	writeJSON(w, map[string]any{"ok": true, "conversation": in.Conversation, "muted": in.Muted})
+}
+
+// browserActivityRoute is the panel's list of what the Session did, with the
+// small picture of the page after each action. The pictures are kept in
+// memory only (browserbridge.MaxActivityThumbs).
+func (s *Server) browserActivityRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET only")
+		return
+	}
+	if machineAuthed(r) || !mayReadBrowser(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a person's device that may read.")
+		return
+	}
+	conversation := r.URL.Query().Get("conversation")
+	if conversation == "" || len(conversation) > 128 {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the Session's conversation.")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"ok": true, "rows": s.browser().RecentActivity(conversation, 12)})
 }

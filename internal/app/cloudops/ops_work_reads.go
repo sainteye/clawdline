@@ -173,6 +173,7 @@ func init() {
 		// runs as the viewer's device, so the daemon's read and send checks apply.
 		op{name: "chrome-tab-status", read: true},
 		op{name: "chrome-tab-screenshot", read: true},
+		op{name: "chrome-tab-activity", read: true},
 		op{name: "chrome-tab-input"},
 		op{name: "chrome-tab-control"},
 		op{name: "chrome-tab-mute"},

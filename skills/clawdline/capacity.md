@@ -54,6 +54,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `artifacts.video_chunk_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `audit.security` | 8388608 | `bytes` | `rotate` | `diagnostics, notice, health` | — |
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
+| `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
+| `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_text_characters` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
 | `browser.command_arg_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |

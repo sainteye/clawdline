@@ -993,6 +993,45 @@
   },
   {
     "Register": "daemon",
+    "Name": "browser.activity_picture_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 98304,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxThumbBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.activity_picture_rows",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 40,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Routine": true,
+    "Sources": [
+      "internal/app/browserbridge.MaxActivityThumbs"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "browser.audit_rows",
     "Class": "journal",
     "Unit": "rows",

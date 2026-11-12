@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11334,
-  "riskKeys": 4974,
-  "nonRiskCount": 6360,
+  "englishContentKeys": 11355,
+  "riskKeys": 4979,
+  "nonRiskCount": 6376,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 478,
+      "count": 480,
       "sources": [
         null
       ],
@@ -450,6 +450,8 @@
         "capacityRow.artifacts.report_image_side.what",
         "capacityRow.artifacts.report_total_image_pixels.full",
         "capacityRow.artifacts.video_chunk_bytes.what",
+        "capacityRow.browser.activity_picture_bytes.what",
+        "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
         "capacityRow.browser.audit_text_characters.what",
         "capacityRow.browser.command_arg_bytes.what",
@@ -3836,7 +3838,7 @@
     },
     {
       "name": "next / other",
-      "count": 828,
+      "count": 842,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3883,10 +3885,24 @@
         "next.archivedAt",
         "next.archiving",
         "next.brokerWork",
+        "next.browserChip",
+        "next.browserOpClick",
+        "next.browserOpHandback",
+        "next.browserOpKey",
+        "next.browserOpOpen",
+        "next.browserOpRead",
+        "next.browserOpRelease",
+        "next.browserOpScreenshot",
+        "next.browserOpScroll",
+        "next.browserOpTakeover",
+        "next.browserOpType",
+        "next.browserPanelActivity",
         "next.browserPanelAgentActs",
         "next.browserPanelHandBack",
         "next.browserPanelImageAlt",
         "next.browserPanelMenu",
+        "next.browserPanelNotifyOff",
+        "next.browserPanelNotifyOn",
         "next.browserPanelPersonActs",
         "next.browserPanelSampled",
         "next.browserPanelScrollDown",
