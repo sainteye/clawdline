@@ -265,7 +265,31 @@ export class RealtimeCopilotClient {
     }
   }
 
+  /**
+   * Lines of this call for the machine's journal (`copilot_journal.go`),
+   * handed over after each answer and when the call ends, so what a call
+   * heard, said and did can be read on the machine.
+   */
+  private journalCall = ''
+  private journalLines: { at: number; kind: string; text: string; tool?: Record<string, unknown> }[] = []
+
+  private journal(kind: 'heard' | 'said' | 'tool' | 'error' | 'notice' | 'start' | 'end', text: string, tool?: Record<string, unknown>) {
+    if (!this.journalCall) return
+    this.journalLines.push({ at: Date.now(), kind, text, ...(tool ? { tool } : {}) })
+  }
+
+  private flushJournal() {
+    if (!this.journalCall || this.journalLines.length === 0) return
+    const entries = this.journalLines.splice(0, this.journalLines.length)
+    void fetch('/v1/voice/copilot-journal', {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({ call: this.journalCall, entries }),
+    }).catch(() => undefined) // refusal-ok: the journal is a record for later; a lost turn costs the call nothing.
+  }
+
   private addLog(level: 'info' | 'tool' | 'error', text: string) {
+    if (level === 'error') this.journal('error', text)
     const time = new Date().toLocaleTimeString(consoleLanguage() || undefined, { hour12: false })
     const item: CopilotLogItem = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -311,6 +335,9 @@ export class RealtimeCopilotClient {
     // was placed from, and that Session is the one under discussion.
     this.call = { memory: '', snapshot: '', options: { origin } }
     this.focus = origin?.id
+    this.journalCall = crypto.randomUUID()
+    this.journalLines = []
+    this.journal('start', navigator.userAgent)
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
@@ -532,6 +559,7 @@ export class RealtimeCopilotClient {
         break
       case 'conversation.item.input_audio_transcription.completed':
         if (event.transcript) {
+          this.journal('heard', event.transcript)
           this.heardNow = event.transcript
           this.updateState({ lastTranscript: event.transcript })
           this.keep('user', event.transcript)
@@ -541,6 +569,7 @@ export class RealtimeCopilotClient {
       case 'response.done': {
         const spoken = this.state.lastAssistantSpeech
         if (spoken) this.keep('assistant', spoken)
+        if (spoken) this.journal('said', spoken)
         // Said it did something the machine never confirmed: say so on screen,
         // and have the copilot correct itself before the person relies on it.
         const unbacked = spoken ? unbackedClaims(spoken, this.doneSinceHeard) : []
@@ -552,6 +581,7 @@ export class RealtimeCopilotClient {
         } else {
           this.correcting = false
         }
+        this.flushJournal()
         if (event.response?.usage) {
           const cost = addUsage(this.state.cost ?? emptyCost(this.model), event.response.usage)
           this.updateState({ cost })
@@ -582,7 +612,9 @@ export class RealtimeCopilotClient {
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: event.name }), speakingState: 'thinking' })
     const startedAt = performance.now()
     const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
-    this.updateState({ tools: [...(this.state.tools ?? []), toolTrace(event.name, output, performance.now() - startedAt)] })
+    const trace = toolTrace(event.name, output, performance.now() - startedAt)
+    this.updateState({ tools: [...(this.state.tools ?? []), trace] })
+    this.journal('tool', event.name, { args: event.arguments.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500) })
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
     // Only what the machine confirmed is shown and chimed, never what the
@@ -591,6 +623,7 @@ export class RealtimeCopilotClient {
     if (done) {
       this.doneSinceHeard.add(NOTICE_KIND[done.key])
       this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
+      this.journal('notice', nextWord(done.key, done.params))
       this.meter.chime()
     }
 
@@ -605,6 +638,9 @@ export class RealtimeCopilotClient {
   }
 
   disconnect() {
+    this.journal('end', this.state.status)
+    this.flushJournal()
+    this.journalCall = ''
     this.attempt += 1
     if (this.dc) {
       try {

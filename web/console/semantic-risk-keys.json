@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11281,
+  "englishKeys": 11289,
   "counts": {
     "negation": 3122,
-    "state": 1861,
+    "state": 1863,
     "permission": 672,
-    "deletion": 255,
+    "deletion": 256,
     "uncertainty": 422
   },
-  "unionCount": 4957,
+  "unionCount": 4960,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3716,6 +3716,8 @@
       "capacityRow.voice.copilot_decision_body_bytes.full",
       "capacityRow.voice.copilot_extra_instructions_characters.full",
       "capacityRow.voice.copilot_extra_instructions_characters.what",
+      "capacityRow.voice.copilot_journal_body_bytes.full",
+      "capacityRow.voice.copilot_journal_entries.full",
       "capacityRow.voice.copilot_key_bytes.full",
       "capacityRow.voice.model_download_bytes.full",
       "capacityRow.voice.polish_characters.full",
@@ -5747,6 +5749,7 @@
       "capacityRow.usage.overview_tasks.full",
       "capacityRow.usage.work_cursor_rows.full",
       "capacityRow.usage.work_units_per_answer.full",
+      "capacityRow.voice.copilot_journal_seconds.full",
       "capacityRow.voice.model_download_bytes.full",
       "capacityRow.voice.polish_terms.full",
       "capacityRow.voice.vocabulary_terms.full",
@@ -7435,6 +7438,9 @@
     "capacityRow.voice.copilot_decision_said_characters.full",
     "capacityRow.voice.copilot_extra_instructions_characters.full",
     "capacityRow.voice.copilot_extra_instructions_characters.what",
+    "capacityRow.voice.copilot_journal_body_bytes.full",
+    "capacityRow.voice.copilot_journal_entries.full",
+    "capacityRow.voice.copilot_journal_seconds.full",
     "capacityRow.voice.copilot_key_bytes.full",
     "capacityRow.voice.model_download_bytes.full",
     "capacityRow.voice.model_download_bytes.what",

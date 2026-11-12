@@ -955,3 +955,8 @@ test("a call placed from a Session opens with that Session's handover, by its id
   // A call from the Session list says nothing of a Session.
   assert.doesNotMatch((sessionUpdateEvent("", "", {}) as { session: { instructions: string } }).session.instructions, /打來的/)
 })
+
+test("a Session's goal is told as the person's request to it, not as words about the person", () => {
+  assert.match(COPILOT_INSTRUCTIONS, /goal 是使用者最近交代那個 Session 的原話/)
+  assert.match(COPILOT_INSTRUCTIONS, /不要把不同 Session 的內容混在一起/)
+})
