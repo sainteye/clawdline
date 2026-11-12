@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { BUBBLE_MARGIN, BUBBLE_SIZE, CopilotDock, firstPoint, isTap, restingPoint } from "./copilot-dock.ts"
+import { BUBBLE_MARGIN, BUBBLE_SIZE, CopilotDock, bubbleSide, firstPoint, isTap, restingPoint } from "./copilot-dock.ts"
 
 const PHONE = { width: 375, height: 812 }
 const NOTCH = { top: 47, right: 0, bottom: 34, left: 0 }
@@ -54,4 +54,10 @@ test("the bubble first appears on the right, a third of the way down", () => {
 test("a small slip of the finger is still a tap, a real move is a drag", () => {
   assert.equal(isTap({ x: 10, y: 10 }, { x: 14, y: 13 }), true)
   assert.equal(isTap({ x: 10, y: 10 }, { x: 30, y: 10 }), false)
+})
+
+test("a bubble resting against either edge opens its notice toward the screen", () => {
+  assert.equal(bubbleSide(restingPoint({ x: 300, y: 400 }, PHONE, NOTCH), PHONE), "right")
+  assert.equal(bubbleSide(restingPoint({ x: 20, y: 400 }, PHONE, NOTCH), PHONE), "left")
+  assert.equal(bubbleSide(firstPoint(PHONE, NOTCH), PHONE), "right")
 })

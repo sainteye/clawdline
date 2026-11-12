@@ -54,6 +54,11 @@
   gap: 18px;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
   animation: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Never taller than the screen: a long caption on a phone pushed the
+     shrink and close buttons above its top edge. The sheet scrolls instead. */
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 @media (min-width: 640px) {
@@ -424,6 +429,12 @@
   display: flex;
   justify-content: center;
   padding-top: 4px;
+  /* Ending the call stays in reach while the sheet scrolls. */
+  position: sticky;
+  bottom: -32px;
+  padding-bottom: 32px;
+  margin-bottom: -32px;
+  background: var(--bg);
 }
 
 .realtime-start-call-btn,
@@ -714,6 +725,9 @@
 @keyframes copilot-notice-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .copilot-bubble-notice { animation-name: copilot-bubble-notice-in; }
 @keyframes copilot-bubble-notice-in { from { opacity: 0; transform: translate(-50%, 4px); } to { opacity: 1; transform: translateX(-50%); } }
+/* Beside a bubble resting against an edge, the notice opens toward the screen. */
+.copilot-bubble.side-left .copilot-bubble-notice { left: 0; transform: none; animation-name: copilot-notice-in; }
+.copilot-bubble.side-right .copilot-bubble-notice { left: auto; right: 0; transform: none; animation-name: copilot-notice-in; }
 @media (prefers-reduced-motion: reduce) { .copilot-notice, .copilot-bubble-notice { animation: none; } }
 .copilot-notice.warn {
   background: color-mix(in srgb, #f59e0b 18%, transparent);

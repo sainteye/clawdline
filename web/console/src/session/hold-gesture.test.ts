@@ -10,7 +10,7 @@ function rig() {
   let pending: { at: number; run: () => void } | null = null
   const did: string[] = []
   const gesture = new HoldGesture(
-    { call: () => { did.push("call") }, held: () => { did.push("held") } },
+    { call: () => { did.push("call") }, lifted: () => { did.push("lifted") } },
     {
       now: () => now,
       after: (ms: number, run: () => void) => { pending = { at: now + ms, run }; return pending },
@@ -34,17 +34,25 @@ test("a tap on the icon does its ordinary job and places no call", () => {
   assert.deepEqual(did, ["snippets"])
 })
 
-test("a hold calls on the lift, and the click the lift produces does not open Snippets", () => {
+test("a hold calls as soon as it is long enough, with the finger still down", () => {
+  const { gesture, did, wait } = rig()
+  gesture.down(10, 10)
+  wait(HOLD_MS - 1)
+  assert.deepEqual(did, [], "not before the hold is long enough")
+  wait(1)
+  assert.deepEqual(did, ["call"], "placed before the lift")
+})
+
+test("the lift after a hold wakes the call, and the click it produces does not open Snippets", () => {
   const { gesture, did, wait, click } = rig()
   gesture.down(10, 10)
   wait(HOLD_MS)
-  assert.deepEqual(did, ["held"])
   gesture.up()
   click()
-  assert.deepEqual(did, ["held", "call"])
+  assert.deepEqual(did, ["call", "lifted"])
   wait(1000)
   click()
-  assert.deepEqual(did, ["held", "call", "snippets"], "the next real tap opens Snippets again")
+  assert.deepEqual(did, ["call", "lifted", "snippets"], "the next real tap opens Snippets again")
 })
 
 test("a hold whose click never arrives does not swallow a later tap", () => {
@@ -54,7 +62,7 @@ test("a hold whose click never arrives does not swallow a later tap", () => {
   gesture.up()
   wait(2000)
   click()
-  assert.deepEqual(did, ["held", "call", "snippets"])
+  assert.deepEqual(did, ["call", "lifted", "snippets"])
 })
 
 test("a finger that slides away, or a press taken by the system, is not a hold", () => {

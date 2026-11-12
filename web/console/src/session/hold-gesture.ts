@@ -3,10 +3,12 @@
  * icon always did (opens Snippets), and a hold places a voice copilot call
  * about this Session.
  *
- * The call is placed when the finger lifts, because the lift is a user
- * activation and a timer is not: iOS keeps audio started from a timer silent.
- * The click a lift produces after a hold is swallowed, so the hold does not
- * also open Snippets.
+ * The call is placed the moment the hold reaches HOLD_MS, while the finger is
+ * still down: the person asked for it not to wait for the lift. A timer is not
+ * a user activation, so iOS may keep that call's audio suspended or refuse its
+ * microphone; the lift, which is one, then runs `lifted` to wake it. The click
+ * a lift produces after a hold is swallowed, so the hold does not also open
+ * Snippets.
  *
  * Nothing is imported here, so `node --test` loads it as it is.
  */
@@ -19,10 +21,10 @@ export const MOVE_PX = 10
 export const SWALLOW_MS = 700
 
 export interface HoldActions {
-  /** Places the call. Runs inside the lift's pointer event. */
+  /** Places the call, the moment the hold is long enough. */
   call(): void
-  /** The hold has lasted long enough; the lift will call. */
-  held?(): void
+  /** The finger lifted after a call was placed: a user activation to wake its audio in. */
+  lifted?(): void
   /** The press stopped being a hold (lifted, slid away, taken by the system). */
   released?(): void
 }
@@ -52,7 +54,7 @@ export class HoldGesture {
     this.timer = this.clock.after(HOLD_MS, () => {
       this.timer = null
       this.holding = true
-      this.act.held?.()
+      this.act.call()
     })
   }
 
@@ -66,7 +68,7 @@ export class HoldGesture {
     this.reset()
     if (!held) return
     this.swallowUntil = this.clock.now() + SWALLOW_MS
-    this.act.call()
+    this.act.lifted?.()
   }
 
   /** The press was taken away (scroll, system gesture, pointer lost). */
