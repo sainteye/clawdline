@@ -366,10 +366,20 @@ for (const [width, ui] of [[320, "zh-Hant"], [390, "zh-Hant"], [390, "en"], [128
         await shot("collapsed-" + count)
         const nameWidth = await run(`document.querySelector('#detail-name').clientWidth`)
         assert.ok(nameWidth > 0, "the Session name remains visible")
+        assert.equal(await run(`(()=>{
+          const button=document.querySelector('.header-options-current');
+          const r=button.getBoundingClientRect(), arrow=document.querySelector('.header-options-toggle').getBoundingClientRect();
+          return parseFloat(getComputedStyle(button).borderTopWidth)>0 &&
+            arrow.left>=r.left && arrow.right<=r.right && arrow.top>=r.top && arrow.bottom<=r.bottom;
+        })()`), true, "the disclosure is inside the visible button outline")
         await run(`document.querySelector('.header-options-toggle').click()`)
         assert.equal(await run(shown(".output-entry")), true)
         assert.equal(await run(shown(".browser-chip")), true)
         if (count === 3) assert.equal(await run(shown(".skill-bot-toggle")), true)
+        if (count === 3) assert.equal(await run(`(()=>{
+          const rows=[...document.querySelector('.header-options-extra').children].map(el=>el.getBoundingClientRect());
+          return rows.length===2 && rows[1].top>=rows[0].bottom && Math.abs(rows[0].left-rows[1].left)<1;
+        })()`), true, "expanded options form vertical rows")
         const bounds = await run(`(()=>{const r=document.querySelector('.header-options-extra').getBoundingClientRect();return {left:r.left,right:r.right}})()`)
         assert.ok(bounds.left >= 0 && bounds.right <= width, "expanded choices fit the viewport")
         assert.equal(await run(`document.querySelector('#detail-name').clientWidth`), nameWidth, "expanding choices does not squeeze the name")
