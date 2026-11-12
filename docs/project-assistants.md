@@ -284,6 +284,14 @@ Cloud or device revocation behavior across an App unmount.
 The application Service owns metadata operations, server-derived command hashes,
 principal-scoped read projections and literal human memory entries. Its ports
 have no startup effects: settings and history do not initialize a native process.
+Before each new repository, memory or runtime effect, Service obtains current
+authority again and requires the same principal, reader and authorization revision
+as admission. It checks online freshness again for read/observed metadata. This
+closes revocation or grant changes during Project resolution and other preparation;
+it neither holds an external grant-store lock across the effect nor replaces
+runtime execution fences or HTTP publication checks. A new request after grant
+renewal keeps the original principal-derived idempotency hash. Replaying an
+existing receipt still does not repeat the external effect.
 Production HTTP/Cloud authorization, source identity and Project resolution must
 still be wired and verified by the integration owner. Merely importing these
 modules does not enable the default-off feature or install its tables.

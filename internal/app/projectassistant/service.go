@@ -81,6 +81,38 @@ func (s *Service) authorize(ctx context.Context, key pa.BotKey, write bool) (Aut
 	return a, err
 }
 
+// Preparation may resolve a Project or read storage after admission. Recheck
+// authority immediately before handing an effect to its owning port. This is
+// not a transaction with an external authorization store or a lock held while
+// the port runs. Runtime retains its execution fences, and HTTP still checks
+// authority before publishing a response.
+func (s *Service) authorizeEffect(ctx context.Context, key pa.BotKey, write bool, expected Authority) (Authority, error) {
+	current, err := s.authorize(ctx, key, write)
+	if err != nil {
+		return Authority{}, err
+	}
+	return sameEffectAuthority(expected, current)
+}
+
+func sameEffectAuthority(expected, current Authority) (Authority, error) {
+	if current.PrincipalID != expected.PrincipalID || current.ReaderID != expected.ReaderID {
+		return Authority{}, serviceFailure(pa.ScopeDenied, "effect_principal")
+	}
+	if current.AuthorizationRevision != expected.AuthorizationRevision {
+		return Authority{}, serviceFailure(pa.StaleVersion, "effect_authorization")
+	}
+	return current, nil
+}
+
+func (s *Service) authorizeObservationEffect(ctx context.Context, key pa.BotKey, expected Authority) error {
+	current, err := s.authorizeObservation(ctx, key)
+	if err != nil {
+		return err
+	}
+	_, err = sameEffectAuthority(expected, current)
+	return err
+}
+
 // canonicalCommand deliberately discards the supplied content hash. It binds
 // intent to the authenticated principal, not to a particular device or grant
 // revision (renewing a grant must not cause an accepted send to execute again).
@@ -148,6 +180,11 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 	conversation := pa.Conversation{Key: c.Key, ID: bot.ConversationID, MemoryRevision: 1, Version: 1}
 	summary := pa.BotSummary{Bot: bot, ActivityAt: now, Source: a.Source, Version: 1}
 	fence := pa.Fence{Key: bot.Key, Project: bot.Project, ConversationID: bot.ConversationID}
+	a, err = s.authorizeEffect(ctx, c.Key, true, a)
+	if err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	summary.Source = a.Source
 	r, err := s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: 0, Bot: &bot, Conversation: &conversation,
 		Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
 		Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotCreated, At: now, Bot: &summary}}})
@@ -190,6 +227,11 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 	}
 	fence := pa.Fence{Key: c.Key, Project: bot.Project, ConversationID: conversation.ID, BindingID: conversation.BindingID, Generation: conversation.Generation}
 	summary := pa.BotSummary{Bot: next, Source: a.Source, Version: next.Version}
+	a, err = s.authorizeEffect(ctx, c.Key, true, a)
+	if err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	summary.Source = a.Source
 	r, err := s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: bot.Version, Bot: &next,
 		Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
 		Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotUpdated, At: next.UpdatedAt, Bot: &summary}}})
@@ -306,6 +348,10 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 	if err != nil {
 		return pa.Receipt{}, err
 	}
+	a, err = s.authorizeEffect(ctx, c.Key, true, a)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
 	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, Feature: a.Feature, Source: a.Source})
 }
 
@@ -324,6 +370,9 @@ func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, er
 	if err != nil {
 		return pa.Receipt{}, err
 	}
+	if _, err = s.authorizeEffect(ctx, request.Command.Key, true, a); err != nil {
+		return pa.Receipt{}, err
+	}
 	return s.opts.Runtime.Stop(ctx, request)
 }
 
@@ -336,6 +385,10 @@ func (s *Service) Answer(ctx context.Context, c pa.Command, answer pa.Permission
 		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "permission_key")
 	}
 	c, err = canonicalCommand(c, pa.AnswerOperation, a.PrincipalID, answer)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	a, err = s.authorizeEffect(ctx, c.Key, true, a)
 	if err != nil {
 		return pa.Receipt{}, err
 	}
@@ -355,6 +408,9 @@ func (s *Service) MarkRead(ctx context.Context, c pa.Command, cursor pa.ReadCurs
 	if err != nil {
 		return pa.ReadCursor{}, err
 	}
+	if err = s.authorizeObservationEffect(ctx, c.Key, a); err != nil {
+		return pa.ReadCursor{}, err
+	}
 	return s.opts.Repository.MarkRead(ctx, c, cursor)
 }
 
@@ -368,6 +424,9 @@ func (s *Service) Observe(ctx context.Context, c pa.Command, receiptID string, s
 		EventSeq  int64
 	}{receiptID, seq})
 	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if err = s.authorizeObservationEffect(ctx, c.Key, a); err != nil {
 		return pa.Receipt{}, err
 	}
 	return s.opts.Repository.Observe(ctx, c, receiptID, seq)
@@ -404,6 +463,9 @@ func (s *Service) Forget(ctx context.Context, request ForgetRequest) (pa.MemoryR
 	if err != nil {
 		return pa.MemoryRevision{}, err
 	}
+	if _, err = s.authorizeEffect(ctx, request.Command.Key, true, a); err != nil {
+		return pa.MemoryRevision{}, err
+	}
 	return s.opts.Memory.Forget(ctx, request)
 }
 
@@ -432,6 +494,9 @@ func (s *Service) SaveMemory(ctx context.Context, request MemoryWrite) (pa.Memor
 		ExpectedRevision int64
 	}{request.Entry, request.ExpectedRevision})
 	if err != nil {
+		return pa.MemoryRevision{}, err
+	}
+	if _, err = s.authorizeEffect(ctx, request.Command.Key, true, a); err != nil {
 		return pa.MemoryRevision{}, err
 	}
 	return s.opts.Memory.Save(ctx, request)
