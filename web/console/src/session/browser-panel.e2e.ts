@@ -389,8 +389,10 @@ for (const [width, ui] of [[320, "zh-Hant"], [390, "zh-Hant"], [390, "en"], [128
         if (count === 3) assert.equal(await run(shown(".skill-bot-toggle")), true)
         assert.equal(await run(`(()=>{
           const rows=[...document.querySelector('.header-options-extra').children].map(el=>el.getBoundingClientRect());
-          return rows.length===${count} && rows.every((row,i)=>i===0 || (row.top>=rows[i-1].bottom && Math.abs(row.left-rows[i-1].left)<1));
+          return rows.length===${count} && rows.every((row,i)=>i===0 || (row.top>=rows[i-1].bottom && Math.abs(row.left-rows[i-1].left)<1 && Math.abs(row.width-rows[i-1].width)<1 && Math.abs(row.height-rows[i-1].height)<1));
         })()`), true, "all options, including the previewed one, form vertical rows")
+        const labels = ui === "en" ? ["Skills for this Session", "Output files", "Chrome tab"] : ["這個 Session 的 Skill", "產出檔案", "Chrome 分頁"]
+        assert.deepEqual(await run(`Array.from(document.querySelector('.header-options-extra').children, el=>el.innerText.trim())`), labels.slice(3 - count), "each row has a visible description")
         const bounds = await run(`(()=>{const r=document.querySelector('.header-options-extra').getBoundingClientRect();return {left:r.left,right:r.right}})()`)
         assert.ok(bounds.left >= 0 && bounds.right <= width, "expanded choices fit the viewport")
         assert.equal(await run(`document.querySelector('#detail-name').clientWidth`), nameWidth, "expanding choices does not squeeze the name")
