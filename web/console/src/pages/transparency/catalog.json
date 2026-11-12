@@ -3368,7 +3368,7 @@
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "d32950bb04573525436ef3809bf06a59e1a7ace7e3bdd8f4571cd2f0c9ff203e",
     "web/console/src/overlays/info.ts": "afee5b67146a062576bef9a06e2531329d275899e5d4a23965ee2e419c9d8c30",
-    "web/console/src/session/Composer.tsx": "03c1d109f6d649a177b930826b4a2641e406501a0a1c4f56dab1c9b1a367166f",
+    "web/console/src/session/Composer.tsx": "66d2d539552e2b22c3d38996f81e86cd19b6046b34e3607f8c00196b7ed8da98",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "1f1f0c58d2c3814e5f7d133b1ae154bdb31d1b9f49a8c10346d6fa2bc768115f",
     "web/console/src/session/pending.ts": "7cac7275dc7caf2b3a225818d2ac4c115e7c00594fe7b9a78c6ada40f511ee87",
