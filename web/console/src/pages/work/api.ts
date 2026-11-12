@@ -341,7 +341,7 @@ export interface HumanInterventionV2 {
   source_label: string
   target_conversation: string
   target_session: string
-  kind: "read" | "answer" | "action" | "report" | "secret"
+  kind: "read" | "answer" | "action" | "report" | "secret" | "browser"
   title: string
   summary: string
   action: string

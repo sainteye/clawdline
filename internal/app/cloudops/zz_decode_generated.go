@@ -18,6 +18,13 @@ var generatedDecoders = map[string]genDecoder{
 	"browser-invite-start":               genDecodeBrowserInviteStart,
 	"browser-invite-status":              genDecodeBrowserInviteStatus,
 	"capacity":                           genDecodeCapacity,
+	"chrome-audit":                       genDecodeChromeAudit,
+	"chrome-launch":                      genDecodeChromeLaunch,
+	"chrome-remind":                      genDecodeChromeRemind,
+	"chrome-settings":                    genDecodeChromeSettings,
+	"chrome-settings-update":             genDecodeChromeSettingsUpdate,
+	"chrome-setup":                       genDecodeChromeSetup,
+	"chrome-stop":                        genDecodeChromeStop,
 	"chrome-tab-activity":                genDecodeChromeTabActivity,
 	"chrome-tab-control":                 genDecodeChromeTabControl,
 	"chrome-tab-input":                   genDecodeChromeTabInput,
@@ -602,6 +609,158 @@ func genDecodeCapacity(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/capacity"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeChromeAudit is the `chrome-audit` row's decode.
+func genDecodeChromeAudit(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "limit", "request", "session"},
+		[]string{"type", "conversation", "limit", "request", "session"},
+		[]string{"type", "limit", "request", "session", "site"},
+		[]string{"type", "limit", "request", "session", "since"},
+		[]string{"type", "conversation", "limit", "request", "session", "site"},
+		[]string{"type", "conversation", "limit", "request", "session", "since"},
+		[]string{"type", "limit", "request", "session", "since", "site"},
+		[]string{"type", "conversation", "limit", "request", "session", "since", "site"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("limit", genRule{kind: "integer", min: genInt(1), max: genInt(2000)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("since", genRule{kind: "integer", min: genInt(0)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("site", genRule{kind: "string", nonEmpty: true, maxBytes: 253}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/audit"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"conversation": genValue{from: "conversation"}, "limit": genValue{from: "limit"}, "since": genValue{from: "since"}, "site": genValue{from: "site"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeChromeLaunch is the `chrome-launch` row's decode.
+func genDecodeChromeLaunch(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/launch"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeChromeRemind is the `chrome-remind` row's decode.
+func genDecodeChromeRemind(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "conversation", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/reminder"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genFields(map[string]genValue{"conversation": genValue{from: "conversation"}})
+	return p, req, true
+}
+
+// genDecodeChromeSettings is the `chrome-settings` row's decode.
+func genDecodeChromeSettings(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/settings"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeChromeSettingsUpdate is the `chrome-settings-update` row's decode.
+func genDecodeChromeSettingsUpdate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "changes", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 4096, properties: map[string]genRule{"browser_enabled": genRule{kind: "bool"}, "browser_notify_new_site": genRule{kind: "bool"}}, closed: true, minKeys: 1, maxKeys: 2}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/settings"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("changes")
+	return p, req, true
+}
+
+// genDecodeChromeSetup is the `chrome-setup` row's decode.
+func genDecodeChromeSetup(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/setup"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeChromeStop is the `chrome-stop` row's decode.
+func genDecodeChromeStop(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session", "stopped"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("stopped", genRule{kind: "bool"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/stop"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genFields(map[string]genValue{"stopped": genValue{from: "stopped"}})
 	return p, req, true
 }
 

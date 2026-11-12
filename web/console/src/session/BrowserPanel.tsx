@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEve
 import { followsRelay } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { browserCall as call } from "./browser-call.js"
+import { openBrowserSetup } from "./BrowserSetup.js"
 import "./browser-panel.css"
 
 /**
@@ -25,7 +27,7 @@ import "./browser-panel.css"
  */
 
 type TabInfo = { tab: number; conversation: string; person: boolean; current: boolean }
-type Status = { enabled: boolean; status: { connected: boolean; stopped: boolean; tabs: TabInfo[]; muted?: string[] } }
+type Status = { enabled: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[] } }
 type Activity = { at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; thumb: string }
 
 const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
@@ -36,32 +38,6 @@ type Shot = { data: string; width: number; height: number; url: string; title: s
 
 const SHOT_MS = 1000
 const STATUS_MS = 3000
-
-async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
-  let res: Response
-  try {
-    res = await fetch(path, {
-      method,
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-  } catch {
-    throw new Error(L.strings.webOffline)
-  }
-  const data = await res.json().catch(() => null)
-  if (!res.ok) {
-    // The daemon's refusal envelope, kept whole so the formatter can name it.
-    const raw = data?.error
-    const code = typeof raw === "string" ? raw : typeof raw?.code === "string" ? raw.code : "http_" + res.status
-    const refusal = new Error(typeof data?.detail === "string" ? data.detail : typeof raw?.message === "string" ? raw.message : code) as Error & { code: string }
-    refusal.name = "RefusalError"
-    refusal.code = code
-    throw refusal
-  }
-  return data as T
-}
 
 /** A refusal in the console's own words, with its code kept (refusals/scan.ts). */
 function said(error: unknown, lead: "browserPanelReadFailed" | "browserPanelActFailed"): string {
@@ -100,13 +76,15 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const [actError, setActError] = useState<unknown>(null)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
+  const [reminded, setReminded] = useState(false)
   const [activity, setActivity] = useState<Activity[]>([])
   const closeRef = useRef<HTMLButtonElement>(null)
 
   const mine = status?.status.tabs.filter((t) => t.conversation === conversation) ?? []
   const tab = mine.find((t) => t.current) ?? mine[mine.length - 1] ?? null
   const tabID = tab?.tab ?? 0
-  const person = !!tab?.person
+  const otherDebugger = (shotError as { code?: string } | null)?.code === "browser_other_debugger"
+  const person = !!tab?.person && !otherDebugger
   const name = assistantName(row)
 
   useEffect(() => {
@@ -122,6 +100,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   }, [open, relay, conversation])
 
   useEffect(() => {
+    setReminded(false)
     setShot(null)
     setShotError(null)
     if (!open || !tabID) return
@@ -219,13 +198,28 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const body = () => {
     if (statusError) return <div className="screen-note err" role="alert">{said(statusError, "browserPanelReadFailed")}</div>
     if (!status) return <div className="screen-note" role="status">…</div>
-    if (!status.status.connected) return <div className="screen-note" role="status">{nextWord("browserPanelNotConnected")}</div>
+    // Not connected, or browser use switched off: the guide sets up both.
+    if (!status.status.connected || !status.enabled) {
+      return (
+        <div className="browser-setup-ask">
+          <div className="screen-note" role="status">{nextWord(status.status.connected ? "browserPanelDisabled" : "browserPanelNotConnected")}</div>
+          <button type="button" className="browser-setup-start" onClick={openBrowserSetup}>{nextWord("browserSetupOpen")}</button>
+          {relay && <button type="button" className="chip" disabled={busy || reminded} onClick={async () => {
+            setBusy(true);setActError(null)
+            try { await call("POST", "/v1/browser/reminder", { conversation }); setReminded(true) }
+            catch(e) { setActError(e) } finally { setBusy(false) }
+          }}>{nextWord(reminded ? "browserReminded" : "browserRemind")}</button>}
+          {actError ? <p role="alert">{said(actError,"browserPanelActFailed")}</p> : null}
+        </div>
+      )
+    }
     if (!tab) return <div className="screen-note" role="status">{nextWord("browserPanelNoTab")}</div>
     return (
       <div className="browser-stage">
+        {status.status.state_error && <div className="screen-note err" role="alert">{nextWord("browserStateUnsaved")}</div>}
         {status.status.stopped && <div className="screen-note" role="status">{nextWord("browserPanelStopped")}</div>}
         {shotError ? <div className="screen-note err" role="alert">{(shotError as { code?: string })?.code === "browser_other_debugger" ? nextWord("browserPanelOtherDebugger") : said(shotError, "browserPanelReadFailed")}</div> : null}
-        {shot && (
+        {shot && !otherDebugger && (
           <img
             className="browser-shot"
             data-person={person ? "true" : undefined}
@@ -240,7 +234,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
             <ol>
               {activity.map((row, i) => (
                 <li key={row.at + ":" + i}>
-                  <img src={"data:image/jpeg;base64," + row.thumb} alt="" />
+                  {row.thumb && <img src={"data:image/jpeg;base64," + row.thumb} alt="" />}
                   <span className="browser-activity-words">
                     <b>{OP_WORD[row.op] ? nextWord(OP_WORD[row.op]) : row.op}</b>
                     <span>{row.op === "type" ? (row.password ? "••••" : "") : row.target || address(row.url).host}</span>
@@ -255,7 +249,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     )
   }
 
-  const ready = !!tab && !!status?.status.connected
+  const ready = !!tab && !!status?.status.connected && !!status.enabled
   return (
     <section className="panel-view" id="browser-panel" aria-labelledby="browser-title" hidden={!open}>
       {/* One address bar instead of a title row: the page's address, how it is
@@ -282,7 +276,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
             <button type="button" className="chip browser-notify" aria-pressed={!muted} disabled={busy} onClick={() => void mute(!muted)}>
               {muted ? nextWord("browserPanelNotifyOff") : nextWord("browserPanelNotifyOn")}
             </button>
-            <button type="button" className={person ? "chip browser-take" : "chip browser-take browser-primary"} disabled={busy} onClick={() => void control(!person)}>
+            <button type="button" className={person ? "chip browser-take" : "chip browser-take browser-primary"} disabled={busy || otherDebugger} onClick={() => void control(!person)}>
               {person ? nextWord("browserPanelHandBack", { assistant: name }) : nextWord("browserPanelTakeOver")}
             </button>
           </div>

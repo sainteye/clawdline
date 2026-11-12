@@ -133,3 +133,21 @@ func TestHumanInterventionReadAndResolutionSurviveStoreReopen(t *testing.T) {
 		t.Fatalf("resolve: %+v, %v", resolved, err)
 	}
 }
+
+func TestBrowserTakeoverNoteSurvivesReading(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	service := NewHumanInterventions(st)
+	c := CreateHumanIntervention{SourceConversation: "root", TargetConversation: "target", TargetSession: "pane-17", Kind: "browser", Title: "Sign in", Summary: "The page needs sign-in.", Action: "Take over the tab.", Reason: "The person signs in."}
+	note, _, err := service.Create(context.Background(), c, store.ReceiptKey{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := service.List(context.Background(), "target")
+	if err != nil || len(rows) != 1 || rows[0].Kind != "browser" || rows[0].ID != note.ID {
+		t.Fatalf("browser note lost: %+v %v", rows, err)
+	}
+}

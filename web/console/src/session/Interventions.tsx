@@ -392,6 +392,7 @@ function InterventionCard({ note, disabled, sending, secretReceived, onReplace, 
         requestPage({ page: "documents", hash: false })
         window.location.hash = documentHere.hash
       }}><WorkIcon name="file" />{catalogWord("inline", "740cf7e11430")}</a></p>}
+    {note.kind === "browser" && !note.withdrawn && !note.resolved_at && <p><button type="button" className="chip" onClick={() => window.dispatchEvent(new CustomEvent("clawdline:browser-takeover", { detail: note.target_conversation }))}>{nextWord("browserPanelTakeOver")}</button></p>}
     {note.detail && <details className="human-intervention-more"><summary>{catalogWord("inline", "61e5b2be1827")}</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
     {note.kind === "secret" && !note.resolved_at && (secretReceived && !replacingSecret
       ? <div className="secret-handoff-received" role="status"><WorkIcon name="check" /><span>{nextWord("secretHandoffReceived")}</span><button type="button" disabled={disabled} onClick={() => { onReplace(); setReplacingSecret(true) }}>{nextWord("secretHandoffReplace")}</button></div>

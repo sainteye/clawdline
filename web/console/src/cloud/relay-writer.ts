@@ -313,6 +313,13 @@ export type WriteRoute =
   | { op: "chrome-tab-input"; word: Carried<"chrome-tab-input"> }
   | { op: "chrome-tab-control"; word: Carried<"chrome-tab-control"> }
   | { op: "chrome-tab-mute"; word: Carried<"chrome-tab-mute"> }
+  | { op: "chrome-settings"; word: Carried<"chrome-settings"> }
+  | { op: "chrome-settings-update"; word: Carried<"chrome-settings-update"> }
+  | { op: "chrome-stop"; word: Carried<"chrome-stop"> }
+  | { op: "chrome-audit"; word: Carried<"chrome-audit"> }
+  | { op: "chrome-setup"; word: Carried<"chrome-setup"> }
+  | { op: "chrome-remind"; word: Carried<"chrome-remind"> }
+  | { op: "chrome-launch"; word: Carried<"chrome-launch"> }
   | { op: "doctor"; word: Carried<"doctor"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
@@ -515,6 +522,9 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "chrome-tab-status",
   "chrome-tab-screenshot",
   "chrome-tab-activity",
+  "chrome-settings",
+  "chrome-audit",
+  "chrome-setup",
   "doctor",
   "default-models",
   "voice-settings",
@@ -599,6 +609,11 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "browser" && a === "status" && segments.length === 2) return { op: "chrome-tab-status", word: "chrome-tab-status" }
     if (head === "browser" && a === "screenshot" && segments.length === 2) return { op: "chrome-tab-screenshot", word: "chrome-tab-screenshot" }
     if (head === "browser" && a === "activity" && segments.length === 2) return { op: "chrome-tab-activity", word: "chrome-tab-activity" }
+    // The Browser block on Settings (pages/settings/BrowserSettingsBlock.tsx).
+    if (head === "browser" && a === "settings" && segments.length === 2) return { op: "chrome-settings", word: "chrome-settings" }
+    if (head === "browser" && a === "audit" && segments.length === 2) return { op: "chrome-audit", word: "chrome-audit" }
+    // The browser setup guide (session/BrowserSetup.tsx).
+    if (head === "browser" && a === "setup" && segments.length === 2) return { op: "chrome-setup", word: "chrome-setup" }
     if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
     if (head === "settings" && a === "default-models" && segments.length === 2) {
       return { op: "default-models", word: "default-models" }
@@ -819,6 +834,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "browser" && a === "person" && segments.length === 2) return { op: "chrome-tab-input", word: "chrome-tab-input" }
   if (head === "browser" && a === "control" && segments.length === 2) return { op: "chrome-tab-control", word: "chrome-tab-control" }
   if (head === "browser" && a === "mute" && segments.length === 2) return { op: "chrome-tab-mute", word: "chrome-tab-mute" }
+  if (head === "browser" && a === "settings" && segments.length === 2) return { op: "chrome-settings-update", word: "chrome-settings-update" }
+  if (head === "browser" && a === "stop" && segments.length === 2) return { op: "chrome-stop", word: "chrome-stop" }
+  if (head === "browser" && a === "reminder" && segments.length === 2) return { op: "chrome-remind", word: "chrome-remind" }
+  if (head === "browser" && a === "launch" && segments.length === 2) return { op: "chrome-launch", word: "chrome-launch" }
   if (head === "settings" && a === "notifications" && segments.length === 2) {
     return { op: "notification-settings-update", word: "notification-settings-update" }
   }
@@ -1034,6 +1053,13 @@ function spellingOf(route: WriteRoute): Spelling {
     case "chrome-tab-input":
     case "chrome-tab-control":
     case "chrome-tab-mute":
+    case "chrome-settings":
+    case "chrome-settings-update":
+    case "chrome-remind":
+    case "chrome-stop":
+    case "chrome-audit":
+    case "chrome-setup":
+    case "chrome-launch":
       return "flat"
     case "push-subscribe":
     case "push-unsubscribe":
@@ -1667,7 +1693,8 @@ export class RelayWriter {
         }
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
       }
-      case "chrome-tab-status": {
+      case "chrome-tab-status":
+      case "chrome-setup": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
         return client._machineRequest(this.host.machine, route.word, {}, "read", undefined, { signal: init?.signal ?? undefined })
@@ -1686,6 +1713,31 @@ export class RelayWriter {
           fields[key] = value
         }
         if (typeof fields.tab !== "string" || !/^\d{1,10}$/.test(fields.tab)) throw failure("invalid_query", "Name the tab to look at.", 400)
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        return client._machineRequest(this.host.machine, route.word, fields, "read", undefined, { signal: init?.signal ?? undefined })
+      }
+      case "chrome-settings": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        return client._machineRequest(this.host.machine, route.word, {}, "read", undefined, { signal: init?.signal ?? undefined })
+      }
+      case "chrome-audit": {
+        // The word always names a page size; the Session, the site and the
+        // first second are each optional, and an empty one is left out.
+        const fields: Record<string, unknown> = { limit: 200 }
+        const seen = new Set<string>()
+        for (const [key, value] of url.searchParams) {
+          if (seen.has(key) || !["conversation", "site", "since", "limit"].includes(key)) {
+            throw failure("invalid_query", "The browser audit takes a Session, a site, a time and a page size.", 400)
+          }
+          seen.add(key)
+          if (key === "limit" || key === "since") {
+            if (!/^\d{1,12}$/.test(value)) throw failure("invalid_query", `${key} is a whole number.`, 400)
+            fields[key] = Number(value)
+          } else if (value !== "") {
+            fields[key] = value
+          }
+        }
         if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
         return client._machineRequest(this.host.machine, route.word, fields, "read", undefined, { signal: init?.signal ?? undefined })
       }
@@ -2086,9 +2138,20 @@ export class RelayWriter {
       }
       case "chrome-tab-input":
       case "chrome-tab-control":
-      case "chrome-tab-mute": {
+      case "chrome-tab-mute":
+      case "chrome-remind":
+    case "chrome-stop": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         return this.machineWorkV2(client, route.word, await bodyOf(init), headerOf(init, "idempotency-key"))
+      }
+      case "chrome-settings-update": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
+        return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "chrome-launch": {
+        // A machine command with no body: start Clawdline's own Chromium.
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "work-gate-settings-update":
       case "integration-settings-update":

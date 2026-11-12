@@ -191,6 +191,13 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/browser/person"],
     ["POST", "/v1/browser/control"],
     ["POST", "/v1/browser/mute"],
+    ["GET", "/v1/browser/settings"],
+    ["POST", "/v1/browser/settings"],
+    ["POST", "/v1/browser/stop"],
+    ["GET", "/v1/browser/audit"],
+    ["GET", "/v1/browser/setup"],
+    ["POST", "/v1/browser/launch"],
+    ["POST", "/v1/browser/reminder"],
     ["POST", "/v1/places/p1/start"],
     ["POST", "/v1/places/p1/resume/claude/abc"],
     ["POST", "/v1/places/p1/start/claude/as/architect"],
@@ -379,7 +386,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["copilot-briefing"], "POST /v1/voice/copilot-briefing")
   assert.equal(CARRIED["copilot-decide"], "POST /v1/voice/copilot-decide")
   assert.equal(CARRIED["copilot-journal"], "POST /v1/voice/copilot-journal")
-  assert.equal(Object.keys(CARRIED).length, 227)
+  assert.equal(Object.keys(CARRIED).length, 234)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

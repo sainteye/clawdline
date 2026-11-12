@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -17,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
 	"github.com/sainteye/clawdline/internal/config"
 )
 
@@ -346,11 +346,9 @@ func readNativeMessage(r io.Reader) ([]byte, error) {
 
 // ---- installing the host for one Chrome profile directory ----
 
-const browserHostName = "com.clawdline.browser"
-
 // browserInstallHost writes Chrome's native messaging manifest for the
 // extension into a Chrome user-data directory, and a launcher that pins this
-// daemon's directory and port. It is what the console's install guide runs.
+// daemon's directory and port (internal/adapters/browserlaunch).
 func browserInstallHost(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("browser install-host", flag.ContinueOnError)
 	fs.SetOutput(errOut)
@@ -359,11 +357,12 @@ func browserInstallHost(args []string, out, errOut io.Writer) int {
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	if !validExtensionID(*extID) || *chromeDir == "" || !filepath.IsAbs(*chromeDir) {
+	if !browserlaunch.ValidExtensionID(*extID) || *chromeDir == "" || !filepath.IsAbs(*chromeDir) {
 		fmt.Fprintln(errOut, "usage: clawdline browser install-host --extension-id <32 letters a-p> --chrome-dir <absolute path>")
 		return 2
 	}
-	exe, err := os.Executable()
+	dir := config.Dir()
+	exe, err := browserlaunch.LauncherBinary(dir)
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 1
@@ -373,42 +372,11 @@ func browserInstallHost(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	dir := config.Dir()
-	launcher := filepath.Join(dir, "browser-host.sh")
-	var script bytes.Buffer
-	fmt.Fprintf(&script, "#!/bin/sh\nCLAWDLINE_NEXT_DIR=%s CLAWDLINE_NEXT_PORT=%d exec %s browser-host\n", shellQuote(dir), port, shellQuote(exe))
-	if err := os.WriteFile(launcher, script.Bytes(), 0o700); err != nil {
+	host, err := browserlaunch.InstallHost(dir, port, exe, *extID, *chromeDir)
+	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	hosts := filepath.Join(*chromeDir, "NativeMessagingHosts")
-	if err := os.MkdirAll(hosts, 0o755); err != nil {
-		fmt.Fprintln(errOut, err)
-		return 1
-	}
-	manifest, _ := json.MarshalIndent(map[string]any{
-		"name": browserHostName, "description": "Clawdline browser bridge", "path": launcher,
-		"type": "stdio", "allowed_origins": []string{"chrome-extension://" + *extID + "/"},
-	}, "", "  ")
-	path := filepath.Join(hosts, browserHostName+".json")
-	if err := os.WriteFile(path, append(manifest, '\n'), 0o644); err != nil {
-		fmt.Fprintln(errOut, err)
-		return 1
-	}
-	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "manifest": path, "launcher": launcher})
+	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "manifest": host.Manifest, "launcher": host.Launcher})
 	return 0
 }
-
-func validExtensionID(id string) bool {
-	if len(id) != 32 {
-		return false
-	}
-	for _, c := range id {
-		if c < 'a' || c > 'p' {
-			return false
-		}
-	}
-	return true
-}
-
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

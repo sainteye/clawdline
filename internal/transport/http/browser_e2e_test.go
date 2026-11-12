@@ -70,7 +70,7 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 <label>Name <input id=name aria-label="Name"></label><br><br>
 <label>Password <input id=pw type=password aria-label="Password"></label><br><br>
 <button id=go onclick="document.getElementById('out').textContent='Hello, '+document.getElementById('name').value">Continue</button>
-<p id=out></p></body>`))
+<input type=password value="synthetic-unlabelled-password"><input placeholder="Code" value="synthetic-unlabelled-code"><p id=out></p></body>`))
 	})
 	pageListener, _ := net.Listen("tcp", "127.0.0.1:0")
 	pageSrv := &http.Server{Handler: pages}
@@ -188,6 +188,9 @@ func TestBrowserBridgeEndToEnd(t *testing.T) {
 	}
 	out, errOut, code = run("browser", "read")
 	mustJSON("read", out, errOut, code, &page)
+	if strings.Contains(string(out), "synthetic-unlabelled-password") || strings.Contains(string(out), "synthetic-unlabelled-code") {
+		t.Fatal("read exposed form field values")
+	}
 	if !strings.Contains(page.Value.Text, "Sign in to the test site") || len(page.Value.Elements) < 3 {
 		t.Fatalf("read: %s", out)
 	}

@@ -1,3 +1,4 @@
+import { useBrowserActivity } from "./BrowserActivity.js"
 import { playbookCardText } from "./playbook-run.js"
 import { LazyEntryBody } from "./LazyEntryBody.js"
 import { catalogWord } from "../catalog.js"
@@ -213,6 +214,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   const session = useSession(id, row)
   // The role's Skill use, as cards at their receipts' times (SkillUse.tsx).
   const skillState = useSessionSkills(agentId ? null : session)
+  const browserCards = useBrowserActivity(agentId ? undefined : session?.sessionId)
   const nativeSendAt = useRef(0)
   const cardSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
   // A native echo removes the delivery card before the reply exists. Keep the
@@ -655,7 +657,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
       {technicalDetails(technical)}
     </>
   ) : null
-  if (!entries.length) {
+  if (!entries.length && !browserCards.length) {
     // A window that ran out before reaching a single entry is not a
     // conversation with nothing in it.
     return (
@@ -699,7 +701,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   }
   const task = session ? L.taskOfChild(session.id) : null
   const skillCards = agentId ? [] : transcriptSkillCards(skillState, !!task && !L.taskLive(task))
-  const drawn = drawTranscriptEntries(entries, session?.state === "working", newestFirst, view, queue.current, skillCards)
+  const drawn = drawTranscriptEntries(entries, session?.state === "working", newestFirst, view, queue.current, [...skillCards, ...browserCards].sort((a, b) => a.at - b.at))
   // The oldest end offers another page when the daemon names a cursor. Older
   // daemons still show the diagnostic cut note rather than a dead control.
   const cut = olderControl ?? (!earlier && cutNote(data))

@@ -37,6 +37,26 @@ export const CARRIED = {
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",
+  // The Browser block on Settings (`pages/settings/BrowserSettingsBlock.tsx`):
+  // every browser action agents took, narrowed by Session, site and day.
+  "chrome-audit": "GET /v1/browser/audit",
+  // The browser setup guide's Open button: start Clawdline's own Chromium with
+  // the extension already in it, a machine command with no body.
+  "chrome-launch": "POST /v1/browser/launch",
+  // Save a browser setup reminder in the current Session for the person's
+  // return to the computer.
+  "chrome-remind": "POST /v1/browser/reminder",
+  // The Browser block's two switches: whether new Sessions may use the browser,
+  // and the new-site notification.
+  "chrome-settings": "GET /v1/browser/settings",
+  // Change one or both browser switches, and no other machine setting.
+  "chrome-settings-update": "POST /v1/browser/settings",
+  // The browser setup guide (`session/BrowserSetup.tsx`): whether a Chromium
+  // was found, its profile, and whether the extension is connected.
+  "chrome-setup": "GET /v1/browser/setup",
+  // The emergency stop on Settings: stop every agent's browser use, or resume
+  // it.
+  "chrome-stop": "POST /v1/browser/stop",
   // The Chrome tab panel's recent actions, each with a small picture of the
   // page after it.
   "chrome-tab-activity": "GET /v1/browser/activity",

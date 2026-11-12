@@ -129,7 +129,7 @@ func ValidateHumanDocumentURL(raw, machine, session string) error {
 
 func validateHumanIntervention(c CreateHumanIntervention) error {
 	switch c.Kind {
-	case "read", "answer", "action", "report", "secret":
+	case "read", "answer", "action", "report", "secret", "browser":
 	default:
 		return humanInterventionError("intervention_kind_invalid", "Choose a supported intervention kind.")
 	}

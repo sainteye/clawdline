@@ -78,6 +78,11 @@ function fixture(): Server {
       if (b.op === "key") keys.push(b.args.key)
       return json(res, 200, { ok: true, value: {} })
     }
+    if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, { ok: true, rows: [{
+      id: "10000000-0000-4000-8000-000000000059", source_conversation: CONVERSATION, source_label: "Codex", target_conversation: CONVERSATION,
+      target_session: SESSION, kind: "browser", title: "Sign in", summary: "The page needs sign-in.", action: "Take over the browser.", reason: "Only the person signs in.",
+      options: [], created_at: Math.floor(Date.now() / 1000), read_at: null, resolved_at: null, version: 1,
+    }], pruned_resolved: 0 })
     if (path.startsWith("/v1/")) return json(res, 404, { error: "not_found", detail: path })
     if (path === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(document(url.searchParams.get("ui") || "zh-Hant")) }
     const file = normalize(join(dist, path))
@@ -142,7 +147,7 @@ after(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 
-for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["phone", 390, 844, "zh-Hant"], ["desktop", 1280, 800, "en"]] as const) {
+for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["phone", 390, 844, "zh-Hant"], ["desktop", 1280, 800, "en"], ["phone", 390, 844, "en"]] as const) {
   test(`${name} ${ui}: the Chrome tab is watched, taken over, used and handed back`, async () => {
     const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
     const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
@@ -169,6 +174,9 @@ for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["ph
       await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: width < 900 }, id)
       const mark = browser.loadCount; await browser.send("Page.navigate", { url: `${origin}/?ui=${ui}#session=${SESSION}` }, id); await browser.loaded(id, mark)
       await until(`!!document.getElementById("detail-actions-trigger") && !document.getElementById("detail-actions-trigger").disabled`)
+      await until(`document.querySelectorAll(".browser-action").length === 2`)
+      assert.equal(await run(`document.querySelectorAll(".browser-action img").length`), 2, "actions appear in the transcript before the panel opens")
+      await shot("transcript")
       await until(`!!document.querySelector(".browser-chip")`)
       await run(`document.getElementById("detail-actions-trigger").click()`)
       await until(`!document.getElementById("session-actions").hidden && !document.getElementById("session-browser").hidden`)
@@ -213,6 +221,15 @@ for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["ph
       await run(`document.querySelector("#browser-panel .browser-who .browser-take").click()`)
       await until(`!document.getElementById("browser-text")`)
       assert.equal((await (await fetch(origin + "/__fixture/log")).json()).person, false)
+      await run(`document.querySelector("#browser-panel .browser-close").click()`)
+      await until(`!!document.querySelector(".human-interventions-head")`)
+      await run(`(() => { const b = document.querySelector(".human-interventions-head"); if (b.getAttribute("aria-expanded") !== "true") b.click() })()`)
+      const take = ui === "en" ? "Take over" : "接手操作"
+      await until(`[...document.querySelectorAll(".human-intervention-card button")].some(b => b.textContent === ${JSON.stringify(take)})`)
+      await run(`[...document.querySelectorAll(".human-intervention-card button")].find(b => b.textContent === ${JSON.stringify(take)}).click()`)
+      await until(`!!document.querySelector("#browser-panel:not([hidden]) .browser-shot")`)
+      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).person, false, "opening a takeover Note sends no browser input")
+
     } finally {
       await browser.send("Target.closeTarget", { targetId }).catch(() => {})
     }

@@ -62,7 +62,9 @@ const (
 	NoTab             Refusal = "browser_no_tab"
 	// OtherDebugger is a tab another program (another extension, DevTools)
 	// already controls; Chrome lets only one debugger client hold a tab.
-	OtherDebugger Refusal = "browser_other_debugger"
+	OtherDebugger     Refusal = "browser_other_debugger"
+	StateWriteFailed  Refusal = "browser_state_write_failed"
+	SecretInputFailed Refusal = "browser_secret_input_failed"
 )
 
 func (r Refusal) Error() string { return string(r) }
@@ -115,6 +117,7 @@ type HostInfo struct {
 
 // AuditRow is one recorded command.
 type AuditRow struct {
+	ID           string `json:"id,omitempty"`
 	At           int64  `json:"at"`
 	Conversation string `json:"conversation"`
 	Op           string `json:"op"`
@@ -140,43 +143,47 @@ type NewSite struct {
 
 // Bridge is safe for concurrent use.
 type Bridge struct {
-	mu       sync.Mutex
-	queue    []Command
-	waiting  map[string]chan Result
-	wake     chan struct{}
-	host     HostInfo
-	stopped  bool
-	person   map[int]bool   // tabs the person has taken over
-	owner    map[int]string // tab → conversation that opened it
-	current  map[string]int // conversation → the tab it last used
-	sites    map[string]map[string]bool
-	muted    map[string]bool // conversations whose new-site notification is off
-	audit    []AuditRow
-	pruned   int
-	journal  *journal
-	tabsPath string
-	thumbs   []Activity // newest last, at most MaxActivityThumbs
-	seq      int64
-	now      func() time.Time
-	onSite   func(NewSite)
-	timeout  time.Duration
-	pollWait time.Duration
+	mu           sync.Mutex
+	queue        []Command
+	waiting      map[string]chan Result
+	wake         chan struct{}
+	host         HostInfo
+	stopped      bool
+	stopEpoch    uint64
+	controlEpoch map[int]uint64
+	person       map[int]bool   // tabs the person has taken over
+	owner        map[int]string // tab → conversation that opened it
+	current      map[string]int // conversation → the tab it last used
+	sites        map[string]map[string]bool
+	muted        map[string]bool // conversations whose new-site notification is off
+	audit        []AuditRow
+	pruned       int
+	journal      *journal
+	tabsPath     string
+	stateErr     error
+	thumbs       []Activity // newest last, at most MaxActivityThumbs
+	seq          int64
+	now          func() time.Time
+	onSite       func(NewSite)
+	timeout      time.Duration
+	pollWait     time.Duration
 }
 
 // New makes an empty bridge. onSite may be nil.
 func New(onSite func(NewSite)) *Bridge {
 	return &Bridge{
-		waiting:  map[string]chan Result{},
-		wake:     make(chan struct{}),
-		person:   map[int]bool{},
-		owner:    map[int]string{},
-		current:  map[string]int{},
-		sites:    map[string]map[string]bool{},
-		muted:    map[string]bool{},
-		now:      time.Now,
-		onSite:   onSite,
-		timeout:  CommandTimeoutSeconds * time.Second,
-		pollWait: HostPollSeconds * time.Second,
+		waiting:      map[string]chan Result{},
+		wake:         make(chan struct{}),
+		person:       map[int]bool{},
+		controlEpoch: map[int]uint64{},
+		owner:        map[int]string{},
+		current:      map[string]int{},
+		sites:        map[string]map[string]bool{},
+		muted:        map[string]bool{},
+		now:          time.Now,
+		onSite:       onSite,
+		timeout:      CommandTimeoutSeconds * time.Second,
+		pollWait:     HostPollSeconds * time.Second,
 	}
 }
 
@@ -189,6 +196,7 @@ type Status struct {
 	Connected  bool      `json:"connected"`
 	Host       HostInfo  `json:"host"`
 	Stopped    bool      `json:"stopped"`
+	StateError bool      `json:"state_error"`
 	PersonTabs []int     `json:"person_tabs"`
 	Pending    int       `json:"pending"`
 	Tabs       []TabInfo `json:"tabs"`
@@ -223,13 +231,13 @@ func (b *Bridge) Status() Status {
 		muted = append(muted, c)
 	}
 	sort.Strings(muted)
-	return Status{Connected: b.hostConnected(), Host: b.host, Stopped: b.stopped, PersonTabs: people, Pending: len(b.queue), Tabs: tabs, Muted: muted}
+	return Status{Connected: b.hostConnected(), Host: b.host, Stopped: b.stopped, StateError: b.stateErr != nil, PersonTabs: people, Pending: len(b.queue), Tabs: tabs, Muted: muted}
 }
 
 // SetMuted turns one Session's new-site notification off or back on. It is
 // the person's choice for this daemon's lifetime; the machine setting
 // browser_notify_new_site still decides for every Session.
-func (b *Bridge) SetMuted(conversation string, on bool) {
+func (b *Bridge) SetMuted(conversation string, on bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if on {
@@ -237,26 +245,50 @@ func (b *Bridge) SetMuted(conversation string, on bool) {
 	} else {
 		delete(b.muted, conversation)
 	}
-	b.saveTabs()
+	if b.saveTabs() != nil {
+		return StateWriteFailed
+	}
+	return nil
 }
 
 // SetStopped is the person's emergency stop. Stopping fails every queued command.
-func (b *Bridge) SetStopped(on bool) {
+func (b *Bridge) SetStopped(on bool) error {
 	b.mu.Lock()
-	b.stopped = on
+	if b.stopped != on {
+		b.stopEpoch++
+		b.stopped = on
+	}
+	err := b.saveTabs()
+	// A failed resume leaves agent access closed. A failed stop stays stopped
+	// in memory, but reports that restart protection has not been saved.
+	if err != nil {
+		b.stopped = true
+	}
 	var dropped []Command
-	if on {
-		dropped, b.queue = b.queue, nil
+	if b.stopped {
+		kept := b.queue[:0]
+		for _, c := range b.queue {
+			if c.Person {
+				kept = append(kept, c)
+			} else {
+				dropped = append(dropped, c)
+			}
+		}
+		b.queue = kept
 	}
 	b.mu.Unlock()
 	for _, c := range dropped {
 		b.deliver(Result{ID: c.ID, Error: string(Stopped)})
 	}
+	if err != nil {
+		return StateWriteFailed
+	}
+	return nil
 }
 
 // SetPersonControl marks a tab taken over by the person, or handed back,
 // and records the change in the audit under the tab's Session.
-func (b *Bridge) SetPersonControl(tab int, on bool) {
+func (b *Bridge) SetPersonControl(tab int, on bool) error {
 	b.mu.Lock()
 	was := b.person[tab]
 	if on {
@@ -265,18 +297,43 @@ func (b *Bridge) SetPersonControl(tab int, on bool) {
 		delete(b.person, tab)
 	}
 	owner := b.owner[tab]
+	var dropped []Command
 	if was != on {
-		b.saveTabs()
+		b.controlEpoch[tab]++
+		kept := b.queue[:0]
+		for _, c := range b.queue {
+			if c.Tab == tab && ((!c.Person && on) || (c.Person && !on && c.Op != "screenshot")) {
+				dropped = append(dropped, c)
+			} else {
+				kept = append(kept, c)
+			}
+		}
+		b.queue = kept
+	}
+	err := b.saveTabs()
+	if err != nil && !on {
+		b.person[tab] = true
 	}
 	b.mu.Unlock()
+	for _, c := range dropped {
+		why := PersonControlling
+		if c.Person {
+			why = NotTakenOver
+		}
+		b.deliver(Result{ID: c.ID, Error: string(why)})
+	}
+	if err != nil {
+		return StateWriteFailed
+	}
 	if was == on {
-		return
+		return nil
 	}
 	op := "handback"
 	if on {
 		op = "takeover"
 	}
 	b.record(owner, op, tab, "", Result{OK: true, Tab: tab})
+	return nil
 }
 
 // personOps are what a person's own device may send to a tab: looking at it
@@ -306,6 +363,7 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 		b.mu.Unlock()
 		return nil, QueueFull
 	}
+	controlEpoch := b.controlEpoch[tab]
 	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, Person: true, conversation: ""}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
@@ -325,12 +383,15 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 	b.mu.Lock()
 	delete(b.waiting, c.ID)
 	b.dropQueued(c.ID)
+	if op != "screenshot" && (!b.person[tab] || b.controlEpoch[tab] != controlEpoch) {
+		res = Result{Error: string(NotTakenOver)}
+	}
 	b.mu.Unlock()
 	if res.OK {
 		return res.Value, nil
 	}
-	if Refusal(res.Error) == TimedOut {
-		return nil, TimedOut
+	if Refusal(res.Error) == TimedOut || Refusal(res.Error) == NotTakenOver {
+		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
 		return nil, OtherDebugger
@@ -340,32 +401,66 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 
 // Records returns up to limit audit rows, newest first, and how many were pruned.
 func (b *Bridge) Records(conversation string, limit int) ([]AuditRow, int) {
+	return b.Find(AuditFilter{Conversation: conversation}, limit)
+}
+
+// AuditFilter narrows the audit; an empty field matches every row.
+type AuditFilter struct {
+	Conversation string
+	// Site is a row's registrable domain, as Site returns it.
+	Site string
+	// Since is a Unix time in seconds; rows before it are left out.
+	Since int64
+}
+
+func (f AuditFilter) matches(row AuditRow) bool {
+	return (f.Conversation == "" || row.Conversation == f.Conversation) &&
+		(f.Site == "" || row.Site == f.Site) && row.At >= f.Since
+}
+
+// Find returns up to limit audit rows that match f, newest first, and how
+// many rows were pruned from the whole audit.
+func (b *Bridge) Find(f AuditFilter, limit int) ([]AuditRow, int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	out := []AuditRow{}
 	for i := len(b.audit) - 1; i >= 0 && len(out) < limit; i-- {
-		if conversation == "" || b.audit[i].Conversation == conversation {
+		if f.matches(b.audit[i]) {
 			out = append(out, b.audit[i])
 		}
 	}
 	return out, b.pruned
 }
 
-// RecentActivity is a Session's recent actions that carry a picture, newest first.
+// RecentActivity includes failed actions and secret input, which have no picture.
+// Pictures are joined to their audit rows; their independent retention stays bounded.
 func (b *Bridge) RecentActivity(conversation string, limit int) []Activity {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	out := []Activity{}
-	for i := len(b.thumbs) - 1; i >= 0 && len(out) < limit; i-- {
-		if b.thumbs[i].Conversation == conversation {
-			out = append(out, b.thumbs[i])
+	if limit > MaxActivityThumbs {
+		limit = MaxActivityThumbs
+	}
+	pictures := make(map[AuditRow][]string, len(b.thumbs))
+	for _, picture := range b.thumbs {
+		pictures[picture.AuditRow] = append(pictures[picture.AuditRow], picture.Thumb)
+	}
+	for i := len(b.audit) - 1; i >= 0 && len(out) < limit; i-- {
+		row := b.audit[i]
+		if row.Conversation == conversation {
+			var thumb string
+			if values := pictures[row]; len(values) > 0 {
+				thumb = values[len(values)-1]
+				pictures[row] = values[:len(values)-1]
+			}
+			out = append(out, Activity{AuditRow: row, Thumb: thumb})
 		}
 	}
 	return out
 }
 
 // Do runs one agent command and waits for the extension's answer.
-func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawMessage) (json.RawMessage, error) {
+func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawMessage) (value json.RawMessage, err error) {
 	if !agentOps[op] || conversation == "" || len(args) > MaxArgBytes {
 		return nil, BadRequest
 	}
@@ -378,20 +473,38 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 	if len(args) > 0 && json.Unmarshal(args, &a) != nil {
 		return nil, BadRequest
 	}
+	tab := a.Tab
+	var recorded Result
+	defer func() {
+		if recorded.URL == "" {
+			recorded.URL = a.URL
+		}
+		if err != nil && recorded.Error == "" {
+			recorded.Error = err.Error()
+		}
+		// A refused command never reached the field; its sensitivity is unknown.
+		if a.Secret || !recorded.OK {
+			recorded.Password = true
+			recorded.Thumb = ""
+		}
+		b.record(conversation, op, tab, a.Text, recorded)
+	}()
 	if op == "open" && !webURL(a.URL) {
 		return nil, BadRequest
 	}
 	b.mu.Lock()
+	if b.stateErr != nil {
+		b.mu.Unlock()
+		return nil, StateWriteFailed
+	}
 	if b.stopped {
 		b.mu.Unlock()
-		b.record(conversation, op, 0, a.Text, Result{Error: string(Stopped)})
 		return nil, Stopped
 	}
 	if !b.hostConnected() {
 		b.mu.Unlock()
 		return nil, HostMissing
 	}
-	tab := a.Tab
 	if tab == 0 && op != "open" && op != "tabs" {
 		tab = b.current[conversation]
 		if tab == 0 {
@@ -406,7 +519,6 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		}
 		if b.person[tab] {
 			b.mu.Unlock()
-			b.record(conversation, op, tab, a.Text, Result{Error: string(PersonControlling)})
 			return nil, PersonControlling
 		}
 	}
@@ -414,6 +526,7 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		b.mu.Unlock()
 		return nil, QueueFull
 	}
+	stopEpoch, controlEpoch := b.stopEpoch, b.controlEpoch[tab]
 	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, conversation: conversation}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
@@ -434,6 +547,13 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 	b.mu.Lock()
 	delete(b.waiting, c.ID)
 	b.dropQueued(c.ID)
+	// A late answer cannot cross a stop or control handoff, even if control
+	// was handed back before the extension answered. Discard frames and text.
+	if b.stopped || b.stopEpoch != stopEpoch {
+		res = Result{ID: c.ID, Tab: tab, Error: string(Stopped)}
+	} else if tab != 0 && (b.person[tab] || b.controlEpoch[tab] != controlEpoch) {
+		res = Result{ID: c.ID, Tab: tab, Error: string(PersonControlling)}
+	}
 	if res.OK && res.Tab != 0 {
 		if op == "open" {
 			b.owner[res.Tab] = conversation
@@ -446,22 +566,33 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		} else if op != "tabs" {
 			b.current[conversation] = res.Tab
 		}
-		b.saveTabs()
+		if b.saveTabs() != nil {
+			res = Result{ID: c.ID, Tab: res.Tab, Error: string(StateWriteFailed)}
+		}
 	}
 	b.mu.Unlock()
 	if !res.OK && tab != 0 && res.Error == "the tab was closed" {
 		b.Forget(tab)
 	}
 	if a.Secret {
-		// A Secret Handoff is never recorded, whatever field it went into.
 		res.Password = true
 	}
-	b.record(conversation, op, tab, a.Text, res)
+	if res.Password {
+		res.URL = ""
+		res.Target = ""
+		res.Thumb = ""
+		if res.OK {
+			res.Error = ""
+		} else {
+			res.Error = secretSafeError(res.Error)
+		}
+	}
+	recorded = res
 	if res.OK {
 		return res.Value, nil
 	}
 	switch Refusal(res.Error) {
-	case Stopped, PersonControlling, TimedOut:
+	case Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed:
 		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
@@ -533,10 +664,19 @@ func (b *Bridge) deliver(r Result) {
 }
 
 func (b *Bridge) record(conversation, op string, tab int, text string, r Result) {
-	row := AuditRow{At: b.now().Unix(), Conversation: conversation, Op: op, Tab: tab, URL: r.URL,
+	row := AuditRow{ID: newID(), At: b.now().Unix(), Conversation: conversation, Op: op, Tab: tab, URL: r.URL,
 		Site: Site(r.URL), Target: r.Target, OK: r.OK, Error: r.Error, Password: r.Password}
 	if r.Tab != 0 {
 		row.Tab = r.Tab
+	}
+	if op == "type" && r.Password {
+		row.URL = ""
+		row.Site = ""
+		row.Target = ""
+		row.Error = ""
+		if !r.OK {
+			row.Error = secretSafeError(r.Error)
+		}
 	}
 	if op == "type" {
 		row.TextLen = len([]rune(text))
@@ -546,7 +686,7 @@ func (b *Bridge) record(conversation, op string, tab int, text string, r Result)
 	}
 	var announce *NewSite
 	b.mu.Lock()
-	if r.Thumb != "" && len(r.Thumb) <= MaxThumbBytes && conversation != "" {
+	if !r.Password && r.Thumb != "" && len(r.Thumb) <= MaxThumbBytes && conversation != "" {
 		b.thumbs = append(b.thumbs, Activity{AuditRow: row, Thumb: r.Thumb})
 		if len(b.thumbs) > MaxActivityThumbs {
 			b.thumbs = append([]Activity(nil), b.thumbs[len(b.thumbs)-MaxActivityThumbs:]...)
@@ -633,4 +773,14 @@ func newID() string {
 	buf := make([]byte, 9)
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
+}
+
+// A page can echo a secret into any error string. Only closed refusal codes
+// are safe to retain for a sensitive operation.
+func secretSafeError(raw string) string {
+	switch Refusal(raw) {
+	case HostMissing, Stopped, PersonControlling, OtherSessionsTab, QueueFull, TimedOut, BadRequest, NoTab, OtherDebugger, StateWriteFailed, SecretInputFailed:
+		return raw
+	}
+	return string(SecretInputFailed)
 }

@@ -1294,7 +1294,7 @@ clawdline note create --requested-by-person --body-file note.json
 
 密碼、憑證或 API key 請使用 **Secret Handoff／機密交付**。建立 `kind: "secret"` 的便條，標題、請求動作與原因都不得包含機密；在 `summary` 填入具體的憑證名稱（例如「正式環境 API key」），它會顯示為多行輸入欄位正上方的標籤。`detail`、`options`、`document_url` 留空。使用者在該欄位貼上內容，單行密碼也使用同一欄位。不要請使用者把機密放進建議回覆、一般訊息、文件或指令參數。送出後，目標 Session 可執行 `clawdline secret run <note-id> -- <command> [args...]`；指令會從標準輸入取得一次性的內容，輸出會被抑制。內容於 15 分鐘後或 daemon 重啟時失效；即使接收程式失敗，也已使用掉這次交付。需要時重新請使用者交付，切勿印出內容或透過 shell 對話紀錄傳遞。界線與使用步驟見 `docs/secret-handoff.md`。
 
-`kind` 可為 `read`、`answer`、`action`、`report` 或 `secret`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是按鈕顯示的建議回覆。使用者點一下，Console 就把它當成對話訊息直接送到便條所在的 Session，後面附上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條；按鈕不顯示這段脈絡。送出成功後，便條才會移到最近已處理。送出失敗時，便條維持待處理，關注按鈕會說明回覆沒有送出。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。依實際收到的對話訊息行事，不看便條狀態：使用者手動標記已處理的便條，並沒有送出任何訊息。只有使用者明確要求建立便條時才用 `--requested-by-person`；泛稱「完成工作」不算明確要求。加上此旗標時便條仍會顯示，但不會送便條推播。若工作確實卡在答覆上，另記錄等待使用者的狀態；Agent 主動建立的便條已負責關注通知，別再重複送一則。便條不會喚醒 Agent。
+`kind` 可為 `read`、`answer`、`action`、`report`、`secret` 或 `browser`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是按鈕顯示的建議回覆。使用者點一下，Console 就把它當成對話訊息直接送到便條所在的 Session，後面附上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條；按鈕不顯示這段脈絡。送出成功後，便條才會移到最近已處理。送出失敗時，便條維持待處理，關注按鈕會說明回覆沒有送出。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。依實際收到的對話訊息行事，不看便條狀態：使用者手動標記已處理的便條，並沒有送出任何訊息。只有使用者明確要求建立便條時才用 `--requested-by-person`；泛稱「完成工作」不算明確要求。加上此旗標時便條仍會顯示，但不會送便條推播。若工作確實卡在答覆上，另記錄等待使用者的狀態；Agent 主動建立的便條已負責關注通知，別再重複送一則。便條不會喚醒 Agent。`browser` 便條提供「接手」按鈕，開啟目標 Session 的即時瀏覽器面板；你仍須在面板中取得控制權，開啟本身不代表輸入操作或核准。
 
 **撤回不再需要關注的便條**
 

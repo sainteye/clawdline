@@ -193,6 +193,15 @@ export function Detail({
   const [screenOpen, setScreenOpen] = useState(false)
   const [browserOpen, setBrowserOpen] = useState(false)
   const [nativeTerminalOpen,setNativeTerminalOpen] = useState(false)
+  useEffect(() => {
+    const open = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== row?.sessionId) return
+      setNativeTerminalOpen(false); setScreenOpen(false); setBrowserOpen(true)
+    }
+    window.addEventListener("clawdline:browser-takeover", open)
+    return () => window.removeEventListener("clawdline:browser-takeover", open)
+  }, [row?.sessionId])
+
   const actionsTrigger = useRef<HTMLButtonElement>(null)
   const [toolOpen, setToolOpen] = useState(false)
   const [toolDraft, setToolDraft] = useState<ToolDraft | null>(null)

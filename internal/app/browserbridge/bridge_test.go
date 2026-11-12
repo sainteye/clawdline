@@ -360,10 +360,134 @@ func TestRecentActivityKeepsBoundedPictures(t *testing.T) {
 		b.record("c1", "click", 1, "", Result{OK: true, Tab: 1, URL: "https://example.com", Thumb: "AAAA"})
 	}
 	b.record("c1", "click", 1, "", Result{OK: true, Tab: 1, Thumb: strings.Repeat("A", MaxThumbBytes+1)})
-	if got := b.RecentActivity("c1", 100); len(got) != MaxActivityThumbs || got[0].Thumb != "AAAA" {
+	if got := b.RecentActivity("c1", 100); len(got) != MaxActivityThumbs || got[0].Thumb != "" || got[1].Thumb != "AAAA" {
 		t.Fatalf("activity %d", len(got))
 	}
 	if len(b.RecentActivity("c2", 10)) != 0 {
 		t.Fatal("another Session's actions leaked")
+	}
+}
+
+func TestRecentActivityIncludesActionsWithoutPictures(t *testing.T) {
+	b := New(nil)
+	b.record("c1", "type", 1, "secret", Result{OK: true, Password: true})
+	b.record("c1", "click", 1, "", Result{Error: string(PersonControlling)})
+	got := b.RecentActivity("c1", MaxActivityThumbs)
+	if len(got) != 2 || got[0].Error != string(PersonControlling) || got[1].Text != "" || got[1].TextLen != 6 || got[1].Thumb != "" {
+		t.Fatalf("missing or unsafe activity: %+v", got)
+	}
+}
+
+func TestTheAuditNarrowsBySessionSiteAndTime(t *testing.T) {
+	b := New(nil)
+	at := time.Unix(1_000_000, 0)
+	b.now = func() time.Time { return at }
+	b.record("c1", "open", 1, "", Result{OK: true, Tab: 1, URL: "https://github.com/a"})
+	at = at.Add(time.Hour)
+	b.record("c1", "open", 1, "", Result{OK: true, Tab: 1, URL: "https://www.example.com/b"})
+	b.record("c2", "open", 2, "", Result{OK: true, Tab: 2, URL: "https://github.com/c"})
+	count := func(f AuditFilter) int { rows, _ := b.Find(f, 10); return len(rows) }
+	for _, tc := range []struct {
+		f    AuditFilter
+		want int
+	}{
+		{AuditFilter{}, 3},
+		{AuditFilter{Conversation: "c1"}, 2},
+		{AuditFilter{Site: "github.com"}, 2},
+		{AuditFilter{Conversation: "c1", Site: "github.com"}, 1},
+		{AuditFilter{Since: at.Unix()}, 2},
+		{AuditFilter{Since: at.Unix(), Site: "github.com"}, 1},
+		{AuditFilter{Since: at.Unix() + 1}, 0},
+	} {
+		if got := count(tc.f); got != tc.want {
+			t.Fatalf("%+v: %d rows, want %d", tc.f, got, tc.want)
+		}
+	}
+}
+
+func TestRefusedSecretInputKeepsOnlyItsLength(t *testing.T) {
+	b := New(nil)
+	b.host.LastPoll = b.now().Unix()
+	b.owner[1] = "c1"
+	b.current["c1"] = 1
+	b.person[1] = true
+	_, err := b.Do(context.Background(), "c1", "type", json.RawMessage(`{"text":"private-value","secret":true}`))
+	if err != PersonControlling {
+		t.Fatalf("refusal: %v", err)
+	}
+	rows, _ := b.Records("c1", 1)
+	if len(rows) != 1 || rows[0].Text != "" || rows[0].TextLen != 13 {
+		t.Fatalf("refused secret was retained: %+v", rows)
+	}
+}
+
+func TestTakeoverDropsQueuedAgentInput(t *testing.T) {
+	b, ctx := connected(t)
+	b.owner[1] = "c1"
+	b.current["c1"] = 1
+	done := make(chan error, 1)
+	go func() { _, err := b.Do(ctx, "c1", "click", nil); done <- err }()
+	for b.Status().Pending == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	b.SetPersonControl(1, true)
+	if commands := b.Poll(ctx, HostInfo{Version: "test"}); len(commands) != 0 {
+		t.Fatalf("queued input survived takeover: %+v", commands)
+	}
+	if err := <-done; err != PersonControlling {
+		t.Fatalf("queued refusal: %v", err)
+	}
+}
+
+func TestFrameInFlightCannotCrossATakeoverAndHandback(t *testing.T) {
+	b, ctx := connected(t)
+	b.owner[1] = "c1"
+	b.current["c1"] = 1
+	started, release := make(chan struct{}), make(chan struct{})
+	fakeHost(ctx, b, func(c Command) Result {
+		close(started)
+		<-release
+		return Result{ID: c.ID, OK: true, Tab: 1, Value: json.RawMessage(`{"data":"private-frame"}`), Thumb: "AAAA"}
+	})
+	done := make(chan error, 1)
+	go func() {
+		value, err := b.Do(ctx, "c1", "screenshot", nil)
+		if len(value) != 0 {
+			done <- ExtensionErrorForTest{}
+			return
+		}
+		done <- err
+	}()
+	<-started
+	b.SetPersonControl(1, true)
+	b.SetPersonControl(1, false)
+	close(release)
+	if err := <-done; err != PersonControlling {
+		t.Fatalf("late frame crossed control change: %v", err)
+	}
+}
+
+type ExtensionErrorForTest struct{}
+
+func (ExtensionErrorForTest) Error() string { return "late frame was returned" }
+
+func TestEmergencyStopSurvivesRestartUntilThePersonResumes(t *testing.T) {
+	dir := t.TempDir()
+	b, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.SetStopped(true)
+	again, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Status().Stopped {
+		t.Fatal("restart forgot emergency stop")
+	}
+	again.SetStopped(false)
+	resumed, err := Open(dir, nil)
+	if err != nil || resumed.Status().Stopped {
+		t.Fatalf("resume was not retained: %v", err)
 	}
 }

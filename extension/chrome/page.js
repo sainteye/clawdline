@@ -8,7 +8,7 @@ export function readPage(textLimit, elementLimit) {
     const s = getComputedStyle(el)
     return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none"
   }
-  const label = (el) => (el.getAttribute("aria-label") || el.innerText || el.value || el.placeholder ||
+  const label = (el) => (el.getAttribute("aria-label") || el.innerText || (el.tagName === "INPUT" && /^(button|submit|reset)$/.test(el.type) ? el.value : "") || el.placeholder ||
     el.getAttribute("title") || el.getAttribute("alt") || el.name || "").replace(/\s+/g, " ").trim().slice(0, 120)
   const sel = "a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[contenteditable=true]"
   const elements = []
@@ -26,7 +26,7 @@ export function readPage(textLimit, elementLimit) {
 export function locate(target) {
   const want = String(target).replace(/\s+/g, " ").trim().toLowerCase()
   const sel = "a[href],button,input,select,textarea,summary,label,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[onclick],[contenteditable=true]"
-  const label = (el) => (el.getAttribute("aria-label") || el.innerText || el.value || el.placeholder ||
+  const label = (el) => (el.getAttribute("aria-label") || el.innerText || (el.tagName === "INPUT" && /^(button|submit|reset)$/.test(el.type) ? el.value : "") || el.placeholder ||
     el.getAttribute("title") || el.getAttribute("alt") || el.name || "").replace(/\s+/g, " ").trim()
   const candidates = []
   for (const el of document.querySelectorAll(sel)) {

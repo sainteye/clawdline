@@ -830,6 +830,26 @@
       "method": "*",
       "pattern": "/v1/browser/activity",
       "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/settings",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/setup",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/launch",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/browser/reminder",
+      "guide": "connect"
     }
   ]
 }
