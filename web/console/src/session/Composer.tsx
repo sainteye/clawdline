@@ -13,6 +13,10 @@ import * as L from "../legacy/bridge.js"
 import { createShots, carriesFiles, carriesPicture } from "../legacy/shots-bridge.js"
 import { composerDraftKey, composerDrafts } from "./composer-drafts.js"
 import * as V from "../legacy/voice-bridge.js"
+import { MicGesture } from "./mic-gesture.js"
+import "./mic-gesture.css"
+import { realtimeCopilot } from "../realtime/realtime-copilot.js"
+import { copilotDock } from "../realtime/copilot-dock.js"
 import { dictatedFrom, polishWord, swapDictation, type Dictated } from "./voice-polish.js"
 import { COMPOSE_APPEND } from "../legacy/snippets-bridge.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
@@ -193,6 +197,32 @@ export function Composer({
   const shotsBusy = Shots.busy()
   const voiceRow = useRef<HTMLDivElement>(null)
   const voiceJob = useRef<V.VoiceJob | null>(null)
+  // A hold or a double press on the microphone calls the voice copilot about
+  // this Session. Only a Session of this machine's list: the copilot reads
+  // `/v1/sessions`, whose ids a fixed remote destination does not share.
+  const callable = !!row && !remote
+  const [micHeld, setMicHeld] = useState(false)
+  const micGesture = useRef<MicGesture | null>(null)
+  if (!micGesture.current) {
+    micGesture.current = new MicGesture({
+      dictate: () => {
+        const job = voiceJob.current
+        if (!job) return false
+        const was = V.voiceState()
+        V.press(job)
+        return was === "off" && V.voiceState() !== "off"
+      },
+      undo: () => { const now = V.voiceState(); if (now === "opening" || now === "recording") V.cancel() },
+      call: () => {
+        setMicHeld(false)
+        const r = rowRef.current
+        if (!r) return
+        copilotDock.open()
+        void realtimeCopilot.start({ id: r.id, label: r.label || assistantLabel(r.assistant) || r.id })
+      },
+      held: () => { setMicHeld(true); try { navigator.vibrate?.(15) } catch { /* refusal-ok: a phone without vibration still calls on the lift. */ } },
+    }, { now: () => Date.now(), after: (ms, run) => setTimeout(run, ms), cancel: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) })
+  }
   const voiceInstallDialog = useRef<HTMLDialogElement>(null)
   const [voiceInstall, setVoiceInstall] = useState<{ reason?: string; help: boolean } | null>(null)
   const form = useRef<HTMLFormElement>(null)
@@ -837,10 +867,23 @@ export function Composer({
           id="mic"
           type="button"
           aria-label={voiceLive ? T.webVoiceStop : T.webVoiceStart}
-          title={voiceLive ? T.webVoiceStop : T.webVoiceStart}
+          aria-description={callable ? nextWord("copilotCallFromSession") : undefined}
+          title={(voiceLive ? T.webVoiceStop : T.webVoiceStart) + (callable ? "\n" + nextWord("copilotCallFromSession") : "")}
           aria-pressed={voiceLive ? "true" : "false"}
-          disabled={voiceLive ? false : !on || sending || voiceBusy}
-          onClick={() => { if (voiceJob.current) V.press(voiceJob.current) }}
+          data-held={micHeld ? "1" : undefined}
+          // While dictation is still opening the microphone the button stays
+          // live where a call can be placed: the second press of a double press
+          // lands in exactly that moment, and a disabled button never sees it.
+          // A press then is a no-op for dictation (`V.press` waits for "off").
+          disabled={voiceLive || (callable && voice === "opening") ? false : !on || sending || voiceBusy}
+          onClick={() => { if (callable) micGesture.current?.click(); else if (voiceJob.current) V.press(voiceJob.current) }}
+          onPointerDown={callable ? (e) => { if (e.button === 0) micGesture.current?.down(e.clientX, e.clientY) } : undefined}
+          onPointerMove={callable ? (e) => micGesture.current?.move(e.clientX, e.clientY) : undefined}
+          onPointerUp={callable ? () => micGesture.current?.up() : undefined}
+          onPointerCancel={callable ? () => { setMicHeld(false); micGesture.current?.abort() } : undefined}
+          onPointerLeave={callable ? () => { setMicHeld(false); micGesture.current?.abort() } : undefined}
+          // A hold must not open the browser's own menu for the button.
+          onContextMenu={callable ? (e) => e.preventDefault() : undefined}
           // Pressing it must not take the focus off the box somebody is typing
           // in; the click still lands.
           onMouseDown={(e) => e.preventDefault()}

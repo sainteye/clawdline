@@ -516,6 +516,32 @@ export interface CallOptions {
   briefing?: string
   /** The language the console is shown in (`<html lang>`), which the copilot speaks. */
   language?: string
+  /** The Session the call was placed from (a long press or double press on its microphone). */
+  origin?: CallOrigin
+}
+
+/** The Session a call was placed from: the id `/v1/sessions` gives it, and its name. */
+export interface CallOrigin {
+  id: string
+  label: string
+}
+
+/**
+ * The instructions' section for a call placed from one Session. It names the
+ * Session once, with its id, so the opening summary needs no list_sessions
+ * call and cannot land on a Session with a similar name.
+ */
+export function originSection(origin?: CallOrigin): string {
+  if (!origin?.id) return ''
+  const name = origin.label.trim() || origin.id
+  return ['【這通電話是從一個 Session 打來的】',
+    `使用者在 Session「${name}」的畫面上撥了這通電話（session_id 是 ${origin.id}，原樣照填）。`,
+    '通話一開始就要交接這個 Session，不打招呼、不自我介紹：',
+    '- 先講它做完了哪些事：依 get_session_recap 的 deliveries 和 requests，用總結一個 Session 的經過的講法，大約四到六句。',
+    '- 再講有什麼事需要使用者處理：它在等的問題（念出選項）、最後一則回覆裡要使用者決定或確認的事、它留給使用者的便條紙。',
+    '- 沒有要使用者處理的事，就明說「這個 Session 沒有要你處理的事」，並說它現在的狀態。',
+    '- 交接完就停，等使用者說話。之後使用者說「它」「這個」，指的就是這個 Session。',
+  ].join('\n')
 }
 
 /** The instructions' section holding the machine's briefing, or "". */
@@ -570,7 +596,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -605,6 +631,24 @@ export function greetingEvent(remembered = false, language = ''): Record<string,
       instructions: remembered
         ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。也不要提任何之前的話題或事情（之前的通話內容只用來理解他接下來說的話）。只像熟悉他的秘書一樣，用一句很短、自然的${name}打招呼。`
         : `像私人秘書一樣，用一句自然的${name}問候，說你可以幫他看這台電腦上各個 Session 的狀況。不要超過一句。`,
+    },
+  }
+}
+
+/**
+ * The first words of a call placed from one Session: read that Session's
+ * whole story and its notes, then hand it over (`originSection` says how).
+ * Response instructions replace the session's for this one response, so the
+ * tool names and the id are spelt out here again.
+ */
+export function originGreetingEvent(origin: CallOrigin, language = ''): Record<string, unknown> {
+  const name = spokenLanguage(language) || '繁體中文'
+  const label = origin.label.trim() || origin.id
+  return {
+    type: 'response.create',
+    response: {
+      output_modalities: ['audio'],
+      instructions: `使用者剛從 Session「${label}」打來，要你交接這個 Session。先不要說話：呼叫 get_session_recap，session_id 填 ${origin.id}；它有便條紙就再呼叫 get_session_notes。拿到結果後用${name}講它做完了什麼、有什麼事需要使用者處理；沒有就明說沒有。`,
     },
   }
 }

@@ -9285,6 +9285,8 @@
   "next.copilotMicBusy": "麥克風正被別的 App 或通話使用中，請先結束它再試一次。",
   "next.copilotMicUnavailable": "這個頁面不能使用麥克風：需要 https 安全連線、而且瀏覽器有提供麥克風。",
   "next.copilotMicFailed": "無法開啟麥克風（{name}）。",
+  "next.copilotLogFocus": "已要求交接「{name}」",
+  "next.copilotCallFromSession": "長按或點兩下：打給語音副駕駛，交接這個 Session",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -304,8 +304,14 @@ export class RealtimeCopilotClient {
     this.updateState({ logs: nextLogs })
   }
 
-  async start(): Promise<void> {
+  /**
+   * Starts a call. With `origin` the call was placed from that Session, and its
+   * first words hand that Session over instead of greeting. A call already
+   * going (or connecting) is turned to the Session instead of starting again.
+   */
+  async start(origin?: CallOrigin): Promise<void> {
     if (this.state.status === 'connected' || this.state.status === 'connecting') {
+      if (origin) this.turnTo(origin)
       return
     }
 
@@ -327,7 +333,10 @@ export class RealtimeCopilotClient {
     microphone.catch(() => undefined)
 
     this.memory = readMemory()
-    this.focus = undefined
+    // A fresh call: nothing of the last one's options, only where this one
+    // was placed from, and that Session is the one under discussion.
+    this.call = { memory: '', snapshot: '', options: { origin } }
+    this.focus = origin?.id
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
     this.journal('start', navigator.userAgent)
@@ -356,7 +365,7 @@ export class RealtimeCopilotClient {
           : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
           : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
       }
-      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions } }
+      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       // The briefing is the deciding machine's own Sessions; on a page showing
       // several machines the call reads every machine's list instead.
@@ -491,9 +500,27 @@ export class RealtimeCopilotClient {
     if (section) this.addLog('info', nextWord('copilotLogMemory', { count: this.memory.length }))
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
-    this.dc.send(JSON.stringify(greetingEvent(!!section, consoleLanguage())))
-    this.addLog('info', nextWord('copilotLogGreeting'))
+    const origin = this.call.options.origin
+    this.dc.send(JSON.stringify(origin ? originGreetingEvent(origin, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
+    this.addLog('info', origin ? nextWord('copilotLogFocus', { name: origin.label || origin.id }) : nextWord('copilotLogGreeting'))
   }
+
+  /**
+   * Turns a call to one Session. Before the channel opens, the focus is kept
+   * for the configuration it is about to send; once open, the instructions
+   * are resent with it and the copilot is asked for the handover now.
+   */
+  private turnTo(origin: CallOrigin) {
+    this.call.options = { ...this.call.options, origin }
+    this.focus = origin.id
+    if (!this.dc || this.dc.readyState !== 'open') return
+    this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    // Only a response in progress can be cancelled; cancelling none is an error event.
+    if (this.state.speakingState === 'speaking' || this.state.speakingState === 'thinking') this.dc.send(JSON.stringify({ type: 'response.cancel' }))
+    this.dc.send(JSON.stringify(originGreetingEvent(origin, consoleLanguage())))
+    this.addLog('info', nextWord('copilotLogFocus', { name: origin.label || origin.id }))
+  }
+
 
   // Both spellings of the output events are handled: GA names them
   // `response.output_audio*`, the beta `response.audio*`.

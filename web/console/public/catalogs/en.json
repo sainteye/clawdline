@@ -9285,6 +9285,8 @@
   "next.copilotMicBusy": "The microphone is in use by another app or call. End that one, then try again.",
   "next.copilotMicUnavailable": "This page cannot use the microphone; it needs a secure (https) page in a browser that offers one.",
   "next.copilotMicFailed": "The microphone could not be opened ({name}).",
+  "next.copilotLogFocus": "Asked for a handover of {name}",
+  "next.copilotCallFromSession": "Hold or double-press: call the voice copilot about this Session",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

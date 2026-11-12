@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11289,
+  "englishContentKeys": 11291,
   "riskKeys": 4961,
-  "nonRiskCount": 6328,
+  "nonRiskCount": 6330,
   "groups": [
     {
       "name": "acp / other",
@@ -3825,7 +3825,7 @@
     },
     {
       "name": "next / other",
-      "count": 807,
+      "count": 809,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3887,6 +3887,7 @@
         "next.copilotBriefingCodex",
         "next.copilotBriefingLabel",
         "next.copilotCall",
+        "next.copilotCallFromSession",
         "next.copilotCallTitle",
         "next.copilotClose",
         "next.copilotConnecting",
@@ -3915,6 +3916,7 @@
         "next.copilotLogConfiguring",
         "next.copilotLogConnected",
         "next.copilotLogError",
+        "next.copilotLogFocus",
         "next.copilotLogForgot",
         "next.copilotLogGreeting",
         "next.copilotLogHeard",
