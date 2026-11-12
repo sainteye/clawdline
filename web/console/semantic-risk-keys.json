@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11268,
+  "englishKeys": 11270,
   "counts": {
-    "negation": 3117,
-    "state": 1858,
-    "permission": 669,
+    "negation": 3118,
+    "state": 1859,
+    "permission": 671,
     "deletion": 255,
     "uncertainty": 422
   },
-  "unionCount": 4949,
+  "unionCount": 4951,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -167,6 +167,7 @@
       "capacityRow.cache.image_thumbs.what",
       "capacityRow.cache.pinned_read.full",
       "capacityRow.cache.provider_quota.full",
+      "capacityRow.cache.provider_quota_renew_seconds.full",
       "capacityRow.cache.provider_quota_request_seconds.full",
       "capacityRow.cache.reclaim_summary.full",
       "capacityRow.cache.reclaim_summary.what",
@@ -3229,6 +3230,7 @@
       "capacityRow.cache.image_thumbs.full",
       "capacityRow.cache.pinned_read.full",
       "capacityRow.cache.pinned_read.what",
+      "capacityRow.cache.provider_quota_renew_seconds.what",
       "capacityRow.cache.provider_quota_response_bytes.full",
       "capacityRow.cache.session_execution_memo.what",
       "capacityRow.cache.session_inventory.what",
@@ -5051,6 +5053,8 @@
       "capacityRow.antigravity.acp_call_seconds.what",
       "capacityRow.artifacts.output_index_bytes.full",
       "capacityRow.cache.assistant_quota.what",
+      "capacityRow.cache.provider_quota_renew_seconds.full",
+      "capacityRow.cache.provider_quota_renew_seconds.what",
       "capacityRow.cache.provider_quota_response_bytes.what",
       "capacityRow.cache.session_execution_memo.what",
       "capacityRow.cache.session_inventory.full",
@@ -6620,6 +6624,8 @@
     "capacityRow.cache.pinned_read.full",
     "capacityRow.cache.pinned_read.what",
     "capacityRow.cache.provider_quota.full",
+    "capacityRow.cache.provider_quota_renew_seconds.full",
+    "capacityRow.cache.provider_quota_renew_seconds.what",
     "capacityRow.cache.provider_quota_request_seconds.full",
     "capacityRow.cache.provider_quota_response_bytes.full",
     "capacityRow.cache.provider_quota_response_bytes.what",

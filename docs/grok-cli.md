@@ -150,7 +150,22 @@ The provider quota bar retains Grok when a completed provider read reports
 `no_reading` or an expired saved sign-in (`reauth_required`), or an earlier
 observation exists; an expired sign-in names the command that renews it instead
 of making Grok disappear. With no valid percentage it
-shows unknown without a progress bar or an invented zero. An initial empty slot
+shows unknown without a progress bar or an invented zero.
+
+The access token in `auth.json` lasts about six hours, while its saved refresh
+token keeps the sign-in valid. An expired access token alone is therefore not an
+expired sign-in. Before reporting `reauth_required`, Clawdline runs the verified
+CLI's `grok models` once (bounded by `RenewSecondsLimit`, from a temporary
+directory, with no prompt). That command performs the CLI's own silent OIDC
+refresh under its own lock and rewrites `auth.json`; on 2026-11-12 its log on
+this machine recorded `oidc refresh enter` with reason `PreRequest`, followed by
+`auth.refresh.success`. Clawdline then rereads the file. Only a token that is
+still expired, or one the billing endpoint rejects again after one renewal, is
+shown as `reauth_required`. An entry without a refresh token, or a missing or
+incompatible CLI, cannot be renewed. A busy CLI probe is shown as unknown
+(`unavailable`), not expired. Clawdline never exchanges, copies or writes the
+refresh token itself. Renewal attempts share the account's single flight and
+fifteen-minute cooldown, and the renewed credential keeps the existing reading. An initial empty slot
 or signed-out account stays hidden. Mobile visibility remains limited to the
 Session list. The Session footer and full Info also show the responding machine's
 Grok account quota, shared by Sessions. They use the same account cache, single

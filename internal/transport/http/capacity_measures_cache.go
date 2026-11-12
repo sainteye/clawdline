@@ -24,7 +24,10 @@ func (s *Server) cacheCapacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "minimum interval between provider metadata reads; Retry-After can extend it"}
 		},
 		"cache.provider_quota_request_seconds": func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "per-provider deadline across metadata requests; no retries"}
+			return capacity.Reading{Known: true, Note: "per-request deadline for provider metadata; retried once only after a Grok sign-in renewal"}
+		},
+		"cache.provider_quota_renew_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "deadline for one run of the Grok CLI's own silent token refresh, inside the account's single flight and cooldown"}
 		},
 		"cache.claude_usage_refresh_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "minimum interval between asks of Claude Code for its plan usage; asked only when the status line has no fresh window"}

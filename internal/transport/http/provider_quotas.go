@@ -2,20 +2,36 @@ package http
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/grok"
 	"github.com/sainteye/clawdline/internal/adapters/providerquota"
 	"github.com/sainteye/clawdline/internal/contract"
 )
+
+// renewGrokSignIn runs the verified Grok CLI's own silent refresh. A busy or
+// unreadable installation probe is unavailable, never an expired sign-in.
+func renewGrokSignIn(ctx context.Context) error {
+	installation := grokResolver().Snapshot(ctx)
+	if installation.Reason == "provider_cli_busy" || installation.Reason == "provider_cli_unreadable" {
+		return providerquota.ErrRenewalUnavailable
+	}
+	if !installation.Compatible || installation.Path == "" {
+		return errors.New("grok CLI is not installed")
+	}
+	return grok.Renew(ctx, installation.Path)
+}
 
 func (s *Server) providerQuotaReader() *providerquota.Service {
 	s.providerQuotaOnce.Do(func() {
 		if s.providerQuotaService == nil {
 			home, _ := os.UserHomeDir()
 			s.providerQuotaService = providerquota.New(home, quotaReader())
+			s.providerQuotaService.WithGrokRenewal(renewGrokSignIn)
 			if host := s.antigravitySessions.Load(); host != nil {
 				s.providerQuotaService.WithGemini(func(ctx context.Context) ([]providerquota.Window, string) {
 					reading, err := host.AccountQuota(ctx)

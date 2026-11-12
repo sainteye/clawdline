@@ -800,6 +800,8 @@
   "capacityRow.cache.provider_quota.what": "每家供應商保留一份額度讀值。",
   "capacityRow.cache.provider_quota_refresh_seconds.full": "重複更新使用快取；供應商要求的冷卻時間可延長等待。",
   "capacityRow.cache.provider_quota_refresh_seconds.what": "設定供應商額度查詢的最短間隔。",
+  "capacityRow.cache.provider_quota_renew_seconds.full": "續期太慢會結束，不阻擋介面；只有確定無法續期時，Grok 才顯示需要重新登入。",
+  "capacityRow.cache.provider_quota_renew_seconds.what": "限制 Grok 自己的 CLI 續期過期通行憑證的最長時間。",
   "capacityRow.cache.provider_quota_request_seconds.full": "緩慢查詢會結束，不阻擋介面，並保留上次讀值與舊資料標示。",
   "capacityRow.cache.provider_quota_request_seconds.what": "限制一家供應商單次額度更新的總時間。",
   "capacityRow.cache.provider_quota_response_bytes.full": "過大的輸入會被拒絕，保留上次成功額度並標示舊資料。",

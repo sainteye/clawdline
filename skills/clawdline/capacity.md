@@ -65,6 +65,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cache.pinned_read` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.provider_quota` | 4 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.provider_quota_refresh_seconds` | 900 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `cache.provider_quota_renew_seconds` | 30 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `cache.provider_quota_request_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `cache.provider_quota_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `cache.reclaim_summary` | 30 | `seconds` | `expire` | `diagnostics` | — |
