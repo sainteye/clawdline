@@ -99,6 +99,18 @@ profile and are separate from the person's Chrome. It passes `--use-mock-keychai
 are not protected by the macOS keychain; it is meant for sites the person chooses to sign in to
 there.
 
+## What a new Session is told
+
+When `browser_enabled` is on as a new Claude Code, Codex, Gemini or Grok Session or child starts,
+`workflow.BrowserUseInstructions()` (`internal/domain/workflow/browser_use.go`) is appended to its
+launch text, the same way the optional space-saving image review is: Claude's
+`--append-system-prompt`, Codex's `developer_instructions`, and the first-input context of Gemini
+and Grok (`internal/app/owned_context.go`). The choice is frozen as `browser_use` in the sealed
+workflow snapshot (schema 2; the digest covers it, schema 1 refuses it), so a resumed Session keeps
+what it was told and turning the setting on or off reaches only executions started afterwards.
+The text grants nothing: the daemon still refuses every action while the setting is off. The same
+rules are `clawdline guide browser`, and the transparency page lists them as `browser-use`.
+
 ## Testing
 
 `TestBrowserBridgeEndToEnd` (internal/transport/http) drives a real Chromium through the whole
@@ -109,6 +121,5 @@ panel against a stand-in daemon at desktop and phone widths, in English and Chin
 
 ## Not built yet
 
-The install guide, the Settings page with the audit list and the stop switch, usage guidance in
-new Sessions, typing a Secret Handoff into a password field, the per-Session notification mute,
-and streaming instead of screenshots when the tab is drawn.
+The install guide, the Settings page with the audit list and the stop switch, typing a Secret
+Handoff into a password field, the per-Session notification mute, and streaming instead of screenshots when the tab is drawn.

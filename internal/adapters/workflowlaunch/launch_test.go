@@ -185,3 +185,72 @@ func TestLegacyParentCanOptIntoImageReviewWithoutAcquiringTodaysWorkflow(t *test
 		}
 	}
 }
+
+func TestBrowserUseIsToldToEachNewExecutionButNeverToAResume(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dir := t.TempDir()
+	service := Service{Store: st, Dir: dir, Resolve: skills.ResolveWorkflow}
+	root := t.TempDir()
+	before, err := skills.ResolveWorkflow("clawdline", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "clawdline", "browser_enabled": false}); err != nil {
+		t.Fatal(err)
+	}
+	off, err := service.Prepare(ctx, root, "", "")
+	if err != nil || off.Text != before.Instructions || strings.Contains(off.Text, "clawdline browser") {
+		t.Fatalf("disabled browser changed bytes: %q %v", off.Text, err)
+	}
+	if l, found, err := st.WorkflowLaunchByID(ctx, off.ID); err != nil || !found || l.SnapshotID != before.Digest || l.Snapshot.BrowserUse {
+		t.Fatalf("disabled snapshot changed: %+v %v", l, err)
+	}
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_enabled": true, "space_saving_images": true}); err != nil {
+		t.Fatal(err)
+	}
+	on, err := service.Prepare(ctx, root, "", "")
+	if err != nil || on.Text != workflow.SpaceSavingImageInstructions()+"\n\n"+workflow.BrowserUseInstructions() {
+		t.Fatalf("missing browser rules: %q %v", on.Text, err)
+	}
+	l, found, err := st.WorkflowLaunchByID(ctx, on.ID)
+	if err != nil || !found || !l.Snapshot.BrowserUse || l.Snapshot.Schema != 2 || l.Snapshot.Validate() != nil {
+		t.Fatalf("browser use not sealed: %+v %v", l, err)
+	}
+	if err := on.Bind(ctx, "%72", "browser-parent"); err != nil {
+		t.Fatal(err)
+	}
+	for _, enabled := range []bool{false, true} {
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_enabled": enabled, "space_saving_images": false}); err != nil {
+			t.Fatal(err)
+		}
+		child, err := service.Prepare(ctx, root, "", "browser-parent")
+		want := ""
+		if enabled {
+			want = workflow.BrowserUseInstructions()
+		}
+		if err != nil || child.Text != want {
+			t.Fatalf("child enabled=%v: %q %v", enabled, child.Text, err)
+		}
+		resumed, err := service.Prepare(ctx, root, "browser-parent", "")
+		if err != nil || resumed.Text != "" {
+			t.Fatalf("resume reinjected: %q %v", resumed.Text, err)
+		}
+		l, found, err := st.WorkflowLaunchByID(ctx, resumed.ID)
+		if err != nil || !found || !l.Snapshot.BrowserUse {
+			t.Fatalf("resume rewrote frozen browser choice: %+v %v", l, err)
+		}
+	}
+	// A legacy parent acquires the browser rules without today's workflow.
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "browser_enabled": true}); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := service.Prepare(ctx, t.TempDir(), "", "legacy")
+	if err != nil || legacy.Text != workflow.BrowserUseInstructions() {
+		t.Fatalf("legacy child: %q %v", legacy.Text, err)
+	}
+}

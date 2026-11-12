@@ -1094,6 +1094,41 @@ clawdline note create --body-file note.json
 
 `kind` ist `read`, `answer`, `action` oder `report`; `title`, `summary`, `action` und `reason` sind erforderlich. Eine `answer` kann zwei bis vier Wahlmöglichkeiten anbieten. Jeder `draft` ist die vorgeschlagene Antwort, die auf seiner Schaltfläche steht. Tippt der Mensch darauf, sendet die Konsole sie sofort als Gesprächsnachricht an die Session der Notiz, gefolgt von einer Kontextzeile mit Notiz-ID, Titel und Aktion, damit die empfangende Session weiß, auf welche Bitte der Mensch geantwortet hat; der Kontext wird auf der Schaltfläche nicht angezeigt. Erst nachdem das Senden gelungen ist, wandert die Notiz zu „kürzlich erledigt“. Scheitert das Senden, bleibt die Notiz ausstehend, und das Aufmerksamkeitselement sagt, dass die Antwort nicht gesendet wurde. `detail` kann längeren Text aufnehmen. `document_url` kann auf ein echtes, lesbares Cloud-Dokument verlinken; prüfe die Dokument-Route und die Datei, bevor du es postest. Handle nach der Gesprächsnachricht, die ankommt, nicht nach dem Zustand der Notiz: Eine Notiz, die der Mensch von Hand als erledigt markiert hat, hat nichts gesendet. Ist deine Arbeit tatsächlich durch die Antwort blockiert, zeichne den Zustand „wartet auf den Menschen“ auf und sende die vorhandene Aufmerksamkeitsbenachrichtigung einmal. Eine sichtbare Notiz allein sendet keine Push-Nachricht und weckt keinen Agent.
 
+## 9b. Use the browser
+
+Only when the person has turned on browser use for this machine (Settings → Browser); a new
+Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
+from the person's Chrome. Every action is recorded for the person, and they may watch and take
+over from their Mac or phone.
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
+  see the layout.
+- `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
+- `browser_stopped`: the person stopped all browser use. Do not retry.
+- `browser_extension_missing` or `browser_disabled`: continue another way, and tell the person
+  that Settings → Browser sets it up.
+- When a page needs the person — sign-in, CAPTCHA, payment, or any confirmation with
+  consequences — create a note (`clawdline guide note`) asking them to take over the Chrome tab,
+  and wait.
+- Never ask for a password in chat. For a secret, use a Secret Handoff and type it with
+  `clawdline secret run <note> -- clawdline browser type --stdin`.
+- Do not buy, send messages, publish, delete or accept terms in the browser unless the person
+  asked for that exact action.
+- The setting does not authorize installing software, changing the person's Chrome or spending
+  money.
+
 ## 10. Das Board
 
 Das Board hat drei Strukturen – Board-Items, den Backlog und die eigene To-do-Liste jeder Session –, und

@@ -584,6 +584,41 @@ clawdline note create --body-file note.json
 
 `kind`는 `read`, `answer`, `action`, `report` 중 하나이며 `title`, `summary`, `action`, `reason`은 필수입니다. `answer`에는 선택지 2–4개를 넣을 수 있습니다. 각 `draft`는 버튼에 표시되는 제안 답변입니다. 사람이 탭하면 콘솔이 곧바로 메모 대상 세션에 대화 메시지로 보내고, 이어 메모 ID·제목·행동이 적힌 맥락 줄을 보냅니다. 받는 세션은 어느 요청에 대한 답인지 알 수 있지만, 맥락 줄은 버튼에 보이지 않습니다. 전송이 성공한 뒤에만 메모가 최근 처리됨으로 이동합니다. 실패하면 메모는 대기 상태로 남고 주의 영역에 답변이 전송되지 않았다고 표시됩니다. `detail`에는 더 긴 내용을 넣을 수 있습니다. `document_url`은 실제로 읽을 수 있는 Cloud 문서를 가리킬 수 있으며, 게시 전에 문서 경로와 파일을 확인해야 합니다. 메모 상태가 아니라 도착한 대화 메시지에 따라 행동하세요. 사람이 수동으로 처리됨 표시만 한 메모는 아무것도 보내지 않았습니다. 답변이 실제 차단 사항이라면 사용자 대기 상태를 기록하고 기존 주의 알림을 한 번 보내세요. 메모가 보인다는 것만으로 푸시가 전송되거나 Agent가 깨어나지는 않습니다.
 
+## 9b. Use the browser
+
+Only when the person has turned on browser use for this machine (Settings → Browser); a new
+Session is told so when it starts. `clawdline browser` drives Clawdline's own Chromium, separate
+from the person's Chrome. Every action is recorded for the person, and they may watch and take
+over from their Mac or phone.
+
+```sh
+clawdline browser open <url>
+clawdline browser read
+clawdline browser click <label>        # or --x <x> --y <y>
+clawdline browser type <text>
+clawdline browser key <name>
+clawdline browser scroll
+clawdline browser screenshot
+clawdline browser release
+clawdline browser --help
+```
+
+- Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
+  see the layout.
+- `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
+- `browser_stopped`: the person stopped all browser use. Do not retry.
+- `browser_extension_missing` or `browser_disabled`: continue another way, and tell the person
+  that Settings → Browser sets it up.
+- When a page needs the person — sign-in, CAPTCHA, payment, or any confirmation with
+  consequences — create a note (`clawdline guide note`) asking them to take over the Chrome tab,
+  and wait.
+- Never ask for a password in chat. For a secret, use a Secret Handoff and type it with
+  `clawdline secret run <note> -- clawdline browser type --stdin`.
+- Do not buy, send messages, publish, delete or accept terms in the browser unless the person
+  asked for that exact action.
+- The setting does not authorize installing software, changing the person's Chrome or spending
+  money.
+
 ## 10. 보드
 
 보드에는 보드 항목, Backlog, 각 세션의 자체 할 일 목록이라는 세 구조가 있으며, **무엇을 올릴지는 사람이 결정합니다.** 세션은 Clawdline을 통해 보내진 사람 자신의 메시지가 명시적으로 지시할 때만 보드 항목을 만듭니다. 그 외에는 제안합니다. 스스로 카드를 만들지 않습니다. 예외는 Epic 담당자입니다. 검토된 Epic 계획을 마친 뒤 Epic을 Feature와 Issue 항목으로 나누고 세션에 배정할 수 있습니다(`clawdline guide ko epic`).
