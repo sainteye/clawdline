@@ -9266,6 +9266,7 @@
   "next.copilotLogForgot": "已清除之前的通話紀錄",
   "next.copilotLogEnded": "語音通話已結束並關閉媒體流",
   "next.copilotErrorMachineLacks": "這台機器的 Clawdline 還沒有語音副駕駛（{code}）：請先更新它，或改選存有 OpenAI Key 的機器。",
+  "next.copilotMarkSaid": "：",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

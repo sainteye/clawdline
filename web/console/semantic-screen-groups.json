@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11254,
+  "englishContentKeys": 11255,
   "riskKeys": 4944,
-  "nonRiskCount": 6310,
+  "nonRiskCount": 6311,
   "groups": [
     {
       "name": "acp / other",
@@ -3815,7 +3815,7 @@
     },
     {
       "name": "next / other",
-      "count": 799,
+      "count": 800,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3914,6 +3914,7 @@
         "next.copilotLogsHide",
         "next.copilotLogsLabel",
         "next.copilotLogsShow",
+        "next.copilotMarkSaid",
         "next.copilotMinimize",
         "next.copilotModelHint",
         "next.copilotModelLabel",

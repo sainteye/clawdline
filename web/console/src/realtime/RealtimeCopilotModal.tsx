@@ -112,10 +112,13 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
             )}
             {copilotState.lastAssistantSpeech && (
               <div className="realtime-bubble assistant">
-                <svg className="bubble-mark" viewBox="0 0 16 11" role="img" aria-label="Clawdline" shapeRendering="crispEdges">
-                  {BRAND_MARK.cells.flatMap((row, y) => row.map((color, x) => color &&
-                    <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={color} />))}
-                </svg>
+                <span className="bubble-label">
+                  <svg className="bubble-mark" viewBox="0 0 16 11" role="img" aria-label="Clawdline" shapeRendering="crispEdges">
+                    {BRAND_MARK.cells.flatMap((row, y) => row.map((color, x) => color &&
+                      <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={color} />))}
+                  </svg>
+                  {nextWord('copilotMarkSaid')}
+                </span>
                 {copilotState.lastAssistantSpeech}
               </div>
             )}

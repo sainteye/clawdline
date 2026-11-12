@@ -104,7 +104,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - answer_session_question：替使用者回答某個 Session 在等的問題（選項選單）。
 - get_session_notes：讀 Session 留給使用者的便條紙。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
-- close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）就照實說原因，不要再試。
+- close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
 - send_message_to_session：替使用者把文字送進某個 Session。
 【開新的 Session】
 - 使用者要開新 Session 時，第一步一定先呼叫 list_machines，接著呼叫 list_projects，然後才開口問。機器、專案、助理、模型的名稱只能用這兩個工具回傳的，絕對不要自己編名稱或舉不存在的例子。
@@ -121,7 +121,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - 使用者說的 Session 在清單裡找不到（例如已經關掉了），就直接說「找不到某某，它可能已經關閉了」，絕對不要改挑另一個 Session 來送。
 - 送出前一定先講「要送到『Session 名稱』：『內容』，對嗎？」，使用者說好才送；回答問題、關閉也一樣先講出 Session 名稱。
 - 工具說「目前在討論的不是這個」時，要先問使用者是不是要改到那個 Session，確認後才帶 switch_confirmed: true 再呼叫。
-- session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。遇到 error 附 candidates 時，依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出候選名稱讓使用者選。
+- session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。使用者用說的描述 Session（例如「TimeTree 相關的」「做排程那個」），由你依清單裡的名稱、狀態與摘要判斷是哪一個，再填它的 id；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
 
@@ -317,13 +317,14 @@ export const COPILOT_TOOLS = [
   {
     type: 'function',
     name: 'close_session',
-    description: '關閉一個已經完成的 Session。只在使用者明確要求關閉、而且你已經問過「確定要關閉某某嗎」並得到肯定回答之後呼叫。機器判斷還不能安全關閉時不會關，會回報原因。',
+    description: '關閉一個 Session。只在使用者明確要求關閉、而且你已經問過「確定要關閉某某嗎」並得到肯定回答之後呼叫。機器判斷還不能安全關閉時不會關，會回報原因；使用者聽過原因、仍明確說要關閉時，帶 force_confirmed: true 再呼叫一次。',
     parameters: {
       type: 'object',
       properties: {
         session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 完整名稱' },
         session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
+        force_confirmed: { type: 'boolean', description: '你已經把「還不能安全關閉」的原因告訴使用者，而他明確說還是要關閉時才填 true' },
       },
       required: ['session_id', 'session_label'],
     },
@@ -629,7 +630,7 @@ async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[] } |
 export function resolveSession(
   rows: readonly CopilotSessionRow[],
   wanted: string,
-): { row: CopilotSessionRow } | { error: string; candidates?: { id: string; label: string }[] } {
+): { row: CopilotSessionRow } | { error: string; candidates?: { id: string; label: string; state?: string }[] } {
   const w = wanted.trim()
   if (!w) return { error: '沒有指定要看哪一個 Session' }
   const byId = rows.find((r) => r.id === w)
@@ -641,20 +642,17 @@ export function resolveSession(
     if (pane) return { row: pane }
   }
   const lower = w.toLowerCase()
-  const tiers = [
-    rows.filter((r) => r.label.toLowerCase() === lower || r.assistant.toLowerCase() === lower),
-    rows.filter((r) => r.label.toLowerCase().includes(lower)),
-  ]
-  for (const hits of tiers) {
-    if (hits.length === 1) return { row: hits[0] }
-    if (hits.length > 1) {
-      return {
-        error: `「${w}」對應到 ${hits.length} 個 Sessions：${hits.map((r) => r.label).join('、')}`,
-        candidates: hits.map((r) => ({ id: r.id, label: r.label })),
-      }
-    }
+  const exact = rows.filter((r) => r.label.toLowerCase() === lower)
+  if (exact.length === 1) return { row: exact[0] }
+  // Anything else is the copilot's to match, not this code's: it hears
+  // "TimeTree 相關的" for "[Task] Foyer 每日 TimeTree 日程整理", which no
+  // substring rule does. It gets every Session and picks an id itself.
+  return {
+    error: rows.length
+      ? `沒有 id 或名稱剛好是「${w}」的 Session。從下面的 Sessions 依使用者的意思挑出 id 再查；真的沒有相符的才說找不到`
+      : `目前沒有任何 Session`,
+    candidates: rows.map((r) => ({ id: r.id, label: r.label, state: r.state })),
   }
-  return { error: `找不到名為「${w}」的 Session` }
 }
 
 function countBy(rows: readonly CopilotSessionRow[]): Record<string, number> {
@@ -1481,7 +1479,7 @@ const CLOSE_REASONS: Record<string, string> = {
   session_identity_unbound: '機器還認不出它是哪個對話',
 }
 
-async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, said = '', switchConfirmed = false): Promise<unknown> {
+async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, said = '', switchConfirmed = false, forceConfirmed = false): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -1499,16 +1497,25 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     return { error: refused }
   }
   const meaning = (codes: string[]) => codes.map((c) => CLOSE_REASONS[c] ?? c)
-  // A close is never forced from a call: what the machine says is still owed stays owed.
-  if (row.closeable !== 'safe') {
-    const error = `「${row.label}」現在還不能安全關閉${row.closeReasons?.length ? `：${meaning(row.closeReasons).join('、')}` : ''}`
-    logs.push({ level: 'error', text: error })
-    return { error, reasons: row.closeReasons ?? [] }
+  // As the console's close sheet does (`overlays/action-confirm.ts`): a close
+  // the machine calls unsafe is said with its reasons and asked again; only
+  // the person's second, explicit "still close" sends `force`, pinned to the
+  // reading those reasons came from, and the machine still decides.
+  const unsafe = (reasons: string[]) => ({
+    error: `「${row.label}」現在還不能安全關閉${reasons.length ? `：${meaning(reasons).join('、')}` : ''}。先把原因告訴使用者，問他「還是要關閉嗎？」；他明確說要，才帶 force_confirmed: true 再呼叫`,
+    needs_confirmation: true,
+    reasons,
+  })
+  const force = forceConfirmed && row.closeable !== 'safe'
+  if (row.closeable !== 'safe' && !forceConfirmed) {
+    const asked = unsafe(row.closeReasons ?? [])
+    logs.push({ level: 'info', text: `「${row.label}」還不能安全關閉，等使用者確認` })
+    return asked
   }
   const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/close`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
-    body: JSON.stringify({ force: false, ...(row.closeVersion ? { expected_closeability_version: row.closeVersion } : {}) }),
+    body: JSON.stringify({ force, ...(row.closeVersion ? { expected_closeability_version: row.closeVersion } : {}) }),
   })
   if (!res.ok) {
     let reasons: string[] = []
@@ -1518,13 +1525,18 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     } catch {
       // refusal-ok: a refusal without reasons is still said by its HTTP status and message below.
     }
+    // The row said safe but the machine found something owed: ask, as above.
+    if (!force && res.status === 409 && reasons.length) {
+      logs.push({ level: 'info', text: `「${row.label}」還不能安全關閉，等使用者確認` })
+      return unsafe(reasons)
+    }
     const detail = await refusalText(res)
     const error = `沒有關閉「${row.label}」（HTTP ${res.status}${reasons.length ? `：${meaning(reasons).join('、')}` : detail ? `：${detail}` : ''}）`
     logs.push({ level: 'error', text: error })
     return { error, reasons }
   }
-  logs.push({ level: 'info', text: `已關閉「${row.label}」` })
-  return { closed: true, label: row.label }
+  logs.push({ level: 'info', text: force ? `已照使用者確認強制關閉「${row.label}」` : `已關閉「${row.label}」` })
+  return { closed: true, label: row.label, ...(force ? { forced: true } : {}) }
 }
 
 async function listMachines(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
@@ -1649,7 +1661,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
     else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
     else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
-    else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true)
+    else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true, args.force_confirmed === true)
     else if (name === 'list_machines') result = await listMachines(deps, logs)
     else if (name === 'list_projects') result = await listProjects(deps, logs, str(args.machine_id))
     else if (name === 'start_session') result = await startSession(deps, logs, args)

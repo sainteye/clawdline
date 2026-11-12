@@ -143,15 +143,25 @@ projects and started codex in clawdline.
 
 **Writes go to the Session under discussion.** `send_message_to_session`,
 `answer_session_question` and `close_session` accept only a Session's id or its whole name (never
-an assistant type or part of a name, which the read tools accept), and require `session_label`, the
+an assistant type or part of a name), and require `session_label`, the
 name the copilot said aloud, which must be that Session's. The call remembers the Session it last
 read, opened or acted on; a write to another one is refused until the person confirms the switch
 (`switch_confirmed`). On 2026-11-12 a message went to the wrong Session; replayed against this
 machine's Sessions, the copilot asked to send to an unrelated one when the named Session had been
 closed, and after the rule "a Session not in the list is said to be missing, never replaced" it
-said so instead. `close_session` closes a Session the person named and confirmed, only when its row's
-closeability is `safe`, with `force: false` and that reading's version; a Session still working
-or owing a landing is not closed and the copilot says why. Over Cloud the close resolves that
+said so instead. `close_session` closes a Session the person named and confirmed, with `force:
+false` and that reading's version when its row's closeability is `safe`. When it is not, or the
+machine answers 409 with reasons, the copilot says the reasons and asks again whether to close
+anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only the person's
+explicit yes (`force_confirmed`) sends `force: true`, pinned to the version those reasons came
+from, and the machine still decides.
+
+**Which Session the person means is the copilot's call.** The read tools take an id or a whole
+name; anything else answers with every Session (id, name, state) and the copilot picks the id
+from what the person said. On 2026-11-12 the person asked for "Task 或 TimeTree 相關的" Session;
+the label-substring match found nothing for "[Task] Foyer 每日 TimeTree 日程整理" and the copilot
+said it did not exist. Matching what was meant is left to the model rather than to a looser rule
+in this code. Over Cloud the close resolves that
 Session's current execution as `answer_session_question` does. Times reach the copilot already
 said as a person says them (剛剛, 12 分鐘前, 3 小時前, 昨天 18:20, 11/9 14:30; 1 小時 20 分 for a
 duration), in the briefing's input too, never as a count of minutes. `get_session_notes` reads the unresolved
