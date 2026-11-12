@@ -3,7 +3,7 @@ import { nextWord } from "../next-strings.js"
 
 export interface HeaderOption { id: string; control: ReactNode }
 
-/** On phones the rightmost available entrance stays beside the disclosure. */
+/** On phones the rightmost entrance and disclosure share one button outline. */
 export function HeaderOptions({ options }: { options: HeaderOption[] }) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -37,10 +37,12 @@ export function HeaderOptions({ options }: { options: HeaderOption[] }) {
       onClick={() => { if (open) { setOpen(false); trigger.current?.focus({ preventScroll: true }) } }}>
       {options.slice(0, -1).map(option => <Fragment key={option.id}>{option.control}</Fragment>)}
     </div>}
-    <Fragment key={options.at(-1)!.id}>{options.at(-1)!.control}</Fragment>
-    {options.length > 1 && <button type="button" className="header-options-toggle" ref={trigger}
-      aria-expanded={open} aria-controls={id} aria-label={label} title={label} onClick={() => setOpen(!open)}>
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
-    </button>}
+    <div className="header-options-current" data-multiple={options.length > 1 ? "true" : undefined}>
+      <Fragment key={options.at(-1)!.id}>{options.at(-1)!.control}</Fragment>
+      {options.length > 1 && <button type="button" className="header-options-toggle" ref={trigger}
+        aria-expanded={open} aria-controls={id} aria-label={label} title={label} onClick={() => setOpen(!open)}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+      </button>}
+    </div>
   </div>
 }
