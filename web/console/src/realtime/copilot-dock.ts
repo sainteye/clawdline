@@ -94,6 +94,14 @@ export function firstPoint(viewport: { width: number; height: number }, insets: 
 }
 
 /** A press that moved less than this is a tap that opens the sheet, not a drag. */
+/**
+ * Which edge of the screen the bubble is nearer, so a notice beside it opens
+ * toward the screen instead of half past its edge.
+ */
+export function bubbleSide(at: Point, viewport: { width: number }): 'left' | 'right' {
+  return at.x + BUBBLE_SIZE / 2 > viewport.width / 2 ? 'right' : 'left'
+}
+
 export const TAP_SLOP = 8
 
 export function isTap(from: Point, to: Point): boolean {
