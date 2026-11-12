@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { actionNotice, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { actionNotice, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -32,7 +32,9 @@ export interface RealtimeCopilotState {
   /** How many earlier turns this browser remembers (`copilot-memory.ts`). */
   remembered: number
   /** The last thing the copilot did on the machine, shown for a moment (`actionNotice`). */
-  notice?: { text: string; at: number }
+  notice?: { text: string; at: number; warn?: boolean }
+  /** The tools used since the person last spoke, in order (`toolTrace`). */
+  tools?: ToolTrace[]
 }
 
 export type RealtimeListener = (state: RealtimeCopilotState) => void
@@ -148,6 +150,10 @@ export class RealtimeCopilotClient {
    * decision never judges the sentence before.
    */
   private heardNow = ''
+  /** What the machine confirmed since the person last spoke (`unbackedClaims`). */
+  private doneSinceHeard = new Set<ActionKind>()
+  /** A correction is under way, so its own words are not checked again. */
+  private correcting = false
   /** Which start this is; `disconnect` moves it on so a ringing start stops. */
   private attempt = 0
   private listeners: Set<RealtimeListener> = new Set()
@@ -457,8 +463,11 @@ export class RealtimeCopilotClient {
         break
       }
       case 'input_audio_buffer.speech_started':
-        // A new sentence has begun: the last one no longer says what is meant.
+        // A new sentence has begun: the last one no longer says what is meant,
+        // and what was done for it no longer backs what is said next.
         this.heardNow = ''
+        this.doneSinceHeard.clear()
+        this.updateState({ tools: [] })
         this.updateState({ speakingState: 'listening' })
         break
       case 'input_audio_buffer.speech_stopped':
@@ -493,6 +502,17 @@ export class RealtimeCopilotClient {
       case 'response.done': {
         const spoken = this.state.lastAssistantSpeech
         if (spoken) this.keep('assistant', spoken)
+        // Said it did something the machine never confirmed: say so on screen,
+        // and have the copilot correct itself before the person relies on it.
+        const unbacked = spoken ? unbackedClaims(spoken, this.doneSinceHeard) : []
+        if (unbacked.length && !this.correcting) {
+          this.correcting = true
+          this.updateState({ notice: { text: nextWord('copilotClaimNotDone'), at: Date.now(), warn: true } })
+          this.addLog('error', nextWord('copilotClaimNotDone'))
+          if (this.dc && this.dc.readyState === 'open') for (const e of unbackedClaimEvents(unbacked)) this.dc.send(JSON.stringify(e))
+        } else {
+          this.correcting = false
+        }
         if (event.response?.usage) {
           const cost = addUsage(this.state.cost ?? emptyCost(this.model), event.response.usage)
           this.updateState({ cost })
@@ -521,13 +541,16 @@ export class RealtimeCopilotClient {
 
   private async handleToolCall(event: { call_id: string; name: string; arguments: string }) {
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: event.name }), speakingState: 'thinking' })
+    const startedAt = performance.now()
     const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
+    this.updateState({ tools: [...(this.state.tools ?? []), toolTrace(event.name, output, performance.now() - startedAt)] })
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
     // Only what the machine confirmed is shown and chimed, never what the
     // copilot says it did.
     const done = actionNotice(event.name, output)
     if (done) {
+      this.doneSinceHeard.add(NOTICE_KIND[done.key])
       this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
       this.meter.chime()
     }

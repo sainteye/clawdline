@@ -127,6 +127,19 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           </div>
         )}
 
+        {copilotState.tools && copilotState.tools.length > 0 && (
+          <ol className="copilot-tools-trail" aria-label={nextWord('copilotToolsUsed')}>
+            {copilotState.tools.map((t, i) => (
+              <li key={i} className={t.ok ? 'ok' : 'failed'} title={`${t.name}${t.target ? ` · ${t.target}` : ''} · ${(t.ms / 1000).toFixed(1)} s`}>
+                <span className="copilot-tool-mark" aria-hidden="true">{t.ok ? '✓' : '✗'}</span>
+                <code>{t.name}</code>
+                {t.target ? <span className="copilot-tool-target">{t.target}</span> : null}
+                <span className="copilot-tool-ms">{(t.ms / 1000).toFixed(1)}s</span>
+              </li>
+            ))}
+          </ol>
+        )}
+
         {copilotState.cost && copilotState.cost.responses > 0 && (
           <div className="realtime-cost-row" aria-live="polite">
             <span className="realtime-cost-total">

@@ -2013,3 +2013,65 @@ export function actionNotice(tool: string, output: string): ActionNotice | null 
   if (tool === 'start_session' && o.started === true) return { key: 'copilotDidStart', params: { project: str(o.project) } }
   return null
 }
+
+/** The kinds of action the copilot can say it did. */
+export type ActionKind = 'send' | 'answer' | 'close' | 'run' | 'start'
+
+/** Which kind each notice is. */
+export const NOTICE_KIND: Record<ActionNotice['key'], ActionKind> = {
+  copilotDidSend: 'send', copilotDidAnswer: 'answer', copilotDidClose: 'close', copilotDidRun: 'run', copilotDidStart: 'start',
+}
+
+/** Sentences that say an action is done, by kind; a question ("…對嗎？") never is one. */
+const CLAIMS: [ActionKind, RegExp][] = [
+  // The copilot's own doing ("幫你", "我", or the message itself), never a
+  // Session's work reported in the third person ("它已經發布了…").
+  ['send', /(幫你|替你|我)(已經|已)?(送|傳)|(訊息|指令|內容|這段|這句)[^，。]{0,6}(送|傳)(出去|過去|出|到)?了|送到「[^」]+」了/],
+  ['answer', /(幫你|替你|我)(已經|已)?(回答|選|按)/],
+  ['close', /(幫你|替你|我)(已經|已)?(關閉|關掉)/],
+  ['run', /(幫你|替你|我)(已經|已)?(執行|啟動|開始跑)/],
+  ['start', /(幫你|替你|我)(已經|已)?開(好|了)/],
+]
+
+/**
+ * The actions `speech` says are done that the machine did not confirm since
+ * the person last spoke (`done`). On 2026-11-12 the copilot told the person a
+ * message was sent without calling the send; only the second ask sent it.
+ */
+export function unbackedClaims(speech: string, done: ReadonlySet<ActionKind>): ActionKind[] {
+  const out: ActionKind[] = []
+  // Split at the full stop, the exclamation and a line break, written as escapes.
+  for (const sentence of speech.split(/[\u3002\uff01!\n]/)) {
+    if (/[\u55ce\uff1f?]/.test(sentence)) continue
+    for (const [kind, said] of CLAIMS) {
+      if (said.test(sentence) && !done.has(kind) && !out.includes(kind)) out.push(kind)
+    }
+  }
+  return out
+}
+
+/** What the copilot is told when it said it did something the machine did not do. */
+export function unbackedClaimEvents(kinds: readonly ActionKind[]): Record<string, unknown>[] {
+  return [
+    { type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text',
+      text: `你剛剛說已經${kinds.map((k) => ({ send: '送出', answer: '回答', close: '關閉', run: '執行', start: '開新 Session' })[k]).join('、')}，但機器沒有收到這個動作，其實沒有做。用一句話照實跟使用者更正，再確認一次要不要現在做。` }] } },
+    { type: 'response.create' },
+  ]
+}
+
+/** One tool the copilot used in the current turn, as the call sheet shows it. */
+export interface ToolTrace { name: string; target?: string; ok: boolean; ms: number }
+
+/**
+ * What a tool call was, for the sheet's tool line: its own name, the Session
+ * or project its answer names, whether it answered without an error, and how
+ * long it took. The person reads these to learn when the copilot reaches for
+ * a tool and where it should do better.
+ */
+export function toolTrace(name: string, output: string, ms: number): ToolTrace {
+  let o: Record<string, unknown> = {}
+  try { o = (JSON.parse(output) ?? {}) as Record<string, unknown> } catch { /* refusal-ok: a reply that is not JSON is shown as a failed call. */ }
+  const status = (o.status && typeof o.status === 'object' ? o.status : {}) as Record<string, unknown>
+  const target = str(o.label) || str(o.sent_to) || str(o.session) || str(status.label) || str(o.project)
+  return { name, ...(target ? { target } : {}), ok: !!o && typeof o === 'object' && !('error' in o) && output.trim().startsWith('{'), ms: Math.max(0, Math.round(ms)) }
+}

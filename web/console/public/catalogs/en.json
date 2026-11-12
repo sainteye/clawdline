@@ -9272,6 +9272,8 @@
   "next.copilotDidClose": "Closed “{label}”",
   "next.copilotDidRun": "Ran “{name}” in “{label}”",
   "next.copilotDidStart": "Started a Session in {project}",
+  "next.copilotClaimNotDone": "The copilot said it was done, but the machine received no such action",
+  "next.copilotToolsUsed": "Tools used for this answer",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

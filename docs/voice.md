@@ -156,6 +156,15 @@ anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only t
 explicit yes (`force_confirmed`) sends `force: true`, pinned to the version those reasons came
 from, and the machine still decides.
 
+**What the person sees the copilot do.** Every send, answer, close, Snippet or Playbook run and
+new Session the machine confirmed shows a small notice in the sheet and above the bubble for five
+seconds, with a short two-note chime (`actionNotice`, `CopilotNotice.tsx`); a refusal never does.
+When the copilot says it did one of these ("已經幫你送過去了") and the machine confirmed none since
+the person last spoke, an amber notice says so and the copilot is told to correct itself and ask
+again (`unbackedClaims`). On 2026-11-12 it told the person a message was sent without calling the
+send; only the second ask sent it, and nothing on screen told the two apart. A Session's own work
+reported in the third person ("它已經發布了") is not a claim.
+
 **Which Session the person means is the copilot's call.** The read tools take an id or a whole
 name; anything else answers with every Session (id, name, state) and the copilot picks the id
 from what the person said. On 2026-11-12 the person asked for "Task 或 TimeTree 相關的" Session;

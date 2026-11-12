@@ -9272,6 +9272,8 @@
   "next.copilotDidClose": "已關閉「{label}」",
   "next.copilotDidRun": "已在「{label}」執行「{name}」",
   "next.copilotDidStart": "已在 {project} 開新的 Session",
+  "next.copilotClaimNotDone": "副駕駛說已經做了，但機器沒有收到這個動作",
+  "next.copilotToolsUsed": "這次回答用到的工具",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

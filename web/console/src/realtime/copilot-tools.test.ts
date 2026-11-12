@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -883,4 +883,24 @@ test("only an action the machine confirmed becomes a notice, never a refusal or 
   assert.equal(actionNotice("send_message_to_session", JSON.stringify({ error: "送到「x」失敗 (HTTP 409)" })), null)
   assert.equal(actionNotice("get_session_summary", JSON.stringify({ label: "x" })), null)
   assert.equal(actionNotice("send_message_to_session", "not json"), null)
+})
+
+test("saying a message was sent without the machine confirming a send is caught; asking first is not", () => {
+  const none = new Set<never>()
+  assert.deepEqual(unbackedClaims("好，已經幫你送過去了。", none), ["send"])
+  assert.deepEqual(unbackedClaims("訊息送出去了，它應該很快會回。", none), ["send"])
+  assert.deepEqual(unbackedClaims("我已經關閉「準備功能截圖」。", none), ["close"])
+  assert.deepEqual(unbackedClaims("送到「準備功能截圖」了。", none), ["send"])
+  assert.deepEqual(unbackedClaims("它已經發布了藏王樹冰心得，也已經傳到正式站。", none), [], "a Session's own work in the third person")
+  assert.deepEqual(unbackedClaims("它已經關掉舊的服務，現在閒置。", none), [])
+  assert.deepEqual(unbackedClaims("要送到「準備功能截圖」：先跑測試，對嗎？", none), [], "a confirmation question claims nothing")
+  assert.deepEqual(unbackedClaims("它最後完成的是發布文章，測試都通過了。", none), [], "a Session's own work is not the copilot's action")
+  assert.deepEqual(unbackedClaims("已經幫你送過去了。", new Set(["send"] as const)), [], "a confirmed send backs the words")
+})
+
+test("a tool call is traced by its name, the Session it named, whether it answered, and its time", () => {
+  assert.deepEqual(toolTrace("get_session_summary", JSON.stringify({ session_id: "%2", label: "Prepare screenshots" }), 812.4), { name: "get_session_summary", target: "Prepare screenshots", ok: true, ms: 812 })
+  assert.deepEqual(toolTrace("open_session", JSON.stringify({ opened: true, label: "x", status: { label: "x" } }), 5), { name: "open_session", target: "x", ok: true, ms: 5 })
+  assert.deepEqual(toolTrace("send_message_to_session", JSON.stringify({ error: "refused" }), 40), { name: "send_message_to_session", ok: false, ms: 40 })
+  assert.equal(toolTrace("list_sessions", "not json", 1).ok, false)
 })

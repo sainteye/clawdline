@@ -715,3 +715,40 @@
 .copilot-bubble-notice { animation-name: copilot-bubble-notice-in; }
 @keyframes copilot-bubble-notice-in { from { opacity: 0; transform: translate(-50%, 4px); } to { opacity: 1; transform: translateX(-50%); } }
 @media (prefers-reduced-motion: reduce) { .copilot-notice, .copilot-bubble-notice { animation: none; } }
+.copilot-notice.warn {
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #b45309;
+}
+.copilot-bubble-notice.warn { background: var(--card, #111); border-color: color-mix(in srgb, #f59e0b 55%, transparent); color: #f59e0b; }
+
+/* The tools the copilot used since the person last spoke (`toolTrace`): a
+   quiet line of small chips under the transcript, oldest first. */
+.copilot-tools-trail {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.copilot-tools-trail li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.copilot-tools-trail code { font-size: 11px; color: inherit; background: none; padding: 0; }
+.copilot-tools-trail .copilot-tool-target { overflow: hidden; text-overflow: ellipsis; max-width: 12em; }
+.copilot-tools-trail .copilot-tool-ms { opacity: 0.75; font-variant-numeric: tabular-nums; }
+.copilot-tools-trail li.ok .copilot-tool-mark { color: #16a34a; }
+.copilot-tools-trail li.failed { border-color: color-mix(in srgb, #ef4444 45%, var(--line)); }
+.copilot-tools-trail li.failed .copilot-tool-mark { color: #ef4444; }

@@ -8,7 +8,7 @@ const NOTICE_SHOWN_MS = 5000
  * moment beside the call: in the sheet, and above the bubble when the call is
  * shrunk. Announced politely to a screen reader.
  */
-export function CopilotNotice({ notice, className }: { notice?: { text: string; at: number }; className: string }) {
+export function CopilotNotice({ notice, className }: { notice?: { text: string; at: number; warn?: boolean }; className: string }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!notice) return
@@ -19,7 +19,7 @@ export function CopilotNotice({ notice, className }: { notice?: { text: string; 
     return () => clearTimeout(timer)
   }, [notice])
   const shown = !!notice && now < notice.at + NOTICE_SHOWN_MS
-  return <div className={className} role="status" aria-live="polite" hidden={!shown}>
-    {shown ? <><span className="copilot-notice-tick" aria-hidden="true">✓</span>{notice!.text}</> : null}
+  return <div className={`${className}${notice?.warn ? " warn" : ""}`} role="status" aria-live="polite" hidden={!shown}>
+    {shown ? <><span className="copilot-notice-tick" aria-hidden="true">{notice!.warn ? "!" : "✓"}</span>{notice!.text}</> : null}
   </div>
 }
