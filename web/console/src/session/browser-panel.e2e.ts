@@ -22,6 +22,7 @@ const TYPES: Record<string, string> = { ".js": "text/javascript", ".css": "text/
 let page = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../public/icon-192.png"))
 let mobilePage = page
 
+let headerCount: number | null = null
 let channelMode = "isolated"
 let shotModes: string[] = []
 let person = false
@@ -41,7 +42,7 @@ const row = {
   evidence: "process", assistant: "codex", sessionId: CONVERSATION, cwd: "/tmp/fixture",
 }
 let sequence = 0
-const snapshot = () => ({ at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: ++sequence }, emptyAuthoritative: true, epoch: 1, generation: sequence, provenance: "fixture" }, sessions: [row] })
+const snapshot = () => ({ at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: ++sequence }, emptyAuthoritative: true, epoch: 1, generation: sequence, provenance: "fixture" }, sessions: [{ ...row, ...(headerCount !== null ? { identity: "protocol" } : {}), ...(headerCount === 3 ? { persona: "reviewer" } : {}) }] })
 
 function json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)) }
 function document(ui: string): string {
@@ -55,11 +56,18 @@ function fixture(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
+    if (path === "/__fixture/header") { headerCount = Number(url.searchParams.get("count")); return json(res, 200, {}) }
+    if (path === "/v1/personas") return json(res, 200, { personas: [{ id: "reviewer", name: { en: "Reviewer", "zh-Hant": "審查員" }, summary: { en: "Reviews changes", "zh-Hant": "審查變更" }, source: "builtin", suggested_kinds: [], teams: [], icon: { accent: "#4ccb7f", cells: [["#4ccb7f"]] } }] })
+    if (path === "/v1/squad/session-snapshots/" + CONVERSATION) return json(res, 200, { snapshot_id: "header-snapshot", snapshot: { definition_id: "reviewer", scope_id: "header-fixture", scope_kind: "repo", skills: [{ id: "review", version: "1", enabled: true, name: { en: "Review", "zh-Hant": "審查" }, purpose: { en: "Review changes", "zh-Hant": "審查變更" }, content: "Review the changes." }] } })
+    if (path === "/v1/squad/events/head") return json(res, 200, { seq: 0 })
+    if (path === "/v1/squad/events") return json(res, 200, { events: [], next_after: 0, has_more: false })
+    if (path === "/v1/squad/settings") return json(res, 200, { motion: { value: false } })
+    if (path === "/v1/sessions/" + SESSION + "/outputs") return json(res, 200, { files: headerCount !== null && headerCount >= 2 ? [{ id: "a".repeat(64), name: "result.txt", path: "result.txt", absolute_path: "/synthetic/result.txt", kind: "created", first_at: 1, updated_at: 1, updates: 1, bytes: 10, state: "available", media_type: "text/plain", source: "fixture", anchor: 0 }] : [], more: false, partial: false, coverage: "complete" })
     if (path === "/__fixture/page") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
       return res.end(`<!doctype html><html><meta name=viewport content="width=device-width,initial-scale=1"><style>body{margin:0;font:18px system-ui;color:#1e293b;background:#f2f5f8}header{padding:22px 28px;background:#17344d;color:white}main{max-width:850px;margin:36px auto;padding:0 24px}article{background:white;border-radius:12px;padding:28px;border:1px solid #d7e0e9}h1{font-size:28px;margin-top:0}label{display:block;margin-top:20px}input{display:block;box-sizing:border-box;width:100%;padding:14px;border:1px solid #a7b5c5;border-radius:6px;font:inherit;margin:8px 0 20px}button{background:#167349;color:white;border:0;border-radius:6px;padding:14px 24px;font:inherit}@media(min-width:700px){main{display:grid;grid-template-columns:220px 1fr;gap:24px}}small{color:#596b7e}</style><header>Example · Browser trial</header><main><aside><h2>Welcome</h2><p>Use the form to try the page.</p><small>This is a local test page.</small></aside><article><h1>Try the browser</h1><p>Zoom in, move the picture, then tap a field.</p><label>Your name<input placeholder="Enter a name"></label><button>Continue</button></article></main></html>`)
     }
-    if (path === "/__fixture/reset") { person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
     if (path === "/__fixture/hold-control") { holdControl = true; return json(res, 200, {}) }
     if (path === "/__fixture/admit") { holdControl = false; heldControl?.(); heldControl = null; return json(res, 200, {}) }
@@ -83,7 +91,7 @@ function fixture(): Server {
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "transcript", id: SESSION, signature: "fixture" })
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, mode:channelMode, enabled: true, notify_new_site: true,
-      status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } })
+      status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } })
     if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); if (b.browser_mode!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); if (holdControl && b.person) await new Promise<void>(resolve => { heldControl = resolve }); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
     if (path === "/v1/browser/screenshot") { if (url.searchParams.get("browser_mode")!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); shotModes.push(channelMode);frames++; return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: layout === "mobile" ? 390 : 1280, height: 720, layout, editables: layout === "mobile" ? mobileFields : desktopFields, data: (layout === "mobile" ? mobilePage : page).toString("base64") } }) }
     if (req.method === "POST" && path === "/v1/browser/person") {
@@ -176,7 +184,6 @@ before(async () => {
   await browser.send("Target.closeTarget", { targetId })
 })
 after(async () => {
-  if (browser) await browser.send("Browser.close").catch(() => {})
   if (browserProcess && browserProcess.exitCode === null) browserProcess.kill()
   browser?.close()
   server?.closeAllConnections(); await new Promise<void>((ok) => server ? server.close(() => ok()) : ok())
@@ -308,6 +315,81 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
     }finally{
       await fetch(origin+"/__fixture/admit").catch(()=>{})
       await browser.send("Target.closeTarget",{targetId}).catch(()=>{})
+    }
+  })
+}
+
+
+for (const [width, ui] of [[320, "zh-Hant"], [390, "zh-Hant"], [390, "en"], [1280, "en"]] as const) {
+  test(`header options ${width} ${ui}: latest entrance, disclosure and available controls`, async () => {
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+    const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+    const run = async (expression: string) => {
+      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+      return result.value
+    }
+    const until = async (expression: string) => {
+      const deadline = Date.now() + 8000
+      while (!await run(expression)) {
+        if (Date.now() > deadline) assert.fail("did not reach " + expression)
+        await new Promise(resolve => setTimeout(resolve, 30))
+      }
+    }
+    const shown = (selector: string) => `!!document.querySelector(${JSON.stringify(selector)})?.getClientRects().length`
+    const shot = async (label: string) => {
+      if (!shots) return
+      const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id)
+      writeFileSync(join(shots, `header-${label}-${ui}-${width}.png`), Buffer.from(data, "base64"))
+    }
+    try {
+      await browser.send("Page.enable", {}, id)
+      await browser.send("Page.bringToFront", {}, id)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 2, mobile: width < 520 }, id)
+      for (const count of [3, 2, 1, 0]) {
+        await fetch(origin + "/__fixture/header?count=" + count)
+        await browser.send("Page.navigate", { url: `${origin}/?ui=${ui}&header=${count}#session=${SESSION}` }, id)
+        await until(`document.querySelector('#detail-name')?.textContent === 'Browser Session'`)
+        if (count) await until(shown(".browser-chip"))
+        if (count >= 2) await until(`!!document.querySelector('.output-entry')`)
+        if (count === 3) await until(`!!document.querySelector('.skill-bot-toggle')`)
+        if (count <= 1) {
+          assert.equal(await run(shown(".header-options-toggle")), false)
+          if (count === 0) assert.equal(await run(shown(".browser-chip")), false)
+          continue
+        }
+        const phone = width <= 520
+        assert.equal(await run(shown(".header-options-toggle")), phone)
+        assert.equal(await run(shown(".output-entry")), !phone)
+        assert.equal(await run(`document.querySelector('#detail-head').scrollWidth <= document.querySelector('#detail-head').clientWidth`), true)
+        if (!phone) continue
+        await shot("collapsed-" + count)
+        const nameWidth = await run(`document.querySelector('#detail-name').clientWidth`)
+        assert.ok(nameWidth > 0, "the Session name remains visible")
+        await run(`document.querySelector('.header-options-toggle').click()`)
+        assert.equal(await run(shown(".output-entry")), true)
+        assert.equal(await run(shown(".browser-chip")), true)
+        if (count === 3) assert.equal(await run(shown(".skill-bot-toggle")), true)
+        const bounds = await run(`(()=>{const r=document.querySelector('.header-options-extra').getBoundingClientRect();return {left:r.left,right:r.right}})()`)
+        assert.ok(bounds.left >= 0 && bounds.right <= width, "expanded choices fit the viewport")
+        assert.equal(await run(`document.querySelector('#detail-name').clientWidth`), nameWidth, "expanding choices does not squeeze the name")
+        await shot("expanded-" + count)
+        await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, id)
+        assert.equal(await run(shown(".output-entry")), false)
+        assert.equal(await run(`document.activeElement?.className`), "header-options-toggle")
+        await run(`document.querySelector('.header-options-toggle').click()`)
+        await until(shown(".output-entry"))
+        await run(`document.querySelector('#detail-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`)
+        assert.equal(await run(shown(".output-entry")), false)
+        await run(`document.querySelector('.header-options-toggle').click()`)
+        await until(shown(".output-entry"))
+        await run(`document.querySelector('.output-entry').click()`)
+        await until(`document.querySelector('.output-entry')?.getAttribute('aria-expanded') === 'true'`)
+        assert.equal(await run(shown(".header-options-extra")), false)
+      }
+    } finally {
+      headerCount = null
+      await browser.send("Target.closeTarget", { targetId })
     }
   })
 }

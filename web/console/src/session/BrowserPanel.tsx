@@ -320,7 +320,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
  * bridge's status every 15 seconds while the page is visible and the panel is
  * closed, and shows nothing when the Session has no tab.
  */
-export function BrowserChip({ row, hidden, onOpen }: { row: SessionRow | null; hidden: boolean; onOpen: () => void }) {
+export function useBrowserTab(row: SessionRow | null, hidden: boolean): boolean {
   const conversation = row?.sessionId ?? ""
   const [has, setHas] = useState(false)
   useEffect(() => {
@@ -338,7 +338,10 @@ export function BrowserChip({ row, hidden, onOpen }: { row: SessionRow | null; h
     const timer = window.setInterval(read, 15_000)
     return () => { alive = false; window.clearInterval(timer) }
   }, [conversation, hidden])
-  if (!has || hidden) return null
+  return has && !hidden
+}
+
+export function BrowserChip({ onOpen }: { onOpen: () => void }) {
   return (
     <button type="button" className="browser-chip" title={nextWord("browserChipTip")} aria-label={nextWord("browserChipTip")} onClick={onOpen}>
       <i aria-hidden="true" />{nextWord("browserChip")}

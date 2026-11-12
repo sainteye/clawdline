@@ -7928,6 +7928,8 @@
   "next.outputsShareCloud": "Open this Session in Clawdline Cloud to share a paired-device link.",
   "next.outputsShareFailed": "The file link could not be shared. Try again.",
   "next.outputsTimeUnknown": "Time not recorded",
+  "next.headerOptionsExpand": "Expand Session options",
+  "next.headerOptionsCollapse": "Collapse Session options",
   "next.outputsTitle": "Output files",
   "next.outputsTooLarge": "This file exceeds the 32 MiB preview and download limit.",
   "next.outputsUnsupported": "This machine does not support Session output files yet. Update it to use this view.",
