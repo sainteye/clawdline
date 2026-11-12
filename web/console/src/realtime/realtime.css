@@ -60,6 +60,9 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* Its parts keep their height while it scrolls; a flex column would otherwise
+   squeeze the caption box, the one part that can scroll, down to two lines. */
+.realtime-modal-sheet > * { flex-shrink: 0; }
 
 @media (min-width: 640px) {
   .realtime-modal-sheet {
@@ -652,29 +655,34 @@
   .copilot-bubble-body::before { animation: none; }
 }
 
-/* This call's cost and what the copilot remembers. */
+/* This call's cost and remembered calls are quiet, unboxed footer text. */
 .realtime-cost-row,
 .realtime-memory-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 4px 12px;
-  margin: 10px 0 0;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  font-size: 13px;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
   color: var(--dim);
 }
-.realtime-cost-total { color: var(--ink); font-variant-numeric: tabular-nums; }
-.realtime-cost-note { font-size: 12px; }
+.realtime-cost-row { position: relative; display: block; }
+.realtime-cost-row summary { cursor: pointer; list-style: none; }
+.realtime-cost-row summary::-webkit-details-marker { display: none; }
+.realtime-cost-total { font-variant-numeric: tabular-nums; }
+.realtime-cost-note { display: block; font-size: 11px; }
+.realtime-cost-row[open] .realtime-cost-note {
+  position: absolute; bottom: 100%; inset-inline: 0; padding: 8px;
+  background: var(--card); box-shadow: 0 2px 12px #0006; z-index: 1;
+}
 .realtime-forget-btn {
   background: transparent;
   border: none;
-  padding: 2px 0;
+  padding: 4px 0;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 11px;
   cursor: pointer;
 }
 .realtime-forget-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
@@ -788,3 +796,39 @@
 .copilot-demo-film video.phone { width: auto; height: calc(92vh - 120px); margin: 0 auto; }
 .copilot-demo-note { margin: 10px 0 0; font-size: 12px; color: var(--dim); }
 .realtime-key-status-row { display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* In a live call the transcript owns the spare height. Speech, tool results,
+   costs and notices cannot change its bounds. Only the person's resize can. */
+.realtime-modal-sheet.in-call {
+  height: min(800px, 100dvh);
+  gap: 10px;
+  padding: 18px 20px max(18px, env(safe-area-inset-bottom));
+}
+.in-call .realtime-header { gap: 4px; }
+.in-call .realtime-desc { font-size: 12px; }
+.in-call .realtime-visual-box { position: relative; padding: 0; gap: 2px; }
+.realtime-orb-resize { cursor: ns-resize; touch-action: none; display: grid; justify-items: center; }
+.realtime-orb-resize:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.realtime-orb-resize .realtime-orb { --orb-size: var(--copilot-orb-size, 112px); }
+.realtime-orb-grip { width: 28px; height: 3px; margin: 3px 0 7px; border-radius: 2px; background: var(--line); }
+.in-call .realtime-status-label {
+  height: 36px; line-height: 18px; width: 100%; overflow: auto;
+}
+.in-call .realtime-visual-box .copilot-notice { position: absolute; bottom: 42px; max-width: 100%; box-sizing: border-box; }
+.in-call .realtime-transcript-box {
+  flex: 1 1 0; min-height: 140px; max-height: none; box-sizing: border-box;
+  overflow-wrap: anywhere; overscroll-behavior: contain; scrollbar-gutter: stable;
+  font-size: 14px; line-height: 1.65;
+}
+.realtime-transcript-box > * { flex-shrink: 0; white-space: pre-wrap; }
+.realtime-transcript-empty { color: var(--dim); }
+.in-call .copilot-tools-trail { height: 48px; margin: 0; align-content: start; overflow-y: auto; }
+.in-call .realtime-secondary { height: 76px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: end; gap: 2px; position: relative; }
+.in-call .realtime-logs-container { position: relative; margin: 0; }
+.in-call .realtime-logs-toggle-btn { font-size: 11px; padding: 2px 0; }
+.in-call .realtime-logs-list { position: absolute; bottom: 100%; inset-inline: 0; z-index: 2; }
+.in-call .realtime-actions { margin: 0; bottom: 0; padding-bottom: 0; }
+@media (max-height: 700px) {
+  .realtime-modal-sheet.in-call { gap: 6px; padding-top: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .in-call .realtime-transcript-box { min-height: 110px; }
+}
