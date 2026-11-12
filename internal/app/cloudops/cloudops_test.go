@@ -1068,6 +1068,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-chrome-control", method: "POST", path: "/v1/browser/control",
 		body2: `{"person":true,"tab":9}`,
 	}, {
+		word:    "chrome-tab-mute",
+		body:    map[string]any{"type": "chrome-tab-mute", "session": machine, "request": "req-chrome-mute", "conversation": "c1", "muted": true},
+		session: machine, name: "action:req-chrome-mute", method: "POST", path: "/v1/browser/mute",
+		body2: `{"conversation":"c1","muted":true}`,
+	}, {
 		word:    "github-connection",
 		body:    map[string]any{"type": "github-connection", "session": machine, "request": "req-gh"},
 		session: machine, name: "read:req-gh", method: "GET", path: "/v1/integrations/github",

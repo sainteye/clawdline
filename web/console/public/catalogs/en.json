@@ -11328,5 +11328,7 @@
   "next.browserPanelReadFailed": "The tab could not be shown: {reason}",
   "next.browserPanelActFailed": "That did not reach the page: {reason}",
   "next.browserPanelStopped": "Browser use is stopped for agents. You can still look at the tab.",
-  "next.browserPanelImageAlt": "The Chrome tab {title}"
+  "next.browserPanelImageAlt": "The Chrome tab {title}",
+  "capacityRow.browser.stdin_text_bytes.what": "How much text an agent may pass to the browser from a Secret Handoff in one go.",
+  "capacityRow.browser.stdin_text_bytes.full": "Longer input is refused before anything is typed, and the agent is told. The text itself is never recorded."
 }

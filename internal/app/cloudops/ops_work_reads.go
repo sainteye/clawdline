@@ -175,6 +175,7 @@ func init() {
 		op{name: "chrome-tab-screenshot", read: true},
 		op{name: "chrome-tab-input"},
 		op{name: "chrome-tab-control"},
+		op{name: "chrome-tab-mute"},
 
 		// Issue sync's tracker connections and the person's Retry
 		// (docs/issue-sync.md). No answer carries a token; a Jira API token

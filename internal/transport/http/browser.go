@@ -26,6 +26,7 @@ import (
 //   - POST /v1/browser/stop           {stopped}; the machine may only stop, a person may also resume
 //   - POST /v1/browser/control        {tab, person}; a person who may send
 //   - POST /v1/browser/person         {op, tab, args}; the person's own view and input
+//   - POST /v1/browser/mute           {conversation, muted}; one Session's new-site notification, a person who may send
 //   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
 func (s *Server) browserRoutes() []route {
 	return []route{
@@ -38,6 +39,7 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/control"}, s.browserControlRoute},
 		{Route{"*", "/v1/browser/person"}, s.browserPersonRoute},
 		{Route{"*", "/v1/browser/screenshot"}, s.browserScreenshotRoute},
+		{Route{"*", "/v1/browser/mute"}, s.browserMuteRoute},
 	}
 }
 
@@ -362,4 +364,24 @@ func (s *Server) browserScreenshotRoute(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]any{"ok": true, "value": value})
+}
+
+func (s *Server) browserMuteRoute(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Conversation string `json:"conversation"`
+		Muted        bool   `json:"muted"`
+	}
+	if !readBrowserBody(w, r, 512, &in) {
+		return
+	}
+	if machineAuthed(r) || !maySend(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "Only a person's device that may send can change a Session's notifications.")
+		return
+	}
+	if in.Conversation == "" || len(in.Conversation) > 128 {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the Session's conversation.")
+		return
+	}
+	s.browser().SetMuted(in.Conversation, in.Muted)
+	writeJSON(w, map[string]any{"ok": true, "conversation": in.Conversation, "muted": in.Muted})
 }

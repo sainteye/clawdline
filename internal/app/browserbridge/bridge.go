@@ -132,6 +132,7 @@ type Bridge struct {
 	owner    map[int]string // tab → conversation that opened it
 	current  map[string]int // conversation → the tab it last used
 	sites    map[string]map[string]bool
+	muted    map[string]bool // conversations whose new-site notification is off
 	audit    []AuditRow
 	pruned   int
 	journal  *journal
@@ -150,6 +151,7 @@ func New(onSite func(NewSite)) *Bridge {
 		owner:    map[int]string{},
 		current:  map[string]int{},
 		sites:    map[string]map[string]bool{},
+		muted:    map[string]bool{},
 		now:      time.Now,
 		onSite:   onSite,
 		timeout:  CommandTimeoutSeconds * time.Second,
@@ -169,6 +171,7 @@ type Status struct {
 	PersonTabs []int     `json:"person_tabs"`
 	Pending    int       `json:"pending"`
 	Tabs       []TabInfo `json:"tabs"`
+	Muted      []string  `json:"muted"`
 }
 
 // TabInfo is one tab a Session has used: the console finds a Session's tab here.
@@ -194,7 +197,25 @@ func (b *Bridge) Status() Status {
 		tabs = append(tabs, TabInfo{Tab: t, Conversation: c, Person: b.person[t], Current: b.current[c] == t})
 	}
 	sort.Slice(tabs, func(i, j int) bool { return tabs[i].Tab < tabs[j].Tab })
-	return Status{Connected: b.hostConnected(), Host: b.host, Stopped: b.stopped, PersonTabs: people, Pending: len(b.queue), Tabs: tabs}
+	muted := []string{}
+	for c := range b.muted {
+		muted = append(muted, c)
+	}
+	sort.Strings(muted)
+	return Status{Connected: b.hostConnected(), Host: b.host, Stopped: b.stopped, PersonTabs: people, Pending: len(b.queue), Tabs: tabs, Muted: muted}
+}
+
+// SetMuted turns one Session's new-site notification off or back on. It is
+// the person's choice for this daemon's lifetime; the machine setting
+// browser_notify_new_site still decides for every Session.
+func (b *Bridge) SetMuted(conversation string, on bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if on {
+		b.muted[conversation] = true
+	} else {
+		delete(b.muted, conversation)
+	}
 }
 
 // SetStopped is the person's emergency stop. Stopping fails every queued command.
@@ -308,9 +329,10 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		return nil, BadRequest
 	}
 	var a struct {
-		Tab  int    `json:"tab"`
-		URL  string `json:"url"`
-		Text string `json:"text"`
+		Tab    int    `json:"tab"`
+		URL    string `json:"url"`
+		Text   string `json:"text"`
+		Secret bool   `json:"secret"`
 	}
 	if len(args) > 0 && json.Unmarshal(args, &a) != nil {
 		return nil, BadRequest
@@ -385,6 +407,10 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 		}
 	}
 	b.mu.Unlock()
+	if a.Secret {
+		// A Secret Handoff is never recorded, whatever field it went into.
+		res.Password = true
+	}
 	b.record(conversation, op, tab, a.Text, res)
 	if res.OK {
 		return res.Value, nil
@@ -485,7 +511,9 @@ func (b *Bridge) record(conversation, op string, tab int, text string, r Result)
 		}
 		if !seen[row.Site] {
 			seen[row.Site] = true
-			announce = &NewSite{Conversation: conversation, Site: row.Site}
+			if !b.muted[conversation] {
+				announce = &NewSite{Conversation: conversation, Site: row.Site}
+			}
 		}
 	}
 	onSite := b.onSite

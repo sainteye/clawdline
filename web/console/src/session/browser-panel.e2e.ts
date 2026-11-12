@@ -171,7 +171,10 @@ for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["ph
       const agent = ui === "en" ? "Codex is using this tab" : "Codex 正在使用這個分頁"
       await until(`document.querySelector("#browser-panel .browser-who")?.textContent?.includes(${JSON.stringify(agent)})`)
       assert.equal(await run(`!!document.getElementById("browser-text")`), false, "no typing before a takeover")
-      assert.equal(await run(`document.querySelector("#browser-panel .browser-address")?.textContent`), "https://example.com/sign-in")
+      assert.equal(await run(`document.querySelector("#browser-panel .browser-host")?.textContent`), "example.com")
+      assert.equal(await run(`document.querySelector("#browser-panel .browser-path")?.textContent`), "/sign-in")
+      assert.equal(await run(`!!document.querySelector("#browser-panel .panel-view-head")`), false, "no title row above the address bar")
+      assert.equal(await run(`(() => { const t = document.querySelector(".session-todos"); return !t || getComputedStyle(t).display === "none" })()`), true, "the to-do row is folded away")
       assert.ok(await run(`document.documentElement.scrollWidth <= innerWidth`), "no horizontal page scroll")
       await shot("watching")
 

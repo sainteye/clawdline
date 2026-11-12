@@ -264,6 +264,11 @@
     "Note": true
   },
   {
+    "Name": "browser.stdin_text_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cache.assistant_quota",
     "Known": true,
     "WindowSeconds": true

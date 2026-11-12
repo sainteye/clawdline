@@ -33,7 +33,8 @@ const browserUsage = `usage: clawdline browser <command>
   tabs                           list the tabs this Session may use
   read [--tab N]                 the page's text and the elements that can be pressed or filled
   click <text> | --x N --y N     press the element whose label is <text>, or a point
-  type <text>                    type into the focused field (Chinese included)
+  type <text> | --stdin          type into the focused field (Chinese included); --stdin reads a
+                                 Secret Handoff: clawdline secret run <note> -- clawdline browser type --stdin
   key <name>                     Enter, Tab, Backspace, Escape, ArrowDown, ArrowUp, PageDown, PageUp
   scroll <down|up>               scroll the page by about one screen
   screenshot [--out FILE]        save a JPEG of the tab and print its path
@@ -96,7 +97,7 @@ func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer
 		}
 		return report(out, errOut, "browser audit", a)
 	}
-	cmdArgs, outFile, code := browserArgs(op, rest, errOut)
+	cmdArgs, outFile, code := browserArgs(op, rest, os.Stdin, errOut)
 	if code != 0 {
 		return code
 	}
@@ -112,13 +113,14 @@ func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer
 }
 
 // browserArgs turns the words after an op into the command's JSON arguments.
-func browserArgs(op string, rest []string, errOut io.Writer) (map[string]any, string, int) {
+func browserArgs(op string, rest []string, stdin io.Reader, errOut io.Writer) (map[string]any, string, int) {
 	fs := flag.NewFlagSet("browser "+op, flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	tab := fs.Int("tab", 0, "tab id")
 	x := fs.Float64("x", -1, "x")
 	y := fs.Float64("y", -1, "y")
 	outFile := fs.String("out", "", "file")
+	fromStdin := fs.Bool("stdin", false, "read the text from standard input")
 	if fs.Parse(rest) != nil {
 		return nil, "", 2
 	}
@@ -149,6 +151,18 @@ func browserArgs(op string, rest []string, errOut io.Writer) (map[string]any, st
 			args["target"] = words
 		}
 	case "type":
+		if *fromStdin {
+			// A secret arrives here from `clawdline secret run`: it is typed,
+			// never printed, and the audit keeps only its length.
+			data, err := io.ReadAll(io.LimitReader(stdin, maxStdinText+1))
+			if err != nil || len(data) > maxStdinText || len(data) == 0 {
+				fmt.Fprintln(errOut, "clawdline browser type --stdin: standard input was empty, unreadable or larger than 16 KiB")
+				return nil, "", 2
+			}
+			text := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
+			args["text"], args["secret"] = text, true
+			break
+		}
 		if !need("the text") {
 			return nil, "", 2
 		}
@@ -207,6 +221,10 @@ func saveScreenshot(a answer, outFile string, out, errOut io.Writer) int {
 	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "path": outFile, "url": body.Value.URL, "bytes": len(data)})
 	return 0
 }
+
+// maxStdinText bounds what `type --stdin` reads, within the bridge's own
+// argument bound.
+const maxStdinText = 16 << 10
 
 // ---- native messaging host ----
 

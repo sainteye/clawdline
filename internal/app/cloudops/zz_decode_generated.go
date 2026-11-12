@@ -20,6 +20,7 @@ var generatedDecoders = map[string]genDecoder{
 	"capacity":                           genDecodeCapacity,
 	"chrome-tab-control":                 genDecodeChromeTabControl,
 	"chrome-tab-input":                   genDecodeChromeTabInput,
+	"chrome-tab-mute":                    genDecodeChromeTabMute,
 	"chrome-tab-screenshot":              genDecodeChromeTabScreenshot,
 	"chrome-tab-status":                  genDecodeChromeTabStatus,
 	"codegraph-guidance":                 genDecodeCodegraphGuidance,
@@ -651,6 +652,30 @@ func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genFields(map[string]genValue{"args": genValue{from: "args"}, "op": genValue{from: "op"}, "tab": genValue{from: "tab"}})
+	return p, req, true
+}
+
+// genDecodeChromeTabMute is the `chrome-tab-mute` row's decode.
+func genDecodeChromeTabMute(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "conversation", "muted", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("muted", genRule{kind: "bool"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/mute"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genFields(map[string]genValue{"conversation": genValue{from: "conversation"}, "muted": genValue{from: "muted"}})
 	return p, req, true
 }
 

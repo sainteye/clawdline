@@ -311,6 +311,7 @@ export type WriteRoute =
   | { op: "chrome-tab-screenshot"; word: Carried<"chrome-tab-screenshot"> }
   | { op: "chrome-tab-input"; word: Carried<"chrome-tab-input"> }
   | { op: "chrome-tab-control"; word: Carried<"chrome-tab-control"> }
+  | { op: "chrome-tab-mute"; word: Carried<"chrome-tab-mute"> }
   | { op: "doctor"; word: Carried<"doctor"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
@@ -814,6 +815,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   if (head === "browser" && a === "person" && segments.length === 2) return { op: "chrome-tab-input", word: "chrome-tab-input" }
   if (head === "browser" && a === "control" && segments.length === 2) return { op: "chrome-tab-control", word: "chrome-tab-control" }
+  if (head === "browser" && a === "mute" && segments.length === 2) return { op: "chrome-tab-mute", word: "chrome-tab-mute" }
   if (head === "settings" && a === "notifications" && segments.length === 2) {
     return { op: "notification-settings-update", word: "notification-settings-update" }
   }
@@ -1027,6 +1029,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "chrome-tab-screenshot":
     case "chrome-tab-input":
     case "chrome-tab-control":
+    case "chrome-tab-mute":
       return "flat"
     case "push-subscribe":
     case "push-unsubscribe":
@@ -2071,7 +2074,8 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "chrome-tab-input":
-      case "chrome-tab-control": {
+      case "chrome-tab-control":
+      case "chrome-tab-mute": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         return this.machineWorkV2(client, route.word, await bodyOf(init), headerOf(init, "idempotency-key"))
       }

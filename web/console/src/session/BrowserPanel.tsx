@@ -62,6 +62,18 @@ function said(error: unknown, lead: "browserPanelReadFailed" | "browserPanelActF
   return nextWord(lead, { reason: L.failureSentence(error, { fallback: (error as Error)?.message || "" }) })
 }
 
+/** An address as a browser's bar shows it: the host first, the rest dimmed. */
+function address(raw: string | undefined): { host: string; rest: string; secure: boolean } {
+  if (!raw) return { host: "", rest: "", secure: false }
+  try {
+    const u = new URL(raw)
+    const rest = (u.pathname === "/" ? "" : u.pathname) + u.search
+    return { host: u.host.replace(/^www\./, ""), rest: decodeURIComponent(rest), secure: u.protocol === "https:" }
+  } catch {
+    return { host: raw, rest: "", secure: false }
+  }
+}
+
 function assistantName(row: SessionRow | null): string {
   switch (row?.assistant) {
     case "codex": return "Codex"
@@ -174,7 +186,6 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     return (
       <div className="browser-stage">
         {status.status.stopped && <div className="screen-note" role="status">{nextWord("browserPanelStopped")}</div>}
-        {shot && <div className="browser-address" title={shot.url}>{shot.url}</div>}
         {shotError ? <div className="screen-note err" role="alert">{said(shotError, "browserPanelReadFailed")}</div> : null}
         {shot && (
           <img
@@ -192,10 +203,21 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const ready = !!tab && !!status?.status.connected
   return (
     <section className="panel-view" id="browser-panel" aria-labelledby="browser-title" hidden={!open}>
-      <div className="panel-view-head">
-        <h2 id="browser-title">{nextWord("browserPanelTitle")}</h2>
-        {ready && <span className="screen-channel">{nextWord("browserPanelSampled")}</span>}
-        <button className="chip" type="button" ref={closeRef} onClick={() => onClose(true)}>{L.strings.webClose}</button>
+      {/* One address bar instead of a title row: the page's address, how it is
+          shown (a picture about once a second), and the way out. */}
+      <div className="browser-bar">
+        <h2 id="browser-title" className="sr-only">{nextWord("browserPanelTitle")}</h2>
+        <div className="browser-url" title={shot?.url || ""}>
+          {address(shot?.url).secure
+            ? <svg className="browser-lock" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" /><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" /></svg>
+            : <svg className="browser-lock" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.7 1.6 2.5 3.4 2.5 5.5S9.7 11.9 8 13.5M8 2.5C6.3 4.1 5.5 5.9 5.5 8s.8 3.9 2.5 5.5" /></svg>}
+          <span className="browser-host">{address(shot?.url).host || nextWord("browserPanelTitle")}</span>
+          <span className="browser-path">{address(shot?.url).rest}</span>
+        </div>
+        {ready && <span className="browser-live" title={nextWord("browserPanelSampled")}><i aria-hidden="true" />{nextWord("browserPanelSampled")}</span>}
+        <button className="browser-close" type="button" ref={closeRef} aria-label={L.strings.webClose} title={L.strings.webClose} onClick={() => onClose(true)}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+        </button>
       </div>
       <div className="scroller panel-view-body" aria-live="polite">{open ? body() : null}</div>
       {open && ready && (

@@ -42,6 +42,9 @@ export const CARRIED = {
   // A tap, typed text, a key or a scroll on a tab the person has taken over;
   // the daemon refuses it otherwise.
   "chrome-tab-input": "POST /v1/browser/person",
+  // Turn one Session's new-site notification off or back on, from the Chrome
+  // tab panel.
+  "chrome-tab-mute": "POST /v1/browser/mute",
   // One picture of the Session's Chrome tab, asked about once a second while
   // the panel is open.
   "chrome-tab-screenshot": "GET /v1/browser/screenshot",

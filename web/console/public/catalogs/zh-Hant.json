@@ -11328,5 +11328,7 @@
   "next.browserPanelReadFailed": "無法顯示分頁畫面：{reason}",
   "next.browserPanelActFailed": "這個動作沒有送到網頁：{reason}",
   "next.browserPanelStopped": "Agent 的瀏覽器操作已停止，你仍然可以查看分頁。",
-  "next.browserPanelImageAlt": "Chrome 分頁：{title}"
+  "next.browserPanelImageAlt": "Chrome 分頁：{title}",
+  "capacityRow.browser.stdin_text_bytes.what": "Agent 一次能把多少機密交付的內容輸入到瀏覽器。",
+  "capacityRow.browser.stdin_text_bytes.full": "超過時會在輸入任何內容之前就被拒絕，並通知 Agent。內容本身從不記錄。"
 }

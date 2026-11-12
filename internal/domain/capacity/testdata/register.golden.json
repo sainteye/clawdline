@@ -1111,6 +1111,26 @@
     ]
   },
   {
+    "Register": "daemon",
+    "Name": "browser.stdin_text_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "cmd/clawdline.maxStdinText"
+    ]
+  },
+  {
     "Register": "tool",
     "Name": "build.disk_reserve_bytes",
     "Class": "buffer",

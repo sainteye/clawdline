@@ -8,6 +8,7 @@ const (
 	BrowserResultBytes     = "browser.result_bytes"
 	BrowserHostMessage     = "browser.host_message_bytes"
 	BrowserAuditText       = "browser.audit_text_characters"
+	BrowserStdinText       = "browser.stdin_text_bytes"
 )
 
 // browserBounds is every registered row named browser.*.
@@ -36,6 +37,14 @@ func browserBounds() []Entry {
 			Limit: 2000, AtLimit: Coalesce,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/browserbridge.MaxAuditTextRunes"},
+		},
+		{
+			// What `clawdline browser type --stdin` reads, as a Secret Handoff
+			// arrives; more is refused before anything is typed.
+			Name: BrowserStdinText, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"cmd/clawdline.maxStdinText"},
 		},
 		{
 			Name: BrowserArgBytes, Class: Buffer, Unit: Bytes,

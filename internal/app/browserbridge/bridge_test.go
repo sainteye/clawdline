@@ -292,3 +292,31 @@ func TestThePersonActsOnlyOnATabTheyTookOver(t *testing.T) {
 		t.Fatalf("audit ops = %v", ops)
 	}
 }
+
+func TestASecretHandoffIsNeverAudited(t *testing.T) {
+	b, ctx := connected(t)
+	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, OK: true, Tab: 2, URL: "https://example.com/login"} })
+	b.Do(ctx, "c1", "open", json.RawMessage(`{"url":"https://example.com/login"}`))
+	// Typed into an ordinary field, as a one-time code often is.
+	if _, err := b.Do(ctx, "c1", "type", json.RawMessage(`{"text":"483920","secret":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := b.Records("c1", 1)
+	if rows[0].Text != "" || rows[0].TextLen != 6 || !rows[0].Password {
+		t.Fatalf("secret row = %+v", rows[0])
+	}
+}
+
+func TestAMutedSessionIsNotAnnounced(t *testing.T) {
+	var got []NewSite
+	b := New(func(n NewSite) { got = append(got, n) })
+	b.SetMuted("c1", true)
+	b.record("c1", "open", 1, "", Result{OK: true, Tab: 1, URL: "https://github.com/a"})
+	b.record("c2", "open", 2, "", Result{OK: true, Tab: 2, URL: "https://github.com/a"})
+	if len(got) != 1 || got[0].Conversation != "c2" {
+		t.Fatalf("announcements = %+v", got)
+	}
+	if st := b.Status(); len(st.Muted) != 1 || st.Muted[0] != "c1" {
+		t.Fatalf("muted = %v", st.Muted)
+	}
+}
