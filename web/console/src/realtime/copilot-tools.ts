@@ -753,21 +753,21 @@ function str(value: unknown): string {
 export interface CopilotFleetRow { machine: string; machineName: string; row: Record<string, unknown> }
 
 /**
- * Every machine's rows as the copilot's own. A Session's id is its id on its
- * machine with the machine's name beside it (`%2@Studio`), since two machines
- * can each have a `%2`; its label names the machine when there is more than one.
+ * Every machine's rows as the copilot's own. Tool IDs encode the stable machine
+ * and Session identities separately; display names can repeat or change.
  */
 export function fleetRowsOf(fleet: readonly CopilotFleetRow[]): CopilotSessionRow[] {
   const machines = new Set(fleet.map((f) => f.machine))
   const many = machines.size > 1
   const out: CopilotSessionRow[] = []
   for (const f of fleet) {
+    if (!f.machine.trim()) continue
     const [row] = rowsOf({ sessions: [f.row] })
     if (!row) continue
     const name = f.machineName || f.machine
     out.push({
       ...row,
-      id: `${row.id}@${name}`,
+      id: `fleet:${encodeURIComponent(f.machine)}:${encodeURIComponent(row.id)}`,
       session: row.id,
       machine: f.machine,
       machineName: name,
@@ -858,27 +858,27 @@ export async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRo
   return { rows: rowsOf(await res.json()) }
 }
 
-/**
- * Which row a spoken name stands for: the id itself, then an exact label or
- * assistant, then a label that contains it. Ambiguity is returned, not guessed.
- */
+/** Even a model-selected ID must identify exactly one row. */
+function uniqueSessionID(rows: readonly CopilotSessionRow[], id: string): CopilotSessionRow | undefined {
+  const matches = rows.filter((r) => r.id === id)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+/** Resolve an ID, pane shorthand or whole label without guessing between rows. */
 export function resolveSession(
   rows: readonly CopilotSessionRow[],
   wanted: string,
 ): { row: CopilotSessionRow } | { error: string; candidates?: { id: string; label: string; state?: string }[] } {
   const w = wanted.trim()
   if (!w) return { error: '沒有指定要看哪一個 Session' }
-  const byId = rows.find((r) => r.id === w)
-  if (byId) return { row: byId }
+  let byId = rows.filter((r) => r.id === w)
   // A tmux pane id said or typed without its sign: "2" for "%2". Never a
   // position in the list, which changes as Sessions start and stop.
-  if (/^\d+$/.test(w)) {
-    const pane = rows.find((r) => r.id === `%${w}`)
-    if (pane) return { row: pane }
-  }
+  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  if (byId.length === 1) return { row: byId[0] }
   const lower = w.toLowerCase()
   const exact = rows.filter((r) => r.label.toLowerCase() === lower)
-  if (exact.length === 1) return { row: exact[0] }
+  if (!byId.length && exact.length === 1 && uniqueSessionID(rows, exact[0].id)) return { row: exact[0] }
   // Anything else is the copilot's to match, not this code's: it hears
   // "TimeTree 相關的" for "[Task] Foyer 每日 TimeTree 日程整理", which no
   // substring rule does. It gets every Session and picks an id itself.
@@ -925,10 +925,10 @@ export async function resolveRead(
     // refusal-ok: without a decision the copilot still gets every Session and chooses itself.
     return direct
   }
-  const near = (decided.candidates ?? []).map((id) => rows.find((r) => r.id === id)).filter((r): r is CopilotSessionRow => !!r)
+  const near = (decided.candidates ?? []).map((id) => uniqueSessionID(rows, id)).filter((r): r is CopilotSessionRow => !!r)
   // A lone candidate is the decision: asking "is it this one?" about the only
   // match was said to the person as "not found".
-  const row = (decided.id ? rows.find((r) => r.id === decided.id) : undefined) ?? (near.length === 1 ? near[0] : undefined)
+  const row = (decided.id ? uniqueSessionID(rows, decided.id) : undefined) ?? (near.length === 1 ? near[0] : undefined)
   if (row) return { row }
   // Words that point nowhere ("它") leave the copilot's own choice standing,
   // and so does a question about several Sessions read one at a time.
@@ -1567,10 +1567,11 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
 export function resolveForWrite(rows: readonly CopilotSessionRow[], wanted: string): { row: CopilotSessionRow } | { error: string; candidates: { id: string; label: string }[] } {
   const w = wanted.trim()
   const candidates = rows.map((r) => ({ id: r.id, label: r.label }))
-  const byId = rows.find((r) => r.id === w) ?? (/^\d+$/.test(w) ? rows.find((r) => r.id === `%${w}`) : undefined)
-  if (byId) return { row: byId }
+  let byId = rows.filter((r) => r.id === w)
+  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  if (byId.length === 1) return { row: byId[0] }
   const byName = rows.filter((r) => r.label.trim().toLowerCase() === w.toLowerCase())
-  if (byName.length === 1) return { row: byName[0] }
+  if (!byId.length && byName.length === 1 && uniqueSessionID(rows, byName[0].id)) return { row: byName[0] }
   return { error: `「${w}」不是一個明確的 Session；送出、回答或關閉要用清單裡的 id 或完整名稱`, candidates }
 }
 
@@ -1778,7 +1779,7 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
   }
   let found = await resolveRead(deps, read.rows, wanted)
   // A Session the copilot just started reaches the list a moment later.
-  for (let tries = 0; 'error' in found && /^(%\d+|owned:)/.test(wanted.trim()) && tries < NEW_SESSION_READS; tries++) {
+  for (let tries = 0; 'error' in found && /^(%\d+|owned:|fleet:)/.test(wanted.trim()) && tries < NEW_SESSION_READS; tries++) {
     await deps.sleep(NEW_SESSION_INTERVAL_MS)
     const again = await readRows(deps)
     if ('error' in again) break
