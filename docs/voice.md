@@ -181,6 +181,12 @@ that Project's Dev Stack links in a modal over the page the person is on (`DevSt
 the page's root with the copilot's bubble, `COPILOT_DEVSTACK`). It first switched to the Projects
 page and its setup dialog; the person asked to see the links without leaving their page.
 
+**A demo for a person without a key.** When the call start answers `copilot_key_missing`, the
+sheet offers **Watch the demo** beside Settings: a modal film of a call from `media.clawdline.com`
+(R2 behind its CDN, published by the site's `scripts/publish-media.py`), in the console's language,
+loaded only when opened (`CopilotDemoFilm.tsx`, `copilot-demo-films.ts`). A phone plays the
+desktop cut until its own is published.
+
 **Every machine.** On a page showing every machine (所有機器) the call reads the page's own list
 (`COPILOT_FLEET`, CloudGate): each machine's Sessions, a Session's id being its id on its machine
 with the machine's name beside it (`%2@Studio`) and its label naming the machine. Every read and

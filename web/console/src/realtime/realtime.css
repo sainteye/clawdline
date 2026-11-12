@@ -768,3 +768,23 @@
 .copilot-tools-trail li.failed { border-color: color-mix(in srgb, #ef4444 45%, var(--line)); }
 .copilot-tools-trail li.failed .copilot-tool-mark, .copilot-tools-trail li.failed .copilot-tool-outcome { color: #ef4444; }
 .copilot-tools-trail .copilot-tool-outcome { font-weight: 600; }
+
+/* The demonstration film for a person without a key (`CopilotDemoFilm`). */
+.copilot-demo-film {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: inherit;
+  padding: 16px;
+  width: min(92vw, 960px);
+  max-height: 92vh;
+  box-sizing: border-box;
+}
+.copilot-demo-film::backdrop { background: rgba(0, 0, 0, 0.6); }
+.copilot-demo-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.copilot-demo-head h2 { margin: 0; font-size: 16px; }
+.copilot-demo-close { background: none; border: 0; color: var(--dim); font-size: 18px; cursor: pointer; padding: 4px 8px; }
+.copilot-demo-film video { display: block; width: 100%; max-height: calc(92vh - 120px); border-radius: 10px; background: #000; object-fit: contain; }
+.copilot-demo-film video.phone { width: auto; height: calc(92vh - 120px); margin: 0 auto; }
+.copilot-demo-note { margin: 10px 0 0; font-size: 12px; color: var(--dim); }
+.realtime-key-status-row { display: flex; flex-wrap: wrap; gap: 12px; }
