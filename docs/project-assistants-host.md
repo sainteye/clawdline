@@ -82,3 +82,16 @@ Production Cloud vocabulary/decoders, trusted cross-device reader principals, re
 ## Removal
 
 Remove this page host, source/registry transport, App/CloudGate props and hooks, Session entry slot, route helpers/admission, fixture/tests, and the source-catalog domain registration. Remove only the corresponding root-owned catalog/semantic entries. Restore the two small Bots history integration changes with the module if the entire feature is removed. Keep the existing Session pages, recorder, Copilot dock, Board owner, Project memory and persisted Bot data. Feature disablement, source revocation, code removal and data deletion are different operations; this host never deletes data.
+
+
+## Reader acknowledgements
+
+The captured source client treats read cursors and observed receipts as the
+current reader's metadata. A paired read-only viewer may acknowledge retained
+history after observing a fresh, readable, online source. The client replaces
+any supplied reader ID with its account namespace; the source service still
+derives the authoritative reader from authenticated context. Missing or stale
+source status, offline state, source revocation and unreadable scope reject the
+acknowledgement. Content edits, native permission answers, sends, stops and
+memory changes continue to require an interactive writable grant. Client
+admission does not establish that the production Cloud command path is mounted.

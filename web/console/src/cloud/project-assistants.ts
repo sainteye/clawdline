@@ -64,7 +64,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
     if (!live.paired) throw failure("pa_unpaired")
     if (live.apiLevel === undefined || live.apiLevel < PROJECT_ASSISTANTS_API_LEVEL) throw failure("pa_unsupported")
     if (!live.online) throw failure("pa_offline")
-    if (write && (!live.writable || content && (this.access !== "interactive" || !this.lastStatus?.writable || !this.lastStatus.fresh))) throw failure("pa_read_only")
+    if (write && content && (!live.writable || this.access !== "interactive" || !this.lastStatus?.writable || !this.lastStatus.fresh)) throw failure("pa_read_only")
+    if (write && !content) {
+      if (!this.lastStatus?.fresh || this.lastStatus.state !== "online") throw failure("pa_offline")
+      if (!this.lastStatus.readable) throw failure("pa_scope_denied")
+    }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
   private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand }, method = "GET", content = true): Promise<T> {

@@ -154,3 +154,41 @@ test("Board reads keep source authority through an App remount and reject mismat
   registry.sync([grant()],() => async () => Response.json({item:{id:"item",project:{id:"other"}}}))
   await assert.rejects(registry.captureWorkItem(work,signal()),error => errorCode(error) === "pa_scope_denied")
 })
+
+test("fresh readable viewers acknowledge their own history without content-write rights", async () => {
+  const writes: {path:string;body:Record<string,unknown>}[] = []
+  const {source} = make(async (path,init) => {
+    if (init?.method !== "GET") writes.push({path,body:JSON.parse(String(init?.body))})
+    return Response.json(path.endsWith("/status") ? sourceStatus("history_only") : {})
+  }, {...grant(),writable:false})
+  await source.status(signal())
+  await source.markRead({command:command(key,"read","own-read"),cursor:{key,conversation_id:"chat",message_seq:2,reader_id:"forged"}},signal())
+  await source.observe({command:command(key,"observe","own-observation"),event_seq:2,receipt_id:"receipt"},signal())
+  assert.deepEqual(writes.map(write => write.path),["/v1/project-assistants/same%2Fid/read","/v1/project-assistants/same%2Fid/observed"])
+  assert.equal((writes[0].body.cursor as {reader_id:string}).reader_id,"trusted-reader")
+  await assert.rejects(source.send({command:command(key,"send"),text:"no"} as W.ProjectAssistantSendRequest,signal()),error => errorCode(error) === "pa_read_only")
+  await assert.rejects(source.edit({command:command(key,"edit")} as W.ProjectAssistantEditRequest,signal()),error => errorCode(error) === "pa_read_only")
+  await assert.rejects(source.create({command:command(key,"create")} as W.ProjectAssistantCreateRequest,signal()),error => errorCode(error) === "pa_read_only")
+  await assert.rejects(source.stop({command:command(key,"stop")} as W.ProjectAssistantStopRequest,signal()),error => errorCode(error) === "pa_read_only")
+  await assert.rejects(source.answer({command:command(key,"answer")} as W.ProjectAssistantPermissionAnswerRequest,signal()),error => errorCode(error) === "pa_read_only")
+  await assert.rejects(source.forget({command:command(key,"forget")} as W.ProjectAssistantForgetRequest,signal()),error => errorCode(error) === "pa_read_only")
+  await assert.rejects(source.saveMemory({command:command(key,"memory_save")} as W.ProjectAssistantMemoryWriteRequest,signal()),error => errorCode(error) === "pa_read_only")
+  assert.equal(writes.length,2)
+})
+
+test("reader acknowledgements require an observed fresh readable online source", async () => {
+  for (const change of [null,{fresh:false},{state:"offline"},{readable:false}] as const) {
+    let writes=0
+    const {source} = make(async (path,init) => {
+      if (init?.method !== "GET") writes++
+      const answer=sourceStatus("history_only")
+      if (change) Object.assign(answer.sources[0],change)
+      return Response.json(path.endsWith("/status") ? answer : {})
+    })
+    if (change) await source.status(signal())
+    const expected=change && "readable" in change && change.readable === false ? "pa_scope_denied" : "pa_offline"
+    await assert.rejects(source.markRead({command:command(key,"read"),cursor:{key,conversation_id:"chat",message_seq:2,reader_id:"reader"}},signal()),error => errorCode(error) === expected)
+    await assert.rejects(source.observe({command:command(key,"observe"),event_seq:2,receipt_id:"receipt"},signal()),error => errorCode(error) === expected)
+    assert.equal(writes,0)
+  }
+})
