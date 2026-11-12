@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -537,11 +537,11 @@ test("the copilot speaks the language the console is shown in", () => {
   assert.match(english, /全程用英文（en）說話/)
   assert.doesNotMatch(english, /全程台灣繁體中文/)
   const greeting = (greetingEvent(false, "en") as { response: { instructions: string } }).response.instructions
-  assert.match(greeting, /用一句英文問候/)
+  assert.match(greeting, /一句自然的英文問候/)
   // Chinese, and a console whose language is not known, keep the words as they were.
   assert.equal(instructionsFor(true, "zh-Hant"), instructionsFor(true))
   assert.match(instructionsFor(true), /全程台灣繁體中文/)
-  assert.match((greetingEvent(true) as { response: { instructions: string } }).response.instructions, /很短的繁體中文打招呼/)
+  assert.match((greetingEvent(true) as { response: { instructions: string } }).response.instructions, /很短、自然的繁體中文打招呼/)
   // The short-answer setting still applies in another language.
   assert.ok(instructionsFor(false, "en").includes(LONG_RULE))
 })
@@ -760,7 +760,7 @@ test("a Session described in words is the copilot's to pick: it gets every Sessi
     assert.ok("error" in found, said)
     assert.deepEqual(found.candidates?.map((c) => c.id), ["%7", "%2"], said)
   }
-  assert.match(COPILOT_INSTRUCTIONS, /TimeTree \u76f8\u95dc\u7684/)
+  assert.match(COPILOT_INSTRUCTIONS, /用描述的方式說 Session/)
 })
 
 test("a send the person already confirmed, or said whole, is not asked about again", () => {
@@ -772,4 +772,16 @@ test("the copilot keeps its content but drops the opening and the closing pleasa
   assert.match(COPILOT_INSTRUCTIONS, /第一句就是內容，最後一個重點講完就停/)
   assert.match(COPILOT_INSTRUCTIONS, /不要收尾/)
   assert.match(COPILOT_INSTRUCTIONS, /絕對不可以講完總數就結束/)
+})
+
+test("the copilot speaks as a secretary reporting in person, not as a list or a help desk", () => {
+  assert.match(COPILOT_INSTRUCTIONS, /私人秘書/)
+  assert.match(COPILOT_INSTRUCTIONS, /不要客服腔/)
+})
+
+test("idle and done Sessions are listed with a warning that their content was not read", async () => {
+  const { deps } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
+  assert.ok(out.idle.length > 0)
+  assert.equal(out.done_and_idle, CONTENT_NOT_READ)
 })

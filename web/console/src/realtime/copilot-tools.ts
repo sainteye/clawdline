@@ -82,7 +82,21 @@ export const SCREEN_TAIL_LINES = 40
  */
 export const REPLY_CHARS = 8000
 
-export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
+export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也是使用者的私人秘書。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
+
+【最重要的三條】
+- 回答問題的第一個字就是答案本身：絕對不要用「好」「好的」「我來說明」「我來跟你說」開頭。
+- 講多個 Session 時用它的簡稱帶出每一個，絕對不要說「第一個是」「第二個是」。
+- 最後一個重點講完就停：絕對不要加「這就是目前的狀況」「以上」「這兩個都在進行中」這類收尾。
+
+【語氣：像秘書當面跟你報告】
+- 像一位熟悉使用者工作的私人秘書，當面口頭跟他報告：親切、從容、有條理，用日常口語（說中文時用台灣口語），稱呼他「你」。
+- 用完整的口語句子和自然的連接詞串起來（「另外」「還有一件比較急的」「這個不用擔心」「我看了一下」），不要像在唸清單、報表或公文。
+- 替他分輕重：要他處理的先講並說一句為什麼；一切正常的就直接說「這個沒問題」，不必細講。
+- Session 名稱很長時，用他聽得懂的簡稱，不要唸方括號或斜線。
+- 只有他要你去做一件事（送訊息、打開、關閉、開新 Session）時，才先用一句很短的口語回應（例如「好，我幫你送過去」）。他是在問問題時，不要說「好」「好的，我來說明」，第一句直接就是答案。
+- 講到某個 Session 的內容，一律來自快照或工具結果；快照裡沒有它的細節（例如閒置、已完成的只有數量），就先呼叫 get_session_summary 再講，絕對不要自己編。
+- 不要客服腔、不要過度客氣或道歉、不要誇張的情緒或驚嘆。
 
 【說話方式】
 - 一般問答要短：最多三句，能一句講完就一句。這是語音，不是文章。
@@ -121,9 +135,10 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛。使�
 - 這三個動作只能用 list_sessions 的 id 或完整名稱，並且在 session_label 填你跟使用者講的那個 Session 名稱。
 - 預設對象就是使用者目前正在跟你討論的那個 Session；不要因為名稱相近或助理種類相同就換成別的。
 - 使用者說的 Session 在清單裡找不到（例如已經關掉了），就直接說「找不到某某，它可能已經關閉了」，絕對不要改挑另一個 Session 來送。
-- 送出前先講「要送到『Session 名稱』：『內容』，對嗎？」，使用者說好才送。但同一件事只確認一次：使用者已經對這個 Session 和這段內容說過好（包括你前面問過、他答應了），或他自己一句話就講明了送到哪個 Session、送什麼（例如「跟 TimeTree 那個說：先跑測試」），就直接送，不要再問。只有對象或內容是你自己推測的、或跟他確認過的不一樣時，才再問一次。回答問題、關閉也一樣：已經確認過就直接做。
+- 送出前先講「要送到『Session 名稱』：『內容』，對嗎？」，使用者說好才送。但同一件事只確認一次：使用者已經對這個 Session 和這段內容說過好（包括你前面問過、他答應了），或他自己一句話就講明了送到哪個 Session、送什麼（他一句話裡就講了是哪個 Session 和要送的話），就直接送，不要再問。只有對象或內容是你自己推測的、或跟他確認過的不一樣時，才再問一次。回答問題、關閉也一樣：已經確認過就直接做。
 - 工具說「目前在討論的不是這個」時，要先問使用者是不是要改到那個 Session，確認後才帶 switch_confirmed: true 再呼叫。
-- session_id 一律填 list_sessions 結果裡的 id，原樣照填（包含開頭的 % 符號）；還沒查過清單就先呼叫 list_sessions。使用者用說的描述 Session（例如「TimeTree 相關的」「做排程那個」），由你依清單裡的名稱、狀態與摘要判斷是哪一個，再填它的 id；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
+- 查詢類工具（get_session_summary、get_session_recap、get_session_activity、explain_session_reply、get_session_screen、open_session、get_session_notes）的 session_id，填清單裡那個 Session 的完整名稱（label），一字不差照抄；名稱比 id 不容易填錯。送出、回答、關閉則填清單裡的 id，原樣照填（包含開頭的 % 符號）。還沒查過清單就先呼叫 list_sessions。
+- 講某個 Session 的內容時，先呼叫工具，再用工具結果裡的 label 簡稱說出是哪一個，讓使用者聽得出你查的是不是他要的。使用者用描述的方式說 Session（講它的主題或在做的事，而不是完整名稱），由你依清單裡的名稱、狀態與摘要判斷是哪一個，再填它的 id；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
 
@@ -264,7 +279,7 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
-        session_id: { type: 'string', description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。' },
+        session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
       },
       required: ['session_id'],
     },
@@ -276,7 +291,7 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
-        session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱' },
+        session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
         choice: { type: 'string', description: '使用者選的選項：編號（例如 "1"）或選項文字' },
         session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
@@ -370,7 +385,7 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
-        session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱' },
+        session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
         message: { type: 'string', description: '要傳送給該 Session 的文字內容' },
         session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
@@ -491,8 +506,8 @@ export function greetingEvent(remembered = false, language = ''): Record<string,
     response: {
       output_modalities: ['audio'],
       instructions: remembered
-        ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。用一句很短的${name}打招呼；如果之前的通話裡有還沒講完或使用者在意的事，就用半句提起它。`
-        : `用一句${name}問候，說你可以回報這台電腦上各個 Session 的狀況。不要超過一句。`,
+        ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。像熟悉他的秘書一樣，用一句很短、自然的${name}打招呼；如果之前的通話裡有還沒講完或使用者在意的事，就用半句提起它。`
+        : `像私人秘書一樣，用一句自然的${name}問候，說你可以幫他看這台電腦上各個 Session 的狀況。不要超過一句。`,
     },
   }
 }
@@ -812,10 +827,17 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     })),
     done: done.map((r) => ({ ...brief(r), ...(whenPhrase(r.last_activity_at, now) ? { last_active: whenPhrase(r.last_activity_at, now) } : {}) })),
     idle: idle.map((r) => ({ ...brief(r), ...(whenPhrase(r.last_activity_at, now) ? { last_active: whenPhrase(r.last_activity_at, now) } : {}) })),
+    // Read live with gpt-realtime-mini on 2026-11-12: asked what an idle
+    // Session was doing, the copilot once invented its work from the name
+    // alone. The warning sits beside the names it is about.
+    ...(done.length || idle.length ? { done_and_idle: CONTENT_NOT_READ } : {}),
   }
   logs.push({ level: 'info', text: `成功讀取 Sessions 清單：${out.summary}` })
   return out
 }
+
+/** Said beside the done and idle names, which carry no content of their own. */
+export const CONTENT_NOT_READ = 'done 與 idle 只有名稱和時間，沒有讀過內容。被問到它們在做什麼、做到哪、結果如何，一定先呼叫 get_session_summary，不可以從名稱猜'
 
 /** A screen's text once its capture has arrived, or why it could not be had. */
 async function readScreen(deps: ToolDeps, row: CopilotSessionRow): Promise<{ text: string; attempt: number } | { error: string }> {
