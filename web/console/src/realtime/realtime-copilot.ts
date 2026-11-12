@@ -9,7 +9,7 @@ import type { OrbLevels } from './copilot-orb.js'
 import { adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
-import { machinesOnThisPage, openOnThisPage } from './copilot-open.js'
+import { machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
 
 export interface CopilotLogItem {
@@ -164,6 +164,7 @@ export class RealtimeCopilotClient {
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       briefing: () => this.briefing,
       openSession: (id) => openOnThisPage(id),
+      snippets: (id, request) => openSnippetsOnThisPage(id, request),
       machines: () => machinesOnThisPage(),
       focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),

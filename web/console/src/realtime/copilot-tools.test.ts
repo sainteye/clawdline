@@ -28,7 +28,7 @@ const PAINTED =
 
 interface Call { path: string; init?: RequestInit }
 
-function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?: number; transcripts?: Record<string, unknown>; notes?: unknown } = {}) {
+function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?: number; transcripts?: Record<string, unknown>; notes?: unknown; snippets?: unknown[] } = {}) {
   const calls: Call[] = []
   const sleeps: number[] = []
   const reads: Record<string, number> = {}
@@ -56,6 +56,7 @@ function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?
       }
       if (m && m[2] === "send") return Response.json({ ok: true })
       if (/^\/v1\/sessions\/[^/]+\/(key|close)$/.test(path)) return Response.json({ ok: true })
+      if (path.startsWith("/v1/snippets?")) return Response.json({ snippets: opts.snippets ?? [] })
       if (path.startsWith("/v1/work/v2/human-interventions/")) return Response.json(opts.notes ?? { ok: true, rows: [], pruned_resolved: 0 })
       return new Response("", { status: 404 })
     },
@@ -184,7 +185,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -414,7 +415,8 @@ test("open_session opens the named Session on the page the call runs in", async 
   deps.openSession = async (id) => { asked.push(id); return true }
   const out = JSON.parse((await runCopilotTool("open_session", '{"session_id":"%2"}', deps)).output)
   assert.deepEqual(asked, ["%2"])
-  assert.deepEqual(out, { opened: true, label: "Prepare screenshots" })
+  assert.equal(out.opened, true)
+  assert.equal(out.label, "Prepare screenshots")
   deps.openSession = async () => false
   assert.match(JSON.parse((await runCopilotTool("open_session", '{"session_id":"%2"}', deps)).output).error, /沒有在這個畫面上打開/)
   assert.ok(JSON.parse((await runCopilotTool("open_session", '{"session_id":"claude"}', deps)).output).candidates, "an ambiguous name is put back with its candidates")
@@ -737,8 +739,9 @@ test("a just-started Session is waited for before it is opened", async () => {
     openSession: async () => true,
   }
   const out = JSON.parse((await runCopilotTool("open_session", '{"session_id":"%77"}', deps)).output)
-  assert.deepEqual(out, { opened: true, label: "New one" })
-  assert.equal(reads, 3)
+  assert.equal(out.opened, true)
+  assert.equal(out.label, "New one")
+  assert.equal(reads, 4, "three until it appears, then the status read after opening")
 })
 
 test("a copilot-session refusal is read in the Cloud seam's flat spelling and the machine's nested one", () => {
@@ -784,4 +787,60 @@ test("idle and done Sessions are listed with a warning that their content was no
   const out = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
   assert.ok(out.idle.length > 0)
   assert.equal(out.done_and_idle, CONTENT_NOT_READ)
+})
+
+test("an opened Session comes with what it did and what is left, for the copilot to tell", async () => {
+  const { deps } = fakeMachine({}, { transcripts: { "%2": { entries: [
+    { role: "user", text: "Take the six feature screenshots." },
+    { role: "assistant", text: "Four are taken; the dark-mode pair is left." },
+  ] } } })
+  deps.openSession = async () => true
+  const out = JSON.parse((await runCopilotTool("open_session", '{"session_id":"%2"}', deps)).output)
+  assert.equal(out.status.label, "Prepare screenshots")
+  assert.deepEqual(out.status.requests, ["Take the six feature screenshots."])
+  assert.match(out.status.last_reply, /dark-mode pair is left/)
+  assert.match(COPILOT_INSTRUCTIONS, /還有什麼沒完成/)
+})
+
+const SNIPPETS = [
+  { id: "s1", title: "Run the checks", body: "Run tools/check.sh and report.", scope: "global" },
+  { id: "p1", title: "Daily release", body: "Run the release checklist.", scope: "playbook" },
+  { id: "c1", title: "Steward only", body: "x", scope: "clawdfather" },
+]
+
+test("list_snippets names a Session's Snippets and Playbooks apart, without Clawdfather's own", async () => {
+  const { deps, calls } = fakeMachine({}, { snippets: SNIPPETS })
+  const out = JSON.parse((await runCopilotTool("list_snippets", '{"session_id":"%2"}', deps)).output)
+  assert.deepEqual(out.snippets, [{ name: "Run the checks", preview: "Run tools/check.sh and report." }])
+  assert.deepEqual(out.playbooks, [{ name: "Daily release", preview: "Run the release checklist." }])
+  assert.equal(calls.at(-1)!.path, "/v1/snippets?session=%252")
+})
+
+test("a Snippet runs as a message to the Session under discussion; a Playbook starts through the page's sheet", async () => {
+  const { deps, calls } = fakeMachine({}, { snippets: SNIPPETS })
+  const asked: unknown[] = []
+  deps.snippets = async (id, request) => { asked.push([id, request]); return "started" }
+  const snip = JSON.parse((await runCopilotTool("run_snippet", '{"session_id":"%2","session_label":"Prepare screenshots","name":"Run the checks"}', deps)).output)
+  assert.equal(snip.ran, true)
+  const send = calls.find((c) => c.path.endsWith("/send"))!
+  assert.deepEqual(JSON.parse(String(send.init?.body)), { text: "Run tools/check.sh and report." })
+  const play = JSON.parse((await runCopilotTool("run_snippet", '{"session_id":"%2","session_label":"Prepare screenshots","name":"daily release"}', deps)).output)
+  assert.equal(play.kind, "playbook")
+  assert.deepEqual(asked, [["%2", { tab: "playbook", playbook: "p1", start: true }]])
+})
+
+test("a Snippet or Playbook named loosely runs nothing and hands back every name", async () => {
+  const { deps, calls } = fakeMachine({}, { snippets: SNIPPETS })
+  deps.snippets = async () => { throw new Error("must not be asked") }
+  const out = JSON.parse((await runCopilotTool("run_snippet", '{"session_id":"%2","session_label":"Prepare screenshots","name":"release"}', deps)).output)
+  assert.match(out.error, /沒有執行/)
+  assert.deepEqual(out.names.map((n: { name: string }) => n.name), ["Run the checks", "Daily release"])
+  assert.equal(calls.some((c) => c.path.endsWith("/send")), false)
+})
+
+test("a Playbook the sheet would not start says why", async () => {
+  const { deps } = fakeMachine({}, { snippets: SNIPPETS })
+  deps.snippets = async () => "already_running"
+  const out = JSON.parse((await runCopilotTool("run_snippet", '{"session_id":"%2","session_label":"Prepare screenshots","name":"Daily release"}', deps)).output)
+  assert.match(out.error, /已經有一個 Playbook 在跑/)
 })

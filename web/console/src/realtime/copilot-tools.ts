@@ -47,6 +47,12 @@ export interface ToolDeps {
   machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
   /** The Session this call is talking about: the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
+  /**
+   * Opens a Session on the page the call runs in and its Snippet / Playbook
+   * sheet, optionally starting a Playbook there (`session/snippets-request.ts`).
+   * Resolves with what the sheet made of it.
+   */
+  snippets?: (sessionID: string, request: { tab: 'snippet' | 'playbook'; playbook?: string; start?: boolean }) => Promise<string>
   /** This call's speed and answer length now, and a way to change them for this call and the next. */
   delivery?: () => { speed: string; brief: boolean }
   adjust?: (change: { speed?: string; brief?: boolean }) => Promise<{ saved: boolean }>
@@ -116,9 +122,10 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
 - explain_session_reply：某個 Session 最後一則回覆的全文，加上使用者最後交代它的事。使用者說「解釋給我聽」「它在說什麼」「我看不懂」「它要我決定什麼」「講詳細一點」時用這個。
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
-- open_session：在使用者通話的這個畫面上打開某個 Session。使用者說「切到／打開／讓我看某某」就呼叫，打開後用一句話說「已經打開某某」，不用唸內容。
+- open_session：在使用者通話的這個畫面上打開某個 Session。使用者說「切到／打開／讓我看某某」就呼叫。打開後結果附 status（它的交代、交付與最後回覆）：先說「已經打開某某」，接著用三到五句講它的狀況：它做了哪些事、還有什麼沒完成、有沒有在等使用者決定。
 - answer_session_question：替使用者回答某個 Session 在等的問題（選項選單）。
 - get_session_notes：讀 Session 留給使用者的便條紙。
+- list_snippets、open_snippets、run_snippet：Session 的 Snippet（存好的常用文字）與 Playbook（存好的工作流程）。使用者要「打開 snippet／playbook 列表」就呼叫 open_snippets；要你「執行某某」就先用 list_snippets 找出它的完整名稱（依使用者說的意思自己判斷是哪一個，找不到就說找不到並唸兩三個最接近的），再講「要在『Session 名稱』執行『名稱』，對嗎？」，使用者說好才呼叫 run_snippet；使用者一句話已經講清楚 Session 和名稱的，照只確認一次的規則直接執行。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
 - send_message_to_session：替使用者把文字送進某個 Session。
@@ -308,6 +315,46 @@ export const COPILOT_TOOLS = [
       properties: {
         session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱；省略時讀全部' },
       },
+    },
+  },
+  {
+    type: 'function',
+    name: 'list_snippets',
+    description: '列出某個 Session 能用的 Snippet（存好的常用文字）與 Playbook（存好的工作流程），各附名稱與開頭一小段內容。使用者問有哪些 snippet／playbook、或要執行一個卻沒說完整名稱時先呼叫。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
+      },
+      required: ['session_id'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'open_snippets',
+    description: '在使用者通話的這個畫面上打開某個 Session，並打開它的 Snippet 或 Playbook 列表。使用者說「打開 snippet 列表」「讓我看 playbook」時呼叫。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
+        kind: { type: 'string', enum: ['snippet', 'playbook'], description: '要打開哪一個列表' },
+      },
+      required: ['session_id', 'kind'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'run_snippet',
+    description: '在某個 Session 執行一個 Snippet 或 Playbook：Snippet 是把它的文字送進那個 Session；Playbook 是在這個畫面打開它並按下開始。只在使用者明確要你執行、而且確認過 Session 與名稱之後呼叫。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'list_sessions 回傳的 id（含開頭的 % 符號）或 Session 完整名稱' },
+        session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
+        name: { type: 'string', description: 'list_snippets 回傳的 Snippet 或 Playbook 完整名稱，一字不差照抄' },
+        switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
+      },
+      required: ['session_id', 'session_label', 'name'],
     },
   },
   {
@@ -1314,6 +1361,142 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
   return { success: true, sent_to: row.label }
 }
 
+/** One reusable text as the copilot is told of it. */
+interface ReusableText { id: string; name: string; kind: 'snippet' | 'playbook'; body: string }
+
+// previews are cut at LIST_GOAL_CHARS, the bound a list's goal line already has
+
+/**
+ * The Snippets and Playbooks a Session's sheet offers, read as the sheet reads
+ * them (`GET /v1/snippets?session=`, `session/snippets-api.ts`). Clawdfather's
+ * own actions are not offered.
+ */
+async function readReusable(deps: ToolDeps, row: CopilotSessionRow): Promise<ReusableText[] | { error: string }> {
+  const res = await deps.fetch(`/v1/snippets?session=${encodeURIComponent(row.id)}`, { headers: { [UNOPENED_READ_HEADER]: '1' } })
+  if (!res.ok) {
+    const why = await refusalText(res)
+    return { error: `讀不到「${row.label}」的 Snippet 與 Playbook（HTTP ${res.status}）${why ? `：${why}` : ''}` }
+  }
+  const body = (await res.json().catch(() => null)) as { snippets?: unknown } | null
+  if (!body || !Array.isArray(body.snippets)) return { error: `「${row.label}」的 Snippet 與 Playbook 回應無法解讀` }
+  const out: ReusableText[] = []
+  for (const item of body.snippets as Record<string, unknown>[]) {
+    const scope = str(item?.scope)
+    if (scope !== 'global' && scope !== 'project' && scope !== 'playbook') continue
+    const id = str(item.id)
+    const name = str(item.title)
+    if (!id || !name) continue
+    out.push({ id, name, kind: scope === 'playbook' ? 'playbook' : 'snippet', body: str(item.body) })
+  }
+  return out
+}
+
+async function sessionForReusable(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<{ row: CopilotSessionRow } | { error: string; candidates?: unknown }> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveSession(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates }
+  }
+  return found
+}
+
+async function listSnippets(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const found = await sessionForReusable(deps, logs, wanted)
+  if ('error' in found) return found
+  const texts = await readReusable(deps, found.row)
+  if ('error' in texts) {
+    logs.push({ level: 'error', text: texts.error })
+    return texts
+  }
+  logs.push({ level: 'info', text: `讀到「${found.row.label}」的 ${texts.length} 個 Snippet 與 Playbook` })
+  const shown = (kind: ReusableText['kind']) => texts.filter((t) => t.kind === kind)
+    .map((t) => ({ name: t.name, preview: t.body.slice(0, LIST_GOAL_CHARS) }))
+  return { session: found.row.label, snippets: shown('snippet'), playbooks: shown('playbook') }
+}
+
+async function openSnippets(deps: ToolDeps, logs: ToolLog[], wanted: string, kind: 'snippet' | 'playbook'): Promise<unknown> {
+  const found = await sessionForReusable(deps, logs, wanted)
+  if ('error' in found) return found
+  if (!deps.snippets) return { error: '這個畫面不能由副駕駛打開 Snippet 列表' }
+  const outcome = await deps.snippets(found.row.id, { tab: kind })
+  if (outcome !== 'opened') {
+    const error = `沒有打開「${found.row.label}」的 ${kind === 'playbook' ? 'Playbook' : 'Snippet'} 列表（${outcome}）`
+    logs.push({ level: 'error', text: error })
+    return { error }
+  }
+  deps.focus?.set(found.row.id)
+  logs.push({ level: 'info', text: `已打開「${found.row.label}」的 ${kind === 'playbook' ? 'Playbook' : 'Snippet'} 列表` })
+  return { opened: true, session: found.row.label, kind }
+}
+
+/** What a Playbook start that did not start means to a person (`SnippetsOutcome`). */
+const PLAYBOOK_REFUSALS: Record<string, string> = {
+  already_running: '這個 Session 已經有一個 Playbook 在跑',
+  source_unavailable: '讀不到這個 Playbook 來源的專案檔案',
+  source_changed: '它來源的專案檔案改過了，要先在畫面上看過新內容再開始',
+  source_scope_conflict: '這個 Playbook 的來源屬於某個專案，但它沒有綁定專案',
+  playbook_not_found: '畫面上的列表裡沒有這個 Playbook',
+  not_ready: '列表還沒準備好',
+  start_unknown: '不確定有沒有開始；它的待辦已經建立，請在畫面上看一下',
+  timeout: '畫面沒有回應',
+}
+
+async function runSnippet(deps: ToolDeps, logs: ToolLog[], wanted: string, name: string, said = '', switchConfirmed = false): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const found = resolveForWrite(read.rows, wanted)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates }
+  }
+  const { row } = found
+  const refused = writeGuard(deps, row, said, switchConfirmed)
+  if (refused) {
+    logs.push({ level: 'error', text: refused })
+    return { error: refused }
+  }
+  const texts = await readReusable(deps, row)
+  if ('error' in texts) {
+    logs.push({ level: 'error', text: texts.error })
+    return texts
+  }
+  // Only a whole name runs anything; which one the person meant is the
+  // copilot's to choose from the list it is handed back.
+  const wantedName = name.trim().toLowerCase()
+  const named = texts.filter((t) => t.name.trim().toLowerCase() === wantedName)
+  if (named.length !== 1) {
+    const error = named.length
+      ? `「${row.label}」有 ${named.length} 個都叫「${name}」，沒有執行；請使用者在畫面上選`
+      : `「${row.label}」沒有名稱剛好是「${name}」的 Snippet 或 Playbook，沒有執行。從下面的名稱依使用者的意思挑一個，確認後再執行`
+    logs.push({ level: 'error', text: error })
+    return { error, names: texts.map((t) => ({ name: t.name, kind: t.kind })) }
+  }
+  const text = named[0]
+  if (text.kind === 'snippet') {
+    // A Snippet is words to send: the same send, guards and receipt as a message.
+    const sent = await sendMessage(deps, logs, row.id, text.body, row.label, true) as { success?: boolean; error?: string }
+    return sent.success ? { ran: true, kind: 'snippet', name: text.name, session: row.label } : sent
+  }
+  if (!deps.snippets) return { error: '這個畫面不能由副駕駛開始 Playbook' }
+  const outcome = await deps.snippets(row.id, { tab: 'playbook', playbook: text.id, start: true })
+  if (outcome !== 'started') {
+    const error = `「${text.name}」沒有在「${row.label}」開始：${PLAYBOOK_REFUSALS[outcome] ?? outcome}`
+    logs.push({ level: 'error', text: error })
+    return { error, outcome }
+  }
+  deps.focus?.set(row.id)
+  logs.push({ level: 'info', text: `已在「${row.label}」開始 Playbook「${text.name}」` })
+  return { ran: true, kind: 'playbook', name: text.name, session: row.label }
+}
+
 async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
@@ -1343,7 +1526,10 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
     return { error }
   }
   logs.push({ level: 'info', text: `已在畫面上打開「${row.label}」` })
-  return { opened: true, label: row.label }
+  // Opened at the person's ask, it is told at once: what it did and what is
+  // left, from the same record get_session_recap reads.
+  const status = await sessionRecap(deps, logs, row.id)
+  return { opened: true, label: row.label, status }
 }
 
 /** The option a spoken choice names: its number, or its label. */
@@ -1684,6 +1870,9 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true)
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
+    else if (name === 'list_snippets') result = await listSnippets(deps, logs, str(args.session_id))
+    else if (name === 'open_snippets') result = await openSnippets(deps, logs, str(args.session_id), args.kind === 'playbook' ? 'playbook' : 'snippet')
+    else if (name === 'run_snippet') result = await runSnippet(deps, logs, str(args.session_id), str(args.name), str(args.session_label), args.switch_confirmed === true)
     else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
     else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
     else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true, args.force_confirmed === true)
