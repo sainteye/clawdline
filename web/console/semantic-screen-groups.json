@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11597,
-  "riskKeys": 5073,
-  "nonRiskCount": 6524,
+  "englishContentKeys": 11601,
+  "riskKeys": 5076,
+  "nonRiskCount": 6525,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 487,
+      "count": 488,
       "sources": [
         null
       ],
@@ -454,6 +454,7 @@
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
         "capacityRow.browser.audit_text_characters.what",
+        "capacityRow.browser.close_receipt_bytes.what",
         "capacityRow.browser.command_arg_bytes.what",
         "capacityRow.browser.host_message_bytes.what",
         "capacityRow.browser.pending_commands.what",

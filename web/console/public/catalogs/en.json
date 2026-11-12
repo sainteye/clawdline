@@ -11597,5 +11597,9 @@
   "capacityRow.voice.work_plan_rounds.what": "Planning rounds per original request, including discovery continuations.",
   "capacityRow.voice.work_plan_rounds.full": "After four rounds, planning stops with the saved request still visible. Only an explicit retry starts another bounded attempt.",
   "capacityRow.voice.work_progress.what": "Prepared results retained for one task attempt so another device can narrate every member.",
-  "capacityRow.voice.work_progress.full": "At eight prepared results, further progress is refused. The final result and task outcome remain separate."
+  "capacityRow.voice.work_progress.full": "At eight prepared results, further progress is refused. The final result and task outcome remain separate.",
+  "capacityRow.browser.close_receipt_rows.what": "How many unsettled close receipts a native browser host may retain for acknowledgment. Receipts contain only command and tab identity, never page content.",
+  "capacityRow.browser.close_receipt_rows.full": "The host stops accepting more close commands instead of dropping an uncertain result. Acknowledged receipts are removed; retrying a receipt never repeats the close.",
+  "capacityRow.browser.close_receipt_bytes.what": "The maximum size of one native host close receipt file, scoped to its browser mode and profile.",
+  "capacityRow.browser.close_receipt_bytes.full": "An oversized or damaged file is refused for recovery. It is retained for inspection; Clawdline does not assume that the close failed or repeat it."
 }

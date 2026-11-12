@@ -255,6 +255,16 @@
     "Note": true
   },
   {
+    "Name": "browser.close_receipt_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.close_receipt_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "browser.command_arg_bytes",
     "Known": true,
     "Note": true

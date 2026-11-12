@@ -58,6 +58,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_text_characters` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
+| `browser.close_receipt_bytes` | 6291456 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `browser.close_receipt_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.command_arg_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.host_message_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.keyboard_pending_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |

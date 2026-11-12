@@ -151,7 +151,8 @@ type Bridge struct {
 	queue           []Command
 	waiting         map[string]chan Result
 	wake            chan struct{}
-	mode            string // active Chrome profile kind; native mode only disables this channel
+	mode            string   // active Chrome profile kind; native mode only disables this channel
+	setupHost       HostInfo // transport readiness, never grants Agent access
 	host            HostInfo
 	stopped         bool
 	stopEpoch       uint64
@@ -199,6 +200,39 @@ func New(onSite func(NewSite)) *Bridge {
 
 func (b *Bridge) hostConnected() bool {
 	return b.host.LastPoll != 0 && b.now().Sub(time.Unix(b.host.LastPoll, 0)) <= HostStaleSeconds*time.Second
+}
+
+// SetupConnected reports a dedicated host's transport readiness independently
+// of the final browser permission. Disabled probes cannot consume commands.
+func (b *Bridge) SetupConnected() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.disabled {
+		return b.hostConnected()
+	}
+	return b.setupHost.LastPoll != 0 && b.now().Sub(time.Unix(b.setupHost.LastPoll, 0)) <= HostStaleSeconds*time.Second
+}
+
+// ProbeSetupHost holds a readiness-only poll while the Clawdline channel is off.
+// The HTTP route admits only the dedicated profile; no page operation is sent.
+func (b *Bridge) ProbeSetupHost(ctx context.Context, info HostInfo) bool {
+	b.mu.Lock()
+	if !b.disabled || (info.Mode != "" && info.Mode != "isolated") {
+		b.mu.Unlock()
+		return false
+	}
+	info.LastPoll = b.now().Unix()
+	b.setupHost = info
+	wake := b.wake
+	b.mu.Unlock()
+	timer := time.NewTimer(b.pollWait)
+	defer timer.Stop()
+	select {
+	case <-wake:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+	return true
 }
 
 // Status is what the console and `clawdline browser status` show.
@@ -841,7 +875,7 @@ func (b *Bridge) Poll(ctx context.Context, info HostInfo) []Command {
 
 	info.LastPoll = b.now().Unix()
 	b.host = info
-	if len(b.queue) == 0 && !b.stopped {
+	if len(b.queue) == 0 {
 		wake := b.wake
 		b.mu.Unlock()
 		timer := time.NewTimer(b.pollWait)
@@ -868,13 +902,16 @@ func (b *Bridge) Poll(ctx context.Context, info HostInfo) []Command {
 }
 
 // Deliver records the host's results.
-func (b *Bridge) Deliver(results []Result) {
+func (b *Bridge) Deliver(results []Result) error {
+	var err error
 	for _, r := range results {
-		b.deliver(r)
+		err = errors.Join(err, b.deliver(r))
 	}
+	return err
 }
 
-func (b *Bridge) deliver(r Result) {
+func (b *Bridge) deliver(r Result) error {
+	var persistErr error
 	b.mu.Lock()
 	for tab, id := range b.closing {
 		if id != r.ID {
@@ -882,9 +919,9 @@ func (b *Bridge) deliver(r Result) {
 		}
 		// Only an actual host answer (or a queued cancellation) releases this
 		// reservation. The caller's timeout never passes through deliver.
+		owner, current, person, epoch := b.owner[tab], b.current[b.owner[tab]], b.person[tab], b.controlEpoch[tab]
 		delete(b.closing, tab)
-		if r.OK {
-			owner := b.owner[tab]
+		if r.OK || (r.Tab == tab && r.Error == "the tab was closed") {
 			b.forgetLocked(tab)
 			for other, conversation := range b.owner {
 				if conversation == owner && other > b.current[owner] {
@@ -892,7 +929,17 @@ func (b *Bridge) deliver(r Result) {
 				}
 			}
 		}
-		b.saveTabs()
+		if b.saveTabs() != nil {
+			// No ACK until the closure is durable. Keep the reservation so
+			// the same result can safely settle it on a later delivery.
+			b.closing[tab] = r.ID
+			if owner != "" {
+				b.owner[tab], b.current[owner] = owner, current
+			}
+			b.person[tab], b.controlEpoch[tab] = person, epoch
+			persistErr = StateWriteFailed
+			r = Result{ID: r.ID, Tab: tab, Error: string(StateWriteFailed)}
+		}
 		break
 	}
 	ch := b.waiting[r.ID]
@@ -903,6 +950,7 @@ func (b *Bridge) deliver(r Result) {
 		default:
 		}
 	}
+	return persistErr
 }
 
 func (b *Bridge) record(conversation, op string, tab int, text string, r Result) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
@@ -295,17 +297,58 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 		_, err = out.Write(data)
 		return err
 	}
+	var resultsPending atomic.Bool
+	resultsDone := make(chan struct{}, 1)
+	resultsSettled := func() {
+		resultsPending.Store(false)
+		select {
+		case resultsDone <- struct{}{}:
+		default:
+		}
+	}
+	var closeMu sync.Mutex
+	closes := map[string]bool{}
+	spool := browserCloseSpoolPath(config.Dir(), mode, profile)
 	var infoMu sync.Mutex
 	info := map[string]string{"version": "unknown", "mode": mode, "profile": profile}
-	done := make(chan struct{})
+	hostCtx, cancelHost := context.WithCancel(context.Background())
+	defer cancelHost()
+	messages := make(chan []byte)
 	go func() {
-		defer close(done)
+		defer close(messages)
+		defer cancelHost()
 		r := bufio.NewReader(in)
 		for {
 			msg, err := readNativeMessage(r)
 			if err != nil {
-				return // Chrome closed the port.
+				return
 			}
+			select {
+			case messages <- msg:
+			case <-hostCtx.Done():
+				return
+			}
+		}
+	}()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Replay only result receipts. Never repeat a destructive command.
+		if saved, err := loadBrowserCloseResults(spool); err != nil {
+			fmt.Fprintf(errOut, cliCopy("core", "browser_host.receipt_recovery_failed", "browser-host: close receipt recovery failed: %v")+"\n", err)
+			return
+		} else if len(saved) > 0 {
+			resultsPending.Store(true)
+			if !postBrowserHostResults(hostCtx, b, saved, errOut) {
+				return
+			}
+			if err := os.Remove(spool); err != nil && !os.IsNotExist(err) {
+				fmt.Fprintln(errOut, err)
+				return
+			}
+			resultsSettled()
+		}
+		for msg := range messages {
 			var m struct {
 				Hello   map[string]string `json:"hello"`
 				Results json.RawMessage   `json:"results"`
@@ -323,9 +366,38 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 				infoMu.Unlock()
 			}
 			if len(m.Results) > 0 {
-				if _, err := b.request(http.MethodPost, "/v1/browser/host/results", nil, json.RawMessage(`{"results":`+string(m.Results)+`}`), ""); err != nil {
+				resultsPending.Store(true)
+				closeMu.Lock()
+				saved, err := browserCloseReceipts(m.Results, closes)
+				closeMu.Unlock()
+				if err != nil {
 					fmt.Fprintln(errOut, err)
+					return
 				}
+				if len(saved) > 0 {
+					for {
+						if err := saveBrowserCloseResults(spool, saved); err == nil {
+							break
+						} else {
+							fmt.Fprintf(errOut, cliCopy("core", "browser_host.receipt_save_failed", "browser-host: save close receipts: %v")+"\n", err)
+						}
+						select {
+						case <-hostCtx.Done():
+							return
+						case <-time.After(3 * time.Second):
+						}
+					}
+				}
+				if !postBrowserHostResults(hostCtx, b, m.Results, errOut) {
+					return
+				}
+				if len(saved) > 0 {
+					if err := os.Remove(spool); err != nil && !os.IsNotExist(err) {
+						fmt.Fprintln(errOut, err)
+						return
+					}
+				}
+				resultsSettled()
 			}
 		}
 	}()
@@ -335,13 +407,21 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 			return 0
 		default:
 		}
+		if resultsPending.Load() {
+			select {
+			case <-done:
+				return 0
+			case <-resultsDone:
+			}
+			continue
+		}
 		infoMu.Lock()
 		body := map[string]string{}
 		for k, v := range info {
 			body[k] = v
 		}
 		infoMu.Unlock()
-		a, err := b.request(http.MethodPost, "/v1/browser/host/poll", nil, body, "")
+		a, err := b.requestContext(hostCtx, http.MethodPost, "/v1/browser/host/poll", nil, body, "")
 		if err != nil || !a.ok() {
 			_ = send(map[string]any{"daemon": "unreachable"})
 			select {
@@ -359,6 +439,17 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 		}
 		_ = send(map[string]any{"daemon": "connected"})
 		for _, c := range polled.Commands {
+			var command struct{ ID, Op string }
+			if json.Unmarshal(c, &command) == nil && command.Op == "close" {
+				closeMu.Lock()
+				if len(closes) >= maxBrowserCloseReceipts {
+					closeMu.Unlock()
+					fmt.Fprintln(errOut, cliCopy("core", "browser_host.too_many_closes", "browser-host: too many unsettled close commands"))
+					return 1
+				}
+				closes[command.ID] = true
+				closeMu.Unlock()
+			}
 			if err := send(map[string]json.RawMessage{"command": c}); err != nil {
 				fmt.Fprintln(errOut, err)
 			}
