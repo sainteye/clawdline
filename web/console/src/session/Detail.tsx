@@ -28,7 +28,7 @@ import { askFocus, askInterrupt } from "../legacy/screen-bridge.js"
 import type { FleetDetailProblem } from "../cloud/all-machine-sessions.js"
 import { Transcript } from "./Transcript.js"
 import { HoldGesture } from "./hold-gesture.js"
-import { callCopilotAbout } from "./copilot-call.js"
+import { callCopilotAbout, wakeCopilotCall } from "./copilot-call.js"
 import "./detail-head-call.css"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
@@ -305,8 +305,13 @@ export function Detail({
   markRow.current = row
   if (!markHold.current) {
     markHold.current = new HoldGesture({
-      call: () => { const r = markRow.current; if (r) callCopilotAbout(r) },
-      held: () => { setMarkHeld(true); try { navigator.vibrate?.(15) } catch { /* refusal-ok: a phone without vibration still calls on the lift. */ } },
+      call: () => {
+        setMarkHeld(true)
+        try { navigator.vibrate?.(15) } catch { /* refusal-ok: a phone without vibration still calls. */ }
+        const r = markRow.current
+        if (r) callCopilotAbout(r)
+      },
+      lifted: () => { const r = markRow.current; wakeCopilotCall(r) },
       released: () => setMarkHeld(false),
     }, { now: () => Date.now(), after: (ms, run) => setTimeout(run, ms), cancel: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) })
   }
