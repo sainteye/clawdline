@@ -4,6 +4,7 @@ import { nextWord } from "../next-strings.js"
 import { realtimeCopilot, type RealtimeCopilotState } from "./realtime-copilot.js"
 import { RealtimeCopilotModal } from "./RealtimeCopilotModal.js"
 import { CopilotNotice } from "./CopilotNotice.js"
+import { DevStackModal } from "./DevStackModal.js"
 import { bubbleSide, copilotDock, firstPoint, isTap, restingPoint, type DockMode, type Insets, type Point } from "./copilot-dock.js"
 import "./realtime.css"
 
@@ -64,6 +65,7 @@ export function CopilotDockView() {
     <RealtimeCopilotModal open={mode === "sheet"} onClose={() => copilotDock.close()}
       onMinimize={() => copilotDock.minimize(inCall)} />
     {mode === "bubble" && inCall ? <CopilotBubble call={call} /> : null}
+    <DevStackModal />
   </>
 }
 

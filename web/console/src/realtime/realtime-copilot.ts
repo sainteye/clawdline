@@ -185,7 +185,7 @@ export class RealtimeCopilotClient {
       openSession: (id, machine) => openOnThisPage(id, machine),
       snippets: (id, request, machine) => openSnippetsOnThisPage(id, request, machine),
       fleet: () => fleetOnThisPage(),
-      devstack: (path) => openDevStackOnThisPage(path),
+      devstack: (place) => openDevStackOnThisPage(place),
       help: async () => {
         const [{ loadHelpDocs }, { helpSections }] = await Promise.all([import('./copilot-help-docs.js'), import('./copilot-help.js')])
         this.helpSections ??= helpSections(await loadHelpDocs(), consoleLanguage() || 'en')

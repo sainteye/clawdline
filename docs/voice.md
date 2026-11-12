@@ -177,7 +177,9 @@ against the mostly English guide picked unrelated sections, and offered beside t
 picked over the right one; it is not offered. The guide then gained the sections it was asked for
 and lacked: archiving a Session, every machine's Sessions, and the voice copilot itself.
 `get_devstack_links` reads a Project's Dev Stack links by its whole name and, with `open`, opens
-that Project's Dev Stack tab on the page (`COPILOT_DEVSTACK`).
+that Project's Dev Stack links in a modal over the page the person is on (`DevStackModal`, held at
+the page's root with the copilot's bubble, `COPILOT_DEVSTACK`). It first switched to the Projects
+page and its setup dialog; the person asked to see the links without leaving their page.
 
 **Every machine.** On a page showing every machine (所有機器) the call reads the page's own list
 (`COPILOT_FLEET`, CloudGate): each machine's Sessions, a Session's id being its id on its machine

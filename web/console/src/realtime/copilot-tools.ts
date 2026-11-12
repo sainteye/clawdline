@@ -63,7 +63,7 @@ export interface ToolDeps {
   /** The user guide's sections a question is about (`copilot-help.ts`); loaded only when asked. */
   help?: () => Promise<HelpSection[]>
   /** Opens a Project's Dev Stack tab on this page (`copilot-open.ts`). */
-  devstack?: (path: string) => Promise<boolean>
+  devstack?: (place: { id: string; label: string }) => Promise<boolean>
   /** Every machine's Session rows, on a page that shows them all; null elsewhere. */
   fleet?: () => Promise<CopilotFleetRow[] | null>
   /**
@@ -432,7 +432,7 @@ export const COPILOT_TOOLS = [
   {
     type: 'function',
     name: 'get_devstack_links',
-    description: '某個專案的 Dev Stack 連結清單：每個連結的名稱、種類（網站、部署、測試、本機伺服器）、狀態與網址。使用者問某專案有哪些連結、網站或伺服器時呼叫；open 填 true 會同時在這個畫面打開那個專案的 Dev Stack 分頁。',
+    description: '某個專案的 Dev Stack 連結清單：每個連結的名稱、種類（網站、部署、測試、本機伺服器）、狀態與網址。使用者問某專案有哪些連結、網站或伺服器時呼叫；open 填 true 會同時在目前的畫面上跳出那個專案的 Dev Stack 視窗（不換頁）。',
     parameters: {
       type: 'object',
       required: ['project'],
@@ -2075,7 +2075,7 @@ async function devstackLinks(deps: ToolDeps, logs: ToolLog[], wanted: string, op
     ...(l.local === true ? { local: true } : {}),
   }))
   let opened: boolean | undefined
-  if (open) opened = deps.devstack && place.path ? await deps.devstack(place.path) : false
+  if (open) opened = deps.devstack ? await deps.devstack({ id: place.id, label: place.label }) : false
   logs.push({ level: 'info', text: `讀到「${place.label}」的 ${links.length} 個 Dev Stack 連結${opened ? '，已在畫面上打開' : ''}` })
   return { project: place.label, links, ...(open ? { opened: !!opened } : {}) }
 }

@@ -1,5 +1,4 @@
 import { COPILOT_DEVSTACK, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
-import { requestPage } from "../overlays/index.js"
 import type { CopilotFleetRow } from "./copilot-tools.js"
 import { OPEN_SNIPPETS } from "../legacy/snippets-bridge.js"
 import type { SnippetsOutcome } from "../session/snippets-request.js"
@@ -65,25 +64,14 @@ export function fleetOnThisPage(): Promise<CopilotFleetRow[] | null> {
   })
 }
 
-/** How often the copilot asks again while the Projects page loads. */
-const DEVSTACK_ASK_MS = 200
-
 /**
- * Opens the Projects page and the Dev Stack tab of the Project at `path`.
- * The page module loads the first time it is opened, so the ask is repeated
- * until it answers or COPILOT_OPEN_WAIT_MS passes.
+ * Opens one Project's Dev Stack links in a modal over the page the person is
+ * on (`DevStackModal`, held at the page's root), without leaving that page.
  */
-export function openDevStackOnThisPage(path: string): Promise<boolean> {
-  requestPage({ page: "projects", hash: false })
+export function openDevStackOnThisPage(place: { id: string; label: string }): Promise<boolean> {
   return new Promise((resolve) => {
-    const until = Date.now() + COPILOT_OPEN_WAIT_MS
-    const ask = () => {
-      const detail: { path: string; answer?: (opened: boolean) => void } = { path, answer: (opened) => resolve(opened) }
-      document.dispatchEvent(new CustomEvent(COPILOT_DEVSTACK, { detail }))
-      if (!detail.answer) return
-      if (Date.now() > until) { resolve(false); return }
-      setTimeout(ask, DEVSTACK_ASK_MS)
-    }
-    ask()
+    const detail: { place: { id: string; label: string }; answer?: (opened: boolean) => void } = { place, answer: (opened) => resolve(opened) }
+    document.dispatchEvent(new CustomEvent(COPILOT_DEVSTACK, { detail }))
+    if (detail.answer) resolve(false)
   })
 }

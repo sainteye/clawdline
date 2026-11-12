@@ -998,12 +998,12 @@ test("a Project's Dev Stack links are read by its whole name, said by state, and
       return new Response("", { status: 404 })
     },
     async sleep() {},
-    devstack: async (path) => { opened.push(path); return true },
+    devstack: async (place) => { opened.push(place.id); return true },
   }
   const out = JSON.parse((await runCopilotTool("get_devstack_links", '{"project":"Clawdline","open":true}', deps)).output)
   assert.deepEqual(out.links.map((l: { name: string; state?: string }) => [l.name, l.state]), [["clawdline.com", "正常"], ["guide", "沒有回應"]])
   assert.equal(out.opened, true)
-  assert.deepEqual(opened, ["/repo/clawdline"])
+  assert.deepEqual(opened, ["p1"])
   const loose = JSON.parse((await runCopilotTool("get_devstack_links", '{"project":"the blog one"}', deps)).output)
   assert.deepEqual(loose.projects, ["clawdline", "festly"], "a loose name is handed back with every Project to choose from")
 })

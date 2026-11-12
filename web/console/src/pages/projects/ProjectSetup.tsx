@@ -82,7 +82,7 @@ function ProjectReadiness({ place, select, openUnify, openDevStack }: {
  * press from that audit enters the ordinary command draft, where the person
  * still reviews assistant, model and instructions before any Session exists.
  */
-export type ProjectSetupHandle = { open(path: string, trigger: HTMLButtonElement | null, view?: "settings" | "devstack"): void }
+export type ProjectSetupHandle = { open(path: string, trigger: HTMLButtonElement): void }
 
 export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<ProjectSetupHandle> }) {
   const [places, setPlaces] = useState<ProjectPlace[]>([])
@@ -146,11 +146,11 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   }, [shown, load, requestClose])
 
   useImperativeHandle(ref, () => ({
-    open(path, button, opened = "settings") {
+    open(path, button) {
       scopedTrigger.current = button
       setCloseNotice("")
       setProjectPath(path)
-      setView(opened)
+      setView("settings")
       setUnifyRequest({ place: "", count: 0 })
       void load()
       showModalWithoutChoice(dialog.current)

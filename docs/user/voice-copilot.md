@@ -27,7 +27,7 @@ use the page; drag the bubble aside, press it to open the call again, or press i
   Playbooks. It confirms the Session and the words once before it acts.
 - To start a new Session in a Project; it asks for the machine, Project, assistant or model it does
   not know.
-- A Project's Dev Stack links, read aloud or opened on the page.
+- A Project's Dev Stack links, read aloud or shown in a window over the page you are on.
 - How to use Clawdline: it answers from this guide, and says so when the guide does not cover it.
 - To speak slower or faster, or to answer shorter or longer.
 

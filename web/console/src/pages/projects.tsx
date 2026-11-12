@@ -7,11 +7,11 @@ import { ProjectFolderPicker } from "./projects/ProjectFolderPicker.js"
 import type { ProjectSetupHandle } from "./projects/ProjectSetup.js"
 import { localizePinnedProjectStatus, projectOpenLabel } from "./projects/project-list.js"
 import { decoratePinnedWorktree } from "./projects/pinned-worktree-copy.js"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
 import { bindProjects, latestProjectReadRefusal, latestWorktreeReadRefusal, removeWorktree, worktreeSourceRow, type ProjectsPage } from "../legacy/projects-bridge.js"
 import { machineWording } from "../legacy/machine-copy.js"
-import { ActionConfirm, COPILOT_DEVSTACK, Info, requestPage, shown as overlayShown } from "../overlays/index.js"
+import { ActionConfirm, Info, requestPage, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./projects/section.html?raw"
 import { nextWord, type NextWord } from "../next-strings.js"
 import { workPageHash } from "../page-route.js"
@@ -84,20 +84,6 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
   }, [listReading])
   const page = useRef<BoundProjects | null>(null)
   const setup = useRef<ProjectSetupHandle>(null)
-  // The voice copilot opening a Project's Dev Stack links (`copilot-open.ts`):
-  // the same setup dialog a row opens, on its Dev Stack tab.
-  useEffect(() => {
-    const onAsk = (event: Event) => {
-      const detail = (event as CustomEvent<{ path?: string; answer?: (opened: boolean) => void }>).detail
-      if (!detail?.path || !detail.answer || !setup.current) return
-      const answer = detail.answer
-      detail.answer = undefined
-      setup.current.open(detail.path, null, "devstack")
-      answer(true)
-    }
-    document.addEventListener(COPILOT_DEVSTACK, onAsk)
-    return () => document.removeEventListener(COPILOT_DEVSTACK, onAsk)
-  }, [])
   const was = useRef(false)
   const painted = useRef(false)
   const [removeTarget, setRemoveTarget] = useState<ProjectTarget | null>(null)
