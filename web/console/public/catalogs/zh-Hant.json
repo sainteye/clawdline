@@ -9265,6 +9265,8 @@
   "next.copilotLogHeard": "語音轉文字識別結果：「{text}」",
   "next.copilotLogForgot": "已清除之前的通話紀錄",
   "next.copilotLogEnded": "語音通話已結束並關閉媒體流",
+  "next.copilotLogFocus": "已要求交接「{name}」",
+  "next.copilotCallFromSession": "長按或點兩下：打給語音副駕駛，交接這個 Session",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

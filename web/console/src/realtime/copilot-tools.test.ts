@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, greetingEvent, instructionsFor, type ToolDeps } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, greetingEvent, focusGreetingEvent, instructionsFor, type ToolDeps } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -574,4 +574,20 @@ test("an in-call change sends the instructions and speed, never the voice", () =
   assert.equal("voice" in ev.session.audio.output, false)
   assert.ok(ev.session.instructions.includes(LONG_RULE))
   assert.equal("tools" in ev.session, false)
+})
+
+test("a call placed from a Session opens with that Session's handover, by its id, through tools the call has", () => {
+  const focus = { id: "%7", label: "Landing page" }
+  const placed = (sessionUpdateEvent("", "", { focus }) as { session: { instructions: string; tools: { name: string }[] } }).session
+  assert.match(placed.instructions, /Session「Landing page」/)
+  assert.match(placed.instructions, /session_id 是 %7/)
+  assert.match(placed.instructions, /需要使用者處理/)
+  const opening = (focusGreetingEvent(focus, "en") as { type: string; response: { instructions: string } })
+  assert.equal(opening.type, "response.create")
+  assert.match(opening.response.instructions, /session_id 填 %7/)
+  assert.match(opening.response.instructions, /英文/)
+  const tools = new Set(placed.tools.map((t) => t.name))
+  for (const name of opening.response.instructions.match(/get_[a-z_]+/g) ?? []) assert.ok(tools.has(name), `${name} is a tool of the call`)
+  // A call from the Session list says nothing of a Session.
+  assert.doesNotMatch((sessionUpdateEvent("", "", {}) as { session: { instructions: string } }).session.instructions, /打來的/)
 })

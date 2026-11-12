@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { adjustEvent, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { adjustEvent, DEFAULT_SPEED, focusGreetingEvent, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallFocus, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { openOnThisPage } from './copilot-open.js'
@@ -246,8 +246,14 @@ export class RealtimeCopilotClient {
     this.updateState({ logs: nextLogs })
   }
 
-  async start(): Promise<void> {
+  /**
+   * Starts a call. With `focus` the call was placed from that Session, and its
+   * first words hand that Session over instead of greeting. A call already
+   * going (or connecting) is turned to the Session instead of starting again.
+   */
+  async start(focus?: CallFocus): Promise<void> {
     if (this.state.status === 'connected' || this.state.status === 'connecting') {
+      if (focus) this.focusOn(focus)
       return
     }
 
@@ -255,6 +261,8 @@ export class RealtimeCopilotClient {
     const meterRefused = this.meter.open()
 
     this.memory = readMemory()
+    // A fresh call: nothing of the last one's options, only where this one was placed from.
+    this.call = { memory: '', snapshot: '', options: { focus } }
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
@@ -279,7 +287,7 @@ export class RealtimeCopilotClient {
           ? nextWord('copilotErrorKeyMissing')
           : grant?.error?.message ? nextWord('copilotErrorNoPassDetail', { code, message: grant.error.message }) : nextWord('copilotErrorNoPass', { code }))
       }
-      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions } }
+      this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, focus: this.call.options.focus } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
@@ -387,8 +395,24 @@ export class RealtimeCopilotClient {
     if (section) this.addLog('info', nextWord('copilotLogMemory', { count: this.memory.length }))
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
-    this.dc.send(JSON.stringify(greetingEvent(!!section, consoleLanguage())))
-    this.addLog('info', nextWord('copilotLogGreeting'))
+    const focus = this.call.options.focus
+    this.dc.send(JSON.stringify(focus ? focusGreetingEvent(focus, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
+    this.addLog('info', focus ? nextWord('copilotLogFocus', { name: focus.label || focus.id }) : nextWord('copilotLogGreeting'))
+  }
+
+  /**
+   * Turns a call to one Session. Before the channel opens, the focus is kept
+   * for the configuration it is about to send; once open, the instructions
+   * are resent with it and the copilot is asked for the handover now.
+   */
+  private focusOn(focus: CallFocus) {
+    this.call.options = { ...this.call.options, focus }
+    if (!this.dc || this.dc.readyState !== 'open') return
+    this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    // Only a response in progress can be cancelled; cancelling none is an error event.
+    if (this.state.speakingState === 'speaking' || this.state.speakingState === 'thinking') this.dc.send(JSON.stringify({ type: 'response.cancel' }))
+    this.dc.send(JSON.stringify(focusGreetingEvent(focus, consoleLanguage())))
+    this.addLog('info', nextWord('copilotLogFocus', { name: focus.label || focus.id }))
   }
 
   // Both spellings of the output events are handled: GA names them
