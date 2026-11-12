@@ -701,6 +701,15 @@ func Register() []Entry {
 	return rows
 }
 
+const (
+	BotsNameRunes        = "bots.name_runes"
+	BotsInstructionBytes = "bots.instruction_bytes"
+	BotsMessageBytes     = "bots.message_bytes"
+	BotsPendingTurns     = "bots.pending_turns"
+	BotsPageRows         = "bots.page_rows"
+	BotsEventRows        = "bots.event_rows"
+)
+
 // Default is a registered row's default limit, and 0 for a name that is not
 // registered. Adapters that enforce a row's limit take their default from
 // here, so the number has one spelling.

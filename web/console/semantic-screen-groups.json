@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11472,
-  "riskKeys": 5024,
-  "nonRiskCount": 6448,
+  "englishContentKeys": 11484,
+  "riskKeys": 5033,
+  "nonRiskCount": 6451,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 480,
+      "count": 483,
       "sources": [
         null
       ],
@@ -450,6 +450,9 @@
         "capacityRow.artifacts.report_image_side.what",
         "capacityRow.artifacts.report_total_image_pixels.full",
         "capacityRow.artifacts.video_chunk_bytes.what",
+        "capacityRow.bots.event_rows.what",
+        "capacityRow.bots.instruction_bytes.what",
+        "capacityRow.bots.name_runes.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",

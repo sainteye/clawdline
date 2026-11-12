@@ -54,6 +54,12 @@
 | `artifacts.video_chunk_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `audit.security` | 8388608 | `bytes` | `rotate` | `diagnostics, notice, health` | — |
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
+| `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.pending_turns` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |
