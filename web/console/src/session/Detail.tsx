@@ -1,3 +1,4 @@
+import { HeaderOptions, type HeaderOption } from "./HeaderOptions.js"
 import { ToolLibrary } from "../tool-library/ToolLibrary.js"
 import { localized, toolTarget, type ToolDraft } from "../tool-library/model.js"
 import { outputSessionKey, readOutputs } from "./output-files-api.js"
@@ -39,7 +40,7 @@ import { MenuHandoffNotice } from "./MenuHandoffNotice.js"
 import { menuHandoffDelay, unreadMenuSeen, type UnreadMenu } from "./menu-handoff.js"
 import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
-import { BrowserChip, BrowserPanel } from "./BrowserPanel.js"
+import { BrowserChip, BrowserPanel, useBrowserTab } from "./BrowserPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
 import { StatusLine } from "./StatusLine.js"
@@ -426,15 +427,17 @@ export function Detail({
             </span>
           </button>
         </div>
-        {row && role && skillToggle && <SkillBotToggle persona={role.persona} name={role.name} skills={skills} />}
-        {row && hasOutputs && <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
-          aria-label={nextWord("outputsTitle")} title={nextWord("outputsTitle")} disabled={ending}
-          onClick={() => setOutputsFor(outputsOpen ? null : outputIdentity)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 7h7l2-3h8v16H3z"/><path d="M3 9h17"/></svg>
-          <span>{nextWord("outputsTitle")}</span>
-        </button>}
         <div className="tools">
           <Tools
+            options={[
+              ...(row && role && skillToggle ? [{ id: "skills", control: <SkillBotToggle persona={role.persona} name={role.name} skills={skills} /> }] : []),
+              ...(row && hasOutputs ? [{ id: "outputs", control: <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
+                aria-label={nextWord("outputsTitle")} title={nextWord("outputsTitle")} disabled={ending}
+                onClick={() => setOutputsFor(outputsOpen ? null : outputIdentity)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 7h7l2-3h8v16H3z"/><path d="M3 9h17"/></svg>
+                <span>{nextWord("outputsTitle")}</span>
+              </button> }] : []),
+            ]}
             row={row}
             project={resolvedProject}
             ending={ending}
@@ -666,6 +669,7 @@ function detailSub(row: SessionRow | null, projectedCoordinatorBound = false): s
  *   refusal is reported by the toast there, not by this menu.
  */
 function Tools({
+  options,
   row,
   project,
   ending,
@@ -678,6 +682,7 @@ function Tools({
   onSuggestions,
   onTools,
 }: {
+  options: HeaderOption[]
   row: SessionRow | null
   project: string
   ending: boolean
@@ -694,6 +699,7 @@ function Tools({
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const actions = richSessionSwipeActions(row)
   const menuVisibility = sessionActionVisibility(row)
+  const browserTab = useBrowserTab(row, !row || ending)
   const [open, setOpen] = useState(false)
   const [more, setMore] = useState(false)
   const [openingTerminal, setOpeningTerminal] = useState(false)
@@ -880,23 +886,14 @@ function Tools({
 
   return (
     <>
-      {/* **Hidden unless this page is being read on the Mac itself.** The chip
-          brings a session's terminal to the front over there; pressed from a
-          phone it does something real and entirely invisible to the person
-          pressing it. The test is where the page was *loaded from*, not the
-          screen width: an iPad with a keyboard is not at the Mac either, and a
-          narrow window on the Mac still is.
-
-          Its title is the write-on wording. The original swaps it for
-          `webShowOnMacOff` on a `write: false` health, which this daemon's
-          health does not carry — the same gap the composer has, and a refusal
-          arrives in the toast rather than in the title. */}
-      <BrowserChip row={row} hidden={!row || ending} onOpen={onBrowser} />
+      <HeaderOptions key={outputSessionKey(row)} options={[
+        ...options,
+        ...(browserTab ? [{ id: "browser", control: <BrowserChip onOpen={onBrowser} /> }] : []),
+        ...(atMac() && menuVisibility.focus ? [{ id: "focus", control:
       <button
         className="chip"
         id="tx-focus"
         type="button"
-        hidden={!atMac() || !menuVisibility.focus}
         disabled={!row || ending}
         title={T.webShowOnMacTip}
         onClick={focusMac}
@@ -907,6 +904,8 @@ function Tools({
         </svg>
         <span id="tx-focus-label">{T.webShowOnMac}</span>
       </button>
+        }] : []),
+      ]} />
       <div className="detail-actions">
         <button
           className="detail-more"

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11517,
+  "englishContentKeys": 11519,
   "riskKeys": 5036,
-  "nonRiskCount": 6481,
+  "nonRiskCount": 6483,
   "groups": [
     {
       "name": "acp / other",
@@ -3838,7 +3838,7 @@
     },
     {
       "name": "next / other",
-      "count": 945,
+      "count": 947,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4163,6 +4163,8 @@
         "next.handoverMatch",
         "next.handoverNoMatch",
         "next.handoverTitle",
+        "next.headerOptionsCollapse",
+        "next.headerOptionsExpand",
         "next.infoContext",
         "next.infoContextUsed",
         "next.infoEffortHigh",

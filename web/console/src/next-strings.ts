@@ -174,6 +174,8 @@ const words = {
     outputsShareCloud: "Open this Session in Clawdline Cloud to share a paired-device link.",
     outputsShareFailed: "The file link could not be shared. Try again.",
 
+    headerOptionsExpand: "Expand Session options",
+    headerOptionsCollapse: "Collapse Session options",
     outputsTitle: "Output files",
     outputsRefresh: "Refresh output files",
     outputsClose: "Close output files",
@@ -3029,6 +3031,8 @@ const words = {
     outputsShareCloud: "請在 Clawdline Cloud 開啟這個 Session，才能分享已配對裝置可讀的連結。",
     outputsShareFailed: "無法分享檔案連結，請再試一次。",
 
+    headerOptionsExpand: "展開 Session 選項",
+    headerOptionsCollapse: "收合 Session 選項",
     outputsTitle: "產出檔案",
     outputsRefresh: "重新讀取產出檔案",
     outputsClose: "關閉產出檔案",

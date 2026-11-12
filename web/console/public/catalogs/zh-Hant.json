@@ -7928,6 +7928,8 @@
   "next.outputsShareCloud": "請在 Clawdline Cloud 開啟這個 Session，才能分享已配對裝置可讀的連結。",
   "next.outputsShareFailed": "無法分享檔案連結，請再試一次。",
   "next.outputsTimeUnknown": "未記錄時間",
+  "next.headerOptionsExpand": "展開 Session 選項",
+  "next.headerOptionsCollapse": "收合 Session 選項",
   "next.outputsTitle": "產出檔案",
   "next.outputsTooLarge": "這個檔案超過 32 MiB 的預覽與下載上限。",
   "next.outputsUnsupported": "這台機器尚未支援 Session 產出檔案，更新後即可使用。",
