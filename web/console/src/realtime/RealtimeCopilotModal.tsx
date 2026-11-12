@@ -3,6 +3,7 @@ import { nextWord } from '../next-strings.js'
 import { BRAND_MARK } from '../brand-mark.js'
 import { formatUSD } from './copilot-cost.js'
 import { CopilotOrb } from './CopilotOrb.js'
+import { CopilotNotice } from './CopilotNotice.js'
 import {
   realtimeCopilot,
   type RealtimeCopilotState,
@@ -99,6 +100,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
             levels={isConnected ? readCallLevels : undefined}
           />
           <div className="realtime-status-label">{stateLabel}</div>
+          <CopilotNotice notice={copilotState.notice} className="copilot-notice" />
         </div>
 
         {/* Live speech / transcript display */}

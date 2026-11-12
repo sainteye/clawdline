@@ -1992,3 +1992,24 @@ export function copilotRefusal(body: unknown, status: number): { code: string; m
 
 /** Codes meaning the chosen machine's Clawdline has no copilot word yet (`MACHINE_LACKS_WORD`, cloud/relay-reader.ts). */
 export const COPILOT_MACHINE_LACKS: ReadonlySet<string> = new Set(['unknown_command', 'cloud_feature_unavailable', 'cloud_machine_unsupported'])
+
+/** A finished action the person should see and hear, as a string key and its words. */
+export interface ActionNotice { key: 'copilotDidSend' | 'copilotDidAnswer' | 'copilotDidClose' | 'copilotDidRun' | 'copilotDidStart'; params: Record<string, string> }
+
+/**
+ * What a write tool's answer did, when the machine says it was done: a send,
+ * an answer, a close, a Snippet or Playbook, a new Session. Anything else, and
+ * every refusal, is no notice. On 2026-11-12 a person watching only the
+ * bubble could not tell the copilot had sent a message it said it sent.
+ */
+export function actionNotice(tool: string, output: string): ActionNotice | null {
+  let o: Record<string, unknown>
+  try { o = JSON.parse(output) as Record<string, unknown> } catch { return null }
+  if (!o || typeof o !== 'object' || 'error' in o) return null
+  if (tool === 'send_message_to_session' && o.success === true) return { key: 'copilotDidSend', params: { label: str(o.sent_to) } }
+  if (tool === 'answer_session_question' && o.answered === true) return { key: 'copilotDidAnswer', params: { label: str(o.label), choice: str(o.chose) } }
+  if (tool === 'close_session' && o.closed === true) return { key: 'copilotDidClose', params: { label: str(o.label) } }
+  if (tool === 'run_snippet' && o.ran === true) return { key: 'copilotDidRun', params: { label: str(o.session), name: str(o.name) } }
+  if (tool === 'start_session' && o.started === true) return { key: 'copilotDidStart', params: { project: str(o.project) } }
+  return null
+}

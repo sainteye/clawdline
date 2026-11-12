@@ -6,7 +6,7 @@
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
+import { actionNotice, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -31,6 +31,8 @@ export interface RealtimeCopilotState {
   cost?: CallCost
   /** How many earlier turns this browser remembers (`copilot-memory.ts`). */
   remembered: number
+  /** The last thing the copilot did on the machine, shown for a moment (`actionNotice`). */
+  notice?: { text: string; at: number }
 }
 
 export type RealtimeListener = (state: RealtimeCopilotState) => void
@@ -522,6 +524,13 @@ export class RealtimeCopilotClient {
     const { output, logs } = await runCopilotTool(event.name, event.arguments, this.toolDeps())
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
+    // Only what the machine confirmed is shown and chimed, never what the
+    // copilot says it did.
+    const done = actionNotice(event.name, output)
+    if (done) {
+      this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
+      this.meter.chime()
+    }
 
     if (this.dc && this.dc.readyState === 'open') {
       for (const message of toolReplyEvents(event.call_id, output)) this.dc.send(JSON.stringify(message))

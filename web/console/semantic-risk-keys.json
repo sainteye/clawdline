@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11261,
+  "englishKeys": 11266,
   "counts": {
     "negation": 3116,
-    "state": 1855,
+    "state": 1857,
     "permission": 669,
     "deletion": 255,
     "uncertainty": 422
   },
-  "unionCount": 4946,
+  "unionCount": 4948,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -4477,6 +4477,8 @@
       "next.cloudPeerTargetReceipt",
       "next.cloudRenameRefused",
       "next.cloudRosterFailed",
+      "next.copilotDidClose",
+      "next.copilotDidSend",
       "next.copilotEagernessHint",
       "next.copilotEagernessLabel",
       "next.copilotErrorChannel",
@@ -9896,6 +9898,8 @@
     "next.copilotBriefingHint",
     "next.copilotCostNote",
     "next.copilotCostUnpriced",
+    "next.copilotDidClose",
+    "next.copilotDidSend",
     "next.copilotEagernessHint",
     "next.copilotEagernessLabel",
     "next.copilotErrorChannel",

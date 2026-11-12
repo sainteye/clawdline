@@ -10,6 +10,8 @@ type Side = { source: MediaStreamAudioSourceNode; analyser: AnalyserNode; sample
 const RING_LEVEL = 0.08
 const RING_ON_S = 1
 const RING_PERIOD_MS = 3000
+/** Each note of the done chime. */
+const CHIME_NOTE_S = 0.12
 
 export class CallMeter {
   private context: AudioContext | null = null
@@ -103,6 +105,35 @@ export class CallMeter {
         try { tone.stop() } catch { /* refusal-ok: a tone that has stopped stops again silently. */ }
       }
       try { gain.disconnect() } catch { /* refusal-ok: an already disconnected node is fine. */ }
+    }
+  }
+
+  /**
+   * A short rising two-note chime, played when the copilot has done something
+   * on the machine (`actionNotice`), on the context the call's tap opened.
+   */
+  chime(): void {
+    const context = this.context
+    if (!context) return
+    try {
+      const gain = context.createGain()
+      gain.connect(context.destination)
+      const at = context.currentTime + 0.01
+      gain.gain.setValueAtTime(0, at)
+      for (const [i, hz] of [880, 1320].entries()) {
+        const start = at + i * CHIME_NOTE_S
+        const tone = context.createOscillator()
+        tone.frequency.value = hz
+        tone.connect(gain)
+        gain.gain.setValueAtTime(0, start)
+        gain.gain.linearRampToValueAtTime(RING_LEVEL, start + 0.01)
+        gain.gain.linearRampToValueAtTime(0, start + CHIME_NOTE_S)
+        tone.start(start)
+        tone.stop(start + CHIME_NOTE_S)
+      }
+      setTimeout(() => { try { gain.disconnect() } catch { /* refusal-ok: an already disconnected node is fine. */ } }, 1000)
+    } catch {
+      // refusal-ok: a chime that cannot play leaves the on-screen notice.
     }
   }
 

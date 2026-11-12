@@ -678,3 +678,40 @@
   margin-right: 2px;
   vertical-align: -0.05em;
 }
+
+/* What the copilot just did on the machine (`CopilotNotice`): a small pill,
+   in the sheet under the status line and above the bubble when shrunk. */
+.copilot-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px auto 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #22c55e 16%, transparent);
+  color: #16a34a;
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 100%;
+  animation: copilot-notice-in 160ms ease-out;
+}
+.copilot-notice[hidden] { display: none; }
+.copilot-notice-tick { font-size: 12px; }
+.copilot-bubble-notice {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  white-space: nowrap;
+  max-width: min(70vw, 280px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--card, #111);
+  border: 1px solid color-mix(in srgb, #22c55e 45%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+@keyframes copilot-notice-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.copilot-bubble-notice { animation-name: copilot-bubble-notice-in; }
+@keyframes copilot-bubble-notice-in { from { opacity: 0; transform: translate(-50%, 4px); } to { opacity: 1; transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .copilot-notice, .copilot-bubble-notice { animation: none; } }

@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -874,4 +874,13 @@ test("a lone candidate is the Session; two are put to the person", async () => {
   const two = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"the test one","said":"the test one"}', deps)).output)
   assert.match(two.error, /問使用者是哪一個/)
   assert.deepEqual(two.candidates.map((c: { id: string }) => c.id), ["%7", "%9"])
+})
+
+test("only an action the machine confirmed becomes a notice, never a refusal or a read", () => {
+  assert.deepEqual(actionNotice("send_message_to_session", JSON.stringify({ success: true, sent_to: "Prepare screenshots" })), { key: "copilotDidSend", params: { label: "Prepare screenshots" } })
+  assert.deepEqual(actionNotice("close_session", JSON.stringify({ closed: true, label: "Fix the login test", forced: true })), { key: "copilotDidClose", params: { label: "Fix the login test" } })
+  assert.deepEqual(actionNotice("run_snippet", JSON.stringify({ ran: true, kind: "playbook", name: "Daily release", session: "Prepare screenshots" })), { key: "copilotDidRun", params: { label: "Prepare screenshots", name: "Daily release" } })
+  assert.equal(actionNotice("send_message_to_session", JSON.stringify({ error: "送到「x」失敗 (HTTP 409)" })), null)
+  assert.equal(actionNotice("get_session_summary", JSON.stringify({ label: "x" })), null)
+  assert.equal(actionNotice("send_message_to_session", "not json"), null)
 })
