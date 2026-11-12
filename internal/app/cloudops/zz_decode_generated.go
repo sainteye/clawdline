@@ -704,7 +704,7 @@ func genDecodeCopilotDecide(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("decision", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"said": genRule{kind: "string", maxBytes: 4000}}, closed: true, maxKeys: 1}) {
+	if !b.genValid("decision", genRule{kind: "object", maxBytes: 65536}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

@@ -12678,7 +12678,7 @@
     "Name": "voice.copilot_decision_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",
-    "Limit": 16384,
+    "Limit": 65536,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -12711,6 +12711,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/transport/http.maxCopilotDecisionSaidRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_decision_sessions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotDecisionSessions"
     ]
   },
   {

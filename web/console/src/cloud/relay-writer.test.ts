@@ -3286,3 +3286,29 @@ test("a call pass no machine can give names the missing key, in the flat spellin
   const refused = await reader.fetch("/v1/voice/copilot-session", post({}, { "Idempotency-Key": "call-2" }))
   assert.equal((await json<{ error: string }>(refused)).error, "copilot_key_missing")
 })
+
+test("on a page showing every machine, the copilot reads a Session on the machine it names", async () => {
+  const generation = "e".repeat(32)
+  class PinnedClient extends FakeClient {
+    async readForGeneration(target: { machineID: string; sessionID: string; executionGeneration: string }, word: string) {
+      this.calls.push(["readForGeneration", target, word])
+      if (word === "screen") return { screen: { id: target.sessionID, pending: false, readable: true, text: "linux\n" } }
+      return { id: target.sessionID, entries: [{ role: "assistant", text: "on linux" }], signature: "s", evidence: "transcript" }
+    }
+  }
+  const client = new PinnedClient()
+  const asked: string[] = []
+  const reader = new RelayReader("mac-a", {
+    resolveSession: async (machine, session) => { asked.push(machine); return machine === "box-b" && session === "%2" ? { machineID: "box-b", sessionID: "%2", executionGeneration: generation } : null },
+  })
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "fleet-read" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const headers = { "X-Clawdline-Unopened-Read": "1", "X-Clawdline-Unopened-Machine": "box-b" }
+  assert.equal((await reader.fetch("/v1/transcript?session=%252", { headers })).status, 200)
+  assert.equal((await reader.fetch("/v1/sessions/%252/screen", { headers })).status, 200)
+  assert.deepEqual(client.calls.map((c) => (c[1] as { machineID: string }).machineID), ["box-b", "box-b"])
+  assert.deepEqual(asked, ["box-b", "box-b"])
+  // Without the machine the reading one is asked, which has no such Session.
+  assert.equal((await reader.fetch("/v1/transcript?session=%252", { headers: { "X-Clawdline-Unopened-Read": "1" } })).status, 409)
+})

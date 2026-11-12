@@ -28,7 +28,7 @@ import { readPersonaDisplay } from "./persona-cache.ts"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { usageOverviewQuery } from "./carry.ts"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
-import { isUnopenedRead } from "./unopened-read.ts"
+import { isUnopenedRead, unopenedMachine } from "./unopened-read.ts"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
@@ -1360,9 +1360,11 @@ export class RelayReader {
             // The voice copilot, asking about a Session other than the opened
             // one (`unopened-read.ts`): its current execution, verified, read
             // as that execution's own — never the opened Session's held page.
-            const target = await this.options.resolveSession?.(this.machine, session)
+            // On a page showing every machine the Session's own machine is named.
+            const machine = unopenedMachine(init) ?? this.machine
+            const target = await this.options.resolveSession?.(machine, session)
             const client = this.connected()
-            if (!target || target.machineID !== this.machine || target.sessionID !== session || !client.readForGeneration) {
+            if (!target || target.machineID !== machine || target.sessionID !== session || !client.readForGeneration) {
               return this.refuse(method, path, 409, "execution_target_required", "This Session's current execution cannot be verified.")
             }
             // An earlier page (`before=`) is read the same way: the copilot's

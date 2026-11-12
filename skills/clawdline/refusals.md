@@ -279,6 +279,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `session_required` | `internal/transport/http/proposals.go`, `internal/transport/http/work_v2_session_name.go` |
 | `session_unavailable` | `internal/transport/http/ops_documents.go` |
 | `session_unresolved` | `internal/transport/http/human_interventions.go`, `internal/transport/http/work_v2_agent.go` |
+| `sessions_too_many` | `internal/transport/http/copilot_decide.go` |
 | `sessions_unreadable` | `internal/transport/http/copilot_decide.go` |
 | `settings_dir_refused` | `internal/transport/http/settings.go` |
 | `settings_file_invalid` | `internal/transport/http/settings.go` |

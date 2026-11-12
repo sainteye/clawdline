@@ -198,8 +198,14 @@ func artifactsBounds() []Entry {
 		{
 			// The decision route's request: one sentence as JSON, with room for escaping.
 			Name: "voice.copilot_decision_body_bytes", Class: Buffer, Unit: Bytes,
-			Limit: 16384, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Limit: 65536, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
 			Sources: []string{"internal/transport/http.copilotDecisionBodyLimit"},
+		},
+		{
+			// The Sessions a call may hand the decision to choose among.
+			Name: "voice.copilot_decision_sessions", Class: Buffer, Unit: Rows,
+			Limit: 200, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotDecisionSessions"},
 		},
 		{
 			// A slower decision is abandoned; the copilot chooses from the list itself.

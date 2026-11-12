@@ -18,12 +18,23 @@
  */
 
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { UNOPENED_READ_HEADER } from "../cloud/unopened-read.ts"
+import { UNOPENED_MACHINE_HEADER, UNOPENED_READ_HEADER } from "../cloud/unopened-read.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { menuFingerprint } from "../session/fingerprint.ts"
 
 /** Every content read names its Session on purpose: the copilot is opened inside another one. */
 const NAMED_READ: RequestInit = { headers: { [UNOPENED_READ_HEADER]: "1" } }
+
+/** A row's id on its own machine: the copilot's id is that id with its machine beside it. */
+function sid(row: Pick<CopilotSessionRow, 'id' | 'session'>): string {
+  return row.session ?? row.id
+}
+
+/** `deps.fetch`, addressed to the machine a row is on when the page shows every machine. */
+function rowFetch(deps: Pick<ToolDeps, 'fetch'>, row: Pick<CopilotSessionRow, 'machine'>): ToolDeps['fetch'] {
+  if (!row.machine) return deps.fetch
+  return (path, init) => deps.fetch(path, { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), [UNOPENED_MACHINE_HEADER]: row.machine! } })
+}
 
 export type ToolLogLevel = 'info' | 'tool' | 'error'
 
@@ -42,11 +53,13 @@ export interface ToolDeps {
   /** The machine's prepared briefing for this call, when it has one (`copilot-briefing`). */
   briefing?: () => Promise<string | null>
   /** Opens one Session on the page the call runs in; true once it is on screen. */
-  openSession?: (id: string) => Promise<boolean>
+  openSession?: (id: string, machine?: string) => Promise<boolean>
   /** The machines a new Session can be started on, as the page knows them. */
   machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
   /** The Session this call is talking about: the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
+  /** Every machine's Session rows, on a page that shows them all; null elsewhere. */
+  fleet?: () => Promise<CopilotFleetRow[] | null>
   /**
    * The Decision API: which Session the person's own words point at, judged
    * by a text model on the machine from the whole list. Asked only when a read
@@ -62,7 +75,7 @@ export interface ToolDeps {
    * sheet, optionally starting a Playbook there (`session/snippets-request.ts`).
    * Resolves with what the sheet made of it.
    */
-  snippets?: (sessionID: string, request: { tab: 'snippet' | 'playbook'; playbook?: string; start?: boolean }) => Promise<string>
+  snippets?: (sessionID: string, request: { tab: 'snippet' | 'playbook'; playbook?: string; start?: boolean }, machine?: string) => Promise<string>
   /** This call's speed and answer length now, and a way to change them for this call and the next. */
   delivery?: () => { speed: string; brief: boolean }
   adjust?: (change: { speed?: string; brief?: boolean }) => Promise<{ saved: boolean }>
@@ -590,7 +603,7 @@ export function greetingEvent(remembered = false, language = ''): Record<string,
     response: {
       output_modalities: ['audio'],
       instructions: remembered
-        ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。像熟悉他的秘書一樣，用一句很短、自然的${name}打招呼；如果之前的通話裡有還沒講完或使用者在意的事，就用半句提起它。`
+        ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。也不要提任何之前的話題或事情（之前的通話內容只用來理解他接下來說的話）。只像熟悉他的秘書一樣，用一句很短、自然的${name}打招呼。`
         : `像私人秘書一樣，用一句自然的${name}問候，說你可以幫他看這台電腦上各個 Session 的狀況。不要超過一句。`,
     },
   }
@@ -644,10 +657,43 @@ export interface CopilotSessionRow {
   closeReasons?: string[]
   /** The conversation the notes belong to (`sessionId`). */
   conversation?: string
+  /** On a page showing every machine: the Session's own id on its machine, and that machine. */
+  session?: string
+  machine?: string
+  machineName?: string
 }
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : ''
+}
+
+/** One Session of a page that shows every machine (`CopilotFleetRow`, cloud/CloudGate.tsx). */
+export interface CopilotFleetRow { machine: string; machineName: string; row: Record<string, unknown> }
+
+/**
+ * Every machine's rows as the copilot's own. A Session's id is its id on its
+ * machine with the machine's name beside it (`%2@Studio`), since two machines
+ * can each have a `%2`; its label names the machine when there is more than one.
+ */
+export function fleetRowsOf(fleet: readonly CopilotFleetRow[]): CopilotSessionRow[] {
+  const machines = new Set(fleet.map((f) => f.machine))
+  const many = machines.size > 1
+  const out: CopilotSessionRow[] = []
+  for (const f of fleet) {
+    const [row] = rowsOf({ sessions: [f.row] })
+    if (!row) continue
+    const name = f.machineName || f.machine
+    out.push({
+      ...row,
+      id: `${row.id}@${name}`,
+      session: row.id,
+      machine: f.machine,
+      machineName: name,
+      // The machine in full-width parentheses, written as escapes.
+      ...(many ? { label: `${row.label}\uff08${name}\uff09` } : {}),
+    })
+  }
+  return out
 }
 
 function rowsOf(data: unknown): CopilotSessionRow[] {
@@ -717,6 +763,11 @@ async function refusalText(res: Response): Promise<string> {
 }
 
 async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[] } | { error: string }> {
+  // A page showing every machine hands its whole list over, each row with its
+  // machine: on 2026-11-12 a phone on 所有機器 heard about one Linux Session
+  // only, because /v1/sessions there is the one reading machine's list.
+  const fleet = deps.fleet ? await deps.fleet().catch(() => null) : null
+  if (fleet && fleet.length) return { rows: fleetRowsOf(fleet) }
   const res = await deps.fetch('/v1/sessions')
   if (!res.ok) {
     const why = await refusalText(res)
@@ -910,7 +961,7 @@ export function progressOf(entries: unknown): Progress {
 
 async function latestWords(deps: ToolDeps, row: CopilotSessionRow): Promise<Progress> {
   try {
-    const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
+    const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
     if (!res.ok) return { latest: '' }
     return progressOf(((await res.json()) as { entries?: unknown })?.entries)
   } catch {
@@ -1027,9 +1078,9 @@ export const CONTENT_NOT_READ = 'done 與 idle 只有名稱和時間，沒有讀
 
 /** A screen's text once its capture has arrived, or why it could not be had. */
 async function readScreen(deps: ToolDeps, row: CopilotSessionRow): Promise<{ text: string; attempt: number } | { error: string }> {
-  const path = `/v1/sessions/${encodeURIComponent(row.id)}/screen`
+  const path = `/v1/sessions/${encodeURIComponent(sid(row))}/screen`
   for (let attempt = 1; attempt <= SCREEN_READ_ATTEMPTS; attempt++) {
-    const res = await deps.fetch(path, NAMED_READ)
+    const res = await rowFetch(deps, row)(path, NAMED_READ)
     if (!res.ok) {
       const why = await refusalText(res)
       return { error: `無法讀取「${row.label}」的畫面 (HTTP ${res.status})${why ? `：${why}` : ''}` }
@@ -1166,7 +1217,9 @@ export interface RecapRead {
  * RECAP_PAGES pages, and keeps what the person asked for and what the
  * Session reported delivering, oldest first.
  */
-export async function readRecap(deps: ToolDeps, id: string): Promise<RecapRead | { error: string; status: number }> {
+export async function readRecap(deps: ToolDeps, at: string | Pick<CopilotSessionRow, 'id' | 'session' | 'machine'>): Promise<RecapRead | { error: string; status: number }> {
+  const id = typeof at === 'string' ? at : sid(at)
+  const fetchRow = typeof at === 'string' ? deps.fetch : rowFetch(deps, at)
   const requests: RecapRead['requests'] = []
   const deliveries: RecapRead['deliveries'] = []
   let lastReply = ''
@@ -1175,7 +1228,7 @@ export async function readRecap(deps: ToolDeps, id: string): Promise<RecapRead |
   let complete = false
   while (pages < RECAP_PAGES) {
     const path = `/v1/transcript?session=${encodeURIComponent(id)}${before ? `&before=${before}` : ''}`
-    const res = await deps.fetch(path, NAMED_READ)
+    const res = await fetchRow(path, NAMED_READ)
     if (!res.ok) {
       if (pages === 0) return { error: (await refusalText(res)) || `HTTP ${res.status}`, status: res.status }
       break
@@ -1230,7 +1283,7 @@ async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   }
   const { row } = found
   deps.focus?.set(row.id)
-  const recap = await readRecap(deps, row.id)
+  const recap = await readRecap(deps, row)
   if ('error' in recap) {
     const error = `無法讀取「${row.label}」的工作紀錄 (HTTP ${recap.status})：${recap.error}`
     logs.push({ level: 'error', text: error })
@@ -1283,7 +1336,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
   let lastReply = ''
   try {
-    const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
+    const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
     if (res.ok) {
       const entries = ((await res.json()) as { entries?: unknown })?.entries
       const list = Array.isArray(entries) ? entries : []
@@ -1326,7 +1379,7 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
-  const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
+  const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
   if (!res.ok) {
     const why = await refusalText(res)
     const error = `無法讀取「${row.label}」的回覆 (HTTP ${res.status})${why ? `：${why}` : ''}`
@@ -1387,7 +1440,7 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
   }
   const { row } = found
   deps.focus?.set(row.id)
-  const res = await deps.fetch(`/v1/transcript?session=${encodeURIComponent(row.id)}`, NAMED_READ)
+  const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
   if (!res.ok) {
     const why = await refusalText(res)
     const error = `無法讀取「${row.label}」的工作紀錄 (HTTP ${res.status})${why ? `：${why}` : ''}`
@@ -1480,7 +1533,7 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: refused })
     return { error: refused }
   }
-  const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/send`, {
+  const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/send`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1511,7 +1564,7 @@ interface ReusableText { id: string; name: string; kind: 'snippet' | 'playbook';
  * own actions are not offered.
  */
 async function readReusable(deps: ToolDeps, row: CopilotSessionRow): Promise<ReusableText[] | { error: string }> {
-  const res = await deps.fetch(`/v1/snippets?session=${encodeURIComponent(row.id)}`, { headers: { [UNOPENED_READ_HEADER]: '1' } })
+  const res = await rowFetch(deps, row)(`/v1/snippets?session=${encodeURIComponent(sid(row))}`, { headers: { [UNOPENED_READ_HEADER]: '1' } })
   if (!res.ok) {
     const why = await refusalText(res)
     return { error: `讀不到「${row.label}」的 Snippet 與 Playbook（HTTP ${res.status}）${why ? `：${why}` : ''}` }
@@ -1562,7 +1615,7 @@ async function openSnippets(deps: ToolDeps, logs: ToolLog[], wanted: string, kin
   const found = await sessionForReusable(deps, logs, wanted)
   if ('error' in found) return found
   if (!deps.snippets) return { error: '這個畫面不能由副駕駛打開 Snippet 列表' }
-  const outcome = await deps.snippets(found.row.id, { tab: kind })
+  const outcome = await deps.snippets(sid(found.row), { tab: kind }, found.row.machine)
   if (outcome !== 'opened') {
     const error = `沒有打開「${found.row.label}」的 ${kind === 'playbook' ? 'Playbook' : 'Snippet'} 列表（${outcome}）`
     logs.push({ level: 'error', text: error })
@@ -1625,7 +1678,7 @@ async function runSnippet(deps: ToolDeps, logs: ToolLog[], wanted: string, name:
     return sent.success ? { ran: true, kind: 'snippet', name: text.name, session: row.label } : sent
   }
   if (!deps.snippets) return { error: '這個畫面不能由副駕駛開始 Playbook' }
-  const outcome = await deps.snippets(row.id, { tab: 'playbook', playbook: text.id, start: true })
+  const outcome = await deps.snippets(sid(row), { tab: 'playbook', playbook: text.id, start: true }, row.machine)
   if (outcome !== 'started') {
     const error = `「${text.name}」沒有在「${row.label}」開始：${PLAYBOOK_REFUSALS[outcome] ?? outcome}`
     logs.push({ level: 'error', text: error })
@@ -1658,7 +1711,7 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
   const { row } = found
   deps.focus?.set(row.id)
   if (!deps.openSession) return { error: '這個畫面不能由副駕駛切換 Session' }
-  const opened = await deps.openSession(row.id)
+  const opened = await deps.openSession(sid(row), row.machine)
   if (!opened) {
     const error = `「${row.label}」沒有在這個畫面上打開（這個畫面目前讀不到它）`
     logs.push({ level: 'error', text: error })
@@ -1716,7 +1769,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
   // The press names the question it answers; the machine refuses it if the
   // screen now asks something else.
   const expect = menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0])
-  const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/key`, {
+  const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/key`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
     body: JSON.stringify({ key: String(choice.n), expect }),
@@ -1758,7 +1811,7 @@ async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   const out: { session_id: string; label: string; notes: unknown[] }[] = []
   for (const row of rows) {
     if (!row.conversation) continue
-    const res = await deps.fetch(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${row.conversation}`)}`, NAMED_READ)
+    const res = await rowFetch(deps, row)(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${row.conversation}`)}`, NAMED_READ)
     if (!res.ok) continue
     const body = (await res.json()) as { rows?: unknown }
     const notes = (Array.isArray(body.rows) ? body.rows : [])
@@ -1862,7 +1915,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     logs.push({ level: 'info', text: `「${row.label}」還不能安全關閉，等使用者確認` })
     return asked
   }
-  const res = await deps.fetch(`/v1/sessions/${encodeURIComponent(row.id)}/close`, {
+  const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/close`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
     body: JSON.stringify({ force, ...(row.closeVersion ? { expected_closeability_version: row.closeVersion } : {}) }),

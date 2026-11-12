@@ -658,8 +658,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `voice.copilot_briefing_input_characters` | 60000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_briefing_reply_characters` | 1500 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_briefing_timeout_milliseconds` | 90000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
-| `voice.copilot_decision_body_bytes` | 16384 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_decision_body_bytes` | 65536 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_decision_said_characters` | 1000 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_decision_sessions` | 200 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_decision_timeout_milliseconds` | 8000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_extra_instructions_characters` | 2000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_journal_body_bytes` | 65536 | `bytes` | `refuse` | `sender, diagnostics` | — |

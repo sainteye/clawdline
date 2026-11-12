@@ -169,6 +169,18 @@ when the call asked only after its pass came back over Cloud, seconds after the 
 now asked before the first await, beside the pass, and released when the call does not start.
 A refusal is said by its reason (`microphoneProblem`), not by the browser's sentence.
 
+**Every machine.** On a page showing every machine (所有機器) the call reads the page's own list
+(`COPILOT_FLEET`, CloudGate): each machine's Sessions, a Session's id being its id on its machine
+with the machine's name beside it (`%2@Studio`) and its label naming the machine. Every read and
+write of one Session names its machine (`X-Clawdline-Unopened-Machine`), so the seam resolves its
+current execution there; the Decision API is handed that list; and the one-machine briefing is
+skipped. On 2026-11-12, read from the journal, a phone on 所有機器 heard about one Linux Session
+only, because `/v1/sessions` over Cloud is the reading machine's list, and the briefing it
+waited for was this Mac's. A pending briefing reaches a phone as 200 with `pending`, and is now
+waited for rather than called failed; the remembered call's greeting no longer brings up an
+earlier topic, which it had invented ("上次提到的會議議程"). Snippets and Notes of a Session on
+another machine are still read from the reading machine.
+
 **The call journal.** What a call heard (the transcribed sentence), said, and did (each tool, its
 arguments, outcome, time and the start of its answer), with its errors and notices, is handed a
 turn at a time to the machine that gave the call its pass (`POST /v1/voice/copilot-journal`,

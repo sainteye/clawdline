@@ -11287,5 +11287,7 @@
   "capacityRow.voice.copilot_journal_text_characters.what": "How much of one line of a voice copilot call is kept.",
   "capacityRow.voice.copilot_journal_text_characters.full": "The rest of that line is cut.",
   "capacityRow.voice.copilot_journal_seconds.what": "How many days of voice copilot call journals this machine keeps.",
-  "capacityRow.voice.copilot_journal_seconds.full": "The oldest day's file is removed."
+  "capacityRow.voice.copilot_journal_seconds.full": "The oldest day's file is removed.",
+  "capacityRow.voice.copilot_decision_sessions.what": "The most Sessions the voice copilot hands the machine to decide among at once.",
+  "capacityRow.voice.copilot_decision_sessions.full": "The decision is not made; the copilot chooses from the list itself."
 }

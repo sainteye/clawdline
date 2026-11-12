@@ -9,7 +9,7 @@ import type { OrbLevels } from './copilot-orb.js'
 import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
-import { machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
+import { fleetOnThisPage, machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
 
 export interface CopilotLogItem {
@@ -177,10 +177,11 @@ export class RealtimeCopilotClient {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       briefing: () => this.briefing,
-      openSession: (id) => openOnThisPage(id),
-      snippets: (id, request) => openSnippetsOnThisPage(id, request),
+      openSession: (id, machine) => openOnThisPage(id, machine),
+      snippets: (id, request, machine) => openSnippetsOnThisPage(id, request, machine),
+      fleet: () => fleetOnThisPage(),
       heard: () => this.heardNow,
-      decide: (said) => decideOnMachine(said),
+      decide: (said, sessions) => decideOnMachine(said, sessions),
       machines: () => machinesOnThisPage(),
       focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
@@ -222,7 +223,8 @@ export class RealtimeCopilotClient {
         return null
       }
       const body = (await res.json().catch(() => null)) as { briefing?: unknown; pending?: unknown; retry_after_ms?: unknown; error?: { code?: unknown } } | null
-      if (res.status === 202 && body?.pending) {
+      // Over Cloud a pending briefing arrives as 200 with `pending`; it is still pending.
+      if (body?.pending) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(10000, Math.max(1000, Number(body.retry_after_ms) || 4000))))
         continue
       }
@@ -356,7 +358,11 @@ export class RealtimeCopilotClient {
       }
       this.call = { memory: '', snapshot: '', options: { eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
-      this.briefing = grant.briefing ? this.pollBriefing() : Promise.resolve(null)
+      // The briefing is the deciding machine's own Sessions; on a page showing
+      // several machines the call reads every machine's list instead.
+      const fleet = await fleetOnThisPage().catch(() => null)
+      const machines = new Set((fleet ?? []).map((f) => f.machine))
+      this.briefing = grant.briefing && machines.size <= 1 ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
       check()
@@ -731,9 +737,11 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
  * person's sentence means. A refusal is thrown; the tool then lets the copilot
  * choose from the list itself.
  */
-async function decideOnMachine(said: string): Promise<{ id?: string; candidates?: string[] }> {
+async function decideOnMachine(said: string, sessions: unknown[]): Promise<{ id?: string; candidates?: string[] }> {
+  // The call's own list goes with the sentence: on a page showing every
+  // machine it is not the deciding machine's own.
   const res = await fetch('/v1/voice/copilot-decide', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said }),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said, sessions }),
   })
   const body = (await res.json().catch(() => null)) as { id?: unknown; candidates?: unknown } | null
   // refusal-ok: a refused decision falls back to the copilot's own choice in `resolveRead`, which is said in the tool's answer.

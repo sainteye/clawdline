@@ -24,6 +24,8 @@ export const COPILOT_OPEN = "clawdline:copilot-open"
 
 /** The voice copilot asks which machines a Session can start on; CloudGate answers on Cloud. */
 export const COPILOT_MACHINES = "clawdline:copilot-machines"
+/** The voice copilot asks for every machine's Sessions; CloudGate answers on 所有機器. */
+export const COPILOT_FLEET = "clawdline:copilot-fleet"
 /** A cancelable check before the shell hides a page with an open editor. */
 export const BEFORE_PAGE_CHANGE = "clawdline:before-page-change"
 

@@ -121,6 +121,9 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		"voice.copilot_decision_said_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-decision guard on the person's sentence"}
 		},
+		"voice.copilot_decision_sessions": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-decision guard on the list a call hands over"}
+		},
 		"voice.copilot_decision_body_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-decision guard on the request body"}
 		},

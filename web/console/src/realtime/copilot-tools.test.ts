@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -943,4 +943,32 @@ test("a group summary reads the working, the idle, or all Sessions, newest activ
 test("a Session's goal is told as the person's request to it, not as words about the person", () => {
   assert.match(COPILOT_INSTRUCTIONS, /goal 是使用者最近交代那個 Session 的原話/)
   assert.match(COPILOT_INSTRUCTIONS, /不要把不同 Session 的內容混在一起/)
+})
+
+test("on a page showing every machine, every machine's Sessions are read, each at its own machine", async () => {
+  const fleet = [
+    { machine: "m-mac", machineName: "Studio", row: { id: "%2", label: "Prepare screenshots", state: "idle", assistant: "codex" } },
+    { machine: "m-linux", machineName: "Build box", row: { id: "%2", label: "Content review", state: "working", assistant: "claude" } },
+  ]
+  const rows = fleetRowsOf(fleet)
+  assert.deepEqual(rows.map((r) => [r.id, r.session, r.machine, r.label]), [
+    ["%2@Studio", "%2", "m-mac", "Prepare screenshots（Studio）"],
+    ["%2@Build box", "%2", "m-linux", "Content review（Build box）"],
+  ], "two machines' %2 stay two Sessions, each named with its machine")
+  const seen: { path: string; machine?: string }[] = []
+  const deps: ToolDeps = {
+    async fetch(path, init) {
+      seen.push({ path, machine: (init?.headers as Record<string, string> | undefined)?.["X-Clawdline-Unopened-Machine"] })
+      if (path.startsWith("/v1/transcript?")) return Response.json({ entries: [{ role: "assistant", text: "Reviewing the second page." }] })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    fleet: async () => fleet,
+  }
+  const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"%2@Build box","said":"the review one"}', deps)).output)
+  assert.equal(out.label, "Content review（Build box）")
+  assert.deepEqual(seen.filter((s) => s.path.startsWith("/v1/transcript")).map((s) => [s.path, s.machine]), [["/v1/transcript?session=%252", "m-linux"]])
+  assert.equal(seen.some((s) => s.path === "/v1/sessions"), false, "the reading machine's list is not what is read")
+  const list = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
+  assert.equal(list.count, 2)
 })

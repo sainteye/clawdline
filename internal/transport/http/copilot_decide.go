@@ -32,14 +32,17 @@ const (
 	// maxCopilotDecisionDuration bounds the one outbound request; a slower
 	// decision is abandoned and the copilot chooses from the list itself.
 	maxCopilotDecisionDuration = 8 * time.Second
-	// copilotDecisionBodyLimit is the route's request: the sentence as JSON.
-	copilotDecisionBodyLimit = 16 << 10
+	// copilotDecisionBodyLimit is the route's request: the sentence, and the
+	// Session list a page showing every machine hands over.
+	copilotDecisionBodyLimit = 64 << 10
 	// copilotDecisionTextRunes is how much of a delivery or a question each
 	// Session is shown by.
 	copilotDecisionTextRunes = 200
 	// copilotDecisionCandidates is how many Sessions one decision may name:
 	// the few it cannot tell apart, or the several a question is about.
 	copilotDecisionCandidates = 5
+	// maxCopilotDecisionSessions bounds a list the call hands over.
+	maxCopilotDecisionSessions = 200
 )
 
 type copilotDecisionSession struct {
@@ -121,6 +124,10 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Said string `json:"said"`
+		// Sessions is the list the call itself reads when it is not this
+		// machine's own: a page showing every machine names each machine's
+		// Sessions, and a decision over this machine's alone named none of them.
+		Sessions []copilotDecisionSession `json:"sessions"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, copilotDecisionBodyLimit+1))
 	if err != nil || len(raw) > copilotDecisionBodyLimit || json.Unmarshal(raw, &body) != nil {
@@ -145,12 +152,25 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusConflict, "copilot_key_missing", "No OpenAI API key is set for the voice copilot on this machine. Add it in Settings › Voice copilot.")
 		return
 	}
+	if len(body.Sessions) > maxCopilotDecisionSessions {
+		writeRefusal(w, http.StatusRequestEntityTooLarge, "sessions_too_many", "Too many Sessions to decide among at once.")
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), maxCopilotDecisionDuration)
 	defer cancel()
-	sessions, ok := s.copilotDecisionSessions(ctx)
-	if !ok {
-		writeRefusal(w, http.StatusServiceUnavailable, "sessions_unreadable", "This machine's Session list could not be read.")
-		return
+	sessions := body.Sessions
+	for i := range sessions {
+		sessions[i].Label = clipRunes(sessions[i].Label, copilotDecisionTextRunes)
+		sessions[i].Delivered = clipRunes(sessions[i].Delivered, copilotDecisionTextRunes)
+		sessions[i].Question = clipRunes(sessions[i].Question, copilotDecisionTextRunes)
+	}
+	if len(sessions) == 0 {
+		own, ok := s.copilotDecisionSessions(ctx)
+		if !ok {
+			writeRefusal(w, http.StatusServiceUnavailable, "sessions_unreadable", "This machine's Session list could not be read.")
+			return
+		}
+		sessions = own
 	}
 	if len(sessions) == 0 {
 		writeJSON(w, copilotDecisionAnswer{Candidates: []string{}})

@@ -294,7 +294,7 @@
       "shapes": [
         {"body": ["decision", "request", "session"], "path": "/v1/voice/copilot-decide", "local_body": ["said"]}
       ],
-      "decode": {"reply": "action", "fields": {"decision": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 1, "properties": {"said": {"type": "string", "max_bytes": 4000}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-decide", "body": {"object": "decision"}}}
+      "decode": {"reply": "action", "fields": {"decision": {"type": "object", "max_bytes": 65536, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-decide", "body": {"object": "decision"}}}
     },
     {
       "op": "copilot-journal",

@@ -3218,6 +3218,11 @@
     "Note": true
   },
   {
+    "Name": "voice.copilot_decision_sessions",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "voice.copilot_decision_timeout_milliseconds",
     "Known": true,
     "Note": true
