@@ -762,3 +762,14 @@ test("a Session described in words is the copilot's to pick: it gets every Sessi
   }
   assert.match(COPILOT_INSTRUCTIONS, /TimeTree \u76f8\u95dc\u7684/)
 })
+
+test("a send the person already confirmed, or said whole, is not asked about again", () => {
+  assert.match(COPILOT_INSTRUCTIONS, /同一件事只確認一次/)
+  assert.match(COPILOT_INSTRUCTIONS, /就直接送，不要再問/)
+})
+
+test("the copilot keeps its content but drops the opening and the closing pleasantries", () => {
+  assert.match(COPILOT_INSTRUCTIONS, /第一句就是內容，最後一個重點講完就停/)
+  assert.match(COPILOT_INSTRUCTIONS, /不要收尾/)
+  assert.match(COPILOT_INSTRUCTIONS, /絕對不可以講完總數就結束/)
+})
