@@ -143,3 +143,91 @@ func TestTheHostManifestAllowsOnlyTheExtension(t *testing.T) {
 		t.Fatal("a relative Chrome directory was accepted")
 	}
 }
+
+func TestHostModesKeepLaunchersAndOriginAllowlistsSeparate(t *testing.T) {
+	dir := t.TempDir()
+	isolated := filepath.Join(t.TempDir(), "isolated")
+	ordinary := filepath.Join(t.TempDir(), "ordinary")
+	a, err := InstallHost(dir, 7791, "/opt/clawdline", strings.Repeat("a", 32), isolated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstScript, _ := os.ReadFile(a.Launcher)
+	firstManifest, _ := os.ReadFile(a.Manifest)
+	b, err := InstallHostForMode(dir, 7791, "/opt/clawdline", strings.Repeat("b", 32), ordinary, "user_chrome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Launcher == b.Launcher || filepath.Base(a.Launcher) != "browser-host.sh" || filepath.Base(b.Launcher) != "browser-host-user-chrome.sh" {
+		t.Fatalf("launchers: %+v %+v", a, b)
+	}
+	afterScript, _ := os.ReadFile(a.Launcher)
+	afterManifest, _ := os.ReadFile(a.Manifest)
+	if string(firstScript) != string(afterScript) || string(firstManifest) != string(afterManifest) {
+		t.Fatal("user Chrome installation changed the isolated host")
+	}
+	var manifest struct {
+		Path    string   `json:"path"`
+		Allowed []string `json:"allowed_origins"`
+	}
+	raw, _ := os.ReadFile(b.Manifest)
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Path != b.Launcher || len(manifest.Allowed) != 1 || manifest.Allowed[0] != "chrome-extension://"+strings.Repeat("b", 32)+"/" {
+		t.Fatalf("user manifest: %s", raw)
+	}
+	if _, err := InstallHostForMode(dir, 7791, "/opt/clawdline", strings.Repeat("b", 32), isolated, "user_chrome"); err == nil {
+		t.Fatal("one mode overwrote the other mode's profile registration")
+	}
+	afterScript, _ = os.ReadFile(a.Launcher)
+	afterManifest, _ = os.ReadFile(a.Manifest)
+	if string(firstScript) != string(afterScript) || string(firstManifest) != string(afterManifest) {
+		t.Fatal("refused cross-mode installation changed existing files")
+	}
+}
+
+func TestInvalidHostModeHasNoFilesystemSideEffects(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "state")
+	profile := filepath.Join(root, "profile")
+	for _, mode := range []string{"native", "", "other"} {
+		if _, err := InstallHostForMode(dir, 7791, "/opt/clawdline", strings.Repeat("a", 32), profile, mode); err == nil {
+			t.Fatalf("accepted mode %q", mode)
+		}
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("invalid mode wrote files: %v %v", entries, err)
+	}
+}
+
+func TestUserChromeDirectoryUsesOnlyTheNamedPlatformDefaults(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	local := filepath.Join(t.TempDir(), "local")
+	xdg := filepath.Join(t.TempDir(), "xdg")
+	for _, tc := range []struct {
+		platform string
+		env      map[string]string
+		want     string
+	}{
+		{"darwin", nil, filepath.Join(home, "Library", "Application Support", "Google", "Chrome")},
+		{"windows", map[string]string{"LOCALAPPDATA": local}, filepath.Join(local, "Google", "Chrome", "User Data")},
+		{"linux", map[string]string{"XDG_CONFIG_HOME": xdg}, filepath.Join(xdg, "google-chrome")},
+		{"linux", nil, filepath.Join(home, ".config", "google-chrome")},
+	} {
+		got, err := userChromeDir(tc.platform, home, func(k string) string { return tc.env[k] })
+		if err != nil || got != tc.want {
+			t.Errorf("%s: %s %v", tc.platform, got, err)
+		}
+		if _, err := os.Stat(got); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("computing a directory touched it: %s %v", got, err)
+		}
+	}
+	if _, err := userChromeDir("windows", home, func(string) string { return "" }); err == nil {
+		t.Fatal("invented a Windows profile without LOCALAPPDATA")
+	}
+	if _, err := userChromeDir("other", home, func(string) string { return "" }); err == nil {
+		t.Fatal("invented an unsupported platform's profile")
+	}
+}

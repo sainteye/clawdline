@@ -29,6 +29,8 @@ func browserCommand(args []string) {
 const browserUsage = `usage: clawdline browser <command>
   status                         whether the extension is connected and browser use is on
   launch [--browser PATH]        start Clawdline's own Chromium with the extension already in it
+  install-host [--mode isolated|user_chrome] --extension-id ID [--chrome-dir PATH]
+                                 connect the extension to the selected Chrome user-data directory
   open <url>                     open a new tab for this Session
   tabs                           list the tabs this Session may use
   read [--tab N]                 the page's text and the elements that can be pressed or filled
@@ -247,11 +249,27 @@ func browserHostCommand() {
 }
 
 func runBrowserHost(in io.Reader, out io.Writer, errOut io.Writer) int {
+	mode := os.Getenv("CLAWDLINE_BROWSER_MODE")
+	if mode == "" {
+		mode = "isolated"
+	}
+	profile := os.Getenv("CLAWDLINE_BROWSER_PROFILE")
+	if profile == "" && mode == "isolated" {
+		profile = browserlaunch.ProfileDir(config.Dir())
+	}
+	if !browserlaunch.ValidHostMode(mode) || !filepath.IsAbs(profile) {
+		fmt.Fprintln(errOut, "browser-host: use isolated or user_chrome and an absolute profile directory")
+		return 2
+	}
 	b, err := openBroker(0)
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
+	return relayBrowserHost(b, mode, profile, in, out, errOut)
+}
+
+func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut io.Writer) int {
 	b.client = &http.Client{Timeout: 45 * time.Second}
 	var writeMu sync.Mutex
 	send := func(v any) error {
@@ -268,7 +286,7 @@ func runBrowserHost(in io.Reader, out io.Writer, errOut io.Writer) int {
 		return err
 	}
 	var infoMu sync.Mutex
-	info := map[string]string{"version": "unknown"}
+	info := map[string]string{"version": "unknown", "mode": mode, "profile": profile}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -288,7 +306,7 @@ func runBrowserHost(in io.Reader, out io.Writer, errOut io.Writer) int {
 			if m.Hello != nil {
 				infoMu.Lock()
 				for k, v := range m.Hello {
-					if k == "version" || k == "browser" || k == "profile" {
+					if k == "version" || k == "browser" {
 						info[k] = v
 					}
 				}
@@ -361,11 +379,24 @@ func browserInstallHost(args []string, out, errOut io.Writer) int {
 	fs.SetOutput(errOut)
 	extID := fs.String("extension-id", "", "the extension's id")
 	chromeDir := fs.String("chrome-dir", "", "Chrome's user-data directory")
+	mode := fs.String("mode", "isolated", "isolated or user_chrome")
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	if !browserlaunch.ValidExtensionID(*extID) || *chromeDir == "" || !filepath.IsAbs(*chromeDir) {
-		fmt.Fprintln(errOut, "usage: clawdline browser install-host --extension-id <32 letters a-p> --chrome-dir <absolute path>")
+	if fs.NArg() != 0 || !browserlaunch.ValidHostMode(*mode) || !browserlaunch.ValidExtensionID(*extID) {
+		fmt.Fprintln(errOut, "usage: clawdline browser install-host [--mode isolated|user_chrome] --extension-id <32 letters a-p> [--chrome-dir <absolute path>]")
+		return 2
+	}
+	if *chromeDir == "" && *mode == "user_chrome" {
+		var err error
+		*chromeDir, err = browserlaunch.UserChromeDir()
+		if err != nil {
+			fmt.Fprintln(errOut, err)
+			return 1
+		}
+	}
+	if *chromeDir == "" || !filepath.IsAbs(*chromeDir) {
+		fmt.Fprintln(errOut, "clawdline browser install-host: name an absolute --chrome-dir")
 		return 2
 	}
 	dir := config.Dir()
@@ -379,11 +410,11 @@ func browserInstallHost(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	host, err := browserlaunch.InstallHost(dir, port, exe, *extID, *chromeDir)
+	host, err := browserlaunch.InstallHostForMode(dir, port, exe, *extID, *chromeDir, *mode)
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "manifest": host.Manifest, "launcher": host.Launcher})
+	_ = json.NewEncoder(out).Encode(map[string]any{"ok": true, "manifest": host.Manifest, "launcher": host.Launcher, "mode": *mode, "profile": *chromeDir})
 	return 0
 }
