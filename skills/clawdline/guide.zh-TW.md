@@ -1317,11 +1317,13 @@ clawdline browser click <label>        # or --x <x> --y <y>
 clawdline browser type <text>
 clawdline browser key <name>
 clawdline browser scroll
+clawdline browser viewport mobile
 clawdline browser screenshot
 clawdline browser release
 clawdline browser --help
 ```
 
+- `viewport mobile` 切成網站手機版；`viewport desktop` 恢復視窗版面。
 - 優先用 `read` 和它回傳的 label，不要用座標。只有非看版面不可時才截圖。
 - `browser_person_controlling`：使用者已經接手這個分頁。等待，不要迴圈重試。
 - `browser_stopped`：使用者停止了所有瀏覽器使用。不要重試。

@@ -1,10 +1,11 @@
 import type { SessionRow } from "@clawdline/contract"
-import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { followsRelay } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { browserCall as call } from "./browser-call.js"
 import { openBrowserSetup } from "./BrowserSetup.js"
+import { BrowserViewport } from "./BrowserViewport.js"
 import "./browser-panel.css"
 
 /**
@@ -33,8 +34,9 @@ type Activity = { at: number; op: string; site?: string; url?: string; target?: 
 const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
   open: "browserOpOpen", read: "browserOpRead", click: "browserOpClick", type: "browserOpType", key: "browserOpKey",
   scroll: "browserOpScroll", screenshot: "browserOpScreenshot", takeover: "browserOpTakeover", handback: "browserOpHandback", release: "browserOpRelease",
+  viewport: "browserOpViewport",
 }
-type Shot = { data: string; width: number; height: number; url: string; title: string }
+type Shot = { data: string; width: number; height: number; url: string; title: string; layout?: "mobile" | "desktop" }
 
 const SHOT_MS = 1000
 const STATUS_MS = 3000
@@ -181,14 +183,6 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     }
   }
 
-  const clickPicture = (e: MouseEvent<HTMLImageElement>) => {
-    if (!person || !shot) return
-    const box = e.currentTarget.getBoundingClientRect()
-    const x = Math.round(((e.clientX - box.left) / box.width) * shot.width)
-    const y = Math.round(((e.clientY - box.top) / box.height) * shot.height)
-    void act("click", { x, y })
-  }
-
   const send = (e: FormEvent) => {
     e.preventDefault()
     if (!text) return
@@ -220,16 +214,10 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         {status.status.stopped && <div className="screen-note" role="status">{nextWord("browserPanelStopped")}</div>}
         {shotError ? <div className="screen-note err" role="alert">{(shotError as { code?: string })?.code === "browser_other_debugger" ? nextWord("browserPanelOtherDebugger") : said(shotError, "browserPanelReadFailed")}</div> : null}
         {shot && !otherDebugger && (
-          <img
-            className="browser-shot"
-            data-person={person ? "true" : undefined}
-            src={"data:image/jpeg;base64," + shot.data}
-            alt={nextWord("browserPanelImageAlt", { title: shot.title || shot.url })}
-            onClick={clickPicture}
-          />
+          <BrowserViewport key={tabID + ":" + (shot.layout || "desktop")} shot={shot} canClick={person && !busy} onTap={(x, y) => void act("click", { x, y })} />
         )}
-        <section className="browser-activity" aria-labelledby="browser-activity-title">
-          <h3 id="browser-activity-title">{nextWord("browserPanelActivity")}</h3>
+        <details className="browser-activity">
+          <summary>{nextWord("browserPanelActivity")}</summary>
           {activity.length === 0 ? <p className="browser-activity-empty">{nextWord("browserPanelActivityEmpty")}</p> : (
             <ol>
               {activity.map((row, i) => (
@@ -237,14 +225,14 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
                   {row.thumb && <img src={"data:image/jpeg;base64," + row.thumb} alt="" />}
                   <span className="browser-activity-words">
                     <b>{OP_WORD[row.op] ? nextWord(OP_WORD[row.op]) : row.op}</b>
-                    <span>{row.op === "type" ? (row.password ? "••••" : "") : row.target || address(row.url).host}</span>
+                    <span>{row.op === "type" ? (row.password ? "••••" : "") : row.op === "viewport" && (row.target === "mobile" || row.target === "desktop") ? nextWord(row.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : row.target || address(row.url).host}</span>
                     <time dateTime={new Date(row.at * 1000).toISOString()}>{new Date(row.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
                   </span>
                 </li>
               ))}
             </ol>
           )}
-        </section>
+        </details>
       </div>
     )
   }
@@ -268,6 +256,11 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
       </div>
+      {open && ready && <div className="browser-layout" role="group" aria-label={nextWord("browserPanelLayout")}>
+        <button type="button" className="chip" aria-pressed={shot?.layout === "mobile"} disabled={!person || busy} onClick={() => void act("viewport", { mode: "mobile" })}>{nextWord("browserPanelMobile")}</button>
+        <button type="button" className="chip" aria-pressed={!!shot && shot.layout !== "mobile"} disabled={!person || busy} onClick={() => void act("viewport", { mode: "desktop" })}>{nextWord("browserPanelDesktop")}</button>
+        {!person && <span>{nextWord("browserPanelLayoutTakeover")}</span>}
+      </div>}
       <div className="scroller panel-view-body" aria-live="polite">{open ? body() : null}</div>
       {open && ready && (
         <div className="browser-controls">

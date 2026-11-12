@@ -116,11 +116,24 @@ daemon at desktop and phone widths, in English and Chinese.
 
 ## Clawdline's own Chromium
 
+The phone panel fills the screen and starts at readable CSS-pixel size. **Fit**, **100%** and the
+zoom buttons, a two-finger pinch and a drag change only the viewer. A drag or pinch never becomes
+a page click, including at a pan boundary. A single tap after takeover is mapped through the
+transformed image to the remote page's CSS coordinates. New screenshots keep that view; rotation
+remeasures and clamps it. Recent actions start collapsed so the page keeps the available height.
+
+After takeover, **Mobile site** changes this tab to a 390 × 720 mobile viewport, mobile user agent
+and touch emulation; **Desktop site** clears those overrides. An agent can request the same with
+`clawdline browser viewport mobile` or `desktop`, subject to the existing ownership, stop and
+takeover fences. This reflows responsive pages without reloading or discarding form input.
+Server-selected mobile pages may need a subsequent navigation; changing layout does not guarantee
+that a site has a mobile design. The encrypted Cloud person-input route carries the same command.
+
 `clawdline browser launch [--browser PATH]` needs nothing installed into the person's Chrome. It
 writes the extension carried in the binary (`extension/embed.go`) to
 `<CLAWDLINE_NEXT_DIR>/chrome-extension`, registers the native messaging host inside
 `<CLAWDLINE_NEXT_DIR>/chrome-profile`, and starts Chromium (`CLAWDLINE_CHROMIUM`, else the newest
-Playwright Chromium) on that profile with the extension loaded. Sign-ins made there stay in that
+Playwright browser, including its newer Chrome for Testing layouts) on that profile with the extension loaded. Installed revisions are compared numerically. Sign-ins made there stay in that
 profile and are separate from the person's Chrome. It passes `--use-mock-keychain`, so its cookies
 are not protected by the macOS keychain; it is meant for sites the person chooses to sign in to
 there. The logic is `internal/adapters/browserlaunch`, which the daemon calls too.

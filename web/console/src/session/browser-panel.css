@@ -1,6 +1,7 @@
 /* The Session's Chrome tab (BrowserPanel.tsx), drawn in the console's tokens. */
 
-.browser-stage { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+#browser-panel .panel-view-body { display: flex; flex-direction: column; min-height: 0; padding: 0; overflow: hidden; }
+.browser-stage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 0; }
 /* The address bar that replaces the panel's title row. */
 .browser-bar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
@@ -31,16 +32,25 @@
   .browser-live { display: none; }
   .browser-bar { padding-left: 10px; }
 }
-/* The whole page stays in view: as wide as the panel allows, never taller
-   than the space above the controls, and never stretched (a tap is mapped
-   through the picture's own box, so its aspect must be the page's). */
+/* The picture owns the remaining height. Its transformed bounds are also
+   the bounds used for input; there is no page-wide scroll or zoom. */
+.browser-picture { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.browser-layout { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.browser-layout .chip { min-height: 44px; padding: 0 12px; }
+.browser-layout .chip[aria-pressed="true"] { background: var(--card-hi); border-color: var(--accent); }
+.browser-layout span { color: var(--dim); font-size: 11px; }
+.browser-zoom { flex: 0 0 auto; display: flex; gap: 6px; align-items: center; padding: 4px 8px; overflow-x: auto; }
+.browser-zoom .chip { min-height: 44px; min-width: 44px; flex: 0 0 auto; padding: 0 10px; }
+.browser-zoom output { min-width: 46px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.browser-viewport { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; background: #202126; cursor: grab; }
+.browser-viewport:active { cursor: grabbing; }
+.browser-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.browser-viewport[data-person="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
 .browser-shot {
-  display: block; align-self: center;
-  width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 420px); min-height: 120px;
-  border: 1px solid var(--line); border-radius: 8px;
-  background: #fff;
+  display: block; position: absolute; left: 50%; top: 50%; max-width: none; max-height: none;
+  transform-origin: center; background: #fff; pointer-events: none; -webkit-touch-callout: none;
 }
-.browser-shot[data-person="true"] { cursor: crosshair; outline: 2px solid var(--accent); outline-offset: 2px; }
+.browser-move-hint { flex: 0 0 auto; margin: 0; padding: 4px 10px; font-size: 11px; color: var(--dim); line-height: 1.4; }
 
 .browser-controls {
   flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px;
@@ -57,8 +67,8 @@
 }
 .browser-keys { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.browser-activity { margin-top: 6px; }
-.browser-activity h3 { margin: 6px 0 8px; font-size: 12px; font-weight: 600; color: var(--dim); }
+.browser-activity { flex: 0 0 auto; max-height: 30%; overflow: auto; padding: 0 10px; border-top: 1px solid var(--line); }
+.browser-activity summary { display: list-item; min-height: 44px; align-content: center; font-size: 12px; font-weight: 600; color: var(--dim); cursor: pointer; }
 .browser-activity ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .browser-activity li { display: flex; gap: 10px; align-items: center; }
 .browser-activity img { width: 96px; height: 60px; object-fit: cover; object-position: top; flex: 0 0 auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
@@ -77,3 +87,20 @@
 }
 .browser-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: block; }
 .browser-chip:hover { background: var(--card-hi); }
+
+@media (max-width: 600px), (max-height: 600px) and (pointer: coarse) {
+  #browser-panel:not([hidden]) { position: fixed; inset: 0; z-index: 1000; height: 100dvh; padding-top: env(safe-area-inset-top); box-sizing: border-box; }
+  .browser-controls { gap: 6px; padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+  .browser-who { gap: 6px; font-size: 11px; }
+  .browser-who > span { flex-basis: 100%; }
+  .browser-controls .chip { padding: 0 10px; }
+  .browser-keys { flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
+  .browser-keys .chip { flex: 0 0 auto; }
+  .browser-notify { font-size: 11px; }
+  .browser-close { width: 44px; height: 44px; }
+  .browser-bar { padding: 3px 6px; }
+}
+@media (max-height: 600px) and (pointer: coarse) {
+  .browser-controls { max-height: 25dvh; overflow-y: auto; }
+  .browser-activity, .browser-move-hint { display: none; }
+}

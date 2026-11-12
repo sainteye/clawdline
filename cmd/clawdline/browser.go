@@ -37,6 +37,7 @@ const browserUsage = `usage: clawdline browser <command>
                                  Secret Handoff: clawdline secret run <note> -- clawdline browser type --stdin
   key <name>                     Enter, Tab, Backspace, Escape, ArrowDown, ArrowUp, PageDown, PageUp
   scroll <down|up>               scroll the page by about one screen
+  viewport <mobile|desktop>      switch this tab's responsive layout and browser user agent
   screenshot [--out FILE]        save a JPEG of the tab and print its path
   release                        stop using this Session's tab (the tab stays open)
   stop                           stop all browser use until the person resumes it
@@ -181,6 +182,12 @@ func browserArgs(op string, rest []string, stdin io.Reader, errOut io.Writer) (m
 			return nil, "", 2
 		}
 		args["direction"] = words
+	case "viewport":
+		if words != "mobile" && words != "desktop" {
+			fmt.Fprintln(errOut, "clawdline browser viewport: use mobile or desktop")
+			return nil, "", 2
+		}
+		args["mode"] = words
 	case "tabs", "read", "screenshot", "release":
 	default:
 		fmt.Fprintln(errOut, browserUsage)

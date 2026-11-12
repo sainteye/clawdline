@@ -7,6 +7,7 @@ type Action = { id?: string; at: number; op: string; site?: string; target?: str
 const words: Record<string, Parameters<typeof nextWord>[0]> = {
   open: "browserOpOpen", read: "browserOpRead", click: "browserOpClick", type: "browserOpType", key: "browserOpKey",
   scroll: "browserOpScroll", screenshot: "browserOpScreenshot", takeover: "browserOpTakeover", handback: "browserOpHandback", release: "browserOpRelease",
+  viewport: "browserOpViewport",
 }
 
 /** Audit pictures already captured by agent actions; this never requests a frame. */
@@ -38,7 +39,7 @@ export function useBrowserActivity(conversation: string | undefined): { at: numb
     <div className="who"><span className="speaker">{nextWord("browserChip")}</span><time dateTime={new Date(action.at * 1000).toISOString()}>{new Date(action.at * 1000).toLocaleTimeString()}</time></div>
     <div className="body">
       <b>{words[action.op] ? nextWord(words[action.op]) : action.op}</b>
-      <span>{action.op === "type" ? (action.password ? nextWord("browserAuditPassword", { count: action.text_length ?? 0 }) : "") : action.target || action.site}</span>
+      <span>{action.op === "type" ? (action.password ? nextWord("browserAuditPassword", { count: action.text_length ?? 0 }) : "") : action.op === "viewport" && (action.target === "mobile" || action.target === "desktop") ? nextWord(action.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : action.target || action.site}</span>
       {!action.ok && <p role="status">{action.error}</p>}
       {action.thumb && <img src={"data:image/jpeg;base64," + action.thumb} alt={nextWord("browserPanelImageAlt", { title: action.site || "" })} loading="lazy" />}
     </div>
