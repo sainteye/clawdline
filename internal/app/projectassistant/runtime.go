@@ -32,18 +32,26 @@ type Engine struct {
 	actors   map[pa.BotKey]*runtimeActor
 	slots    chan struct{}
 	disabled map[pa.ProjectSelection]bool
+	closed   bool
+	changed  chan struct{}
 }
 
 type runtimeActor struct {
-	mu      sync.Mutex
-	key     pa.BotKey
-	project pa.ProjectScope
-	users   int // protected by Engine.mu; includes the worker reference
-	working bool
-	cancel  context.CancelFunc
-	session ProviderSession
-	turnID  string
-	stopped bool
+	mu         sync.Mutex
+	key        pa.BotKey
+	project    pa.ProjectScope
+	users      int // protected by Engine.mu; includes the worker reference
+	lifetime   context.Context
+	stop       context.CancelFunc
+	slot       bool  // Engine.mu: includes setup and unknown cleanup
+	retained   bool  // Engine.mu: cleanup owner and process slot survive unknown cleanup
+	cleanupErr error // Engine.mu
+	opening    bool  // actor.mu
+	working    bool
+	cancel     context.CancelFunc
+	session    ProviderSession
+	turnID     string
+	stopped    bool
 }
 
 var _ Runtime = (*Engine)(nil)
@@ -51,6 +59,11 @@ var _ Runtime = (*Engine)(nil)
 func (r *Engine) Usage() RuntimeUsage {
 	r.mu.Lock()
 	usage := RuntimeUsage{ActiveActors: len(r.actors), Processes: len(r.slots), Known: true}
+	for _, a := range r.actors {
+		if a.retained {
+			usage.Known = false
+		}
+	}
 	var actors []*runtimeActor
 	for _, a := range r.actors {
 		a.users++
@@ -59,6 +72,9 @@ func (r *Engine) Usage() RuntimeUsage {
 	r.mu.Unlock()
 	for _, a := range actors {
 		if a.mu.TryLock() {
+			if a.opening {
+				usage.Known = false
+			}
 			if a.session != nil {
 				if s, ok := a.session.(interface{ Usage() SessionUsage }); ok {
 					usage.Sessions = append(usage.Sessions, s.Usage())
@@ -83,18 +99,25 @@ func NewRuntime(o RuntimeOptions) (*Engine, error) {
 	if o.Repository == nil || o.Memory == nil || o.WorkBridge == nil || o.ProjectResolver == nil || o.Provider == nil || o.Clock == nil || o.ID == nil || o.Authorize == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout <= 0 || o.Limits.CleanupTimeout <= 0 {
 		return nil, runtimeFailure(pa.Invalid, "runtime_options")
 	}
-	return &Engine{o: o, actors: make(map[pa.BotKey]*runtimeActor), slots: make(chan struct{}, o.Limits.MaxProcesses), disabled: make(map[pa.ProjectSelection]bool)}, nil
+	return &Engine{o: o, actors: make(map[pa.BotKey]*runtimeActor), slots: make(chan struct{}, o.Limits.MaxProcesses), disabled: make(map[pa.ProjectSelection]bool), changed: make(chan struct{})}, nil
 }
 
 func (r *Engine) acquire(key pa.BotKey) (*runtimeActor, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return nil, runtimeFailure(pa.Disabled, "runtime")
+	}
 	a := r.actors[key]
+	if a != nil && a.retained {
+		return nil, runtimeFailure(pa.ExecutionEffectUnknown, "owned_cleanup")
+	}
 	if a == nil {
 		if len(r.actors) >= r.o.Limits.MaxBots {
 			return nil, runtimeFailure(pa.CapacityFull, "active_bots")
 		}
-		a = &runtimeActor{key: key}
+		lifetime, stop := context.WithCancel(context.Background())
+		a = &runtimeActor{key: key, lifetime: lifetime, stop: stop}
 		r.actors[key] = a
 	}
 	a.users++
@@ -104,13 +127,15 @@ func (r *Engine) release(a *runtimeActor) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a.users--
-	if a.users == 0 {
+	if a.users == 0 && !a.retained {
+		a.stop()
 		delete(r.actors, a.key)
 	}
+	r.notifyLocked()
 }
 func (r *Engine) authorized(ctx context.Context, key pa.BotKey, project pa.ProjectScope) error {
 	r.mu.Lock()
-	disabled := r.disabled[pa.ProjectSelection{MachineID: project.MachineID, ProjectID: project.ProjectID}]
+	disabled := r.closed || r.disabled[pa.ProjectSelection{MachineID: project.MachineID, ProjectID: project.ProjectID}]
 	r.mu.Unlock()
 	if disabled {
 		return runtimeFailure(pa.Disabled, "project")
@@ -142,6 +167,10 @@ func (r *Engine) replay(ctx context.Context, c pa.Command, op pa.Operation) (*pa
 	return x, err
 }
 func (r *Engine) command(key pa.BotKey, op pa.Operation, id string, payload any) pa.Command {
+	return runtimeCommand(key, op, id, payload)
+}
+
+func runtimeCommand(key pa.BotKey, op pa.Operation, id string, payload any) pa.Command {
 	b, _ := json.Marshal(payload)
 	h := sha256.Sum256(b)
 	return pa.Command{Key: key, Operation: op, IdempotencyKey: id, ContentHash: hex.EncodeToString(h[:])}
@@ -211,6 +240,7 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err != nil {
 		return pa.Receipt{}, err
 	}
+	r.setProject(a, bot.Project)
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -259,6 +289,9 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err = pa.CheckExecutionCapabilities(caps, currentFence(bot, c)); err != nil {
 		return pa.Receipt{}, err
 	}
+	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
+		return pa.Receipt{}, err
+	}
 	var binding *pa.ExecutionBinding
 	if c.BindingID == "" {
 		memory, e := r.o.Memory.Current(ctx, a.key)
@@ -277,7 +310,7 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	a.project = bot.Project
+	r.setProject(a, bot.Project)
 	if !a.working {
 		a.working = true
 		r.mu.Lock()
@@ -316,7 +349,7 @@ func (r *Engine) Recover(ctx context.Context, key pa.BotKey) error {
 	if err != nil {
 		return err
 	}
-	a.project = bot.Project
+	r.setProject(a, bot.Project)
 	a.working = true
 	r.mu.Lock()
 	a.users++
@@ -329,6 +362,17 @@ func (r *Engine) work(a *runtimeActor) {
 	defer r.release(a)
 	for {
 		a.mu.Lock()
+		if a.lifetime.Err() != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), r.o.Limits.CleanupTimeout)
+			err := r.stopPendingLocked(ctx, a)
+			cancel()
+			if err != nil {
+				r.retain(a, err)
+			}
+			a.working = false
+			a.mu.Unlock()
+			return
+		}
 		pending, err := r.o.Repository.PendingTurns(context.Background(), a.key)
 		if err != nil || len(pending) == 0 {
 			a.working = false
@@ -352,7 +396,7 @@ func (r *Engine) work(a *runtimeActor) {
 			a.mu.Unlock()
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), r.o.Limits.PromptTimeout)
+		ctx, cancel := context.WithTimeout(a.lifetime, r.o.Limits.PromptTimeout)
 		a.cancel = cancel
 		a.turnID = turn.ID
 		a.stopped = false
@@ -360,15 +404,25 @@ func (r *Engine) work(a *runtimeActor) {
 		// Waiting for a process slot remains cancellable and does not launch IO.
 		select {
 		case r.slots <- struct{}{}:
+			r.mu.Lock()
+			a.slot = true
+			r.mu.Unlock()
 			err = r.execute(ctx, a, *turn)
-			<-r.slots
+			r.mu.Lock()
+			retained := a.retained
+			r.mu.Unlock()
+			if !retained {
+				r.mu.Lock()
+				a.slot = false
+				<-r.slots
+				r.mu.Unlock()
+			}
 		case <-ctx.Done():
 			err = ctx.Err()
 		}
 		cancel()
 		a.mu.Lock()
 		a.cancel = nil
-		a.session = nil
 		a.turnID = ""
 		if err != nil {
 			latest, e := r.o.Repository.Turn(context.Background(), a.key, turn.ID)
@@ -376,6 +430,9 @@ func (r *Engine) work(a *runtimeActor) {
 				state := pa.TurnUnknown
 				if latest.State == pa.TurnQueued {
 					state = pa.TurnFailed
+					if a.lifetime.Err() != nil {
+						state = pa.TurnCancelled
+					}
 				}
 				if e = r.finishLocked(context.Background(), a, latest, state, "", err); e != nil {
 					a.working = false
@@ -384,11 +441,19 @@ func (r *Engine) work(a *runtimeActor) {
 				}
 			}
 		}
+		r.mu.Lock()
+		retained := a.retained
+		r.mu.Unlock()
+		if retained {
+			a.working = false
+			a.mu.Unlock()
+			return
+		}
 		a.mu.Unlock()
 	}
 }
 
-func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) error {
+func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resultErr error) {
 	a.mu.Lock()
 	if a.stopped || ctx.Err() != nil {
 		a.mu.Unlock()
@@ -509,17 +574,33 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) error 
 	if err != nil {
 		return err
 	}
+	a.mu.Lock()
+	a.opening = true
+	a.mu.Unlock()
 	session, err := r.o.Provider.Open(ctx, OpenRequest{Bot: bot, Binding: binding, Directory: resolution.Directory, Resume: resume}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
+	a.mu.Lock()
+	a.opening = false
+	a.session = session
+	a.mu.Unlock()
+	if session == nil {
+		if err == nil {
+			err = runtimeFailure(pa.ExecutionEffectUnknown, "missing_session")
+		}
+		if pa.Code(err) == pa.ExecutionEffectUnknown || pa.Code(err) == pa.OutcomeUnknown {
+			r.retain(a, err)
+		}
+		return err
+	}
+	cleaned := false
+	defer func() {
+		if !cleaned {
+			resultErr = errors.Join(resultErr, r.closeSession(a, session))
+		}
+	}()
 	if err != nil {
 		return err
 	}
-	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), r.o.Limits.CleanupTimeout)
-		defer cancel()
-		_ = session.Close(cleanup)
-	}()
 	a.mu.Lock()
-	a.session = session
 	if a.stopped || ctx.Err() != nil {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ExecutionEffectUnknown, "stopped_before_send")
@@ -553,9 +634,8 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) error 
 	if err != nil {
 		return err
 	}
-	cleanup, cleanupCancel := context.WithTimeout(context.Background(), r.o.Limits.CleanupTimeout)
-	err = session.Close(cleanup)
-	cleanupCancel()
+	err = r.closeSession(a, session)
+	cleaned = true
 	if err != nil {
 		return err
 	}
@@ -735,6 +815,9 @@ func (r *Engine) incoming(ctx context.Context, a *runtimeActor, e ProtocolEvent)
 	if err != nil {
 		return err
 	}
+	if c.ActiveTurnID != e.TurnID {
+		return runtimeFailure(pa.StaleVersion, "incoming_active_turn")
+	}
 	if err = pa.CheckFence(e.Fence, currentFence(bot, c)); err != nil {
 		return err
 	}
@@ -884,12 +967,22 @@ func (r *Engine) DispatchWork(ctx context.Context, q pa.WorkRequest) (pa.WorkLin
 	if err = pa.CheckFence(fence, currentFence(bot, c)); err != nil {
 		return link, err
 	}
-	if link.Fence != fence || link.TurnID != q.TurnID || link.ID == "" {
+	if link.Fence != fence || link.TurnID != q.TurnID || link.ID == "" || link.TaskID == "" {
 		return link, runtimeFailure(pa.ScopeDenied, "work_link")
 	}
-	cmd := r.command(a.key, pa.DispatchOperation, "runtime-work-"+link.ID, link)
-	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, WorkLinks: []pa.WorkLink{link}, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: link.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.WorkUpdated, Work: &link}}})
-	return link, err
+	export, err := r.o.Repository.Export(ctx, a.key)
+	if err != nil {
+		return link, err
+	}
+	for _, persisted := range export.WorkLinks {
+		if persisted.ID == link.ID {
+			if persisted.Fence != fence || persisted.TurnID != q.TurnID || persisted.TaskID != link.TaskID {
+				return link, runtimeFailure(pa.ScopeDenied, "persisted_work_owner")
+			}
+			return persisted, nil
+		}
+	}
+	return link, runtimeFailure(pa.OutcomeUnknown, "work_not_persisted")
 }
 
 func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error) {
@@ -1028,45 +1121,5 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (pa.Receipt, error) {
 }
 
 func (r *Engine) Disable(ctx context.Context, project pa.ProjectSelection) error {
-	r.mu.Lock()
-	r.disabled[project] = true
-	var actors []*runtimeActor
-	for _, a := range r.actors {
-		a.users++
-		actors = append(actors, a)
-	}
-	r.mu.Unlock()
-	var result error
-	for _, a := range actors {
-		a.mu.Lock()
-		var session ProviderSession
-		if a.project.MachineID == project.MachineID && a.project.ProjectID == project.ProjectID {
-			a.stopped = true
-			if a.cancel != nil {
-				a.cancel()
-			}
-			session = a.session
-			pending, err := r.o.Repository.PendingTurns(ctx, a.key)
-			result = errors.Join(result, err)
-			for _, t := range pending {
-				if t.State == pa.TurnUnknown {
-					continue
-				}
-				state := pa.TurnCancelled
-				if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.State == pa.TurnUnknown {
-					state = pa.TurnUnknown
-				}
-				result = errors.Join(result, r.finishLocked(ctx, a, t, state, "", runtimeFailure(pa.ExecutionEffectUnknown, "disabled")))
-			}
-		}
-		a.mu.Unlock()
-		if session != nil {
-			cleanup, cancel := context.WithTimeout(ctx, r.o.Limits.CleanupTimeout)
-			result = errors.Join(result, session.Cancel(cleanup))
-			result = errors.Join(result, session.Close(cleanup))
-			cancel()
-		}
-		r.release(a)
-	}
-	return result
+	return r.shutdown(ctx, &project)
 }

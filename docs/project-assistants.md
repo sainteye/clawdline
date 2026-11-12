@@ -293,3 +293,18 @@ capability, the existing isolated task admission path, and durable work-result
 projections. It preserves the human approval boundary. Its current verified
 module tests use a real temporary broker and fake worker launch; installing the
 bridge in a production source host is a separate integration requirement.
+
+Read cursors and observed receipts belong to the authenticated reader. Fresh,
+readable retained history may acknowledge that reader's own view without granting
+content, native, configuration or permission-answer writes. Offline, stale and
+revoked sources cannot accept new acknowledgements. The transport must preserve
+this distinction rather than requiring content-write authority for every POST.
+
+
+The [SQLite implementation](project-assistants-store.md) preserves source facts,
+reader cursors and unknown intents independently of the host schema. The
+[lazy runtime host](project-assistants-runtime-host.md) composes this Store,
+Service, Engine and Broker, and owns native entry lifetime and bounded durable
+queue shutdown. Its real Store/Broker fixtures and fake providers prove module
+behavior; production settings, Server/Cloud/MCP wiring, native admission and
+complete removal remain integration acceptance work.

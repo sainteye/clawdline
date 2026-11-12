@@ -159,7 +159,7 @@ func (s *runtimeStore) Export(context.Context, pa.BotKey) (Export, error) {
 	for _, offer := range s.permissions {
 		permissions = append(permissions, clone(offer))
 	}
-	return Export{Messages: clone(s.messages), WorkLinks: clone(s.work), Turns: turns, Permissions: permissions}, nil
+	return Export{Bot: clone(s.bot), Conversation: s.c, Messages: clone(s.messages), WorkLinks: clone(s.work), Turns: turns, Permissions: permissions}, nil
 }
 
 type runtimeMemory struct {
@@ -198,6 +198,7 @@ func (r runtimeResolver) Resolve(context.Context, pa.ProjectSelection) (pa.Proje
 }
 
 type runtimeBridge struct {
+	store *runtimeStore
 	WorkBridge
 	calls   atomic.Int64
 	failure error
@@ -208,7 +209,13 @@ func (b *runtimeBridge) Dispatch(_ context.Context, q pa.WorkRequest) (pa.WorkLi
 	if b.failure != nil {
 		return pa.WorkLink{}, b.failure
 	}
-	return pa.WorkLink{ID: "broker-link", TaskID: "owned-task", Fence: q.Actor.Fence, TurnID: q.TurnID, State: pa.WorkAccepted}, nil
+	link := pa.WorkLink{ID: "broker-link", TaskID: "owned-task", Fence: q.Actor.Fence, TurnID: q.TurnID, State: pa.WorkAccepted}
+	if b.store != nil {
+		b.store.mu.Lock()
+		b.store.work = append(b.store.work, link)
+		b.store.mu.Unlock()
+	}
+	return link, nil
 }
 
 type runtimeProvider struct {
@@ -302,7 +309,7 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 	f.provider = &runtimeProvider{sent: make(chan PromptRequest, pa.MaxPendingTurns), memory: f.memory}
 	f.source = pa.SourceStatus{MachineID: "machine", State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive}
 	var err error
-	f.r, err = NewRuntime(RuntimeOptions{Repository: f.store, Memory: f.memory, WorkBridge: &runtimeBridge{}, ProjectResolver: runtimeResolver{f.scope}, Provider: f.provider, Clock: time.Now, ID: func() string { return fmt.Sprint(f.seq.Add(1)) }, Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	f.r, err = NewRuntime(RuntimeOptions{Repository: f.store, Memory: f.memory, WorkBridge: &runtimeBridge{store: f.store}, ProjectResolver: runtimeResolver{f.scope}, Provider: f.provider, Clock: time.Now, ID: func() string { return fmt.Sprint(f.seq.Add(1)) }, Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		s := f.source
 		if f.revoked.Load() {
 			s.State = pa.SourceRevoked
@@ -649,6 +656,67 @@ func TestRuntimeWorkBridgeKeepsPersistedLink(t *testing.T) {
 	defer f.store.mu.Unlock()
 	if len(f.store.work) != 1 || f.store.work[0].ID != link.ID || link.TaskID != "owned-task" {
 		t.Fatal("missing broker link")
+	}
+}
+
+type projectedRuntimeBridge struct {
+	WorkBridge
+	store      *runtimeStore
+	projection func(pa.WorkLink) *pa.WorkLink
+}
+
+func (b projectedRuntimeBridge) Dispatch(_ context.Context, q pa.WorkRequest) (pa.WorkLink, error) {
+	link := pa.WorkLink{ID: "persisted", TaskID: "task", Fence: q.Actor.Fence, TurnID: q.TurnID, State: pa.WorkAccepted}
+	if projected := b.projection(link); projected != nil {
+		b.store.mu.Lock()
+		b.store.work = append(b.store.work, *projected)
+		b.store.mu.Unlock()
+	}
+	return link, nil
+}
+func TestRuntimeWorkBridgeChecksPersistedOwnerAndReturnsAdvancedState(t *testing.T) {
+	for _, mode := range []string{"missing", "foreign task", "advanced"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newRuntimeFixture(t)
+			f.r.o.WorkBridge = projectedRuntimeBridge{store: f.store, projection: func(link pa.WorkLink) *pa.WorkLink {
+				switch mode {
+				case "missing":
+					return nil
+				case "foreign task":
+					link.TaskID = "foreign"
+				case "advanced":
+					link.State = pa.WorkCompleted
+				}
+				return &link
+			}}
+			if _, e := f.submit(t, "work", "one"); e != nil {
+				t.Fatal(e)
+			}
+			prompt := receivePrompt(t, f.provider)
+			q := pa.WorkRequest{Actor: pa.AssistantExecutionActor{CapabilityID: "host-issued", Fence: prompt.Turn.Fence, ExpiresAt: time.Now().Add(time.Minute), Operations: []pa.ActorOperation{pa.DispatchWork}}, Command: pa.Command{Key: f.key, Operation: pa.DispatchOperation, IdempotencyKey: "work", ContentHash: strings.Repeat("f", 64)}, TurnID: prompt.Turn.ID, Brief: "Change owned.go", Claims: []string{"owned.go"}}
+			link, e := f.r.DispatchWork(context.Background(), q)
+			switch mode {
+			case "missing":
+				if pa.Code(e) != pa.OutcomeUnknown {
+					t.Fatal(e)
+				}
+			case "foreign task":
+				if pa.Code(e) != pa.ScopeDenied {
+					t.Fatal(e)
+				}
+			case "advanced":
+				if e != nil || link.State != pa.WorkCompleted {
+					t.Fatal(link, e)
+				}
+			}
+			f.store.mu.Lock()
+			defer f.store.mu.Unlock()
+			for _, event := range f.store.events {
+				if event.Kind == pa.WorkUpdated {
+					t.Fatal("Engine projected a second bridge-owned work event")
+				}
+			}
+		})
 	}
 }
 
