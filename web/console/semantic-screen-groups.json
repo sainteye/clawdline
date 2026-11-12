@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11289,
+  "englishContentKeys": 11290,
   "riskKeys": 4960,
-  "nonRiskCount": 6329,
+  "nonRiskCount": 6330,
   "groups": [
     {
       "name": "acp / other",
@@ -3824,7 +3824,7 @@
     },
     {
       "name": "next / other",
-      "count": 809,
+      "count": 810,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4341,6 +4341,7 @@
         "next.sessionStateShowAll",
         "next.sessionStop",
         "next.sessionTrySendingAgain",
+        "next.sessionVoiceCopilot",
         "next.sessionWaitHeavyQueued",
         "next.sessionWriteDisabled",
         "next.sessionsListWaitTitle",

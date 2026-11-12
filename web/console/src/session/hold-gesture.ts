@@ -1,57 +1,47 @@
 /**
- * The composer's microphone has three presses: a tap dictates, and a hold or
- * a double press places a voice copilot call about this Session.
+ * A press on the Session title's icon has two meanings: a tap does what the
+ * icon always did (opens Snippets), and a hold places a voice copilot call
+ * about this Session.
  *
- * A tap starts dictation at once, as it always has; a second press inside
- * DOUBLE_MS takes that start back (`undo`) and calls instead, so dictation
- * never waits to find out whether a second press is coming. A hold places the
- * call when the finger lifts, because the lift is a user activation and a
- * timer is not: iOS keeps audio started from a timer silent.
+ * The call is placed when the finger lifts, because the lift is a user
+ * activation and a timer is not: iOS keeps audio started from a timer silent.
+ * The click a lift produces after a hold is swallowed, so the hold does not
+ * also open Snippets.
  *
  * Nothing is imported here, so `node --test` loads it as it is.
  */
 
 /** How long a press is held before it is a call rather than a tap. */
 export const HOLD_MS = 500
-/** How soon a second press must follow the first to be a double press. */
-export const DOUBLE_MS = 350
 /** How far a finger may drift before a hold stops being one. */
 export const MOVE_PX = 10
 /** How long after a hold's lift the click it produces is swallowed. */
 export const SWALLOW_MS = 700
 
-export interface MicActions {
-  /**
-   * A single press: dictation. True when it started a recording; a press that
-   * stopped one cannot be the first of a double press, or the second press
-   * would throw away what was just said.
-   */
-  dictate(): boolean
-  /** Takes back the dictation the first of a double press started. */
-  undo(): void
-  /** Places the call. Runs inside a pointer or click event. */
+export interface HoldActions {
+  /** Places the call. Runs inside the lift's pointer event. */
   call(): void
   /** The hold has lasted long enough; the lift will call. */
   held?(): void
+  /** The press stopped being a hold (lifted, slid away, taken by the system). */
+  released?(): void
 }
 
-export interface MicClock {
+export interface HoldClock {
   now(): number
   after(ms: number, run: () => void): unknown
   cancel(handle: unknown): void
 }
 
-export class MicGesture {
+export class HoldGesture {
   private timer: unknown = null
   private holding = false
   private start: { x: number; y: number } | null = null
   private swallowUntil = 0
-  private lastTap = 0
+  private readonly act: HoldActions
+  private readonly clock: HoldClock
 
-  private readonly act: MicActions
-  private readonly clock: MicClock
-
-  constructor(act: MicActions, clock: MicClock) {
+  constructor(act: HoldActions, clock: HoldClock) {
     this.act = act
     this.clock = clock
   }
@@ -76,7 +66,6 @@ export class MicGesture {
     this.reset()
     if (!held) return
     this.swallowUntil = this.clock.now() + SWALLOW_MS
-    this.lastTap = 0
     this.act.call()
   }
 
@@ -85,25 +74,21 @@ export class MicGesture {
     this.reset()
   }
 
-  click() {
-    const now = this.clock.now()
-    if (now < this.swallowUntil) {
+  /** Whether a click should do the icon's ordinary job; false right after a hold. */
+  tap(): boolean {
+    if (this.clock.now() < this.swallowUntil) {
       this.swallowUntil = 0
-      return
+      return false
     }
-    if (this.lastTap && now - this.lastTap <= DOUBLE_MS) {
-      this.lastTap = 0
-      this.act.undo()
-      this.act.call()
-      return
-    }
-    this.lastTap = this.act.dictate() ? now : 0
+    return true
   }
 
   private reset() {
+    const was = this.holding || this.timer !== null
     if (this.timer !== null) this.clock.cancel(this.timer)
     this.timer = null
     this.holding = false
     this.start = null
+    if (was) this.act.released?.()
   }
 }
