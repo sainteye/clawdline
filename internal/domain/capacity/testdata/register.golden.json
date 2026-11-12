@@ -1241,6 +1241,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "cache.provider_quota_renew_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/providerquota.RenewSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cache.provider_quota_request_seconds",
     "Class": "observation",
     "Unit": "seconds",

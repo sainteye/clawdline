@@ -800,6 +800,8 @@
   "capacityRow.cache.provider_quota.what": "Keeps one provider quota snapshot per supported service.",
   "capacityRow.cache.provider_quota_refresh_seconds.full": "Repeated refreshes reuse the cached result; a provider cooldown can extend the wait.",
   "capacityRow.cache.provider_quota_refresh_seconds.what": "Sets the minimum gap between provider quota checks.",
+  "capacityRow.cache.provider_quota_renew_seconds.full": "A slow renewal ends without blocking the interface; Grok shows that it needs a new sign-in only when the token cannot be renewed.",
+  "capacityRow.cache.provider_quota_renew_seconds.what": "Limits how long Grok's own CLI may take to renew an expired access token.",
   "capacityRow.cache.provider_quota_request_seconds.full": "A slow check ends without blocking the interface and keeps the last reading marked outdated.",
   "capacityRow.cache.provider_quota_request_seconds.what": "Limits the total time for one provider quota refresh.",
   "capacityRow.cache.provider_quota_response_bytes.full": "Oversized input is refused; the last successful quota remains marked outdated.",
