@@ -5124,6 +5124,712 @@ export interface Project {
   sessionCount: number
 }
 
+/**
+ * Default is hidden. Disabled with preserved data is history_only, allowing
+ * authenticated reads/export but no create/send/permission answer.
+ */
+export type ProjectAssistantAccess =
+    "hidden"
+  | "history_only"
+  | "interactive"
+
+export const ProjectAssistantAccessValues: readonly ProjectAssistantAccess[] = ["hidden", "history_only", "interactive"] as const
+
+export type ProjectAssistantAgent =
+    "claude"
+  | "codex"
+
+export const ProjectAssistantAgentValues: readonly ProjectAssistantAgent[] = ["claude", "codex"] as const
+
+export interface ProjectAssistantAppearance {
+  color: string
+  shape: ProjectAssistantShape
+}
+
+export interface ProjectAssistantBot {
+  agent: ProjectAssistantAgent
+  appearance: ProjectAssistantAppearance
+  conversation_id: string
+  created_at: string
+  instructions: ProjectAssistantInstructions
+  key: ProjectAssistantBotKey
+  name: string
+  permission_policy: ProjectAssistantPermissionPolicy
+  project: ProjectAssistantProjectScope
+  updated_at: string
+  version: number
+}
+
+export interface ProjectAssistantBotKey {
+  bot_id: string
+  machine_id: string
+}
+
+export interface ProjectAssistantBotResponse {
+  bot: ProjectAssistantBot
+  contract_version: string
+  receipt: ProjectAssistantReceipt
+}
+
+export interface ProjectAssistantBotSummary {
+  activity: string
+  activity_at: string
+  bot: ProjectAssistantBot
+  latest_message: string
+  pending_permissions: number
+  read_cursor: ProjectAssistantReadCursor
+  source: ProjectAssistantSourceStatus
+  unread_count: number
+  version: number
+}
+
+/**
+ * Unknown version/capability is unavailable. Provider probes must supply actual
+ * evidence before native mode is enabled.
+ */
+export interface ProjectAssistantCapabilities {
+  adapter_version: string
+  agent: ProjectAssistantAgent
+  cli_version: string
+  evidence: string
+  key: ProjectAssistantBotKey
+  native_memory: ProjectAssistantNativeMemoryMode
+  native_memory_verified: boolean
+  project: ProjectAssistantProjectScope
+  read_only_enforced: boolean
+  resume: boolean
+  send_message: boolean
+  unavailable?: ProjectAssistantFailure
+}
+
+/**
+ * SHA-256 of canonical validated content, recomputed by source. Scope is
+ * machine/Bot/operation/key, not device. At create, client chooses a stable opaque
+ * bot_id; same command returns same Bot.
+ */
+export interface ProjectAssistantCommand {
+  content_hash: string
+  idempotency_key: string
+  key: ProjectAssistantBotKey
+  operation: ProjectAssistantOperation
+}
+
+/**
+ * A forgotten source in any provenance rejects the whole summary; never silently
+ * strip its ID while retaining the text.
+ */
+export interface ProjectAssistantContextSnapshot {
+  memory: ProjectAssistantMemoryRevision
+  provenance_complete: boolean
+  sources: ProjectAssistantMemorySource[]
+  text: string
+}
+
+export interface ProjectAssistantConversation {
+  active_turn_id: string
+  binding_id: string
+  generation: number
+  id: string
+  key: ProjectAssistantBotKey
+  last_message_seq: number
+  memory_revision: number
+  version: number
+}
+
+export interface ProjectAssistantCreateRequest {
+  command: ProjectAssistantCommand
+  settings: ProjectAssistantCreateSettings
+}
+
+/**
+ * Six settings. Creating, cancelling, reading, selecting and searching start no
+ * process or model. Only first send binds execution.
+ */
+export interface ProjectAssistantCreateSettings {
+  agent: ProjectAssistantAgent
+  appearance: ProjectAssistantAppearance
+  instructions: string
+  name: string
+  permission_policy: ProjectAssistantPermissionPolicy
+  role_snapshot_ref: string
+  target: ProjectAssistantProjectSelection
+}
+
+export interface ProjectAssistantEditRequest {
+  command: ProjectAssistantCommand
+  settings: ProjectAssistantEditSettings
+}
+
+/**
+ * Complete editable settings replacement. Agent/model/Project/policy changes,
+ * archive and deletion are outside v1.
+ */
+export interface ProjectAssistantEditSettings {
+  appearance: ProjectAssistantAppearance
+  expected_version: number
+  instructions: string
+  name: string
+}
+
+/**
+ * Acceptance is durable admission; delivery is a persisted reply; observation and
+ * read require separate device acknowledgements. Unknown is never automatically
+ * executed again.
+ */
+export type ProjectAssistantEffectState =
+    "accepted"
+  | "executing"
+  | "unknown"
+  | "delivered"
+  | "observed"
+  | "read"
+  | "failed"
+
+export const ProjectAssistantEffectStateValues: readonly ProjectAssistantEffectState[] = ["accepted", "executing", "unknown", "delivered", "observed", "read", "failed"] as const
+
+export type ProjectAssistantErrorCode =
+    "pa_invalid"
+  | "pa_disabled"
+  | "pa_read_only"
+  | "pa_not_found"
+  | "pa_offline"
+  | "pa_unsupported"
+  | "pa_unpaired"
+  | "pa_revoked"
+  | "pa_stale_generation"
+  | "pa_stale_version"
+  | "pa_idempotency_conflict"
+  | "pa_capacity_full"
+  | "pa_outcome_unknown"
+  | "pa_expired"
+  | "pa_scope_denied"
+  | "pa_context_stale"
+  | "pa_cursor_expired"
+  | "cli_not_installed"
+  | "adapter_not_found"
+  | "adapter_inventory_unknown"
+  | "provider_version_unsupported"
+  | "auth_required"
+  | "auth_probe_unknown"
+  | "auth_rejected"
+  | "auth_unavailable_in_isolated_runtime"
+  | "sandbox_unavailable"
+  | "read_only_unverified"
+  | "scope_expansion_denied"
+  | "memory_isolation_unverified"
+  | "resume_forbidden_after_forget"
+  | "resume_unsupported"
+  | "execution_effect_unknown"
+
+export const ProjectAssistantErrorCodeValues: readonly ProjectAssistantErrorCode[] = ["pa_invalid", "pa_disabled", "pa_read_only", "pa_not_found", "pa_offline", "pa_unsupported", "pa_unpaired", "pa_revoked", "pa_stale_generation", "pa_stale_version", "pa_idempotency_conflict", "pa_capacity_full", "pa_outcome_unknown", "pa_expired", "pa_scope_denied", "pa_context_stale", "pa_cursor_expired", "cli_not_installed", "adapter_not_found", "adapter_inventory_unknown", "provider_version_unsupported", "auth_required", "auth_probe_unknown", "auth_rejected", "auth_unavailable_in_isolated_runtime", "sandbox_unavailable", "read_only_unverified", "scope_expansion_denied", "memory_isolation_unverified", "resume_forbidden_after_forget", "resume_unsupported", "execution_effect_unknown"] as const
+
+export interface ProjectAssistantErrorResponse {
+  contract_version: string
+  error: ProjectAssistantFailure
+}
+
+/**
+ * Exactly one payload matching kind, except feature_disabled which has none. Replay
+ * is deduplicated by source machine plus seq/id.
+ */
+export interface ProjectAssistantEvent {
+  at: string
+  bot?: ProjectAssistantBotSummary
+  fence: ProjectAssistantFence
+  id: string
+  kind: ProjectAssistantEventKind
+  memory?: ProjectAssistantMemoryRevision
+  message?: ProjectAssistantMessage
+  permission?: ProjectAssistantPermissionOffer
+  read?: ProjectAssistantReadCursor
+  seq: number
+  source?: ProjectAssistantSourceStatus
+  trace?: ProjectAssistantTrace
+  turn?: ProjectAssistantTurn
+  version: string
+  work?: ProjectAssistantWorkLink
+}
+
+/**
+ * Each event has exactly the corresponding typed payload. trace_updated uses Trace;
+ * event sequences never count as unread messages.
+ */
+export type ProjectAssistantEventKind =
+    "bot_created"
+  | "bot_updated"
+  | "message_created"
+  | "turn_updated"
+  | "permission_offered"
+  | "permission_answered"
+  | "work_updated"
+  | "memory_changed"
+  | "read_advanced"
+  | "trace_updated"
+  | "source_updated"
+  | "feature_disabled"
+
+export const ProjectAssistantEventKindValues: readonly ProjectAssistantEventKind[] = ["bot_created", "bot_updated", "message_created", "turn_updated", "permission_offered", "permission_answered", "work_updated", "memory_changed", "read_advanced", "trace_updated", "source_updated", "feature_disabled"] as const
+
+/**
+ * Durable source-local cursor, page size 1..256; expired cursor is
+ * pa_cursor_expired and requires snapshot refresh.
+ */
+export interface ProjectAssistantEventsRequest {
+  after_seq: number
+  key: ProjectAssistantBotKey
+  page_size: number
+}
+
+export interface ProjectAssistantEventsResponse {
+  contract_version: string
+  has_more: boolean
+  items: ProjectAssistantEvent[]
+  next_seq: number
+}
+
+/**
+ * Internal binding identity is safe to expose; native_session_id must be redacted
+ * from public roster projections.
+ */
+export interface ProjectAssistantExecutionBinding {
+  agent: ProjectAssistantAgent
+  fence: ProjectAssistantFence
+  forgotten_through: number
+  instruction_revision: number
+  memory_revision: number
+  native_session_id: string
+  revoked: boolean
+}
+
+/**
+ * Authenticated export only, never roster cache. SQLite remains authoritative.
+ * Restore refuses unsupported versions and retains receipt/tombstone identities.
+ */
+export interface ProjectAssistantExport {
+  bindings: ProjectAssistantExecutionBinding[]
+  bot: ProjectAssistantBot
+  context: ProjectAssistantContextSnapshot
+  contract_version: string
+  conversation: ProjectAssistantConversation
+  events: ProjectAssistantEvent[]
+  memory: ProjectAssistantMemoryRevision
+  memory_entries: ProjectAssistantMemoryEntry[]
+  messages: ProjectAssistantMessage[]
+  permissions: ProjectAssistantPermissionOffer[]
+  read_cursors: ProjectAssistantReadCursor[]
+  receipts: ProjectAssistantReceipt[]
+  schema_version: number
+  turns: ProjectAssistantTurn[]
+  work_links: ProjectAssistantWorkLink[]
+}
+
+export interface ProjectAssistantFailure {
+  code: ProjectAssistantErrorCode
+  field: string
+  retry_after_seconds: number
+}
+
+/**
+ * Must match current source authority on every RPC, permission answer, native event
+ * and tool call. Before first execution binding_id is empty and generation is zero;
+ * only send admission may replace that initial fence.
+ */
+export interface ProjectAssistantFence {
+  binding_id: string
+  conversation_id: string
+  generation: number
+  key: ProjectAssistantBotKey
+  project: ProjectAssistantProjectScope
+}
+
+export interface ProjectAssistantForgetRequest {
+  command: ProjectAssistantCommand
+  expected_revision: number
+  project: ProjectAssistantProjectScope
+  source_ids: string[]
+}
+
+export interface ProjectAssistantGetResponse {
+  bot: ProjectAssistantBot
+  contract_version: string
+  conversation: ProjectAssistantConversation
+  source: ProjectAssistantSourceStatus
+}
+
+/**
+ * before_seq=0 starts from latest. Items are ascending within a page. Page size
+ * 1..100.
+ */
+export interface ProjectAssistantHistoryRequest {
+  before_seq: number
+  conversation_id: string
+  key: ProjectAssistantBotKey
+  page_size: number
+}
+
+export interface ProjectAssistantHistoryResponse {
+  contract_version: string
+  conversation: ProjectAssistantConversation
+  has_more: boolean
+  items: ProjectAssistantMessage[]
+  next_before_seq: number
+}
+
+/**
+ * Captured at the next idle turn; running turn snapshots are immutable.
+ */
+export interface ProjectAssistantInstructions {
+  revision: number
+  role_snapshot_ref: string
+  text: string
+}
+
+/**
+ * Captured source-local machine_id is required. The UI obtains one client per
+ * authorized source and federates their pages; the selected global active machine
+ * is never substituted. Cursor is opaque and bound to filter/authorization
+ * revision. Page size 1..100.
+ */
+export interface ProjectAssistantListRequest {
+  cursor: string
+  machine_id: string
+  page_size: number
+  query: string
+}
+
+export interface ProjectAssistantListResponse {
+  contract_version: string
+  items: ProjectAssistantBotSummary[]
+  next_cursor: string
+  sources: ProjectAssistantSourceStatus[]
+}
+
+export interface ProjectAssistantMemoryEntry {
+  forgotten: boolean
+  id: string
+  key: ProjectAssistantBotKey
+  project: ProjectAssistantProjectScope
+  revision: number
+  sources: ProjectAssistantMemorySource[]
+  text: string
+}
+
+export interface ProjectAssistantMemoryResponse {
+  contract_version: string
+  memory: ProjectAssistantMemoryRevision
+}
+
+/**
+ * Durable tombstones and revision fence future context. Does not claim to erase
+ * model training, independent external files or other copies.
+ */
+export interface ProjectAssistantMemoryRevision {
+  forgotten_source_ids: string[]
+  forgotten_through: number
+  key: ProjectAssistantBotKey
+  project: ProjectAssistantProjectScope
+  revision: number
+}
+
+export interface ProjectAssistantMemorySource {
+  id: string
+  key: ProjectAssistantBotKey
+  kind: string
+  project: ProjectAssistantProjectScope
+  revision: number
+}
+
+export interface ProjectAssistantMemoryWriteRequest {
+  command: ProjectAssistantCommand
+  entry: ProjectAssistantMemoryEntry
+  expected_revision: number
+}
+
+export interface ProjectAssistantMessage {
+  at: string
+  fence: ProjectAssistantFence
+  id: string
+  kind: ProjectAssistantMessageKind
+  quote_message_id: string
+  seq: number
+  text: string
+  turn_id: string
+}
+
+export type ProjectAssistantMessageKind =
+    "user"
+  | "assistant"
+  | "work"
+  | "notice"
+
+export const ProjectAssistantMessageKindValues: readonly ProjectAssistantMessageKind[] = ["user", "assistant", "work", "notice"] as const
+
+export type ProjectAssistantNativeMemoryMode =
+    "unknown"
+  | "disabled"
+  | "isolated"
+  | "unsafe"
+
+export const ProjectAssistantNativeMemoryModeValues: readonly ProjectAssistantNativeMemoryMode[] = ["unknown", "disabled", "isolated", "unsafe"] as const
+
+/**
+ * Authenticated device observation of a receipt/event. It does not advance read
+ * cursors or turn model text into human authorization.
+ */
+export interface ProjectAssistantObserveRequest {
+  command: ProjectAssistantCommand
+  event_seq: number
+  receipt_id: string
+}
+
+export type ProjectAssistantOperation =
+    "create"
+  | "edit"
+  | "send"
+  | "stop"
+  | "answer"
+  | "read"
+  | "observe"
+  | "forget"
+  | "memory_save"
+  | "dispatch"
+
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
+
+export interface ProjectAssistantPermissionAnswerRequest {
+  command: ProjectAssistantCommand
+  fence: ProjectAssistantFence
+  offer_id: string
+  option_id: string
+  turn_id: string
+}
+
+export interface ProjectAssistantPermissionOffer {
+  expires_at: string
+  fence: ProjectAssistantFence
+  id: string
+  native_request_id: string
+  options: ProjectAssistantPermissionOption[]
+  selected_option_id: string
+  state: ProjectAssistantPermissionState
+  turn_id: string
+}
+
+export interface ProjectAssistantPermissionOption {
+  allow: boolean
+  id: string
+  kind: ProjectAssistantPermissionOptionKind
+  label: string
+  read_only: boolean
+}
+
+/**
+ * Native option kind is preserved. Persistent choices are never accepted in v1 and
+ * cannot widen authority.
+ */
+export type ProjectAssistantPermissionOptionKind =
+    "allow_once"
+  | "reject_once"
+  | "allow_always"
+  | "reject_always"
+
+export const ProjectAssistantPermissionOptionKindValues: readonly ProjectAssistantPermissionOptionKind[] = ["allow_once", "reject_once", "allow_always", "reject_always"] as const
+
+/**
+ * Applies only inside the enforced read-only native sandbox. No native answer can
+ * authorize repository writes.
+ */
+export type ProjectAssistantPermissionPolicy =
+    "ask"
+  | "auto_read"
+
+export const ProjectAssistantPermissionPolicyValues: readonly ProjectAssistantPermissionPolicy[] = ["ask", "auto_read"] as const
+
+export type ProjectAssistantPermissionState =
+    "pending"
+  | "answered"
+  | "expired"
+  | "cancelled"
+  | "unknown"
+
+export const ProjectAssistantPermissionStateValues: readonly ProjectAssistantPermissionState[] = ["pending", "answered", "expired", "cancelled", "unknown"] as const
+
+export type ProjectAssistantProjectKind =
+    "repository"
+  | "place"
+
+export const ProjectAssistantProjectKindValues: readonly ProjectAssistantProjectKind[] = ["repository", "place"] as const
+
+/**
+ * Linked worktrees resolve to the existing canonical repository. Non-repository
+ * places retain their own identity.
+ */
+export interface ProjectAssistantProjectScope {
+  canonical_id: string
+  kind: ProjectAssistantProjectKind
+  machine_id: string
+  project_id: string
+}
+
+/**
+ * Only registered IDs, never an arbitrary cwd. Resolve on the source machine at
+ * creation and before execution.
+ */
+export interface ProjectAssistantProjectSelection {
+  machine_id: string
+  project_id: string
+}
+
+/**
+ * reader_id is the authenticated Cloud principal, shared across its devices. Source
+ * machine stores max(previous,incoming) bounded by last visible message sequence.
+ */
+export interface ProjectAssistantReadCursor {
+  conversation_id: string
+  key: ProjectAssistantBotKey
+  message_seq: number
+  reader_id: string
+}
+
+export interface ProjectAssistantReadRequest {
+  command: ProjectAssistantCommand
+  cursor: ProjectAssistantReadCursor
+}
+
+export interface ProjectAssistantReadResponse {
+  contract_version: string
+  cursor: ProjectAssistantReadCursor
+}
+
+export interface ProjectAssistantReceipt {
+  command: ProjectAssistantCommand
+  event_seq: number
+  id: string
+  resource_id: string
+  state: ProjectAssistantEffectState
+}
+
+export interface ProjectAssistantReceiptResponse {
+  contract_version: string
+  receipt: ProjectAssistantReceipt
+}
+
+export interface ProjectAssistantSendRequest {
+  command: ProjectAssistantCommand
+  fence: ProjectAssistantFence
+  quote_message_id: string
+  text: string
+}
+
+/**
+ * Codync outline vocabulary. Global entry is always blob/#e39567; it never
+ * identifies the selected Bot.
+ */
+export type ProjectAssistantShape =
+    "blob"
+  | "squircle"
+  | "wedge"
+  | "pebble"
+  | "tablet"
+  | "hex"
+  | "cloud"
+  | "teardrop"
+
+export const ProjectAssistantShapeValues: readonly ProjectAssistantShape[] = ["blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"] as const
+
+export type ProjectAssistantSourceState =
+    "online"
+  | "offline"
+  | "unsupported"
+  | "unpaired"
+  | "revoked"
+
+export const ProjectAssistantSourceStateValues: readonly ProjectAssistantSourceState[] = ["online", "offline", "unsupported", "unpaired", "revoked"] as const
+
+/**
+ * Offline cached rows stay visibly stale; revoked and unpaired rows cannot be read.
+ * An offline source is never an authoritative empty list.
+ */
+export interface ProjectAssistantSourceStatus {
+  access: ProjectAssistantAccess
+  capabilities: ProjectAssistantCapabilities[]
+  fresh: boolean
+  machine_id: string
+  observed_at: string
+  readable: boolean
+  state: ProjectAssistantSourceState
+  writable: boolean
+}
+
+export interface ProjectAssistantSourcesResponse {
+  contract_version: string
+  sources: ProjectAssistantSourceStatus[]
+}
+
+/**
+ * Cancels active and queued turns; a collapsed UI never sends this.
+ */
+export interface ProjectAssistantStopRequest {
+  command: ProjectAssistantCommand
+  fence: ProjectAssistantFence
+  turn_id: string
+}
+
+/**
+ * Trace is not a visible message and never advances unread. Secrets and raw
+ * provider credentials are redacted by source.
+ */
+export interface ProjectAssistantTrace {
+  category: string
+  complete: boolean
+  text: string
+  turn_id: string
+}
+
+export interface ProjectAssistantTurn {
+  failure?: ProjectAssistantFailure
+  fence: ProjectAssistantFence
+  id: string
+  idempotency_key: string
+  instructions: ProjectAssistantInstructions
+  memory_revision: number
+  message_id: string
+  state: ProjectAssistantTurnState
+}
+
+export type ProjectAssistantTurnState =
+    "accepted"
+  | "queued"
+  | "running"
+  | "waiting_permission"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "unknown"
+
+export const ProjectAssistantTurnStateValues: readonly ProjectAssistantTurnState[] = ["accepted", "queued", "running", "waiting_permission", "succeeded", "failed", "cancelled", "unknown"] as const
+
+export interface ProjectAssistantWorkLink {
+  board_item_id: string
+  fence: ProjectAssistantFence
+  id: string
+  landing_commit: string
+  result_message_id: string
+  state: ProjectAssistantWorkState
+  task_id: string
+  turn_id: string
+}
+
+export type ProjectAssistantWorkState =
+    "accepted"
+  | "executing"
+  | "failed"
+  | "completed"
+  | "landed"
+  | "unknown"
+
+export const ProjectAssistantWorkStateValues: readonly ProjectAssistantWorkState[] = ["accepted", "executing", "failed", "completed", "landed", "unknown"] as const
+
 export interface ProjectCatalog {
   /**
    * False when the store could not be read at all; `readState.error` says why.

@@ -236,6 +236,116 @@
     "Known": true
   },
   {
+    "Name": "bots.actors",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.capture_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.chat_gap_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cleanup_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.event_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.frame_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.instruction_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.message_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.name_runes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.notice_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.owned_children",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.page_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.pending_turns",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.perm_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.processes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.prompt_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.refresh_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.rpc_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.rpc_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.stderr_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.survey_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.write_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "browser.activity_picture_bytes",
     "Known": true,
     "Note": true

@@ -37,6 +37,11 @@ import (
 // exactly that reason.
 type Broker struct {
 	Store *store.Store
+	// AssistantAuthority is opt-in. Without a source-owned verifier and result
+	// sink, the typed Bot door is closed; ordinary Session doors are unchanged.
+	AssistantAuthority   *AssistantAuthority
+	AssistantWorkChanged func(context.Context, AssistantWorkSnapshot) error
+	assistantMu          sync.Mutex
 	// SquadActorRequired makes agent dispatch prove the bound launch and root
 	// conversation. Production enables it; isolated broker tests can exercise
 	// legacy protocol behavior without a squad catalog.
@@ -939,6 +944,7 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 	}
 	if wrote {
 		b.taskListChanged()
+		b.publishAssistantWork(ctx, out)
 	}
 	return out, ids, nil
 }

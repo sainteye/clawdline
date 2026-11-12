@@ -1,0 +1,1922 @@
+{
+  "contract_version": "project-assistants.v1",
+  "fixture_version": 1,
+  "evidence_class": "synthetic_no_model",
+  "policy_cases": [
+    {
+      "id": "fence-current",
+      "rule": "fence",
+      "input": {
+        "received": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        }
+      },
+      "expected": {
+        "code": ""
+      }
+    },
+    {
+      "id": "fence-old-generation",
+      "rule": "fence",
+      "input": {
+        "received": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 0
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        }
+      },
+      "expected": {
+        "code": "pa_stale_generation"
+      }
+    },
+    {
+      "id": "fence-old-binding",
+      "rule": "fence",
+      "input": {
+        "received": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-old",
+          "generation": 1
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        }
+      },
+      "expected": {
+        "code": "pa_stale_generation"
+      }
+    },
+    {
+      "id": "fence-other-chat",
+      "rule": "fence",
+      "input": {
+        "received": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-other",
+          "binding_id": "binding-a",
+          "generation": 1
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        }
+      },
+      "expected": {
+        "code": "pa_scope_denied"
+      }
+    },
+    {
+      "id": "fence-other-machine",
+      "rule": "fence",
+      "input": {
+        "received": {
+          "key": {
+            "machine_id": "machine-b",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        }
+      },
+      "expected": {
+        "code": "pa_scope_denied"
+      }
+    },
+    {
+      "id": "receipt-accepted",
+      "rule": "replay",
+      "input": {
+        "command": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "operation": "send",
+          "idempotency_key": "command-a",
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "receipt": {
+          "command": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "operation": "send",
+            "idempotency_key": "command-a",
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "id": "receipt-a",
+          "state": "accepted",
+          "resource_id": "turn-a",
+          "event_seq": 1
+        }
+      },
+      "expected": {
+        "code": "",
+        "decision": "return_receipt"
+      }
+    },
+    {
+      "id": "receipt-executing",
+      "rule": "replay",
+      "input": {
+        "command": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "operation": "send",
+          "idempotency_key": "command-a",
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "receipt": {
+          "command": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "operation": "send",
+            "idempotency_key": "command-a",
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "id": "receipt-a",
+          "state": "executing",
+          "resource_id": "turn-a",
+          "event_seq": 1
+        }
+      },
+      "expected": {
+        "code": "",
+        "decision": "inspect_unknown"
+      }
+    },
+    {
+      "id": "receipt-unknown",
+      "rule": "replay",
+      "input": {
+        "command": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "operation": "send",
+          "idempotency_key": "command-a",
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "receipt": {
+          "command": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "operation": "send",
+            "idempotency_key": "command-a",
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "id": "receipt-a",
+          "state": "unknown",
+          "resource_id": "turn-a",
+          "event_seq": 1
+        }
+      },
+      "expected": {
+        "code": "",
+        "decision": "inspect_unknown"
+      }
+    },
+    {
+      "id": "receipt-delivered",
+      "rule": "replay",
+      "input": {
+        "command": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "operation": "send",
+          "idempotency_key": "command-a",
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "receipt": {
+          "command": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "operation": "send",
+            "idempotency_key": "command-a",
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "id": "receipt-a",
+          "state": "delivered",
+          "resource_id": "turn-a",
+          "event_seq": 1
+        }
+      },
+      "expected": {
+        "code": "",
+        "decision": "return_receipt"
+      }
+    },
+    {
+      "id": "receipt-new",
+      "rule": "replay",
+      "input": {
+        "command": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "operation": "send",
+          "idempotency_key": "command-a",
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "receipt": null
+      },
+      "expected": {
+        "code": "",
+        "decision": "execute"
+      }
+    },
+    {
+      "id": "receipt-conflicting-content",
+      "rule": "replay",
+      "input": {
+        "command": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "operation": "send",
+          "idempotency_key": "command-a",
+          "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "receipt": {
+          "command": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "operation": "send",
+            "idempotency_key": "command-a",
+            "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "id": "receipt-a",
+          "state": "accepted",
+          "resource_id": "turn-a",
+          "event_seq": 1
+        }
+      },
+      "expected": {
+        "code": "pa_idempotency_conflict"
+      }
+    },
+    {
+      "id": "reply-explicit",
+      "rule": "reply",
+      "input": {
+        "explicit_ids": [
+          "message-a"
+        ],
+        "final_text": "Final duplicate.",
+        "stopped": false
+      },
+      "expected": {
+        "text": "",
+        "promote": false
+      }
+    },
+    {
+      "id": "reply-fallback",
+      "rule": "reply",
+      "input": {
+        "explicit_ids": [],
+        "final_text": "Final visible.",
+        "stopped": false
+      },
+      "expected": {
+        "text": "Final visible.",
+        "promote": true
+      }
+    },
+    {
+      "id": "reply-empty",
+      "rule": "reply",
+      "input": {
+        "explicit_ids": [],
+        "final_text": "  ",
+        "stopped": false
+      },
+      "expected": {
+        "text": "",
+        "promote": false
+      }
+    },
+    {
+      "id": "reply-cancelled",
+      "rule": "reply",
+      "input": {
+        "explicit_ids": [],
+        "final_text": "Late final.",
+        "stopped": true
+      },
+      "expected": {
+        "text": "",
+        "promote": false
+      }
+    },
+    {
+      "id": "resume-current",
+      "rule": "resume",
+      "input": {
+        "binding": {
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "agent": "codex",
+          "native_session_id": "native-a",
+          "memory_revision": 2,
+          "forgotten_through": 0,
+          "instruction_revision": 1,
+          "revoked": false
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "revision": 2,
+          "forgotten_through": 0,
+          "forgotten_source_ids": []
+        },
+        "context": {
+          "memory": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "revision": 2,
+            "forgotten_through": 0,
+            "forgotten_source_ids": []
+          },
+          "text": "A synthetic retained fact.",
+          "sources": [
+            {
+              "id": "source-keep",
+              "key": {
+                "machine_id": "machine-a",
+                "bot_id": "bot-a"
+              },
+              "project": {
+                "machine_id": "machine-a",
+                "project_id": "project-a",
+                "canonical_id": "repo-a",
+                "kind": "repository"
+              },
+              "kind": "user_message",
+              "revision": 1
+            }
+          ],
+          "provenance_complete": true
+        },
+        "capabilities": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "agent": "codex",
+          "cli_version": "fixture-cli/1",
+          "adapter_version": "fixture-acp/1",
+          "evidence": "synthetic-fixture-only",
+          "read_only_enforced": true,
+          "native_memory": "disabled",
+          "native_memory_verified": true,
+          "resume": true,
+          "send_message": true
+        }
+      },
+      "expected": {
+        "decision": "resume",
+        "code": ""
+      }
+    },
+    {
+      "id": "resume-no-capability",
+      "rule": "resume",
+      "input": {
+        "binding": {
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "agent": "codex",
+          "native_session_id": "native-a",
+          "memory_revision": 2,
+          "forgotten_through": 0,
+          "instruction_revision": 1,
+          "revoked": false
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "revision": 2,
+          "forgotten_through": 0,
+          "forgotten_source_ids": []
+        },
+        "context": {
+          "memory": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "revision": 2,
+            "forgotten_through": 0,
+            "forgotten_source_ids": []
+          },
+          "text": "A synthetic retained fact.",
+          "sources": [
+            {
+              "id": "source-keep",
+              "key": {
+                "machine_id": "machine-a",
+                "bot_id": "bot-a"
+              },
+              "project": {
+                "machine_id": "machine-a",
+                "project_id": "project-a",
+                "canonical_id": "repo-a",
+                "kind": "repository"
+              },
+              "kind": "user_message",
+              "revision": 1
+            }
+          ],
+          "provenance_complete": true
+        },
+        "capabilities": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "agent": "codex",
+          "cli_version": "fixture-cli/1",
+          "adapter_version": "fixture-acp/1",
+          "evidence": "synthetic-fixture-only",
+          "read_only_enforced": true,
+          "native_memory": "disabled",
+          "native_memory_verified": true,
+          "resume": false,
+          "send_message": true
+        }
+      },
+      "expected": {
+        "decision": "start_filtered",
+        "code": ""
+      }
+    },
+    {
+      "id": "resume-unknown-isolation",
+      "rule": "resume",
+      "input": {
+        "binding": {
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "agent": "codex",
+          "native_session_id": "native-a",
+          "memory_revision": 2,
+          "forgotten_through": 0,
+          "instruction_revision": 1,
+          "revoked": false
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "revision": 2,
+          "forgotten_through": 0,
+          "forgotten_source_ids": []
+        },
+        "context": {
+          "memory": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "revision": 2,
+            "forgotten_through": 0,
+            "forgotten_source_ids": []
+          },
+          "text": "A synthetic retained fact.",
+          "sources": [
+            {
+              "id": "source-keep",
+              "key": {
+                "machine_id": "machine-a",
+                "bot_id": "bot-a"
+              },
+              "project": {
+                "machine_id": "machine-a",
+                "project_id": "project-a",
+                "canonical_id": "repo-a",
+                "kind": "repository"
+              },
+              "kind": "user_message",
+              "revision": 1
+            }
+          ],
+          "provenance_complete": true
+        },
+        "capabilities": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "agent": "codex",
+          "cli_version": "fixture-cli/1",
+          "adapter_version": "fixture-acp/1",
+          "evidence": "synthetic-fixture-only",
+          "read_only_enforced": true,
+          "native_memory": "disabled",
+          "native_memory_verified": false,
+          "resume": true,
+          "send_message": true
+        }
+      },
+      "expected": {
+        "decision": "",
+        "code": "memory_isolation_unverified"
+      }
+    },
+    {
+      "id": "forget-forces-new-binding",
+      "rule": "resume",
+      "input": {
+        "binding": {
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "agent": "codex",
+          "native_session_id": "native-a",
+          "memory_revision": 2,
+          "forgotten_through": 0,
+          "instruction_revision": 1,
+          "revoked": false
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "revision": 3,
+          "forgotten_through": 3,
+          "forgotten_source_ids": [
+            "source-forgotten"
+          ]
+        },
+        "context": {
+          "memory": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "revision": 3,
+            "forgotten_through": 3,
+            "forgotten_source_ids": [
+              "source-forgotten"
+            ]
+          },
+          "text": "A synthetic retained fact.",
+          "sources": [
+            {
+              "id": "source-keep",
+              "key": {
+                "machine_id": "machine-a",
+                "bot_id": "bot-a"
+              },
+              "project": {
+                "machine_id": "machine-a",
+                "project_id": "project-a",
+                "canonical_id": "repo-a",
+                "kind": "repository"
+              },
+              "kind": "user_message",
+              "revision": 1
+            }
+          ],
+          "provenance_complete": true
+        },
+        "capabilities": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "agent": "codex",
+          "cli_version": "fixture-cli/1",
+          "adapter_version": "fixture-acp/1",
+          "evidence": "synthetic-fixture-only",
+          "read_only_enforced": true,
+          "native_memory": "disabled",
+          "native_memory_verified": true,
+          "resume": true,
+          "send_message": true
+        }
+      },
+      "expected": {
+        "decision": "start_filtered",
+        "code": ""
+      }
+    },
+    {
+      "id": "forget-rejects-stale-summary",
+      "rule": "resume",
+      "input": {
+        "binding": {
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "agent": "codex",
+          "native_session_id": "native-a",
+          "memory_revision": 2,
+          "forgotten_through": 0,
+          "instruction_revision": 1,
+          "revoked": false
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "revision": 3,
+          "forgotten_through": 3,
+          "forgotten_source_ids": [
+            "source-forgotten"
+          ]
+        },
+        "context": {
+          "memory": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "revision": 2,
+            "forgotten_through": 0,
+            "forgotten_source_ids": []
+          },
+          "text": "A synthetic retained fact.",
+          "sources": [
+            {
+              "id": "source-keep",
+              "key": {
+                "machine_id": "machine-a",
+                "bot_id": "bot-a"
+              },
+              "project": {
+                "machine_id": "machine-a",
+                "project_id": "project-a",
+                "canonical_id": "repo-a",
+                "kind": "repository"
+              },
+              "kind": "user_message",
+              "revision": 1
+            }
+          ],
+          "provenance_complete": true
+        },
+        "capabilities": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "agent": "codex",
+          "cli_version": "fixture-cli/1",
+          "adapter_version": "fixture-acp/1",
+          "evidence": "synthetic-fixture-only",
+          "read_only_enforced": true,
+          "native_memory": "disabled",
+          "native_memory_verified": true,
+          "resume": true,
+          "send_message": true
+        }
+      },
+      "expected": {
+        "decision": "",
+        "code": "pa_context_stale"
+      }
+    },
+    {
+      "id": "forget-rejects-hidden-lineage",
+      "rule": "resume",
+      "input": {
+        "binding": {
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "agent": "codex",
+          "native_session_id": "native-a",
+          "memory_revision": 2,
+          "forgotten_through": 0,
+          "instruction_revision": 1,
+          "revoked": false
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "revision": 3,
+          "forgotten_through": 3,
+          "forgotten_source_ids": [
+            "source-forgotten"
+          ]
+        },
+        "context": {
+          "memory": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "revision": 3,
+            "forgotten_through": 3,
+            "forgotten_source_ids": [
+              "source-forgotten"
+            ]
+          },
+          "text": "A synthetic retained fact.",
+          "sources": [
+            {
+              "id": "source-forgotten",
+              "key": {
+                "machine_id": "machine-a",
+                "bot_id": "bot-a"
+              },
+              "project": {
+                "machine_id": "machine-a",
+                "project_id": "project-a",
+                "canonical_id": "repo-a",
+                "kind": "repository"
+              },
+              "kind": "user_message",
+              "revision": 1
+            }
+          ],
+          "provenance_complete": true
+        },
+        "capabilities": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "agent": "codex",
+          "cli_version": "fixture-cli/1",
+          "adapter_version": "fixture-acp/1",
+          "evidence": "synthetic-fixture-only",
+          "read_only_enforced": true,
+          "native_memory": "disabled",
+          "native_memory_verified": true,
+          "resume": true,
+          "send_message": true
+        }
+      },
+      "expected": {
+        "decision": "",
+        "code": "pa_context_stale"
+      }
+    },
+    {
+      "id": "forget-rejects-other-bot",
+      "rule": "resume",
+      "input": {
+        "binding": {
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "agent": "codex",
+          "native_session_id": "native-a",
+          "memory_revision": 2,
+          "forgotten_through": 0,
+          "instruction_revision": 1,
+          "revoked": false
+        },
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "revision": 3,
+          "forgotten_through": 3,
+          "forgotten_source_ids": [
+            "source-forgotten"
+          ]
+        },
+        "context": {
+          "memory": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "revision": 3,
+            "forgotten_through": 3,
+            "forgotten_source_ids": [
+              "source-forgotten"
+            ]
+          },
+          "text": "A synthetic retained fact.",
+          "sources": [
+            {
+              "id": "source-keep",
+              "key": {
+                "machine_id": "machine-a",
+                "bot_id": "bot-b"
+              },
+              "project": {
+                "machine_id": "machine-a",
+                "project_id": "project-a",
+                "canonical_id": "repo-a",
+                "kind": "repository"
+              },
+              "kind": "user_message",
+              "revision": 1
+            }
+          ],
+          "provenance_complete": true
+        },
+        "capabilities": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "agent": "codex",
+          "cli_version": "fixture-cli/1",
+          "adapter_version": "fixture-acp/1",
+          "evidence": "synthetic-fixture-only",
+          "read_only_enforced": true,
+          "native_memory": "disabled",
+          "native_memory_verified": true,
+          "resume": true,
+          "send_message": true
+        }
+      },
+      "expected": {
+        "decision": "",
+        "code": "pa_context_stale"
+      }
+    },
+    {
+      "id": "read-older-device",
+      "rule": "read",
+      "input": {
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "conversation_id": "chat-a",
+          "reader_id": "reader-a",
+          "message_seq": 4
+        },
+        "incoming": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "conversation_id": "chat-a",
+          "reader_id": "reader-a",
+          "message_seq": 2
+        },
+        "last_seq": 8
+      },
+      "expected": {
+        "seq": 4,
+        "code": ""
+      }
+    },
+    {
+      "id": "read-later-device",
+      "rule": "read",
+      "input": {
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "conversation_id": "chat-a",
+          "reader_id": "reader-a",
+          "message_seq": 4
+        },
+        "incoming": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "conversation_id": "chat-a",
+          "reader_id": "reader-a",
+          "message_seq": 6
+        },
+        "last_seq": 8
+      },
+      "expected": {
+        "seq": 6,
+        "code": ""
+      }
+    },
+    {
+      "id": "read-beyond-history",
+      "rule": "read",
+      "input": {
+        "current": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "conversation_id": "chat-a",
+          "reader_id": "reader-a",
+          "message_seq": 4
+        },
+        "incoming": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "conversation_id": "chat-a",
+          "reader_id": "reader-a",
+          "message_seq": 9
+        },
+        "last_seq": 8
+      },
+      "expected": {
+        "seq": 4,
+        "code": "pa_invalid"
+      }
+    },
+    {
+      "id": "create-configuration-only",
+      "rule": "create",
+      "input": {
+        "settings": {
+          "target": {
+            "machine_id": "machine-a",
+            "project_id": "project-a"
+          },
+          "name": "Helper",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "agent": "codex",
+          "permission_policy": "ask",
+          "instructions": "Read and plan; dispatch changes.",
+          "role_snapshot_ref": "role-a@1"
+        },
+        "resolution": {
+          "Scope": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "Directory": "/workspace/repo",
+          "Current": true,
+          "Available": true
+        }
+      },
+      "expected": {
+        "code": ""
+      }
+    },
+    {
+      "id": "create-linked-canonical-project",
+      "rule": "create",
+      "input": {
+        "settings": {
+          "target": {
+            "machine_id": "machine-a",
+            "project_id": "project-a"
+          },
+          "name": "Helper",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "agent": "codex",
+          "permission_policy": "ask",
+          "instructions": "Read and plan; dispatch changes.",
+          "role_snapshot_ref": "role-a@1"
+        },
+        "resolution": {
+          "Scope": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "Directory": "/workspace/linked-worktree",
+          "Current": true,
+          "Available": true
+        }
+      },
+      "expected": {
+        "code": ""
+      }
+    },
+    {
+      "id": "create-non-repository-place",
+      "rule": "create",
+      "input": {
+        "settings": {
+          "target": {
+            "machine_id": "machine-a",
+            "project_id": "project-a"
+          },
+          "name": "Helper",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "agent": "codex",
+          "permission_policy": "ask",
+          "instructions": "Read and plan; dispatch changes.",
+          "role_snapshot_ref": "role-a@1"
+        },
+        "resolution": {
+          "Scope": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "place-a",
+            "kind": "place"
+          },
+          "Directory": "/workspace/repo",
+          "Current": true,
+          "Available": true
+        }
+      },
+      "expected": {
+        "code": ""
+      }
+    },
+    {
+      "id": "create-directory-gone",
+      "rule": "create",
+      "input": {
+        "settings": {
+          "target": {
+            "machine_id": "machine-a",
+            "project_id": "project-a"
+          },
+          "name": "Helper",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "agent": "codex",
+          "permission_policy": "ask",
+          "instructions": "Read and plan; dispatch changes.",
+          "role_snapshot_ref": "role-a@1"
+        },
+        "resolution": {
+          "Scope": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "Directory": "/workspace/repo",
+          "Current": true,
+          "Available": false
+        }
+      },
+      "expected": {
+        "code": "pa_not_found"
+      }
+    },
+    {
+      "id": "create-stale-project-resolution",
+      "rule": "create",
+      "input": {
+        "settings": {
+          "target": {
+            "machine_id": "machine-a",
+            "project_id": "project-a"
+          },
+          "name": "Helper",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "agent": "codex",
+          "permission_policy": "ask",
+          "instructions": "Read and plan; dispatch changes.",
+          "role_snapshot_ref": "role-a@1"
+        },
+        "resolution": {
+          "Scope": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "Directory": "/workspace/repo",
+          "Current": false,
+          "Available": true
+        }
+      },
+      "expected": {
+        "code": "pa_stale_version"
+      }
+    },
+    {
+      "id": "create-client-cannot-choose-other-source-directory",
+      "rule": "create",
+      "input": {
+        "settings": {
+          "target": {
+            "machine_id": "machine-b",
+            "project_id": "project-a"
+          },
+          "name": "Helper",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "agent": "codex",
+          "permission_policy": "ask",
+          "instructions": "Read and plan; dispatch changes.",
+          "role_snapshot_ref": "role-a@1"
+        },
+        "resolution": {
+          "Scope": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "Directory": "/workspace/repo",
+          "Current": true,
+          "Available": true
+        }
+      },
+      "expected": {
+        "code": "pa_scope_denied"
+      }
+    }
+  ],
+  "acp_cases": [
+    {
+      "id": "permission-during-pending-prompt",
+      "frames": [
+        {
+          "direction": "host_to_adapter",
+          "rpc": {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "session/prompt",
+            "params": {
+              "sessionId": "native-a",
+              "prompt": [
+                {
+                  "type": "text",
+                  "text": "synthetic input"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "direction": "adapter_to_host",
+          "rpc": {
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "session/request_permission",
+            "params": {
+              "sessionId": "native-a",
+              "toolCall": {
+                "toolCallId": "tool-a",
+                "title": "Read fixture"
+              },
+              "options": [
+                {
+                  "optionId": "allow-once",
+                  "name": "Allow once",
+                  "kind": "allow_once"
+                },
+                {
+                  "optionId": "reject",
+                  "name": "Reject",
+                  "kind": "reject_once"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "prompt_remains_pending": true,
+        "permission_offer_count": 1,
+        "permission_fence": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        },
+        "stop_must_remain_servable": true
+      }
+    },
+    {
+      "id": "explicit-message-suppresses-final",
+      "frames": [
+        {
+          "direction": "tool_to_host",
+          "tool": "send_message",
+          "call_id": "call-a",
+          "text": "Visible fixture reply."
+        },
+        {
+          "direction": "tool_to_host",
+          "tool": "send_message",
+          "call_id": "call-a",
+          "text": "Visible fixture reply."
+        },
+        {
+          "direction": "adapter_to_host",
+          "rpc": {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "result": {
+              "stopReason": "end_turn"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "visible_messages": [
+          "Visible fixture reply."
+        ],
+        "repeated_call_returns_same_receipt": true,
+        "final_text_promoted": false
+      }
+    },
+    {
+      "id": "forget-before-queued-send",
+      "frames": [
+        {
+          "direction": "host_internal",
+          "action": "capture_context",
+          "revision": 2
+        },
+        {
+          "direction": "host_internal",
+          "action": "forget",
+          "revision": 3,
+          "source_ids": [
+            "source-forgotten"
+          ]
+        },
+        {
+          "direction": "host_internal",
+          "action": "attempt_send",
+          "captured_revision": 2
+        }
+      ],
+      "expected": {
+        "error": "pa_context_stale",
+        "prompt_request_count": 0,
+        "opaque_resume_error": "resume_forbidden_after_forget",
+        "replacement": "filtered_context_new_binding_generation_2"
+      }
+    },
+    {
+      "id": "send-crash-after-write",
+      "frames": [
+        {
+          "direction": "host_internal",
+          "action": "persist_executing"
+        },
+        {
+          "direction": "host_to_adapter",
+          "rpc": {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "session/prompt",
+            "params": {
+              "sessionId": "native-a",
+              "prompt": [
+                {
+                  "type": "text",
+                  "text": "synthetic input"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "direction": "host_internal",
+          "action": "crash_before_response"
+        }
+      ],
+      "expected": {
+        "effect": "unknown",
+        "automatic_prompt_retry_count": 0,
+        "same_command": "inspect_unknown"
+      }
+    }
+  ],
+  "http_cases": [
+    {
+      "id": "create-retry",
+      "operation": "create",
+      "command": {
+        "key": {
+          "machine_id": "machine-a",
+          "bot_id": "bot-a"
+        },
+        "operation": "create",
+        "idempotency_key": "command-a",
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected": {
+        "bot_count": 1,
+        "model_requests": 0,
+        "process_starts": 0
+      }
+    },
+    {
+      "id": "read-offline-cache",
+      "operation": "list",
+      "source_state": "offline",
+      "expected": {
+        "empty_authoritative": false,
+        "fresh": false,
+        "model_requests": 0
+      }
+    },
+    {
+      "id": "revoked-permission",
+      "operation": "permission_answer",
+      "source_state": "revoked",
+      "expected": {
+        "code": "pa_revoked",
+        "native_response_count": 0
+      }
+    },
+    {
+      "id": "disabled-history",
+      "operation": "history",
+      "feature": {
+        "Enabled": false,
+        "HasData": true
+      },
+      "expected": {
+        "access": "history_only",
+        "model_requests": 0,
+        "create_send_permission_allowed": false
+      }
+    },
+    {
+      "id": "native-adapter-missing",
+      "operation": "send",
+      "expected": {
+        "code": "adapter_not_found",
+        "model_requests": 0
+      }
+    }
+  ],
+  "event_cases": [
+    {
+      "id": "visible-message",
+      "input": {
+        "version": "project-assistants.v1",
+        "id": "event-a",
+        "seq": 1,
+        "fence": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        },
+        "kind": "message_created",
+        "at": "2026-01-02T03:04:05Z",
+        "message": {
+          "id": "message-a",
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "seq": 1,
+          "turn_id": "turn-a",
+          "kind": "assistant",
+          "text": "Synthetic visible reply.",
+          "quote_message_id": "",
+          "at": "2026-01-02T03:04:05Z"
+        }
+      },
+      "expected": {
+        "code": "",
+        "visible_messages": 1,
+        "unread_delta": 1
+      }
+    },
+    {
+      "id": "trace-not-unread",
+      "input": {
+        "version": "project-assistants.v1",
+        "id": "event-trace",
+        "seq": 2,
+        "fence": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        },
+        "kind": "trace_updated",
+        "at": "2026-01-02T03:04:05Z",
+        "trace": {
+          "turn_id": "turn-a",
+          "category": "tool",
+          "text": "Synthetic trace",
+          "complete": true
+        }
+      },
+      "expected": {
+        "code": "",
+        "visible_messages": 0,
+        "unread_delta": 0
+      }
+    },
+    {
+      "id": "ambiguous-event-payload",
+      "input": {
+        "version": "project-assistants.v1",
+        "id": "event-a",
+        "seq": 1,
+        "fence": {
+          "key": {
+            "machine_id": "machine-a",
+            "bot_id": "bot-a"
+          },
+          "project": {
+            "machine_id": "machine-a",
+            "project_id": "project-a",
+            "canonical_id": "repo-a",
+            "kind": "repository"
+          },
+          "conversation_id": "chat-a",
+          "binding_id": "binding-a",
+          "generation": 1
+        },
+        "kind": "message_created",
+        "at": "2026-01-02T03:04:05Z",
+        "message": {
+          "id": "message-a",
+          "fence": {
+            "key": {
+              "machine_id": "machine-a",
+              "bot_id": "bot-a"
+            },
+            "project": {
+              "machine_id": "machine-a",
+              "project_id": "project-a",
+              "canonical_id": "repo-a",
+              "kind": "repository"
+            },
+            "conversation_id": "chat-a",
+            "binding_id": "binding-a",
+            "generation": 1
+          },
+          "seq": 1,
+          "turn_id": "turn-a",
+          "kind": "assistant",
+          "text": "Synthetic visible reply.",
+          "quote_message_id": "",
+          "at": "2026-01-02T03:04:05Z"
+        },
+        "trace": {
+          "turn_id": "turn-a",
+          "category": "tool",
+          "text": "Synthetic trace",
+          "complete": true
+        }
+      },
+      "expected": {
+        "code": "pa_invalid"
+      }
+    }
+  ],
+  "native_cases": [
+    {
+      "id": "bounded-adapter-absent",
+      "input": {
+        "adapter_candidate_found": false,
+        "inventory_complete_for_configured_paths": true
+      },
+      "expected": {
+        "code": "adapter_not_found",
+        "process_starts": 0,
+        "model_requests": 0
+      }
+    },
+    {
+      "id": "uninspected-adapter-cache",
+      "input": {
+        "adapter_candidate_found": false,
+        "inventory_complete_for_configured_paths": false
+      },
+      "expected": {
+        "code": "adapter_inventory_unknown",
+        "process_starts": 0,
+        "model_requests": 0
+      }
+    },
+    {
+      "id": "sandbox-did-not-run-target",
+      "input": {
+        "ordinary_write_control": true,
+        "sandbox_started": false,
+        "canary_changed": false,
+        "wrapper_exit": 2
+      },
+      "expected": {
+        "read_only_verified": false,
+        "model_requests": 0
+      }
+    },
+    {
+      "id": "codex-native-memory-unknown",
+      "input": {
+        "agent": "codex",
+        "cli_feature_memories_recognized": true,
+        "pinned_codync_switches_it_off": false,
+        "isolation_verified": false
+      },
+      "expected": {
+        "code": "memory_isolation_unverified",
+        "model_requests": 0
+      }
+    }
+  ]
+}

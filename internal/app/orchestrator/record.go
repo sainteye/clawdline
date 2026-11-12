@@ -410,6 +410,9 @@ type Record struct {
 	// account says now.
 	AssistantQuota *AssistantQuotaDecision `json:"assistant_quota,omitempty"`
 	Root           *RootRef                `json:"root,omitempty"`
+	// AssistantOwner is public Bot provenance, mutually exclusive with Root.
+	// It carries no capability and grants no Session or human Board authority.
+	AssistantOwner *AssistantOwner `json:"assistant_owner,omitempty"`
 	// BatchID groups tasks dispatched under one root while that root still has
 	// unfinished children. A later dispatch starts a new batch.
 	BatchID string `json:"batch_id,omitempty"`

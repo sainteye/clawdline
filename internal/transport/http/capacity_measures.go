@@ -23,6 +23,7 @@ var capacityMeasureAreas = []struct {
 	{"iterm", (*Server).itermCapacityMeasures},
 	{"memory", (*Server).memoryCapacityMeasures},
 	{"places", (*Server).placesCapacityMeasures},
+	{"projectassistant", (*Server).projectAssistantCapacityMeasures},
 	{"projectfiles", (*Server).projectFilesCapacityMeasures},
 	{"projectsync", (*Server).projectSyncCapacityMeasures},
 	{"release", (*Server).releaseCapacityMeasures},
