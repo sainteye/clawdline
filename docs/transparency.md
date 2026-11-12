@@ -497,3 +497,14 @@ This inventory establishes no native read-only or memory-isolation proof.
 English and Taiwan Traditional Chinese describe the same conditional scope.
 The public website snapshot must be imported and deployed after the reviewed
 product commit lands; no website publication is performed by this change.
+
+Persistent Bot workers reuse the broker's child briefing and result protocol.
+The conditional child card in English and Taiwan Traditional Chinese now names
+this trigger and its exact additional instruction: the worker is neither a human
+nor a terminal Root, returns results and landing facts to the source Bot chat,
+and cannot approve, claim or finish Board items for a person. The reviewed
+excerpt contains the actual branch in ChildBrief. Authenticated source policy,
+process-local capabilities and the broker enforce admission; the instruction
+alone does not establish authorization or successful execution. Native provider
+admission, production host wiring and public website publication remain separate
+acceptance work. The website snapshot must follow this revision when published.

@@ -123,7 +123,7 @@ func (s *Store) PendingTurns(ctx context.Context, key pa.BotKey) ([]pa.Turn, err
 	out := []pa.Turn{}
 	for _, t := range a.Turns {
 		switch t.State {
-		case pa.TurnAccepted, pa.TurnQueued, pa.TurnRunning, pa.TurnWaitingPermission:
+		case pa.TurnAccepted, pa.TurnQueued, pa.TurnRunning, pa.TurnWaitingPermission, pa.TurnUnknown:
 			out = append(out, t)
 		}
 	}

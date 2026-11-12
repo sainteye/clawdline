@@ -111,7 +111,12 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 
 	w("# Clawdline child briefing — task %s", r.ID)
 	w("")
-	if r.Root == nil && r.ScheduleID != "" {
+	if r.AssistantOwner != nil {
+		w("You are a CHILD worker for a persistent Bot, not a human or terminal Root.")
+		w("The existing broker returns result.json and landing facts to the source Bot chat.")
+		w("You have no authority to approve, claim or finish Board items for a person.")
+		w("Your one job is the task under \"The task\" below.")
+	} else if r.Root == nil && r.ScheduleID != "" {
 		// A scheduled task has nobody to report back to (D07): it was started
 		// by a clock, and saying "a root session" would send it looking for one.
 		w("You are a CHILD session started by the schedule %q on this machine. No session", r.ScheduleTitle)

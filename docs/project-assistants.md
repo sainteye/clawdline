@@ -270,3 +270,32 @@ cursors with contract/schema versions. PA-03 validates exact round trips and
 rejects unknown future versions. PA-05 owns the final removal, authorization,
 Cloud and cross-module failure-injection rehearsal; PA-04 returns for actual
 desktop/phone interaction acceptance after modules are integrated.
+
+
+## Module implementation checkpoints
+
+The [runtime and ACP adapter](project-assistants-runtime.md) implement durable
+queueing, fenced callbacks, permission lifecycle, filtered prompt context and
+owned process cleanup. Scripted peer evidence and cross-compilation are distinct
+from admission of a real native provider. The [Session host integration](project-assistants-host.md) connects the all-source roster and preserves the
+existing voice owner; its synthetic browser matrix does not prove production
+Cloud or device revocation behavior across an App unmount.
+
+The application Service owns metadata operations, server-derived command hashes,
+principal-scoped read projections and literal human memory entries. Its ports
+have no startup effects: settings and history do not initialize a native process.
+Production HTTP/Cloud authorization, source identity and Project resolution must
+still be wired and verified by the integration owner. Merely importing these
+modules does not enable the default-off feature or install its tables.
+
+The [broker bridge](project-assistants-broker.md) supplies a separate private Bot
+capability, the existing isolated task admission path, and durable work-result
+projections. It preserves the human approval boundary. Its current verified
+module tests use a real temporary broker and fake worker launch; installing the
+bridge in a production source host is a separate integration requirement.
+
+Read cursors and observed receipts belong to the authenticated reader. Fresh,
+readable retained history may acknowledge that reader's own view without granting
+content, native, configuration or permission-answer writes. Offline, stale and
+revoked sources cannot accept new acknowledgements. The transport must preserve
+this distinction rather than requiring content-write authority for every POST.

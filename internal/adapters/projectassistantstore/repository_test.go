@@ -277,3 +277,32 @@ func TestObserveIsScopedIdempotentAndHistoryReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPendingTurnsRetainUnknownAsQueueBarrier(t *testing.T) {
+	_, s, _ := testDB(t)
+	b := seed(t, s, "one")
+	f := populate(t, s, b, pa.EffectUnknown)
+	unknown, err := s.Turn(testContext, b.Key, "turn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown.State = pa.TurnUnknown
+	if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.SendOperation, "mark-unknown"), ExpectedVersion: 2, Turn: &unknown, Receipt: pa.Receipt{ID: "unknown", State: pa.EffectUnknown}}); err != nil {
+		t.Fatal(err)
+	}
+	queued := pa.Turn{ID: "queued", Fence: f, MessageID: "later-message", State: pa.TurnQueued, IdempotencyKey: "later"}
+	message := pa.Message{ID: queued.MessageID, Fence: f, Seq: 2, TurnID: queued.ID, Kind: pa.UserMessage, Text: "later"}
+	if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.SendOperation, "later"), ExpectedVersion: 3, Turn: &queued, Messages: []pa.Message{message}, Receipt: pa.Receipt{ID: "later", State: pa.EffectAccepted}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, reader := range []*Store{s, New(s.db)} {
+		turns, err := reader.PendingTurns(testContext, b.Key)
+		if err != nil || len(turns) != 2 || turns[0].ID != unknown.ID || turns[0].State != pa.TurnUnknown || turns[1].ID != queued.ID {
+			t.Fatalf("unknown barrier lost before queued turn: %+v, %v", turns, err)
+		}
+		receipt, err := reader.Receipt(testContext, command(b.Key, pa.SendOperation, "send"))
+		if err != nil || receipt == nil || receipt.State != pa.EffectUnknown {
+			t.Fatalf("original unknown intent changed: %+v, %v", receipt, err)
+		}
+	}
+}
