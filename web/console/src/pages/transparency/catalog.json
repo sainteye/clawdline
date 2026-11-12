@@ -3366,7 +3366,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "997f164c72e1ad060e80081f87aa012d374f21e93f73b4a0f1e977675fbd0158",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "4dad4023352d37d8ecdb61ecca6938aff0b619f70b38d23543717f6cc927552c",
+    "web/console/src/next-strings.ts": "b9c25b1ef7d5a5e4455d4650b6247ec384d190f922a9eda0cc78f873a2a10074",
     "web/console/src/overlays/info.ts": "afee5b67146a062576bef9a06e2531329d275899e5d4a23965ee2e419c9d8c30",
     "web/console/src/session/Composer.tsx": "7bba0e78b8295c16bbad0542415b38977767e3d835bf1284b753909aa982489f",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",

@@ -4,6 +4,7 @@ import { BRAND_MARK } from '../brand-mark.js'
 import { formatUSD } from './copilot-cost.js'
 import { CopilotOrb } from './CopilotOrb.js'
 import { CopilotNotice } from './CopilotNotice.js'
+import { CopilotDemoFilm } from './CopilotDemoFilm.js'
 import {
   realtimeCopilot,
   type RealtimeCopilotState,
@@ -26,6 +27,7 @@ interface Props {
 export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimize }) => {
   const [copilotState, setCopilotState] = useState<RealtimeCopilotState>(realtimeCopilot.getState())
   const [showLogs, setShowLogs] = useState(false)
+  const [demoOpen, setDemoOpen] = useState(false)
 
   useEffect(() => {
     return realtimeCopilot.subscribe((state) => {
@@ -202,6 +204,10 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
             <button type="button" className="key-edit-link" onClick={openSettings}>
               {nextWord('copilotGoSettings')}
             </button>
+            {/* Without a key there is no call yet: the film shows what one does. */}
+            <button type="button" className="key-edit-link copilot-demo-watch" onClick={() => setDemoOpen(true)}>
+              {nextWord('copilotDemoWatch')}
+            </button>
           </div>
         ) : null}
 
@@ -234,6 +240,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           )}
         </div>
       </div>
+      <CopilotDemoFilm open={demoOpen} onClose={() => setDemoOpen(false)} />
     </div>
   )
 }

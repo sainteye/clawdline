@@ -10,6 +10,9 @@ On the machine, open **Settings** → **Voice copilot** and paste an OpenAI API 
 sets the **Voice** (with **Listen** to hear it), the speaking speed, **Short answers**, **Waiting for
 you to finish**, **Prepare a briefing when a call starts**, and **Extra instructions**.
 
+No key yet? Press the call button anyway: the call says no key is set and offers **Go to Settings ›
+Voice copilot** and **Watch the demo**, a film of a call in the console's language.
+
 ## Start and end a call
 
 Press the phone button (**Call the voice copilot**) beside the Session list's actions. The call
