@@ -71,7 +71,11 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const select=(item:W.ProjectAssistantBotSummary)=>{
     lastSelected.current=botIdentity(item.bot.key);setStatus(false)
     setSelected(botIdentity(item.bot.key));selectRef.current?.(item.bot.key)
-    if(manageHistory)history.pushState({...history.state,paView:historyID.current,paBot:botIdentity(item.bot.key)},"")
+    if(manageHistory){
+      const state={...history.state,paView:historyID.current,paBot:botIdentity(item.bot.key)}
+      if(history.state?.paView===historyID.current&&history.state?.paBot)history.replaceState(state,"")
+      else history.pushState(state,"")
+    }
   }
   const back=()=>{
     if(manageHistory&&history.state?.paView===historyID.current&&history.state?.paBot){history.back();return}
@@ -80,8 +84,8 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   useEffect(()=>{
     const opener=returnFocus??(document.activeElement instanceof HTMLElement?document.activeElement:null)
     const scrollX=window.scrollX,scrollY=window.scrollY
-    if(manageHistory)history.pushState({...history.state,paView:historyID.current,paBot:null},"")
-    const pop=()=>{if(history.state?.paView===historyID.current){setSelected(history.state.paBot??null);selectRef.current?.(null)}else closeRef.current()}
+    if(manageHistory&&history.state?.paView!==historyID.current)history.pushState({...history.state,paView:historyID.current,paBot:null},"")
+    const pop=()=>{if(history.state?.paView===historyID.current){const identity=history.state.paBot??null;setSelected(identity);const item=pagesRef.current;const key=Object.values(item).flatMap(page=>page.items).find(row=>botIdentity(row.bot.key)===identity)?.bot.key??null;selectRef.current?.(key)}else closeRef.current()}
     if(manageHistory)window.addEventListener("popstate",pop)
     return()=>{window.removeEventListener("popstate",pop);requestAnimationFrame(()=>{if(opener?.isConnected)opener.focus({preventScroll:true});window.scrollTo(scrollX,scrollY)})}
   },[manageHistory])
