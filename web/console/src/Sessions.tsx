@@ -68,6 +68,7 @@ export function SessionsPage({
   onStarted,
   streamTasks = null,
   fleetList,
+  assistantEntry,
   fleetDetailKey,
   fleetCoordinatorBound = false,
   fleetDetailPending = false,
@@ -115,6 +116,7 @@ export function SessionsPage({
   streamTasks?: TaskList | null
   /** The same page frame and detail, with only the list supplied by the Cloud fleet adapter. */
   fleetList?: ReactNode
+  assistantEntry?: ReactNode
   fleetDetailKey?: string
   fleetCoordinatorBound?: boolean
   fleetDetailPending?: boolean
@@ -319,7 +321,8 @@ export function SessionsPage({
         data-mode={terminalMode ? "terminal" : undefined}
         hidden={!onScreen}
       >
-        <section className="pane pane-list">
+        <section className="pane pane-list" style={assistantEntry ? {position:"relative"} : undefined}>
+          {assistantEntry && <div className="session-bots-entry" style={{position:"absolute",right:16,bottom:72,zIndex:4}}>{assistantEntry}</div>}
           {/* One line: a newer release for this machine and the press that
               installs it, or the dev build running here and the ways on from
               it (machine/UpdateBanner.tsx). */}
