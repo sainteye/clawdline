@@ -1,0 +1,14 @@
+Codync
+Copyright 2026 Po Kai Lee
+
+This product includes software developed by Po Kai Lee and the Codync
+contributors (https://github.com/leepokai/Codync).
+
+Services built on Codync are operated by third parties, not by the Codync
+project. Codync Cloud (accounts, the relay at api.codync.dev, push and the
+remote-screen relay) is for personal use only: hosted, resold or
+multi-tenant services must run their own relay and accounts. See
+https://github.com/leepokai/Codync/blob/main/TRADEMARK.md and
+https://codync.dev/terms.
+
+Codync 2.11.0 and earlier were released under the MIT License.

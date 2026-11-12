@@ -1,0 +1,872 @@
+{
+  "contract_version": "project-assistants.v1",
+  "fixture_version": 1,
+  "schema_version": 1,
+  "foundation_base": "8522f21290f848027f45ff2122a8bd527fb66883",
+  "foundation_status": "contract_only_default_hidden_no_routes_or_native_runtime",
+  "upstream": {
+    "repository": "https://github.com/leepokai/Codync",
+    "revision": "234219cef2d3f991f0f7225ba89e3c99cdd34177",
+    "reuse_record": "docs/project-assistants-reuse.md",
+    "notices": [
+      "third_party/codync/LICENSE",
+      "third_party/codync/NOTICE",
+      "third_party/codync/DERIVATION.md"
+    ]
+  },
+  "go": {
+    "domain_package": "github.com/sainteye/clawdline/internal/domain/projectassistant",
+    "ports_package": "github.com/sainteye/clawdline/internal/app/projectassistant",
+    "ports": {
+      "Runtime": [
+        "Submit(context.Context, Submission) (pa.Receipt, error)",
+        "Stop(context.Context, StopRequest) (pa.Receipt, error)",
+        "Answer(context.Context, AnswerRequest) (pa.Receipt, error)",
+        "Disable(context.Context, pa.ProjectSelection) error"
+      ],
+      "Repository": [
+        "Bot(context.Context, pa.BotKey) (pa.Bot, error)",
+        "List(context.Context, pa.ListBots) (pa.BotPage, error)",
+        "Conversation(context.Context, pa.BotKey, string) (pa.Conversation, error)",
+        "Turn(context.Context, pa.BotKey, string) (pa.Turn, error)",
+        "PendingTurns(context.Context, pa.BotKey) ([]pa.Turn, error)",
+        "Binding(context.Context, pa.BotKey, string) (pa.ExecutionBinding, error)",
+        "Messages(context.Context, HistoryQuery) (MessagePage, error)",
+        "Permission(context.Context, pa.BotKey, string) (pa.PermissionOffer, error)",
+        "Receipt(context.Context, pa.Command) (*pa.Receipt, error)",
+        "Commit(context.Context, Mutation) (pa.Receipt, error)",
+        "MarkRead(context.Context, pa.Command, pa.ReadCursor) (pa.ReadCursor, error)",
+        "Observe(context.Context, pa.Command, string, int64) (pa.Receipt, error)",
+        "Export(context.Context, pa.BotKey) (Export, error)"
+      ],
+      "Memory": [
+        "Current(context.Context, pa.BotKey) (pa.MemoryRevision, error)",
+        "Snapshot(context.Context, pa.BotKey) (pa.ContextSnapshot, error)",
+        "WithCurrent(context.Context, pa.BotKey, int64, func(pa.ContextSnapshot) error) error",
+        "Save(context.Context, MemoryWrite) (pa.MemoryRevision, error)",
+        "Forget(context.Context, ForgetRequest) (pa.MemoryRevision, error)"
+      ],
+      "WorkBridge": [
+        "Dispatch(context.Context, pa.WorkRequest) (pa.WorkLink, error)",
+        "Status(context.Context, pa.AssistantExecutionActor, string) (pa.WorkLink, error)"
+      ],
+      "EventFeed": [
+        "Read(context.Context, pa.EventQuery) (pa.EventPage, error)"
+      ],
+      "ProjectResolver": [
+        "Resolve(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error)"
+      ],
+      "SchemaInstaller": [
+        "Version() int",
+        "Install(context.Context, *sql.DB) error"
+      ]
+    },
+    "bootstrap": "github.com/sainteye/clawdline/internal/adapters/projectassistanttest.Bootstrap(ctx, installer)",
+    "bootstrap_database": "fresh caller-owned :memory: SQLite; installer version must equal 1; no global sqlite.go or host user_version change"
+  },
+  "wire": {
+    "schema": "api/v1/project-assistants.schema.json",
+    "go_output": "internal/contract/zz_generated.go",
+    "typescript_output": "web/contract/src/generated.ts",
+    "types": [
+      "ProjectAssistantAccess",
+      "ProjectAssistantAgent",
+      "ProjectAssistantAppearance",
+      "ProjectAssistantBot",
+      "ProjectAssistantBotKey",
+      "ProjectAssistantBotResponse",
+      "ProjectAssistantBotSummary",
+      "ProjectAssistantCapabilities",
+      "ProjectAssistantCommand",
+      "ProjectAssistantContextSnapshot",
+      "ProjectAssistantConversation",
+      "ProjectAssistantCreateRequest",
+      "ProjectAssistantCreateSettings",
+      "ProjectAssistantEditRequest",
+      "ProjectAssistantEditSettings",
+      "ProjectAssistantEffectState",
+      "ProjectAssistantErrorCode",
+      "ProjectAssistantErrorResponse",
+      "ProjectAssistantEvent",
+      "ProjectAssistantEventKind",
+      "ProjectAssistantEventsRequest",
+      "ProjectAssistantEventsResponse",
+      "ProjectAssistantExecutionBinding",
+      "ProjectAssistantExport",
+      "ProjectAssistantFailure",
+      "ProjectAssistantFence",
+      "ProjectAssistantForgetRequest",
+      "ProjectAssistantGetResponse",
+      "ProjectAssistantHistoryRequest",
+      "ProjectAssistantHistoryResponse",
+      "ProjectAssistantInstructions",
+      "ProjectAssistantListRequest",
+      "ProjectAssistantListResponse",
+      "ProjectAssistantMemoryEntry",
+      "ProjectAssistantMemoryResponse",
+      "ProjectAssistantMemoryRevision",
+      "ProjectAssistantMemorySource",
+      "ProjectAssistantMemoryWriteRequest",
+      "ProjectAssistantMessage",
+      "ProjectAssistantMessageKind",
+      "ProjectAssistantNativeMemoryMode",
+      "ProjectAssistantObserveRequest",
+      "ProjectAssistantOperation",
+      "ProjectAssistantPermissionAnswerRequest",
+      "ProjectAssistantPermissionOffer",
+      "ProjectAssistantPermissionOption",
+      "ProjectAssistantPermissionOptionKind",
+      "ProjectAssistantPermissionPolicy",
+      "ProjectAssistantPermissionState",
+      "ProjectAssistantProjectKind",
+      "ProjectAssistantProjectScope",
+      "ProjectAssistantProjectSelection",
+      "ProjectAssistantReadCursor",
+      "ProjectAssistantReadRequest",
+      "ProjectAssistantReadResponse",
+      "ProjectAssistantReceipt",
+      "ProjectAssistantReceiptResponse",
+      "ProjectAssistantSendRequest",
+      "ProjectAssistantShape",
+      "ProjectAssistantSourceState",
+      "ProjectAssistantSourceStatus",
+      "ProjectAssistantSourcesResponse",
+      "ProjectAssistantStopRequest",
+      "ProjectAssistantTrace",
+      "ProjectAssistantTurn",
+      "ProjectAssistantTurnState",
+      "ProjectAssistantWorkLink",
+      "ProjectAssistantWorkState"
+    ],
+    "timestamps": "RFC3339 UTC",
+    "arrays": "non-null, including empty lists",
+    "events": "exactly one payload matching snake_case EventKind, except feature_disabled has none",
+    "operation_hash": "source-recomputed SHA-256 of canonical validated command; identity and operation are inside hash; transport metadata and claimed content_hash excluded",
+    "memory_write_revision": "Input entry.revision equals expected_revision. Store assigns next source revision atomically; tombstones cannot be overwritten."
+  },
+  "frontend_port": {
+    "owner": "PA-04",
+    "path": "web/console/src/project-assistants/client.ts",
+    "interface": "SourceClient",
+    "readonly_properties": {
+      "machineID": "string",
+      "authorizationRevision": "string"
+    },
+    "methods": {
+      "status": {
+        "request": "void",
+        "response": "Promise<ProjectAssistantSourcesResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "projects": {
+        "request": "void",
+        "response": "Promise<ProjectCatalogAnswer>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "list": {
+        "request": "ProjectAssistantListRequest",
+        "response": "Promise<ProjectAssistantListResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "create": {
+        "request": "ProjectAssistantCreateRequest",
+        "response": "Promise<ProjectAssistantBotResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "get": {
+        "request": "ProjectAssistantBotKey",
+        "response": "Promise<ProjectAssistantGetResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "edit": {
+        "request": "ProjectAssistantEditRequest",
+        "response": "Promise<ProjectAssistantBotResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "history": {
+        "request": "ProjectAssistantHistoryRequest",
+        "response": "Promise<ProjectAssistantHistoryResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "send": {
+        "request": "ProjectAssistantSendRequest",
+        "response": "Promise<ProjectAssistantReceiptResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "stop": {
+        "request": "ProjectAssistantStopRequest",
+        "response": "Promise<ProjectAssistantReceiptResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "answer": {
+        "request": "ProjectAssistantPermissionAnswerRequest",
+        "response": "Promise<ProjectAssistantReceiptResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "markRead": {
+        "request": "ProjectAssistantReadRequest",
+        "response": "Promise<ProjectAssistantReadResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "observe": {
+        "request": "ProjectAssistantObserveRequest",
+        "response": "Promise<ProjectAssistantReceiptResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "events": {
+        "request": "ProjectAssistantEventsRequest",
+        "response": "Promise<ProjectAssistantEventsResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "forget": {
+        "request": "ProjectAssistantForgetRequest",
+        "response": "Promise<ProjectAssistantMemoryResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "saveMemory": {
+        "request": "ProjectAssistantMemoryWriteRequest",
+        "response": "Promise<ProjectAssistantMemoryResponse>",
+        "last_argument": "signal: AbortSignal"
+      },
+      "export": {
+        "request": "ProjectAssistantBotKey",
+        "response": "Promise<ProjectAssistantExport>",
+        "last_argument": "signal: AbortSignal"
+      }
+    },
+    "errors": "Reject with generated ProjectAssistantErrorResponse; do not parse English messages. Preserve unknown receipts and drafts.",
+    "implementation_owner": "PA-05",
+    "implementation_path": "web/console/src/cloud/project-assistants.ts",
+    "independent_compilation": "PA-04 owns the single interface and fake implementation; PA-05 can implement a structurally compatible class using only generated request/response types before importing that interface at integration. No second UI data model.",
+    "source_authority": "Capture machine-specific client and authorization revision at construction; validate current grant before each operation. Host supplies all authorized sources, never global active-machine singleton.",
+    "pagination": "Independent opaque cursor per source/filter/authorization revision. Global roster merges activity_at descending then machine_id/bot_id ascending. Offline errors remain per-source and do not become an empty authoritative roster.",
+    "view_identity": "Account cache namespace + machine_id + bot_id; permission callbacks additionally capture conversation/binding/generation/turn/offer. Local draft and visible message anchor survive switching; entry always clears selected Bot.",
+    "global_entry": {
+      "shape": "blob",
+      "color": "#e39567",
+      "opens": "all_authorized_bots",
+      "starts_model": false
+    },
+    "microphone": "hidden until PA-05 supplies a verified existing recorder-ownership adapter; do not attachComposerVoice"
+  },
+  "http_integration_targets": [
+    {
+      "method": "GET",
+      "path": "/v1/project-assistants/status",
+      "client_method": "status",
+      "cloud_word": "project-assistants.status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects",
+      "client_method": "projects",
+      "cloud_word": "projects"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/project-assistants",
+      "client_method": "list",
+      "cloud_word": "project-assistants.list"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants",
+      "client_method": "create",
+      "cloud_word": "project-assistants.create"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/project-assistants/{bot}",
+      "client_method": "get",
+      "cloud_word": "project-assistants.get"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/project-assistants/{bot}",
+      "client_method": "edit",
+      "cloud_word": "project-assistants.edit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/project-assistants/{bot}/messages",
+      "client_method": "history",
+      "cloud_word": "project-assistants.history"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants/{bot}/messages",
+      "client_method": "send",
+      "cloud_word": "project-assistants.send"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants/{bot}/stop",
+      "client_method": "stop",
+      "cloud_word": "project-assistants.stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants/{bot}/permissions/{offer}/answer",
+      "client_method": "answer",
+      "cloud_word": "project-assistants.answer"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants/{bot}/read",
+      "client_method": "markRead",
+      "cloud_word": "project-assistants.markRead"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants/{bot}/observed",
+      "client_method": "observe",
+      "cloud_word": "project-assistants.observe"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/project-assistants/{bot}/events",
+      "client_method": "events",
+      "cloud_word": "project-assistants.events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants/{bot}/memory/forget",
+      "client_method": "forget",
+      "cloud_word": "project-assistants.forget"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/project-assistants/{bot}/memory",
+      "client_method": "saveMemory",
+      "cloud_word": "project-assistants.saveMemory"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/project-assistants/{bot}/export",
+      "client_method": "export",
+      "cloud_word": "project-assistants.export"
+    }
+  ],
+  "http_notes": [
+    "These are PA-05 targets, not routes registered by PA-01. Existing /v1/projects remains owned by its current service.",
+    "Route bot/offer IDs and captured machine must match body identities. Get/history/list queries are generated request shapes encoded as query parameters.",
+    "Every write carries Idempotency-Key matching command.idempotency_key, rejects unknown fields, rechecks device/feature/source scope, and recomputes content hash. Never trust reader_id, SourceStatus or Capabilities supplied by the browser.",
+    "Native capabilities are local attested facts; provider failure preserves metadata functionality.",
+    "PA-05 registers the new routes with a raised APILevel and complete device/Cloud write gates; no machine-credential fallback."
+  ],
+  "fixtures": {
+    "path": "internal/domain/projectassistant/testdata/cases.json",
+    "version": 1,
+    "policy_cases": "Executable now via TestSharedPolicyFixtures",
+    "acp_cases": "Fixed script input/output for PA-02; not a native execution receipt",
+    "http_cases": "Fixed route/service input/output for PA-03/05; no router installed here",
+    "event_cases": "Typed event-envelope fixtures plus later projection/replay expectations",
+    "native_cases": "Source/config probe requirements, not a successful native capability receipt"
+  },
+  "checks": [
+    "go test ./internal/domain/projectassistant ./internal/app/projectassistant ./internal/adapters/projectassistanttest",
+    "go run ./tools/contract-gen -check",
+    "go test ./internal/domain/capacity -count=1",
+    "go test ./internal/transport/http -run \"TestEveryRegisteredRowIsMeasured|TestEveryMeasureIsInItsBoundsArea|TestCapacityMeasuresMatchTheirSnapshot\" -count=1",
+    "go test -race ./internal/domain/projectassistant ./internal/adapters/projectassistanttest",
+    "tools/check.sh"
+  ],
+  "capacity": {
+    "registered": [
+      "bots.name_runes",
+      "bots.instruction_bytes",
+      "bots.message_bytes",
+      "bots.pending_turns",
+      "bots.page_rows",
+      "bots.event_rows"
+    ],
+    "red_evidence": "Task artifact capacity-red.log: TestEveryBoundIsRegistered names all six actual missing declarations before registration.",
+    "uninstalled_measurement": "Known zero allocation only because this build has no Bot runtime/queues installed; explicitly noted, never native readiness. PA-05 replaces all six observations when installing. Installed but unreadable remains Unknown.",
+    "effective_limits": "Module owners must honor source-machine lower overrides as well as domain ceilings.",
+    "operational_limits_pending": {
+      "PA-02": [
+        "native processes/concurrency",
+        "pending RPC and incoming event queue",
+        "bounded stdin write and cancellation/cleanup deadlines",
+        "stderr retention"
+      ],
+      "PA-03": [
+        "database/export/memory byte budgets",
+        "receipt retry horizon and retention without evicting unknowns",
+        "durable event retention and expired-cursor snapshots"
+      ],
+      "PA-05": [
+        "HTTP/Cloud request envelope size using existing limits where valid",
+        "UI event poll/reconnect/backoff and cache retention",
+        "actor capability lifetime/revocation retention"
+      ]
+    },
+    "registration_owner": "PA-05 integrates exact proposed values, Sources, bilingual help, HTTP measures and both snapshots. Module owners provide observed/failure evidence before adding enforced bounds.",
+    "measurements": {
+      "bots.name_runes": {
+        "owner": "PA-05",
+        "installed_measurement": "per-settings Unicode name guard; no retained allocation",
+        "unknown": "report unknown only if active configured validator settings cannot be read"
+      },
+      "bots.instruction_bytes": {
+        "owner": "PA-05",
+        "installed_measurement": "per-settings UTF-8 instruction guard; no retained allocation",
+        "unknown": "report unknown if active configured validator settings cannot be read"
+      },
+      "bots.message_bytes": {
+        "owner": "PA-05",
+        "installed_measurement": "per-message UTF-8 guard before acceptance; no retained allocation",
+        "unknown": "report unknown if active configured validator settings cannot be read"
+      },
+      "bots.pending_turns": {
+        "owner": "PA-02 supplies observations; PA-05 wires them",
+        "installed_measurement": "maximum waiting queue depth among live Bots, excluding active turns; never sum per-Bot queues against one per-Bot ceiling",
+        "unknown": "an installed runtime or queue that cannot be read is unmeasured, never assumed zero"
+      },
+      "bots.page_rows": {
+        "owner": "PA-03 validator; PA-05 transport",
+        "installed_measurement": "per-roster/history response-page guard, not total stored history",
+        "unknown": "active effective limit unavailable is unmeasured"
+      },
+      "bots.event_rows": {
+        "owner": "PA-03 replay validator; PA-05 transport",
+        "installed_measurement": "per-durable-replay-page guard, not incoming ACP event queue occupancy",
+        "unknown": "active effective limit unavailable is unmeasured"
+      }
+    }
+  },
+  "owners": {
+    "PA-02": {
+      "exact_write_paths": [
+        "internal/app/projectassistant/runtime.go",
+        "internal/app/projectassistant/runtime_test.go",
+        "internal/app/projectassistant/protocol.go",
+        "internal/app/projectassistant/protocol_test.go",
+        "internal/adapters/projectassistantacp/client.go",
+        "internal/adapters/projectassistantacp/client_test.go",
+        "internal/adapters/projectassistantacp/process.go",
+        "internal/adapters/projectassistantacp/process_unix.go",
+        "internal/adapters/projectassistantacp/process_windows.go",
+        "internal/adapters/projectassistantacp/process_other.go",
+        "internal/adapters/projectassistantacp/process_test.go",
+        "internal/adapters/projectassistantacp/capabilities.go",
+        "internal/adapters/projectassistantacp/capabilities_test.go",
+        "internal/adapters/projectassistantacp/testdata/peer.go",
+        "docs/project-assistants-runtime.md"
+      ],
+      "accepts_ports": [
+        "Runtime",
+        "Repository",
+        "Memory",
+        "WorkBridge",
+        "ProjectResolver"
+      ],
+      "module_ready": "Compiling commit, scripted ACP peer with no provider/model calls, queue/permission/stop/unknown/cleanup failure tests, actual constructor names and evidence. Native adapter absent stays typed-unavailable.",
+      "final_acceptance": "Authorized native provider tests later, after exact installed capabilities and sandbox startup are proved."
+    },
+    "PA-03": {
+      "exact_write_paths": [
+        "internal/adapters/projectassistantstore/schema.go",
+        "internal/adapters/projectassistantstore/schema_test.go",
+        "internal/adapters/projectassistantstore/repository.go",
+        "internal/adapters/projectassistantstore/repository_test.go",
+        "internal/adapters/projectassistantstore/events.go",
+        "internal/adapters/projectassistantstore/events_test.go",
+        "internal/adapters/projectassistantstore/memory.go",
+        "internal/adapters/projectassistantstore/memory_test.go",
+        "internal/adapters/projectassistantstore/export.go",
+        "internal/adapters/projectassistantstore/export_test.go",
+        "docs/project-assistants-store.md"
+      ],
+      "implements_ports": [
+        "Repository",
+        "Memory",
+        "EventFeed",
+        "SchemaInstaller"
+      ],
+      "module_ready": "Compiling commit, isolated Bootstrap with caller installer, atomic rollback/idempotency/read/event/provenance/forget/WithCurrent tests and export/restore round trip. No global sqlite.go edit.",
+      "final_acceptance": "Old-version copy/read/upgrade and compatible reinstall evidence; final integration removal uses exact retained data."
+    },
+    "PA-04": {
+      "exact_write_paths": [
+        "web/console/src/project-assistants/Bots.tsx",
+        "web/console/src/project-assistants/BotOrb.tsx",
+        "web/console/src/project-assistants/BotRoster.tsx",
+        "web/console/src/project-assistants/BotRow.tsx",
+        "web/console/src/project-assistants/BotAvatar.tsx",
+        "web/console/src/project-assistants/avatar-paths.ts",
+        "web/console/src/project-assistants/BotCreate.tsx",
+        "web/console/src/project-assistants/BotSettings.tsx",
+        "web/console/src/project-assistants/BotStatus.tsx",
+        "web/console/src/project-assistants/Chat.tsx",
+        "web/console/src/project-assistants/ChatRows.tsx",
+        "web/console/src/project-assistants/Composer.tsx",
+        "web/console/src/project-assistants/PermissionCard.tsx",
+        "web/console/src/project-assistants/Trace.tsx",
+        "web/console/src/project-assistants/WorkResultCard.tsx",
+        "web/console/src/project-assistants/client.ts",
+        "web/console/src/project-assistants/view-state.ts",
+        "web/console/src/project-assistants/chat-items.ts",
+        "web/console/src/project-assistants/composer-keyboard.ts",
+        "web/console/src/project-assistants/words.ts",
+        "web/console/src/project-assistants/styles.css",
+        "web/console/src/project-assistants/fixtures.ts",
+        "web/console/src/project-assistants/view-state.test.ts",
+        "web/console/src/project-assistants/chat-items.test.ts",
+        "web/console/src/project-assistants/composer-keyboard.test.ts",
+        "web/console/src/project-assistants/components.test.mjs",
+        "web/console/src/project-assistants/client.test.ts",
+        "web/console/src/project-assistants/bots.e2e.mjs",
+        "web/console/src/project-assistants/SOURCE.md",
+        "web/console/tools/fixtures/project-assistants.html"
+      ],
+      "module_ready": "Compiling component module using generated types and one SourceClient interface, synthetic source clients, static-render and keyboard/view-state tests, initial BR screenshots. No App/router/Cloud singleton or recorder wiring.",
+      "final_acceptance": "After PA-05 integration, return for actual desktop/paired phone, focus/history/IME/accessibility/revocation tests against all BR frames. Static pictures alone do not pass."
+    },
+    "PA-05": {
+      "exact_write_paths": [
+        "internal/app/projectassistant/service.go",
+        "internal/app/projectassistant/service_test.go",
+        "internal/app/projectassistant/workbridge.go",
+        "internal/app/projectassistant/workbridge_test.go",
+        "internal/app/orchestrator/project_assistant_actor.go",
+        "internal/app/orchestrator/project_assistant_actor_test.go",
+        "internal/app/orchestrator/dispatch.go",
+        "internal/transport/http/project_assistants.go",
+        "internal/transport/http/project_assistants_test.go",
+        "internal/transport/http/server.go",
+        "internal/transport/http/routes.go",
+        "internal/transport/http/work.go",
+        "internal/app/cloudops/project_assistants.go",
+        "internal/app/cloudops/project_assistants_test.go",
+        "internal/domain/cloudvocab/vocabulary.json",
+        "internal/app/cloudops/zz_decode_generated.go",
+        "internal/app/cloudops/testdata/cloud_decoders.golden.jsonl.gz",
+        "internal/transport/http/capacity_measures_projectassistant.go",
+        "web/console/src/App.tsx",
+        "web/console/src/Sessions.tsx",
+        "web/console/src/page-route.ts",
+        "web/console/src/page-route.test.ts",
+        "web/console/src/pages/project-assistants.tsx",
+        "web/console/src/cloud/CloudGate.tsx",
+        "web/console/src/cloud/project-assistants.ts",
+        "web/console/src/cloud/project-assistants.test.ts",
+        "web/console/src/cloud/relay-reader.ts",
+        "web/console/src/cloud/relay-writer.ts",
+        "web/console/src/cloud/install.ts",
+        "web/console/src/cloud/carry-generated.ts",
+        "web/console/tools/check-source-catalog.mjs",
+        "web/console/public/catalogs/en.json",
+        "web/console/public/catalogs/zh-Hant.json",
+        "api/v1/project-assistants.schema.json",
+        "api/v1/routes.json",
+        "api/v1/agent-routes.json",
+        "internal/contract/zz_generated.go",
+        "web/contract/src/generated.ts",
+        "internal/domain/capacity/register_projectassistant.go",
+        "internal/domain/capacity/capacity.go",
+        "internal/domain/capacity/areas.go",
+        "internal/domain/capacity/testdata/register.golden.json",
+        "internal/transport/http/capacity_measures.go",
+        "internal/transport/http/testdata/capacity_measures.golden.json",
+        "skills/clawdline/routes.md",
+        "skills/clawdline/routes.zh-TW.md",
+        "skills/clawdline/capacity.md",
+        "skills/clawdline/capacity.zh-TW.md",
+        "docs/project-assistants.md",
+        "docs/project-assistants-reuse.md",
+        "docs/project-assistants-handoff.json",
+        "third_party/codync/DERIVATION.md",
+        "internal/contract/namespace_test.go",
+        "web/console/semantic-risk-keys.json",
+        "web/console/semantic-screen-groups.json"
+      ],
+      "sequential_batches": [
+        [
+          "internal/app/projectassistant/service.go",
+          "internal/app/projectassistant/service_test.go",
+          "internal/app/projectassistant/workbridge.go",
+          "internal/app/projectassistant/workbridge_test.go",
+          "internal/app/orchestrator/project_assistant_actor.go",
+          "internal/app/orchestrator/project_assistant_actor_test.go",
+          "internal/app/orchestrator/dispatch.go",
+          "internal/transport/http/project_assistants.go",
+          "internal/transport/http/project_assistants_test.go",
+          "internal/transport/http/server.go",
+          "internal/transport/http/routes.go",
+          "internal/transport/http/work.go",
+          "internal/app/cloudops/project_assistants.go",
+          "internal/app/cloudops/project_assistants_test.go",
+          "internal/domain/cloudvocab/vocabulary.json",
+          "internal/app/cloudops/zz_decode_generated.go",
+          "internal/app/cloudops/testdata/cloud_decoders.golden.jsonl.gz",
+          "internal/transport/http/capacity_measures_projectassistant.go"
+        ],
+        [
+          "web/console/src/App.tsx",
+          "web/console/src/Sessions.tsx",
+          "web/console/src/page-route.ts",
+          "web/console/src/page-route.test.ts",
+          "web/console/src/pages/project-assistants.tsx",
+          "web/console/src/cloud/CloudGate.tsx",
+          "web/console/src/cloud/project-assistants.ts",
+          "web/console/src/cloud/project-assistants.test.ts",
+          "web/console/src/cloud/relay-reader.ts",
+          "web/console/src/cloud/relay-writer.ts",
+          "web/console/src/cloud/install.ts",
+          "web/console/src/cloud/carry-generated.ts",
+          "web/console/tools/check-source-catalog.mjs",
+          "web/console/public/catalogs/en.json",
+          "web/console/public/catalogs/zh-Hant.json"
+        ],
+        [
+          "api/v1/project-assistants.schema.json",
+          "api/v1/routes.json",
+          "api/v1/agent-routes.json",
+          "internal/contract/zz_generated.go",
+          "web/contract/src/generated.ts",
+          "internal/domain/capacity/register_projectassistant.go",
+          "internal/domain/capacity/capacity.go",
+          "internal/domain/capacity/areas.go",
+          "internal/domain/capacity/testdata/register.golden.json",
+          "internal/transport/http/capacity_measures.go",
+          "internal/transport/http/testdata/capacity_measures.golden.json",
+          "skills/clawdline/routes.md",
+          "skills/clawdline/routes.zh-TW.md",
+          "skills/clawdline/capacity.md",
+          "skills/clawdline/capacity.zh-TW.md",
+          "docs/project-assistants.md",
+          "docs/project-assistants-reuse.md",
+          "docs/project-assistants-handoff.json",
+          "third_party/codync/DERIVATION.md",
+          "internal/contract/namespace_test.go",
+          "web/console/semantic-risk-keys.json",
+          "web/console/semantic-screen-groups.json"
+        ]
+      ],
+      "dispatch_note": "Single integration owner. Total list exceeds one 32-path child brief; execute these exact nonoverlapping batches sequentially in the owning root or explicitly bounded follow-ups, never concurrent shared writers. No wildcard claims.",
+      "module_ready": "Accept frozen foundation and PA-02/03/04 module commits, integrate service/transport and source clients with default hidden; do not wait for PA-04 final live acceptance to begin.",
+      "final_acceptance": "Pinned candidate cross-module fault injection, genuine scoped Bot broker dispatch and WorkLink return, authorization/no-escalation, disable/rollback/removal/export/reinstall, then actual UI and separately authorized native tests. Deployment/release remain separately authorized."
+    }
+  },
+  "shared_file_owner": "PA-01 owns this frozen foundation until accepted; thereafter PA-05 alone owns shared schema/generated/capacity/route/Cloud/App/catalog/notice changes. PA-02/03/04 report exact needed additions instead of editing them.",
+  "core_seam_allowlist": {
+    "internal/app/orchestrator/dispatch.go": "Add an explicit authenticated AssistantExecutionActor dispatch branch; preserve Session checks. Do not fake root terminal or user run. Existing broker claim/arbitration/worktree/durable-record paths remain authoritative.",
+    "internal/app/orchestrator/project_assistant_actor.go": "Server-held opaque capability registry/verifier, scoped actor and current revocation/expiration; no client-asserted authority.",
+    "internal/transport/http/work.go": "Only a narrowly authenticated Bot proposal/link branch when required; leave human decision rules and existing via.run semantics intact.",
+    "internal/transport/http/server.go": "Opt-in feature host/schema hook and route mounting only; no module startup for metadata reads or default-off installs.",
+    "internal/domain/cloudvocab/vocabulary.json": "Add exact feature reads/commands with device/write gates, strict body keys and captured-source route mapping.",
+    "web/console/src/App.tsx": "Feature host/page state and safe return focus; retain existing voice dock.",
+    "web/console/src/Sessions.tsx": "One optional entry slot visible across local/fleet Session lists, preserve original list state.",
+    "web/console/src/page-route.ts": "Bots roster/chat route and two-level return; never masquerade as Session terminal route.",
+    "web/console/src/cloud/CloudGate.tsx": "All authorized source clients above selected-machine remount lifetime; revocation removes stale access/counts.",
+    "web/console/src/cloud/install.ts": "Capture per-source relay fetch and current grant; no global selected-machine writes."
+  },
+  "not_preapproved_paths": [
+    "internal/adapters/store/sqlite.go",
+    "cmd/clawdline/main.go",
+    "web/package.json",
+    "web/console/package.json",
+    "web/package-lock.json",
+    "web/console/src/legacy/voice-bridge.ts",
+    "web/console/src/legacy/MANIFEST.json",
+    "web/console/src/realtime/CopilotDockView.tsx",
+    "tools/contract-gen/main.go"
+  ],
+  "new_path_rule": "If actual existing constructors require an unlisted core seam, PA-05 names it with evidence and obtains an exact scope supplement; these lists do not authorize speculative edits.",
+  "acceptance_order": [
+    "Accept PA-01 compiling contract, generator parity, bound red/green and complete local gate commit.",
+    "Dispatch PA-02/03/04 independent modules and let PA-05 prepare transport/host in parallel.",
+    "Accept each module compile/fake/isolated-data commit; PA-05 integrates them without waiting for full PA-04 live acceptance.",
+    "Freeze one clean candidate, run cross-module scope/memory/unknown/queue/cleanup tests and removal/export/rollback rehearsal.",
+    "PA-04 returns for actual desktop and paired phone journey. Root records native provider limits separately; no paid prompts without request/cost authorization.",
+    "Only then claim per-card acceptance and perform any separately authorized CI/deploy/dev/Release steps; never auto-check another card."
+  ],
+  "removal": {
+    "new_foundation_files": [
+      "internal/domain/projectassistant/types.go",
+      "internal/domain/projectassistant/errors.go",
+      "internal/domain/projectassistant/policy.go",
+      "internal/domain/projectassistant/actor.go",
+      "internal/domain/projectassistant/types_test.go",
+      "internal/domain/projectassistant/policy_test.go",
+      "internal/domain/projectassistant/actor_test.go",
+      "internal/domain/projectassistant/testdata/cases.json",
+      "internal/app/projectassistant/ports.go",
+      "internal/adapters/projectassistanttest/bootstrap.go",
+      "internal/adapters/projectassistanttest/bootstrap_test.go",
+      "api/v1/project-assistants.schema.json",
+      "docs/project-assistants.md",
+      "docs/project-assistants-reuse.md",
+      "docs/project-assistants-handoff.json",
+      "internal/domain/capacity/register_projectassistant.go",
+      "internal/transport/http/capacity_measures_projectassistant.go",
+      "third_party/codync/LICENSE",
+      "third_party/codync/NOTICE",
+      "third_party/codync/DERIVATION.md"
+    ],
+    "new_module_files": [
+      "internal/app/projectassistant/runtime.go",
+      "internal/app/projectassistant/runtime_test.go",
+      "internal/app/projectassistant/protocol.go",
+      "internal/app/projectassistant/protocol_test.go",
+      "internal/adapters/projectassistantacp/client.go",
+      "internal/adapters/projectassistantacp/client_test.go",
+      "internal/adapters/projectassistantacp/process.go",
+      "internal/adapters/projectassistantacp/process_unix.go",
+      "internal/adapters/projectassistantacp/process_windows.go",
+      "internal/adapters/projectassistantacp/process_other.go",
+      "internal/adapters/projectassistantacp/process_test.go",
+      "internal/adapters/projectassistantacp/capabilities.go",
+      "internal/adapters/projectassistantacp/capabilities_test.go",
+      "internal/adapters/projectassistantacp/testdata/peer.go",
+      "docs/project-assistants-runtime.md",
+      "internal/adapters/projectassistantstore/schema.go",
+      "internal/adapters/projectassistantstore/schema_test.go",
+      "internal/adapters/projectassistantstore/repository.go",
+      "internal/adapters/projectassistantstore/repository_test.go",
+      "internal/adapters/projectassistantstore/events.go",
+      "internal/adapters/projectassistantstore/events_test.go",
+      "internal/adapters/projectassistantstore/memory.go",
+      "internal/adapters/projectassistantstore/memory_test.go",
+      "internal/adapters/projectassistantstore/export.go",
+      "internal/adapters/projectassistantstore/export_test.go",
+      "docs/project-assistants-store.md",
+      "web/console/src/project-assistants/Bots.tsx",
+      "web/console/src/project-assistants/BotOrb.tsx",
+      "web/console/src/project-assistants/BotRoster.tsx",
+      "web/console/src/project-assistants/BotRow.tsx",
+      "web/console/src/project-assistants/BotAvatar.tsx",
+      "web/console/src/project-assistants/avatar-paths.ts",
+      "web/console/src/project-assistants/BotCreate.tsx",
+      "web/console/src/project-assistants/BotSettings.tsx",
+      "web/console/src/project-assistants/BotStatus.tsx",
+      "web/console/src/project-assistants/Chat.tsx",
+      "web/console/src/project-assistants/ChatRows.tsx",
+      "web/console/src/project-assistants/Composer.tsx",
+      "web/console/src/project-assistants/PermissionCard.tsx",
+      "web/console/src/project-assistants/Trace.tsx",
+      "web/console/src/project-assistants/WorkResultCard.tsx",
+      "web/console/src/project-assistants/client.ts",
+      "web/console/src/project-assistants/view-state.ts",
+      "web/console/src/project-assistants/chat-items.ts",
+      "web/console/src/project-assistants/composer-keyboard.ts",
+      "web/console/src/project-assistants/words.ts",
+      "web/console/src/project-assistants/styles.css",
+      "web/console/src/project-assistants/fixtures.ts",
+      "web/console/src/project-assistants/view-state.test.ts",
+      "web/console/src/project-assistants/chat-items.test.ts",
+      "web/console/src/project-assistants/composer-keyboard.test.ts",
+      "web/console/src/project-assistants/components.test.mjs",
+      "web/console/src/project-assistants/client.test.ts",
+      "web/console/src/project-assistants/bots.e2e.mjs",
+      "web/console/src/project-assistants/SOURCE.md",
+      "web/console/tools/fixtures/project-assistants.html"
+    ],
+    "new_integration_files": [
+      "internal/app/projectassistant/service.go",
+      "internal/app/projectassistant/service_test.go",
+      "internal/app/projectassistant/workbridge.go",
+      "internal/app/projectassistant/workbridge_test.go",
+      "internal/app/orchestrator/project_assistant_actor.go",
+      "internal/app/orchestrator/project_assistant_actor_test.go",
+      "internal/transport/http/project_assistants.go",
+      "internal/transport/http/project_assistants_test.go",
+      "internal/app/cloudops/project_assistants.go",
+      "internal/app/cloudops/project_assistants_test.go",
+      "web/console/src/pages/project-assistants.tsx",
+      "web/console/src/cloud/project-assistants.ts",
+      "web/console/src/cloud/project-assistants.test.ts",
+      "docs/project-assistants-handoff.json"
+    ],
+    "restore_wiring": [
+      "internal/app/projectassistant/service.go",
+      "internal/app/projectassistant/service_test.go",
+      "internal/app/projectassistant/workbridge.go",
+      "internal/app/projectassistant/workbridge_test.go",
+      "internal/app/orchestrator/project_assistant_actor.go",
+      "internal/app/orchestrator/project_assistant_actor_test.go",
+      "internal/app/orchestrator/dispatch.go",
+      "internal/transport/http/project_assistants.go",
+      "internal/transport/http/project_assistants_test.go",
+      "internal/transport/http/server.go",
+      "internal/transport/http/routes.go",
+      "internal/transport/http/work.go",
+      "internal/app/cloudops/project_assistants.go",
+      "internal/app/cloudops/project_assistants_test.go",
+      "internal/domain/cloudvocab/vocabulary.json",
+      "internal/app/cloudops/zz_decode_generated.go",
+      "internal/app/cloudops/testdata/cloud_decoders.golden.jsonl.gz",
+      "internal/transport/http/capacity_measures_projectassistant.go",
+      "web/console/src/App.tsx",
+      "web/console/src/Sessions.tsx",
+      "web/console/src/page-route.ts",
+      "web/console/src/page-route.test.ts",
+      "web/console/src/pages/project-assistants.tsx",
+      "web/console/src/cloud/CloudGate.tsx",
+      "web/console/src/cloud/project-assistants.ts",
+      "web/console/src/cloud/project-assistants.test.ts",
+      "web/console/src/cloud/relay-reader.ts",
+      "web/console/src/cloud/relay-writer.ts",
+      "web/console/src/cloud/install.ts",
+      "web/console/src/cloud/carry-generated.ts",
+      "web/console/tools/check-source-catalog.mjs",
+      "web/console/public/catalogs/en.json",
+      "web/console/public/catalogs/zh-Hant.json",
+      "api/v1/project-assistants.schema.json",
+      "api/v1/routes.json",
+      "api/v1/agent-routes.json",
+      "internal/contract/zz_generated.go",
+      "web/contract/src/generated.ts",
+      "internal/domain/capacity/register_projectassistant.go",
+      "internal/domain/capacity/capacity.go",
+      "internal/domain/capacity/areas.go",
+      "internal/domain/capacity/testdata/register.golden.json",
+      "internal/transport/http/capacity_measures.go",
+      "internal/transport/http/testdata/capacity_measures.golden.json",
+      "skills/clawdline/routes.md",
+      "skills/clawdline/routes.zh-TW.md",
+      "skills/clawdline/capacity.md",
+      "skills/clawdline/capacity.zh-TW.md",
+      "docs/project-assistants.md",
+      "docs/project-assistants-reuse.md",
+      "docs/project-assistants-handoff.json",
+      "third_party/codync/DERIVATION.md",
+      "internal/contract/namespace_test.go",
+      "web/console/semantic-risk-keys.json",
+      "web/console/semantic-screen-groups.json"
+    ],
+    "instructions": "For each existing file restore only PA-05 enumerated imports/hooks/fields/routes/vocabulary/catalog rows/capacity rows/generated entries. Regenerate outputs, do not reset foreign bytes. Delete only confirmed feature-owned files. Keep SQLite tables and exported data.",
+    "data_versions": {
+      "contract": "project-assistants.v1",
+      "feature_schema": 1
+    },
+    "separate_proofs": [
+      "disabled history-only access",
+      "specified old binary can do original work on isolated copy and upgrade preserves feature tables",
+      "actual source deletion plus successful build and original Session/Board/schedule checks",
+      "pre-removal export restored into empty feature schema with all facts/cursors/receipts/tombstones",
+      "compatible module reinstalled reads preserved feature tables"
+    ],
+    "remove_after_landing": "Root uses canonical landing receipts and worktree cleanup policy; child never removes an active/unlanded checkout."
+  },
+  "provider_state": {
+    "claude": {
+      "reported_cli_version": "2.1.322",
+      "reported_local_auth": "signed_in_not_runtime_proof",
+      "installed_acp_version": null,
+      "admission": "adapter_not_found"
+    },
+    "codex": {
+      "reported_cli_version": "0.166.0",
+      "reported_local_auth": "signed_in_not_runtime_proof",
+      "installed_acp_version": null,
+      "admission": "adapter_not_found"
+    },
+    "inventory_scope": "PATH plus four explicitly checked executable directories and current global Node packages. Other private caches unknown.",
+    "sandbox_evidence": "Initial outer sandbox startup failure and root follow-up CLI argument-parser exit 2; neither executes/proves write denial.",
+    "native_model_requests": 0,
+    "usage_priced_api_requests": 0,
+    "cost": 0
+  }
+}

@@ -236,6 +236,36 @@
     "Known": true
   },
   {
+    "Name": "bots.event_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.instruction_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.message_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.name_runes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.page_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.pending_turns",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "browser.activity_picture_bytes",
     "Known": true,
     "Note": true

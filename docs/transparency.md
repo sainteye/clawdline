@@ -480,3 +480,15 @@ changes.
 The native-log reader also looks under `$HOME/.gemini/<app-data-dir>`, where AGY
 1.5 writes its conversation logs. It still only reads for display and sends
 nothing to the model.
+
+
+Persistent Bot workers reuse the broker's child briefing and result protocol.
+The conditional child card in English and Taiwan Traditional Chinese now names
+this trigger and its exact additional instruction: the worker is neither a human
+nor a terminal Root, returns results and landing facts to the source Bot chat,
+and cannot approve, claim or finish Board items for a person. The reviewed
+excerpt contains the actual branch in ChildBrief. Authenticated source policy,
+process-local capabilities and the broker enforce admission; the instruction
+alone does not establish authorization or successful execution. Native provider
+admission, production host wiring and public website publication remain separate
+acceptance work. The website snapshot must follow this revision when published.
