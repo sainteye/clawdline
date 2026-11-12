@@ -16,13 +16,13 @@ Each nested object is closed and lists its required fields. Absent fields,
 additional fields, nulls, non-integer numbers, negative sequence/version
 values and integers outside `cloud.MaxSafeInteger` are rejected before Local.
 
-The 16 `SourceClient` methods use the following 15 new words plus `projects`.
+The 16 `SourceClient` methods use the following 16 `project-assistants.*` words.
 `B` below is `/v1/project-assistants`; IDs are escaped single segments.
 
 | SourceClient method | Cloud word | Local HTTP | Write gate |
 | --- | --- | --- | --- |
 | status | project-assistants.status | GET B/status | No |
-| projects | projects (existing) | GET /v1/projects | No |
+| projects | project-assistants.projects | GET /v1/project-assistant-targets | No |
 | list | project-assistants.list | GET B | No |
 | create | project-assistants.create | POST B | Yes |
 | get | project-assistants.get | GET B/{bot_id} | No |
@@ -38,6 +38,7 @@ The 16 `SourceClient` methods use the following 15 new words plus `projects`.
 | saveMemory | project-assistants.memory | POST B/{bot_id}/memory | Yes |
 | export | project-assistants.export | GET B/{bot_id}/export | No |
 
+Projects retains `machine_id`, `cursor`, and `page_size` on its independent route.
 List retains `machine_id`, `query`, `cursor`, and `page_size`. History retains
 `key`, `conversation_id`, `before_seq`, and `page_size`; events retain `key`,
 `after_seq`, and `page_size`. Get/export retain their complete Bot key. The
@@ -59,7 +60,7 @@ fence, cursor and memory-source conflicts are refused before Local. Bot IDs
 reject `status`, dot segments, slash, backslash and control characters;
 ordinary Unicode single segments remain valid. Names are not Bot IDs.
 
-All 15 new routes run as a device, without the machine's local exemption.
+All 16 feature routes run as a device, without the machine's local exemption.
 `LocalRequest.Viewer` comes only from the verified envelope sender. Body
 fields cannot provide a principal. `reader_id` remains an untrusted hint
 which the source service replaces with its own authenticated reader.
@@ -135,8 +136,9 @@ senders, metadata actions, typed errors, unknown outcomes and exact reply
 byte boundaries. The console tests exercise the actual copied reply reader,
 the carry table, late grant revocation, history-only metadata and no retry.
 
-The full catalog test contains explicit new cases for all 15 words. The
-decoder golden has 219,679 distinct rows over 245 words after recording.
+The original 15-word transport delivery recorded 219,679 distinct decoder
+golden rows over 245 words. That retained baseline is described here; the
+registered catalog addition is recorded separately below.
 Every prior 202,410 distinct input and its result remains present and
 unchanged. Comparison preserves JSON number lexemes as well as value types:
 for example, `1e3` and `1000.0` must remain different inputs because raw
@@ -160,3 +162,82 @@ npm run check --prefix web
 
 The integrating root owns the normal-environment gate on the exact final
 merged tree, source-check fingerprint refresh, review, landing and release.
+
+
+## Registered configuration choices (API 58)
+
+The captured source client requires API level 58. Older sources report typed
+unsupported and never fall back to the legacy `projects` word or `/v1/projects`.
+That legacy word remains available for its other callers. The new read has no
+body, credential, principal or role field. Its exact closed required fields are
+`machine_id`, `cursor`, and integer `page_size` (the existing 1..100 bound).
+It uses the authenticated current connection sender and the captured machine,
+without consulting the shell's active machine. Read-only grants may read fresh,
+readable metadata; creation still requires a fresh interactive writable status.
+
+`projects(request, signal)` returns the generated
+`ProjectAssistantProjectsResponse`: contract version, one source, `agents`,
+revision, complete `items`, next cursor and `has_more`. Configuration agents
+(`claude`, `codex`) are independent of native capability readiness. Returning
+these choices does not admit an adapter, authenticate a CLI, verify read-only
+execution or memory isolation, or start a model. The normal first-Send runtime
+admission still refuses an unavailable production provider.
+
+Before publishing a page, the client checks the current grant and AbortSignal,
+contract, source machine/freshness/readability, known unique agent values,
+complete same-machine targets, unique Project IDs and cursor consistency.
+The form additionally checks one revision/agent set across pages and refuses
+repeated cursors or IDs across the accumulated choices. Errors retain their
+complete typed envelopes; no error becomes an empty catalog or a write retry.
+Only an explicit Load more reads another page. An expired revision requires
+an explicit fresh first-page retry. Other page failures can retry that page.
+No new cache, row or time bound is introduced.
+
+A source switch clears the selected Project, while name, appearance, policy
+and instructions survive. Old initial/page/create responses cannot publish
+after source replacement, revocation, cancellation or form closure. The form
+rechecks its captured source/revision immediately after the awaited status
+returns, before calling create, even if the host has not rendered the authority
+change yet. SourceClient retains its own transport pre-request check. An unknown
+create keeps its exact command, settings and source through explicit retries,
+including a later preflight refusal, until success or an explicit new form.
+Roster labels read only the first Project page; unseen IDs retain the existing
+ID fallback and are not treated as deleted or unwritable Projects.
+
+The catalog addition records 220,164 distinct golden rows over 246 words,
+compared with the retained 219,679-row/245-word baseline. A canonical comparison
+preserving JSON number lexemes and number/string types finds zero missing old
+inputs and zero changed old results. Added probes are 474 for
+`project-assistants.projects`, two for `chrome-tab-input`, and nine for
+`copilot-settings-update`; the latter are observed additional null-property subset probes. Their causal
+attribution has not been established by a controlled recording comparison;
+no old input or outcome changed. Reproduce with
+`CLAWDLINE_DECODER_GOLDEN=record go test ./internal/app/cloudops -run
+'^TestGeneratedDecodersKeepTheGolden$' -count=1`; compare the retained baseline
+with a JSON parser that preserves numbers rather than normalizing floats.
+
+`TestProjectAssistantProjectsEscapedCorrelationCapacity` sends the longest
+legal correlation ID (128 `<` bytes) through the real Bridge and checks the
+complete `read:<request>` JSON wrapper at the exact 8 MiB boundary and one byte
+over. The captured cross-language fixture uses that same escaped name for the
+Projects word. This is transport-seam evidence; actual Server route/store and
+production encrypted transport acceptance remain separately identified.
+
+
+`TestProjectAssistantCatalogBridgeThroughServerAndRegistry` closes the local
+integration gap: the new vocabulary enters `Bridge.Handle`, delegates through
+the production Cloud Router and Server.Handler/device gate, and reads a real
+PlaceRegistry populated through Add. It checks two pages, exact complete
+queries, stable registered IDs/labels, configuration Agents, fresh source DTO,
+read-only pin authority, wrong-machine refusal, a cursor expired by a registry
+mutation, and a freshly revoked pin. All six requests initialize zero native
+providers. The full typed failure bodies survive the Bridge. This test starts
+at the already verified/decrypted sender seam; it does not test relay signature
+verification, encryption, production Cloud networking or a physical phone.
+
+The synthetic form browser matrix passes Chromium/WebKit × 390/1440 × English
+and Traditional Chinese. A retained pre-fix component provides two failing
+controls: after a delayed fresh status, revoking/replacing current authority
+still called create once. The candidate calls create zero times in both
+controlled scenarios. These browser sources remain synthetic; the real local
+Server/registry test above is separate evidence, not a production E2E claim.

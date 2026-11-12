@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11752,
+  "englishContentKeys": 11753,
   "riskKeys": 5132,
-  "nonRiskCount": 6620,
+  "nonRiskCount": 6621,
   "groups": [
     {
       "name": "acp / other",
@@ -5425,7 +5425,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 72,
+      "count": 73,
       "sources": [
         null
       ],
@@ -5469,6 +5469,7 @@
         "projectAssistants.offline",
         "projectAssistants.online",
         "projectAssistants.project",
+        "projectAssistants.projectsLoading",
         "projectAssistants.queued",
         "projectAssistants.quote",
         "projectAssistants.quoteMissing",

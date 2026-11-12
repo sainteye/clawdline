@@ -1,13 +1,13 @@
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
-import { failure } from "../project-assistants/client.ts"
+import { failure, projectChoices } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { createViewState, canRead } from "../project-assistants/view-state.ts"
 import type { CloudClientHandle, CloudMachine } from "./copied.js"
 import type { WorkV2Item } from "../pages/work/api.js"
 
-export const PROJECT_ASSISTANTS_API_LEVEL = 56
+export const PROJECT_ASSISTANTS_API_LEVEL = 58
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -59,7 +59,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   private check(signal: AbortSignal, write: boolean, content: boolean) {
     const live = this.currentGrant()
     if (!live || this.lifetime.signal.aborted || live.accountKey !== this.grant.accountKey ||
-      live.machineID !== this.machineID || live.authorizationRevision !== this.authorizationRevision) throw failure("pa_revoked")
+      live.readerID !== this.grant.readerID || live.machineID !== this.machineID || live.authorizationRevision !== this.authorizationRevision) throw failure("pa_revoked")
     if (signal.aborted) throw new DOMException("Aborted", "AbortError")
     if (!live.paired) throw failure("pa_unpaired")
     if (live.apiLevel === undefined || live.apiLevel < PROJECT_ASSISTANTS_API_LEVEL) throw failure("pa_unsupported")
@@ -114,7 +114,15 @@ export class ProjectAssistantSourceClient implements SourceClient {
       throw error
     }
   }
-  projects(s: AbortSignal) { return this.request<W.ProjectCatalogAnswer>("/v1/projects",s) }
+  async projects(r: W.ProjectAssistantProjectsRequest,s: AbortSignal) {
+    this.key({machine_id:r.machine_id,bot_id:""})
+    if(typeof r.cursor!=="string"||!Number.isInteger(r.page_size)||r.page_size<1||r.page_size>100)throw failure("pa_invalid")
+    const answer = projectChoices(await this.request<W.ProjectAssistantProjectsResponse>("/v1/project-assistant-targets"+query({...r}),s),r)
+    this.check(s,false,false)
+    const source={...answer.source,writable:answer.source.writable && this.currentGrant()?.writable === true}
+    this.access=source.access;this.lastStatus=source
+    return {...answer,source}
+  }
   list(r: W.ProjectAssistantListRequest,s: AbortSignal) { this.key({machine_id:r.machine_id,bot_id:""}); return this.request<W.ProjectAssistantListResponse>(base+query({...r}),s) }
   create(r: W.ProjectAssistantCreateRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(base,s,r,"POST") }
   async get(r: W.ProjectAssistantBotKey,s: AbortSignal) {
@@ -153,6 +161,12 @@ export class ProjectAssistantSourceClient implements SourceClient {
 export function assistantRelayRequest(input: string, init?: RequestInit) {
   const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
   if (url.pathname === "/v1/projects" && method === "GET") return {word:"projects",kind:"read" as const,fields:{},id:""}
+  if (url.pathname === "/v1/project-assistant-targets" && method === "GET") {
+    const q=Object.fromEntries(url.searchParams)
+    if (url.searchParams.size !== 3 || Object.keys(q).some(key=>!["machine_id","cursor","page_size"].includes(key)) ||
+      typeof q.machine_id !== "string" || !q.machine_id || typeof q.cursor !== "string" || !/^[1-9][0-9]*$/.test(q.page_size) || Number(q.page_size)>100) throw failure("pa_invalid")
+    return {word:"project-assistants.projects",kind:"read" as const,fields:{machine_id:q.machine_id,cursor:q.cursor,page_size:Number(q.page_size)},id:""}
+  }
   const work = /^\/v1\/work\/v2\/items\/([^/]+)$/.exec(url.pathname)
   if (work && method === "GET") return {word:"work.v2.item",kind:"read" as const,fields:{id:decodeURIComponent(work[1])},id:""}
   const match = /^\/v1\/project-assistants(?:\/([^/]+))?(.*)$/.exec(url.pathname)

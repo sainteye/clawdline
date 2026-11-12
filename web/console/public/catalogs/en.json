@@ -10111,6 +10111,7 @@
   "projectAssistants.permission": "Permission request",
   "projectAssistants.policy": "Permission policy",
   "projectAssistants.project": "Project",
+  "projectAssistants.projectsLoading": "Loading Projects…",
   "projectAssistants.queued": "Queued",
   "projectAssistants.quote": "Reply",
   "projectAssistants.quoteMissing": "Quoted message is in earlier history",

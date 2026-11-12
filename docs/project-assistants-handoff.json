@@ -159,8 +159,8 @@
         "last_argument": "signal: AbortSignal"
       },
       "projects": {
-        "request": "void",
-        "response": "Promise<ProjectCatalogAnswer>",
+        "request": "ProjectAssistantProjectsRequest",
+        "response": "Promise<ProjectAssistantProjectsResponse>",
         "last_argument": "signal: AbortSignal"
       },
       "list": {
@@ -247,7 +247,8 @@
       "opens": "all_authorized_bots",
       "starts_model": false
     },
-    "microphone": "hidden until PA-05 supplies a verified existing recorder-ownership adapter; do not attachComposerVoice"
+    "microphone": "hidden until PA-05 supplies a verified existing recorder-ownership adapter; do not attachComposerVoice",
+    "project_catalog": "API58 source metadata: explicit first page and user-requested continuation; validate source/revision/target identity and late grant cancellation. agents are accepted configuration kinds, not native capability admission."
   },
   "http_integration_targets": [
     {
@@ -258,9 +259,9 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects",
+      "path": "/v1/project-assistant-targets",
       "client_method": "projects",
-      "cloud_word": "projects"
+      "cloud_word": "project-assistants.projects"
     },
     {
       "method": "GET",
@@ -314,13 +315,13 @@
       "method": "POST",
       "path": "/v1/project-assistants/{bot}/read",
       "client_method": "markRead",
-      "cloud_word": "project-assistants.markRead"
+      "cloud_word": "project-assistants.read"
     },
     {
       "method": "POST",
       "path": "/v1/project-assistants/{bot}/observed",
       "client_method": "observe",
-      "cloud_word": "project-assistants.observe"
+      "cloud_word": "project-assistants.observed"
     },
     {
       "method": "GET",
@@ -338,7 +339,7 @@
       "method": "POST",
       "path": "/v1/project-assistants/{bot}/memory",
       "client_method": "saveMemory",
-      "cloud_word": "project-assistants.saveMemory"
+      "cloud_word": "project-assistants.memory"
     },
     {
       "method": "GET",
@@ -348,11 +349,12 @@
     }
   ],
   "http_notes": [
-    "These are PA-05 targets, not routes registered by PA-01. Existing /v1/projects remains owned by its current service.",
+    "API58 source Server routes include the additive /v1/project-assistant-targets metadata catalog. Existing /v1/projects remains a separate intentionally empty legacy route; native readiness and production Cloud/device acceptance are separate.",
     "Route bot/offer IDs and captured machine must match body identities. Get/history/list queries are generated request shapes encoded as query parameters.",
     "Every write carries Idempotency-Key matching command.idempotency_key, rejects unknown fields, rechecks device/feature/source scope, and recomputes content hash. Never trust reader_id, SourceStatus or Capabilities supplied by the browser.",
     "Native capabilities are local attested facts; provider failure preserves metadata functionality.",
-    "PA-05 registers the new routes with a raised APILevel and complete device/Cloud write gates; no machine-credential fallback."
+    "PA-05 registers the new routes with a raised APILevel and complete device/Cloud write gates; no machine-credential fallback.",
+    "Own read/observed metadata uses fresh online readable authority; seven content operations require interactive writable authority. A source Project catalog option is metadata only and selected-directory resolution runs again before Create and execution."
   ],
   "fixtures": {
     "path": "internal/domain/projectassistant/testdata/cases.json",

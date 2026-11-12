@@ -10111,6 +10111,7 @@
   "projectAssistants.permission": "權限請求",
   "projectAssistants.policy": "允許方式",
   "projectAssistants.project": "Project",
+  "projectAssistants.projectsLoading": "正在載入 Projects…",
   "projectAssistants.queued": "待送",
   "projectAssistants.quote": "引用回覆",
   "projectAssistants.quoteMissing": "引用的訊息位於較早歷史",

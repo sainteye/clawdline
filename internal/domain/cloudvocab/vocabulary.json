@@ -3290,6 +3290,80 @@
       }
     },
     {
+      "op": "project-assistants.projects",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistant-targets",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "machine_id": "source-one",
+        "cursor": "",
+        "page_size": 100,
+        "session": "__clawdline_machine__",
+        "request": "stable-projects"
+      },
+      "shapes": [
+        {
+          "body": [
+            "cursor",
+            "machine_id",
+            "page_size",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistant-targets",
+          "query": [
+            "cursor",
+            "machine_id",
+            "page_size"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "machine_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 100,
+            "copies": {
+              "max": "projectassistant.MaxPageRows"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistant-targets",
+          "query": {
+            "machine_id": {
+              "from": "machine_id"
+            },
+            "cursor": {
+              "from": "cursor"
+            },
+            "page_size": {
+              "from": "page_size"
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-assistants.read",
       "kind": "command",
       "write_gate": false,

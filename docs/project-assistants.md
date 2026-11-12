@@ -40,8 +40,11 @@ The additive [registered Project catalog](project-assistants-targets.md) at
 API level 58 supplies source-owned metadata through a dedicated paged endpoint.
 It preserves the retired empty `/v1/projects` route. Its Agent options name
 accepted configuration kinds, never native readiness. Project resolution still
-runs before Create and execution; UI and Cloud consumption have separate
-integration acceptance.
+runs before Create and execution. The captured SourceClient consumes the
+generated page through `project-assistants.projects`, with explicit continuation
+in the creation form and configuration Agents independent of native capability
+admission. API58 is required; the retired catalog is not a fallback. Production
+Cloud/device and native execution acceptance remain separate.
 
 ## Approved journey and fixed inputs
 

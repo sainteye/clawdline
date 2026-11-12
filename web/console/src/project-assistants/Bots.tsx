@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
-import { authorized, errorCode } from "./client"
+import { authorized, errorCode, projectChoices } from "./client"
 import { BotRoster } from "./BotRoster"
 import { BotCreate } from "./BotCreate"
 import { BotStatus } from "./BotStatus"
@@ -65,7 +65,8 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   useEffect(()=>{void load();return()=>controller.current?.abort()},[query])
   useEffect(()=>{
     const control=new AbortController()
-    for(const source of sources)void authorized(source,current,s=>source.projects(s),control.signal).then(answer=>{if(!control.signal.aborted&&answer.catalog.available)setProjectNames(old=>{const next=new Map(old);for(const p of answer.catalog.projects)next.set(JSON.stringify([source.machineID,p.id]),p.label||p.name);return next})}).catch(()=>{})
+    setProjectNames(new Map())
+    for(const source of sources)void authorized(source,current,async s=>{const request={machine_id:source.machineID,cursor:"",page_size:100};return projectChoices(await source.projects(request,s),request)},control.signal).then(answer=>{if(!control.signal.aborted)setProjectNames(old=>{const next=new Map(old);for(const p of answer.items)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.label);return next})}).catch(()=>{})
     return()=>control.abort()
   },[authorization,current])
   const select=(item:W.ProjectAssistantBotSummary)=>{

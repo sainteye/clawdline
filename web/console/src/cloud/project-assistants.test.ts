@@ -11,7 +11,7 @@ import { CARRIED } from "./carry-generated.ts"
 
 const signal = () => new AbortController().signal
 const key = {machine_id:"one",bot_id:"same/id"}
-const grant = (machineID = "one"): AssistantGrant => ({accountKey:"account",readerID:"trusted-reader",machineID,authorizationRevision:"grant-1",apiLevel:56,paired:true,online:true,writable:true})
+const grant = (machineID = "one"): AssistantGrant => ({accountKey:"account",readerID:"trusted-reader",machineID,authorizationRevision:"grant-1",apiLevel:58,paired:true,online:true,writable:true})
 const sourceStatus = (access: W.ProjectAssistantAccess = "interactive"): W.ProjectAssistantSourcesResponse => ({contract_version:"project-assistants.v1",sources:[{machine_id:"one",access,state:"online",fresh:true,readable:true,writable:access === "interactive",observed_at:"",capabilities:[]}]})
 const make = (transport: AssistantFetch, first = grant()) => {
   let current: AssistantGrant | null = first
@@ -20,7 +20,7 @@ const make = (transport: AssistantFetch, first = grant()) => {
 }
 test("old, unknown, unpaired and offline sources issue no nonexistent API requests",async () => {
   let calls = 0
-  for (const changed of [{apiLevel:55},{apiLevel:undefined},{paired:false},{online:false}]) {
+  for (const changed of [{apiLevel:57},{apiLevel:undefined},{paired:false},{online:false}]) {
     const {source} = make(async () => {calls++; return Response.json({})},{...grant(),...changed})
     const answer = await source.status(signal())
     assert.equal(answer.sources[0].readable,false)
@@ -222,7 +222,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["answer","create","edit","events","export","forget","get","history","list","memory","observed","read","send","status","stop"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["answer","create","edit","events","export","forget","get","history","list","memory","observed","read","send","status","stop","projects"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -231,5 +231,75 @@ test("every Bot word is carried and read-only metadata retains action refs",asyn
     await relay("/v1/project-assistants/bot/"+word,{method:"POST",body:JSON.stringify(fields),headers:{"Idempotency-Key":"stable-"+word}})
     assert.equal(captured.at(-1)?.ref,"stable-"+word)
     assert.deepEqual(captured.at(-1)?.fields,fields)
+  }
+})
+
+const projectsRequest: W.ProjectAssistantProjectsRequest={machine_id:"one",cursor:"opaque +<&page",page_size:100}
+const catalog = (): W.ProjectAssistantProjectsResponse => ({contract_version:"project-assistants.v1",source:sourceStatus().sources[0],agents:["claude","codex"],revision:"registered-1",items:[{target:{machine_id:"one",project_id:"project-a"},label:"Same name"},{target:{machine_id:"one",project_id:"project-b"},label:"Same name"}],has_more:true,next_cursor:"next-page"})
+test("registered Projects use API58, captured query and configuration agents without native readiness",async()=>{
+  const paths:string[]=[]
+  const {source}=make(async path=>{paths.push(path);return Response.json(catalog())})
+  const response=await source.projects(projectsRequest,signal())
+  assert.deepEqual(response.agents,["claude","codex"])
+  assert.deepEqual(response.source.capabilities,[])
+  assert.deepEqual(response.items.map(item=>item.target.project_id),["project-a","project-b"])
+  assert.equal(paths.length,1)
+  const request=assistantRelayRequest(paths[0])
+  assert.equal(new URL(paths[0],"http://fixture").pathname,"/v1/project-assistant-targets")
+  assert.equal(request.word,"project-assistants.projects");assert.deepEqual(request.fields,projectsRequest)
+  await assert.rejects(source.projects({...projectsRequest,machine_id:"two"},signal()),e=>errorCode(e)==="pa_scope_denied")
+  assert.equal(paths.length,1)
+  for(const apiLevel of [undefined,56,57]){
+    const old=make(async()=>{assert.fail("legacy catalog fallback")},{...grant(),apiLevel}).source
+    assert.equal((await old.status(signal())).sources[0].state,"unsupported")
+    await assert.rejects(old.projects(projectsRequest,signal()),e=>errorCode(e)==="pa_unsupported")
+  }
+})
+test("Project catalogs accept fresh read-only metadata and require fresh interactive status for create",async()=>{
+  let writes=0
+  const response=catalog();response.source={...response.source,access:"history_only",writable:false}
+  const {source}=make(async (_path,init)=>{if(init?.method!=="GET")writes++;return Response.json(response)},{...grant(),writable:false})
+  assert.deepEqual((await source.projects(projectsRequest,signal())).agents,["claude","codex"])
+  await assert.rejects(source.create({command:command(key,"create")} as W.ProjectAssistantCreateRequest,signal()),e=>errorCode(e)==="pa_read_only")
+  assert.equal(writes,0)
+})
+test("foreign, duplicate, invalid and stale Project pages never publish options",async()=>{
+  const changes:[(answer:W.ProjectAssistantProjectsResponse)=>void,string][]=[
+    [a=>{a.contract_version="other"},"pa_invalid"],
+    [a=>{a.source.machine_id="two"},"pa_scope_denied"],
+    [a=>{a.items[0].target.machine_id="two"},"pa_scope_denied"],
+    [a=>{a.items.push(a.items[0])},"pa_invalid"],
+    [a=>{a.agents.push("codex")},"pa_invalid"],
+    [a=>{a.source.fresh=false},"pa_offline"],
+    [a=>{a.source.readable=false},"pa_scope_denied"],
+    [a=>{a.source.state="revoked"},"pa_revoked"],
+    [a=>{a.next_cursor=projectsRequest.cursor},"pa_invalid"],
+    [a=>{a.has_more=false},"pa_invalid"],
+    [a=>{a.revision=""},"pa_invalid"],
+  ]
+  for(const [change,code]of changes){const response=catalog();change(response);const {source}=make(async()=>Response.json(response));await assert.rejects(source.projects(projectsRequest,signal()),e=>errorCode(e)===code)}
+  for(const path of ["?machine_id=one&page_size=100","?machine_id=one&cursor=&page_size=100&principal=forged","?machine_id=one&cursor=&page_size=100&cursor=x","?machine_id=one&cursor=&page_size=1e2"]){assert.throws(()=>assistantRelayRequest("/v1/project-assistant-targets"+path),e=>errorCode(e)==="pa_invalid")}
+})
+test("late Project pages reject abort, revoke and reader replacement after JSON decoding",async()=>{
+  for(const state of ["abort","revoke","reader"]){
+    let release!:(answer:unknown)=>void,started!:()=>void
+    const body=new Promise(resolve=>{release=resolve}),reading=new Promise<void>(resolve=>{started=resolve})
+    const response=new Response("{}");response.json=()=>{started();return body}
+    const {source,setGrant}=make(async()=>response),control=new AbortController()
+    const waiting=source.projects(projectsRequest,control.signal)
+    await reading
+    if(state==="abort")control.abort();else if(state==="revoke")setGrant(null);else setGrant({...grant(),readerID:"other-reader"})
+    release(catalog())
+    await assert.rejects(waiting,e=>state==="abort"?(e as Error).name==="AbortError":errorCode(e)==="pa_revoked")
+  }
+})
+test("captured Project cursor, revocation and budget refusals retain their entire envelope without retry",async()=>{
+  for(const code of ["pa_cursor_expired","pa_capacity_full","pa_revoked","pa_context_stale"] as const){
+    let calls=0
+    const refusal:W.ProjectAssistantErrorResponse={contract_version:"project-assistants.v1",error:{code,field:"catalog",retry_after_seconds:7}}
+    const connection={machineDescriptor:()=>({machine:{commands:["project-assistants.projects"]}}),async _machineRequest(machine:string,word:string,fields:Record<string,unknown>){calls++;assert.equal(machine,"one");assert.equal(word,"project-assistants.projects");assert.deepEqual(fields,projectsRequest);return refusal}}
+    const source=new ProjectAssistantSourceClient(grant(),capturedAssistantRelayFetch("one",()=>connection,["project-assistants.projects"]),()=>grant())
+    await assert.rejects(source.projects(projectsRequest,signal()),e=>{assert.deepEqual(e,refusal);return true})
+    assert.equal(calls,1)
   }
 })

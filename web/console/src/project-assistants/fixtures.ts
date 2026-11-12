@@ -11,7 +11,7 @@ import { avatarPaths, palette } from "./avatar-paths"
 import { createViewState, sameBot } from "./view-state"
 export const contractVersion="project-assistants.v1"
 export interface FixtureLog {method:string;machine:string;request:unknown}
-export function fixtureSource(machineID="studio",log:FixtureLog[]=[]): SourceClient & {setState:(state:W.ProjectAssistantSourceState,access?:W.ProjectAssistantAccess)=>void;push:(event:W.ProjectAssistantEvent)=>void;seedHistory:(count:number)=>void;holdGet:()=>void;releaseGet:()=>void;expireCursor:(mode?:"ok"|"pa_offline"|"pa_revoked"|"pa_capacity_full")=>void;holdEvents:()=>void;releaseEvents:()=>void;holdExport:()=>void;releaseExport:()=>void;completePreviousWork:()=>void;emitMessage:(text:string)=>void;log:FixtureLog[];bots:W.ProjectAssistantBot[]} {
+export function fixtureSource(machineID="studio",log:FixtureLog[]=[]): SourceClient & {setState:(state:W.ProjectAssistantSourceState,access?:W.ProjectAssistantAccess)=>void;push:(event:W.ProjectAssistantEvent)=>void;seedHistory:(count:number)=>void;holdGet:()=>void;releaseGet:()=>void;expireCursor:(mode?:"ok"|"pa_offline"|"pa_revoked"|"pa_capacity_full")=>void;holdEvents:()=>void;releaseEvents:()=>void;holdExport:()=>void;releaseExport:()=>void;completePreviousWork:()=>void;emitMessage:(text:string)=>void;log:FixtureLog[];bots:W.ProjectAssistantBot[];configureProjects:(options:{count?:number;failure?:W.ProjectAssistantErrorCode|null;invalid?:"duplicate"|"foreign"|"cursor"|"revision"|null})=>void;holdProjects:()=>void;releaseProjects:()=>void;unknownCreate:(value:boolean)=>void;holdCreate:()=>void;releaseCreate:()=>void;holdStatus:()=>void;releaseStatus:()=>void} {
   const project:W.ProjectAssistantProjectScope={machine_id:machineID,project_id:"project",canonical_id:"canonical",kind:"repository"}
   const at="2026-11-12T06:20:00Z"
   const names=["Project assistant","Code review","Interface design","Documentation","Research","Testing"]
@@ -25,7 +25,12 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]): SourceCli
   const conversation=(bot:W.ProjectAssistantBot):W.ProjectAssistantConversation=>({id:bot.conversation_id,key:bot.key,binding_id:"fixture-binding",generation,active_turn_id:"",last_message_seq:messages.get(bot.key.bot_id)?.length??0,memory_revision:1,version:1})
   const fence=(bot:W.ProjectAssistantBot):W.ProjectAssistantFence=>({key:bot.key,project,conversation_id:bot.conversation_id,binding_id:"fixture-binding",generation})
   for(const bot of bots)messages.set(bot.key.bot_id,[{id:`${bot.key.bot_id}-user`,seq:1,kind:"user",text:"Help me plan the next tasks.",at,fence:fence(bot),turn_id:"turn-1",quote_message_id:""},{id:`${bot.key.bot_id}-reply`,seq:2,kind:"assistant",text:"I split the work into five tasks. First freeze the shared contract, then work in parallel.\nYou can give me the next task.",at,fence:fence(bot),turn_id:"turn-1",quote_message_id:""}])
-  const capabilities=(bot:W.ProjectAssistantBot):W.ProjectAssistantCapabilities=>({key:bot.key,project,agent:bot.agent,cli_version:"scripted",adapter_version:"fixture",read_only_enforced:true,resume:false,send_message:true,native_memory:"isolated",native_memory_verified:true,evidence:"scripted peer only"})
+  let projectCount=1,projectRevision=1,projectFailure:W.ProjectAssistantErrorCode|null=null,projectInvalid:string|null=null,unknownCreate=false
+  let projectGate:Promise<void>|null=null,releaseProjects:(()=>void)|null=null
+  let createGate:Promise<void>|null=null,releaseCreate:(()=>void)|null=null
+  let statusGate:Promise<void>|null=null,releaseStatus:(()=>void)|null=null
+  const created=new Set<string>()
+  const capabilities=(bot:W.ProjectAssistantBot):W.ProjectAssistantCapabilities=>({key:bot.key,project,agent:bot.agent,cli_version:"scripted",adapter_version:"fixture",read_only_enforced:false,resume:false,send_message:false,native_memory:"unknown",native_memory_verified:false,evidence:"synthetic metadata; no native provider admitted",unavailable:failure("adapter_not_found").error})
   const status=():W.ProjectAssistantSourceStatus=>({machine_id:machineID,state,access,readable:state!=="revoked"&&state!=="unpaired",writable:state==="online"&&access==="interactive",fresh:state==="online",observed_at:at,capabilities:bots.map(capabilities)})
   const check=(method:string,request:unknown,signal:AbortSignal,write=false)=>{
     log.push({method,machine:machineID,request})
@@ -43,14 +48,30 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]): SourceCli
   push({id:"trace-event",seq:0,at,version:contractVersion,kind:"trace_updated",fence:fence(bots[0]),trace:{turn_id:"turn-1",category:"read",complete:true,text:"Reviewed the shared contract and split independent changes."}})
   const memory:W.ProjectAssistantMemoryRevision={key:bots[0].key,project,revision:1,forgotten_through:0,forgotten_source_ids:[]}
   const api:SourceClient={machineID,authorizationRevision:`${machineID}-grant-1`,
-    async status(signal){log.push({method:"status",machine:machineID,request:null});if(signal.aborted)throw new DOMException("Aborted","AbortError");return{contract_version:contractVersion,sources:[status()]}},
-    async projects(signal){check("projects",null,signal);return {at:0,catalog:{available:true,enabled:true,mode:"fixture",projects:[{id:"project",name:"Clawdline",label:"Clawdline",activeItemCount:0,itemCount:0,isStartPoint:false,summaryCoverage:"complete"}],readState:{},revision:1,schemaVersion:1,source:{}}} as W.ProjectCatalogAnswer},
+    async status(signal){log.push({method:"status",machine:machineID,request:null});if(signal.aborted)throw new DOMException("Aborted","AbortError");const answer={contract_version:contractVersion,sources:[status()]};if(statusGate)await statusGate;return answer},
+    async projects(r,signal){
+      check("projects",r,signal)
+      if(r.machine_id!==machineID)throw failure("pa_scope_denied")
+      if(projectFailure)throw failure(projectFailure)
+      const offset=r.cursor?Number(r.cursor.split(":")[1]):0
+      if(r.cursor&&!r.cursor.startsWith(`${projectRevision}:`))throw failure("pa_cursor_expired")
+      const items=Array.from({length:projectCount},(_,i)=>({target:{machine_id:machineID,project_id:i?`project-${i}`:"project"},label:i<2?"Clawdline":`Project ${i+1}`})).slice(offset,offset+r.page_size)
+      const more=offset+items.length<projectCount
+      const answer:W.ProjectAssistantProjectsResponse={contract_version:contractVersion,source:status(),agents:["claude","codex"],revision:String(projectRevision),items,next_cursor:more?`${projectRevision}:${offset+items.length}`:"",has_more:more}
+      if(projectInvalid==="foreign"&&items[0])items[0].target.machine_id="foreign"
+      if(projectInvalid==="duplicate"&&items[0])items.push(items[0])
+      if(projectInvalid==="cursor"){answer.next_cursor=r.cursor;answer.has_more=true}
+      if(projectInvalid==="revision"&&r.cursor)answer.revision="different"
+      // Deliberately ignore cancellation after capture to test the publication fence.
+      if(projectGate)await projectGate
+      return answer
+    },
     async list(r,s){check("list",r,s);const matches=bots.filter(b=>!r.query||`${b.name} Clawdline ${summary(b).latest_message}`.toLowerCase().includes(r.query.toLowerCase()));const offset=Number(r.cursor||0);const items=matches.slice(offset,offset+3);return{contract_version:contractVersion,items:items.map(summary),sources:[status()],next_cursor:offset+3<matches.length?String(offset+3):""}},
     async get(r,s){if(getGate)await getGate;check("get",r,s);const bot=find(r);return{contract_version:contractVersion,bot,conversation:conversation(bot),source:status()}},
-    async create(r,s){check("create",r,s,true);let bot=bots.find(b=>sameBot(b.key,r.command.key));if(!bot){bot={...bots[0],key:r.command.key,name:r.settings.name,appearance:r.settings.appearance,agent:r.settings.agent,permission_policy:r.settings.permission_policy,conversation_id:crypto.randomUUID(),instructions:{text:r.settings.instructions,revision:1,role_snapshot_ref:r.settings.role_snapshot_ref}};bots.push(bot);messages.set(bot.key.bot_id,[])}return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
+    async create(r,s){check("create",r,s,true);if(createGate)await createGate;if(unknownCreate)throw failure("pa_outcome_unknown");let bot=bots.find(b=>sameBot(b.key,r.command.key));if(!bot){bot={...bots[0],key:r.command.key,name:r.settings.name,appearance:r.settings.appearance,agent:r.settings.agent,permission_policy:r.settings.permission_policy,conversation_id:crypto.randomUUID(),instructions:{text:r.settings.instructions,revision:1,role_snapshot_ref:r.settings.role_snapshot_ref}};bot.project={...project,...r.settings.target};bots.push(bot);created.add(bot.key.bot_id);messages.set(bot.key.bot_id,[])}return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
     async edit(r,s){check("edit",r,s,true);const bot=find(r.command.key);if(bot.version!==r.settings.expected_version)throw failure("pa_stale_version");Object.assign(bot,{name:r.settings.name,appearance:r.settings.appearance,instructions:{...bot.instructions,text:r.settings.instructions,revision:bot.instructions.revision+1},version:bot.version+1});return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
     async history(r,s){check("history",r,s);const bot=find(r.key),all=(messages.get(r.key.bot_id)??[]).filter(m=>!r.before_seq||m.seq<r.before_seq),items=all.slice(-r.page_size);return{contract_version:contractVersion,conversation:conversation(bot),items,has_more:all.length>items.length,next_before_seq:items[0]?.seq??0}},
-    async send(r,s){check("send",r,s,true);const bot=find(r.command.key);const receipt=receive(r.command);if(r.text==="unknown"){receipt.state="unknown";return{contract_version:contractVersion,receipt}}
+    async send(r,s){check("send",r,s,true);if(created.has(r.command.key.bot_id))throw failure("adapter_not_found");const bot=find(r.command.key);const receipt=receive(r.command);if(r.text==="unknown"){receipt.state="unknown";return{contract_version:contractVersion,receipt}}
       const rows=messages.get(bot.key.bot_id)??[];const message:W.ProjectAssistantMessage={id:receipt.id,seq:rows.length+1,at,fence:fence(bot),kind:"user",text:r.text,quote_message_id:r.quote_message_id,turn_id:receipt.id};if(!rows.some(m=>m.id===message.id)){messages.set(bot.key.bot_id,[...rows,message]);push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})}return{contract_version:contractVersion,receipt}},
     async stop(r,s){check("stop",r,s,true);return{contract_version:contractVersion,receipt:receive(r.command)}},
     async answer(r,s){check("answer",r,s,true);return{contract_version:contractVersion,receipt:receive(r.command)}},
@@ -61,7 +82,11 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]): SourceCli
     async saveMemory(r,s){check("saveMemory",r,s,true);return{contract_version:contractVersion,memory:{...memory,key:r.command.key}}},
     async export(r,s){if(exportGate)await exportGate;check("export",r,s);if(exportFailure!=="ok"&&sameBot(r,bots[0].key))throw failure(exportFailure);if(sameBot(r,bots[0].key))expiredCursor=false;const bot=find(r),revision={...memory,key:r},ownEvents=events.filter(e=>sameBot(e.fence.key,r));return{contract_version:contractVersion,schema_version:1,bot,conversation:conversation(bot),messages:messages.get(r.bot_id)??[],memory:revision,memory_entries:[],context:{memory:revision,provenance_complete:true,sources:[],text:""},bindings:[],permissions:ownEvents.flatMap(e=>e.permission?[e.permission]:[]),read_cursors:[],receipts:[...receipts.values()].filter(receipt=>sameBot(receipt.command.key,r)),turns:ownEvents.flatMap(e=>e.turn?[e.turn]:[]),work_links:[...new Map(ownEvents.flatMap(e=>e.work?[[e.work.id,e.work] as const]:[])).values()],events:ownEvents}},
   }
-  return Object.assign(api,{setState(next:W.ProjectAssistantSourceState,nextAccess=access){state=next;access=nextAccess},push,log,bots,
+  return Object.assign(api,{configureProjects(options:{count?:number;failure?:W.ProjectAssistantErrorCode|null;invalid?:"duplicate"|"foreign"|"cursor"|"revision"|null}){if(options.count!==undefined){projectCount=options.count;projectRevision++}if("failure" in options)projectFailure=options.failure??null;if("invalid" in options)projectInvalid=options.invalid??null},
+    holdProjects(){projectGate=new Promise(resolve=>{releaseProjects=resolve})},releaseProjects(){releaseProjects?.();projectGate=null;releaseProjects=null},unknownCreate(value:boolean){unknownCreate=value},
+    holdStatus(){statusGate=new Promise(resolve=>{releaseStatus=resolve})},releaseStatus(){releaseStatus?.();statusGate=null;releaseStatus=null},
+    holdCreate(){createGate=new Promise(resolve=>{releaseCreate=resolve})},releaseCreate(){releaseCreate?.();createGate=null;releaseCreate=null},
+    setState(next:W.ProjectAssistantSourceState,nextAccess=access){state=next;access=nextAccess},push,log,bots,
     expireCursor(mode:"ok"|"pa_offline"|"pa_revoked"|"pa_capacity_full"="ok"){
       expiredCursor=true;exportFailure=mode
       const bot=bots[0],oldFence=fence(bot),options=events.find(e=>e.permission)?.permission?.options??[]
@@ -94,6 +119,10 @@ export function mountFixture() {
     React.createElement("div",{className:"fixture-sessions",hidden:opened},React.createElement("h1",null,"clawdline"),React.createElement("h2",null,"Sessions"),React.createElement("p",null,"Synthetic Session list · existing voice owner remains mounted"),React.createElement("button",{id:"session-opener"},"Original Session"),React.createElement(BotOrb,{onOpen:(element?:HTMLElement)=>{opener=element??null;opened=true;paint()},language,unread:4,pendingPermissions:2})),
     opened?React.createElement(Bots,{key:hostGeneration,viewState:view,sources:sourceList,onClose:()=>{opened=false;paint()},language,accountKey:"fixture-account",readerID:"fixture-reader",manageHistory:true,returnFocus:opener}):null,
     React.createElement("button",{id:"voice-owner",onClick:()=>{},"aria-label":"Existing voice stop control"},"Voice stop")))
-  const controls={log,a,b,remount(){hostGeneration++;paint()},open(){opened=true;paint()},revoke(){sourceList=[b];paint()},offline(){a.setState("offline");paint()},readOnly(){a.setState("online","history_only");sourceList=[Object.assign(Object.create(a),{authorizationRevision:"readonly-grant"}),b];paint()},shapes(){root.render(React.createElement("div",{className:"project-assistants fixture-shapes"},Object.keys(avatarPaths).map((shape,i)=>React.createElement("figure",{key:shape},React.createElement(BotAvatar,{appearance:{shape:shape as W.ProjectAssistantShape,color:palette[i]},size:92}),React.createElement("figcaption",null,shape))),React.createElement(BotOrb,{onOpen:()=>{},language})))}}
+  const controls={log,a,b,
+    // Update authority before the host renders: selected ref and abort stay unchanged.
+    revokeBeforeRender(){sourceList.splice(sourceList.indexOf(a),1)},
+    replaceGrantBeforeRender(){sourceList.splice(sourceList.indexOf(a),1,Object.assign(Object.create(a),{authorizationRevision:"replacement-grant"}))},
+    remount(){hostGeneration++;paint()},open(){opened=true;paint()},revoke(){sourceList=[b];paint()},offline(){a.setState("offline");paint()},readOnly(){a.setState("online","history_only");sourceList=[Object.assign(Object.create(a),{authorizationRevision:"readonly-grant"}),b];paint()},shapes(){root.render(React.createElement("div",{className:"project-assistants fixture-shapes"},Object.keys(avatarPaths).map((shape,i)=>React.createElement("figure",{key:shape},React.createElement(BotAvatar,{appearance:{shape:shape as W.ProjectAssistantShape,color:palette[i]},size:92}),React.createElement("figcaption",null,shape))),React.createElement(BotOrb,{onOpen:()=>{},language})))}}
   Object.assign(window,{botsFixture:controls});paint()
 }

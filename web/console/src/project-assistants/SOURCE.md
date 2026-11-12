@@ -54,3 +54,71 @@ Two known limits remain outside this bounded UI correction: initialization still
 
 
 Removal consists of deleting this subtree and the explicit fixture HTML, then removing only root-owned imports, page admission, entry slot, route coordination and catalog/table registrations. Do not delete persisted Bot data, Project memory or existing voice owners. No production integration import is introduced by this module commit.
+
+
+## Source-owned Project configuration catalog
+
+The form retains the approved compact settings and original avatar system.
+The pinned upstream `views/bots/NewBotView.tsx` and
+`views/bots/BotEditorView.tsx` separate the selected computer, Agent picker and
+Project destination; this adaptation uses source-registered IDs instead of a
+filesystem picker. No arbitrary directory, provider-ready fixture or global
+active-machine lookup is introduced.
+
+The sixteen-method SourceClient now takes
+`projects(ProjectAssistantProjectsRequest, AbortSignal)` and returns the
+frozen `ProjectAssistantProjectsResponse`. The host's API58 transport owns the
+independent `/v1/project-assistant-targets` route and current captured grant.
+`catalog.agents` controls configuration choices only; status capabilities
+continue to describe native execution and memory verification separately.
+The form does not filter Agent choices through native capability readiness.
+
+The first page is requested at the existing 100-row size. Load more is manual,
+keeps Project IDs distinct even when labels match, and verifies the same source,
+revision and agent set without repeated IDs or cursors. Initial or later errors
+keep creation disabled until an explicit successful retry. Retrying an expired
+cursor starts a new first page. Switching source clears only the Project
+selection and catalog; name, appearance, instructions and policy remain.
+Publication is fenced across initial reads, page reads, source replacement,
+revocation, close and create preflight. Unknown create settings and idempotency
+remain frozen through manual retry; no effect is automatically replayed.
+Roster labels read one Project page only and keep ID fallback for unseen rows.
+
+The only added visible key is `projectAssistants.projectsLoading`, with
+`Loading Projects…` / `正在載入 Projects…`. Root owns the two shipped catalogs
+and semantic/transparency generation. The module changes neither the original
+orb and eight avatar outlines, nor Chat/history/recovery/focus/voice ownership.
+
+Run `BOTS_CATALOG_ONLY=1` with the documented browser harness environment for
+Chromium/WebKit at 390/1440 and English/Traditional Chinese. Its synthetic
+sources expose unavailable native capabilities, 101 Project IDs, same-name
+choices, delayed pages, cursor/revision/machine failures, read-only sources
+and unknown create outcomes. The scripted first Send for a newly created Bot
+returns `adapter_not_found` and invokes no native provider. These real browser
+clicks prove form behavior against injected clients, not source persistence,
+Server mounting or production Cloud admission. Launch failures are capability
+failures, never passing browser acceptance. All pages and the temporary server
+close in `finally`; the harness installs no dependencies or external service.
+
+
+The create preflight status is itself wrapped in `authorized`, so its await
+cannot cross a change to the current source object or authorization revision
+and then call create. A second effect-entry check precedes create; the source
+transport retains its independent current-grant check. The fixture can hold
+status, replace/revoke authority before a host render, then release a captured
+fresh interactive response. The browser assertion requires zero create calls;
+selected refs and cancellation alone cannot pass that controlled scenario.
+For a red control, set `BOTS_CREATE_SOURCE` to the retained pre-fix BotCreate
+artifact; the harness substitutes only that local module in its in-memory
+bundle and never modifies the checkout. Omit it for the delivered candidate.
+
+
+The frozen candidate passed the eight normal-environment catalog browser
+cases. Both retained pre-effect-fence controls failed as intended with one
+create call after authority replacement/revocation; the candidate admitted
+zero calls. Full request logs and screenshots were retained by the owning
+root. The separate `TestProjectAssistantCatalogBridgeThroughServerAndRegistry`
+passes normal and race runs against the actual local Bridge/Router/Server,
+device gate and PlaceRegistry, including typed cursor/revocation errors and
+zero provider initialization. These results do not establish production Cloud
+signatures/networking, persistence across devices or physical phone acceptance.

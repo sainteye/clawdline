@@ -28,7 +28,7 @@ test("offline status remains distinct from an empty source",async()=>{
 })
 test("reading, selecting and metadata creation do not start a scripted model",async()=>{
   const log=[],s=fixtureSource("one",log),signal=new AbortController().signal
-  await s.status(signal);await s.projects(signal);const page=await s.list({machine_id:"one",query:"",cursor:"",page_size:100},signal)
+  await s.status(signal);await s.projects({machine_id:"one",cursor:"",page_size:100},signal);const page=await s.list({machine_id:"one",query:"",cursor:"",page_size:100},signal)
   const bot=page.items[0].bot;await s.get(bot.key,signal);const history=await s.history({key:bot.key,conversation_id:bot.conversation_id,before_seq:0,page_size:100},signal)
   const html=render(ChatRows,{messages:history.items,w:words("en"),language:"en",onQuote:()=>{}})
   assert.match(html,/Help me plan/);assert.equal(log.filter(x=>x.method==="send"||x.method==="stop"||x.method==="answer").length,0)

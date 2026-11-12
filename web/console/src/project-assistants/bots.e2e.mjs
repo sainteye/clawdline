@@ -11,16 +11,150 @@ await mkdir(artifacts,{recursive:true})
 if(!process.env.PLAYWRIGHT_MODULE)throw new Error("Set PLAYWRIGHT_MODULE to an existing local Playwright index.mjs; this harness installs nothing")
 const {chromium,webkit}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
 const dir=fileURLToPath(new URL(".",import.meta.url))
-const bundle=await build({entryPoints:[path.join(dir,"fixtures.ts")],outfile:"project-assistants-fixture.js",bundle:true,write:false,format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
+const fenceOverride=process.env.BOTS_CREATE_SOURCE
+const plugins=fenceOverride?[{name:"captured-create-fence-baseline",setup(build){build.onLoad({filter:/\/BotCreate\.tsx$/},async args=>({contents:await readFile(fenceOverride,"utf8"),loader:"tsx",resolveDir:path.dirname(args.path)}))}}]:[]
+const bundle=await build({plugins,entryPoints:[path.join(dir,"fixtures.ts")],outfile:"project-assistants-fixture.js",bundle:true,write:false,format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
 const content=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.text]))
 const html=await readFile(new URL("../../tools/fixtures/project-assistants.html",import.meta.url),"utf8")
+// This matrix verifies injected metadata behavior; real transport/store acceptance is separate.
+async function catalogChecks(page,origin,language,shot,log) {
+  const zh=language!=="en",w=zh?{create:"新增 Bot",submit:"建立",cancel:"取消",name:"名稱",machine:"機器",agent:"Agent",instructions:"固定指示",more:"載入更多",retry:"重試",search:"搜尋 Bot 或 Project",message:"訊息"}:{create:"Create Bot",submit:"Create",cancel:"Cancel",name:"Name",machine:"Machine",agent:"Agent",instructions:"Standing instructions",more:"Load more",retry:"Try again",search:"Search Bot or Project",message:"Message"}
+  const dialog=page.getByRole("dialog"),project=()=>dialog.getByRole("combobox",{name:"Project",exact:true}),submit=()=>dialog.getByRole("button",{name:w.submit,exact:true})
+  const allRequests=[]
+  const fresh=async(options={})=>{
+    if(page.url().startsWith(origin))allRequests.push(...await log())
+    await page.goto(origin+"/?lang="+language)
+    await page.evaluate(options=>{window.botsFixture.a.configureProjects(options);window.botsFixture.open()},options)
+    await page.getByRole("button",{name:w.create,exact:true}).waitFor()
+  }
+  const open=async()=>{await page.getByRole("button",{name:w.create,exact:true}).click();await dialog.waitFor()}
+  const loaded=async(count=101)=>{await page.waitForFunction(count=>document.querySelector('.pa-form-panel select[required]')?.options.length===count,count);assert.equal(await project().isDisabled(),false)}
+  const fill=async()=>{await dialog.getByRole("textbox",{name:w.name,exact:true}).fill("Catalog Bot");await dialog.getByRole("textbox",{name:w.instructions,exact:true}).fill("Preserve these instructions")}
+  const alert=async(code)=>dialog.getByRole("alert").filter({hasText:code}).waitFor()
+  const reset=async()=>dialog.getByRole("button",{name:w.retry,exact:true}).click()
+  const metadata=()=>log().then(rows=>rows.filter(row=>["create","send","stop","answer"].includes(row.method)))
+  await fresh({count:101});await open();await loaded();await fill()
+  assert.deepEqual(await dialog.getByRole("combobox",{name:w.agent,exact:true}).locator("option").allTextContents(),["Claude Code","Codex"])
+  assert.equal(await page.evaluate(async()=>{const s=await window.botsFixture.a.status(new AbortController().signal);return s.sources[0].capabilities.every(c=>!c.read_only_enforced&&!c.native_memory_verified&&!!c.unavailable)}),true)
+  assert.equal(await project().locator('option[value="project"]').textContent(),await project().locator('option[value="project-1"]').textContent(),"same labels retain independent IDs")
+  await project().selectOption("project-1");await dialog.getByRole("combobox",{name:w.agent,exact:true}).selectOption("codex")
+  assert.equal(await submit().isDisabled(),false)
+  assert.equal((await metadata()).length,0,"metadata reads and selections start no model or mutation")
+  const firstRequests=(await log()).filter(row=>row.method==="projects")
+  assert.equal(firstRequests.every(row=>row.request.cursor===""),true,"no automatic page draining")
+  await shot("catalog-first-100")
+  await dialog.getByRole("button",{name:w.more,exact:true}).click();await loaded(102)
+  assert.equal(await project().inputValue(),"project-1")
+  await project().selectOption("project-100");await shot("catalog-page-101")
+  await submit().click();await dialog.waitFor({state:"hidden"})
+  const created=(await log()).filter(row=>row.method==="create")
+  assert.equal(created.length,1);assert.equal(created[0].request.settings.target.project_id,"project-100");assert.equal(created[0].request.settings.agent,"codex")
+  assert.equal((await log()).filter(row=>row.method==="send").length,0)
+  await page.getByRole("searchbox",{name:w.search,exact:true}).fill("Catalog Bot")
+  await page.getByRole("button",{name:/^Catalog Bot, studio,/}).click()
+  await page.getByRole("textbox",{name:w.message,exact:true}).fill("First send cannot admit a provider")
+  await page.getByRole("textbox",{name:w.message,exact:true}).press("Enter")
+  await page.getByRole("alert").filter({hasText:"adapter_not_found"}).waitFor()
+  assert.equal((await log()).filter(row=>row.method==="send").length,1,"explicit first Send retains typed unavailable")
+  await shot("catalog-provider-unavailable")
+
+  await fresh({failure:"pa_offline"});await open();await alert("pa_offline");await fill()
+  assert.equal(await submit().isDisabled(),true);assert.equal(await project().isDisabled(),true)
+  await page.evaluate(()=>window.botsFixture.a.configureProjects({failure:null}));await reset();await loaded(2)
+  assert.equal(await dialog.getByRole("textbox",{name:w.name,exact:true}).inputValue(),"Catalog Bot")
+  assert.equal(await dialog.getByRole("textbox",{name:w.instructions,exact:true}).inputValue(),"Preserve these instructions")
+  await shot("catalog-initial-retry")
+
+  for(const failure of ["pa_cursor_expired","pa_capacity_full"]) {
+    await fresh({count:101});await open();await loaded();await fill();await project().selectOption("project-1")
+    await page.evaluate(failure=>window.botsFixture.a.configureProjects({failure}),failure)
+    await dialog.getByRole("button",{name:w.more,exact:true}).click();await alert(failure)
+    assert.equal(await submit().isDisabled(),true)
+    await page.evaluate(()=>window.botsFixture.a.configureProjects({failure:null}));await reset();await loaded(failure==="pa_cursor_expired"?101:102)
+    assert.equal(await project().inputValue(),"project-1")
+    assert.equal(await dialog.getByRole("textbox",{name:w.name,exact:true}).inputValue(),"Catalog Bot")
+    await shot("catalog-retry-"+failure)
+  }
+  for(const invalid of ["revision","cursor","foreign","duplicate"]) {
+    await fresh({count:101});await open();await loaded();await fill();await project().selectOption("project")
+    await page.evaluate(invalid=>window.botsFixture.a.configureProjects({invalid}),invalid)
+    await dialog.getByRole("button",{name:w.more,exact:true}).click()
+    await alert(invalid==="revision"?"pa_cursor_expired":invalid==="foreign"?"pa_scope_denied":"pa_invalid")
+    assert.equal(await submit().isDisabled(),true)
+    await shot("catalog-reject-"+invalid)
+  }
+
+  await fresh({count:101});await open();await loaded();await fill();await project().selectOption("project-1")
+  await page.evaluate(()=>window.botsFixture.a.holdProjects())
+  await dialog.getByRole("button",{name:w.more,exact:true}).click()
+  await dialog.getByRole("combobox",{name:w.machine,exact:true}).selectOption("notebook");await loaded(2)
+  assert.equal(await project().inputValue(),"")
+  await page.evaluate(()=>window.botsFixture.a.releaseProjects());await page.waitForTimeout(30)
+  assert.equal(await project().locator("option").count(),2,"late old page cannot replace the new source")
+  assert.equal(await dialog.getByRole("textbox",{name:w.name,exact:true}).inputValue(),"Catalog Bot")
+  assert.equal(await dialog.getByRole("textbox",{name:w.instructions,exact:true}).inputValue(),"Preserve these instructions")
+  await shot("catalog-source-switch")
+
+  await fresh();await page.evaluate(()=>window.botsFixture.a.holdProjects());await open()
+  await dialog.getByRole("button",{name:w.cancel,exact:true}).click()
+  await page.evaluate(()=>window.botsFixture.a.releaseProjects());await page.waitForTimeout(30)
+  assert.equal(await dialog.count(),0);assert.equal((await metadata()).length,0)
+  await open();await loaded(2);assert.equal(await dialog.getByRole("textbox",{name:w.name,exact:true}).inputValue(),"")
+
+  await fresh();await page.evaluate(()=>window.botsFixture.a.setState("online","history_only"));await open();await loaded(2);await fill();await project().selectOption("project")
+  assert.equal(await submit().isDisabled(),true,"read-only metadata never admits create")
+  assert.equal((await metadata()).length,0);await shot("catalog-read-only")
+
+  await fresh();await open();await loaded(2);await fill();await project().selectOption("project")
+  await page.evaluate(()=>window.botsFixture.a.setState("online","history_only"));await submit().click();await alert("pa_read_only")
+  assert.equal((await metadata()).length,0,"fresh status rejects a write after metadata was loaded")
+
+  await fresh();await page.evaluate(()=>window.botsFixture.a.holdProjects());await open();await page.evaluate(()=>window.botsFixture.revoke());await page.evaluate(()=>window.botsFixture.a.releaseProjects());await page.waitForTimeout(30)
+  assert.equal(await submit().isDisabled(),true);assert.equal(await project().locator("option").count(),1)
+  assert.equal((await metadata()).length,0);await shot("catalog-revoked")
+
+  for(const authority of ["revoke","revision"]) {
+    await fresh();await open();await loaded(2);await fill();await project().selectOption("project")
+    const statuses=(await log()).filter(row=>row.method==="status").length
+    await page.evaluate(()=>window.botsFixture.a.holdStatus());await submit().click()
+    await page.waitForFunction(n=>window.botsFixture.log.filter(row=>row.method==="status").length>n,statuses)
+    await page.evaluate(authority=>{if(authority==="revoke")window.botsFixture.revokeBeforeRender();else window.botsFixture.replaceGrantBeforeRender();window.botsFixture.a.releaseStatus()},authority)
+    await alert("pa_revoked")
+    assert.equal((await log()).filter(row=>row.method==="create").length,0,`effect fence after delayed status: ${authority}`)
+    await shot("catalog-status-effect-fence-"+authority)
+  }
+
+  await fresh();await open();await loaded(2);await fill();await project().selectOption("project")
+  await page.evaluate(()=>window.botsFixture.a.unknownCreate(true));await submit().click();await alert("pa_outcome_unknown")
+  assert.equal(await dialog.getByRole("textbox",{name:w.name,exact:true}).isDisabled(),true)
+  assert.equal((await log()).filter(row=>row.method==="create").length,1,"unknown create is never automatically repeated")
+  await shot("catalog-create-unknown")
+  await page.evaluate(()=>window.botsFixture.a.setState("online","history_only"));await reset();await alert("pa_read_only")
+  assert.equal(await dialog.getByRole("textbox",{name:w.name,exact:true}).isDisabled(),true,"preflight refusal cannot unlock an earlier unknown create")
+  assert.equal((await log()).filter(row=>row.method==="create").length,1)
+  await page.evaluate(()=>{window.botsFixture.a.setState("online","interactive");window.botsFixture.a.unknownCreate(false)});await reset();await dialog.waitFor({state:"hidden"})
+  const attempts=(await log()).filter(row=>row.method==="create")
+  assert.equal(attempts.length,2);assert.deepEqual(attempts[0].request,attempts[1].request,"explicit retry uses identical idempotency and settings")
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+  await fresh();await open();await loaded(2);await fill();await project().selectOption("project")
+  await page.evaluate(()=>window.botsFixture.a.holdCreate());await submit().click()
+  await page.waitForFunction(()=>window.botsFixture.log.some(row=>row.method==="create"))
+  const readsBeforeClose=(await log()).filter(row=>row.method==="list").length
+  await dialog.getByRole("button",{name:w.cancel,exact:true}).click()
+  await page.evaluate(()=>window.botsFixture.a.releaseCreate());await page.waitForTimeout(30)
+  assert.equal(await dialog.count(),0)
+  assert.equal((await log()).filter(row=>row.method==="list").length,readsBeforeClose,"late create cannot publish onCreated after close")
+  await shot("catalog-late-create-after-close")
+  page.catalogRequests=[...allRequests,...await log()]
+  return ["101 registered Projects via manual pagination","same-label distinct IDs","metadata agents with unavailable native capabilities","no automatic drain or model invocation","first Send typed unavailable","initial/manual cursor/budget retry preserves form","revision/duplicate/foreign/repeated cursor refusal","late page after source change","late page after close","read-only metadata and fresh create gate","late revocation","effect fence after delayed status before host render","unknown create retains idempotency"]
+}
 let forbidden=0
 const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":"text/html");res.end(text)})
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
 const origin=`http://127.0.0.1:${server.address().port}`,results=[]
 const failures=[]
 try {
-  for(const engine of [chromium,webkit])for(const width of (process.env.BOTS_TARGETED?[390,1440]:[320,390,1440]))for(const language of (process.env.BOTS_TARGETED?["en"]:["zh-Hant","en"])) {
+  for(const engine of [chromium,webkit])for(const width of (process.env.BOTS_TARGETED||process.env.BOTS_CATALOG_ONLY?[390,1440]:[320,390,1440]))for(const language of (process.env.BOTS_TARGETED?["en"]:["zh-Hant","en"])) {
     const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Back to Sessions",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"返回 Sessions",earlier:"較早的訊息",refresh:"檢查新訊息"}
     const browser=await engine.launch({headless:true}),name=`${engine.name()}-${width}-${language}`
     const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce"})
@@ -30,6 +164,12 @@ try {
     const log=()=>page.evaluate(()=>window.botsFixture.log)
     const row=(bot="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${bot}, ${machine},`)})
     try {
+      if(process.env.BOTS_CATALOG_ONLY){
+        const checks=await catalogChecks(page,origin,language,shot,log)
+        assert.deepEqual(consoleErrors,[])
+        await writeFile(path.join(artifacts,`interactions-${name}.json`),JSON.stringify({log:page.catalogRequests,consoleErrors,checks,modelInvocations:0},null,2))
+        results.push({engine:engine.name(),width,language,status:"pass",checks});continue
+      }
       await page.goto(origin+"/?lang="+language)
       await shot("BR-01")
       const orb=page.getByRole("button",{name:new RegExp(w.allBots)});await orb.click()

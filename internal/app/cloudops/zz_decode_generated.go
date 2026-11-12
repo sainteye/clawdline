@@ -103,6 +103,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.list":            genDecodeProjectAssistantsList,
 	"project-assistants.memory":          genDecodeProjectAssistantsMemory,
 	"project-assistants.observed":        genDecodeProjectAssistantsObserved,
+	"project-assistants.projects":        genDecodeProjectAssistantsProjects,
 	"project-assistants.read":            genDecodeProjectAssistantsRead,
 	"project-assistants.send":            genDecodeProjectAssistantsSend,
 	"project-assistants.status":          genDecodeProjectAssistantsStatus,
@@ -2554,6 +2555,33 @@ func genDecodeProjectAssistantsObserved(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "event_seq": genValue{from: "event_seq"}, "receipt_id": genValue{from: "receipt_id"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsProjects is the `project-assistants.projects` row's decode.
+func genDecodeProjectAssistantsProjects(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "cursor", "machine_id", "page_size", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("cursor", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("page_size", genRule{kind: "integer", min: genInt(1), max: genInt(100)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-targets"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"cursor": genValue{from: "cursor"}, "machine_id": genValue{from: "machine_id"}, "page_size": genValue{from: "page_size"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

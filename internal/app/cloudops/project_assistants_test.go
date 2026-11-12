@@ -29,6 +29,7 @@ func projectAssistantOperationCases() []operationCase {
 		query                map[string]string
 	}{
 		{"status", "GET", "/status", nil, nil},
+		{"projects", "GET", "/v1/project-assistant-targets", map[string]any{"machine_id": "mac-01", "cursor": "page", "page_size": 100}, map[string]string{"machine_id": "mac-01", "cursor": "page", "page_size": "100"}},
 		{"list", "GET", "", map[string]any{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": 2}, map[string]string{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": "2"}},
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
 		{"export", "GET", "/bot/export", key, map[string]string{"machine_id": "mac-01"}},
@@ -51,6 +52,9 @@ func projectAssistantOperationCases() []operationCase {
 			body[k] = v
 		}
 		c := operationCase{word: "project-assistants." + r.word, method: r.method, path: "/v1/project-assistants" + r.suffix, query: r.query, session: MachineReplySession}
+		if r.word == "projects" {
+			c.path = r.suffix
+		}
 		c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
 		if r.method != "GET" {
 			op := map[string]string{"observed": "observe", "memory": "memory_save"}[r.word]
@@ -89,7 +93,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 15 {
+	if len(out) != 16 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -118,15 +122,15 @@ const rows=JSON.parse(readFileSync(root+'/internal/domain/cloudvocab/vocabulary.
 const machine='source-one', fixtures=[], status={contract_version:'project-assistants.v1',sources:[{machine_id:machine,state:'online',access:'interactive',fresh:true,readable:true,writable:true,observed_at:'',capabilities:[]}]};
 let http, sequence=0;
 const connection={machineDescriptor:()=>({machine:{commands:Object.keys(CARRIED)}}),
- _machineRequest:async(machine,word,fields,kind)=>receive('captured-read-'+(++sequence),machine,word,fields,kind),
+ _machineRequest:async(machine,word,fields,kind)=>receive(word==='project-assistants.projects'?'<'.repeat(128):'captured-read-'+(++sequence),machine,word,fields,kind),
  _machineRequestAs:async(ref,machine,word,fields,kind)=>receive(ref,machine,word,fields,kind)};
-function receive(ref,machine,word,fields,kind){fixtures.push({...http,machine,word,ref,kind,plaintext:{type:word,session:'__clawdline_machine__',request:ref,...fields}});return word.endsWith('.status')?status:{contract_version:'project-assistants.v1',echo:word};}
+function receive(ref,machine,word,fields,kind){fixtures.push({...http,machine,word,ref,kind,plaintext:{type:word,session:'__clawdline_machine__',request:ref,...fields}});return word.endsWith('.status')?status:word.endsWith('.projects')?{contract_version:'project-assistants.v1',source:status.sources[0],agents:['claude','codex'],revision:'catalog-1',items:[{target:{machine_id:machine,project_id:'project'},label:'Project'}],next_cursor:'next',has_more:true}:{contract_version:'project-assistants.v1',echo:word};}
 const relay=capturedAssistantRelayFetch(machine,()=>connection,Object.keys(CARRIED));
 const grant={accountKey:'fixture-account',readerID:'trusted-reader',machineID:machine,authorizationRevision:'revision',apiLevel:999,paired:true,online:true,writable:true};
 const source=new ProjectAssistantSourceClient(grant,async(input,init)=>{http={input,method:init.method,body:init.body??null,idempotency:new Headers(init.headers).get('Idempotency-Key')};return relay(input,init)},()=>grant);
 const signal=new AbortController().signal;
-await source.status(signal);await source.projects(signal);
-for(const row of rows){const word=row.op.split('.').at(-1);if(word==='status')continue;const {request,session,...fields}=row.example;const method={read:'markRead',observed:'observe',memory:'saveMemory'}[word]??word;await source[method](fields,signal);}
+await source.status(signal);
+for(const row of rows){const word=row.op.split('.').at(-1);if(word==='status')continue;const {request,session,...fields}=row.example;if(word==='projects')fields.machine_id=machine;const method={read:'markRead',observed:'observe',memory:'saveMemory'}[word]??word;await source[method](fields,signal);}
 process.stdout.write(JSON.stringify(fixtures));
 `
 
@@ -179,9 +183,6 @@ func TestProjectAssistantCapturedSourceRoundTrip(t *testing.T) {
 			bridge := Bridge{MachineID: fixture.Machine, AllowCommands: func() bool { return true }, Router: projectAssistantRouter(func(_ context.Context, request LocalRequest) (LocalResponse, error) {
 				calls++
 				actor := actorDevice
-				if fixture.Word == "projects" {
-					actor = ""
-				} // existing catalog behavior
 				if request.Method != fixture.Method || request.Path != u.EscapedPath() || request.Viewer != "authenticated-device" || request.Header[actorHeader] != actor {
 					t.Errorf("HTTP identity/method/path: %+v", request)
 				}
@@ -503,6 +504,42 @@ func TestProjectAssistantMachineReplyIsolation(t *testing.T) {
 		calls = 0
 		if answer := bridge.Handle(context.Background(), cmd); answer.Code != "wrong_machine" || calls != 0 {
 			t.Fatal("foreign machine route reached Local")
+		}
+	}
+}
+
+// A legal worst-case correlation name expands under Go's JSON HTML escaping.
+// Exercise the real Bridge rather than measuring a literal operation name.
+func TestProjectAssistantProjectsEscapedCorrelationCapacity(t *testing.T) {
+	var row cloudvocab.Operation
+	for _, candidate := range projectAssistantRows(t) {
+		if candidate.Op == "project-assistants.projects" {
+			row = candidate
+		}
+	}
+	base := projectAssistantExample(t, row)
+	base["request"] = strings.Repeat("<", 128)
+	name := "read:" + base["request"].(string)
+	empty := []byte(`{"contract_version":"project-assistants.v1","label":""}`)
+	overhead := len(payload(name, 200, empty, nil))
+	for _, delta := range []int{0, 1} {
+		raw, _ := json.Marshal(map[string]string{"contract_version": pa.ContractVersion, "label": strings.Repeat("x", ReadPlaintextBytesLimit-overhead+delta)})
+		bridge := open(&router{body: string(raw)})
+		answer := bridge.Handle(context.Background(), request(t, ClassCtl, base))
+		if delta == 0 {
+			if !answer.OK() || answer.Name != name || len(answer.Payload) != ReadPlaintextBytesLimit {
+				t.Fatalf("legal full correlation boundary: status=%d bytes=%d name=%q", answer.Status, len(answer.Payload), answer.Name)
+			}
+		} else if answer.Status != 429 || answer.Code != "pa_capacity_full" || len(answer.Payload) > ReadPlaintextBytesLimit {
+			t.Fatalf("overflow: status=%d code=%s bytes=%d", answer.Status, answer.Code, len(answer.Payload))
+		}
+		t.Logf("delta=%d correlation bytes=%d source bytes=%d full candidate bytes=%d answer bytes=%d status=%d", delta, len(base["request"].(string)), len(raw), len(payload(name, 200, raw, nil)), len(answer.Payload), answer.Status)
+	}
+	for _, code := range []pa.ErrorCode{pa.CursorExpired, pa.CapacityFull, pa.ContextStale, pa.Revoked, pa.Expired} {
+		raw := projectAssistantReplyFailure(code, "project_catalog")
+		answer := open(&router{status: 409, body: string(raw)}).Handle(context.Background(), request(t, ClassCtl, base))
+		if answer.Status != 409 || answer.Code != string(code) || !projectAssistantSame(answerOf(t, answer)["body"], json.RawMessage(raw)) {
+			t.Fatalf("catalog refusal lost: %+v", answer)
 		}
 	}
 }

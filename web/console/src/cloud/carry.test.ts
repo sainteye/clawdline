@@ -392,6 +392,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["copilot-work-update"], "POST /v1/voice/copilot-work")
   // Captured Bot sources preserve their own complete HTTP request and authority.
   const bots = {
+    "project-assistants.projects": "captured Bot source GET /v1/project-assistant-targets",
     "project-assistants.status": "captured Bot source GET /v1/project-assistants/status",
     "project-assistants.list": "captured Bot source GET /v1/project-assistants",
     "project-assistants.create": "captured Bot source POST /v1/project-assistants",
@@ -413,7 +414,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     assert.ok(!(word in DEFERRED), word)
     assert.ok(!(word in NO_MACHINE_ROUTE), word)
   }
-  assert.equal(Object.keys(CARRIED).length, 251)
+  assert.equal(Object.keys(CARRIED).length, 252)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
