@@ -777,6 +777,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/voice"}, s.voiceRoute},
 		{Route{"*", "/v1/voice/copilot-session"}, s.copilotSessionRoute},
 		{Route{"*", "/v1/voice/copilot-briefing"}, s.copilotBriefingRoute},
+		{Route{"*", "/v1/voice/copilot-decide"}, s.copilotDecideRoute},
 		{Route{"*", "/v1/voice/language"}, s.voiceLanguageRoute},
 		{Route{"*", "/v1/voice/source"}, s.voiceSourceRoute},
 		{Route{"*", "/v1/voice/setup"}, s.voiceSetupRoute},

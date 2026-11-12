@@ -140,6 +140,12 @@ export class RealtimeCopilotClient {
   private meter = new CallMeter()
   /** Stops the ringback that plays while the call connects (`CallMeter.ring`). */
   private stopRing: (() => void) | null = null
+  /**
+   * The person's current sentence as transcribed, for the Decision API; empty
+   * from the moment they start speaking until its transcript arrives, so a
+   * decision never judges the sentence before.
+   */
+  private heardNow = ''
   /** Which start this is; `disconnect` moves it on so a ringing start stops. */
   private attempt = 0
   private listeners: Set<RealtimeListener> = new Set()
@@ -165,6 +171,8 @@ export class RealtimeCopilotClient {
       briefing: () => this.briefing,
       openSession: (id) => openOnThisPage(id),
       snippets: (id, request) => openSnippetsOnThisPage(id, request),
+      heard: () => this.heardNow,
+      decide: (said) => decideOnMachine(said),
       machines: () => machinesOnThisPage(),
       focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
@@ -447,6 +455,8 @@ export class RealtimeCopilotClient {
         break
       }
       case 'input_audio_buffer.speech_started':
+        // A new sentence has begun: the last one no longer says what is meant.
+        this.heardNow = ''
         this.updateState({ speakingState: 'listening' })
         break
       case 'input_audio_buffer.speech_stopped':
@@ -472,6 +482,7 @@ export class RealtimeCopilotClient {
         break
       case 'conversation.item.input_audio_transcription.completed':
         if (event.transcript) {
+          this.heardNow = event.transcript
           this.updateState({ lastTranscript: event.transcript })
           this.keep('user', event.transcript)
           this.addLog('info', nextWord('copilotLogHeard', { text: event.transcript }))
@@ -631,5 +642,24 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
     try { dc.close() } catch { /* refusal-ok: closing a preview's channel twice is harmless. */ }
     try { pc.close() } catch { /* refusal-ok: closing a preview's connection twice is harmless. */ }
     audio.srcObject = null
+  }
+}
+
+/**
+ * The Decision API on the machine that holds the key
+ * (`internal/transport/http/copilot_decide.go`): which of its Sessions the
+ * person's sentence means. A refusal is thrown; the tool then lets the copilot
+ * choose from the list itself.
+ */
+async function decideOnMachine(said: string): Promise<{ id?: string; candidates?: string[] }> {
+  const res = await fetch('/v1/voice/copilot-decide', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said }),
+  })
+  const body = (await res.json().catch(() => null)) as { id?: unknown; candidates?: unknown } | null
+  // refusal-ok: a refused decision falls back to the copilot's own choice in `resolveRead`, which is said in the tool's answer.
+  if (!res.ok || !body) throw new Error(copilotRefusal(body, res.status).code)
+  return {
+    ...(typeof body.id === 'string' && body.id ? { id: body.id } : {}),
+    candidates: Array.isArray(body.candidates) ? body.candidates.filter((c): c is string => typeof c === 'string') : [],
   }
 }

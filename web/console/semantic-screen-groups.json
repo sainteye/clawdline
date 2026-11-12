@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11255,
-  "riskKeys": 4944,
-  "nonRiskCount": 6311,
+  "englishContentKeys": 11261,
+  "riskKeys": 4946,
+  "nonRiskCount": 6315,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 457,
+      "count": 461,
       "sources": [
         null
       ],
@@ -842,6 +842,10 @@
         "capacityRow.voice.copilot_briefing_input_characters.what",
         "capacityRow.voice.copilot_briefing_reply_characters.full",
         "capacityRow.voice.copilot_briefing_reply_characters.what",
+        "capacityRow.voice.copilot_decision_body_bytes.what",
+        "capacityRow.voice.copilot_decision_said_characters.what",
+        "capacityRow.voice.copilot_decision_timeout_milliseconds.full",
+        "capacityRow.voice.copilot_decision_timeout_milliseconds.what",
         "capacityRow.voice.copilot_key_bytes.what",
         "capacityRow.voice.polish_characters.what",
         "capacityRow.voice.polish_terms.what",

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11255,
+  "englishKeys": 11261,
   "counts": {
-    "negation": 3115,
-    "state": 1854,
+    "negation": 3116,
+    "state": 1855,
     "permission": 669,
     "deletion": 255,
     "uncertainty": 422
   },
-  "unionCount": 4944,
+  "unionCount": 4946,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -680,6 +680,7 @@
       "capacityRow.voice.copilot_briefing_characters.full",
       "capacityRow.voice.copilot_briefing_input_characters.full",
       "capacityRow.voice.copilot_briefing_timeout_milliseconds.full",
+      "capacityRow.voice.copilot_decision_said_characters.full",
       "capacityRow.voice.copilot_extra_instructions_characters.full",
       "capacityRow.voice.copilot_key_bytes.full",
       "capacityRow.voice.model_download_bytes.what",
@@ -3705,6 +3706,7 @@
       "capacityRow.update.fetch_timeout_seconds.what",
       "capacityRow.update.refresh_seconds.what",
       "capacityRow.usage.work_cursor_queue.what",
+      "capacityRow.voice.copilot_decision_body_bytes.full",
       "capacityRow.voice.copilot_extra_instructions_characters.full",
       "capacityRow.voice.copilot_extra_instructions_characters.what",
       "capacityRow.voice.copilot_key_bytes.full",
@@ -7412,6 +7414,8 @@
     "capacityRow.voice.copilot_briefing_input_characters.full",
     "capacityRow.voice.copilot_briefing_timeout_milliseconds.full",
     "capacityRow.voice.copilot_briefing_timeout_milliseconds.what",
+    "capacityRow.voice.copilot_decision_body_bytes.full",
+    "capacityRow.voice.copilot_decision_said_characters.full",
     "capacityRow.voice.copilot_extra_instructions_characters.full",
     "capacityRow.voice.copilot_extra_instructions_characters.what",
     "capacityRow.voice.copilot_key_bytes.full",

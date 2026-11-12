@@ -316,6 +316,7 @@ export type WriteRoute =
   | { op: "copilot-settings-update"; word: Carried<"copilot-settings-update"> }
   | { op: "copilot-session"; word: Carried<"copilot-session"> }
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
+  | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
   | { op: "notification-rules"; word: Carried<"notification-rules"> }
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
@@ -782,6 +783,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-briefing" && segments.length === 2) {
     return { op: "copilot-briefing", word: "copilot-briefing" }
   }
+  if (head === "voice" && a === "copilot-decide" && segments.length === 2) {
+    return { op: "copilot-decide", word: "copilot-decide" }
+  }
   if (head === "notification-rules" && segments.length === 1) return { op: "notification-rules-update", word: "notification-rules-update" }
   if (head === "update" && a === "apply" && segments.length === 2) {
     return { op: "update-apply", word: "update-apply" }
@@ -1040,6 +1044,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-settings-update":
     case "copilot-session":
     case "copilot-briefing":
+    case "copilot-decide":
     case "notification-rules":
     case "notification-rules-update":
     case "work-gate-settings":
@@ -1998,6 +2003,15 @@ export class RelayWriter {
           return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
         }
         return this.copilotSession(client, headerOf(init, "idempotency-key"))
+      }
+      case "copilot-decide": {
+        // The person's transcribed sentence, judged by the machine that gave
+        // the call its pass against that machine's own Sessions.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        }
+        const sent = await bodyOf(init)
+        return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? "") } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
       }
       case "update-apply": {
         // The press installs the newest release of the machine's channel and

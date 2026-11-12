@@ -48,6 +48,16 @@ export interface ToolDeps {
   /** The Session this call is talking about: the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
   /**
+   * The Decision API: which Session the person's own words point at, judged
+   * by a text model on the machine from the whole list. Asked only when a read
+   * names no Session by its id or whole name (`resolveRead`).
+   */
+  decide?: (said: string, sessions: DecisionSession[]) => Promise<SessionDecision>
+  /** The person's own words for the Session in the current tool call (`said`). */
+  said?: string
+  /** What the person last said in the call, as transcribed: the words the Decision API judges first. */
+  heard?: () => string
+  /**
    * Opens a Session on the page the call runs in and its Snippet / Playbook
    * sheet, optionally starting a Playbook there (`session/snippets-request.ts`).
    * Resolves with what the sheet made of it.
@@ -145,7 +155,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 送出前先講「要送到『Session 名稱』：『內容』，對嗎？」，使用者說好才送。但同一件事只確認一次：使用者已經對這個 Session 和這段內容說過好（包括你前面問過、他答應了），或他自己一句話就講明了送到哪個 Session、送什麼（他一句話裡就講了是哪個 Session 和要送的話），就直接送，不要再問。只有對象或內容是你自己推測的、或跟他確認過的不一樣時，才再問一次。回答問題、關閉也一樣：已經確認過就直接做。
 - 工具說「目前在討論的不是這個」時，要先問使用者是不是要改到那個 Session，確認後才帶 switch_confirmed: true 再呼叫。
 - 查詢類工具（get_session_summary、get_session_recap、get_session_activity、explain_session_reply、get_session_screen、open_session、get_session_notes）的 session_id，填清單裡那個 Session 的完整名稱（label），一字不差照抄；名稱比 id 不容易填錯。送出、回答、關閉則填清單裡的 id，原樣照填（包含開頭的 % 符號）。還沒查過清單就先呼叫 list_sessions。
-- 講某個 Session 的內容時，先呼叫工具，再用工具結果裡的 label 簡稱說出是哪一個，讓使用者聽得出你查的是不是他要的。使用者用描述的方式說 Session（講它的主題或在做的事，而不是完整名稱），由你依清單裡的名稱、狀態與摘要判斷是哪一個，再填它的 id；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
+- 使用者問到某個 Session 的內容、進度、結果時，一定先呼叫查詢工具再回答，即使快照裡有它的名稱也一樣；快照只用來回答整體有哪些 Session。講某個 Session 的內容時，再用工具結果裡的 label 簡稱說出是哪一個，讓使用者聽得出你查的是不是他要的。使用者用描述的方式說 Session（講它的主題或在做的事，而不是完整名稱）時，查詢類工具的 said 照填他稱呼它的原話（session_id 填你認為的那個），工具會依他的原話判斷是哪一個；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
 
@@ -208,12 +218,13 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: {
           type: 'string',
           description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
         },
       },
-      required: ['session_id'],
+      required: ['session_id', 'said'],
     },
   },
   {
@@ -224,12 +235,13 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: {
           type: 'string',
           description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
         },
       },
-      required: ['session_id'],
+      required: ['session_id', 'said'],
     },
   },
   {
@@ -240,12 +252,13 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: {
           type: 'string',
           description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
         },
       },
-      required: ['session_id'],
+      required: ['session_id', 'said'],
     },
   },
   {
@@ -256,12 +269,13 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: {
           type: 'string',
           description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
         },
       },
-      required: ['session_id'],
+      required: ['session_id', 'said'],
     },
   },
   {
@@ -271,12 +285,13 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: {
           type: 'string',
           description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
         },
       },
-      required: ['session_id'],
+      required: ['session_id', 'said'],
     },
   },
   {
@@ -286,9 +301,10 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
       },
-      required: ['session_id'],
+      required: ['session_id', 'said'],
     },
   },
   {
@@ -312,7 +328,9 @@ export const COPILOT_TOOLS = [
     description: '讀取 Session 留給使用者、還沒處理的便條紙（標題、要使用者做什麼、原因、內容、建議回覆）。不填 session_id 就讀所有有便條的 Session。',
     parameters: {
       type: 'object',
+      required: ['said'],
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: { type: 'string', description: 'list_sessions 回傳的 id，或 Session 名稱；省略時讀全部' },
       },
     },
@@ -324,9 +342,10 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
       },
-      required: ['session_id'],
+      required: ['session_id', 'said'],
     },
   },
   {
@@ -336,10 +355,11 @@ export const COPILOT_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
+        said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
         kind: { type: 'string', enum: ['snippet', 'playbook'], description: '要打開哪一個列表' },
       },
-      required: ['session_id', 'kind'],
+      required: ['session_id', 'kind', 'said'],
     },
   },
   {
@@ -720,6 +740,57 @@ export function resolveSession(
   }
 }
 
+/** One Session as the Decision API is shown it. */
+export interface DecisionSession { id: string; label: string; state: string; assistant: string; delivered?: string; question?: string }
+
+/** What the Decision API decided: one id, or the few it could not tell apart. */
+export interface SessionDecision { id?: string; candidates?: string[] }
+
+/**
+ * A read's Session. An id or a whole name is taken as it is; any other words
+ * go to the Decision API with every Session, and only an id it names from the
+ * list is used. Without a decision the copilot gets every Session to choose
+ * from, as before (`resolveSession`). Writes never come here (`resolveForWrite`).
+ */
+export async function resolveRead(
+  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard'>,
+  rows: readonly CopilotSessionRow[],
+  wanted: string,
+): Promise<ReturnType<typeof resolveSession>> {
+  const direct = resolveSession(rows, wanted)
+  // The person's words decide when there are any: measured live, the voice
+  // model filled in a wrong id itself (「做衣服圖片的那個」 read as another
+  // Session), and asked for the person's words it handed over its own pick
+  // of a label instead. So the transcribed sentence comes first.
+  const asked = (deps.heard?.() ?? '').trim() || (deps.said ?? '').trim() || ('row' in direct ? '' : wanted.trim())
+  if (!asked || !deps.decide || rows.length === 0) return direct
+  let decided: SessionDecision
+  try {
+    decided = await deps.decide(asked, rows.map((r) => ({
+      id: r.id, label: r.label, state: r.state, assistant: r.assistant,
+      ...(r.delivered ? { delivered: clip(r.delivered, LIST_GOAL_CHARS) } : {}),
+      ...(r.question ? { question: clip(r.question, LIST_GOAL_CHARS) } : {}),
+    })))
+  } catch {
+    // refusal-ok: without a decision the copilot still gets every Session and chooses itself.
+    return direct
+  }
+  const near = (decided.candidates ?? []).map((id) => rows.find((r) => r.id === id)).filter((r): r is CopilotSessionRow => !!r)
+  // A lone candidate is the decision: asking "is it this one?" about the only
+  // match was said to the person as "not found".
+  const row = (decided.id ? rows.find((r) => r.id === decided.id) : undefined) ?? (near.length === 1 ? near[0] : undefined)
+  if (row) return { row }
+  // Words that point nowhere ("它") leave the copilot's own choice standing.
+  if ('row' in direct && (near.length === 0 || near.includes(direct.row))) return direct
+  if (near.length) {
+    return {
+      error: `「${wanted}」可能是：${near.map((r) => r.label).join('、')}。唸出這幾個名稱，問使用者是哪一個`,
+      candidates: near.map((r) => ({ id: r.id, label: r.label, state: r.state })),
+    }
+  }
+  return direct
+}
+
 function countBy(rows: readonly CopilotSessionRow[]): Record<string, number> {
   const out: Record<string, number> = {}
   for (const r of rows) {
@@ -910,7 +981,7 @@ async function sessionScreen(deps: ToolDeps, logs: ToolLog[], wanted: string): P
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
@@ -1084,7 +1155,7 @@ async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
@@ -1134,7 +1205,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
@@ -1181,7 +1252,7 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
@@ -1241,7 +1312,7 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
@@ -1397,7 +1468,7 @@ async function sessionForReusable(deps: ToolDeps, logs: ToolLog[], wanted: strin
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveSession(read.rows, wanted)
+  const found = await resolveRead(deps, read.rows, wanted)
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates }
@@ -1503,14 +1574,14 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  let found = resolveSession(read.rows, wanted)
+  let found = await resolveRead(deps, read.rows, wanted)
   // A Session the copilot just started reaches the list a moment later.
   for (let tries = 0; 'error' in found && /^(%\d+|owned:)/.test(wanted.trim()) && tries < NEW_SESSION_READS; tries++) {
     await deps.sleep(NEW_SESSION_INTERVAL_MS)
     const again = await readRows(deps)
     if ('error' in again) break
     read.rows = again.rows
-    found = resolveSession(read.rows, wanted)
+    found = await resolveRead(deps, read.rows, wanted)
   }
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
@@ -1607,7 +1678,7 @@ async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   }
   let rows: CopilotSessionRow[]
   if (wanted.trim()) {
-    const found = resolveSession(read.rows, wanted)
+    const found = await resolveRead(deps, read.rows, wanted)
     if ('error' in found) {
       logs.push({ level: 'error', text: found.error })
       return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })) }
@@ -1858,6 +1929,8 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     // refusal-ok: malformed arguments are treated as none; each tool says what it is missing.
   }
   logs.push({ level: 'tool', text: `執行工具【${name}】參數: ${JSON.stringify(args)}` })
+  // A read's Session is judged from the person's own words (`resolveRead`).
+  deps = { ...deps, said: typeof args.said === 'string' ? args.said : undefined }
   let result: unknown
   try {
     if (name === 'get_status_briefing') result = await statusBriefing(deps, logs)

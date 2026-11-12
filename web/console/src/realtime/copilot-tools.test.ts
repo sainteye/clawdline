@@ -844,3 +844,34 @@ test("a Playbook the sheet would not start says why", async () => {
   const out = JSON.parse((await runCopilotTool("run_snippet", '{"session_id":"%2","session_label":"Prepare screenshots","name":"Daily release"}', deps)).output)
   assert.match(out.error, /已經有一個 Playbook 在跑/)
 })
+
+test("a read follows the Decision API on the sentence the person said, over the copilot's own pick", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login test" }], "%7": [{ pending: false, readable: true, text: "flaky" }] })
+  const asked: string[] = []
+  deps.heard = () => "the login one, how is it"
+  deps.decide = async (said) => { asked.push(said); return { id: "%9" } }
+  const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output)
+  assert.equal(out.session_id, "%9")
+  assert.deepEqual(asked, ["the login one, how is it"], "the transcribed sentence is judged, not the copilot's paraphrase")
+})
+
+test("a sentence that points nowhere, a refused decision, or an unknown id leave the copilot's choice standing", async () => {
+  const { deps } = fakeMachine({ "%7": [{ pending: false, readable: true, text: "flaky" }] })
+  deps.heard = () => "and that one?"
+  for (const decide of [async () => ({ candidates: [] }), async () => { throw new Error("copilot_key_missing") }, async () => ({ id: "%44" })]) {
+    deps.decide = decide
+    const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"it"}', deps)).output)
+    assert.equal(out.session_id, "%7")
+  }
+})
+
+test("a lone candidate is the Session; two are put to the person", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }] })
+  deps.heard = () => "the test one"
+  deps.decide = async () => ({ candidates: ["%9"] })
+  assert.equal(JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"the test one","said":"the test one"}', deps)).output).session_id, "%9")
+  deps.decide = async () => ({ candidates: ["%7", "%9"] })
+  const two = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"the test one","said":"the test one"}', deps)).output)
+  assert.match(two.error, /問使用者是哪一個/)
+  assert.deepEqual(two.candidates.map((c: { id: string }) => c.id), ["%7", "%9"])
+})

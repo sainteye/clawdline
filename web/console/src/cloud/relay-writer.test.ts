@@ -3261,6 +3261,11 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
   client.calls.length = 0
   await reader.fetch("/v1/voice/copilot-briefing", post({}, { "Idempotency-Key": "brief-1" }))
   assert.deepEqual(client.calls[0].slice(1, 4), ["brief-1", "mac-b", "copilot-briefing"])
+
+  // So is the decision on which Session a sentence means, with only the sentence.
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-decide", post({ said: "the clothes photo one", extra: 1 }, { "Idempotency-Key": "decide-1" }))
+  assert.deepEqual(client.calls[0].slice(1, 5), ["decide-1", "mac-b", "copilot-decide", { decision: { said: "the clothes photo one" } }])
 })
 
 test("a call pass no machine can give names the missing key, in the flat spelling the page reads", async () => {

@@ -981,6 +981,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/voice/copilot-briefing",
 		body2: `{}`,
 	}, {
+		word: "copilot-decide",
+		body: map[string]any{"type": "copilot-decide", "session": machine, "request": "req-decide",
+			"decision": map[string]any{"said": "the clothes photo one"}},
+		session: machine, name: "action:req-decide",
+		method: "POST", path: "/v1/voice/copilot-decide",
+		body2: `{"said":"the clothes photo one"}`,
+	}, {
 		word:    "notification-rules",
 		body:    map[string]any{"type": "notification-rules", "session": machine, "request": "req-rules"},
 		session: machine, name: "read:req-rules",

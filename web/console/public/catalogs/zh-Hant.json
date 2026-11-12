@@ -11255,5 +11255,11 @@
   "capacityRow.console.copilot_orb_frames_per_second.what": "語音副駕駛的雲霧光球每秒最多畫幾次。",
   "capacityRow.console.copilot_orb_frames_per_second.full": "更新率更高的螢幕會略過多的畫面；光球動起來一樣，比較省電。",
   "capacityRow.console.copilot_orb_pixel_ratio.what": "在高解析度螢幕上，語音副駕駛的雲霧光球最多畫得多精細。",
-  "capacityRow.console.copilot_orb_pixel_ratio.full": "更高解析度的螢幕會用這個精細度畫好再放大；柔和的雲霧看起來沒有差別。"
+  "capacityRow.console.copilot_orb_pixel_ratio.full": "更高解析度的螢幕會用這個精細度畫好再放大；柔和的雲霧看起來沒有差別。",
+  "capacityRow.voice.copilot_decision_said_characters.what": "語音副駕駛交給機器判斷「指的是哪個 Session」的一句話最長長度，一句口語遠比這短。",
+  "capacityRow.voice.copilot_decision_said_characters.full": "這次不做判斷，副駕駛改由自己從 Session 清單挑選。",
+  "capacityRow.voice.copilot_decision_body_bytes.what": "機器判斷 Session 的 route 接受的最大請求。",
+  "capacityRow.voice.copilot_decision_body_bytes.full": "請求會被拒絕，副駕駛改由自己從 Session 清單挑選。",
+  "capacityRow.voice.copilot_decision_timeout_milliseconds.what": "機器等 OpenAI 判斷「這句話指的是哪個 Session」的最長時間。",
+  "capacityRow.voice.copilot_decision_timeout_milliseconds.full": "這次判斷會放棄，副駕駛改由自己從 Session 清單挑選。"
 }

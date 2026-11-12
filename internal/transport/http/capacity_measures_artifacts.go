@@ -118,6 +118,15 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		"voice.copilot_briefing_reply_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-briefing clip of each last reply, keeping both ends"}
 		},
+		"voice.copilot_decision_said_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-decision guard on the person's sentence"}
+		},
+		"voice.copilot_decision_body_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-decision guard on the request body"}
+		},
+		"voice.copilot_decision_timeout_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-decision deadline; a slower decision leaves the copilot's own choice"}
+		},
 		"voice.copilot_key_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-settings-write guard on the pasted key"}
 		},

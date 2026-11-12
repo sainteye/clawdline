@@ -161,7 +161,21 @@ name; anything else answers with every Session (id, name, state) and the copilot
 from what the person said. On 2026-11-12 the person asked for "Task 或 TimeTree 相關的" Session;
 the label-substring match found nothing for "[Task] Foyer 每日 TimeTree 日程整理" and the copilot
 said it did not exist. Matching what was meant is left to the model rather than to a looser rule
-in this code. Over Cloud the close resolves that
+in this code.
+
+The voice model alone still read the wrong Session, or none, too often: across eleven spoken
+descriptions of this machine's Sessions on 2026-11-12, gpt-realtime-mini read the right one for 7
+(gpt-realtime, about four times the price, for 8). So a read that names a Session by neither id
+nor whole name, and every read the person described in words, also asks the **Decision API**:
+`POST /v1/voice/copilot-decide` with the person's transcribed sentence (`heard`, never the voice
+model's paraphrase, which handed over its own pick of a label). The machine that gave the call its
+pass reads its own Session list and asks `gpt-4.1-mini` on its key for one id, the two or three it
+cannot tell apart, or neither (`copilot_decide.go`). Only an id from that list is used; a lone
+candidate is the Session; a sentence that points nowhere ("它"), a refusal or a slow answer leave
+the voice model's own choice standing (`resolveRead`). Writes never take a decision. With it, 10
+of the 11 descriptions read the right Session, at a median of 0.7 s per decision. The sentence is
+bounded (`voice.copilot_decision_said_characters`) and so is the wait
+(`voice.copilot_decision_timeout_milliseconds`). Over Cloud the close resolves that
 Session's current execution as `answer_session_question` does. Times reach the copilot already
 said as a person says them (剛剛, 12 分鐘前, 3 小時前, 昨天 18:20, 11/9 14:30; 1 小時 20 分 for a
 duration), in the briefing's input too, never as a count of minutes. `get_session_notes` reads the unresolved

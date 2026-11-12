@@ -3203,6 +3203,21 @@
     "Note": true
   },
   {
+    "Name": "voice.copilot_decision_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_decision_said_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_decision_timeout_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "voice.copilot_extra_instructions_characters",
     "Known": true,
     "Note": true
