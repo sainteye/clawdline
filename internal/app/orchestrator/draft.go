@@ -240,6 +240,16 @@ func (b *Broker) readDraftAs(id string, scheduled, detached bool) (Record, error
 // Every other field meets the same checks a caller's brief meets, so a template
 // asking for something this broker does not do is refused by name.
 func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, error) {
+	return b.admitOwned(id, d, scheduled, detached, false)
+}
+
+// admitAssistant is private to the authenticated typed door. A JSON field can
+// never select it. All ordinary draft validation still runs, including claims.
+func (b *Broker) admitAssistant(id string, d draft) (Record, error) {
+	return b.admitOwned(id, d, false, false, true)
+}
+
+func (b *Broker) admitOwned(id string, d draft, scheduled, detached, assistant bool) (Record, error) {
 	bad := func(msg string) (Record, error) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task", msg)
 	}
@@ -310,6 +320,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 
 	var root *RootRef
 	switch {
+	case assistant:
+		if d.Root != nil {
+			return bad("Bot work cannot declare a Session root")
+		}
 	case scheduled:
 	case detached:
 		if err := admitDetached(d.Root); err != nil {

@@ -4373,6 +4373,724 @@ type Project struct {
 	SessionCount int64 `json:"sessionCount"`
 }
 
+// Default is hidden. Disabled with preserved data is history_only, allowing
+// authenticated reads/export but no create/send/permission answer.
+type ProjectAssistantAccess string
+
+const (
+	ProjectAssistantAccessHidden      ProjectAssistantAccess = "hidden"
+	ProjectAssistantAccessHistoryOnly ProjectAssistantAccess = "history_only"
+	ProjectAssistantAccessInteractive ProjectAssistantAccess = "interactive"
+)
+
+// ProjectAssistantAccessValues is every value the contract allows, in contract order.
+var ProjectAssistantAccessValues = []ProjectAssistantAccess{ProjectAssistantAccessHidden, ProjectAssistantAccessHistoryOnly, ProjectAssistantAccessInteractive}
+
+type ProjectAssistantAgent string
+
+const (
+	ProjectAssistantAgentClaude ProjectAssistantAgent = "claude"
+	ProjectAssistantAgentCodex  ProjectAssistantAgent = "codex"
+)
+
+// ProjectAssistantAgentValues is every value the contract allows, in contract order.
+var ProjectAssistantAgentValues = []ProjectAssistantAgent{ProjectAssistantAgentClaude, ProjectAssistantAgentCodex}
+
+type ProjectAssistantAppearance struct {
+	Color string                `json:"color"`
+	Shape ProjectAssistantShape `json:"shape"`
+}
+
+type ProjectAssistantBot struct {
+	Agent            ProjectAssistantAgent            `json:"agent"`
+	Appearance       ProjectAssistantAppearance       `json:"appearance"`
+	ConversationID   string                           `json:"conversation_id"`
+	CreatedAt        string                           `json:"created_at"`
+	Instructions     ProjectAssistantInstructions     `json:"instructions"`
+	Key              ProjectAssistantBotKey           `json:"key"`
+	Name             string                           `json:"name"`
+	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
+	Project          ProjectAssistantProjectScope     `json:"project"`
+	UpdatedAt        string                           `json:"updated_at"`
+	Version          int64                            `json:"version"`
+}
+
+type ProjectAssistantBotKey struct {
+	BotID     string `json:"bot_id"`
+	MachineID string `json:"machine_id"`
+}
+
+type ProjectAssistantBotResponse struct {
+	Bot             ProjectAssistantBot     `json:"bot"`
+	ContractVersion string                  `json:"contract_version"`
+	Receipt         ProjectAssistantReceipt `json:"receipt"`
+}
+
+type ProjectAssistantBotSummary struct {
+	Activity           string                       `json:"activity"`
+	ActivityAt         string                       `json:"activity_at"`
+	Bot                ProjectAssistantBot          `json:"bot"`
+	LatestMessage      string                       `json:"latest_message"`
+	PendingPermissions int64                        `json:"pending_permissions"`
+	ReadCursor         ProjectAssistantReadCursor   `json:"read_cursor"`
+	Source             ProjectAssistantSourceStatus `json:"source"`
+	UnreadCount        int64                        `json:"unread_count"`
+	Version            int64                        `json:"version"`
+}
+
+// Unknown version/capability is unavailable. Provider probes must supply actual
+// evidence before native mode is enabled.
+type ProjectAssistantCapabilities struct {
+	AdapterVersion       string                           `json:"adapter_version"`
+	Agent                ProjectAssistantAgent            `json:"agent"`
+	CliVersion           string                           `json:"cli_version"`
+	Evidence             string                           `json:"evidence"`
+	Key                  ProjectAssistantBotKey           `json:"key"`
+	NativeMemory         ProjectAssistantNativeMemoryMode `json:"native_memory"`
+	NativeMemoryVerified bool                             `json:"native_memory_verified"`
+	Project              ProjectAssistantProjectScope     `json:"project"`
+	ReadOnlyEnforced     bool                             `json:"read_only_enforced"`
+	Resume               bool                             `json:"resume"`
+	SendMessage          bool                             `json:"send_message"`
+	Unavailable          *ProjectAssistantFailure         `json:"unavailable,omitempty"`
+}
+
+// SHA-256 of canonical validated content, recomputed by source. Scope is
+// machine/Bot/operation/key, not device. At create, client chooses a stable
+// opaque bot_id; same command returns same Bot.
+type ProjectAssistantCommand struct {
+	ContentHash    string                    `json:"content_hash"`
+	IdempotencyKey string                    `json:"idempotency_key"`
+	Key            ProjectAssistantBotKey    `json:"key"`
+	Operation      ProjectAssistantOperation `json:"operation"`
+}
+
+// A forgotten source in any provenance rejects the whole summary; never
+// silently strip its ID while retaining the text.
+type ProjectAssistantContextSnapshot struct {
+	Memory             ProjectAssistantMemoryRevision `json:"memory"`
+	ProvenanceComplete bool                           `json:"provenance_complete"`
+	Sources            []ProjectAssistantMemorySource `json:"sources"`
+	Text               string                         `json:"text"`
+}
+
+type ProjectAssistantConversation struct {
+	ActiveTurnID   string                 `json:"active_turn_id"`
+	BindingID      string                 `json:"binding_id"`
+	Generation     int64                  `json:"generation"`
+	ID             string                 `json:"id"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	LastMessageSeq int64                  `json:"last_message_seq"`
+	MemoryRevision int64                  `json:"memory_revision"`
+	Version        int64                  `json:"version"`
+}
+
+type ProjectAssistantCreateRequest struct {
+	Command  ProjectAssistantCommand        `json:"command"`
+	Settings ProjectAssistantCreateSettings `json:"settings"`
+}
+
+// Six settings. Creating, cancelling, reading, selecting and searching start no
+// process or model. Only first send binds execution.
+type ProjectAssistantCreateSettings struct {
+	Agent            ProjectAssistantAgent            `json:"agent"`
+	Appearance       ProjectAssistantAppearance       `json:"appearance"`
+	Instructions     string                           `json:"instructions"`
+	Name             string                           `json:"name"`
+	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
+	RoleSnapshotRef  string                           `json:"role_snapshot_ref"`
+	Target           ProjectAssistantProjectSelection `json:"target"`
+}
+
+type ProjectAssistantEditRequest struct {
+	Command  ProjectAssistantCommand      `json:"command"`
+	Settings ProjectAssistantEditSettings `json:"settings"`
+}
+
+// Complete editable settings replacement. Agent/model/Project/policy changes,
+// archive and deletion are outside v1.
+type ProjectAssistantEditSettings struct {
+	Appearance      ProjectAssistantAppearance `json:"appearance"`
+	ExpectedVersion int64                      `json:"expected_version"`
+	Instructions    string                     `json:"instructions"`
+	Name            string                     `json:"name"`
+}
+
+// Acceptance is durable admission; delivery is a persisted reply; observation
+// and read require separate device acknowledgements. Unknown is never
+// automatically executed again.
+type ProjectAssistantEffectState string
+
+const (
+	ProjectAssistantEffectStateAccepted  ProjectAssistantEffectState = "accepted"
+	ProjectAssistantEffectStateExecuting ProjectAssistantEffectState = "executing"
+	ProjectAssistantEffectStateUnknown   ProjectAssistantEffectState = "unknown"
+	ProjectAssistantEffectStateDelivered ProjectAssistantEffectState = "delivered"
+	ProjectAssistantEffectStateObserved  ProjectAssistantEffectState = "observed"
+	ProjectAssistantEffectStateRead      ProjectAssistantEffectState = "read"
+	ProjectAssistantEffectStateFailed    ProjectAssistantEffectState = "failed"
+)
+
+// ProjectAssistantEffectStateValues is every value the contract allows, in contract order.
+var ProjectAssistantEffectStateValues = []ProjectAssistantEffectState{ProjectAssistantEffectStateAccepted, ProjectAssistantEffectStateExecuting, ProjectAssistantEffectStateUnknown, ProjectAssistantEffectStateDelivered, ProjectAssistantEffectStateObserved, ProjectAssistantEffectStateRead, ProjectAssistantEffectStateFailed}
+
+type ProjectAssistantErrorCode string
+
+const (
+	ProjectAssistantErrorCodePaInvalid                        ProjectAssistantErrorCode = "pa_invalid"
+	ProjectAssistantErrorCodePaDisabled                       ProjectAssistantErrorCode = "pa_disabled"
+	ProjectAssistantErrorCodePaReadOnly                       ProjectAssistantErrorCode = "pa_read_only"
+	ProjectAssistantErrorCodePaNotFound                       ProjectAssistantErrorCode = "pa_not_found"
+	ProjectAssistantErrorCodePaOffline                        ProjectAssistantErrorCode = "pa_offline"
+	ProjectAssistantErrorCodePaUnsupported                    ProjectAssistantErrorCode = "pa_unsupported"
+	ProjectAssistantErrorCodePaUnpaired                       ProjectAssistantErrorCode = "pa_unpaired"
+	ProjectAssistantErrorCodePaRevoked                        ProjectAssistantErrorCode = "pa_revoked"
+	ProjectAssistantErrorCodePaStaleGeneration                ProjectAssistantErrorCode = "pa_stale_generation"
+	ProjectAssistantErrorCodePaStaleVersion                   ProjectAssistantErrorCode = "pa_stale_version"
+	ProjectAssistantErrorCodePaIdempotencyConflict            ProjectAssistantErrorCode = "pa_idempotency_conflict"
+	ProjectAssistantErrorCodePaCapacityFull                   ProjectAssistantErrorCode = "pa_capacity_full"
+	ProjectAssistantErrorCodePaOutcomeUnknown                 ProjectAssistantErrorCode = "pa_outcome_unknown"
+	ProjectAssistantErrorCodePaExpired                        ProjectAssistantErrorCode = "pa_expired"
+	ProjectAssistantErrorCodePaScopeDenied                    ProjectAssistantErrorCode = "pa_scope_denied"
+	ProjectAssistantErrorCodePaContextStale                   ProjectAssistantErrorCode = "pa_context_stale"
+	ProjectAssistantErrorCodePaCursorExpired                  ProjectAssistantErrorCode = "pa_cursor_expired"
+	ProjectAssistantErrorCodeCliNotInstalled                  ProjectAssistantErrorCode = "cli_not_installed"
+	ProjectAssistantErrorCodeAdapterNotFound                  ProjectAssistantErrorCode = "adapter_not_found"
+	ProjectAssistantErrorCodeAdapterInventoryUnknown          ProjectAssistantErrorCode = "adapter_inventory_unknown"
+	ProjectAssistantErrorCodeProviderVersionUnsupported       ProjectAssistantErrorCode = "provider_version_unsupported"
+	ProjectAssistantErrorCodeAuthRequired                     ProjectAssistantErrorCode = "auth_required"
+	ProjectAssistantErrorCodeAuthProbeUnknown                 ProjectAssistantErrorCode = "auth_probe_unknown"
+	ProjectAssistantErrorCodeAuthRejected                     ProjectAssistantErrorCode = "auth_rejected"
+	ProjectAssistantErrorCodeAuthUnavailableInIsolatedRuntime ProjectAssistantErrorCode = "auth_unavailable_in_isolated_runtime"
+	ProjectAssistantErrorCodeSandboxUnavailable               ProjectAssistantErrorCode = "sandbox_unavailable"
+	ProjectAssistantErrorCodeReadOnlyUnverified               ProjectAssistantErrorCode = "read_only_unverified"
+	ProjectAssistantErrorCodeScopeExpansionDenied             ProjectAssistantErrorCode = "scope_expansion_denied"
+	ProjectAssistantErrorCodeMemoryIsolationUnverified        ProjectAssistantErrorCode = "memory_isolation_unverified"
+	ProjectAssistantErrorCodeResumeForbiddenAfterForget       ProjectAssistantErrorCode = "resume_forbidden_after_forget"
+	ProjectAssistantErrorCodeResumeUnsupported                ProjectAssistantErrorCode = "resume_unsupported"
+	ProjectAssistantErrorCodeExecutionEffectUnknown           ProjectAssistantErrorCode = "execution_effect_unknown"
+)
+
+// ProjectAssistantErrorCodeValues is every value the contract allows, in contract order.
+var ProjectAssistantErrorCodeValues = []ProjectAssistantErrorCode{ProjectAssistantErrorCodePaInvalid, ProjectAssistantErrorCodePaDisabled, ProjectAssistantErrorCodePaReadOnly, ProjectAssistantErrorCodePaNotFound, ProjectAssistantErrorCodePaOffline, ProjectAssistantErrorCodePaUnsupported, ProjectAssistantErrorCodePaUnpaired, ProjectAssistantErrorCodePaRevoked, ProjectAssistantErrorCodePaStaleGeneration, ProjectAssistantErrorCodePaStaleVersion, ProjectAssistantErrorCodePaIdempotencyConflict, ProjectAssistantErrorCodePaCapacityFull, ProjectAssistantErrorCodePaOutcomeUnknown, ProjectAssistantErrorCodePaExpired, ProjectAssistantErrorCodePaScopeDenied, ProjectAssistantErrorCodePaContextStale, ProjectAssistantErrorCodePaCursorExpired, ProjectAssistantErrorCodeCliNotInstalled, ProjectAssistantErrorCodeAdapterNotFound, ProjectAssistantErrorCodeAdapterInventoryUnknown, ProjectAssistantErrorCodeProviderVersionUnsupported, ProjectAssistantErrorCodeAuthRequired, ProjectAssistantErrorCodeAuthProbeUnknown, ProjectAssistantErrorCodeAuthRejected, ProjectAssistantErrorCodeAuthUnavailableInIsolatedRuntime, ProjectAssistantErrorCodeSandboxUnavailable, ProjectAssistantErrorCodeReadOnlyUnverified, ProjectAssistantErrorCodeScopeExpansionDenied, ProjectAssistantErrorCodeMemoryIsolationUnverified, ProjectAssistantErrorCodeResumeForbiddenAfterForget, ProjectAssistantErrorCodeResumeUnsupported, ProjectAssistantErrorCodeExecutionEffectUnknown}
+
+type ProjectAssistantErrorResponse struct {
+	ContractVersion string                  `json:"contract_version"`
+	Error           ProjectAssistantFailure `json:"error"`
+}
+
+// Exactly one payload matching kind, except feature_disabled which has none.
+// Replay is deduplicated by source machine plus seq/id.
+type ProjectAssistantEvent struct {
+	At         string                           `json:"at"`
+	Bot        *ProjectAssistantBotSummary      `json:"bot,omitempty"`
+	Fence      ProjectAssistantFence            `json:"fence"`
+	ID         string                           `json:"id"`
+	Kind       ProjectAssistantEventKind        `json:"kind"`
+	Memory     *ProjectAssistantMemoryRevision  `json:"memory,omitempty"`
+	Message    *ProjectAssistantMessage         `json:"message,omitempty"`
+	Permission *ProjectAssistantPermissionOffer `json:"permission,omitempty"`
+	Read       *ProjectAssistantReadCursor      `json:"read,omitempty"`
+	Seq        int64                            `json:"seq"`
+	Source     *ProjectAssistantSourceStatus    `json:"source,omitempty"`
+	Trace      *ProjectAssistantTrace           `json:"trace,omitempty"`
+	Turn       *ProjectAssistantTurn            `json:"turn,omitempty"`
+	Version    string                           `json:"version"`
+	Work       *ProjectAssistantWorkLink        `json:"work,omitempty"`
+}
+
+// Each event has exactly the corresponding typed payload. trace_updated uses
+// Trace; event sequences never count as unread messages.
+type ProjectAssistantEventKind string
+
+const (
+	ProjectAssistantEventKindBotCreated         ProjectAssistantEventKind = "bot_created"
+	ProjectAssistantEventKindBotUpdated         ProjectAssistantEventKind = "bot_updated"
+	ProjectAssistantEventKindMessageCreated     ProjectAssistantEventKind = "message_created"
+	ProjectAssistantEventKindTurnUpdated        ProjectAssistantEventKind = "turn_updated"
+	ProjectAssistantEventKindPermissionOffered  ProjectAssistantEventKind = "permission_offered"
+	ProjectAssistantEventKindPermissionAnswered ProjectAssistantEventKind = "permission_answered"
+	ProjectAssistantEventKindWorkUpdated        ProjectAssistantEventKind = "work_updated"
+	ProjectAssistantEventKindMemoryChanged      ProjectAssistantEventKind = "memory_changed"
+	ProjectAssistantEventKindReadAdvanced       ProjectAssistantEventKind = "read_advanced"
+	ProjectAssistantEventKindTraceUpdated       ProjectAssistantEventKind = "trace_updated"
+	ProjectAssistantEventKindSourceUpdated      ProjectAssistantEventKind = "source_updated"
+	ProjectAssistantEventKindFeatureDisabled    ProjectAssistantEventKind = "feature_disabled"
+)
+
+// ProjectAssistantEventKindValues is every value the contract allows, in contract order.
+var ProjectAssistantEventKindValues = []ProjectAssistantEventKind{ProjectAssistantEventKindBotCreated, ProjectAssistantEventKindBotUpdated, ProjectAssistantEventKindMessageCreated, ProjectAssistantEventKindTurnUpdated, ProjectAssistantEventKindPermissionOffered, ProjectAssistantEventKindPermissionAnswered, ProjectAssistantEventKindWorkUpdated, ProjectAssistantEventKindMemoryChanged, ProjectAssistantEventKindReadAdvanced, ProjectAssistantEventKindTraceUpdated, ProjectAssistantEventKindSourceUpdated, ProjectAssistantEventKindFeatureDisabled}
+
+// Durable source-local cursor, page size 1..256; expired cursor is
+// pa_cursor_expired and requires snapshot refresh.
+type ProjectAssistantEventsRequest struct {
+	AfterSeq int64                  `json:"after_seq"`
+	Key      ProjectAssistantBotKey `json:"key"`
+	PageSize int64                  `json:"page_size"`
+}
+
+type ProjectAssistantEventsResponse struct {
+	ContractVersion string                  `json:"contract_version"`
+	HasMore         bool                    `json:"has_more"`
+	Items           []ProjectAssistantEvent `json:"items"`
+	NextSeq         int64                   `json:"next_seq"`
+}
+
+// Internal binding identity is safe to expose; native_session_id must be
+// redacted from public roster projections.
+type ProjectAssistantExecutionBinding struct {
+	Agent               ProjectAssistantAgent `json:"agent"`
+	Fence               ProjectAssistantFence `json:"fence"`
+	ForgottenThrough    int64                 `json:"forgotten_through"`
+	InstructionRevision int64                 `json:"instruction_revision"`
+	MemoryRevision      int64                 `json:"memory_revision"`
+	NativeSessionID     string                `json:"native_session_id"`
+	Revoked             bool                  `json:"revoked"`
+}
+
+// Authenticated export only, never roster cache. SQLite remains authoritative.
+// Restore refuses unsupported versions and retains receipt/tombstone
+// identities.
+type ProjectAssistantExport struct {
+	Bindings        []ProjectAssistantExecutionBinding `json:"bindings"`
+	Bot             ProjectAssistantBot                `json:"bot"`
+	Context         ProjectAssistantContextSnapshot    `json:"context"`
+	ContractVersion string                             `json:"contract_version"`
+	Conversation    ProjectAssistantConversation       `json:"conversation"`
+	Events          []ProjectAssistantEvent            `json:"events"`
+	Memory          ProjectAssistantMemoryRevision     `json:"memory"`
+	MemoryEntries   []ProjectAssistantMemoryEntry      `json:"memory_entries"`
+	Messages        []ProjectAssistantMessage          `json:"messages"`
+	Permissions     []ProjectAssistantPermissionOffer  `json:"permissions"`
+	ReadCursors     []ProjectAssistantReadCursor       `json:"read_cursors"`
+	Receipts        []ProjectAssistantReceipt          `json:"receipts"`
+	SchemaVersion   int64                              `json:"schema_version"`
+	Turns           []ProjectAssistantTurn             `json:"turns"`
+	WorkLinks       []ProjectAssistantWorkLink         `json:"work_links"`
+}
+
+type ProjectAssistantFailure struct {
+	Code              ProjectAssistantErrorCode `json:"code"`
+	Field             string                    `json:"field"`
+	RetryAfterSeconds int64                     `json:"retry_after_seconds"`
+}
+
+// Must match current source authority on every RPC, permission answer, native
+// event and tool call. Before first execution binding_id is empty and
+// generation is zero; only send admission may replace that initial fence.
+type ProjectAssistantFence struct {
+	BindingID      string                       `json:"binding_id"`
+	ConversationID string                       `json:"conversation_id"`
+	Generation     int64                        `json:"generation"`
+	Key            ProjectAssistantBotKey       `json:"key"`
+	Project        ProjectAssistantProjectScope `json:"project"`
+}
+
+type ProjectAssistantForgetRequest struct {
+	Command          ProjectAssistantCommand      `json:"command"`
+	ExpectedRevision int64                        `json:"expected_revision"`
+	Project          ProjectAssistantProjectScope `json:"project"`
+	SourceIds        []string                     `json:"source_ids"`
+}
+
+type ProjectAssistantGetResponse struct {
+	Bot             ProjectAssistantBot          `json:"bot"`
+	ContractVersion string                       `json:"contract_version"`
+	Conversation    ProjectAssistantConversation `json:"conversation"`
+	Source          ProjectAssistantSourceStatus `json:"source"`
+}
+
+// before_seq=0 starts from latest. Items are ascending within a page. Page size
+// 1..100.
+type ProjectAssistantHistoryRequest struct {
+	BeforeSeq      int64                  `json:"before_seq"`
+	ConversationID string                 `json:"conversation_id"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	PageSize       int64                  `json:"page_size"`
+}
+
+type ProjectAssistantHistoryResponse struct {
+	ContractVersion string                       `json:"contract_version"`
+	Conversation    ProjectAssistantConversation `json:"conversation"`
+	HasMore         bool                         `json:"has_more"`
+	Items           []ProjectAssistantMessage    `json:"items"`
+	NextBeforeSeq   int64                        `json:"next_before_seq"`
+}
+
+// Captured at the next idle turn; running turn snapshots are immutable.
+type ProjectAssistantInstructions struct {
+	Revision        int64  `json:"revision"`
+	RoleSnapshotRef string `json:"role_snapshot_ref"`
+	Text            string `json:"text"`
+}
+
+// Captured source-local machine_id is required. The UI obtains one client per
+// authorized source and federates their pages; the selected global active
+// machine is never substituted. Cursor is opaque and bound to
+// filter/authorization revision. Page size 1..100.
+type ProjectAssistantListRequest struct {
+	Cursor    string `json:"cursor"`
+	MachineID string `json:"machine_id"`
+	PageSize  int64  `json:"page_size"`
+	Query     string `json:"query"`
+}
+
+type ProjectAssistantListResponse struct {
+	ContractVersion string                         `json:"contract_version"`
+	Items           []ProjectAssistantBotSummary   `json:"items"`
+	NextCursor      string                         `json:"next_cursor"`
+	Sources         []ProjectAssistantSourceStatus `json:"sources"`
+}
+
+type ProjectAssistantMemoryEntry struct {
+	Forgotten bool                           `json:"forgotten"`
+	ID        string                         `json:"id"`
+	Key       ProjectAssistantBotKey         `json:"key"`
+	Project   ProjectAssistantProjectScope   `json:"project"`
+	Revision  int64                          `json:"revision"`
+	Sources   []ProjectAssistantMemorySource `json:"sources"`
+	Text      string                         `json:"text"`
+}
+
+type ProjectAssistantMemoryResponse struct {
+	ContractVersion string                         `json:"contract_version"`
+	Memory          ProjectAssistantMemoryRevision `json:"memory"`
+}
+
+// Durable tombstones and revision fence future context. Does not claim to erase
+// model training, independent external files or other copies.
+type ProjectAssistantMemoryRevision struct {
+	ForgottenSourceIds []string                     `json:"forgotten_source_ids"`
+	ForgottenThrough   int64                        `json:"forgotten_through"`
+	Key                ProjectAssistantBotKey       `json:"key"`
+	Project            ProjectAssistantProjectScope `json:"project"`
+	Revision           int64                        `json:"revision"`
+}
+
+type ProjectAssistantMemorySource struct {
+	ID       string                       `json:"id"`
+	Key      ProjectAssistantBotKey       `json:"key"`
+	Kind     string                       `json:"kind"`
+	Project  ProjectAssistantProjectScope `json:"project"`
+	Revision int64                        `json:"revision"`
+}
+
+type ProjectAssistantMemoryWriteRequest struct {
+	Command          ProjectAssistantCommand     `json:"command"`
+	Entry            ProjectAssistantMemoryEntry `json:"entry"`
+	ExpectedRevision int64                       `json:"expected_revision"`
+}
+
+type ProjectAssistantMessage struct {
+	At             string                      `json:"at"`
+	Fence          ProjectAssistantFence       `json:"fence"`
+	ID             string                      `json:"id"`
+	Kind           ProjectAssistantMessageKind `json:"kind"`
+	QuoteMessageID string                      `json:"quote_message_id"`
+	Seq            int64                       `json:"seq"`
+	Text           string                      `json:"text"`
+	TurnID         string                      `json:"turn_id"`
+}
+
+type ProjectAssistantMessageKind string
+
+const (
+	ProjectAssistantMessageKindUser      ProjectAssistantMessageKind = "user"
+	ProjectAssistantMessageKindAssistant ProjectAssistantMessageKind = "assistant"
+	ProjectAssistantMessageKindWork      ProjectAssistantMessageKind = "work"
+	ProjectAssistantMessageKindNotice    ProjectAssistantMessageKind = "notice"
+)
+
+// ProjectAssistantMessageKindValues is every value the contract allows, in contract order.
+var ProjectAssistantMessageKindValues = []ProjectAssistantMessageKind{ProjectAssistantMessageKindUser, ProjectAssistantMessageKindAssistant, ProjectAssistantMessageKindWork, ProjectAssistantMessageKindNotice}
+
+type ProjectAssistantNativeMemoryMode string
+
+const (
+	ProjectAssistantNativeMemoryModeUnknown  ProjectAssistantNativeMemoryMode = "unknown"
+	ProjectAssistantNativeMemoryModeDisabled ProjectAssistantNativeMemoryMode = "disabled"
+	ProjectAssistantNativeMemoryModeIsolated ProjectAssistantNativeMemoryMode = "isolated"
+	ProjectAssistantNativeMemoryModeUnsafe   ProjectAssistantNativeMemoryMode = "unsafe"
+)
+
+// ProjectAssistantNativeMemoryModeValues is every value the contract allows, in contract order.
+var ProjectAssistantNativeMemoryModeValues = []ProjectAssistantNativeMemoryMode{ProjectAssistantNativeMemoryModeUnknown, ProjectAssistantNativeMemoryModeDisabled, ProjectAssistantNativeMemoryModeIsolated, ProjectAssistantNativeMemoryModeUnsafe}
+
+// Authenticated device observation of a receipt/event. It does not advance read
+// cursors or turn model text into human authorization.
+type ProjectAssistantObserveRequest struct {
+	Command   ProjectAssistantCommand `json:"command"`
+	EventSeq  int64                   `json:"event_seq"`
+	ReceiptID string                  `json:"receipt_id"`
+}
+
+type ProjectAssistantOperation string
+
+const (
+	ProjectAssistantOperationCreate     ProjectAssistantOperation = "create"
+	ProjectAssistantOperationEdit       ProjectAssistantOperation = "edit"
+	ProjectAssistantOperationSend       ProjectAssistantOperation = "send"
+	ProjectAssistantOperationStop       ProjectAssistantOperation = "stop"
+	ProjectAssistantOperationAnswer     ProjectAssistantOperation = "answer"
+	ProjectAssistantOperationRead       ProjectAssistantOperation = "read"
+	ProjectAssistantOperationObserve    ProjectAssistantOperation = "observe"
+	ProjectAssistantOperationForget     ProjectAssistantOperation = "forget"
+	ProjectAssistantOperationMemorySave ProjectAssistantOperation = "memory_save"
+	ProjectAssistantOperationDispatch   ProjectAssistantOperation = "dispatch"
+)
+
+// ProjectAssistantOperationValues is every value the contract allows, in contract order.
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
+
+type ProjectAssistantPermissionAnswerRequest struct {
+	Command  ProjectAssistantCommand `json:"command"`
+	Fence    ProjectAssistantFence   `json:"fence"`
+	OfferID  string                  `json:"offer_id"`
+	OptionID string                  `json:"option_id"`
+	TurnID   string                  `json:"turn_id"`
+}
+
+type ProjectAssistantPermissionOffer struct {
+	ExpiresAt        string                             `json:"expires_at"`
+	Fence            ProjectAssistantFence              `json:"fence"`
+	ID               string                             `json:"id"`
+	NativeRequestID  string                             `json:"native_request_id"`
+	Options          []ProjectAssistantPermissionOption `json:"options"`
+	SelectedOptionID string                             `json:"selected_option_id"`
+	State            ProjectAssistantPermissionState    `json:"state"`
+	TurnID           string                             `json:"turn_id"`
+}
+
+type ProjectAssistantPermissionOption struct {
+	Allow    bool                                 `json:"allow"`
+	ID       string                               `json:"id"`
+	Kind     ProjectAssistantPermissionOptionKind `json:"kind"`
+	Label    string                               `json:"label"`
+	ReadOnly bool                                 `json:"read_only"`
+}
+
+// Native option kind is preserved. Persistent choices are never accepted in v1
+// and cannot widen authority.
+type ProjectAssistantPermissionOptionKind string
+
+const (
+	ProjectAssistantPermissionOptionKindAllowOnce    ProjectAssistantPermissionOptionKind = "allow_once"
+	ProjectAssistantPermissionOptionKindRejectOnce   ProjectAssistantPermissionOptionKind = "reject_once"
+	ProjectAssistantPermissionOptionKindAllowAlways  ProjectAssistantPermissionOptionKind = "allow_always"
+	ProjectAssistantPermissionOptionKindRejectAlways ProjectAssistantPermissionOptionKind = "reject_always"
+)
+
+// ProjectAssistantPermissionOptionKindValues is every value the contract allows, in contract order.
+var ProjectAssistantPermissionOptionKindValues = []ProjectAssistantPermissionOptionKind{ProjectAssistantPermissionOptionKindAllowOnce, ProjectAssistantPermissionOptionKindRejectOnce, ProjectAssistantPermissionOptionKindAllowAlways, ProjectAssistantPermissionOptionKindRejectAlways}
+
+// Applies only inside the enforced read-only native sandbox. No native answer
+// can authorize repository writes.
+type ProjectAssistantPermissionPolicy string
+
+const (
+	ProjectAssistantPermissionPolicyAsk      ProjectAssistantPermissionPolicy = "ask"
+	ProjectAssistantPermissionPolicyAutoRead ProjectAssistantPermissionPolicy = "auto_read"
+)
+
+// ProjectAssistantPermissionPolicyValues is every value the contract allows, in contract order.
+var ProjectAssistantPermissionPolicyValues = []ProjectAssistantPermissionPolicy{ProjectAssistantPermissionPolicyAsk, ProjectAssistantPermissionPolicyAutoRead}
+
+type ProjectAssistantPermissionState string
+
+const (
+	ProjectAssistantPermissionStatePending   ProjectAssistantPermissionState = "pending"
+	ProjectAssistantPermissionStateAnswered  ProjectAssistantPermissionState = "answered"
+	ProjectAssistantPermissionStateExpired   ProjectAssistantPermissionState = "expired"
+	ProjectAssistantPermissionStateCancelled ProjectAssistantPermissionState = "cancelled"
+	ProjectAssistantPermissionStateUnknown   ProjectAssistantPermissionState = "unknown"
+)
+
+// ProjectAssistantPermissionStateValues is every value the contract allows, in contract order.
+var ProjectAssistantPermissionStateValues = []ProjectAssistantPermissionState{ProjectAssistantPermissionStatePending, ProjectAssistantPermissionStateAnswered, ProjectAssistantPermissionStateExpired, ProjectAssistantPermissionStateCancelled, ProjectAssistantPermissionStateUnknown}
+
+type ProjectAssistantProjectKind string
+
+const (
+	ProjectAssistantProjectKindRepository ProjectAssistantProjectKind = "repository"
+	ProjectAssistantProjectKindPlace      ProjectAssistantProjectKind = "place"
+)
+
+// ProjectAssistantProjectKindValues is every value the contract allows, in contract order.
+var ProjectAssistantProjectKindValues = []ProjectAssistantProjectKind{ProjectAssistantProjectKindRepository, ProjectAssistantProjectKindPlace}
+
+// Linked worktrees resolve to the existing canonical repository. Non-repository
+// places retain their own identity.
+type ProjectAssistantProjectScope struct {
+	CanonicalID string                      `json:"canonical_id"`
+	Kind        ProjectAssistantProjectKind `json:"kind"`
+	MachineID   string                      `json:"machine_id"`
+	ProjectID   string                      `json:"project_id"`
+}
+
+// Only registered IDs, never an arbitrary cwd. Resolve on the source machine at
+// creation and before execution.
+type ProjectAssistantProjectSelection struct {
+	MachineID string `json:"machine_id"`
+	ProjectID string `json:"project_id"`
+}
+
+// reader_id is the authenticated Cloud principal, shared across its devices.
+// Source machine stores max(previous,incoming) bounded by last visible message
+// sequence.
+type ProjectAssistantReadCursor struct {
+	ConversationID string                 `json:"conversation_id"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	MessageSeq     int64                  `json:"message_seq"`
+	ReaderID       string                 `json:"reader_id"`
+}
+
+type ProjectAssistantReadRequest struct {
+	Command ProjectAssistantCommand    `json:"command"`
+	Cursor  ProjectAssistantReadCursor `json:"cursor"`
+}
+
+type ProjectAssistantReadResponse struct {
+	ContractVersion string                     `json:"contract_version"`
+	Cursor          ProjectAssistantReadCursor `json:"cursor"`
+}
+
+type ProjectAssistantReceipt struct {
+	Command    ProjectAssistantCommand     `json:"command"`
+	EventSeq   int64                       `json:"event_seq"`
+	ID         string                      `json:"id"`
+	ResourceID string                      `json:"resource_id"`
+	State      ProjectAssistantEffectState `json:"state"`
+}
+
+type ProjectAssistantReceiptResponse struct {
+	ContractVersion string                  `json:"contract_version"`
+	Receipt         ProjectAssistantReceipt `json:"receipt"`
+}
+
+type ProjectAssistantSendRequest struct {
+	Command        ProjectAssistantCommand `json:"command"`
+	Fence          ProjectAssistantFence   `json:"fence"`
+	QuoteMessageID string                  `json:"quote_message_id"`
+	Text           string                  `json:"text"`
+}
+
+// Codync outline vocabulary. Global entry is always blob/#e39567; it never
+// identifies the selected Bot.
+type ProjectAssistantShape string
+
+const (
+	ProjectAssistantShapeBlob     ProjectAssistantShape = "blob"
+	ProjectAssistantShapeSquircle ProjectAssistantShape = "squircle"
+	ProjectAssistantShapeWedge    ProjectAssistantShape = "wedge"
+	ProjectAssistantShapePebble   ProjectAssistantShape = "pebble"
+	ProjectAssistantShapeTablet   ProjectAssistantShape = "tablet"
+	ProjectAssistantShapeHex      ProjectAssistantShape = "hex"
+	ProjectAssistantShapeCloud    ProjectAssistantShape = "cloud"
+	ProjectAssistantShapeTeardrop ProjectAssistantShape = "teardrop"
+)
+
+// ProjectAssistantShapeValues is every value the contract allows, in contract order.
+var ProjectAssistantShapeValues = []ProjectAssistantShape{ProjectAssistantShapeBlob, ProjectAssistantShapeSquircle, ProjectAssistantShapeWedge, ProjectAssistantShapePebble, ProjectAssistantShapeTablet, ProjectAssistantShapeHex, ProjectAssistantShapeCloud, ProjectAssistantShapeTeardrop}
+
+type ProjectAssistantSourceState string
+
+const (
+	ProjectAssistantSourceStateOnline      ProjectAssistantSourceState = "online"
+	ProjectAssistantSourceStateOffline     ProjectAssistantSourceState = "offline"
+	ProjectAssistantSourceStateUnsupported ProjectAssistantSourceState = "unsupported"
+	ProjectAssistantSourceStateUnpaired    ProjectAssistantSourceState = "unpaired"
+	ProjectAssistantSourceStateRevoked     ProjectAssistantSourceState = "revoked"
+)
+
+// ProjectAssistantSourceStateValues is every value the contract allows, in contract order.
+var ProjectAssistantSourceStateValues = []ProjectAssistantSourceState{ProjectAssistantSourceStateOnline, ProjectAssistantSourceStateOffline, ProjectAssistantSourceStateUnsupported, ProjectAssistantSourceStateUnpaired, ProjectAssistantSourceStateRevoked}
+
+// Offline cached rows stay visibly stale; revoked and unpaired rows cannot be
+// read. An offline source is never an authoritative empty list.
+type ProjectAssistantSourceStatus struct {
+	Access       ProjectAssistantAccess         `json:"access"`
+	Capabilities []ProjectAssistantCapabilities `json:"capabilities"`
+	Fresh        bool                           `json:"fresh"`
+	MachineID    string                         `json:"machine_id"`
+	ObservedAt   string                         `json:"observed_at"`
+	Readable     bool                           `json:"readable"`
+	State        ProjectAssistantSourceState    `json:"state"`
+	Writable     bool                           `json:"writable"`
+}
+
+type ProjectAssistantSourcesResponse struct {
+	ContractVersion string                         `json:"contract_version"`
+	Sources         []ProjectAssistantSourceStatus `json:"sources"`
+}
+
+// Cancels active and queued turns; a collapsed UI never sends this.
+type ProjectAssistantStopRequest struct {
+	Command ProjectAssistantCommand `json:"command"`
+	Fence   ProjectAssistantFence   `json:"fence"`
+	TurnID  string                  `json:"turn_id"`
+}
+
+// Trace is not a visible message and never advances unread. Secrets and raw
+// provider credentials are redacted by source.
+type ProjectAssistantTrace struct {
+	Category string `json:"category"`
+	Complete bool   `json:"complete"`
+	Text     string `json:"text"`
+	TurnID   string `json:"turn_id"`
+}
+
+type ProjectAssistantTurn struct {
+	Failure        *ProjectAssistantFailure     `json:"failure,omitempty"`
+	Fence          ProjectAssistantFence        `json:"fence"`
+	ID             string                       `json:"id"`
+	IdempotencyKey string                       `json:"idempotency_key"`
+	Instructions   ProjectAssistantInstructions `json:"instructions"`
+	MemoryRevision int64                        `json:"memory_revision"`
+	MessageID      string                       `json:"message_id"`
+	State          ProjectAssistantTurnState    `json:"state"`
+}
+
+type ProjectAssistantTurnState string
+
+const (
+	ProjectAssistantTurnStateAccepted          ProjectAssistantTurnState = "accepted"
+	ProjectAssistantTurnStateQueued            ProjectAssistantTurnState = "queued"
+	ProjectAssistantTurnStateRunning           ProjectAssistantTurnState = "running"
+	ProjectAssistantTurnStateWaitingPermission ProjectAssistantTurnState = "waiting_permission"
+	ProjectAssistantTurnStateSucceeded         ProjectAssistantTurnState = "succeeded"
+	ProjectAssistantTurnStateFailed            ProjectAssistantTurnState = "failed"
+	ProjectAssistantTurnStateCancelled         ProjectAssistantTurnState = "cancelled"
+	ProjectAssistantTurnStateUnknown           ProjectAssistantTurnState = "unknown"
+)
+
+// ProjectAssistantTurnStateValues is every value the contract allows, in contract order.
+var ProjectAssistantTurnStateValues = []ProjectAssistantTurnState{ProjectAssistantTurnStateAccepted, ProjectAssistantTurnStateQueued, ProjectAssistantTurnStateRunning, ProjectAssistantTurnStateWaitingPermission, ProjectAssistantTurnStateSucceeded, ProjectAssistantTurnStateFailed, ProjectAssistantTurnStateCancelled, ProjectAssistantTurnStateUnknown}
+
+type ProjectAssistantWorkLink struct {
+	BoardItemID     string                    `json:"board_item_id"`
+	Fence           ProjectAssistantFence     `json:"fence"`
+	ID              string                    `json:"id"`
+	LandingCommit   string                    `json:"landing_commit"`
+	ResultMessageID string                    `json:"result_message_id"`
+	State           ProjectAssistantWorkState `json:"state"`
+	TaskID          string                    `json:"task_id"`
+	TurnID          string                    `json:"turn_id"`
+}
+
+type ProjectAssistantWorkState string
+
+const (
+	ProjectAssistantWorkStateAccepted  ProjectAssistantWorkState = "accepted"
+	ProjectAssistantWorkStateExecuting ProjectAssistantWorkState = "executing"
+	ProjectAssistantWorkStateFailed    ProjectAssistantWorkState = "failed"
+	ProjectAssistantWorkStateCompleted ProjectAssistantWorkState = "completed"
+	ProjectAssistantWorkStateLanded    ProjectAssistantWorkState = "landed"
+	ProjectAssistantWorkStateUnknown   ProjectAssistantWorkState = "unknown"
+)
+
+// ProjectAssistantWorkStateValues is every value the contract allows, in contract order.
+var ProjectAssistantWorkStateValues = []ProjectAssistantWorkState{ProjectAssistantWorkStateAccepted, ProjectAssistantWorkStateExecuting, ProjectAssistantWorkStateFailed, ProjectAssistantWorkStateCompleted, ProjectAssistantWorkStateLanded, ProjectAssistantWorkStateUnknown}
+
 type ProjectCatalog struct {
 	// False when the store could not be read at all; `readState.error` says why.
 	Available bool `json:"available"`

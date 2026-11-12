@@ -2,9 +2,48 @@ package cloudvocab
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestNestedRouteFieldsAreDeclaredObjects(t *testing.T) {
+	ops, err := Operations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row Operation
+	for _, candidate := range ops {
+		if candidate.Op == "project-assistants.send" {
+			row = candidate
+		}
+	}
+	if row.Op == "" {
+		t.Fatal("Bot send is absent")
+	}
+	if field, ok := FieldAt(row.Decode.Fields, "command.key.bot_id"); !ok || field.Type != TypeString {
+		t.Fatal("the generated route cannot read the declared Bot key")
+	}
+	for _, path := range []string{"command.credential", "command.key.bot_id.secret", "fence.project.cwd"} {
+		if _, ok := FieldAt(row.Decode.Fields, path); ok {
+			t.Fatalf("undeclared field %s", path)
+		}
+		cloned, _ := json.Marshal(row)
+		var changed Operation
+		if err := json.Unmarshal(cloned, &changed); err != nil {
+			t.Fatal(err)
+		}
+		changed.Decode.Route.Headers["Idempotency-Key"] = Value{From: path}
+		if err := validateDecode(changed); err == nil {
+			t.Fatalf("undeclared source %s accepted", path)
+		}
+		changed.Decode.Route.Headers["Idempotency-Key"] = Value{From: "command.idempotency_key"}
+		changed.Decode.Route.Path = "/v1/project-assistants/{" + path + "}"
+		if err := validateDecode(changed); err == nil {
+			t.Fatalf("undeclared path %s accepted", path)
+		}
+	}
+}
 
 func TestTheEmbeddedTableReads(t *testing.T) {
 	ops, err := Operations()
