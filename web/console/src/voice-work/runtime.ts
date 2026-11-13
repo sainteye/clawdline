@@ -1,5 +1,5 @@
 import { onMachineChanged } from '../cloud/machine-switch.js'
-import { fleetOnThisPage, machinesOnThisPage, openOnThisPage, openSnippetsOnThisPage, openDevStackOnThisPage } from '../realtime/copilot-open.js'
+import { fleetOnThisPage, machinesOnThisPage, openOnThisPage,titleSavedOnThisPage, openSnippetsOnThisPage, openDevStackOnThisPage } from '../realtime/copilot-open.js'
 import { COPILOT_TOOLS, readRows, runCopilotTool, type ToolDeps } from '../realtime/copilot-tools.js'
 import { menuFingerprint } from '../session/fingerprint.js'
 import { loadCopilotHelp } from '../realtime/copilot-help-loader.js'
@@ -8,7 +8,7 @@ let callDeps: ToolDeps | undefined
 let callID = ''
 export function useCallWorkTools(deps?: ToolDeps, call='') { callDeps=deps;callID=call;voiceWork.capabilitiesChanged() }
 function workspaceTools():ToolDeps {
-  return {fetch:(path,init)=>fetch(path,init),sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms)),fleet:fleetOnThisPage,machines:machinesOnThisPage,openSession:openOnThisPage,snippets:openSnippetsOnThisPage,devstack:openDevStackOnThisPage,help:loadCopilotHelp}
+  return {fetch:(path,init)=>fetch(path,init),sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms)),fleet:fleetOnThisPage,machines:machinesOnThisPage,openSession:openOnThisPage,titleSaved:titleSavedOnThisPage,snippets:openSnippetsOnThisPage,devstack:openDevStackOnThisPage,help:loadCopilotHelp}
 }
 function tools():ToolDeps {return callDeps??workspaceTools()}
 export async function workDirectory(deps:ToolDeps=tools()) {

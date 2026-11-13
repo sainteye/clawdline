@@ -1221,6 +1221,14 @@ test("smart_rename_sessions names each Session through the machine's smart namin
   assert.equal((posts[0].init?.headers as Record<string, string>)["Idempotency-Key"], "req-1")
 })
 
+test("a voice smart rename tells the page the new titles, so the list and the open Session change at once", async () => {
+  // 2026-11-13: the title changed on the machine but not on screen until a later refresh.
+  const { deps } = namingMachine()
+  const shown: [string, string | undefined, string][] = []
+  await runCopilotTool("smart_rename_sessions", JSON.stringify({ sessions: ["Prepare screenshots", "Fix the login test"], confirmed: true }), { ...deps, titleSaved: (id, machine, title) => shown.push([id, machine, title]) })
+  assert.deepEqual(shown.map(([id, , title]) => [id, title]), [["%2", "Named %2"], ["%9", "Named %9"]])
+})
+
 test("smart_rename_sessions renames nothing until the person has agreed", async () => {
   const { deps, posts } = namingMachine()
   const out = JSON.parse((await runCopilotTool("smart_rename_sessions", JSON.stringify({ sessions: ["Prepare screenshots"] }), deps)).output)

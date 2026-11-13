@@ -8,6 +8,7 @@ export { SessionFacts } from "./facts.js"
 export {
   GO_PAGE,
   COPILOT_OPEN,
+  COPILOT_TITLE,
   COPILOT_MACHINES,
   COPILOT_FLEET,
   COPILOT_DEVSTACK,

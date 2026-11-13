@@ -1,4 +1,4 @@
-import { COPILOT_DEVSTACK, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
+import { COPILOT_DEVSTACK, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN, COPILOT_TITLE } from "../overlays/events.js"
 import type { CopilotFleetRow } from "./copilot-tools.js"
 import { OPEN_SNIPPETS } from "../legacy/snippets-bridge.js"
 import type { SnippetsOutcome } from "../session/snippets-request.js"
@@ -22,6 +22,17 @@ export function openOnThisPage(sessionID: string, machineID?: string): Promise<b
     const detail: CopilotOpenDetail = { sessionID, ...(machineID ? { machineID } : {}), answer: (opened) => { clearTimeout(timer); resolve(opened) } }
     document.dispatchEvent(new CustomEvent<CopilotOpenDetail>(COPILOT_OPEN, { detail }))
   })
+}
+
+/** What a page receives when the copilot saved a Session's title. */
+export interface CopilotTitleDetail { sessionID: string; machineID?: string; title: string }
+/**
+ * Tells this page a title was saved, so the list and the open Session show
+ * it at once. On 2026-11-13 a voice smart rename changed nothing on screen
+ * until the next refresh, while the Session info button updated both.
+ */
+export function titleSavedOnThisPage(sessionID: string, machineID: string | undefined, title: string): void {
+  document.dispatchEvent(new CustomEvent<CopilotTitleDetail>(COPILOT_TITLE, { detail: { sessionID, ...(machineID ? { machineID } : {}), title } }))
 }
 
 export interface CopilotMachine { id: string; name: string; online: boolean; current: boolean }

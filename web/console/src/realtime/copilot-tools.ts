@@ -69,6 +69,8 @@ export interface ToolDeps {
   briefing?: () => Promise<string | null>
   /** Opens one Session on the page the call runs in; true once it is on screen. */
   openSession?: (id: string, machine?: string) => Promise<boolean>
+  /** Shows a saved title on this page at once (`titleSavedOnThisPage`). */
+  titleSaved?: (id: string, machine: string | undefined, title: string) => void
   /** The machines a new Session can be started on, as the page knows them. */
   machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
   /** The Session this call is talking about: the one on screen, or the last one a tool read, opened or acted on. */
@@ -2343,6 +2345,7 @@ async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: stri
     const answer = (await res.json().catch(() => ({}))) as { title?: unknown; display_title?: unknown }
     const after = str(answer.display_title) || str(answer.title)
     renamed.push({ before: row.label, after })
+    if (after) deps.titleSaved?.(sid(row), row.machine, after)
     logs.push({ level: 'info', text: `已把「${row.label}」重新命名為「${after}」` })
   }
   return { ...(renamed.length ? { renamed } : {}), ...(failed.length ? { failed } : {}) }

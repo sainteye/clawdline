@@ -58,6 +58,7 @@ import {
   BEFORE_PAGE_CHANGE,
   GO_PAGE,
   COPILOT_OPEN,
+  COPILOT_TITLE,
   Info,
   RoleDetail,
   OPEN_CONFIRM,
@@ -762,6 +763,20 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     }
     document.addEventListener(GO_PAGE, onGo)
     return () => document.removeEventListener(GO_PAGE, onGo)
+  }, [])
+
+  // The voice copilot renamed a Session: the same refresh Session info's
+  // rename gives (2026-11-13), on the local page and on Cloud alike.
+  useEffect(() => {
+    const onTitle = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionID: string; title: string }>).detail
+      if (!detail?.sessionID || typeof detail.title !== "string") return
+      layoutRef.current.receiveTitle(detail.sessionID, detail.title)
+      layoutRef.current.titleSaved?.(detail.sessionID, detail.title)
+      layoutRef.current.refresh()
+    }
+    document.addEventListener(COPILOT_TITLE, onTitle)
+    return () => document.removeEventListener(COPILOT_TITLE, onTitle)
   }, [])
 
   // The voice copilot opening a Session on the page it runs in. On Cloud,
