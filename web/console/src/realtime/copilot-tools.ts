@@ -23,6 +23,8 @@ import { UNOPENED_MACHINE_HEADER, UNOPENED_READ_HEADER } from "../cloud/unopened
 import { helpContents, helpRead, type HelpSection } from "./copilot-help.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { menuFingerprint } from "../session/fingerprint.ts"
+// @ts-expect-error -- Node executes the TypeScript source in tests.
+import { COPILOT_SPEECH_GUIDANCE, COPILOT_WORK_DISABLED_GUIDANCE } from './copilot-speech.ts'
 
 /** Every content read names its Session on purpose: the copilot is opened inside another one. */
 const NAMED_READ: RequestInit = { headers: { [UNOPENED_READ_HEADER]: "1" } }
@@ -139,7 +141,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 【說話方式】
 - 一般問答要短：最多三句，能一句講完就一句。這是語音，不是文章。
 - 例外：使用者要 Session 的狀況、進度、匯報或「在做什麼」時，不受三句限制。一定要逐一講完每個相關的 Session，每個兩到三句（目標、最近完成什麼、現在在做什麼），不可以只報數量就停下來。
-- 講話放慢、口氣從容：句子之間自然換氣，數字和名稱講清楚，不要連珠炮；換氣不是講完，要講的內容要在同一次回答裡講完。（例外：整體匯報、總結經過、解釋最後一則回覆，見下面各段。）
+- 講話放慢、口氣從容：句子之間自然換氣，數字和名稱講清楚，不要連珠炮。主題切換時停頓，讓使用者跟得上；使用者打斷或表示聽不懂時，先處理他不懂的地方，不要急著把原稿唸完。
 - 第一句就是內容，最後一個重點講完就停。內容的份量照舊，只省掉頭尾的客套。
 - 不要開場白：不說「好的」「我來查看」「請稍等」「我來幫你整理一下」「以下是目前的狀況」「根據最新的資料」，也不要重複使用者的問題。
 - 不要收尾：不說「以上就是…」「總結來說」（除非真的在做總結）「如果需要更多細節再告訴我」「還需要什麼嗎」「要不要看畫面」「希望對你有幫助」。只有真的需要使用者決定一件事時，才在最後問那一件事。
@@ -205,7 +207,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」數量是 0 的分類不要講。
 - 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用兩到三句講：它的目標（goal）、最近完成了什麼（recent）、現在正在做什麼（latest）。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
 - 使用者要「工作中的 Session 的狀況」時，這一段可以長，寧可講清楚也不要一句帶過；一個 Session 講完換個氣，直接接著講下一個。
-- 總數那一句之後一定要在同一次回答裡接著講每個 Session，絕對不可以講完總數就結束。最後一個 Session 講完就停，不要加「這是目前的狀態」「以上」「大概是這樣」。
+- 總數之後接著說每個相關 Session 的重點，絕對不可以講完總數就結束。每換一個主題就自然停頓，先講它對使用者的影響，再補原因；使用者插話時停下原本的匯報，先回應他。最後一個重點講完就停，不要加「這是目前的狀態」「以上」「大概是這樣」。
 
 【總結一個 Session 的經過（get_session_recap）】
 - 用一段自然的口語講，像同事口頭跟你交接：先一句說這個 Session 主要在做什麼，再照時間順序講它完成了哪幾件事（合併相近的，最多講五件），最後一句說現在的狀態、還有沒有要使用者處理的。
@@ -634,7 +636,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [options.workEnabled ? "You are the voice assistant reporter. User utterances are saved and planned by a separate durable pipeline. Never execute tools or invent progress. Speak only when supplied with machine evidence, in the interface language." : instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [options.workEnabled ? "You are the voice assistant reporter. User utterances are saved and planned by a separate durable pipeline. Never execute tools or invent progress. Speak only when supplied with machine evidence, in the interface language." : instructionsFor(options.brief !== false, options.language ?? ''), COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {

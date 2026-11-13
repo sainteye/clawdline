@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11602,
+  "englishKeys": 11607,
   "counts": {
-    "negation": 3191,
-    "state": 1931,
+    "negation": 3193,
+    "state": 1932,
     "permission": 681,
     "deletion": 262,
     "uncertainty": 438
   },
-  "unionCount": 5075,
+  "unionCount": 5078,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2814,6 +2814,8 @@
       "next.voiceWorkFailure",
       "next.voiceWorkInbox",
       "next.voiceWorkManagedSourceHint",
+      "next.voiceWorkModeDisabled",
+      "next.voiceWorkModeUnknown",
       "next.workEmptyTitle",
       "next.worktreeRemoveFailed",
       "next.worktreeRemoveRisk",
@@ -4889,6 +4891,7 @@
       "next.voiceWorkDone",
       "next.voiceWorkFailed",
       "next.voiceWorkHistory",
+      "next.voiceWorkModeDisabledHint",
       "next.voiceWorkPlan",
       "next.voiceWorkPlannerFailed",
       "next.voiceWorkRuntimeHint",
@@ -10938,6 +10941,9 @@
     "next.voiceWorkHistory",
     "next.voiceWorkInbox",
     "next.voiceWorkManagedSourceHint",
+    "next.voiceWorkModeDisabled",
+    "next.voiceWorkModeDisabledHint",
+    "next.voiceWorkModeUnknown",
     "next.voiceWorkPlan",
     "next.voiceWorkPlannerFailed",
     "next.voiceWorkRuntimeHint",

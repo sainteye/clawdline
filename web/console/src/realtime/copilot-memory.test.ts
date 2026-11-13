@@ -23,9 +23,11 @@ test("the next call is told what was said before, oldest first, as background", 
   assert.ok(ev.session.instructions.endsWith(section))
 })
 
-test("with nothing remembered the instructions are unchanged", () => {
+test("with nothing remembered the call adds no conversation-history section", () => {
   assert.equal(memorySection([], NOW), "")
-  assert.equal((sessionUpdateEvent("") as { session: { instructions: string } }).session.instructions, COPILOT_INSTRUCTIONS)
+  const instructions = (sessionUpdateEvent(memorySection([], NOW)) as { session: { instructions: string } }).session.instructions
+  assert.ok(instructions.startsWith(COPILOT_INSTRUCTIONS))
+  assert.doesNotMatch(instructions, /【之前的通話】/)
 })
 
 test("a remembered call opens without the introduction", () => {

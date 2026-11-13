@@ -20,6 +20,11 @@ const words = {
     voiceWorkBriefingReplaced: "Background planning replaces the opening briefing in this mode. This setting applies to the next call.",
 
     voiceWorkTitle: "Voice assistant",
+    voiceWorkModeLoading: "Checking background request planning…",
+    voiceWorkModeEnabled: "Background request planning is on · new calls add requests to this work list",
+    voiceWorkModeDisabled: "Background request planning is off · calls do not add work items",
+    voiceWorkModeDisabledHint: "To accumulate requests as you speak, enable background request planning in Settings, then start a new call. It uses your selected CLI assistant's quota. Text requests can still be saved here while planning is off.",
+    voiceWorkModeUnknown: "Could not check background request planning. Check Settings before relying on task capture.",
     voiceWorkHint: "Keep talking. Your requests and unfinished work stay together here.",
     voiceWorkCall: "Open call",
     voiceWorkList: "Unfinished work",
@@ -2926,6 +2931,11 @@ const words = {
     voiceWorkBriefingReplaced: "此模式以背景工作流程取代開場匯報，設定從下一通電話開始生效。",
 
     voiceWorkTitle: "語音助理",
+    voiceWorkModeLoading: "正在確認背景整理要求的設定…",
+    voiceWorkModeEnabled: "背景整理要求已開啟 · 新通話會把要求加入這份工作清單",
+    voiceWorkModeDisabled: "背景整理要求尚未開啟 · 通話不會加入工作項目",
+    voiceWorkModeDisabledHint: "若要一邊說話、一邊累積要求，請先到設定開啟「背景整理要求」，再開始一通新通話。整理會使用所選 CLI 助理的額度。關閉時仍可在這裡輸入文字，先保存要求。",
+    voiceWorkModeUnknown: "無法確認背景整理設定，請先到設定確認，再依賴通話記錄任務。",
     voiceWorkHint: "持續交代就好，你的要求與未完成工作都會留在這裡。",
     voiceWorkCall: "開啟通話",
     voiceWorkList: "未完成工作",
