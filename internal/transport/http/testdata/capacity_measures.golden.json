@@ -1353,6 +1353,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_smart_rename_sessions",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.direct_history_hours",
     "Known": true,
     "Note": true

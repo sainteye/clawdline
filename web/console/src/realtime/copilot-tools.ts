@@ -120,6 +120,12 @@ export const SCREEN_TAIL_LINES = 40
  * thousand characters; the 600 the other reads keep lose its reasoning.
  */
 export const REPLY_CHARS = 8000
+/**
+ * How many Sessions one smart_rename_sessions call names. Each one spends a
+ * small model turn on the machine, one after another, so a longer list would
+ * keep the person waiting in silence.
+ */
+export const SMART_RENAME_SESSIONS = 6
 
 export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也是使用者的私人秘書。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
 
@@ -162,10 +168,18 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - get_session_notes：讀 Session 留給使用者的便條紙。
 - list_snippets、open_snippets、run_snippet：Session 的 Snippet（存好的常用文字）與 Playbook（存好的工作流程）。使用者要「打開 snippet／playbook 列表」就呼叫 open_snippets；要你「執行某某」就先用 list_snippets 找出它的完整名稱（依使用者說的意思自己判斷是哪一個，找不到就說找不到並唸兩三個最接近的），再講「要在『Session 名稱』執行『名稱』，對嗎？」，使用者說好才呼叫 run_snippet；使用者一句話已經講清楚 Session 和名稱的，照只確認一次的規則直接執行。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
+- smart_rename_sessions：用 Clawdline 的「智慧命名」替一個或幾個 Session 重新取名（機器上的助理依它的對話內容取名）。見下面【智慧命名】。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
 - send_message_to_session：替使用者把文字送進某個 Session。
 - clawdline_help：使用者問 Clawdline 怎麼用、功能在哪、怎麼設定時呼叫，只依回傳的說明段落回答，兩三句講出步驟與位置；沒有回傳任何段落，就說說明文件沒有寫到這個，不要自己猜。
 - get_devstack_links：使用者要看或打開某個專案的 Dev Stack（連結清單、網站、伺服器）時呼叫；要在畫面上打開就填 open=true。專案名稱不確定就先呼叫 list_projects。念連結時只說名稱和狀態，絕對不要念網址（使用者要網址時才念）。
+【智慧命名】
+- 使用者要你「看看哪些 Session 的名稱和工作內容不符，用智慧命名重新命名」時：先呼叫 get_sessions_summary（他說工作中的就用 which=working，沒說就用 all），逐一比對每個 Session 的名稱和它的目標、最近完成、現在在做的事。
+- 名稱已經大致講得出它在做什麼的，就算用字不同也不要改；只挑名稱明顯對不上、太籠統（例如只有「新 Session」、專案名或一個指令）、或工作已經轉到別件事的。
+- 用名稱逐一說哪幾個要改、各用半句說為什麼（例如「『修 bug』其實在做語音匯報」），然後問一次「要用智慧命名重新命名這幾個嗎？」；都對得上就直接說「名稱都對得上，不用改」。
+- 使用者說好，才呼叫 smart_rename_sessions，sessions 填這些 Session 的完整名稱（label），一字不差照抄，並帶 confirmed: true。使用者自己一句話就點名要智慧命名哪個 Session 的，照只確認一次的規則直接做。
+- 做完照結果逐一講「某某改成了某某」；失敗的照實說原因。新名稱是機器上的助理取的，不要自己改字。
+
 【開新的 Session】
 - 使用者要開新 Session 時，第一步一定先呼叫 list_machines，接著呼叫 list_projects，然後才開口問。機器、專案、助理、模型的名稱只能用這兩個工具回傳的，絕對不要自己編名稱或舉不存在的例子。
 - 要確定四件事：哪台機器、哪個專案、用哪個助理、用哪個模型。缺哪一項就問哪一項，一次只問一項，不要自己猜。
@@ -466,6 +480,19 @@ export const COPILOT_TOOLS = [
       type: 'object',
       properties: { brief: { type: 'boolean', description: 'true 簡短、false 詳細' } },
       required: ['brief'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'smart_rename_sessions',
+    description: '用 Clawdline 的「智慧命名」替 Session 重新取名：機器上的助理依每個 Session 的對話內容各取一個新名稱並直接套用，每個要幾秒。只有在你已經用名稱唸出要改哪幾個、使用者說好之後才呼叫，並帶 confirmed: true。',
+    parameters: {
+      type: 'object',
+      properties: {
+        sessions: { type: 'array', items: { type: 'string' }, description: '要重新命名的 Session 完整名稱（label）或 id，一字不差照抄清單或摘要裡的；最多 6 個' },
+        confirmed: { type: 'boolean', description: '使用者已經聽過要改哪幾個並說好時填 true' },
+      },
+      required: ['sessions', 'confirmed'],
     },
   },
   {
@@ -2028,6 +2055,62 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
   return { closed: true, label: row.label, ...(force ? { forced: true } : {}) }
 }
 
+/** What a smart-title refusal means aloud, by its code. */
+const SMART_TITLE_REFUSALS: Record<string, string> = {
+  conversation_empty: '它還沒有第一則交代，沒有內容可以取名',
+  conversation_unreadable: '讀不到它的對話',
+  no_namer: '設定裡選的命名助理沒有安裝在這台機器上',
+  namer_out_of_quota: '命名助理的帳號額度用完了',
+  naming_failed: '命名助理沒有給出能用的名稱',
+  busy: '機器正忙著另一個命名，稍後再試',
+}
+
+async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: string[], confirmed: boolean): Promise<unknown> {
+  const names = [...new Set(wanted.map((w) => w.trim()).filter(Boolean))]
+  if (!names.length) return { error: '沒有說要重新命名哪些 Session' }
+  if (!confirmed) return { error: '還沒有得到使用者同意：先用名稱唸出要改哪幾個，問「要用智慧命名重新命名這幾個嗎？」，他說好才帶 confirmed: true 呼叫' }
+  if (names.length > SMART_RENAME_SESSIONS) return { error: `一次最多 ${SMART_RENAME_SESSIONS} 個；先跟使用者說要分批，挑最需要改的 ${SMART_RENAME_SESSIONS} 個` }
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const renamed: { before: string; after: string }[] = []
+  const failed: { session: string; error: string }[] = []
+  // One after another: the machine runs one naming turn at a time.
+  for (const name of names) {
+    const found = resolveForWrite(read.rows, name)
+    if ('error' in found) {
+      failed.push({ session: name, error: '找不到這個名稱的 Session，或有好幾個同名的' })
+      continue
+    }
+    const { row } = found
+    const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/smart-title`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
+      body: '{}',
+    })
+    if (!res.ok) {
+      let code = ''
+      try {
+        const body = (await res.clone().json()) as { error?: unknown }
+        code = typeof body.error === 'string' ? body.error : str((body.error as { code?: unknown } | undefined)?.code)
+      } catch {
+        // refusal-ok: a refusal without a code is said by its HTTP status and message.
+      }
+      const why = SMART_TITLE_REFUSALS[code] ?? (await refusalText(res) || `HTTP ${res.status}`)
+      failed.push({ session: row.label, error: why })
+      logs.push({ level: 'error', text: `「${row.label}」沒有重新命名：${why}` })
+      continue
+    }
+    const answer = (await res.json().catch(() => ({}))) as { title?: unknown; display_title?: unknown }
+    const after = str(answer.display_title) || str(answer.title)
+    renamed.push({ before: row.label, after })
+    logs.push({ level: 'info', text: `已把「${row.label}」重新命名為「${after}」` })
+  }
+  return { ...(renamed.length ? { renamed } : {}), ...(failed.length ? { failed } : {}) }
+}
+
 /**
  * The user guide in two steps: its contents, from which the copilot picks the
  * sections a question means (most of the guide is English, so a Chinese
@@ -2217,6 +2300,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'run_snippet') result = await runSnippet(deps, logs, str(args.session_id), str(args.name), str(args.session_label), args.switch_confirmed === true)
     else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
     else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
+    else if (name === 'smart_rename_sessions') result = await smartRenameSessions(deps, logs, Array.isArray(args.sessions) ? args.sessions.map(str) : [], args.confirmed === true)
     else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true, args.force_confirmed === true)
     else if (name === 'list_machines') result = await listMachines(deps, logs)
     else if (name === 'list_projects') result = await listProjects(deps, logs, str(args.machine_id))
@@ -2263,7 +2347,7 @@ export function copilotRefusal(body: unknown, status: number): { code: string; m
 export const COPILOT_MACHINE_LACKS: ReadonlySet<string> = new Set(['unknown_command', 'cloud_feature_unavailable', 'cloud_machine_unsupported'])
 
 /** A finished action the person should see and hear, as a string key and its words. */
-export interface ActionNotice { key: 'copilotDidSend' | 'copilotDidAnswer' | 'copilotDidClose' | 'copilotDidRun' | 'copilotDidStart'; params: Record<string, string> }
+export interface ActionNotice { key: 'copilotDidSend' | 'copilotDidAnswer' | 'copilotDidClose' | 'copilotDidRun' | 'copilotDidStart' | 'copilotDidRename'; params: Record<string, string> }
 
 /**
  * What a write tool's answer did, when the machine says it was done: a send,
@@ -2280,15 +2364,16 @@ export function actionNotice(tool: string, output: string): ActionNotice | null 
   if (tool === 'close_session' && o.closed === true) return { key: 'copilotDidClose', params: { label: str(o.label) } }
   if (tool === 'run_snippet' && o.ran === true) return { key: 'copilotDidRun', params: { label: str(o.session), name: str(o.name) } }
   if (tool === 'start_session' && o.started === true) return { key: 'copilotDidStart', params: { project: str(o.project) } }
+  if (tool === 'smart_rename_sessions' && Array.isArray(o.renamed) && o.renamed.length) return { key: 'copilotDidRename', params: { count: String(o.renamed.length) } }
   return null
 }
 
 /** The kinds of action the copilot can say it did. */
-export type ActionKind = 'send' | 'answer' | 'close' | 'run' | 'start'
+export type ActionKind = 'send' | 'answer' | 'close' | 'run' | 'start' | 'rename'
 
 /** Which kind each notice is. */
 export const NOTICE_KIND: Record<ActionNotice['key'], ActionKind> = {
-  copilotDidSend: 'send', copilotDidAnswer: 'answer', copilotDidClose: 'close', copilotDidRun: 'run', copilotDidStart: 'start',
+  copilotDidSend: 'send', copilotDidAnswer: 'answer', copilotDidClose: 'close', copilotDidRun: 'run', copilotDidStart: 'start', copilotDidRename: 'rename',
 }
 
 /** Sentences that say an action is done, by kind; a question ("…對嗎？") never is one. */
@@ -2300,6 +2385,7 @@ const CLAIMS: [ActionKind, RegExp][] = [
   ['close', /(幫你|替你|我)(已經|已)?(關閉|關掉)/],
   ['run', /(幫你|替你|我)(已經|已)?(執行|啟動|開始跑)/],
   ['start', /(幫你|替你|我)(已經|已)?開(好|了)/],
+  ['rename', /(幫你|替你|我)(已經|已)?(重新命名|改名|改了名)/],
 ]
 
 /**
@@ -2323,7 +2409,7 @@ export function unbackedClaims(speech: string, done: ReadonlySet<ActionKind>): A
 export function unbackedClaimEvents(kinds: readonly ActionKind[]): Record<string, unknown>[] {
   return [
     { type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text',
-      text: `你剛剛說已經${kinds.map((k) => ({ send: '送出', answer: '回答', close: '關閉', run: '執行', start: '開新 Session' })[k]).join('、')}，但機器沒有收到這個動作，其實沒有做。用一句話照實跟使用者更正，再確認一次要不要現在做。` }] } },
+      text: `你剛剛說已經${kinds.map((k) => ({ send: '送出', answer: '回答', close: '關閉', run: '執行', start: '開新 Session', rename: '重新命名' })[k]).join('、')}，但機器沒有收到這個動作，其實沒有做。用一句話照實跟使用者更正，再確認一次要不要現在做。` }] } },
     { type: 'response.create' },
   ]
 }

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11607,
+  "englishKeys": 11610,
   "counts": {
     "negation": 3193,
-    "state": 1932,
+    "state": 1933,
     "permission": 681,
     "deletion": 262,
     "uncertainty": 438
   },
-  "unionCount": 5078,
+  "unionCount": 5079,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3463,6 +3463,7 @@
       "capacityRow.console.carrier_receive_rows.full",
       "capacityRow.console.carrier_receive_rows.what",
       "capacityRow.console.copilot_recap_pages.what",
+      "capacityRow.console.copilot_smart_rename_sessions.full",
       "capacityRow.console.direct_history_hours.full",
       "capacityRow.console.direct_history_hours.what",
       "capacityRow.console.direct_history_machines.full",
@@ -7104,6 +7105,7 @@
     "capacityRow.console.copilot_recap_pages.what",
     "capacityRow.console.copilot_reply_characters.full",
     "capacityRow.console.copilot_screen_reads.full",
+    "capacityRow.console.copilot_smart_rename_sessions.full",
     "capacityRow.console.direct_history_hours.full",
     "capacityRow.console.direct_history_hours.what",
     "capacityRow.console.direct_history_machines.full",
