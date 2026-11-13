@@ -80,3 +80,11 @@
   .browser-setup .setup-primary { flex: 1 1 auto; }
   .browser-setup-switches { padding: 4px 14px; }
 }
+
+.browser-prepared { margin: 14px 0; min-width: 0; }
+.browser-setup .setup-body ol { padding-left: 24px; }
+.browser-setup .setup-body li { min-width: 0; }
+.browser-setup details { margin-top: 12px; }
+.browser-setup summary { padding: 10px 0; cursor: pointer; }
+.browser-setup .browser-setup-copy { max-width: 100%; min-width: 0; }
+.browser-setup .browser-setup-copy input { min-width: 0; }

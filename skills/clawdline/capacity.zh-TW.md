@@ -280,6 +280,7 @@
 | `console.copilot_recap_pages` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_reply_characters` | 8000 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_smart_rename_sessions` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.direct_history_hours` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.execution_recovery_attempts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |

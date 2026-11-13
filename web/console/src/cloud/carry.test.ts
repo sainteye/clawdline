@@ -390,7 +390,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["copilot-journal"], "POST /v1/voice/copilot-journal")
   assert.equal(CARRIED["copilot-work"], "GET /v1/voice/copilot-work")
   assert.equal(CARRIED["copilot-work-update"], "POST /v1/voice/copilot-work")
-  assert.equal(Object.keys(CARRIED).length, 236)
+  assert.equal(Object.keys(CARRIED).length, 237)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

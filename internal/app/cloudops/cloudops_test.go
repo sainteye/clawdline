@@ -1118,6 +1118,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-chrome-launch", method: "POST", path: "/v1/browser/launch",
 		body2: `{}`,
 	}, {
+		word:    "chrome-prepare",
+		body:    map[string]any{"type": "chrome-prepare", "session": machine, "request": "req-chrome-prepare"},
+		session: machine, name: "action:req-chrome-prepare", method: "POST", path: "/v1/browser/prepare",
+		body2: `{}`,
+	}, {
 		word:    "github-connection",
 		body:    map[string]any{"type": "github-connection", "session": machine, "request": "req-gh"},
 		session: machine, name: "read:req-gh", method: "GET", path: "/v1/integrations/github",

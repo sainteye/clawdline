@@ -97,14 +97,16 @@ and send access to take over and act:
 | `chrome-tab-control` | command | `POST /v1/browser/control` |
 | `chrome-setup` | read | `GET /v1/browser/setup` |
 | `chrome-launch` | command | `POST /v1/browser/launch` |
+| `chrome-prepare` | command | `POST /v1/browser/prepare` (own extension files only) |
 
 ## The Settings block
 
 Settings, Sessions and access, has a **Browser** block
 (`web/console/src/pages/settings/BrowserSettingsBlock.tsx`): whether the extension is connected
 and which browser it is in, three mutually exclusive modes plus `browser_notify_new_site`
-(off on a new machine), the emergency stop with its banner and Resume, and the audit list,
-narrowed by Session, site and day. `GET/POST /v1/browser/settings` reads and writes only the mode, its legacy enabled projection, and notification preference; an agent's machine token is refused, and writing needs a device that may send.
+(off on a new machine), the emergency stop with its banner and Resume, and a View activity button. The audit is read only while its modal is open,
+narrowed by Session, site and day. Closing or leaving Settings aborts pending reads
+and stops its polling; opening Settings alone makes no audit request. `GET/POST /v1/browser/settings` reads and writes only the mode, its legacy enabled projection, and notification preference; an agent's machine token is refused, and writing needs a device that may send.
 `/v1/browser/audit` takes `conversation`, `site` (a registrable domain) and `since` (Unix seconds)
 besides `limit`. Through Clawdline Cloud the block uses four more words:
 
@@ -293,7 +295,15 @@ The user-Chrome setup is deliberately separate from choosing the setting:
 clawdline browser prepare --mode user_chrome
 ```
 
-This only writes the content-addressed extension folder inside Clawdline's state
+The guide’s Prepare current extension button calls `POST /v1/browser/prepare`
+(`chrome-prepare` through Cloud). This requires a sending person device, rejects
+machine tokens and other selected modes, and accepts no filesystem path. It
+returns the canonical extension folder, its ID, a connection command, and on
+macOS a shell-quoted `open` command. The folder picker also supports
+Command-Shift-G and pasting that path. The Terminal command above uses the same
+preparation operation. Neither route registers a host or starts Chrome.
+
+Preparation only writes the content-addressed extension folder inside Clawdline's state
 directory and prints its extension ID and a connection command. The person loads
 that folder with Load unpacked at `chrome://extensions`, then runs the printed
 `install-host --mode user_chrome --extension-id ...` command and reloads the
@@ -303,8 +313,8 @@ continues to register only its own profile. Do not substitute a launch of the
 person's usual Chrome for the separate connection flow.
 
 Cloud carries the selected viewer mode, the three settings choices and responsive
-layout through the existing encrypted chrome-* words. No new relay/API word is
-needed. Tests use temporary profiles and native-host manifests; a test labelled
+layout through the encrypted chrome-* words. Folder preparation adds the
+write-gated `chrome-prepare` word. Tests use temporary profiles and native-host manifests; a test labelled
 user_chrome does not establish installation into the person's real Chrome.
 
 Mode preconditions and config persistence share the bridge's command-admission
@@ -319,3 +329,29 @@ Setup transport readiness does not grant browser access. Close result receipts s
 service and host restarts without replaying the destructive operation. The protocol,
 limits, failure boundaries and regression fixtures are described in
 [browser setup and close result recovery](browser-reliability.md).
+
+
+### Extension update boundary and proposed automatic flow
+
+The application carries its current extension, but an already loaded unpacked
+extension does not switch directories when the application updates. Preparation
+publishes a complete revision directory atomically and verifies an existing one
+without rewriting files a browser may be reading. It refuses changed or incomplete
+files instead of silently replacing them. Old revision directories are retained.
+A preparation receipt establishes file readiness, not a running worker version.
+
+The current guide describes an explicit update: hand back control, prepare the
+current files, and if the directory changed remove the old Clawdline extension,
+load the new directory, and run its matching connection command. Reloading the
+old directory alone does not update it. This delivery does not install or reload
+the person's usual Chrome.
+
+Automatic updating needs a separate lifecycle protocol before it can be enabled:
+a stable approved installation identity or a verified identity transition; a
+worker-reported embedded revision rather than a fetch of newer on-disk metadata;
+a per-profile handback and admission fence that waits for pending commands and
+uncertain close receipts; a durable update intent that survives daemon or worker
+restart; and an observed new-worker handshake before success. Refusal or lost
+acknowledgement must preserve the old installation and report the unresolved
+state without blindly retrying. Dedicated and usual Chrome require separate
+consent and receipts. This is a proposed design, not implemented automatic reload.

@@ -33,10 +33,11 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `browser_disabled` | `internal/transport/http/browser.go` |
 | `browser_launch_failed` | `internal/transport/http/browser_launch.go` |
 | `browser_page_error` | `internal/transport/http/browser.go` |
+| `browser_prepare_failed` | `internal/transport/http/browser_launch.go` |
 | `browser_resume_person_only` | `internal/transport/http/browser.go` |
 | `browser_setting_unavailable` | `internal/transport/http/settings.go` |
 | `browser_user_chrome_setup_required` | `internal/transport/http/browser_launch.go` |
-| `browser_wrong_mode` | `internal/transport/http/browser.go` |
+| `browser_wrong_mode` | `internal/transport/http/browser.go`, `internal/transport/http/browser_launch.go` |
 | `builtin_read_only` | `internal/transport/http/squad.go` |
 | `busy` | `internal/transport/http/intent.go`, `internal/transport/http/session_smart_title.go`, `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/squad_role_draft.go`, `internal/transport/http/voice.go`, `internal/transport/http/work_v2_persona_suggestion.go` |
 | `capacity_full` | `internal/transport/http/squad.go`, `internal/transport/http/tool_library.go` |

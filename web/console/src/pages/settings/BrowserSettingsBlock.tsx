@@ -1,6 +1,6 @@
 import { openBrowserSetup } from "../../session/BrowserSetup.js"
 import type { SessionRow } from "@clawdline/contract"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { sessionName } from "../../brand-mark.js"
 import { S } from "../../legacy/js/core/state.js"
 import * as L from "../../legacy/bridge.js"
@@ -9,6 +9,7 @@ import {
   readBrowserAudit, readChromeSettings, readBrowserStatus, writeChromeSettings, writeBrowserStop,
   type BrowserMode, type BrowserAudit, type BrowserAuditRow, type ChromeSettings, type BrowserStatus,
 } from "./api.js"
+import { showModalWithoutChoice } from "../../modal-focus.js"
 import { Switch } from "./Switch.js"
 import "./workflow-settings.css"
 import "./browser-settings.css"
@@ -130,6 +131,7 @@ function AuditEntry({ row }: { row: BrowserAuditRow }) {
 export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
   const [settings, setSettings] = useState<ChromeSettings | null>(null)
   const [status, setStatus] = useState<BrowserStatus | null>(null)
+  const [auditOpen, setAuditOpen] = useState(false)
   const [audit, setAudit] = useState<BrowserAudit | null>(null)
   const [readError, setReadError] = useState("")
   const [auditError, setAuditError] = useState("")
@@ -162,10 +164,13 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
     return () => { live = false; controller.abort(); window.clearInterval(timer) }
   }, [shown, retry])
 
+  useEffect(() => { if (!shown) setAuditOpen(false) }, [shown])
+
   useEffect(() => {
-    if (!shown) return
+    if (!shown || !auditOpen) return
     let live = true
     const controller = new AbortController()
+    setAudit(null); setAuditError("")
     const read = () => readBrowserAudit({ conversation, site, since: sinceOf(range), limit: AUDIT_ROWS }, controller.signal).then(
       (value) => {
         if (!live) return
@@ -185,7 +190,7 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
     void read()
     const timer = window.setInterval(() => { if (!document.hidden) void read() }, AUDIT_MS)
     return () => { live = false; controller.abort(); window.clearInterval(timer) }
-  }, [shown, retry, conversation, site, range])
+  }, [shown, auditOpen, retry, conversation, site, range])
 
   const save = async (key: SettingKey) => {
     if (!settings || busy) return
@@ -317,8 +322,8 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
     <p className="said" role="status" aria-live="polite">{said || readError}</p>
     {readError && <button type="button" className="chip" onClick={() => setRetry((n) => n + 1)}>{nextWord("browserSettingsRetry")}</button>}
 
-    <div className="browser-audit" aria-labelledby="browser-audit-title">
-      <strong id="browser-audit-title" className="browser-audit-title">{nextWord("browserAuditTitle")}</strong>
+    <button type="button" className="chip" id="browser-audit-open" onClick={() => setAuditOpen(true)}>{nextWord("browserAuditOpen")}</button>
+    {shown && auditOpen && <AuditDialog onClose={() => setAuditOpen(false)}>
       <div className="browser-audit-filters">
         <label>
           <span>{nextWord("browserAuditSession")}</span>
@@ -361,6 +366,21 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
       {rows.length > 0 && <ol className="browser-audit-list">
         {rows.map((row, i) => <AuditEntry key={row.at + ":" + i} row={row} />)}
       </ol>}
-    </div>
+    </AuditDialog>}
   </div>
+}
+
+function AuditDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const opener = document.activeElement
+    showModalWithoutChoice(dialog.current)
+    return () => { if (opener instanceof HTMLElement && opener.isConnected) opener.focus() }
+  }, [])
+  return <dialog ref={dialog} className="browser-audit-dialog" aria-labelledby="browser-audit-title"
+    onCancel={event => { event.preventDefault(); onClose() }}>
+    <header><h2 id="browser-audit-title">{nextWord("browserAuditTitle")}</h2>
+      <button type="button" className="chip" id="browser-audit-close" onClick={onClose}>{L.strings.webClose}</button></header>
+    <div className="browser-audit">{children}</div>
+  </dialog>
 }

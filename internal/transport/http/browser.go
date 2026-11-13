@@ -49,6 +49,7 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/activity"}, s.browserActivityRoute},
 		{Route{"*", "/v1/browser/settings"}, s.browserSettingsRoute},
 		{Route{"*", "/v1/browser/setup"}, s.browserSetupRoute},
+		{Route{"*", "/v1/browser/prepare"}, s.browserPrepareRoute},
 		{Route{"*", "/v1/browser/launch"}, s.browserLaunchRoute},
 	}
 }

@@ -43,6 +43,9 @@ export const CARRIED = {
   // The browser setup guide's Open button: start Clawdline's own Chromium with
   // the extension already in it, a machine command with no body.
   "chrome-launch": "POST /v1/browser/launch",
+  // Prepare the current extension in Clawdline's own directory. A person must
+  // separately load it and register its host in their usual Chrome.
+  "chrome-prepare": "POST /v1/browser/prepare",
   // Save a browser setup reminder in the current Session for the person's
   // return to the computer.
   "chrome-remind": "POST /v1/browser/reminder",

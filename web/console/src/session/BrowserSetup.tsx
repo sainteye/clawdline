@@ -78,7 +78,7 @@ function refusalCode(error: unknown): string {
 }
 
 /** A refusal in the console's own words, with its code kept (refusals/scan.ts). */
-function said(error: unknown, lead: "browserSetupLaunchFailed" | "browserSetupReadFailed" | "browserSetupSaveFailed"): string {
+function said(error: unknown, lead: "browserSetupLaunchFailed" | "browserSetupReadFailed" | "browserSetupSaveFailed" | "browserUserChromePrepareFailed"): string {
   return nextWord(lead, { reason: L.failureSentence(error, { fallback: (error as Error)?.message || "" }) })
 }
 
@@ -127,15 +127,36 @@ export function BrowserSetup({ onClose }: { onClose: () => void }) {
   )
 }
 
+type PreparedExtension = { directory: string; platform: string; open_command?: string; connect_command: string; revision: string }
+
 function UserChromeGuide({ onClose }: { onClose: () => void }) {
+  const [prepared, setPrepared] = useState<PreparedExtension | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const prepare = async () => {
+    if (busy) return
+    setBusy(true); setError("")
+    try { setPrepared(await browserCall<PreparedExtension>("POST", "/v1/browser/prepare", {})) }
+    catch (error) { setError(said(error, "browserUserChromePrepareFailed")) }
+    finally { setBusy(false) }
+  }
   return <div className="setup-body">
     <h2>{nextWord("browserUserChromeTitle")}</h2>
     <p>{nextWord("browserUserChromeIntro")}</p>
     <ol>
-      <li><p>{nextWord("browserUserChromePrepare")}</p><CopyLine text="clawdline browser prepare --mode user_chrome" /></li>
+      <li><p>{nextWord("browserUserChromePrepare")}</p>
+        <button type="button" id="browser-prepare-extension" className="setup-secondary" disabled={busy} onClick={() => void prepare()}>{nextWord(busy ? "browserSettingsLoading" : "browserUserChromePrepareButton")}</button>
+        {error && <p className="setup-said" role="alert">{error}</p>}
+        {prepared && <div className="browser-prepared" role="status">
+          <p>{nextWord("browserUserChromeDirectory")}</p><CopyLine text={prepared.directory} />
+          {prepared.platform === "darwin" && prepared.open_command && <><p>{nextWord("browserUserChromeOpenFolder")}</p><CopyLine text={prepared.open_command} /><p>{nextWord("browserUserChromeFinderHint")}</p></>}
+        </div>}
+        <details><summary>{nextWord("browserUserChromeTerminal")}</summary><CopyLine text="clawdline browser prepare --mode user_chrome" /></details>
+      </li>
       <li><p>{nextWord("browserUserChromeLoad")}</p></li>
-      <li><p>{nextWord("browserUserChromeConnect")}</p></li>
+      <li><p>{nextWord("browserUserChromeConnect")}</p>{prepared && <CopyLine text={prepared.connect_command} />}</li>
     </ol>
+    <p className="browser-setup-plain">{nextWord("browserUserChromeUpdates")}</p>
     <div className="setup-actions"><button type="button" className="setup-primary" onClick={onClose}>{nextWord("browserSetupClose")}</button></div>
   </div>
 }

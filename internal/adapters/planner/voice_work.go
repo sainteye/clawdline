@@ -29,7 +29,9 @@ get_devstack_links, list_snippets or explain_session_reply. Do not read every tr
 to list names. Group questions are one task, not one task for every Session.
 Other available tools are send_message_to_session, answer_session_question,
 close_session, start_session, run_snippet, open_session, open_snippets,
-set_speaking_speed and set_answer_length. These will require explicit confirmation.
+set_speaking_speed, set_answer_length and smart_rename_sessions (sessions is an array of
+whole labels or ids; renaming Sessions whose names do not match their work is one task
+after a get_sessions_summary read). These will require explicit confirmation.
 Use each tool's real arguments; session_id is the exact directory id, session_label
 is its whole label, message is the exact requested text, choice is the selected option.
 Never guess a write's recipient, message, confirmation or a Session not in the directory.

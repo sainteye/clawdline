@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -185,7 +185,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -1193,4 +1193,79 @@ test('a managed answer cannot approve a replacement question in the same convers
  const output=JSON.parse((await runCopilotTool('answer_session_question',JSON.stringify({session_id:'%7',session_label:'Fix the flaky test',choice:'1',switch_confirmed:true,expected_question:'0'.repeat(64)}),deps)).output)
  assert.ok(output.error)
  assert.equal(calls.filter(c=>c.path.endsWith('/key')).length,0)
+})
+
+/** A machine whose smart-title route names Sessions, or refuses one by its code. */
+function namingMachine(refuse: Record<string, { status: number; code: string }> = {}) {
+  const posts: { path: string; init?: RequestInit }[] = []
+  const deps: ToolDeps = {
+    async fetch(path, init) {
+      if (path === "/v1/sessions") return Response.json({ sessions: ROWS, at: 1 })
+      const m = /^\/v1\/sessions\/([^/]+)\/smart-title$/.exec(path)
+      if (m && init?.method === "POST") {
+        posts.push({ path, init })
+        const id = decodeURIComponent(m[1])
+        const r = refuse[id]
+        if (r) return Response.json({ error: { code: r.code, message: "refused" } }, { status: r.status })
+        return Response.json({ ok: true, title: `Named ${id}`, display_title: `Named ${id}`, named_by: "claude" })
+      }
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    newRequestID: () => "req-1",
+  }
+  return { deps, posts }
+}
+
+test("smart_rename_sessions names each Session through the machine's smart naming, one after another", async () => {
+  const { deps, posts } = namingMachine()
+  const out = JSON.parse((await runCopilotTool("smart_rename_sessions", JSON.stringify({ sessions: ["Prepare screenshots", "Fix the login test"], confirmed: true }), deps)).output)
+  assert.deepEqual(out.renamed, [{ before: "Prepare screenshots", after: "Named %2" }, { before: "Fix the login test", after: "Named %9" }])
+  assert.equal(out.failed, undefined)
+  assert.deepEqual(posts.map((p) => p.path), ["/v1/sessions/%252/smart-title", "/v1/sessions/%259/smart-title"])
+  assert.equal(posts[0].init?.body, "{}")
+  assert.equal((posts[0].init?.headers as Record<string, string>)["Idempotency-Key"], "req-1")
+})
+
+test("smart_rename_sessions renames nothing until the person has agreed", async () => {
+  const { deps, posts } = namingMachine()
+  const out = JSON.parse((await runCopilotTool("smart_rename_sessions", JSON.stringify({ sessions: ["Prepare screenshots"] }), deps)).output)
+  assert.match(out.error, /confirmed/)
+  assert.equal(posts.length, 0)
+})
+
+test("smart_rename_sessions refuses a list longer than its bound before any naming turn", async () => {
+  const { deps, posts } = namingMachine()
+  const names = Array.from({ length: SMART_RENAME_SESSIONS + 1 }, (_, i) => `Session ${i}`)
+  const out = JSON.parse((await runCopilotTool("smart_rename_sessions", JSON.stringify({ sessions: names, confirmed: true }), deps)).output)
+  assert.match(out.error, /最多/)
+  assert.equal(posts.length, 0)
+})
+
+test("a Session smart naming refuses, or a name that is not one, is said without stopping the others", async () => {
+  const { deps } = namingMachine({ "%2": { status: 409, code: "conversation_empty" } })
+  const out = JSON.parse((await runCopilotTool("smart_rename_sessions", JSON.stringify({ sessions: ["Prepare screenshots", "No such Session", "Fix the login test"], confirmed: true }), deps)).output)
+  assert.deepEqual(out.renamed, [{ before: "Fix the login test", after: "Named %9" }])
+  assert.equal(out.failed.length, 2)
+  assert.match(out.failed[0].error, /第一則交代/)
+  assert.equal(out.failed[1].session, "No such Session")
+})
+
+test("a rename the machine did is a notice, and a claimed one it did not is caught", () => {
+  assert.deepEqual(noticeOf("smart_rename_sessions", JSON.stringify({ renamed: [{ before: "a", after: "b" }] })), { key: "copilotDidRename", params: { count: "1" } })
+  assert.equal(noticeOf("smart_rename_sessions", JSON.stringify({ failed: [{ session: "a", error: "x" }] })), null)
+  assert.deepEqual(claimsOf("我已經幫你重新命名好了。", new Set()), ["rename"])
+  assert.deepEqual(claimsOf("要用智慧命名重新命名這幾個嗎？", new Set()), [])
+})
+
+test("a message asking a Session to rename itself is refused toward smart naming, and is not sent", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: "%2", session_label: "Prepare screenshots", message: "請使用智慧命名功能重新命名此 Session，使其名稱更符合目標" }), deps)).output)
+  assert.match(out.error, /smart_rename_sessions/)
+  assert.ok(!calls.some((c) => c.path.endsWith("/send")))
+})
+
+test("only a request to rename the Session itself counts as one", () => {
+  for (const asks of ["請使用智慧命名功能重新命名此 Session", "把這個 Session 改名", "請重新命名 Session 名稱", "Please rename this session to match its work", "use smart naming"]) assert.ok(ASKS_A_RENAME.test(asks), asks)
+  for (const work of ["請把變數 foo 重新命名為 bar", "rename the helper to parseRows", "改名後的檔案要更新 import"]) assert.ok(!ASKS_A_RENAME.test(work), work)
 })

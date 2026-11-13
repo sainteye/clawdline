@@ -183,6 +183,7 @@ func init() {
 		// Clawdline's own, so a phone can set up browser use without a terminal.
 		op{name: "chrome-setup", read: true},
 		op{name: "chrome-launch"},
+		op{name: "chrome-prepare"},
 		op{name: "chrome-remind"},
 
 		// The Browser block on Settings (docs/browser.md): the two switches,

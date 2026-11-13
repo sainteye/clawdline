@@ -24,7 +24,7 @@
 .browser-stopped p { flex: 1 1 220px; margin: 0; color: var(--ink); font-weight: 600; line-height: 1.5; }
 .browser-stopped .chip { min-height: 44px; min-width: 88px; }
 
-.browser-audit { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.browser-audit { min-width: 0; }
 .browser-audit-title { display: block; color: var(--ink); margin-bottom: 10px; }
 .browser-audit-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .browser-audit-filters label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--dim); font-size: 12px; }
@@ -63,3 +63,10 @@
 .browser-mode-choice > span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .browser-mode-choice span span { color: var(--dim); font-size: 13px; line-height: 1.5; }
 .browser-modes:disabled .browser-mode-choice { opacity: .6; cursor: default; }
+
+.browser-audit-dialog { box-sizing: border-box; width: min(960px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); overflow-y: auto; overscroll-behavior: contain; }
+.browser-audit-dialog::backdrop { background: #0009; }
+.browser-audit-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.browser-audit-dialog h2 { margin: 0; font-size: 20px; }
+.browser-audit-dialog .chip, .browser-audit-dialog select { min-height: 44px; }
+@media (max-width: 600px) { .browser-audit-dialog { padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); } }

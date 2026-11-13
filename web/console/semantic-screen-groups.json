@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11602,
-  "riskKeys": 5075,
-  "nonRiskCount": 6527,
+  "englishContentKeys": 11618,
+  "riskKeys": 5082,
+  "nonRiskCount": 6536,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 489,
+      "count": 490,
       "sources": [
         null
       ],
@@ -587,6 +587,7 @@
         "capacityRow.console.copilot_recap_pages.full",
         "capacityRow.console.copilot_reply_characters.what",
         "capacityRow.console.copilot_screen_reads.what",
+        "capacityRow.console.copilot_smart_rename_sessions.what",
         "capacityRow.console.direct_history_machines.what",
         "capacityRow.console.health_ui_body_bytes.what",
         "capacityRow.console.health_ui_budget_seconds.what",
@@ -3847,7 +3848,7 @@
     },
     {
       "name": "next / other",
-      "count": 980,
+      "count": 988,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3909,6 +3910,7 @@
         "next.browserAuditOpTabs",
         "next.browserAuditOpTakeover",
         "next.browserAuditOpType",
+        "next.browserAuditOpen",
         "next.browserAuditPassword",
         "next.browserAuditPrivateInput",
         "next.browserAuditSession",
@@ -4020,7 +4022,11 @@
         "next.browserSetupWatchHint",
         "next.browserStateRetry",
         "next.browserUserChromeConnect",
+        "next.browserUserChromeDirectory",
+        "next.browserUserChromeFinderHint",
         "next.browserUserChromePrepare",
+        "next.browserUserChromePrepareButton",
+        "next.browserUserChromeTerminal",
         "next.browserUserChromeTitle",
         "next.claudeRemoteCloseSay",
         "next.claudeRemoteShort",
@@ -4048,6 +4054,7 @@
         "next.copilotDemoWatch",
         "next.copilotDesc",
         "next.copilotDidAnswer",
+        "next.copilotDidRename",
         "next.copilotDidRun",
         "next.copilotDidStart",
         "next.copilotEagernessAuto",
@@ -4814,6 +4821,8 @@
         "next.voiceWorkList",
         "next.voiceWorkLoading",
         "next.voiceWorkManagedSource",
+        "next.voiceWorkModeEnabled",
+        "next.voiceWorkModeLoading",
         "next.voiceWorkPause",
         "next.voiceWorkPaused",
         "next.voiceWorkPlaceholder",

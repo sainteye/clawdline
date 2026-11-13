@@ -48,6 +48,26 @@ work planner is an explicit setting and uses the person's selected provider; it
 does not silently fall back to another account. Existing calls retain their
 behavior until the workspace workflow is enabled.
 
+The workspace shows whether background planning is enabled on the selected
+machine, including a separate unknown state when that setting cannot be read.
+When it is off, the page explains that direct calls do not add persistent work
+items, links to Settings, and names the next-call boundary and CLI quota use.
+Changing machines discards an outstanding settings reply. Text requests can
+still be saved without starting a model. The direct-call instructions must not
+claim that an utterance or tool result was queued in the persistent work list.
+Entering from the sidebar without a machine key or legacy browser key opens
+Settings by default. An explicit Work tab remains accessible without a key;
+default routing neither enables planning nor starts a call.
+
+Both direct calls and evidence-driven updates share delivery guidance: lead
+with the practical consequence, explain one connected thought at a time, use
+natural emphasis and pauses, and rephrase after an interruption or a report of
+confusion. This changes speech composition without changing playback speed.
+Prompt inspection and synthetic event checks do not establish actual intonation
+or listener comprehension; recorded speech and human listening remain required
+for that acceptance. Guidance follows the official Realtime prompting guide:
+https://developers.openai.com/api/docs/guides/voice-prompting .
+
 ## Delivered boundary and rollout
 
 The new sidebar page is a machine-owned assistant workspace. It is not an invented

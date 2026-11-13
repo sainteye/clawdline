@@ -81,3 +81,32 @@ func (s *Server) browserLaunchRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "pid": started.PID, "browser": started.Browser, "profile": started.Profile,
 		"extension_id": started.ExtensionID, "install_command": browserlaunch.InstallCommand})
 }
+
+// browserPrepareRoute writes only Clawdline-owned files after an explicit
+// press by a sending device. It never registers a host or opens Chrome.
+func (s *Server) browserPrepareRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if machineAuthed(r) || !maySend(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "Only a person's device that may send can prepare the extension.")
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, settingsRequestBodyLimit+1))
+	if body := strings.TrimSpace(string(raw)); err != nil || (body != "" && body != "{}") {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "The browser request is not valid JSON for this route.")
+		return
+	}
+	if s.browserMode() != "user_chrome" {
+		writeRefusal(w, http.StatusConflict, "browser_wrong_mode", "Select your usual Chrome mode before preparing its extension.")
+		return
+	}
+	receipt, err := browserlaunch.PrepareUserChrome(s.cfg.Dir)
+	if err != nil {
+		writeRefusal(w, http.StatusInternalServerError, "browser_prepare_failed", "The extension files could not be prepared.")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, receipt)
+}

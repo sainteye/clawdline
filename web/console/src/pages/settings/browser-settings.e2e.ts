@@ -80,6 +80,7 @@ function fixture(): Server {
     if (path === "/v1/settings/integrations") return json(res,200,{codegraph_enabled:false,workflow_skills_enabled:false,workflow_profile:"clawdline",space_saving_images:false})
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: settings.browser_enabled, notify_new_site: settings.browser_notify_new_site,
       status: { connected: true, stopped, state_error: stateError, host: { version: "0.1.0", browser: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36", last_poll: now() }, person_tabs: [], pending: 0, tabs: [], muted: [] } })
+    if (path === "/v1/browser/prepare") return json(res,200,{ok:true,directory:"/test/Clawdline's data/chrome-extension-revision",platform:"darwin",revision:"revision",open_command:"open '/test/Clawdline'\\''s data/chrome-extension-revision'",connect_command:"clawdline browser install-host --mode user_chrome --extension-id " + "a".repeat(32)})
     if (path === "/v1/browser/setup") return json(res,200,{mode:settings.browser_mode,chromium_found:true,connected:true})
     if (path === "/v1/browser/launch" && req.method==="POST") {launches++;return json(res,200,{ok:true})}
     if (path === "/v1/browser/settings") {
@@ -214,7 +215,10 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await until(`!!document.getElementById("settings-tab-3")`)
       await run(`document.getElementById("settings-tab-3").click()`)
       await until(`!!document.querySelector("#settings-pane-3:not([hidden]) #settings-browser")`)
-      await until(`document.querySelectorAll("#settings-browser .browser-audit-row").length === 5`)
+      await until(`!!document.querySelector('input[name="browser-mode"]:checked') && !document.querySelector(".browser-modes").disabled`)
+      await new Promise(resolve => setTimeout(resolve, 200))
+      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).queries.length,0,"Settings never reads activity before opening it")
+      assert.equal(await run(`document.querySelector('.browser-audit-dialog') === null`),true)
 
       // Exactly one mode is selected; choosing user Chrome opens instructions
       // without launching or installing anything in that browser.
@@ -230,6 +234,13 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await run(`document.querySelector('#settings-browser > button.chip').click()`)
       await until(`document.querySelector('.browser-setup')?.innerText.includes('chrome://extensions')`)
       assert.ok(await run(`document.querySelector('.browser-setup input[readonly]').value.includes('prepare --mode user_chrome')`))
+      await run(`document.getElementById('browser-prepare-extension').click()`)
+      await until(`!!document.querySelector('.browser-prepared input')`)
+      assert.equal(await run(`document.querySelector('.browser-prepared input').value`),"/test/Clawdline's data/chrome-extension-revision")
+      assert.ok(await run(`[...document.querySelectorAll('.browser-setup input')].some(e => e.value.startsWith("open "))`))
+      assert.ok(await run(`[...document.querySelectorAll('.browser-setup input')].some(e => e.value.includes("install-host --mode user_chrome --extension-id"))`))
+      assert.ok(await run(`document.querySelector('.browser-setup').scrollWidth <= document.querySelector('.browser-setup').clientWidth`),"guide fits phone width")
+      await shot("prepare-guide", ".browser-setup")
       await run(`document.querySelector('.browser-setup .setup-x').click()`)
       await until(`!document.querySelector('.browser-setup')`)
       await choose("native")
@@ -241,6 +252,10 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       assert.ok((await text()).includes(w.host), await text())
       assert.equal(await run(`document.getElementById("browser-setting-browser_notify_new_site").getAttribute("aria-checked")`), "false")
 
+      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).queries.length,0,"mode/status reads never fetch activity")
+      await run(`document.getElementById("browser-audit-open").focus(); document.getElementById("browser-audit-open").click()`)
+      await until(`document.querySelectorAll("#settings-browser .browser-audit-row").length === 5`)
+      assert.equal(await run(`document.querySelector('.browser-audit-dialog').matches(':modal')`),true)
       const all = await text()
       for (const want of [w.password, w.cut, w.pruned, w.journal, w.click, w.refused, "Browser Session", "abcdef12", "example.com", "/sign-in?next=/home", "github.com"]) {
         assert.ok(all.includes(want), `missing ${want}: ${all}`)
@@ -250,10 +265,9 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
         (ui === "en" ? "All Sessions" : "所有 Session") + "|Browser Session|abcdef12")
       assert.ok(await run(`document.documentElement.scrollWidth <= innerWidth`), "no horizontal page scroll")
       // Every control in the block is at least 44 px tall.
-      const small = await run(`[...document.querySelectorAll("#settings-browser button, #settings-browser select")].filter((e) => e.getBoundingClientRect().height < 44).map((e) => e.id || e.className)`)
+      const small = await run(`[...document.querySelectorAll("#settings-browser button, #settings-browser select")].filter((e) => e.getClientRects().length && e.getBoundingClientRect().height < 44).map((e) => e.id || e.className)`)
       assert.deepEqual(small, [], "touch targets under 44 px")
-      await shot("top")
-      await shot("modes", "#settings-browser .browser-modes")
+      await shot("activity-modal", ".browser-audit-dialog")
       await shot("list", "#settings-browser .browser-audit-list")
       await shot("list-end", "#settings-browser .browser-audit-row:last-child")
 
@@ -274,6 +288,15 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       assert.ok(seen.some((q) => q.site === "github.com" && !q.since), JSON.stringify(seen))
       assert.ok(seen.every((q) => q.limit === "200"), JSON.stringify(seen))
       assert.ok(await rowCount() === 5)
+
+      await run(`document.getElementById("browser-audit-close").click()`)
+      await until(`!document.querySelector('.browser-audit-dialog')`)
+      assert.equal(await run(`document.activeElement.id`),"browser-audit-open")
+      const countAfterClose=(await (await fetch(origin + "/__fixture/log")).json()).queries.length
+      if (name==="phone" && ui==="en") {
+        await new Promise(resolve=>setTimeout(resolve,15_200))
+        assert.equal((await (await fetch(origin + "/__fixture/log")).json()).queries.length,countAfterClose,"closing stops audit polling")
+      }
 
       // The emergency stop, its banner, and resuming.
       assert.ok((await text()).includes(w.stop))
@@ -305,6 +328,9 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       const again = browser.loadCount; await browser.send("Page.reload", {}, id); await browser.loaded(id, again)
       await until(`!!document.getElementById("settings-tab-3")`)
       await run(`document.getElementById("settings-tab-3").click()`)
+      await until(`!!document.getElementById("browser-audit-open")`)
+      assert.equal(await run(`!!document.querySelector('.browser-audit-empty')`),false)
+      await run(`document.getElementById("browser-audit-open").click()`)
       await until(`document.getElementById("settings-browser")?.innerText.includes(${JSON.stringify(w.empty)})`)
       await shot("empty")
     } finally {

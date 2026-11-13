@@ -320,6 +320,7 @@ export type WriteRoute =
   | { op: "chrome-setup"; word: Carried<"chrome-setup"> }
   | { op: "chrome-remind"; word: Carried<"chrome-remind"> }
   | { op: "chrome-launch"; word: Carried<"chrome-launch"> }
+  | { op: "chrome-prepare"; word: Carried<"chrome-prepare"> }
   | { op: "doctor"; word: Carried<"doctor"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
@@ -842,6 +843,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "browser" && a === "settings" && segments.length === 2) return { op: "chrome-settings-update", word: "chrome-settings-update" }
   if (head === "browser" && a === "stop" && segments.length === 2) return { op: "chrome-stop", word: "chrome-stop" }
   if (head === "browser" && a === "reminder" && segments.length === 2) return { op: "chrome-remind", word: "chrome-remind" }
+  if (head === "browser" && a === "prepare" && segments.length === 2) return { op: "chrome-prepare", word: "chrome-prepare" }
   if (head === "browser" && a === "launch" && segments.length === 2) return { op: "chrome-launch", word: "chrome-launch" }
   if (head === "settings" && a === "notifications" && segments.length === 2) {
     return { op: "notification-settings-update", word: "notification-settings-update" }
@@ -1065,6 +1067,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "chrome-audit":
     case "chrome-setup":
     case "chrome-launch":
+    case "chrome-prepare":
       return "flat"
     case "push-subscribe":
     case "push-unsubscribe":
@@ -2163,6 +2166,11 @@ export class RelayWriter {
       case "chrome-settings-update": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "chrome-prepare": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        if (Object.keys(await bodyOf(init)).length > 0) throw failure("cloud_not_carried", "Extension preparation does not accept a folder or other options over Clawdline Cloud.", 501)
+        return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "chrome-launch": {
         // A machine command with no body: start Clawdline's own Chromium.

@@ -71,6 +71,7 @@ the command instead.
 | `clawdline guide routes` | Registered route inventory for this build, API levels, owning parts, and human goals; no daemon needed |
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
+| `clawdline session smart-title [--terminal id]` | Renames this Session with Smart naming, as Session info's button does; prints the new title (§7) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
 | `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
 | `clawdline playbook list\|create\|edit\|delete` | Manage saved launch messages (`clawdline guide project`) |
@@ -1322,6 +1323,13 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
   `report_local_only`).
 - `--out` writes another file or directory instead, with the `file://` address only. stderr says
   what it left out or shortened. `--open` also opens the file in this machine's browser.
+
+**Rename this Session with Smart naming.** When the person (or the voice copilot on their behalf) asks you to "use smart naming" or to rename
+this Session so its name fits its work, run `clawdline session smart-title`. It is the same naming
+turn as Session info's Smart naming button: the naming assistant chosen in Settings reads this
+conversation's first request and recent context and the title is applied at once. It prints the
+new title, or the machine's refusal (for example `conversation_empty` or `namer_out_of_quota`). Do
+not open the app's window or invent a title yourself.
 
 ## 8. Talk to another session
 

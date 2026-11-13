@@ -65,6 +65,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline guide routes` | 此 build 的路由、API 等級、對應指南部分與使用者目標；不需要 daemon |
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
 | `clawdline session close [--dry-run] [--terminal id]` | 稽核並關閉已完成的 Session，絕不強制（§2a） |
+| `clawdline session smart-title [--terminal id]` | 用智慧命名重新命名這個 Session（與 Session 資訊的按鈕相同），並印出新名稱（§7） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
 | `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-Hant feature-root`、§10） |
 | `clawdline playbook list\|create\|edit\|delete` | 管理儲存的啟動訊息（`clawdline guide project`） |
@@ -1156,6 +1157,11 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
   （`report_not_over_cloud`、`report_local_only`）。
 - `--out` 改寫到別的檔案或資料夾，這時只有 `file://` 網址。stderr 會說哪些沒列或有刪減。`--open` 會順便
   用這台機器的瀏覽器打開檔案。
+
+**用智慧命名重新命名這個 Session。** 使用者（或替他轉達的語音助理）要你「用智慧命名」或把這個 Session 改成符合工作內容的名稱時，執行
+`clawdline session smart-title`。它跟 Session 資訊裡的「智慧命名」按鈕是同一個命名回合：設定裡選的命名
+助理會讀這段對話的第一則請求與近期脈絡，名稱立即套用。它會印出新名稱，或機器拒絕的原因（例如
+`conversation_empty`、`namer_out_of_quota`）。不要去操作 App 視窗，也不要自己編名稱。
 
 ## 8. 跟另一個 session 說話
 

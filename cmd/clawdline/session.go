@@ -39,6 +39,10 @@ func sessionCommand(args []string) {
 		sessionCloseCommand(args[1:])
 		return
 	}
+	if len(args) > 0 && args[0] == "smart-title" {
+		sessionSmartTitleCommand(args[1:])
+		return
+	}
 	if len(args) == 0 || args[0] != "report" {
 		sessionUsage()
 	}
@@ -72,6 +76,8 @@ func sessionUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("workflow", "session.records_this_session_s_finished_turn_delivered_awaiting", "  records this session's finished turn: delivered, awaiting approval"))
 	fmt.Fprintln(os.Stderr, cliCopy("workflow", "session.usage_clawdline_session_close_dry_run_conversation_id", "usage: clawdline session close [--dry-run] [--conversation id] [--terminal id] [--port n]"))
 	fmt.Fprintln(os.Stderr, cliCopy("workflow", "session.audits_what_this_session_or_a_feature_root", "  audits what this session (or a Feature Root its Epic opened) still owes, and closes it only when nothing is"))
+	fmt.Fprintln(os.Stderr, cliCopy("workflow", "session.usage_clawdline_session_smart_title", "usage: clawdline session smart-title [--conversation id | --terminal id] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("workflow", "session.renames_this_session_with_smart_naming", "  renames this Session with Smart naming, as Session info's button does, and prints the new title"))
 	os.Exit(2)
 }
 
@@ -557,4 +563,78 @@ func printCloseAudit(w io.Writer, audit sessionCloseAudit) {
 		}
 		fmt.Fprintf(w, cliCopy("workflow", "session.s_s_s_moved_by_s", "  %s (%s)%s — moved by %s\n"), r.Code, r.Kind, subject, mover)
 	}
+}
+
+// `clawdline session smart-title`: the Smart naming that Session info's button
+// runs, for the Session that runs this command. Asked by the voice copilot to
+// "use smart naming", a Codex Session in another project tried to drive the
+// app's window instead (2026-11-13): no command or guide line named it.
+func sessionSmartTitleCommand(args []string) {
+	fs := flag.NewFlagSet("session smart-title", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	conversation := fs.String("conversation", "", cliCopy("workflow", "session.this_assistant_s_conversation_id_default_from_the", "this assistant's conversation id (default: from the environment)"))
+	terminal := fs.String("terminal", "", cliCopy("workflow", "session.the_terminal_to_rename_default_this_session_s", "the terminal to rename (default: this Session's own)"))
+	port := fs.Int("port", 0, cliCopy("workflow", "session.the_daemon_s_port_default_clawdline_next_port", "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)"))
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		sessionUsage()
+	}
+	b, err := openBroker(*port)
+	if err != nil {
+		fail(err)
+	}
+	os.Exit(smartTitleSession(os.Stdout, os.Stderr, b, *conversation, *terminal, os.Getenv))
+}
+
+// smartTitleSession is the command, answering its exit status.
+func smartTitleSession(stdout, stderr io.Writer, b *broker, conversation, terminal string, getenv func(string) string) int {
+	prefix := cliCopy("workflow", "session.clawdline_session_smart_title", "clawdline session smart-title:")
+	if terminal == "" {
+		if conversation == "" {
+			var err error
+			if conversation, _, err = conversationFromEnv(getenv); err != nil {
+				fmt.Fprintln(stderr, prefix, conversationRefusal(err, "--conversation"))
+				return 2
+			}
+		}
+		if conversation == "" {
+			fmt.Fprintf(stderr, cliCopy("workflow", "session.smart_title_cannot_tell_which_session", "clawdline session smart-title: cannot tell which Session this is: none of %s is set. Pass --conversation or --terminal.\n"),
+				strings.Join(conversationEnv, ", "))
+			return 2
+		}
+		who, err := b.request(http.MethodGet, "/v1/orchestrator/whoami", url.Values{"conversation_id": {conversation}}, nil, "")
+		if err != nil {
+			fmt.Fprintln(stderr, prefix, err)
+			return 1
+		}
+		if !who.ok() {
+			return report(stdout, stderr, "session smart-title (whoami)", who)
+		}
+		var id struct {
+			TerminalID string `json:"terminal_id"`
+		}
+		if json.Unmarshal(who.Body, &id) != nil || id.TerminalID == "" {
+			fmt.Fprintln(stderr, cliCopy("workflow", "session.smart_title_whoami_without_terminal", "clawdline session smart-title: whoami answered without a terminal id. Nothing was renamed."))
+			return 1
+		}
+		terminal = id.TerminalID
+	}
+	a, err := b.request(http.MethodPost, "/v1/orchestrator/sessions/"+url.PathEscape(terminal)+"/smart-title", nil, nil, newKey("smart-title"))
+	if err != nil {
+		fmt.Fprintln(stderr, prefix, err)
+		return 1
+	}
+	if !a.ok() {
+		return report(stdout, stderr, "session smart-title", a)
+	}
+	var named struct {
+		Title        string `json:"title"`
+		DisplayTitle string `json:"display_title"`
+	}
+	_ = json.Unmarshal(a.Body, &named)
+	title := named.DisplayTitle
+	if title == "" {
+		title = named.Title
+	}
+	fmt.Fprintf(stdout, cliCopy("workflow", "session.smart_title_renamed", "This Session is now named \"%s\".\n"), title)
+	return 0
 }

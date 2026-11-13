@@ -166,6 +166,29 @@ anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only t
 explicit yes (`force_confirmed`) sends `force: true`, pinned to the version those reasons came
 from, and the machine still decides.
 
+**Smart naming.** Asked which Sessions' names no longer match their work, the copilot reads
+`get_sessions_summary`, says which ones it would rename and why, and asks once. On a yes,
+`smart_rename_sessions` (with `confirmed: true`) posts each named Session to
+`POST /v1/sessions/{id}/smart-title`, the route behind the console's Smart naming, one after
+another with its own Idempotency-Key, and says each old name and the title the machine chose; a
+refusal (no first request yet, naming assistant missing or out of usage) is said for that Session
+and the rest go on. At most 6 Sessions per call (`console.copilot_smart_rename_sessions`), since
+each spends one small model turn. A rename joins the actions the copilot may only claim once the
+machine confirmed it. Before this tool the copilot had no way to rename and, asked to, did not know
+what smart naming was.
+
+In the first call after it shipped (2026-11-13) the copilot still read the guide when it heard
+"smart naming", the rule for any question about Clawdline, and then typed "please use smart naming
+to rename this Session" into the Session, which tried to drive the app's window. The instructions
+now say a request to do something a tool does is done with that tool, and `send_message_to_session`
+refuses a message asking a Session to rename itself (`ASKS_A_RENAME`), pointing at
+`smart_rename_sessions`. Each call's journal now starts with its bundle and tool count, since that
+call could not be told apart from one placed by a page loaded before the tool existed. A Session
+asked directly has `clawdline session smart-title`, documented in the agent guide (§7). It posts
+to `/v1/orchestrator/sessions/{terminal}/smart-title`, the same naming turn behind the orchestrator
+token: the paired-device route answered that token 403, which the first real run of the command
+showed and its stand-in test had not.
+
 **A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
 person), the idle and lately finished ones, or all, newest activity first, each with its goal,
 what it finished lately and what it is doing; only the newest `LIST_LATEST_READS` are read and
@@ -294,6 +317,7 @@ The bounds are registered as `voice.copilot_key_bytes`,
 `voice.copilot_extra_instructions_characters`, `voice.copilot_briefing_timeout_milliseconds`,
 `voice.copilot_briefing_input_characters`, `voice.copilot_briefing_characters`,
 `voice.copilot_briefing_reply_characters`, `console.copilot_reply_characters`,
+`console.copilot_smart_rename_sessions`,
 `console.copilot_memory_turns`, `console.copilot_list_transcript_reads`,
 `console.copilot_recap_pages` and `console.copilot_screen_reads`.
 

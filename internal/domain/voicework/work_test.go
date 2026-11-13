@@ -387,3 +387,21 @@ func TestOpeningADevStackStaysWithTheOriginatingCall(t *testing.T) {
 		t.Fatal("originating call could not execute navigation")
 	}
 }
+
+// Asked to rename mismatched Sessions, the planner's work list must accept a
+// smart rename, and as a write it runs only after the person confirms it.
+func TestASmartRenameIsWorkThatWaitsForConfirmation(t *testing.T) {
+	s := New("assistant")
+	input(t, &s, "a", "Rename the working Sessions whose names do not match their work")
+	apply(t, &s, "a", Change{Op: "add", ID: "rename", Text: "Smart-name two Sessions", Tool: "smart_rename_sessions",
+		Args: map[string]any{"sessions": []any{"Fix bug", "New Session"}}})
+	if s.Tasks[0].Status != "waiting_confirmation" || s.Claim("executor", 3) != nil {
+		t.Fatalf("an unconfirmed rename ran: %+v", s.Tasks[0])
+	}
+	if err := s.Edit("rename", 1, "confirm", 3); err != nil {
+		t.Fatal(err)
+	}
+	if claimed := s.Claim("executor", 4); claimed == nil || claimed.ID != "rename" {
+		t.Fatalf("a confirmed rename did not run: %+v", claimed)
+	}
+}

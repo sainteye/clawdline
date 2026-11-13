@@ -3343,3 +3343,19 @@ test("voice work reads and writes stay on the selected machine and keep their ow
  assert.deepEqual(client.calls.pop(),["_machineRequest","mac-a","copilot-work-update",{work},"action"])
  assert.equal((await reader.fetch("/v1/voice/copilot-work?other=1")).status,400)
 })
+
+
+test("preparing the current extension carries only an explicit press and returns the real directory", async () => {
+  const client = new FakeClient()
+  const prepared = { ok: true, directory: "/test/state/chrome-extension-revision", extension_id: "a".repeat(32), platform: "darwin", open_command: "open '/test/state/chrome-extension-revision'", connect_command: "clawdline browser install-host --mode user_chrome --extension-id " + "a".repeat(32) }
+  client.machineAnswer = prepared
+  const { reader } = seam(client)
+  const result = await reader.fetch("/v1/browser/prepare", post({}, { "Idempotency-Key": "prepare-current" }))
+  assert.equal(result.status, 200)
+  assert.deepEqual(await json(result), prepared)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "prepare-current", "mac-a", "chrome-prepare", {}, "action"])
+  const count = client.calls.length
+  assert.equal((await reader.fetch("/v1/browser/prepare?directory=other", post({}))).status, 501)
+  assert.equal((await reader.fetch("/v1/browser/prepare", post({ directory: "other" }))).status, 501)
+  assert.equal(client.calls.length, count, "unsupported path/body never reaches the machine")
+})

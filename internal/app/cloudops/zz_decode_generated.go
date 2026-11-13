@@ -20,6 +20,7 @@ var generatedDecoders = map[string]genDecoder{
 	"capacity":                           genDecodeCapacity,
 	"chrome-audit":                       genDecodeChromeAudit,
 	"chrome-launch":                      genDecodeChromeLaunch,
+	"chrome-prepare":                     genDecodeChromePrepare,
 	"chrome-remind":                      genDecodeChromeRemind,
 	"chrome-settings":                    genDecodeChromeSettings,
 	"chrome-settings-update":             genDecodeChromeSettingsUpdate,
@@ -663,6 +664,24 @@ func genDecodeChromeLaunch(b body) (plan, LocalRequest, bool) {
 		return plan{}, LocalRequest{}, false
 	}
 	path := "/v1/browser/launch"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeChromePrepare is the `chrome-prepare` row's decode.
+func genDecodeChromePrepare(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/browser/prepare"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = []byte("{}")
