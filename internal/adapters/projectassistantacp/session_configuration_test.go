@@ -101,9 +101,10 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 						}
 						ClaudeCode struct {
 							Options struct {
-								Tools, SettingSources                            []string
-								StrictMcpConfig, AllowDangerouslySkipPermissions bool
-								Settings                                         struct{ AutoMemoryEnabled, AutoDreamEnabled, DisableAllHooks bool }
+								Tools, SettingSources                                     []string
+								StrictMcpConfig, AllowDangerouslySkipPermissions          bool
+								PersistSession, PromptSuggestions, AgentProgressSummaries *bool
+								Settings                                                  struct{ AutoMemoryEnabled, AutoDreamEnabled, DisableAllHooks bool }
 							}
 						}
 					}
@@ -111,6 +112,11 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 						t.Fatal(err)
 					}
 					o := meta.ClaudeCode.Options
+					for _, value := range []*bool{o.PersistSession, o.PromptSuggestions, o.AgentProgressSummaries} {
+						if value == nil || *value {
+							t.Fatal("native persistence or background models enabled")
+						}
+					}
 					if meta.SystemPrompt.Append != q.Bot.Instructions.Text || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools == nil || len(o.Tools) != 0 || o.SettingSources == nil || len(o.SettingSources) != 0 || !o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || !o.Settings.DisableAllHooks {
 						t.Fatal("Claude owned preset", string(request))
 					}

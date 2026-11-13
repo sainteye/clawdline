@@ -532,3 +532,15 @@ excerpt or opaque provider summary is silently substituted for filtered memory.
 Unfinished references grant no replay authority. The existing conditional card,
 source excerpt and both language versions describe this addition; native
 readiness and the eventual public website snapshot remain separate acceptance.
+
+
+The first installed Claude Bot route adds explicit local artifact setup and
+OS controls to the existing lazy production Host. Setup starts no native
+adapter and establishes neither login nor model access. Its session settings
+disable native transcript persistence, prompt suggestions and progress
+summaries; a new process reconstructs the app's filtered context. Review of
+the persistent-Bot card in English and Traditional Chinese distinguishes
+those controls from live-provider evidence. The unrelated Antigravity launch
+context is unchanged; its source link follows the CLI entry-point movement.
+The public website snapshot still follows approval and publication of the
+reviewed product tree.

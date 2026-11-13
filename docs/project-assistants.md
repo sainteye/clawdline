@@ -9,6 +9,10 @@ product acceptance and does not make either native provider available.
 The machine-readable dispatch input is [project-assistants-handoff.json](project-assistants-handoff.json).
 The source and intentional differences are in [project-assistants-reuse.md](project-assistants-reuse.md).
 
+The [first installed Claude route](project-assistants-native-entry.md) provides
+explicit local setup and the lazy production provider factory. Its local
+readiness checks are separate from real model and release acceptance.
+
 ## One data contract
 
 Contract version: `project-assistants.v1`. Fixture version: `1`. Feature schema

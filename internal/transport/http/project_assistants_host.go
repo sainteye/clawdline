@@ -17,6 +17,7 @@ import (
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	"github.com/sainteye/clawdline/internal/adapters/projectassistanthost"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
@@ -39,7 +40,7 @@ type projectAssistantServer struct {
 	allowed          bool
 	stopped          bool
 	inspectionFailed bool
-	// Private fixture seams; production leaves both nil.
+	// Private fixture overrides; production uses the installed native factory.
 	provider          func() (app.Provider, error)
 	limits            *app.RuntimeLimits
 	beforeViewPublish func()
@@ -104,14 +105,18 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 	if p.limits != nil {
 		limits = *p.limits
 	}
+	provider := p.provider
+	if provider == nil {
+		provider = func() (app.Provider, error) { return projectassistantacp.InstalledClaudeProvider(s.cfg.Dir), nil }
+	}
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
 		Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit,
 		Projects:          projectAssistantProjects{s}, Broker: s.broker, Clock: time.Now,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
-		Source: s.projectAssistantSource, Provider: p.provider,
-		// NativeWork and DispatchPolicy require separately verified adapters
-		// and source-owned exact claims; absence is deliberately fail closed.
+		Source: s.projectAssistantSource, Provider: provider,
+		// The provider receives only execution-bound NativeTools from Host.
+		// Dispatch still requires separate source-owned exact claims.
 	})
 	if err != nil {
 		p.mu.Lock()

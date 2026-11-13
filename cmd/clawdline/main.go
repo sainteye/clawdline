@@ -101,6 +101,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "project-assistants":
+		os.Exit(projectAssistantsCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdout, os.Stderr))
 	case "provider":
 		os.Exit(providerObserveCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdin, os.Stdout, os.Stderr))
 	case "serve":

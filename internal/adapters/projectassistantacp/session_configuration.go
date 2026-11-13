@@ -68,7 +68,8 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 			"claudeCode": map[string]any{"options": map[string]any{
 				"tools": []string{}, "settingSources": []string{}, "strictMcpConfig": true,
 				"allowDangerouslySkipPermissions": false,
-				"settings":                        map[string]any{"autoMemoryEnabled": false, "autoDreamEnabled": false, "disableAllHooks": true},
+				"persistSession":                  false, "promptSuggestions": false, "agentProgressSummaries": false,
+				"settings": map[string]any{"autoMemoryEnabled": false, "autoDreamEnabled": false, "disableAllHooks": true},
 			}},
 		}
 	case pa.Codex:

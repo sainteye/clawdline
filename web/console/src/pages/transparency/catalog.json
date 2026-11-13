@@ -2372,7 +2372,7 @@
         },
         {
           "path": "cmd/clawdline/main.go",
-          "line": 330
+          "line": 347
         },
         {
           "path": "internal/adapters/projects/launch.go",
@@ -3430,6 +3430,22 @@
         {
           "path": "internal/adapters/projectassistantacp/mcp.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/installation.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/installation_isolation.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/project_assistants_host.go",
+          "line": 1
+        },
+        {
+          "path": "cmd/clawdline/project_assistants.go",
+          "line": 1
         }
       ],
       "original": [
@@ -3486,13 +3502,16 @@
         "Source-machine persistent Bot turn snapshot",
         "ACP session/prompt text blocks",
         "ACP session/new and session/load settings",
-        "Owned MCP tool descriptions and schemas"
+        "Owned MCP tool descriptions and schemas",
+        "Local installed Claude setup and OS controls",
+        "Per-execution native scratch directory"
       ]
     }
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "5577de4fd31130abc10f4fc057a9535791db81cbb3e2e2e9fefa6083ab3c5b40",
+    "cmd/clawdline/main.go": "1e670ab828c498f072751572fbc627836e95ec677c3dc52df503a818d51450e3",
+    "cmd/clawdline/project_assistants.go": "3dcd821debb88c1f7b1e1cb79bb2d5be8beccf523935bfd248f5c18945c191d6",
     "cmd/clawdline/session.go": "cafde1e2256317a25731543da5579b293cc47a83e48f0ff9c98fbf46309e283b",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3527,8 +3546,10 @@
     "internal/adapters/planner/voice_work.go": "a687718d648d1924327a74a9a973dd7c34a8d94c7c7d8fb7cb14067019823595",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
     "internal/adapters/projectassistantacp/client.go": "527105f02769fb26a55c21b3ee9b82588fe3188c8946adb4838a358a4fd78cca",
+    "internal/adapters/projectassistantacp/installation.go": "ca758eb0b55f14b280199eb5de199bff21d74eb9902e4c78e696dcc163e4a3d1",
+    "internal/adapters/projectassistantacp/installation_isolation.go": "cf04f7a98f642f000408346c37f2e937899898ea406c6927b6594dff9956b591",
     "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
-    "internal/adapters/projectassistantacp/session_configuration.go": "84370b98b696c8a81ddc9bd6d934b0b745c7acf472785e3f929a7dbfef7d9465",
+    "internal/adapters/projectassistantacp/session_configuration.go": "88601599acf7e706a4a4475f25b2c106738f1d0a6f6236b70cb8261d794d6d20",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -3589,6 +3610,7 @@
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
     "internal/transport/http/integration_settings.go": "bd8e1338d9d1383e6a4096f7cac005e0a5109ea926aa0d574d1c9cffa7b11962",
+    "internal/transport/http/project_assistants_host.go": "25dcf20579f172e2b498b5e140bef3c7f844841a7a80e600d06bc5559104583a",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "9d269ca8d986662ac80cdcb9fc76ea7b898c246b766e40d3c77576b0501e17fd",
     "internal/transport/http/session_naming_context.go": "524e877e5147fe959956900d90056febb7ef2038363f40864ed1b6cede839cb6",
@@ -3630,7 +3652,7 @@
     "web/console/src/voice-work/runtime.ts": "278b3b8bcfce334142062b98e37e8b9229de96dc1fdca92531ed863fea56f656"
   },
   "copyChecks": {
-    "en": "af0e0c1047a80b4bd8bb6110aba2a750a8eeec9ccbf7d54e1a1e444b6673b85f",
-    "zh-Hant": "884dc7205d828c68eda777bdbd514c14d60a180048c3c8680e57e4b9f00a4320"
+    "en": "3b911d2e8265d2d878335d116593d9ae6a79d6fcc6be411a96c292cc538f885a",
+    "zh-Hant": "2124b76158dd1675a8b1023ead288a615652d1584eef2b81a816baa3a145e0fd"
   }
 }

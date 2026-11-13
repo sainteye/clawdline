@@ -284,5 +284,7 @@
   "project.devstack_failed": "clawdline project devstack: %v\n",
   "project.devstack_flag_json": "print the matching stacks as JSON",
   "todo.take_usage": "       clawdline todo take [--conversation id] [--key k] [--port n] <to-do id>",
-  "todo.take_needs_id": "clawdline %s: name the to-do id to take\n"
+  "todo.take_needs_id": "clawdline %s: name the to-do id to take\n",
+  "project_assistants.setup_failed": "Claude setup was refused (%s). No adapter was started.\n",
+  "project_assistants.setup_usage": "Usage: clawdline project-assistants setup-claude --node PATH --adapter PATH --cli PATH\n"
 }
