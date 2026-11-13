@@ -45,7 +45,7 @@ func TestLaunchStartsChromiumOnClawdlinesOwnProfile(t *testing.T) {
 		t.Fatalf("the stand-in Chromium never ran: %v", err)
 	}
 	ext, _ := filepath.EvalSymlinks(ExtensionDir(dir))
-	for _, want := range []string{"--user-data-dir=" + ProfileDir(dir), "--load-extension=" + ext, "--disable-extensions-except=" + ext, "--use-mock-keychain", "about:blank"} {
+	for _, want := range []string{"--user-data-dir=" + ProfileDir(dir), "--load-extension=" + ext, "--disable-extensions-except=" + ext, "--use-mock-keychain", "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "about:blank"} {
 		if !strings.Contains(string(got), want+"\n") {
 			t.Errorf("argument %q missing from:\n%s", want, got)
 		}

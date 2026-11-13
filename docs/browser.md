@@ -169,7 +169,11 @@ writes the extension carried in the binary (`extension/embed.go`) to
 Playwright browser, including its newer Chrome for Testing layouts) on that profile with the extension loaded. Installed revisions are compared numerically. Sign-ins made there stay in that
 profile and are separate from the person's Chrome. It passes `--use-mock-keychain`, so its cookies
 are not protected by the macOS keychain; it is meant for sites the person chooses to sign in to
-there. The logic is `internal/adapters/browserlaunch`, which the daemon calls too.
+there. It also passes `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`
+and `--disable-background-timer-throttling`: on 2026-11-13, with the display asleep and the system
+awake, the tester's pages turned hidden and every phone screenshot timed out after 30 s, so the
+panel showed black; relaunched with these switches the page stayed visible and screenshots kept
+answering. The display-sleep setting itself stays the person's. The logic is `internal/adapters/browserlaunch`, which the daemon calls too.
 
 Chrome can keep an unpacked extension's installed service worker across a full browser restart,
 even after its files and manifest version changed. Each embedded payload therefore has its own

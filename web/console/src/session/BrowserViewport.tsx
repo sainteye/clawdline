@@ -12,9 +12,9 @@ type Shot = { data: string; width: number; height: number; url: string; title: s
  * Gestures change only this view. Only a released, unmoved single pointer may
  * become a browser click, and its coordinates come from the transformed image.
  */
-export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onCloseKeyboard, layoutControl }: {
+export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onFocusKeyboard, onCloseKeyboard, layoutControl }: {
   shot: Shot; canClick: boolean; person: boolean; onTap: (x: number, y: number) => Promise<InputReceipt>;
-  onKeyboard: (kind: string, ready: Promise<boolean>) => void; onCloseKeyboard: () => void; layoutControl: ReactNode;
+  onKeyboard: (kind: string, ready: Promise<boolean>) => void; onFocusKeyboard: () => void; onCloseKeyboard: () => void; layoutControl: ReactNode;
 }) {
   const frame = useRef<HTMLDivElement>(null)
   const image = useRef<HTMLImageElement>(null)
@@ -24,6 +24,15 @@ export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onC
   const press = useRef<Point | null>(null)
   const pressRemote = useRef<Point | null>(null)
   const moved = useRef(false)
+  // iOS Safari raises its keyboard for a programmatic focus inside touchend,
+  // not inside pointerup. A phone tap on a pictured field reached the page,
+  // but the footer editor stayed unfocused until the person tapped it.
+  const focusOnTouchEnd = useRef(false)
+  // After that, iOS still sends compatibility mouse events and a click, which
+  // focus this tabbable picture: the footer editor flashed and lost focus.
+  // Cancel them in touchend, and hand a focus that arrives right after a
+  // field tap back to the editor.
+  const fieldTapAt = useRef(0)
   const mode = useRef<"fit" | "native" | "custom">(window.matchMedia("(pointer: coarse) and (max-width: 899px)").matches ? "native" : "fit")
   const fitted = useRef(0)
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -125,8 +134,8 @@ export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onC
     const answer = onTap(remote.x, remote.y)
     // The visible footer editor receives focus in the trusted tap. Its DOM
     // identity is independent of screenshots and editable geometry refreshes.
-    if (field) onKeyboard(field.kind, answer.then(value => value.ok && value.editable !== null))
-    else onCloseKeyboard()
+    if (field) { onKeyboard(field.kind, answer.then(value => value.ok && value.editable !== null)); focusOnTouchEnd.current = event.pointerType === "touch"; fieldTapAt.current = Date.now() }
+    else { fieldTapAt.current = 0; onCloseKeyboard() }
   }
 
   return <div className="browser-picture">
@@ -139,6 +148,8 @@ export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onC
     </div>
     <div className="browser-viewport" ref={frame} tabIndex={0} aria-label={nextWord(person ? "browserPanelTapHint" : "browserPanelMoveHint")} data-person={person ? "true" : undefined}
       onPointerDown={start} onPointerMove={move} onPointerUp={(e) => finish(e)} onPointerCancel={(e) => finish(e, true)} onLostPointerCapture={(e) => finish(e, true)}
+      onTouchEnd={(e) => { if (focusOnTouchEnd.current) { focusOnTouchEnd.current = false; if (e.cancelable) e.preventDefault(); onFocusKeyboard() } }}
+      onFocus={(e) => { if (e.target === e.currentTarget && Date.now() - fieldTapAt.current < 1000) onFocusKeyboard() }}
       onKeyDown={(e) => {
         if (e.key === "+" || e.key === "=") { e.preventDefault(); scaleTo(view.scale * 1.5) }
         else if (e.key === "-") { e.preventDefault(); scaleTo(view.scale / 1.5) }

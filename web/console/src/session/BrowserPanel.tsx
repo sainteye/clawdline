@@ -263,7 +263,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         {shotError ? <div className="screen-note err" role="alert">{(shotError as { code?: string })?.code === "browser_other_debugger" ? nextWord("browserPanelOtherDebugger") : said(shotError, "browserPanelReadFailed")}</div> : null}
         {shot && !otherDebugger && (
           <BrowserViewport key={scopeKey + ":" + (shot.layout || "desktop")} shot={shot} canClick={!busy && !controlBusy} person={person} onTap={tap}
-            onKeyboard={(kind, ready) => nativeKeyboard.current?.open(kind, ready)} onCloseKeyboard={() => nativeKeyboard.current?.close()}
+            onKeyboard={(kind, ready) => nativeKeyboard.current?.open(kind, ready)} onFocusKeyboard={() => nativeKeyboard.current?.open()} onCloseKeyboard={() => nativeKeyboard.current?.close()}
             layoutControl={<label className="browser-mode"><span className="sr-only">{nextWord("browserPanelLayout")}</span>
               <select aria-label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy} onChange={e => void changeLayout(e.target.value)}>
                 <option value="mobile">{nextWord("browserPanelMobile")}</option><option value="desktop">{nextWord("browserPanelDesktop")}</option>
@@ -298,7 +298,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         <div className="browser-controls">
           <BrowserComposer key={scopeKey} keyboardRef={nativeKeyboard} person={person}
             available={ready && !otherDebugger && !controlBusy && !busy}
-            onPrepare={ensureControl} onSend={text => act("type", { text })} />
+            onPrepare={ensureControl} onSend={text => act("type", { text })} onDelete={() => void act("key", { key: "Backspace" })} />
           <div className="browser-who" data-person={person ? "true" : undefined}>
             <span aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</span>
             <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={controlBusy || otherDebugger} onClick={() => void control(!person)}>
@@ -312,7 +312,6 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
               <button type="button" className="browser-keyboard-open" disabled={busy || controlBusy || otherDebugger} onClick={() => { nativeKeyboard.current?.open(); setToolsOpen(false) }}>{nextWord("browserPanelKeyboard")}</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Tab" })}>Tab</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Enter" })}>Enter</button>
-              <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Backspace" })}>{nextWord("browserPanelKeyBackspace")}</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "up" })}>{nextWord("browserPanelScrollUp")}</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "down" })}>{nextWord("browserPanelScrollDown")}</button>
             </div>

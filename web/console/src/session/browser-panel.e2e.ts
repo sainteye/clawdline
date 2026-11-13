@@ -277,6 +277,11 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await run(`window.__touchedField=document.getElementById('browser-native-keyboard');true`)
       await tap(hit.x,hit.y,name==="phone"&&ui==="zh-Hant"&&width===390)
       assert.equal(await run(`document.activeElement === window.__touchedField`),true,"the visible footer editor is focused before Cloud approves takeover")
+      // iOS follows a tap with compatibility mouse events and a click that can
+      // focus the tabbable picture; the person saw the footer flash and lose focus.
+      await run(`document.querySelector('.browser-viewport').focus();true`)
+      await run(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`)
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"a focus the tap hands to the picture returns to the footer editor")
       await browser.send("Input.insertText",{text:"中文試用"},id)
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,[],"typing cannot pass an unconfirmed takeover")
       const other=desktopFields[1]
@@ -303,8 +308,13 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.frames>=${pendingFrames + 2})`)
       assert.equal(await run(`document.activeElement === window.__touchedField`),true,"a pending send and screenshot refresh never disable or blur the editor")
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段")
+      // The person could not tell that text was on its way; the button says so.
+      const sending=ui==="en"?"Sending…":"送出中…", sent=ui==="en"?"Sent":"已送出"
+      assert.equal(await run(`document.querySelector('.browser-composer button').getAttribute('aria-busy')`),"true")
+      assert.ok((await run(`document.querySelector('.browser-composer button').textContent`)).includes(sending),"the Send button shows that text is being sent")
       await fetch(origin+"/__fixture/release-type")
       await until(`!document.querySelector('.browser-input-pending')`)
+      await until(`document.querySelector('.browser-composer button').textContent.includes(${JSON.stringify(sent)})`)
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段","acknowledgement preserves the next draft")
       await run(`document.getElementById('browser-native-keyboard').select()`)
       await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
@@ -325,6 +335,24 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"12","Backspace edits the local draft without a remote keystroke")
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,[])
+      // Delete beside Send text removes a character from the page field and,
+      // like Send text, never takes focus: the phone keyboard stays up.
+      const del=await run(`(()=>{const r=document.querySelector('.browser-composer-delete').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`)
+      await tap(del.x,del.y)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.keys.length===1)`)
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,["Backspace"],"Delete sends one Backspace to the page")
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"Delete keeps the footer editor focused")
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"12","Delete leaves the local draft alone")
+      // The keyboard's own Backspace edits the draft while it has text and,
+      // once it is empty, reaches the page field like Delete.
+      for (let i=0;i<3;i++){
+        await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+        await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+      }
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"","two Backspaces empty the draft")
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.keys.length===2)`)
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,["Backspace","Backspace"],"a Backspace on an empty draft reaches the page")
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"forwarding Backspace keeps the footer editor focused")
       if(name==="phone"){
         await run(`Object.defineProperty(window.visualViewport,'height',{configurable:true,value:Math.round(innerHeight*.58)});window.visualViewport.dispatchEvent(new Event('resize'))`)
         await until(`document.getElementById('browser-panel').getBoundingClientRect().height<innerHeight*.7`)
