@@ -57,7 +57,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsEventRows:           pure,
 		capacity.BotsActors:              count(func(u app.RuntimeUsage) int { return u.ActiveActors }, "actual Host.Usage actors; pending or unknown cleanup is not known zero"),
 		capacity.BotsProcesses:           count(func(u app.RuntimeUsage) int { return u.Processes }, "actual Host.Usage process slots, including unresolved owners; not native readiness"),
-		capacity.BotsRPCPending:          sessions(func(u app.SessionUsage) int { return u.PendingRPC }, "largest session-reported pending RPC occupancy; no provider is configured in production"),
+		capacity.BotsRPCPending:          sessions(func(u app.SessionUsage) int { return u.PendingRPC }, "largest shared ACP request/owned MCP connection occupancy; no provider is configured in production"),
 		capacity.BotsPermissions:         sessions(func(u app.SessionUsage) int { return u.PendingPermissions }, "largest session-reported pending permission occupancy"),
 		capacity.BotsNotifications:       sessions(func(u app.SessionUsage) int { return u.QueuedNotifications }, "largest session-reported native notification queue"),
 		capacity.BotsFrames:              unobserved,

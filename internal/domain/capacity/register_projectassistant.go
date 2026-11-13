@@ -54,7 +54,7 @@ func projectAssistantBounds() []Entry {
 			Sources: []string{"internal/domain/capacity.MaximumBotProcesses", "internal/app/projectassistant.NewRuntime:chan(o.Limits.MaxProcesses)"}},
 		{Name: BotsRPCPending, Class: Buffer, Unit: Rows, Limit: MaximumBotRPCPending, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/capacity.MaximumBotRPCPending"}},
+			Sources: []string{"internal/domain/capacity.MaximumBotRPCPending", "internal/adapters/projectassistantacp.NewClient:chan(l.RPCPending)"}},
 		{Name: BotsPermissions, Class: Buffer, Unit: Rows, Limit: MaximumBotPermissions, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotPermissions"}},

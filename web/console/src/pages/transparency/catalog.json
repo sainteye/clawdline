@@ -3409,7 +3409,7 @@
       "sources": [
         {
           "path": "internal/adapters/projectassistantacp/client.go",
-          "line": 238
+          "line": 288
         },
         {
           "path": "internal/app/projectassistant/runtime.go",
@@ -3421,6 +3421,14 @@
         },
         {
           "path": "internal/app/projectassistant/session_handoff.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/session_configuration.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/mcp.go",
           "line": 1
         }
       ],
@@ -3442,6 +3450,10 @@
         "\t\ttext = opening + \"\\n\" + q.Text\n",
         "\t}\n",
         "\tc.mu.Lock()\n",
+        "\tif c.permissionsSealed {\n",
+        "\t\tc.mu.Unlock()\n",
+        "\t\treturn nil, refusal(pa.Revoked, \"prompt_lifetime\")\n",
+        "\t}\n",
         "\tif c.turnID != \"\" {\n",
         "\t\tc.mu.Unlock()\n",
         "\t\treturn nil, refusal(pa.CapacityFull, \"active_prompt\")\n",
@@ -3472,7 +3484,9 @@
       ],
       "locations": [
         "Source-machine persistent Bot turn snapshot",
-        "ACP session/prompt text blocks"
+        "ACP session/prompt text blocks",
+        "ACP session/new and session/load settings",
+        "Owned MCP tool descriptions and schemas"
       ]
     }
   ],
@@ -3511,8 +3525,10 @@
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/voice_work.go": "a687718d648d1924327a74a9a973dd7c34a8d94c7c7d8fb7cb14067019823595",
-    "internal/adapters/projectassistantacp/capabilities.go": "8f41f5b889d4f1d2dbdd0681ae3a946e338584f251fdf4ae6df95d77795a75e0",
-    "internal/adapters/projectassistantacp/client.go": "779bba966f1533a646f8ed24f2c67186a84b4577c18b4bdfe64449e346ded234",
+    "internal/adapters/projectassistantacp/capabilities.go": "94b743c0f2eb96c4cecabd68a038731dfdf6da70124432965b3bda9771474834",
+    "internal/adapters/projectassistantacp/client.go": "527105f02769fb26a55c21b3ee9b82588fe3188c8946adb4838a358a4fd78cca",
+    "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
+    "internal/adapters/projectassistantacp/session_configuration.go": "84370b98b696c8a81ddc9bd6d934b0b745c7acf472785e3f929a7dbfef7d9465",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -3614,7 +3630,7 @@
     "web/console/src/voice-work/runtime.ts": "278b3b8bcfce334142062b98e37e8b9229de96dc1fdca92531ed863fea56f656"
   },
   "copyChecks": {
-    "en": "9ee7cc5d6eab39718965376cc05fbd63bf5c7806522535a4ea8ef3dd21f60b3c",
-    "zh-Hant": "36600ccc21dfaa34c5120c2b6967a90c937c98e3151a503aeda97429a7fb7930"
+    "en": "af0e0c1047a80b4bd8bb6110aba2a750a8eeec9ccbf7d54e1a1e444b6673b85f",
+    "zh-Hant": "884dc7205d828c68eda777bdbd514c14d60a180048c3c8680e57e4b9f00a4320"
   }
 }

@@ -5,6 +5,7 @@ package projectassistantacp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -29,6 +30,10 @@ type ProviderOptions struct {
 	// ReadOnlyPermission classifies the actual native tool payload. A missing
 	// classifier denies allow options; option labels are never authority.
 	ReadOnlyPermission func([]byte) bool
+	// OpenMCP optionally overrides the built-in bounded loopback server.
+	// Without an override, Open requires host-bound OpenRequest.Tools.
+	// Metadata reads/Capabilities never allocate a listener.
+	OpenMCP func(context.Context, app.OpenRequest) (OwnedMCP, error)
 }
 type Provider struct{ o ProviderOptions }
 
@@ -57,54 +62,96 @@ func NewProvider(o ProviderOptions) (*Provider, error) {
 }
 
 func (p *Provider) Capabilities(ctx context.Context, bot pa.Bot) (pa.Capabilities, error) {
+	_, caps, err := p.admit(ctx, bot)
+	return caps, err
+}
+
+func (p *Provider) admit(ctx context.Context, bot pa.Bot) (Configuration, pa.Capabilities, error) {
 	caps := pa.Capabilities{Key: bot.Key, Project: bot.Project, Agent: bot.Agent, NativeMemory: pa.NativeMemoryUnknown}
 	c, ok := p.o.Configurations[bot.Agent]
 	if !ok {
-		return caps, refusal(pa.AdapterNotFound, "trusted_executable")
+		return c, caps, refusal(pa.AdapterNotFound, "trusted_executable")
 	}
 	info, err := os.Stat(c.Executable)
 	if err != nil || !info.Mode().IsRegular() {
-		return caps, refusal(pa.AdapterNotFound, "trusted_executable")
+		return c, caps, refusal(pa.AdapterNotFound, "trusted_executable")
 	}
 	if p.o.Verify == nil {
-		return caps, refusal(pa.ReadOnlyUnverified, "native_evidence")
+		return c, caps, refusal(pa.ReadOnlyUnverified, "native_evidence")
 	}
 	caps, err = p.o.Verify(ctx, bot, c)
 	if err != nil {
-		return caps, err
+		return c, caps, err
 	}
 	if caps.Agent != bot.Agent || caps.Key != bot.Key || caps.Project != bot.Project {
-		return caps, refusal(pa.ScopeDenied, "capability_scope")
+		return c, caps, refusal(pa.ScopeDenied, "capability_scope")
 	}
 	if err = pa.CheckCapabilities(caps); err != nil {
-		return caps, err
+		return c, caps, err
 	}
-	return caps, nil
+	return c, caps, nil
 }
 
 func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
-	caps, err := p.Capabilities(ctx, q.Bot)
+	if sink == nil {
+		return nil, refusal(pa.Invalid, "acp_client")
+	}
+	if err := pa.CheckFence(q.Binding.Fence, q.Binding.Fence); err != nil {
+		return nil, err
+	}
+	c, caps, err := p.admit(ctx, q.Bot)
 	if err != nil {
 		return nil, err
 	}
 	if err = pa.CheckExecutionCapabilities(caps, q.Binding.Fence); err != nil {
 		return nil, err
 	}
+	if q.Binding.Revoked || q.Binding.Agent != q.Bot.Agent || q.Binding.Fence.ConversationID != q.Bot.ConversationID || q.Binding.InstructionRevision != q.Bot.Instructions.Revision {
+		return nil, refusal(pa.ScopeDenied, "execution_binding")
+	}
 	if q.Resume && (!caps.Resume || q.Binding.NativeSessionID == "") {
 		return nil, refusal(pa.ResumeUnsupported, "native_session")
 	}
-	c := p.o.Configurations[q.Bot.Agent]
+	if caps.SendMessage && (p.o.Limits.RPCPending < 2 || q.Tools == nil && p.o.OpenMCP == nil) {
+		return nil, refusal(pa.AdapterNotFound, "owned_mcp")
+	}
 	proc, err := StartProcess(ctx, ProcessOptions{Configuration: c, Directory: q.Directory, Limits: p.o.Limits})
 	if err != nil {
 		return nil, err
 	}
 	client, err := NewClient(proc, p.o.Limits, q.Binding.Fence, sink, p.o.ReadOnlyPermission)
 	if err != nil {
-		_ = proc.Close(ctx)
-		return nil, err
+		cleanup, cancel := context.WithTimeout(context.Background(), p.o.Limits.CleanupTimeout)
+		defer cancel()
+		return nil, errors.Join(err, proc.Close(cleanup))
 	}
-	if err = client.initialize(ctx, q); err != nil {
-		_ = client.Close(ctx)
+	client.adapterVersion = caps.AdapterVersion
+	if caps.SendMessage {
+		var lease OwnedMCP
+		if p.o.OpenMCP != nil {
+			lease, err = p.o.OpenMCP(ctx, q)
+		} else {
+			lease, err = client.openMCP(ctx, q)
+		}
+		// A partial allocation remains owned even when its factory fails.
+		if lease.Revoke != nil || lease.URL != "" || lease.BearerToken != "" {
+			client.ownedMCP = &lease
+		}
+		if err == nil {
+			err = lease.validate(q.Binding.Fence)
+		}
+	}
+	if err == nil {
+		err = client.initialize(ctx, q)
+	}
+	if err != nil {
+		cleanup, cancel := context.WithTimeout(context.Background(), p.o.Limits.CleanupTimeout)
+		defer cancel()
+		if cleanupErr := client.Close(cleanup); cleanupErr != nil {
+			// Engine retains this handle and slot until an explicit cleanup
+			// succeeds. Returning nil would discard the partial resource.
+			return client, errors.Join(refusal(pa.ExecutionEffectUnknown, "owned_cleanup"), err, cleanupErr)
+		}
 		return nil, err
 	}
 	return client, nil

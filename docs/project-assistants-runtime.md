@@ -103,8 +103,9 @@ verified read-only allow-once option through the same durable Answer path.
 ACP `session/update` agent message chunks become trace and bounded partial text.
 The owned `clawdline/send_message` RPC supports explicit visible replies in the
 scripted transport. Real provider integration must install an authenticated
-owned MCP chat server using Engine.Publish; this module does not claim that
-arbitrary native adapters already implement that extension. Unknown filesystem,
+owned MCP chat server using Engine.Publish. The bounded transport and host
+composition are described in [Owned Bot tools over MCP](project-assistants-owned-mcp.md);
+arbitrary native adapters are not assumed to implement the scripted extension. Unknown filesystem,
 terminal and MCP client requests are rejected. Native in-process tools still
 require a separately verified sandbox at admission.
 

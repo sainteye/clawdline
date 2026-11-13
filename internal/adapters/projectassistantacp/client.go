@@ -34,31 +34,41 @@ type incoming struct {
 	completion chan response
 }
 type nativePermission struct {
+	turnID  string
 	id      json.RawMessage
 	options map[string]pa.PermissionOption
 }
 
 type Client struct {
-	p           *Process
-	l           Limits
-	fence       pa.Fence
-	sink        func(context.Context, app.ProtocolEvent) error
-	readOnly    func([]byte) bool
-	mu          sync.Mutex
-	next        uint64
-	pending     map[string]chan response
-	permissions map[string]nativePermission
-	queue       chan incoming
-	done        chan struct{}
-	workerDone  chan struct{}
-	stop        sync.Once
-	failure     error
-	sessionID   string
-	turnID      string
-	partial     string
-	sequence    uint64
-	ctx         context.Context
-	cancel      context.CancelFunc
+	p                 *Process
+	l                 Limits
+	fence             pa.Fence
+	sink              func(context.Context, app.ProtocolEvent) error
+	readOnly          func([]byte) bool
+	mu                sync.Mutex
+	next              uint64
+	pending           map[string]chan response
+	permissions       map[string]nativePermission
+	queue             chan incoming
+	done              chan struct{}
+	workerDone        chan struct{}
+	stop              sync.Once
+	failure           error
+	sessionID         string
+	turnID            string
+	partial           string
+	sequence          uint64
+	ctx               context.Context
+	cancel            context.CancelFunc
+	adapterVersion    string
+	ownedMCP          *OwnedMCP
+	mcpMu             sync.Mutex
+	mcpRevoked        bool
+	permissionsSealed bool
+	cancelled         bool
+	promptID          string
+	answerMu          sync.Mutex
+	rpcSlots          chan struct{}
 }
 
 func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, app.ProtocolEvent) error, readOnly func([]byte) bool) (*Client, error) {
@@ -72,7 +82,7 @@ func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, 
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Client{p: p, l: l, fence: fence, sink: sink, readOnly: readOnly, pending: make(map[string]chan response), permissions: make(map[string]nativePermission), queue: make(chan incoming, l.Notifications), done: make(chan struct{}), workerDone: make(chan struct{}), ctx: ctx, cancel: cancel}
+	c := &Client{p: p, l: l, fence: fence, sink: sink, readOnly: readOnly, pending: make(map[string]chan response), permissions: make(map[string]nativePermission), queue: make(chan incoming, l.Notifications), done: make(chan struct{}), workerDone: make(chan struct{}), ctx: ctx, cancel: cancel, rpcSlots: make(chan struct{}, l.RPCPending)}
 	go c.consume()
 	go c.read()
 	return c, nil
@@ -82,8 +92,17 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	var initialized struct {
 		ProtocolVersion   int `json:"protocolVersion"`
 		AgentCapabilities struct {
-			LoadSession bool `json:"loadSession"`
+			LoadSession     bool `json:"loadSession"`
+			MCPCapabilities struct {
+				HTTP bool `json:"http"`
+			} `json:"mcpCapabilities"`
+			SessionCapabilities map[string]json.RawMessage `json:"sessionCapabilities"`
+			Meta                map[string]json.RawMessage `json:"_meta"`
 		} `json:"agentCapabilities"`
+		AgentInfo struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		} `json:"agentInfo"`
 	}
 	b, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}})
 	if err != nil {
@@ -95,7 +114,22 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	if initialized.ProtocolVersion != 1 {
 		return refusal(pa.ProviderVersionUnsupported, "acp_protocol_version")
 	}
-	params := map[string]any{"cwd": q.Directory, "mcpServers": []any{}}
+	if c.adapterVersion != "" && (initialized.AgentInfo.Version != c.adapterVersion || initialized.AgentInfo.Name != adapterPackage(q.Bot.Agent)) {
+		return refusal(pa.ProviderVersionUnsupported, "acp_adapter_identity")
+	}
+	if q.Bot.Agent == pa.Codex && !hasCapability(initialized.AgentCapabilities.SessionCapabilities["systemPrompt"]) {
+		return refusal(pa.Unsupported, "system_prompt")
+	}
+	if q.Bot.Agent == pa.ClaudeCode && !hasCapability(initialized.AgentCapabilities.Meta["claudeCode"]) {
+		return refusal(pa.Unsupported, "claude_session_options")
+	}
+	if c.ownedMCP != nil && !initialized.AgentCapabilities.MCPCapabilities.HTTP {
+		return refusal(pa.Unsupported, "http_mcp")
+	}
+	params, err := sessionParameters(q, c.ownedMCP)
+	if err != nil {
+		return err
+	}
 	method := "session/new"
 	if q.Resume {
 		if !initialized.AgentCapabilities.LoadSession {
@@ -132,7 +166,7 @@ func (c *Client) SessionID() string { c.mu.Lock(); defer c.mu.Unlock(); return c
 
 func (c *Client) Usage() app.SessionUsage {
 	c.mu.Lock()
-	usage := app.SessionUsage{PendingRPC: len(c.pending), PendingPermissions: len(c.permissions), QueuedNotifications: len(c.queue), CapturedBytes: len(c.partial)}
+	usage := app.SessionUsage{PendingRPC: len(c.rpcSlots), PendingPermissions: len(c.permissions), QueuedNotifications: len(c.queue), CapturedBytes: len(c.partial)}
 	c.mu.Unlock()
 	c.p.mu.Lock()
 	usage.StderrBytes = len(c.p.stderr)
@@ -144,9 +178,11 @@ func (c *Client) fail(err error) {
 	c.stop.Do(func() {
 		c.mu.Lock()
 		c.failure = err
+		c.permissionsSealed = true
+		c.permissions = make(map[string]nativePermission)
 		for key, ch := range c.pending {
 			ch <- response{err: err}
-			delete(c.pending, key)
+			c.removePending(key)
 		}
 		c.mu.Unlock()
 		c.cancel()
@@ -178,7 +214,9 @@ func (c *Client) begin(ctx context.Context, method string, params any) (*pending
 		c.mu.Unlock()
 		return nil, err
 	}
-	if len(c.pending) >= c.l.RPCPending {
+	select {
+	case c.rpcSlots <- struct{}{}:
+	default:
 		c.mu.Unlock()
 		return nil, refusal(pa.CapacityFull, "pending_rpc")
 	}
@@ -186,14 +224,26 @@ func (c *Client) begin(ctx context.Context, method string, params any) (*pending
 	id := strconv.FormatUint(c.next, 10)
 	ch := make(chan response, 1)
 	c.pending[id] = ch
+	if method == "session/prompt" {
+		c.promptID = id
+	}
 	c.mu.Unlock()
 	if err := c.write(ctx, frame{ID: json.RawMessage(id), Method: method, Params: raw(params)}); err != nil {
 		c.mu.Lock()
-		delete(c.pending, id)
+		c.removePending(id)
 		c.mu.Unlock()
 		return nil, err
 	}
 	return &pendingRPC{c: c, id: id, ch: ch}, nil
+}
+
+// removePending holds c.mu; only the owner of an existing entry releases its
+// shared ACP/MCP request slot. Late replies cannot release another request.
+func (c *Client) removePending(id string) {
+	if _, ok := c.pending[id]; ok {
+		delete(c.pending, id)
+		<-c.rpcSlots
+	}
 }
 
 type pendingRPC struct {
@@ -210,7 +260,7 @@ func (p *pendingRPC) wait(ctx context.Context) (json.RawMessage, error) {
 		return x.value, x.err
 	case <-ctx.Done():
 		p.c.mu.Lock()
-		delete(p.c.pending, p.id)
+		p.c.removePending(p.id)
 		p.c.mu.Unlock()
 		err := refusal(pa.ExecutionEffectUnknown, "rpc_timeout")
 		p.c.fail(err)
@@ -252,6 +302,10 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 		text = opening + "\n" + q.Text
 	}
 	c.mu.Lock()
+	if c.permissionsSealed {
+		c.mu.Unlock()
+		return nil, refusal(pa.Revoked, "prompt_lifetime")
+	}
 	if c.turnID != "" {
 		c.mu.Unlock()
 		return nil, refusal(pa.CapacityFull, "active_prompt")
@@ -296,6 +350,7 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	}
 	p.rpc.c.mu.Lock()
 	partial := p.rpc.c.partial
+	cancelled := p.rpc.c.cancelled
 	p.rpc.c.turnID = ""
 	p.rpc.c.mu.Unlock()
 	if result.Text == "" {
@@ -304,7 +359,7 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	if len(result.Text) > p.rpc.c.l.CaptureBytes {
 		return app.PromptResult{}, refusal(pa.CapacityFull, "reply_capture")
 	}
-	if result.StopReason == "cancelled" || result.StopReason == "refusal" {
+	if cancelled || result.StopReason == "cancelled" || result.StopReason == "refusal" {
 		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_stopped")
 	}
 	return app.PromptResult{FinalText: result.Text}, nil
@@ -362,7 +417,11 @@ func (c *Client) consume() {
 			if f.Method == "" {
 				c.mu.Lock()
 				ch := c.pending[string(f.ID)]
-				delete(c.pending, string(f.ID))
+				if string(f.ID) == c.promptID {
+					c.permissionsSealed = true
+					c.permissions = make(map[string]nativePermission)
+				}
+				c.removePending(string(f.ID))
 				c.mu.Unlock()
 				if ch != nil {
 					x := response{value: f.Result}
@@ -447,6 +506,12 @@ func (c *Client) handle(f frame) error {
 		}
 		id := string(f.ID)
 		e := c.event("permission-" + id)
+		c.mu.Lock()
+		sealed := c.permissionsSealed || c.failure != nil
+		c.mu.Unlock()
+		if sealed {
+			return c.write(c.ctx, frame{ID: f.ID, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "cancelled"}})})
+		}
 		if e.TurnID == "" {
 			return refusal(pa.StaleGeneration, "permission_turn")
 		}
@@ -462,6 +527,10 @@ func (c *Client) handle(f frame) error {
 			options[o.ID] = o
 		}
 		c.mu.Lock()
+		if c.permissionsSealed || c.failure != nil || c.turnID != e.TurnID {
+			c.mu.Unlock()
+			return c.write(c.ctx, frame{ID: f.ID, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "cancelled"}})})
+		}
 		if len(c.permissions) >= c.l.IncomingPermissions {
 			c.mu.Unlock()
 			return refusal(pa.CapacityFull, "permissions")
@@ -470,7 +539,7 @@ func (c *Client) handle(f frame) error {
 			c.mu.Unlock()
 			return nil
 		}
-		c.permissions[id] = nativePermission{id: append(json.RawMessage(nil), f.ID...), options: options}
+		c.permissions[id] = nativePermission{turnID: e.TurnID, id: append(json.RawMessage(nil), f.ID...), options: options}
 		c.mu.Unlock()
 		e.Permission = &offer
 		return c.sink(c.ctx, e)
@@ -500,10 +569,12 @@ func (c *Client) handle(f frame) error {
 }
 
 func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
+	c.answerMu.Lock()
+	defer c.answerMu.Unlock()
 	c.mu.Lock()
 	p, ok := c.permissions[nativeID]
 	option, exists := p.options[optionID]
-	if !ok || !exists {
+	if !ok || !exists || c.permissionsSealed || c.failure != nil || p.turnID != c.turnID {
 		c.mu.Unlock()
 		return refusal(pa.NotFound, "native_permission")
 	}
@@ -520,7 +591,10 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 	return c.write(ctx, frame{ID: p.id, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": optionID}})})
 }
 func (c *Client) Cancel(ctx context.Context) error {
+	c.answerMu.Lock()
+	defer c.answerMu.Unlock()
 	c.mu.Lock()
+	c.permissionsSealed, c.cancelled = true, true
 	permissions := c.permissions
 	c.permissions = make(map[string]nativePermission)
 	sid := c.sessionID
@@ -533,14 +607,33 @@ func (c *Client) Cancel(ctx context.Context) error {
 	return c.write(ctx, frame{Method: "session/cancel", Params: raw(map[string]string{"sessionId": sid})})
 }
 func (c *Client) Close(ctx context.Context) error {
+	c.answerMu.Lock()
+	defer c.answerMu.Unlock()
 	cleanup, cancel := context.WithTimeout(ctx, c.l.CleanupTimeout)
 	defer cancel()
 	c.fail(refusal(pa.ExecutionEffectUnknown, "closed"))
-	err := c.p.Close(cleanup)
+	err := c.revokeMCP(cleanup)
+	err = errors.Join(err, c.p.Close(cleanup))
 	if !waitOwnedDone(cleanup, c.workerDone) {
-		return errors.Join(err, refusal(pa.ExecutionEffectUnknown, "incoming_cleanup"))
+		err = errors.Join(err, refusal(pa.ExecutionEffectUnknown, "incoming_cleanup"))
 	}
 	return err
+}
+
+func (c *Client) revokeMCP(ctx context.Context) error {
+	c.mcpMu.Lock()
+	defer c.mcpMu.Unlock()
+	if c.ownedMCP == nil || c.mcpRevoked {
+		return nil
+	}
+	if c.ownedMCP.Revoke == nil {
+		return refusal(pa.ExecutionEffectUnknown, "owned_mcp_cleanup")
+	}
+	if err := c.ownedMCP.Revoke(ctx); err != nil {
+		return errors.Join(refusal(pa.ExecutionEffectUnknown, "owned_mcp_cleanup"), err)
+	}
+	c.mcpRevoked = true
+	return nil
 }
 
 var _ app.ProviderSession = (*Client)(nil)

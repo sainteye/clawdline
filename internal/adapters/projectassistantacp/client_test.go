@@ -64,10 +64,32 @@ func TestACPTestPeer(t *testing.T) {
 		}
 		switch f.Method {
 		case "initialize":
-			send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]bool{"loadSession": true}})})
+			if strings.HasPrefix(mode, "configure-") {
+				name := adapterPackage(pa.Codex)
+				if strings.Contains(mode, "claude") {
+					name = adapterPackage(pa.ClaudeCode)
+				}
+				version := "scripted"
+				if strings.Contains(mode, "wrong-version") {
+					version = "wrong"
+				}
+				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": name, "version": version}, "agentCapabilities": map[string]any{"loadSession": true, "mcpCapabilities": map[string]bool{"http": true}, "sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}, "_meta": map[string]any{"claudeCode": map[string]any{}}}})})
+			} else {
+				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]bool{"loadSession": true}})})
+			}
 		case "session/new":
+			if path := os.Getenv("CLAWDLINE_ACP_PARAMS_FILE"); path != "" {
+				if err := os.WriteFile(path, scanner.Bytes(), 0600); err != nil {
+					os.Exit(5)
+				}
+			}
 			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": "scripted-session"})})
 		case "session/load":
+			if path := os.Getenv("CLAWDLINE_ACP_PARAMS_FILE"); path != "" {
+				if err := os.WriteFile(path, scanner.Bytes(), 0600); err != nil {
+					os.Exit(5)
+				}
+			}
 			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": "scripted-session"})})
 		case "session/prompt":
 			promptID = f.ID

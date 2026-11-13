@@ -134,17 +134,18 @@ func (p *ownedProvider) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabili
 	return p.p.Capabilities(ctx, b)
 }
 func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
-	if p.h.o.NativeWork == nil {
-		return p.p.Open(ctx, q, sink)
-	}
 	life, tools, err := p.h.tools(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	unregister, err := p.h.o.NativeWork(ctx, q, tools)
-	life.registered(unregister)
-	if err == nil && unregister == nil {
-		err = failure(pa.Invalid, "native_work_unregister")
+	q.Tools = tools
+	if p.h.o.NativeWork != nil {
+		unregister, registerErr := p.h.o.NativeWork(ctx, q, tools)
+		life.registered(unregister)
+		err = registerErr
+		if err == nil && unregister == nil {
+			err = failure(pa.Invalid, "native_work_unregister")
+		}
 	}
 	if err != nil {
 		life.invalidate()

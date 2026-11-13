@@ -26,6 +26,15 @@ type OpenRequest struct {
 	Binding   pa.ExecutionBinding
 	Directory string
 	Resume    bool
+	// Tools is execution-bound by the host. No model-supplied identity or
+	// machine credential can construct authority through this interface.
+	Tools NativeTools `json:"-"`
+}
+
+type NativeTools interface {
+	SendMessage(context.Context, string, string) error
+	Dispatch(context.Context, string, string, []string) (pa.WorkLink, error)
+	Status(context.Context, string) (pa.WorkLink, error)
 }
 
 // Send performs one bounded write only. Waiting for the model must happen in
@@ -58,6 +67,7 @@ type PromptResult struct{ FinalText string }
 // Usage contains counts only, never prompts, credentials or native stderr.
 // A host can wire these readings into its registered capacity measurements.
 type SessionUsage struct {
+	// PendingRPC includes the shared ACP request/owned MCP connection budget.
 	PendingRPC          int
 	PendingPermissions  int
 	QueuedNotifications int

@@ -1390,7 +1390,8 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/domain/capacity.MaximumBotRPCPending"
+      "internal/domain/capacity.MaximumBotRPCPending",
+      "internal/adapters/projectassistantacp.NewClient:chan(l.RPCPending)"
     ]
   },
   {
