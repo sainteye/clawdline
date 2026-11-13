@@ -624,6 +624,25 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 		s.brokerSessionWorkflow(w, r)
 		return
 	}
+	// Smart naming for the Session that asks (`clawdline session smart-title`):
+	// the same turn as Session info's button, which a paired device reaches
+	// through /v1/sessions/<id>/smart-title. An agent's token cannot use that
+	// route, so a Session told to "use smart naming" had no way to.
+	if action == "smart-title" && r.Method == http.MethodPost {
+		if !machineAuthed(r) {
+			writeAuthRefusal(w, http.StatusForbidden, "forbidden", "Smart naming a Session needs the orchestrator token.")
+			return
+		}
+		if strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+			writeRefusal(w, http.StatusBadRequest, "bad_request",
+				"smart naming needs an Idempotency-Key so one confirmation can spend at most one model turn")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		s.smartSessionTitle(w, r, decodeSegment(terminal), ctx)
+		return
+	}
 	if action != "complete" || r.Method != http.MethodPost {
 		writeNoSuchRoute(w, r)
 		return
