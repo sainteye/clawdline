@@ -227,7 +227,7 @@ test("get_session_activity explains a Session from its transcript, goal first an
   assert.equal(out.last_report, "Twenty runs pass now. Should I push to main?")
   assert.ok(out.recent_activity[2].text.length <= 163, "a command is clipped")
   assert.equal(out.recent_activity[3].text, "ok github.com/example/auth 1.2s")
-  assert.ok(logs.some((l) => l.text.includes("5 筆")))
+  assert.ok(logs.some((l) => l.text.includes("5 records")), "outside a page the log is English")
 })
 
 test("get_session_activity says why when the machine has no transcript", async () => {
@@ -1630,4 +1630,31 @@ test("the machine's recap is asked for in the console's language", async () => {
   await runCopilotTool("get_session_recap", '{"session_id":"%2"}', deps)
   assert.equal(JSON.parse(bodies[0]).language, "en")
   assert.equal("language" in JSON.parse(bodies[1]), false, "outside a page nothing is named, and the machine's language answers")
+})
+
+// The call's screen lists each tool it ran. Those lines were Chinese only
+// until 2026-11-13, whatever the console showed.
+test("the call's tool log follows the console's language", async () => {
+  const deps: ToolDeps = {
+    async fetch(path) {
+      if (path === "/v1/sessions") return Response.json({ sessions: ROWS })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    now: () => 1_000_600,
+  }
+  const page = globalThis as { document?: unknown }
+  const logOf = async (lang: string) => {
+    page.document = { documentElement: { lang } }
+    try {
+      return (await runCopilotTool("list_sessions", "{}", deps)).logs.map((l) => l.text).join("\n")
+    } finally {
+      delete page.document
+    }
+  }
+  const en = await logOf("en"), zh = await logOf("zh-Hant"), hans = await logOf("zh-Hans")
+  assert.match(en, /Ran the tool list_sessions/)
+  assert.doesNotMatch(en, /[\u4e00-\u9fff]{2}/, "an English console's log has no Chinese sentence")
+  assert.match(zh, /執行工具【list_sessions】/)
+  assert.match(hans, /Ran the tool list_sessions/, "Simplified Chinese falls back to English, as untranslated copy does")
 })

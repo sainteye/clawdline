@@ -1257,7 +1257,7 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
     if(deps.progress) await deps.progress(JSON.stringify({label:r.label,...progressFields(words)}))
     return words
   }))
-  logs.push({ level: 'info', text: `讀了 ${shown.length} 個 Session 的摘要（共 ${group.length} 個）` })
+  logs.push({ level: 'info', text: say(`Read the summaries of ${shown.length} Sessions (${group.length} in all)`, `讀了 ${shown.length} 個 Session 的摘要（共 ${group.length} 個）`) })
   return {
     which,
     count: group.length,
@@ -1314,7 +1314,10 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     // alone. The warning sits beside the names it is about.
     content_not_read: CONTENT_NOT_READ,
   }
-  logs.push({ level: 'info', text: `成功讀取 Sessions 清單：${out.summary}` })
+  // `summary` is what the model reads; the screen's English line counts the same groups.
+  const english = ([[out.needs_you.length, 'waiting for you'], [out.working.length, 'working'], [out.done.length, 'done'], [out.idle.length, 'idle']] as [number, string][])
+    .filter(([n]) => n > 0).map(([n, words]) => `${n} ${words}`).join(', ')
+  logs.push({ level: 'info', text: say(`Read the Session list: ${rows.length} Sessions${english ? `, ${english}` : ''}`, `成功讀取 Sessions 清單：${out.summary}`) })
   return out
 }
 
@@ -1617,7 +1620,7 @@ async function sessionUpdates(deps: ToolDeps, logs: ToolLog[], wanted: string): 
   const newest = entries.length ? entries[entries.length - 1] : undefined
   const updates = activityOf(entries)
   markReported(deps, row, newest)
-  logs.push({ level: 'info', text: `讀了「${row.label}」上次匯報之後的 ${updates.length} 筆紀錄` })
+  logs.push({ level: 'info', text: say(`Read ${updates.length} records of "${row.label}" since the last report`, `讀了「${row.label}」上次匯報之後的 ${updates.length} 筆紀錄`) })
   return {
     session_id: row.id,
     label: row.label,
@@ -1663,6 +1666,16 @@ function pageLanguage(): string {
   return typeof document === 'undefined' ? '' : document.documentElement.lang || ''
 }
 
+/**
+ * A tool log line as the call's screen shows it: Taiwan Traditional Chinese
+ * for a console shown in it, English for every other (and outside a page),
+ * as untranslated product copy falls back. These lines were Chinese only
+ * until 2026-11-13.
+ */
+function say(en: string, zh: string): string {
+  return /^(?:zh|zh-hant|zh-tw|zh-hk)(?:-|$)/i.test(pageLanguage()) && !/^zh-hans/i.test(pageLanguage()) ? zh : en
+}
+
 async function machineRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
   let res: Response
   try {
@@ -1675,18 +1688,18 @@ async function machineRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSession
     })
   } catch {
     // refusal-ok: a slow or unreachable recap leaves the call's own read of the record.
-    logs.push({ level: 'info', text: `機器沒有及時整理「${row.label}」的經過，改由副駕駛自己讀` })
+    logs.push({ level: 'info', text: say(`The machine did not recap "${row.label}" in time; the copilot reads it itself`, `機器沒有及時整理「${row.label}」的經過，改由副駕駛自己讀`) })
     return undefined
   }
   if (!res.ok) {
-    logs.push({ level: 'info', text: `機器沒有整理「${row.label}」的經過（HTTP ${res.status}${(await refusalText(res)) ? `：${await refusalText(res)}` : ''}），改由副駕駛自己讀` })
+    logs.push({ level: 'info', text: say(`The machine did not recap "${row.label}" (HTTP ${res.status}${(await refusalText(res)) ? `: ${await refusalText(res)}` : ''}); the copilot reads it itself`, `機器沒有整理「${row.label}」的經過（HTTP ${res.status}${(await refusalText(res)) ? `：${await refusalText(res)}` : ''}），改由副駕駛自己讀`) })
     return undefined
   }
   const body = (await res.json().catch(() => null)) as { recap?: unknown; progress?: unknown; complete?: unknown } | null
   const recap = str(body?.recap).trim()
   if (!recap) return undefined
   const progress = spokenProgress(body?.progress)
-  logs.push({ level: 'info', text: `機器整理好「${row.label}」的經過` })
+  logs.push({ level: 'info', text: say(`The machine recapped "${row.label}"`, `機器整理好「${row.label}」的經過`) })
   return {
     session_id: row.id,
     label: row.label,
@@ -1773,7 +1786,7 @@ async function recapForRow(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionR
   const progress = await boardProgress(deps, row)
   // A delivery's own count may be hours old: each one says when it was written.
   const dated = (d: { text: string; at?: number }) => (whenPhrase(d.at, now) ? { when: whenPhrase(d.at, now), text: d.text } : { text: d.text })
-  logs.push({ level: 'info', text: `成功讀取「${row.label}」經過：${recap.requests.length} 個交代、${recap.deliveries.length} 次交付（讀了 ${recap.pages} 頁）` })
+  logs.push({ level: 'info', text: say(`Read the story of "${row.label}": ${recap.requests.length} requests, ${recap.deliveries.length} deliveries (${recap.pages} pages read)`, `成功讀取「${row.label}」經過：${recap.requests.length} 個交代、${recap.deliveries.length} 次交付（讀了 ${recap.pages} 頁）`) })
   return {
     session_id: row.id,
     label: row.label,
@@ -1851,7 +1864,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
     ...(row.notes ? { notes: row.notes } : {}),
     ...(!row.delivered && !lastReply ? { note: '這個 Session 沒有交付摘要也讀不到回覆，可改用 get_session_screen 看畫面' } : {}),
   }
-  logs.push({ level: 'info', text: `成功讀取「${row.label}」摘要${row.delivered ? '（含交付摘要）' : ''}` })
+  logs.push({ level: 'info', text: say(`Read the summary of "${row.label}"${row.delivered ? ' (with its delivery summary)' : ''}`, `成功讀取「${row.label}」摘要${row.delivered ? '（含交付摘要）' : ''}`) })
   return out
 }
 
@@ -1889,11 +1902,11 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     if (words) { asked = clip(plainScreenText(words), ACTIVITY_TEXT_CHARS); break }
   }
   if (!reply) {
-    logs.push({ level: 'error', text: `「${row.label}」讀不到回覆` })
+    logs.push({ level: 'error', text: say(`No reply of "${row.label}" could be read`, `「${row.label}」讀不到回覆`) })
     return { session_id: row.id, label: row.label, state: row.state, note: '這個 Session 讀不到最後一則回覆，可改用 get_session_screen 看畫面' }
   }
   const truncated = reply.length > REPLY_CHARS
-  logs.push({ level: 'info', text: `成功讀取「${row.label}」最後一則回覆（${reply.length} 字）` })
+  logs.push({ level: 'info', text: say(`Read the last reply of "${row.label}" (${reply.length} characters)`, `成功讀取「${row.label}」最後一則回覆（${reply.length} 字）`) })
   return {
     session_id: row.id,
     label: row.label,
@@ -1945,7 +1958,7 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
     }
     return ''
   })()
-  logs.push({ level: 'info', text: `成功讀取「${row.label}」工作紀錄（${activity.length} 筆）` })
+  logs.push({ level: 'info', text: say(`Read the activity of "${row.label}" (${activity.length} records)`, `成功讀取「${row.label}」工作紀錄（${activity.length} 筆）`) })
   // A Session that waits on the person shows its question on the screen (an
   // approval menu, a choice), not in its transcript.
   let waiting: { waiting_screen_text?: string } = {}
@@ -2053,7 +2066,7 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
   deps.focus?.set(row.id)
   const receipt={request,id:answer.id??sid(row),action:answer.action}
   if(answer.action==='accepted')return {accepted:true,delivery:'accepted',target:row.label,receipt,meaning:'The recipient service accepted the request; delivery into the Session is not confirmed.'}
-  logs.push({ level: 'info', text: `已送出訊息至「${row.label}」` })
+  logs.push({ level: 'info', text: say(`Sent the message to "${row.label}"`, `已送出訊息至「${row.label}」`) })
   return { success: true, delivery:'typed', sent_to: row.label, receipt }
 }
 
@@ -2109,7 +2122,7 @@ async function listSnippets(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     logs.push({ level: 'error', text: texts.error })
     return texts
   }
-  logs.push({ level: 'info', text: `讀到「${found.row.label}」的 ${texts.length} 個 Snippet 與 Playbook` })
+  logs.push({ level: 'info', text: say(`Read ${texts.length} Snippets and Playbooks of "${found.row.label}"`, `讀到「${found.row.label}」的 ${texts.length} 個 Snippet 與 Playbook`) })
   const shown = (kind: ReusableText['kind']) => texts.filter((t) => t.kind === kind)
     .map((t) => ({ name: t.name, preview: t.body.slice(0, LIST_GOAL_CHARS) }))
   return { session: found.row.label, snippets: shown('snippet'), playbooks: shown('playbook') }
@@ -2126,7 +2139,7 @@ async function openSnippets(deps: ToolDeps, logs: ToolLog[], wanted: string, kin
     return { error }
   }
   deps.focus?.set(found.row.id)
-  logs.push({ level: 'info', text: `已打開「${found.row.label}」的 ${kind === 'playbook' ? 'Playbook' : 'Snippet'} 列表` })
+  logs.push({ level: 'info', text: say(`Opened the ${kind === 'playbook' ? 'Playbook' : 'Snippet'} list of "${found.row.label}"`, `已打開「${found.row.label}」的 ${kind === 'playbook' ? 'Playbook' : 'Snippet'} 列表`) })
   return { opened: true, session: found.row.label, kind }
 }
 
@@ -2189,7 +2202,7 @@ async function runSnippet(deps: ToolDeps, logs: ToolLog[], wanted: string, name:
     return { error, outcome }
   }
   deps.focus?.set(row.id)
-  logs.push({ level: 'info', text: `已在「${row.label}」開始 Playbook「${text.name}」` })
+  logs.push({ level: 'info', text: say(`Started the Playbook "${text.name}" in "${row.label}"`, `已在「${row.label}」開始 Playbook「${text.name}」`) })
   return { ran: true, kind: 'playbook', name: text.name, session: row.label }
 }
 
@@ -2221,7 +2234,7 @@ async function openSessionTool(deps: ToolDeps, logs: ToolLog[], wanted: string):
     logs.push({ level: 'error', text: error })
     return { error }
   }
-  logs.push({ level: 'info', text: `已在畫面上打開「${row.label}」` })
+  logs.push({ level: 'info', text: say(`Opened "${row.label}" on the screen`, `已在畫面上打開「${row.label}」`) })
   // Opened at the person's ask, it is told at once: what it did and what is
   // left, from the same record get_session_recap reads.
   const status = await sessionRecap(deps, logs, row.id)
@@ -2262,7 +2275,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
     return { error: refused }
   }
   if (!row.menu || !row.choices?.length) {
-    logs.push({ level: 'error', text: `「${row.label}」現在沒有在等問題的答案` })
+    logs.push({ level: 'error', text: say(`"${row.label}" is not waiting for an answer now`, `「${row.label}」現在沒有在等問題的答案`) })
     return { error: `「${row.label}」現在沒有在等問題的答案` }
   }
   const choice = choiceOf(row.choices, spoken)
@@ -2286,7 +2299,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
     logs.push({ level: 'error', text: error })
     return { error }
   }
-  logs.push({ level: 'info', text: `已替「${row.label}」選了 ${choice.n}. ${choice.label}` })
+  logs.push({ level: 'info', text: say(`Chose ${choice.n}. ${choice.label} for "${row.label}"`, `已替「${row.label}」選了 ${choice.n}. ${choice.label}`) })
   return { answered: true, label: row.label, question: row.question ?? '', chose: `${choice.n}. ${choice.label}` }
 }
 
@@ -2341,7 +2354,7 @@ async function notesForRows(deps: ToolDeps, logs: ToolLog[], rows: CopilotSessio
     if (notes.length) out.push({ session_id: row.id, label: row.label, notes })
   }
   const count = out.reduce((n, s) => n + s.notes.length, 0)
-  logs.push({ level: 'info', text: `讀到 ${count} 張還沒處理的便條` })
+  logs.push({ level: 'info', text: say(`Read ${count} open notes`, `讀到 ${count} 張還沒處理的便條`) })
   return count ? { sessions: out } : { note: specific ? '這個 Session 沒有還沒處理的便條' : '沒有 Session 留下還沒處理的便條' }
 }
 
@@ -2387,7 +2400,7 @@ async function setSpeed(deps: ToolDeps, logs: ToolLog[], ask: string): Promise<u
     return { speed, changed: false, note: edge }
   }
   const { saved } = await deps.adjust({ speed })
-  logs.push({ level: 'info', text: `語速調成 ${speed} 倍${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}` })
+  logs.push({ level: 'info', text: say(`Speech speed set to ${speed}×${saved ? ', and saved for the next call' : ' (this call only)'}`, `語速調成 ${speed} 倍${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}`) })
   return { speed, changed: true, saved_for_next_calls: saved }
 }
 
@@ -2395,7 +2408,7 @@ async function setLength(deps: ToolDeps, logs: ToolLog[], brief: unknown): Promi
   if (!deps.adjust) return { error: '這通電話不能調整回答長度' }
   if (typeof brief !== 'boolean') return { error: '要說簡短（true）還是詳細（false）' }
   const { saved } = await deps.adjust({ brief })
-  logs.push({ level: 'info', text: `${brief ? '改成簡短回答' : '改成詳細回答'}${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}` })
+  logs.push({ level: 'info', text: say(`${brief ? 'Switched to short answers' : 'Switched to detailed answers'}${saved ? ', and saved for the next call' : ' (this call only)'}`, `${brief ? '改成簡短回答' : '改成詳細回答'}${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}`) })
   return { brief, saved_for_next_calls: saved }
 }
 
@@ -2446,7 +2459,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
   const force = forceConfirmed && row.closeable !== 'safe'
   if (row.closeable !== 'safe' && !forceConfirmed) {
     const asked = unsafe(row.closeReasons ?? [])
-    logs.push({ level: 'info', text: `「${row.label}」還不能安全關閉，等使用者確認` })
+    logs.push({ level: 'info', text: say(`"${row.label}" cannot be closed safely yet; waiting for the person to confirm`, `「${row.label}」還不能安全關閉，等使用者確認`) })
     return asked
   }
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/close`, {
@@ -2464,7 +2477,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     }
     // The row said safe but the machine found something owed: ask, as above.
     if (!force && res.status === 409 && reasons.length) {
-      logs.push({ level: 'info', text: `「${row.label}」還不能安全關閉，等使用者確認` })
+      logs.push({ level: 'info', text: say(`"${row.label}" cannot be closed safely yet; waiting for the person to confirm`, `「${row.label}」還不能安全關閉，等使用者確認`) })
       return unsafe(reasons)
     }
     const detail = await refusalText(res)
@@ -2472,7 +2485,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     logs.push({ level: 'error', text: error })
     return { error, reasons }
   }
-  logs.push({ level: 'info', text: force ? `已照使用者確認強制關閉「${row.label}」` : `已關閉「${row.label}」` })
+  logs.push({ level: 'info', text: force ? say(`Force-closed "${row.label}" as the person confirmed`, `已照使用者確認強制關閉「${row.label}」`) : say(`Closed "${row.label}"`, `已關閉「${row.label}」`) })
   return { closed: true, label: row.label, ...(force ? { forced: true } : {}) }
 }
 
@@ -2521,14 +2534,14 @@ async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: stri
       }
       const why = SMART_TITLE_REFUSALS[code] ?? (await refusalText(res) || `HTTP ${res.status}`)
       failed.push({ session: row.label, error: why })
-      logs.push({ level: 'error', text: `「${row.label}」沒有重新命名：${why}` })
+      logs.push({ level: 'error', text: say(`"${row.label}" was not renamed: ${why}`, `「${row.label}」沒有重新命名：${why}`) })
       continue
     }
     const answer = (await res.json().catch(() => ({}))) as { title?: unknown; display_title?: unknown }
     const after = str(answer.display_title) || str(answer.title)
     renamed.push({ before: row.label, after })
     if (after) deps.titleSaved?.(sid(row), row.machine, after)
-    logs.push({ level: 'info', text: `已把「${row.label}」重新命名為「${after}」` })
+    logs.push({ level: 'info', text: say(`Renamed "${row.label}" to "${after}"`, `已把「${row.label}」重新命名為「${after}」`) })
   }
   return { ...(renamed.length ? { renamed } : {}), ...(failed.length ? { failed } : {}) }
 }
@@ -2544,7 +2557,7 @@ async function clawdlineHelp(deps: ToolDeps, logs: ToolLog[], question: string, 
   const guide = await deps.help()
   if (ids.length) {
     const sections = helpRead(guide, ids)
-    logs.push({ level: 'info', text: `讀了使用說明 ${sections.length} 段` })
+    logs.push({ level: 'info', text: say(`Read ${sections.length} sections of the user guide`, `讀了使用說明 ${sections.length} 段`) })
     // Asked "how do I archive a Session", the copilot answered from the to-do
     // sections it had picked: the guide has no archive section at all.
     return sections.length
@@ -2553,7 +2566,7 @@ async function clawdlineHelp(deps: ToolDeps, logs: ToolLog[], question: string, 
   }
   // Only the contents: a word match listed beside them, which a Chinese question
   // made against an English guide, was picked every time over the right section.
-  logs.push({ level: 'info', text: `給了使用說明目錄（${guide.length} 段）` })
+  logs.push({ level: 'info', text: say(`Gave the user guide's contents (${guide.length} sections)`, `給了使用說明目錄（${guide.length} 段）`) })
   return {
     contents: helpContents(guide),
     next: '依問題的意思從 contents 挑最多三個 id，再呼叫一次 clawdline_help 並填 sections；目錄裡沒有相關的，就照實說說明文件沒有寫到，不要猜',
@@ -2588,13 +2601,13 @@ async function devstackLinks(deps: ToolDeps, logs: ToolLog[], wanted: string, op
   }))
   let opened: boolean | undefined
   if (open) opened = deps.devstack ? await deps.devstack({ id: place.id, label: place.label }) : false
-  logs.push({ level: 'info', text: `讀到「${place.label}」的 ${links.length} 個 Dev Stack 連結${opened ? '，已在畫面上打開' : ''}` })
+  logs.push({ level: 'info', text: say(`Read ${links.length} Dev Stack links of "${place.label}"${opened ? ', opened on the screen' : ''}`, `讀到「${place.label}」的 ${links.length} 個 Dev Stack 連結${opened ? '，已在畫面上打開' : ''}`) })
   return { project: place.label, links, ...(open ? { opened: !!opened } : {}) }
 }
 
 async function listMachines(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const machines = deps.machines ? await deps.machines() : []
-  logs.push({ level: 'info', text: `可以開 Session 的機器：${machines.length || 1} 台` })
+  logs.push({ level: 'info', text: say(`Machines that can start a Session: ${machines.length || 1}`, `可以開 Session 的機器：${machines.length || 1} 台`) })
   const list = machines.length ? machines : [{ id: '', name: '這台機器', online: true, current: true }]
   // The current machine's projects come with the list, so the first question
   // names real projects (a bare list once led to "專案A 還是專案B").
@@ -2640,7 +2653,7 @@ async function listProjects(deps: ToolDeps, logs: ToolLog[], machine: string): P
       models = {}
     }
   }
-  logs.push({ level: 'info', text: `讀到 ${projects.length} 個專案、${assistants.length} 種助理` })
+  logs.push({ level: 'info', text: say(`Read ${projects.length} Projects and ${assistants.length} assistants`, `讀到 ${projects.length} 個專案、${assistants.length} 種助理`) })
   return { projects, assistants, ...(Object.keys(models).length ? { models } : { note: '這台機器的模型清單讀不到；不填 model 就用預設' }) }
 }
 
@@ -2670,22 +2683,22 @@ async function startSession(deps: ToolDeps, logs: ToolLog[], args: Record<string
   const answer = (await res.json().catch(() => ({}))) as { id?: unknown }
   const id = str(answer.id)
   if (id) deps.focus?.set(id)
-  logs.push({ level: 'info', text: `已在「${str(place.label)}」開了新的 ${assistant} Session` })
+  logs.push({ level: 'info', text: say(`Started a new ${assistant} Session in "${str(place.label)}"`, `已在「${str(place.label)}」開了新的 ${assistant} Session`) })
   return { started: true, project: str(place.label), assistant, ...(model ? { model } : { model: '預設' }), ...(id ? { session_id: id } : {}) }
 }
 
 async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   if (!deps.briefing) {
-    logs.push({ level: 'error', text: '這通電話沒有機器整理的匯報' })
+    logs.push({ level: 'error', text: say('This call has no briefing prepared by the machine', '這通電話沒有機器整理的匯報') })
     return { error: '這通電話沒有機器整理的匯報，請改用 list_sessions 自己整理' }
   }
   const text = await Promise.race([deps.briefing(),
     new Promise<null>((resolve) => setTimeout(() => resolve(null), BRIEFING_TOOL_WAIT_MS))])
   if (!text) {
-    logs.push({ level: 'error', text: '機器的匯報還沒整理好' })
+    logs.push({ level: 'error', text: say('The machine has not finished its briefing', '機器的匯報還沒整理好') })
     return { error: '機器的匯報還沒整理好或整理失敗，請改用 list_sessions 自己整理' }
   }
-  logs.push({ level: 'info', text: '已取得機器整理好的匯報' })
+  logs.push({ level: 'info', text: say('Got the briefing the machine prepared', '已取得機器整理好的匯報') })
   return { briefing: text }
 }
 
@@ -2699,7 +2712,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
   } catch {
     // refusal-ok: malformed arguments are treated as none; each tool says what it is missing.
   }
-  logs.push({ level: 'tool', text: `執行工具【${name}】參數: ${JSON.stringify(args)}` })
+  logs.push({ level: 'tool', text: say(`Ran the tool ${name} with ${JSON.stringify(args)}`, `執行工具【${name}】參數: ${JSON.stringify(args)}`) })
   // A read's Session is judged from the person's own words (`resolveRead`).
   deps = { ...deps, said: typeof args.said === 'string' ? args.said : undefined }
   let result: unknown
@@ -2731,12 +2744,12 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'send_message_to_session') result = await sendMessage(deps, logs, str(args.session_id), str(args.message), str(args.session_label), args.switch_confirmed === true)
     else {
       result = { error: `未知的工具：${name}` }
-      logs.push({ level: 'error', text: `未知的工具請求：${name}` })
+      logs.push({ level: 'error', text: say(`Unknown tool request: ${name}`, `未知的工具請求：${name}`) })
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     result = { error: msg }
-    logs.push({ level: 'error', text: `工具執行異常: ${msg}` })
+    logs.push({ level: 'error', text: say(`The tool failed: ${msg}`, `工具執行異常: ${msg}`) })
   }
   return { output: JSON.stringify(result), logs }
 }
