@@ -6,7 +6,7 @@ import { nextWord } from "../next-strings.js"
 import { browserCall as call } from "./browser-call.js"
 import { openBrowserSetup } from "./BrowserSetup.js"
 import { BrowserViewport } from "./BrowserViewport.js"
-import { BrowserComposer, type BrowserKeyboardHandle } from "./BrowserComposer.js"
+import { BrowserComposer, type BrowserKeyboardHandle, type PageField } from "./BrowserComposer.js"
 import type { InputReceipt } from "./browser-keyboard.js"
 import "./browser-panel.css"
 
@@ -177,6 +177,17 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     }
   }, [tabID, browserMode, scopeKey])
 
+  // The person's own read of the focused field, for checking what was sent.
+  // It neither marks the panel busy nor reports an error: an unreadable field
+  // only means nothing is compared.
+  const readField = useCallback(async (): Promise<PageField | null> => {
+    if (!tabID || scope.current !== scopeKey) return null
+    try {
+      const result = await call<{ value?: PageField }>("POST", "/v1/browser/person", { op: "field", tab: tabID, args: {}, ...(browserMode ? {browser_mode:browserMode} : {}) })
+      return scope.current === scopeKey ? result.value ?? null : null
+    } catch { return null }
+  }, [tabID, browserMode, scopeKey])
+
   const muted = !!status?.status.muted?.includes(conversation)
   const mute = async (on: boolean) => {
     setBusy(true)
@@ -298,7 +309,8 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         <div className="browser-controls">
           <BrowserComposer key={scopeKey} keyboardRef={nativeKeyboard} person={person}
             available={ready && !otherDebugger && !controlBusy && !busy}
-            onPrepare={ensureControl} onSend={text => act("type", { text })} onDelete={() => void act("key", { key: "Backspace" })} />
+            onPrepare={ensureControl} onSend={(text, replace) => act("type", replace ? { text, replace: true } : { text })}
+            onDelete={() => void act("key", { key: "Backspace" })} onReadField={readField} />
           <div className="browser-who" data-person={person ? "true" : undefined}>
             <span aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</span>
             <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={controlBusy || otherDebugger} onClick={() => void control(!person)}>

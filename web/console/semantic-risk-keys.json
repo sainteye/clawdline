@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11708,
+  "englishKeys": 11718,
   "counts": {
     "negation": 3222,
-    "state": 1951,
+    "state": 1953,
     "permission": 683,
     "deletion": 262,
     "uncertainty": 442
   },
-  "unionCount": 5120,
+  "unionCount": 5122,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -4541,6 +4541,8 @@
       "next.browserModeSwitchHelp",
       "next.browserOpClose",
       "next.browserPanelActivityEmpty",
+      "next.browserPanelMismatchSent",
+      "next.browserPanelMismatchTitle",
       "next.browserPanelNotConnected",
       "next.browserPanelOtherDebugger",
       "next.browserPanelSent",
@@ -9873,6 +9875,8 @@
     "next.browserPanelDisabled",
     "next.browserPanelInputUnconfirmed",
     "next.browserPanelKeyBackspace",
+    "next.browserPanelMismatchSent",
+    "next.browserPanelMismatchTitle",
     "next.browserPanelNoTab",
     "next.browserPanelNotConnected",
     "next.browserPanelOtherDebugger",

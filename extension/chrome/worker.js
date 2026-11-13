@@ -6,12 +6,13 @@
 // tabs never rearrange the person's own windows, and answers each command
 // with one result. It holds no secret and opens no network connection.
 
-import { readPage, locate, editableRects, focusedEditableKind } from "./page.js"
+import { readPage, locate, editableRects, focusedEditableKind, focusedField, selectFocusedField } from "./page.js"
 
 const HOST = "com.clawdline.browser"
 const TEXT_LIMIT = 200 * 1024
 const ELEMENT_LIMIT = 300
 const LOAD_WAIT_MS = 15000
+const FIELD_LIMIT = 16384
 
 let port = null
 let state = { host: "connecting", daemon: "unknown", since: Date.now() }
@@ -284,6 +285,9 @@ async function run(c) {
       return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y), editable: c.person ? await evaluate(tab, focusedEditableKind) : undefined } }
     }
     case "type": {
+      // Replace selects the whole focused field first, so the insertion
+      // becomes its entire text.
+      if (a.replace && !(await evaluate(tab, selectFocusedField))) throw new Error("no editable field has focus to replace")
       await cdp(tab, "Input.insertText", { text: String(a.text) })
       // Input.insertText targets Chrome's current focus, which may be inside
       // closed shadow DOM or another frame. A separate Runtime.evaluate can
@@ -293,6 +297,11 @@ async function run(c) {
       // The bridge's password flag also strips URL/target metadata; never
       // capture a post-input picture or query the page for its typed content.
       return { tab, password: true, value: { tab, typed: [...String(a.text)].length } }
+    }
+    case "field": {
+      // Only the person's own route sends this. Marked private like typing,
+      // with no picture, so nothing about the field is kept.
+      return { tab, password: true, value: { tab, ...(await evaluate(tab, focusedField, FIELD_LIMIT)) } }
     }
     case "key": {
       await key(tab, a.key)

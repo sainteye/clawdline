@@ -149,6 +149,19 @@ successful receipt and dismiss the keyboard. The editor survives screenshot and
 viewport updates, and its input is never disabled merely because a command is in
 flight. Physical phone keyboard presentation still needs actual-device acceptance.
 
+**Checking what was sent.** Until 2026-11-13 the worker never read a field back. The person's
+own route (never an agent's) now has a `field` command that returns the focused field's kind,
+text and selection, up to 16 KiB. A password input, or a field whose `autocomplete` names a
+password, one-time code or card, answers only kind `password`; focus inside a closed shadow root
+or another frame answers no kind. The result is marked private and carries no picture, and person
+commands are not audited, so the text is never recorded; it reaches the person's device only
+through the encrypted relay. Send text reads the field before and after inserting: a match shows
+"✓ Checked"; a difference shows both texts with **Replace the field with my text** (`type` with
+`replace`, which selects the whole field first) and **Keep the page's text**. It is never
+corrected unasked. When a tapped field already holds text, a strip offers **Edit this**, which
+puts that text in the draft so Send replaces the whole field; the strip is hidden below 500 px of
+height. A secret field, an unknown focus or contenteditable shows only "✓ Sent".
+
 After takeover, **Mobile site** changes this tab to a 390 × 720 mobile viewport, mobile user agent
 and touch emulation; **Desktop site** clears those overrides. An agent can request the same with
 `clawdline browser viewport mobile` or `desktop`, subject to the existing ownership, stop and

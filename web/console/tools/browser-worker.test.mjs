@@ -109,7 +109,7 @@ test("type never discloses field text across focus boundaries", { skip: !browser
 
   server = createServer((_req, res) => {
     res.setHeader("Content-Type", "text/html")
-    res.end(`<!doctype html><input id=plain><input id=password type=password>
+    res.end(`<!doctype html><input id=plain><input id=password type=password><input id=otp autocomplete=one-time-code>
       <textarea id=area></textarea><div id=editable contenteditable=true></div>
       <div id=shadow></div><div id=nested></div><div id=closed></div>
       <iframe id=frame srcdoc="<input id=field type=password>"></iframe>
@@ -261,6 +261,31 @@ test("type never discloses field text across focus boundaries", { skip: !browser
       }
     })
   }
+  // The person's check of what they sent reads the focused field, but a
+  // password, one-time code or shadow password answers only its kind.
+  await t.test("field reads a plain field and never a secret one", async () => {
+    await page("plain.value='hello'; plain.focus(); plain.setSelectionRange(2,4)")
+    const plain = await command({op:"field", tab, person:true, args:{}})
+    assert.equal(plain.ok, true)
+    assert.equal(plain.password, true, "a field read is never recorded")
+    assert.equal(plain.thumb, undefined)
+    assert.deepEqual({kind:plain.value.kind, value:plain.value.value, start:plain.value.start, end:plain.value.end}, {kind:"text", value:"hello", start:2, end:4})
+    for (const [name, focus] of [["password", "password.value='hunter2'; password.focus()"], ["otp", "otp.value='123456'; otp.focus()"], ["shadow", "shadow.shadowRoot.firstChild.value='s3cret'; shadow.shadowRoot.firstChild.focus()"]]) {
+      await page(focus)
+      const secret = await command({op:"field", tab, person:true, args:{}})
+      assert.equal(secret.value.kind, "password", name)
+      assert.equal("value" in secret.value, false, name + " text must not leave the page")
+      assert.ok(!JSON.stringify(secret).match(/hunter2|123456|s3cret/), name)
+    }
+    await page("focusClosed()")
+    assert.equal((await command({op:"field", tab, person:true, args:{}})).value.kind, null, "closed shadow focus is not compared")
+  })
+  await t.test("replace makes the text the whole field", async () => {
+    await page("plain.value='old text'; plain.focus(); plain.setSelectionRange(3,3)")
+    const result = await command({op:"type", tab, person:true, args:{text:"新的", replace:true}})
+    assert.equal(result.ok, true)
+    assert.equal(await page("plain.value"), "新的")
+  })
   await t.test("explicit secret flag is preserved", async () => {
     await page("plain.focus()")
     const result = await command({op:"type", tab, args:{text:"secret",secret:true}})

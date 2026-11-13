@@ -72,3 +72,42 @@ export function focusedEditableKind() {
   if (el.tagName === "TEXTAREA" || el.isContentEditable) return "multiline"
   return el.tagName === "INPUT" && /^(text|password|search|email|url|tel|number)$/.test(el.type) ? el.type : null
 }
+
+// The focused field's text, for the person's own check that what they sent
+// is what the page now holds. A password, one-time code or card field
+// answers only its kind: its text never leaves the page. Focus inside a
+// closed shadow root or another frame answers no kind, so nothing is
+// compared.
+export function focusedField(limit) {
+  let el = document.activeElement
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement
+  if (!el || el.disabled || el.readOnly) return { kind: null }
+  const tag = el.tagName, type = String(el.type || "text").toLowerCase()
+  const auto = String(el.getAttribute?.("autocomplete") || "").toLowerCase()
+  if ((tag === "INPUT" && type === "password") || /password|one-time-code|cc-/.test(auto)) return { kind: "password" }
+  let kind = null, value = ""
+  if (tag === "TEXTAREA") { kind = "multiline"; value = String(el.value) }
+  else if (tag === "INPUT" && /^(text|search|email|url|tel|number)$/.test(type)) { kind = type; value = String(el.value) }
+  else if (el.isContentEditable) { kind = "multiline"; value = String(el.innerText) }
+  else return { kind: null }
+  if (value.length > limit) return { kind, truncated: true }
+  let start = null, end = null
+  if (tag === "INPUT" || tag === "TEXTAREA") {
+    try { start = el.selectionStart; end = el.selectionEnd } catch {}
+  }
+  return { kind, value, start, end }
+}
+
+// Selects all of the focused field so the next insertion replaces it.
+export function selectFocusedField() {
+  let el = document.activeElement
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement
+  if (!el || el.disabled || el.readOnly) return false
+  if ((el.tagName === "INPUT" || el.tagName === "TEXTAREA") && typeof el.select === "function") { el.select(); return true }
+  if (el.isContentEditable) {
+    const range = document.createRange(); range.selectNodeContents(el)
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range)
+    return true
+  }
+  return false
+}

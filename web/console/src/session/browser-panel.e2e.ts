@@ -29,6 +29,11 @@ let person = false
 let clicks: { x: number; y: number }[] = []
 let typed: string[] = []
 let keys: string[] = []
+// The tapped field's text as the stand-in page holds it, and whether the next
+// insertion is changed by the "site" afterwards.
+let fieldValue = ""
+let mangleNext = false
+let replaced: string[] = []
 let muted = false
 let layout = "desktop"
 let frames = 0
@@ -73,7 +78,7 @@ function fixture(): Server {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
       return res.end(`<!doctype html><html><meta name=viewport content="width=device-width,initial-scale=1"><style>body{margin:0;font:18px system-ui;color:#1e293b;background:#f2f5f8}header{padding:22px 28px;background:#17344d;color:white}main{max-width:850px;margin:36px auto;padding:0 24px}article{background:white;border-radius:12px;padding:28px;border:1px solid #d7e0e9}h1{font-size:28px;margin-top:0}label{display:block;margin-top:20px}input{display:block;box-sizing:border-box;width:100%;padding:14px;border:1px solid #a7b5c5;border-radius:6px;font:inherit;margin:8px 0 20px}button{background:#167349;color:white;border:0;border-radius:6px;padding:14px 24px;font:inherit}@media(min-width:700px){main{display:grid;grid-template-columns:220px 1fr;gap:24px}}small{color:#596b7e}</style><header>Example · Browser trial</header><main><aside><h2>Welcome</h2><p>Use the form to try the page.</p><small>This is a local test page.</small></aside><article><h1>Try the browser</h1><p>Zoom in, move the picture, then tap a field.</p><label>Your name<input placeholder="Enter a name"></label><label>Other text<input placeholder="Another field"></label><button>Continue</button></article></main></html>`)
     }
-    if (path === "/__fixture/reset") { headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; fieldValue = ""; mangleNext = false; replaced = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
     if (path === "/__fixture/hold-control") { holdControl = true; return json(res, 200, {}) }
     if (path === "/__fixture/admit") { holdControl = false; heldControl?.(); heldControl = null; return json(res, 200, {}) }
@@ -82,7 +87,8 @@ function fixture(): Server {
     if (path === "/__fixture/fail-next-type") { failNextType = true; return json(res, 200, {}) }
     if (path === "/__fixture/hold-status") { holdNextStatus = true; return json(res, 200, {}) }
     if (path === "/__fixture/release-status") { heldStatus?.(); heldStatus = null; return json(res, 200, {}) }
-    if (path === "/__fixture/log") return json(res, 200, { person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus })
+    if (path === "/__fixture/mangle-next") { mangleNext = true; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/log") return json(res, 200, { person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
     if (path === "/v1/browser/activity") return json(res, 200, { ok: true, rows: [
       { at: activityAt, op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
       { at: activityAt - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
@@ -119,7 +125,10 @@ function fixture(): Server {
         typed.push(b.args.text)
         if (holdType) await new Promise<void>(resolve => { heldType = resolve })
         if (failNextType) { failNextType = false; return json(res, 503, {error:"browser_timeout",detail:"Synthetic input acknowledgement was lost."}) }
+        if (b.args.replace) { replaced.push(b.args.text); fieldValue = b.args.text } else fieldValue += b.args.text
+        if (mangleNext) { mangleNext = false; fieldValue += b.args.text }
       }
+      if (b.op === "field") return json(res, 200, { ok: true, value: { tab: TAB, kind: "text", value: fieldValue, start: fieldValue.length, end: fieldValue.length } })
       if (b.op === "key") keys.push(b.args.key)
       if (b.op === "viewport") layout = b.args.mode
       const field = b.op === "click" ? (layout === "mobile" ? mobileFields : desktopFields).find(f=>b.args.x>=f.x && b.args.x<=f.x+f.width && b.args.y>=f.y && b.args.y<=f.y+f.height) : null
@@ -300,7 +309,7 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       assert.equal(await run(`document.activeElement === window.__touchedField`), true, "a delayed pre-takeover status and idle screenshot refresh must not dismiss the native keyboard")
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"中文試用","the draft remains visible across refreshes")
       await fetch(origin+"/__fixture/hold-type")
-      const sendPoint = await pointerCentre('.browser-composer button')
+      const sendPoint = await pointerCentre('.browser-composer-send')
       await tap(sendPoint.x,sendPoint.y)
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed[0]==='中文試用')`)
       await browser.send("Input.insertText",{text:"下一段"},id)
@@ -310,11 +319,13 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段")
       // The person could not tell that text was on its way; the button says so.
       const sending=ui==="en"?"Sending…":"送出中…", sent=ui==="en"?"Sent":"已送出"
-      assert.equal(await run(`document.querySelector('.browser-composer button').getAttribute('aria-busy')`),"true")
-      assert.ok((await run(`document.querySelector('.browser-composer button').textContent`)).includes(sending),"the Send button shows that text is being sent")
+      assert.equal(await run(`document.querySelector('.browser-composer-send').getAttribute('aria-busy')`),"true")
+      assert.ok((await run(`document.querySelector('.browser-composer-send').textContent`)).includes(sending),"the Send button shows that text is being sent")
       await fetch(origin+"/__fixture/release-type")
       await until(`!document.querySelector('.browser-input-pending')`)
-      await until(`document.querySelector('.browser-composer button').textContent.includes(${JSON.stringify(sent)})`)
+      // The field was read back and holds what was sent.
+      const checked=ui==="en"?"Checked":"已核對"
+      await until(`document.querySelector('.browser-composer-send').textContent.includes(${JSON.stringify(checked)})`)
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段","acknowledgement preserves the next draft")
       await run(`document.getElementById('browser-native-keyboard').select()`)
       await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
@@ -325,7 +336,7 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await browser.send("Input.imeSetComposition",{text:"測",selectionStart:1,selectionEnd:1},id)
       await browser.send("Input.insertText",{text:"測試"},id)
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"測試","IME remains a visible local draft until sent")
-      await until(`!document.querySelector('.browser-composer button').disabled`)
+      await until(`!document.querySelector('.browser-composer-send').disabled`)
       await run(`document.querySelector('.browser-composer').requestSubmit()`)
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed.length===2)`)
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,["中文試用","測試"],"IME sends the committed Chinese once")
@@ -353,6 +364,36 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.keys.length===2)`)
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,["Backspace","Backspace"],"a Backspace on an empty draft reaches the page")
       assert.equal(await run(`document.activeElement === window.__touchedField`),true,"forwarding Backspace keeps the footer editor focused")
+      // A field the site changed after the insertion: the card shows both
+      // sides and replaces the whole field only when asked.
+      await fetch(origin+"/__fixture/mangle-next")
+      await browser.send("Input.insertText",{text:"對照"},id)
+      await until(`!document.querySelector('.browser-composer-send').disabled`)
+      await run(`document.querySelector('.browser-composer').requestSubmit()`)
+      await until(`!!document.querySelector('.browser-check-card')`)
+      const card=await run(`document.querySelector('.browser-check-card').textContent`)
+      assert.ok(card.includes("對照"),"the card shows what was sent")
+      assert.ok(card.includes("對照對照"),"the card shows what the field now holds")
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"the card does not take focus")
+      await run(`document.querySelector('.browser-check-replace').click()`)
+      await until(`!document.querySelector('.browser-check-card')`)
+      let log=await(await fetch(origin+"/__fixture/log")).json()
+      assert.deepEqual(log.replaced,["對照"],"replacing sends the text once as the whole field")
+      assert.equal(log.fieldValue,"對照")
+      await until(`document.querySelector('.browser-composer-send').textContent.includes(${JSON.stringify(checked)})`)
+      // The field's text can be pulled into the draft, edited and sent back
+      // as the whole field.
+      await until(`!!document.querySelector('.browser-field-pull')`)
+      assert.ok((await run(`document.querySelector('.browser-field-strip').textContent`)).includes("對照"))
+      await run(`document.querySelector('.browser-field-pull').click()`)
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"對照","Edit this puts the field's text in the draft")
+      assert.ok(await run(`!!document.querySelector('.browser-replace-mode')`),"the draft says Send replaces the whole field")
+      await browser.send("Input.insertText",{text:"完成"},id)
+      await run(`document.querySelector('.browser-composer').requestSubmit()`)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.replaced.length===2)`)
+      log=await(await fetch(origin+"/__fixture/log")).json()
+      assert.equal(log.fieldValue,"對照完成","the edited draft replaced the field")
+      await until(`!document.querySelector('.browser-replace-mode')`)
       if(name==="phone"){
         await run(`Object.defineProperty(window.visualViewport,'height',{configurable:true,value:Math.round(innerHeight*.58)});window.visualViewport.dispatchEvent(new Event('resize'))`)
         await until(`document.getElementById('browser-panel').getBoundingClientRect().height<innerHeight*.7`)
@@ -402,13 +443,13 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
         const nextHit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${field.x+field.width/2}/390*r.width,y:r.top+${field.y+field.height/2}/720*r.height}})()`)
         await tap(nextHit.x,nextHit.y)
         await browser.send("Input.insertText",{text:"新模式輸入"},id)
-        await until(`!document.querySelector('.browser-composer button').disabled`)
+        await until(`!document.querySelector('.browser-composer-send').disabled`)
         await run(`document.querySelector('.browser-composer').requestSubmit()`)
         await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed.includes('新模式輸入'))`)
         await until(`!document.querySelector('.browser-input-pending')`)
         await browser.send("Input.insertText",{text:"未確認文字"},id)
         await fetch(origin+"/__fixture/fail-next-type")
-        await until(`!document.querySelector('.browser-composer button').disabled`)
+        await until(`!document.querySelector('.browser-composer-send').disabled`)
         await run(`document.querySelector('.browser-composer').requestSubmit()`)
         await until(`!!document.querySelector('.browser-input-error')`)
         assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"未確認文字","an uncertain result preserves the draft for inspection")
