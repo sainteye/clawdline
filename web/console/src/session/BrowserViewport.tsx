@@ -28,6 +28,11 @@ export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onF
   // not inside pointerup. A phone tap on a pictured field reached the page,
   // but the footer editor stayed unfocused until the person tapped it.
   const focusOnTouchEnd = useRef(false)
+  // After that, iOS still sends compatibility mouse events and a click, which
+  // focus this tabbable picture: the footer editor flashed and lost focus.
+  // Cancel them in touchend, and hand a focus that arrives right after a
+  // field tap back to the editor.
+  const fieldTapAt = useRef(0)
   const mode = useRef<"fit" | "native" | "custom">(window.matchMedia("(pointer: coarse) and (max-width: 899px)").matches ? "native" : "fit")
   const fitted = useRef(0)
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -129,8 +134,8 @@ export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onF
     const answer = onTap(remote.x, remote.y)
     // The visible footer editor receives focus in the trusted tap. Its DOM
     // identity is independent of screenshots and editable geometry refreshes.
-    if (field) { onKeyboard(field.kind, answer.then(value => value.ok && value.editable !== null)); focusOnTouchEnd.current = event.pointerType === "touch" }
-    else onCloseKeyboard()
+    if (field) { onKeyboard(field.kind, answer.then(value => value.ok && value.editable !== null)); focusOnTouchEnd.current = event.pointerType === "touch"; fieldTapAt.current = Date.now() }
+    else { fieldTapAt.current = 0; onCloseKeyboard() }
   }
 
   return <div className="browser-picture">
@@ -143,7 +148,8 @@ export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onF
     </div>
     <div className="browser-viewport" ref={frame} tabIndex={0} aria-label={nextWord(person ? "browserPanelTapHint" : "browserPanelMoveHint")} data-person={person ? "true" : undefined}
       onPointerDown={start} onPointerMove={move} onPointerUp={(e) => finish(e)} onPointerCancel={(e) => finish(e, true)} onLostPointerCapture={(e) => finish(e, true)}
-      onTouchEnd={() => { if (focusOnTouchEnd.current) { focusOnTouchEnd.current = false; onFocusKeyboard() } }}
+      onTouchEnd={(e) => { if (focusOnTouchEnd.current) { focusOnTouchEnd.current = false; if (e.cancelable) e.preventDefault(); onFocusKeyboard() } }}
+      onFocus={(e) => { if (e.target === e.currentTarget && Date.now() - fieldTapAt.current < 1000) onFocusKeyboard() }}
       onKeyDown={(e) => {
         if (e.key === "+" || e.key === "=") { e.preventDefault(); scaleTo(view.scale * 1.5) }
         else if (e.key === "-") { e.preventDefault(); scaleTo(view.scale / 1.5) }

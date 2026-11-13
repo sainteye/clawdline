@@ -277,6 +277,11 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await run(`window.__touchedField=document.getElementById('browser-native-keyboard');true`)
       await tap(hit.x,hit.y,name==="phone"&&ui==="zh-Hant"&&width===390)
       assert.equal(await run(`document.activeElement === window.__touchedField`),true,"the visible footer editor is focused before Cloud approves takeover")
+      // iOS follows a tap with compatibility mouse events and a click that can
+      // focus the tabbable picture; the person saw the footer flash and lose focus.
+      await run(`document.querySelector('.browser-viewport').focus();true`)
+      await run(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`)
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"a focus the tap hands to the picture returns to the footer editor")
       await browser.send("Input.insertText",{text:"中文試用"},id)
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,[],"typing cannot pass an unconfirmed takeover")
       const other=desktopFields[1]
