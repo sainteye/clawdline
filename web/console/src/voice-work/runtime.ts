@@ -3,7 +3,7 @@ import { fleetOnThisPage, machinesOnThisPage, openOnThisPage, openSnippetsOnThis
 import { COPILOT_TOOLS, readRows, runCopilotTool, type ToolDeps } from '../realtime/copilot-tools.js'
 import { menuFingerprint } from '../session/fingerprint.js'
 import { loadCopilotHelp } from '../realtime/copilot-help-loader.js'
-import { VoiceWorkRuntime, workRequest, type VoiceTask } from './engine.js'
+import { VoiceWorkRuntime, workRequest, type VoiceTask, type VoiceFocus } from './engine.js'
 let callDeps: ToolDeps | undefined
 let callID = ''
 export function useCallWorkTools(deps?: ToolDeps, call='') { callDeps=deps;callID=call;voiceWork.capabilitiesChanged() }
@@ -44,7 +44,7 @@ export const voiceWork = new VoiceWorkRuntime({
       effectAccepted=true
       return perform()
     }
-    const base:ToolDeps={...original,fetch:guarded,
+    const base:ToolDeps={...original,fetch:guarded,marks:undefined,
       openSession:original.openSession?(...args)=>effect(()=>original.openSession!(...args)):undefined,
       snippets:original.snippets?(...args)=>effect(()=>original.snippets!(...args)):undefined,
       devstack:original.devstack?(...args)=>effect(()=>original.devstack!(...args)):undefined,
@@ -102,3 +102,20 @@ export async function retryVoicePlanning(inputIDs:string[]) {
   const sessions=await workDirectory()
   return voiceWork.change({action:'plan',sessions,input_ids:inputIDs,retry:true,tool_contracts:COPILOT_TOOLS})
 }
+
+
+/** Save conversation without starting the second model. The current input keeps
+ * the target it had when spoken; a later screen change cannot rewrite it. */
+export async function receiveCallInput(text:string,call:string,id:string,focus?:VoiceFocus,context='') {
+  return voiceWork.change({action:'input',id,call,text,deferred:true,...(focus?{focus}:{}),...(context?{context}:{})})
+}
+export async function queueVoiceInputs(ids:string[],retry=false) {
+  const sessions=await workDirectory()
+  return voiceWork.change({action:'plan',sessions,input_ids:ids,tool_contracts:COPILOT_TOOLS,...(retry?{retry:true}:{})})
+}
+export function answerVoiceInput(id:string,call:string) {
+  return voiceWork.change({action:'answer',id,call})
+}
+
+export function parkVoiceInput(id:string,call:string) {return voiceWork.change({action:'park',id,call})}
+export function parkVoiceCall(call:string) {return voiceWork.change({action:'park_call',call})}

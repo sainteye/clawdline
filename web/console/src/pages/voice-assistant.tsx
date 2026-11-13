@@ -92,7 +92,7 @@ function VoiceAssistant({shown}:{shown:boolean}) {
         <button type="submit" disabled={sending||!text.trim()}>{W(sending?'voiceWorkSaving':'voiceWorkReceive')}</button>
       </form>
       {voiceWork.state?.reply?<p className="voice-work-reply" role="status">{voiceWork.state.reply}</p>:null}
-      {pending.length?<section className="voice-work-inbox"><h2>{W('voiceWorkInbox')} · {pending.length}</h2><ul>{pending.map(i=><li key={i.id}>{i.text}</li>)}</ul>
+      {pending.length?<section className="voice-work-inbox"><h2>{W('voiceWorkInbox')} · {pending.length}</h2><ul>{pending.map(i=><li key={i.id}>{i.text}{i.focus?<span> · {i.focus.label}</span>:null}{i.planning_error?<p role="alert">{W('voiceWorkInputFailed',{reason:i.planning_error,stage:i.planning_stage??'unknown'})}</p>:null}<button type="button" onClick={()=>{setError('');void voiceWork.change({action:'dismiss_input',id:i.id}).catch(e=>setError(String(e)))}}>{W('voiceWorkSkipInput')}</button></li>)}</ul>
         <button type="button" disabled={voiceWork.planning} onClick={()=>{setError('');void retryVoicePlanning(pending.map(i=>i.id)).catch(e=>setError(String(e)))}}>{W(voiceWork.planning?'voiceWorkPlanning':'voiceWorkPlan')}</button>
         <p>{W('voiceWorkEnableReminder')}</p>
       </section>:null}

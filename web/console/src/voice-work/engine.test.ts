@@ -119,3 +119,24 @@ test('the first workspace reply is history, even when the call subscribes before
  assert.match(next[0].value,/specific answer/)
  assert.equal(late.update({...history,id:'another-machine'}).length,0)
 })
+
+test('planner failures are reported once per request and new immediate queries need no planner',()=>{
+ const baseline=state();const observer=new WorkObservations(baseline)
+ const input={id:'failed-input',text:'Rename this Session',planned:false,at:1,planning_error:'voice_work_invalid_plan',planning_stage:'decode'}
+ const failed={...baseline,revision:2,inputs:[input]}
+ const updates=observer.update(failed)
+ assert.equal(updates.length,1);assert.match(updates[0].value,/failed-input/)
+ assert.equal(observer.update(failed).length,0)
+ observer.update({...failed,revision:3,inputs:[{...input,planning_error:''}]})
+ assert.equal(observer.update({...failed,revision:4}).length,1,'an explicit retry can report its new failure')
+})
+
+test('fresh state readers await the same held request instead of observing stale work',async()=>{
+ let release!:(value:{state:ReturnType<typeof state>})=>void
+ const held=new Promise<{state:ReturnType<typeof state>}>(r=>release=r)
+ const runtime=new VoiceWorkRuntime({request:()=>held,execute:async()=>({result:''})})
+ const one=runtime.refresh(),two=runtime.refresh()
+ assert.equal(one,two)
+ release({state:state()});await two
+ assert.equal(runtime.state?.id,state().id)
+})

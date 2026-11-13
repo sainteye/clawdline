@@ -4,9 +4,10 @@ export interface VoiceTask {
   priority: number; version: number; approved_version?: number; status: string; result?: string; error?: string
   runner?: string; action_key?: string; lease_until?: number; call?: string; attempt?: number; effect_started?: boolean; progress?: {sequence:number;value:string}[]; result_revision?:number
 }
-export interface VoiceInput { id: string; text: string; call?: string; planned: boolean; at: number }
+export interface VoiceFocus {id:string;label:string;machine?:string;conversation?:string}
+export interface VoiceInput { cancelled?:boolean;context?:string;deferred?:boolean;parked?:boolean;focus?:VoiceFocus;planning_error?:string;planning_stage?:string;id: string; text: string; call?: string; planned: boolean; at: number }
 export interface VoiceState { id: string; revision: number; plan_version: number; inputs: VoiceInput[]; tasks: VoiceTask[]; reply?: string; planner_error?: string }
-export interface VoiceAnswer { state: VoiceState; claimed?: VoiceTask | null; planning?: boolean }
+export interface VoiceAnswer { state: VoiceState; protocol?:number; claimed?: VoiceTask | null; planning?: boolean }
 export const WORK_REQUEST_MS = 10000
 export const WORK_POLL_MS = 1000
 export const WORK_HEARTBEAT_MS = 30000
@@ -36,7 +37,7 @@ export async function workRequest(fetcher: typeof fetch, change?: Record<string,
   } finally {clearTimeout(timer);signal?.removeEventListener('abort',aborted)}
 }
 
-export const readTask = (task: Pick<VoiceTask,'tool'|'args'>) => ['list_sessions','get_sessions_summary','get_session_summary','get_session_recap','get_session_activity','explain_session_reply','get_session_notes','get_session_screen','list_machines','list_projects','get_devstack_links','clawdline_help','list_snippets'].includes(task.tool) && !(task.tool==='get_devstack_links'&&task.args.open===true)
+export const readTask = (task: Pick<VoiceTask,'tool'|'args'>) => ['list_sessions','get_sessions_summary','get_session_summary','get_session_recap','get_session_updates','get_session_activity','explain_session_reply','get_session_notes','get_session_screen','list_machines','list_projects','get_devstack_links','clawdline_help','list_snippets'].includes(task.tool) && !(task.tool==='get_devstack_links'&&task.args.open===true)
 export const retryableTask = (task: VoiceTask) => ['paused','failed'].includes(task.status) || task.status==='outcome_unknown'&&readTask(task)
 
 export interface WorkRuntimeDeps {
@@ -55,6 +56,7 @@ export class VoiceWorkRuntime {
   private owners = 0
   private generation = 0
   private polling = false
+  private refreshing?:Promise<void>
   private reading?:AbortController
   private timer: ReturnType<typeof setTimeout> | undefined
   private active = new Map<string, AbortController>()
@@ -87,7 +89,7 @@ export class VoiceWorkRuntime {
   }
   /** Forget content before even issuing a request on a new machine. */
   switchMachine() {
-    this.reading?.abort();this.polling=false
+    this.reading?.abort();this.polling=false;this.refreshing=undefined
     this.generation++; this.runner=crypto.randomUUID()
     for (const control of this.active.values()) control.abort()
     this.active.clear(); this.state=null;this.planning=false;this.failure='';this.publish()
@@ -99,7 +101,13 @@ export class VoiceWorkRuntime {
     if(generation!==this.generation) throw new WorkRefusal('voice_work_machine_changed',true)
     this.accept(answer);void this.refresh();return answer
   }
-  async refresh() {
+  refresh():Promise<void> {
+    if(this.refreshing)return this.refreshing
+    const run=this.refreshNow();this.refreshing=run
+    void run.finally(()=>{if(this.refreshing===run)this.refreshing=undefined})
+    return run
+  }
+  private async refreshNow() {
     if(this.polling) return
     this.polling=true;const generation=this.generation
     const reading=new AbortController();this.reading=reading

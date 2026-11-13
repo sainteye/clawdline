@@ -1392,3 +1392,27 @@ test('reading an opening only advances the report mark when narration is submitt
   result.reported?.()
   assert.equal(saved.length,1)
 })
+
+test('managed calls retain immediate reads and route work without exposing direct mutations',()=>{
+ const session=(sessionUpdateEvent('','',{workEnabled:true}) as {session:{tools:{name:string}[];tool_choice:string}}).session
+ const names=session.tools.map(t=>t.name)
+ assert.ok(names.includes('get_session_recap'))
+ assert.ok(names.includes('get_session_updates'))
+ assert.ok(names.includes('queue_voice_work'))
+ assert.ok(names.includes('get_voice_work'))
+ assert.ok(names.includes('retry_voice_work'))
+ assert.ok(!names.includes('send_message_to_session'))
+ assert.ok(!names.includes('smart_rename_sessions'))
+ assert.equal(session.tool_choice,'auto')
+})
+
+test('opening history cannot turn an earlier approval into a current decision',async()=>{
+ const {deps}=fakeMachine({}, {transcripts:{'%7':{entries:[
+  {role:'user',text:'Restart now, I approve.'},{role:'assistant',text:'The update is complete. No restart or decision is needed.'},
+ ]}}})
+ const output=JSON.parse((await readCallHandover({id:'%7',label:'Review'},deps)).output)
+ assert.equal(output.recap.requests,undefined)
+ assert.doesNotMatch(JSON.stringify(output),/Restart now, I approve/)
+ assert.match(output.recap.last_reply,/No restart or decision is needed/)
+ assert.equal(output.historical_deliveries_are_not_pending,true)
+})

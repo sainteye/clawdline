@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11626,
-  "riskKeys": 5083,
-  "nonRiskCount": 6543,
+  "englishContentKeys": 11629,
+  "riskKeys": 5084,
+  "nonRiskCount": 6545,
   "groups": [
     {
       "name": "acp / other",
@@ -3852,7 +3852,7 @@
     },
     {
       "name": "next / other",
-      "count": 991,
+      "count": 994,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4129,6 +4129,7 @@
         "next.copilotVoicePreviewLine",
         "next.copilotVoicePreviewing",
         "next.copilotVoiceRecommended",
+        "next.copilotWorkUpdateRequired",
         "next.copilotYouSaid",
         "next.devStackConfigTitle",
         "next.devStackEditButton",
@@ -4827,6 +4828,7 @@
         "next.voiceWorkList",
         "next.voiceWorkLoading",
         "next.voiceWorkManagedSource",
+        "next.voiceWorkManagedSourceHint",
         "next.voiceWorkModeEnabled",
         "next.voiceWorkModeLoading",
         "next.voiceWorkPause",
@@ -4844,6 +4846,7 @@
         "next.voiceWorkSettings",
         "next.voiceWorkSettingsLink",
         "next.voiceWorkSettingsMoved",
+        "next.voiceWorkSkipInput",
         "next.voiceWorkTitle",
         "next.voiceWorkUnknown",
         "next.workCreateItem",
@@ -6696,7 +6699,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 164,
+      "count": 163,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6827,7 +6830,6 @@
         "transparency.card.turn-todos.title",
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",
-        "transparency.card.voice-work.how",
         "transparency.card.voice-work.title",
         "transparency.claude",
         "transparency.codex",

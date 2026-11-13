@@ -29,3 +29,26 @@ test('a discarded opening never advances the Session report cursor',()=>{
  n.prepared('opening','current recap','',()=>{reported++})
  assert.equal(sent.length,1);assert.equal(reported,1)
 })
+
+test('each outstanding transcription is acknowledged before conversation can start',()=>{
+ const sent:Record<string,unknown>[]=[];const n=new WorkNarrator(e=>sent.push(e),()=> 'en')
+ n.event('input_audio_buffer.speech_started','one');n.event('input_audio_buffer.speech_stopped','one')
+ n.event('input_audio_buffer.speech_started','two');n.event('input_audio_buffer.speech_stopped','two')
+ n.conversation('one');n.received('one');assert.equal(sent.length,0)
+ n.received('two');assert.equal(sent.length,1)
+ assert.equal((sent[0].response as {tool_choice:string}).tool_choice,'auto')
+})
+
+test('parallel tools produce one continuation after every result, with marks held until submission',()=>{
+ const sent:Record<string,unknown>[]=[],marks:string[]=[]
+ const n=new WorkNarrator(e=>sent.push(e),()=> 'en')
+ n.event('response.created');n.toolStarted('one');n.toolStarted('two')
+ n.conversation('same-input',()=>marks.push('one'))
+ n.event('response.done')
+ assert.equal(sent.length,0);assert.equal(marks.length,0)
+ n.conversation('same-input',()=>marks.push('two'));n.toolFinished('one')
+ assert.equal(sent.length,0)
+ n.toolFinished('two')
+ assert.equal(sent.length,1);assert.deepEqual(marks,['one','two'])
+ n.event('response.done');assert.equal(sent.length,1)
+})

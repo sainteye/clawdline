@@ -30,15 +30,30 @@ var (
 	ErrUnknown  = errors.New("voice_work_outcome_unknown")
 )
 
+// Focus is captured with the utterance, never read from a later call's screen.
+type Focus struct {
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	Machine      string `json:"machine,omitempty"`
+	Conversation string `json:"conversation,omitempty"`
+}
+
 type Input struct {
-	ID         string   `json:"id"`
-	Call       string   `json:"call,omitempty"`
-	Text       string   `json:"text"`
-	At         int64    `json:"at"`
-	Planned    bool     `json:"planned"`
-	Ready      bool     `json:"ready"`
-	WaitFor    []string `json:"wait_for,omitempty"`
-	PlanRounds int      `json:"plan_rounds,omitempty"`
+	Cancelled     bool     `json:"cancelled,omitempty"`
+	Context       string   `json:"context,omitempty"`
+	Parked        bool     `json:"parked,omitempty"`
+	Deferred      bool     `json:"deferred,omitempty"`
+	Focus         *Focus   `json:"focus,omitempty"`
+	PlanningError string   `json:"planning_error,omitempty"`
+	PlanningStage string   `json:"planning_stage,omitempty"`
+	ID            string   `json:"id"`
+	Call          string   `json:"call,omitempty"`
+	Text          string   `json:"text"`
+	At            int64    `json:"at"`
+	Planned       bool     `json:"planned"`
+	Ready         bool     `json:"ready"`
+	WaitFor       []string `json:"wait_for,omitempty"`
+	PlanRounds    int      `json:"plan_rounds,omitempty"`
 }
 
 type Prepared struct {
@@ -113,6 +128,22 @@ func KnownTool(tool string) bool {
 }
 
 func (s *State) AddInput(in Input) (bool, error) {
+	if in.Focus != nil {
+		if !ValidText(in.Focus.ID) {
+			return false, ErrInvalid
+		}
+		for _, v := range []string{in.Focus.Label, in.Focus.Machine, in.Focus.Conversation} {
+			if v != "" && !ValidText(v) {
+				return false, ErrInvalid
+			}
+		}
+		held := *in.Focus
+		in.Focus = &held
+	}
+	s.isolateLegacyFailure()
+	if in.Context != "" && !ValidText(in.Context) {
+		return false, ErrInvalid
+	}
 	if !ValidText(in.ID) || in.Call != "" && !ValidText(in.Call) || !ValidText(in.Text) {
 		return false, ErrInvalid
 	}
@@ -149,10 +180,11 @@ func (s State) Pending() []Input {
 // Ready binds an explicitly supplied directory to exactly the saved inputs it
 // was fetched for. A newer utterance cannot run against an older catalogue.
 func (s *State) Ready(ids []string) error {
+	s.isolateLegacyFailure()
 	for _, id := range ids {
 		found := false
 		for _, in := range s.Inputs {
-			if in.ID == id {
+			if in.ID == id && !in.Planned {
 				found = true
 				break
 			}
@@ -162,7 +194,9 @@ func (s *State) Ready(ids []string) error {
 		}
 	}
 	for i := range s.Inputs {
-		if slices.Contains(ids, s.Inputs[i].ID) && !s.Inputs[i].Ready {
+		if slices.Contains(ids, s.Inputs[i].ID) && (!s.Inputs[i].Ready || s.Inputs[i].Deferred) {
+			s.Inputs[i].Deferred = false
+			s.Inputs[i].Parked = false
 			s.Inputs[i].Ready = true
 			s.Revision++
 		}
@@ -171,13 +205,160 @@ func (s *State) Ready(ids []string) error {
 }
 func (s State) ReadyPending() []Input {
 	out := []Input{}
-	for _, in := range s.Pending() {
+	for _, in := range s.Inputs {
+		if in.Planned || in.Deferred || in.PlanningError != "" {
+			continue
+		}
 		if !in.Ready {
 			break
 		}
 		out = append(out, in)
+		if len(out) == MaxPlanInputs {
+			break
+		}
 	}
 	return out
+}
+
+// Old stores have only one workspace error. Isolate those old pending inputs
+// before adding anything new; a fresh request is not a retry of earlier work.
+func (s *State) isolateLegacyFailure() {
+	if s.PlannerError == "" {
+		return
+	}
+	for _, in := range s.Inputs {
+		if !in.Planned && in.PlanningError != "" {
+			return
+		}
+	}
+	for i := range s.Inputs {
+		in := &s.Inputs[i]
+		if !in.Planned && !in.Deferred {
+			in.PlanningError = s.PlannerError
+			in.PlanningStage = "legacy"
+		}
+	}
+}
+
+func (s *State) FailPlanning(ids []string, code, stage string) {
+	changed := false
+	for i := range s.Inputs {
+		if slices.Contains(ids, s.Inputs[i].ID) && !s.Inputs[i].Planned {
+			s.Inputs[i].PlanningError = code
+			changed = true
+			s.Inputs[i].PlanningStage = stage
+		}
+	}
+	if changed {
+		s.PlannerError = code
+		s.Revision++
+	}
+}
+
+func (s *State) RetryPlanning(ids []string) error {
+	s.isolateLegacyFailure()
+	for _, id := range ids {
+		found := false
+		for _, in := range s.Inputs {
+			if in.ID == id && !in.Planned {
+				found = true
+			}
+		}
+		if !found {
+			return ErrConflict
+		}
+	}
+	for i := range s.Inputs {
+		if slices.Contains(ids, s.Inputs[i].ID) {
+			s.Inputs[i].PlanningError = ""
+			s.Inputs[i].PlanningStage = ""
+			s.Inputs[i].PlanRounds = 0
+		}
+	}
+	s.PlannerError = ""
+	for _, in := range s.Inputs {
+		if !in.Planned && in.PlanningError != "" {
+			s.PlannerError = in.PlanningError
+			break
+		}
+	}
+	s.Revision++
+	return nil
+}
+
+// Answer only resolves a conversational input; it cannot complete a work task.
+func (s *State) Answer(id, call string) error {
+	for i := range s.Inputs {
+		in := &s.Inputs[i]
+		if in.ID == id {
+			if in.Call != call || !in.Deferred {
+				return ErrConflict
+			}
+			if !in.Planned {
+				in.Planned = true
+				s.Revision++
+			}
+			return nil
+		}
+	}
+	return ErrInvalid
+}
+
+// Dismiss is an explicit inbox action. It retains the words and never changes
+// a task's approval or completion state.
+func (s *State) Dismiss(id string) error {
+	for i := range s.Inputs {
+		if s.Inputs[i].ID == id {
+			in := &s.Inputs[i]
+			if in.Planned {
+				return ErrConflict
+			}
+			in.Cancelled = true
+			in.Planned = true
+			in.WaitFor = nil
+			s.PlannerError = ""
+			for _, other := range s.Inputs {
+				if !other.Planned && other.PlanningError != "" {
+					s.PlannerError = other.PlanningError
+					break
+				}
+			}
+			s.Revision++
+			return nil
+		}
+	}
+	return ErrInvalid
+}
+
+// Park retains an interrupted conversation for explicit later submission. It
+// does not cancel queued work or claim the person's request was completed.
+func (s *State) Park(id, call string) error {
+	for i := range s.Inputs {
+		in := &s.Inputs[i]
+		if in.ID == id {
+			if in.Call != call || !in.Deferred {
+				return ErrConflict
+			}
+			if !in.Parked && !in.Planned {
+				in.Parked = true
+				s.Revision++
+			}
+			return nil
+		}
+	}
+	return ErrInvalid
+}
+func (s *State) ParkCall(call string) error {
+	if !ValidText(call) {
+		return ErrInvalid
+	}
+	for i := range s.Inputs {
+		if s.Inputs[i].Call == call && s.Inputs[i].Deferred && !s.Inputs[i].Planned && !s.Inputs[i].Parked {
+			s.Inputs[i].Parked = true
+			s.Revision++
+		}
+	}
+	return nil
 }
 
 func (s *State) task(id string) *Task {
@@ -343,6 +524,8 @@ func (s *State) ApplyPlan(expected int64, sources []string, changes []Change, re
 				return ErrFull
 			}
 			next.Inputs[i].PlanRounds++
+			next.Inputs[i].PlanningError = ""
+			next.Inputs[i].PlanningStage = ""
 			next.Inputs[i].WaitFor = slices.Clone(waitFor)
 			next.Inputs[i].Planned = true
 		}
@@ -351,6 +534,12 @@ func (s *State) ApplyPlan(expected int64, sources []string, changes []Change, re
 		return ErrInvalid
 	}
 	next.Reply, next.PlannerError = reply, ""
+	for _, in := range next.Inputs {
+		if !in.Planned && in.PlanningError != "" {
+			next.PlannerError = in.PlanningError
+			break
+		}
+	}
 	next.PlanVersion++
 	next.releaseContinuations()
 	next.Revision++
@@ -517,6 +706,7 @@ func (s *State) Progress(id, runner, key, result string, now int64) error {
 }
 
 func (s *State) Finish(id, runner, key, result, problem string, unknown bool, now int64) error {
+	s.isolateLegacyFailure()
 	t := s.task(id)
 	if t == nil || t.Runner != runner || t.ActionKey != key || (t.Status != "running" && t.Status != "cancel_requested") {
 		return ErrConflict

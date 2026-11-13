@@ -3338,7 +3338,7 @@ test("voice work reads and writes stay on the selected machine and keep their ow
  const client=new FakeClient();const {reader}=seam(client)
  assert.equal((await reader.fetch("/v1/voice/copilot-work")).status,200)
  assert.deepEqual(client.calls.pop(),["_machineRequest","mac-a","copilot-work",{},"read"])
- const work={action:"input",id:"utterance-one",text:"List Sessions"}
+ const work={action:"input",id:"utterance-one",text:"List Sessions",deferred:true,focus:{id:"fleet:remote:%257",label:"Review",machine:"remote",conversation:"conversation-a"},context:"Bounded earlier evidence"}
  assert.equal((await reader.fetch("/v1/voice/copilot-work",post(work))).status,200)
  assert.deepEqual(client.calls.pop(),["_machineRequest","mac-a","copilot-work-update",{work},"action"])
  assert.equal((await reader.fetch("/v1/voice/copilot-work?other=1")).status,400)
