@@ -52,6 +52,13 @@ optional read port and generated projections. Its proposed API59 route and
 16-operation surface remains intact. This work replaces chat recovery through
 a whole Export only after the producer and consumer are implemented together.
 
+The [optional SQL read adapter](project-assistants-read-store.md) implements
+that port over a borrowed query-only pool. It returns a transaction-consistent
+raw-byte-bounded prefix with complete unknown/control counts, stateless signed
+cursors and nested event-scope validation. Its tests include the actual Store
+and a concurrent WAL writer. SQLite still parses/scans aggregate JSON; exact
+HTTP/Cloud packing and production Host/Chat wiring remain consumer work.
+
 ## Approved journey and fixed inputs
 
 | Approved frame | Contract and fixed input/output | Owner |

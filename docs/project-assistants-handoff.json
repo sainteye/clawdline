@@ -872,7 +872,7 @@
     "cost": 0
   },
   "read_view_extension": {
-    "state": "frozen foundation; producer/consumer not wired",
+    "state": "optional SQL producer implemented; HTTP/Cloud/UI consumer not wired in this module",
     "app_port": "ReadViews.Read(context.Context,ReadViewQuery)(ReadView,error)",
     "domain_request": "ReadViewRequest",
     "wire_request": "ProjectAssistantReadViewRequest",
@@ -895,6 +895,15 @@
     "authority": "AuthorizationBinding/ByteLimit/CursorByteLimit are trusted app inputs only, not JSON authority. Reader epoch/reference grants no permission.",
     "cursor": "Live history tuple with event reconciliation, no Bot.version binding; permission/trace references bind current full execution fence; maximum4096 bytes.",
     "frontier": "Only snapshot mode replaces replay cursor; other page heads never advance it.",
-    "data_policy": "Mandatory counted pending turns/queued messages bounded by existing16; cross-generation unknown barriers counted exactly; permission/trace summaries paged and full stored details fetched before answering; archive remains separate transfer."
+    "data_policy": "Mandatory counted pending turns/queued messages bounded by existing16; cross-generation unknown barriers counted exactly; permission/trace summaries paged and full stored details fetched before answering; archive remains separate transfer.",
+    "producer": {
+      "constructor": "projectassistantstore.NewReadViews(*sql.DB)(*ViewStore,error)",
+      "port": "app.ReadViews",
+      "doc": "docs/project-assistants-read-store.md",
+      "database": "Borrowed existing query-only pool; no open/close/pragma/schema/index/writer changes.",
+      "candidate_budget": "Head/control/candidate raw JSON share the trusted existing Cloud byte ceiling; engine scans, Go allocations and exact HTTP/Cloud encoding are separate.",
+      "event_scope": "Outer and nested payloads retain the stored Bot/Project/conversation; execution references retain their complete fence.",
+      "checks": "Normal whole Store package and named MarkRead/WAL race cases passed; original whole-package race timeout is retained and is not a pass."
+    }
   }
 }
