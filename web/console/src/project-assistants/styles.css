@@ -123,3 +123,9 @@
   .project-assistants .pa-form-panel { border:0;max-width:none; }
 }
 @media(prefers-reduced-motion:reduce) { .project-assistants *, .project-assistants *::before, .project-assistants *::after { animation:none!important;transition:none!important;scroll-behavior:auto!important; } }
+
+.pa-memory form,.pa-memory fieldset{display:grid;gap:12px}
+.pa-memory textarea{display:block;width:100%;box-sizing:border-box}
+.project-assistants label.pa-memory-entry{display:flex;align-items:center;gap:10px;min-height:44px;margin:0;color:inherit;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.project-assistants .pa-memory-entry input[type="checkbox"]{flex:none;width:20px;height:20px;min-height:20px;padding:0;margin:0;border-radius:4px;accent-color:#e39567}
+.pa-memory .pa-toolbar h3{margin:0}

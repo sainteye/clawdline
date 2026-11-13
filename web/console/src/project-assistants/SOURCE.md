@@ -229,3 +229,24 @@ tests pass. The mobile browser route now goes Chat → Bots → Sessions before
 the existing opener-focus assertion. These correct the observed failed paths;
 they do not turn the failed v5 matrix into a passing UI receipt. Normal eight
 groups and the retained red controls remain the root's acceptance gate.
+
+## Human memory controls
+
+`MemoryPanel.tsx` exposes the existing human `saveMemory` and source-aware
+`forget` operations through the Bot's Memory panel. People enter literal notes
+and select saved text rather than copying provenance identifiers. Server-owned
+manual provenance, current Project/reader authority and expected revisions stay
+unchanged. The panel lists only active entries and reports the retained forgotten
+source count; history and external Project/native memory remain separate.
+
+Each uncertain memory mutation retains its exact command, entry identity and
+expected revision for an explicit retry. A different mutation cannot replace an
+unresolved one. Confirmed writes clear their intent before a display refresh,
+so a failed refresh cannot duplicate a saved note. Closing the panel retains an
+unconfirmed note/selection until it is reopened in the same Bot chat. These
+metadata operations never construct an ACP provider or run a model.
+
+Navigation uses distinct `pagehide` pause and `pageshow` resume handlers. A page
+may still report visible while leaving; that state must never start a new
+event read during teardown. Draft flushing and owned read cancellation remain
+shared with ordinary visibility changes.

@@ -7,6 +7,7 @@ import { partitionMessages } from "./chat-items"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import { BotAvatar } from "./BotAvatar"
 import { BotSettings } from "./BotSettings"
+import { MemoryPanel } from "./MemoryPanel"
 import { ChatRows } from "./ChatRows"
 import { Composer } from "./Composer"
 import { PermissionCard } from "./PermissionCard"
@@ -47,9 +48,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [text,setText]=useState(()=>view.draft(draftKey)),[quote,setQuote]=useState(view.quotes.get(draftKey)??"")
   const [error,setError]=useState(()=>recoveryRequired?"pa_read_only":""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false)
   const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null)
-  const [sourceIDs,setSourceIDs]=useState(""),[more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
+  const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
   const stopping=useRef(false)
+  const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
   const refreshBusy=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),activeMutations=useRef(new Set<AbortController>())
   const reads=useRef(new Set<AbortController>()),collectionBusy=useRef(new Map<string,AbortController>()),historyCursors=useRef(new Set<string>())
   const collectionCursors=useRef({permissions:new Set<string>(),traces:new Set<string>()})
@@ -161,9 +163,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     alive.current=true;const control=new AbortController()
     // Initial entry uses only the new consistent bounded snapshot.
     if(!recovery.current)void recoverSnapshot(control.signal).then(async()=>{if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}).catch(e=>{if(!control.signal.aborted&&valid()){lock();fail(e)}})
-    const visibility=()=>{if(document.visibilityState==="hidden"){eventControl.current?.abort();if(timer.current)clearTimeout(timer.current);for(const read of reads.current)read.abort();view.flush(draftKey)}else if(!recovery.current)void refresh()}
-    document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",visibility)
-    return()=>{alive.current=false;control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",visibility)}
+    // pagehide may run while visibilityState is still visible. Leaving must
+    // pause IO rather than start a refresh that the unloading page cannot read.
+    const pause=()=>{eventControl.current?.abort();if(timer.current){clearTimeout(timer.current);timer.current=null}for(const read of reads.current)read.abort();view.flush(draftKey)}
+    const visibility=()=>{if(document.visibilityState==="hidden")pause();else if(!recovery.current)void refresh()}
+    const show=(event:PageTransitionEvent)=>{if(event.persisted)visibility()}
+    document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show)
+    return()=>{alive.current=false;control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
 
   useLayoutEffect(()=>{
@@ -320,23 +326,60 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     finally{reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history")}
   }
   const loadExport=async()=>{
-    try {const value=await authorized(source,current,s=>source.export(key,s),new AbortController().signal);if(valid()&&sameConversation({key:value.bot.key,project:value.bot.project,conversation_id:value.conversation.id},scope))setMemory(value)}catch(e){fail(e)}
+    const value=await authorized(source,current,s=>source.export(key,s),new AbortController().signal)
+    if(!valid()||!sameConversation({key:value.bot.key,project:value.bot.project,conversation_id:value.conversation.id},scope))throw failure("pa_scope_denied")
+    if(memoryShown.current)setMemory(previous=>previous&&previous.memory.revision>value.memory.revision?previous:value)
+  }
+  const memoryOutcomeUnknown=(error:unknown)=>["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(errorCode(error))||(error as Error)?.name==="AbortError"
+  const saveMemory=async(text:string)=>{
+    if(!memory||!text.trim())return
+    if(memoryForget.current)throw failure("pa_outcome_unknown")
+    // Keep the same request after an uncertain reply; a second click cannot
+    // turn one note into two entries or move it onto a newer revision.
+    let intent=memorySave.current
+    if(intent&&intent.entry.text!==text)throw failure("pa_outcome_unknown")
+    if(!intent){
+      const id=crypto.randomUUID()
+      intent={command:command(key,"memory_save"),expected_revision:memory.memory.revision,entry:{id,key,project:memory.bot.project,text,revision:memory.memory.revision,sources:[],forgotten:false}}
+      memorySave.current=intent
+    }
+    const request=intent
+    let attempted=false
+    try{await mutate((_,signal)=>{attempted=true;return source.saveMemory(request,signal)})}
+    catch(error){if(!attempted||!memoryOutcomeUnknown(error))memorySave.current=null;throw error}
+    memorySave.current=null
+    await loadExport().catch(fail)
+  }
+  const forgetMemory=async(sourceIDs:string[])=>{
+    if(!memory||!sourceIDs.length)return
+    if(memorySave.current)throw failure("pa_outcome_unknown")
+    let intent=memoryForget.current
+    const ids=[...new Set(sourceIDs)].sort()
+    if(intent&&JSON.stringify(intent.source_ids)!==JSON.stringify(ids))throw failure("pa_outcome_unknown")
+    if(!intent){intent={command:command(key,"forget"),project:memory.bot.project,expected_revision:memory.memory.revision,source_ids:ids};memoryForget.current=intent}
+    const request=intent
+    let attempted=false
+    try{await mutate((_,signal)=>{attempted=true;return source.forget(request,signal)})}
+    catch(error){if(!attempted||!memoryOutcomeUnknown(error))memoryForget.current=null;throw error}
+    memoryForget.current=null
+    await loadExport().catch(fail)
+    void refresh(true)
   }
   const bot=data?.bot??summary.bot,enabled=!recoveryRequired&&!!data&&canWrite(data.source), parts=partitionMessages(messages,turns)
   return <section className="pa-chat" aria-label={bot.name}>
     <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36}/><div><h2 tabIndex={-1}>{bot.name}</h2><small>{projectName||bot.project.project_id} · {bot.agent==="claude"?"Claude Code":"Codex"} · {key.machine_id}</small></div><button className="pa-circle" aria-label={w.settings} onClick={()=>setSettings(true)}>···</button></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{!data&&!error&&<p role="status">{w.loading}</p>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{w.unavailable} ({error}) <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
-      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector("textarea")?.focus()}} w={w} language={language}/>
+      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>
       {works.map(work=><WorkResultCard key={work.id} work={work} w={w} onOpen={onOpenWork}/>)}<Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
       {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=><p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
-      {memory&&<section className="pa-card"><h3>{w.memoryRevision}: {memory.memory.revision}</h3><p>{w.forgetScope}</p><p>{w.forgotten}: {memory.memory.forgotten_source_ids.join(", ")||"—"}</p>{memory.memory_entries.filter(e=>!e.forgotten).map(e=><p key={e.id}>{e.id}: {e.text}</p>)}<label>{w.sourceIDs}<textarea value={sourceIDs} onChange={e=>setSourceIDs(e.target.value)}/></label><button disabled={!enabled||!sourceIDs.trim()} onClick={()=>void mutate((d,s)=>source.forget({command:command(key,"forget"),project:d.bot.project,expected_revision:memory.memory.revision,source_ids:sourceIDs.split("\n").map(v=>v.trim()).filter(Boolean)},s)).then(()=>loadExport()).catch(fail)}>{w.forget}</button></section>}
+      {memory&&<MemoryPanel value={memory} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>{memoryShown.current=false;setMemory(null)}} w={w}/>}
       </div>
     </div>
     <div className="pa-chat-footer">{parts.queued.map(m=><div className="pa-queued" key={m.id}>{w.queued}: {m.text}</div>)}{receipt&&<p role="status">{w[receipt.state]} · {receipt.id}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
       {!following&&<button className="pa-pill" onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>{w.jump}</button>}
-      <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>void loadExport()}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button>}</div>
+      <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>{memoryShown.current=true;void loadExport().catch(fail)}}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button>}</div>
       <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown||(head?.unknown_turn_count??0)>0} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w}/>
     </div>
     {settings&&<BotSettings bot={bot} enabled={enabled} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}

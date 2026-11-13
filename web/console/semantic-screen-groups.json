@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11756,
-  "riskKeys": 5135,
-  "nonRiskCount": 6621,
+  "englishContentKeys": 11761,
+  "riskKeys": 5137,
+  "nonRiskCount": 6624,
   "groups": [
     {
       "name": "acp / other",
@@ -5424,7 +5424,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 74,
+      "count": 77,
       "sources": [
         null
       ],
@@ -5458,6 +5458,7 @@
         "projectAssistants.loading",
         "projectAssistants.machine",
         "projectAssistants.memory",
+        "projectAssistants.memoryNote",
         "projectAssistants.memoryRevision",
         "projectAssistants.memory_disabled",
         "projectAssistants.memory_isolated",
@@ -5476,9 +5477,11 @@
         "projectAssistants.read",
         "projectAssistants.refresh",
         "projectAssistants.reject_once",
+        "projectAssistants.remember",
         "projectAssistants.retry",
         "projectAssistants.running",
         "projectAssistants.save",
+        "projectAssistants.savingMemory",
         "projectAssistants.search",
         "projectAssistants.selectBot",
         "projectAssistants.send",
