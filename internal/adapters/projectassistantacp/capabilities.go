@@ -119,7 +119,14 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 	if err != nil {
 		return nil, err
 	}
-	client, err := NewClient(proc, p.o.Limits, q.Binding.Fence, sink, p.o.ReadOnlyPermission)
+	// The default classifier binds host-verified identity, never identity
+	// asserted inside a permission payload. Explicit host classifiers remain
+	// responsible for their separately verified enforcement boundary.
+	classify := p.o.ReadOnlyPermission
+	if classify == nil {
+		classify = NewReadOnlyPermissionClassifier(caps.Agent, caps.AdapterVersion)
+	}
+	client, err := NewClient(proc, p.o.Limits, q.Binding.Fence, sink, classify)
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), p.o.Limits.CleanupTimeout)
 		defer cancel()
