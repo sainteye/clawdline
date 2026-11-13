@@ -94,6 +94,11 @@ export const CARRIED = {
   // call heard, said and did, appended a turn at a time to the machine that
   // gave it its pass.
   "copilot-journal": "POST /v1/voice/copilot-journal",
+  // The voice copilot's Session recap (`realtime/copilot-tools.ts`,
+  // `get_session_recap`): the machine holding the Session reads its whole
+  // record and Board steps, and a text model on its key writes one spoken
+  // recap.
+  "copilot-recap": "POST /v1/voice/copilot-recap",
   // The voice copilot's call start (`realtime/realtime-copilot.ts`): a Realtime
   // client secret minted with the machine's key, a machine command with no
   // body.

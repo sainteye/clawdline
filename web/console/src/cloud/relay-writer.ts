@@ -331,6 +331,7 @@ export type WriteRoute =
   | { op: "copilot-session"; word: Carried<"copilot-session"> }
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
+  | { op: "copilot-recap"; word: Carried<"copilot-recap"> }
   | { op: "copilot-journal"; word: Carried<"copilot-journal"> }
   | { op: "copilot-work"; word: Carried<"copilot-work"> }
   | { op: "copilot-work-update"; word: Carried<"copilot-work-update"> }
@@ -820,6 +821,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-decide" && segments.length === 2) {
     return { op: "copilot-decide", word: "copilot-decide" }
   }
+  if (head === "voice" && a === "copilot-recap" && segments.length === 2) {
+    return { op: "copilot-recap", word: "copilot-recap" }
+  }
   if (head === "voice" && a === "copilot-work" && segments.length === 2) return { op: "copilot-work-update", word: "copilot-work-update" }
   if (head === "voice" && a === "copilot-journal" && segments.length === 2) {
     return { op: "copilot-journal", word: "copilot-journal" }
@@ -1106,6 +1110,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-session":
     case "copilot-briefing":
     case "copilot-decide":
+    case "copilot-recap":
     case "copilot-work":
     case "copilot-work-update":
     case "copilot-journal":
@@ -2131,6 +2136,16 @@ export class RelayWriter {
         const sent = await bodyOf(init)
         const sessions = Array.isArray(sent.sessions) ? sent.sessions : []
         return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? ""), ...(sessions.length ? { sessions } : {}) } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+      }
+      case "copilot-recap": {
+        // A Session's spoken recap is written by the machine that holds the
+        // Session: its record and Board steps are there, not on the call's.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        }
+        const sent = await bodyOf(init)
+        const conversation = typeof sent.conversation === "string" && sent.conversation ? { conversation: sent.conversation } : {}
+        return this.machineWorkV2(client, route.word, { recap: { session: String(sent.session ?? ""), ...conversation } }, headerOf(init, "idempotency-key"), unopenedMachine(init) ?? this.host.machine)
       }
       case "copilot-work": {
         if (url.search) throw failure("invalid_query", "Voice work has no query parameters.", 400)

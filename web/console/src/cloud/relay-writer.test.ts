@@ -3274,6 +3274,15 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
   await reader.fetch("/v1/voice/copilot-decide", post({ said: "the clothes photo one", extra: 1 }, { "Idempotency-Key": "decide-1" }))
   assert.deepEqual(client.calls[0].slice(1, 5), ["decide-1", "mac-b", "copilot-decide", { decision: { said: "the clothes photo one" } }])
 
+  // A Session's recap is written where the Session is: the page's machine,
+  // or the one a page showing every machine names for the row.
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-recap", post({ session: "%2", conversation: "c1", extra: 1 }, { "Idempotency-Key": "recap-1" }))
+  assert.deepEqual(client.calls[0].slice(1, 5), ["recap-1", "mac-a", "copilot-recap", { recap: { session: "%2", conversation: "c1" } }])
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-recap", post({ session: "%7" }, { "Idempotency-Key": "recap-2", "X-Clawdline-Unopened-Machine": "mac-c" }))
+  assert.deepEqual(client.calls[0].slice(1, 5), ["recap-2", "mac-c", "copilot-recap", { recap: { session: "%7" } }])
+
   // And the call's journal lines are kept there too.
   client.calls.length = 0
   await reader.fetch("/v1/voice/copilot-journal", post({ call: "call-0001", entries: [{ at: 1, kind: "heard", text: "hi" }] }, { "Idempotency-Key": "journal-1" }))

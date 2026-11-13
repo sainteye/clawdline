@@ -39,6 +39,7 @@ var generatedDecoders = map[string]genDecoder{
 	"copilot-briefing":                   genDecodeCopilotBriefing,
 	"copilot-decide":                     genDecodeCopilotDecide,
 	"copilot-journal":                    genDecodeCopilotJournal,
+	"copilot-recap":                      genDecodeCopilotRecap,
 	"copilot-session":                    genDecodeCopilotSession,
 	"copilot-settings":                   genDecodeCopilotSettings,
 	"copilot-settings-update":            genDecodeCopilotSettingsUpdate,
@@ -1083,6 +1084,27 @@ func genDecodeCopilotJournal(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("journal")
+	return p, req, true
+}
+
+// genDecodeCopilotRecap is the `copilot-recap` row's decode.
+func genDecodeCopilotRecap(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "recap", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("recap", genRule{kind: "object", maxBytes: 65536}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-recap"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("recap")
 	return p, req, true
 }
 

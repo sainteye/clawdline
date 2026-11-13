@@ -3376,6 +3376,36 @@
     "Note": true
   },
   {
+    "Name": "voice.copilot_recap_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_recap_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_recap_input_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_recap_line_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_recap_pages",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_recap_timeout_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "voice.model_download_bytes",
     "Known": true,
     "Note": true

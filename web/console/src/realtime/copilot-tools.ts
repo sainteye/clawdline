@@ -257,11 +257,14 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 【總結一個 Session 的經過（get_session_recap）】
 - 用一段自然的口語講，像同事口頭跟你交接：先一句說這個 Session 主要在做什麼，再照時間順序講它完成了哪幾件事（合併相近的，最多講五件），最後一句說現在的狀態、還有沒有要使用者處理的。
 - 這一段可以比平常長，大約五到八句。像講故事一樣用「一開始…接著…後來…最後…」把事情串起來；不要說「第一、第二」或「1、2、3」，不要逐條唸清單，不要唸 commit 編號、檔名或指令。
-- 依 deliveries 和 requests 講，紀錄裡沒有的事不要補。
+- 回傳有 recap 時，那是機器剛剛讀完整紀錄與看板寫好的匯報：照它的內容講，數字一個都不要改，也不要補充紀錄裡沒有的事。
+- 沒有 recap 時，依 deliveries 和 requests 講，紀錄裡沒有的事不要補。
+- 進度數字（完成幾步、還剩幾項）只能用 progress，那是剛剛從看板讀到的現況。deliveries 每筆的 when 是那次回報的時間，裡面的數字是當時的；和 progress 不同時，絕對不可以說成現在的進度，要提就說是什麼時候的。沒有 progress 就不要講剩幾項。
 
 【解說單一 Session】
 - 先讀 get_session_summary，用兩到三句講：它在做什麼、做到哪（依 delivered_summary 或 last_reply 講具體結果）、現在要不要使用者處理（在等什麼）。閒置的 Session 也要說它最後完成了什麼。使用者追問過程或細節，再讀 get_session_activity。
 - 依紀錄內容具體講，不要只說「在工作中」或「已閒置」。
+- 有 progress 時，進度數字以 progress 為準（剛剛從看板讀到的步驟數）；delivered_summary 或 last_reply 裡的數字和它不同時，那是舊的，不可以說成現在的進度。
 - last_reply 的結尾如果在問使用者（要不要做、選哪個、請他確認），即使狀態是閒置，也要說它在等使用者決定，並問要不要詳細解釋。
 
 【解釋最後一則回覆（explain_session_reply）】
@@ -304,7 +307,7 @@ export const COPILOT_TOOLS = [
     type: 'function',
     name: 'get_session_recap',
     description:
-      '讀取特定 Session 從開始到現在的完整經過：使用者陸續交代了哪些事（requests）、它每一次交付回報了什麼（deliveries，依時間排序）、以及它最後一則回覆。使用者問「這個 Session 完成了什麼」「從頭到尾做了哪些事」「幫我總結這個 Session」時用這個，然後用一段自然的口語講給使用者聽。',
+      '讀取特定 Session 從開始到現在的完整經過。機器整理得出來時回傳 recap（讀完整紀錄與看板後寫好的口語匯報）與 progress（看板上現在的步驟數）；整理不出來時回傳使用者陸續交代的事（requests）、每次交付回報（deliveries，依時間排序、附當時時間）、最後一則回覆與 progress。使用者問「這個 Session 完成了什麼」「從頭到尾做了哪些事」「幫我總結這個 Session」「還剩幾項」時用這個，然後用一段自然的口語講給使用者聽。整理可能要十幾秒，呼叫前先說一聲請使用者稍等。',
     parameters: {
       type: 'object',
       properties: {
@@ -1395,6 +1398,8 @@ export interface RecapRead {
   requests: { text: string; at?: number }[]
   deliveries: { text: string; at?: number }[]
   lastReply: string
+  /** Unix seconds of the last reply, when the record says. */
+  lastReplyAt?: number
   pages: number
   complete: boolean
   /** The newest entry read, where a report of this recap ends. */
@@ -1412,6 +1417,7 @@ export async function readRecap(deps: ToolDeps, at: string | Pick<CopilotSession
   const requests: RecapRead['requests'] = []
   const deliveries: RecapRead['deliveries'] = []
   let lastReply = ''
+  let lastReplyAt: number | undefined
   let before: number | undefined
   let pages = 0
   let complete = false
@@ -1446,7 +1452,7 @@ export async function readRecap(deps: ToolDeps, at: string | Pick<CopilotSession
     if (pages === 1) {
       for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i] as Record<string, unknown> | null
-        if (e && e.role === 'assistant' && str(e.text).trim()) { lastReply = clip(plainScreenText(str(e.text)), ACTIVITY_TEXT_CHARS); break }
+        if (e && e.role === 'assistant' && str(e.text).trim()) { lastReply = clip(plainScreenText(str(e.text)), ACTIVITY_TEXT_CHARS); lastReplyAt = Number(e.at) || undefined; break }
       }
     }
     // Pages arrive newest first; each page's own entries are oldest first.
@@ -1458,7 +1464,7 @@ export async function readRecap(deps: ToolDeps, at: string | Pick<CopilotSession
   }
   // The newest are the ones worth keeping when there are too many; the first request is the goal.
   const keptRequests = requests.length > RECAP_REQUESTS ? [requests[0], ...requests.slice(-(RECAP_REQUESTS - 1))] : requests
-  return { requests: keptRequests, deliveries: deliveries.slice(-RECAP_DELIVERIES), lastReply, pages, complete, ...(newest ? { newest } : {}) }
+  return { requests: keptRequests, deliveries: deliveries.slice(-RECAP_DELIVERIES), lastReply, ...(lastReplyAt ? { lastReplyAt } : {}), pages, complete, ...(newest ? { newest } : {}) }
 }
 
 /**
@@ -1582,7 +1588,115 @@ async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   deps.focus?.set(found.row.id)
+  const written = await machineRecap(deps, logs, found.row)
+  if (written) return written
   return recapForRow(deps, logs, found.row)
+}
+
+/** How long the machine may take to read a whole Session and write its recap. */
+export const MACHINE_RECAP_MS = 30_000
+
+/**
+ * The machine's own recap of a Session (`POST /v1/voice/copilot-recap`): it
+ * reads every request, reply and report with when it happened, and the
+ * Session's Board steps as they are now, and a text model on its key writes
+ * what to say. Undefined when the machine cannot (no key, an older daemon, a
+ * slow answer), and the call reads the record itself.
+ */
+async function machineRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
+  let res: Response
+  try {
+    res = await rowFetch(deps, row)('/v1/voice/copilot-recap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
+      body: JSON.stringify({ session: sid(row), ...(row.conversation ? { conversation: row.conversation } : {}) }),
+      signal: AbortSignal.timeout(MACHINE_RECAP_MS),
+    })
+  } catch {
+    // refusal-ok: a slow or unreachable recap leaves the call's own read of the record.
+    logs.push({ level: 'info', text: `機器沒有及時整理「${row.label}」的經過，改由副駕駛自己讀` })
+    return undefined
+  }
+  if (!res.ok) {
+    logs.push({ level: 'info', text: `機器沒有整理「${row.label}」的經過（HTTP ${res.status}${(await refusalText(res)) ? `：${await refusalText(res)}` : ''}），改由副駕駛自己讀` })
+    return undefined
+  }
+  const body = (await res.json().catch(() => null)) as { recap?: unknown; progress?: unknown; complete?: unknown } | null
+  const recap = str(body?.recap).trim()
+  if (!recap) return undefined
+  const progress = spokenProgress(body?.progress)
+  logs.push({ level: 'info', text: `機器整理好「${row.label}」的經過` })
+  return {
+    session_id: row.id,
+    label: row.label,
+    assistant: row.assistant,
+    state: row.state,
+    recap,
+    ...(progress ? { progress } : {}),
+    ...(row.question ? { question: row.question } : {}),
+    ...(body?.complete === false ? { note: '更早的經過沒有讀到' } : {}),
+  }
+}
+
+/** Board progress as the call is shown it: counts read just now, or undefined when there is none. */
+export function spokenProgress(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const p = raw as Record<string, unknown>
+  const total = Number(p.total_steps) || 0
+  const done = Number(p.done_steps) || 0
+  const todosDone = Number(p.todos_done) || 0
+  const todosOpen = Number(p.todos_open) || 0
+  if (!total && !todosDone && !todosOpen) return undefined
+  const cards = Array.isArray(p.cards) ? p.cards.filter((c): c is Record<string, unknown> => !!c && typeof c === 'object') : []
+  return {
+    read: '剛剛從看板讀到的現況',
+    ...(total ? { done_steps: done, total_steps: total, remaining_steps: Math.max(0, total - done) } : {}),
+    ...(todosDone || todosOpen ? { todos_done: todosDone, todos_open: todosOpen } : {}),
+    ...(cards.length ? { cards: cards.map((c) => ({ title: str(c.title), done_steps: Number(c.done_steps) || 0, total_steps: Number(c.total_steps) || 0 })) } : {}),
+  }
+}
+
+/**
+ * Board progress read in the browser from the Session's to-dos, counted as
+ * the Board counts: cancelled steps are not steps. Undefined when the read
+ * fails or the Session has nothing on the Board.
+ */
+async function boardProgress(deps: ToolDeps, row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
+  const target = row.conversation ? `conversation:${row.conversation}` : sid(row)
+  try {
+    const res = await rowFetch(deps, row)(`/v1/work/v2/session-todos/${encodeURIComponent(target)}`, NAMED_READ)
+    if (!res.ok) return undefined
+    return spokenProgress(progressOfTodos(await res.json()))
+  } catch {
+    // refusal-ok: a Session's summary still says what its record says without the Board's count.
+    return undefined
+  }
+}
+
+/** The Board's step and to-do counts in one Session's to-do page. */
+export function progressOfTodos(page: unknown): Record<string, unknown> {
+  const p = (page && typeof page === 'object' ? page : {}) as Record<string, unknown>
+  const items = Array.isArray(p.assigned_items) ? p.assigned_items : []
+  const todos = Array.isArray(p.direct_todos) ? p.direct_todos : []
+  let done = 0
+  let total = 0
+  const cards = items.map((raw) => {
+    const item = (raw ?? {}) as Record<string, unknown>
+    const steps = Array.isArray(item.steps) ? item.steps as Record<string, unknown>[] : []
+    let d = 0
+    let t = 0
+    for (const s of steps) {
+      if (s?.status === 'cancelled' || s?.cancelled_at) continue
+      t++
+      if (s?.status === 'done' || s?.done === true) d++
+    }
+    done += d
+    total += t
+    return { title: str(item.title), done_steps: d, total_steps: t }
+  })
+  let todosDone = 0
+  for (const td of todos) if ((td as Record<string, unknown> | null)?.completed_at) todosDone++
+  return { cards, done_steps: done, total_steps: total, todos_done: todosDone, todos_open: todos.length - todosDone }
 }
 
 async function recapForRow(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<unknown> {
@@ -1594,6 +1708,10 @@ async function recapForRow(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionR
   }
   // A recap told to the person is a report: "what happened since" starts after it.
   markReported(deps, row, recap.newest)
+  const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
+  const progress = await boardProgress(deps, row)
+  // A delivery's own count may be hours old: each one says when it was written.
+  const dated = (d: { text: string; at?: number }) => (whenPhrase(d.at, now) ? { when: whenPhrase(d.at, now), text: d.text } : { text: d.text })
   logs.push({ level: 'info', text: `成功讀取「${row.label}」經過：${recap.requests.length} 個交代、${recap.deliveries.length} 次交付（讀了 ${recap.pages} 頁）` })
   return {
     session_id: row.id,
@@ -1601,9 +1719,11 @@ async function recapForRow(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionR
     assistant: row.assistant,
     state: row.state,
     requests: recap.requests.map((r) => r.text),
-    deliveries: recap.deliveries.map((d) => d.text),
+    deliveries: recap.deliveries.map(dated),
     ...(row.delivered && !recap.deliveries.some((d) => d.text === row.delivered) ? { latest_delivery: row.delivered } : {}),
     ...(recap.lastReply ? { last_reply: recap.lastReply } : {}),
+    ...(whenPhrase(recap.lastReplyAt, now) ? { last_reply_when: whenPhrase(recap.lastReplyAt, now) } : {}),
+    ...(progress ? { progress } : {}),
     ...(row.question ? { question: row.question } : {}),
     ...(recap.complete ? {} : { note: '這個 Session 很長，只讀了最近的部分；更早的經過沒有包含在內' }),
   }
@@ -1653,12 +1773,14 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
   } catch {
     // refusal-ok: the summary still carries the Session's own delivery words and state without its transcript.
   }
+  const progress = await boardProgress(deps, row)
   const out = {
     session_id: row.id,
     label: row.label,
     assistant: row.assistant,
     state: row.state,
     work_state: row.work_state,
+    ...(progress ? { progress } : {}),
     ...(row.delivered ? { delivered_summary: row.delivered } : {}),
     ...(whenPhrase(row.delivered_at, now) ? { delivered_when: whenPhrase(row.delivered_at, now) } : {}),
     ...(lastReply ? { last_reply: lastReply } : {}),

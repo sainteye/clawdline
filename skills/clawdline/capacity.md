@@ -693,6 +693,12 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `voice.copilot_journal_seconds` | 1209600 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `voice.copilot_journal_text_characters` | 4000 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_key_bytes` | 400 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_recap_body_bytes` | 4096 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_recap_characters` | 2500 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_recap_input_characters` | 60000 | `characters` | `coalesce` | `sender, diagnostics` | — |
+| `voice.copilot_recap_line_characters` | 1200 | `characters` | `coalesce` | `diagnostics` | — |
+| `voice.copilot_recap_pages` | 40 | `rows` | `coalesce` | `sender, diagnostics` | — |
+| `voice.copilot_recap_timeout_milliseconds` | 25000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `voice.polish_characters` | 4000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.polish_terms` | 240 | `rows` | `refuse` | `diagnostics` | — |

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11689,
-  "riskKeys": 5112,
-  "nonRiskCount": 6577,
+  "englishContentKeys": 11701,
+  "riskKeys": 5116,
+  "nonRiskCount": 6585,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 499,
+      "count": 507,
       "sources": [
         null
       ],
@@ -876,6 +876,14 @@
         "capacityRow.voice.copilot_journal_text_characters.full",
         "capacityRow.voice.copilot_journal_text_characters.what",
         "capacityRow.voice.copilot_key_bytes.what",
+        "capacityRow.voice.copilot_recap_body_bytes.what",
+        "capacityRow.voice.copilot_recap_characters.what",
+        "capacityRow.voice.copilot_recap_input_characters.full",
+        "capacityRow.voice.copilot_recap_input_characters.what",
+        "capacityRow.voice.copilot_recap_line_characters.full",
+        "capacityRow.voice.copilot_recap_line_characters.what",
+        "capacityRow.voice.copilot_recap_pages.what",
+        "capacityRow.voice.copilot_recap_timeout_milliseconds.full",
         "capacityRow.voice.polish_characters.what",
         "capacityRow.voice.polish_terms.what",
         "capacityRow.voice.polish_timeout_milliseconds.full",

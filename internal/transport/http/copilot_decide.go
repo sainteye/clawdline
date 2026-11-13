@@ -199,19 +199,51 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 // decideCopilotSession asks the decision model once. Only ids from sessions
 // survive its answer.
 func decideCopilotSession(ctx context.Context, key, said string, sessions []copilotDecisionSession) (copilotDecisionAnswer, int, string) {
-	payload, _ := json.Marshal(copilotDecisionRequest(said, sessions))
+	content, status, detail := copilotChatJSON(ctx, key, copilotDecisionRequest(said, sessions))
+	if detail != "" {
+		return copilotDecisionAnswer{}, status, detail
+	}
+	var chose struct {
+		ID         *string  `json:"id"`
+		Candidates []string `json:"candidates"`
+		Many       bool     `json:"many"`
+	}
+	if json.Unmarshal([]byte(content), &chose) != nil {
+		return copilotDecisionAnswer{}, status, "the decision was not JSON"
+	}
+	known := make(map[string]bool, len(sessions))
+	for _, s := range sessions {
+		known[s.ID] = true
+	}
+	out := copilotDecisionAnswer{Candidates: []string{}, Many: chose.Many}
+	if chose.ID != nil && known[*chose.ID] {
+		out.ID = *chose.ID
+	}
+	for _, id := range chose.Candidates {
+		if known[id] && id != out.ID && len(out.Candidates) < copilotDecisionCandidates {
+			out.Candidates = append(out.Candidates, id)
+		}
+	}
+	return out, status, ""
+}
+
+// copilotChatJSON sends one Chat Completions request on the person's key and
+// answers the first choice's content, or the HTTP status and a detail that
+// never carries the key.
+func copilotChatJSON(ctx context.Context, key string, body map[string]any) (string, int, string) {
+	payload, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotOpenAI+"/v1/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return copilotDecisionAnswer{}, 0, "the request could not be built"
+		return "", 0, "the request could not be built"
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return copilotDecisionAnswer{}, 0, "OpenAI did not answer in time"
+			return "", 0, "OpenAI did not answer in time"
 		}
-		return copilotDecisionAnswer{}, 0, "OpenAI could not be reached"
+		return "", 0, "OpenAI could not be reached"
 	}
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
@@ -235,28 +267,7 @@ func decideCopilotSession(ctx context.Context, key, said string, sessions []copi
 		if strings.Contains(detail, "sk-") {
 			detail = "incorrect API key (" + reply.Error.Code + ")"
 		}
-		return copilotDecisionAnswer{}, res.StatusCode, detail
+		return "", res.StatusCode, detail
 	}
-	var chose struct {
-		ID         *string  `json:"id"`
-		Candidates []string `json:"candidates"`
-		Many       bool     `json:"many"`
-	}
-	if json.Unmarshal([]byte(reply.Choices[0].Message.Content), &chose) != nil {
-		return copilotDecisionAnswer{}, res.StatusCode, "the decision was not JSON"
-	}
-	known := make(map[string]bool, len(sessions))
-	for _, s := range sessions {
-		known[s.ID] = true
-	}
-	out := copilotDecisionAnswer{Candidates: []string{}, Many: chose.Many}
-	if chose.ID != nil && known[*chose.ID] {
-		out.ID = *chose.ID
-	}
-	for _, id := range chose.Candidates {
-		if known[id] && id != out.ID && len(out.Candidates) < copilotDecisionCandidates {
-			out.Candidates = append(out.Candidates, id)
-		}
-	}
-	return out, res.StatusCode, ""
+	return reply.Choices[0].Message.Content, res.StatusCode, ""
 }

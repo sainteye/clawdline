@@ -68,7 +68,11 @@ type copilotBriefingSession struct {
 	Requests   []string `json:"requests,omitempty"`
 	Deliveries []string `json:"deliveries,omitempty"`
 	LastReply  string   `json:"last_reply,omitempty"`
-	LastActive string   `json:"last_active,omitempty"`
+	id         string
+	LastActive string `json:"last_active,omitempty"`
+	// Progress is the Session's Board steps when the briefing was prepared;
+	// a delivery's own count may be hours old (copilot_recap.go).
+	Progress *copilotRecapProgress `json:"progress,omitempty"`
 }
 
 var copilotReportCommand = regexp.MustCompile(`clawdline\s+session\s+report\b[^\n]*?--summary\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')`)
@@ -161,13 +165,23 @@ func copilotUrgency(r copilotRow) int {
 
 // copilotBriefingInput reads the Sessions this briefing is about.
 func (s *Server) copilotBriefingInput(ctx context.Context) ([]copilotBriefingSession, error) {
-	return copilotBriefingFrom(func(target string, into any) bool {
+	sessions, err := copilotBriefingFrom(func(target string, into any) bool {
 		handler := http.HandlerFunc(s.sessions)
 		if strings.HasPrefix(target, "/v1/transcript") {
 			handler = s.transcriptRoute
 		}
 		return copilotOwnRead(ctx, handler, target, into)
 	})
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	for i := range sessions {
+		if p := s.copilotRecapProgressFor(ctx, sessions[i].id, "", now); p.Unavailable == "" && (p.TotalSteps > 0 || p.TodosDone+p.TodosOpen > 0) {
+			sessions[i].Progress = &p
+		}
+	}
+	return sessions, nil
 }
 
 // copilotBriefingFrom builds the briefing's input from two reads: the
@@ -187,7 +201,7 @@ func copilotBriefingFrom(read func(target string, into any) bool) ([]copilotBrie
 	now := time.Now().Unix()
 	out := make([]copilotBriefingSession, 0, len(rows))
 	for _, r := range rows {
-		b := copilotBriefingSession{Name: r.Label, Assistant: r.Assistant, State: r.State, WorkState: r.WorkState}
+		b := copilotBriefingSession{Name: r.Label, Assistant: r.Assistant, State: r.State, WorkState: r.WorkState, id: r.ID}
 		if b.Name == "" {
 			b.Name = r.ID
 		}

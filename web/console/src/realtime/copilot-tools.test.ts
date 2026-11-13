@@ -288,8 +288,9 @@ test("get_session_summary gives the Session's own delivery words and its last re
   assert.equal(out.delivered_summary, "Captured six feature screenshots; abc123 is on main.")
   assert.equal(out.delivered_when, "10 分鐘前")
   assert.equal(out.last_reply, "Done: six screenshots are in docs/shots and pushed.")
-  assert.deepEqual(calls.map((c) => c.path), ["/v1/sessions", "/v1/transcript?session=%252"])
+  assert.deepEqual(calls.map((c) => c.path), ["/v1/sessions", "/v1/transcript?session=%252", "/v1/work/v2/session-todos/%252"])
   assert.equal((calls[1].init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
+  assert.equal(out.progress, undefined, "a Session with nothing on the Board has no count to say")
 })
 
 test("a waiting Session's summary says what it asks, and survives an unreadable transcript", async () => {
@@ -357,6 +358,7 @@ test("a recap stops at its page budget and says it did", async () => {
   const deps: ToolDeps = {
     async fetch(path) {
       if (path === "/v1/sessions") return Response.json({ sessions: ROWS })
+      if (!path.startsWith("/v1/transcript")) return new Response("", { status: 404 })
       n++
       return Response.json({ entries: [{ role: "user", text: `ask ${n}` }], nextBefore: 1000 - n })
     },
@@ -366,6 +368,62 @@ test("a recap stops at its page budget and says it did", async () => {
   assert.equal(n, 5)
   assert.match(out.note, /只讀了最近的部分/)
   assert.equal(out.requests[0], "ask 5", "the oldest page read comes first")
+})
+
+// The 2026-11-13 call: asked what %2 had done, the copilot read its one
+// delivery report, an hour old, and said 41 of 56 with 15 left. The Board said
+// 46 and 10. The machine could not write the recap, so the call read the
+// record itself; it must still be handed the Board's count and the report's age.
+function boardMachine(recap: Response | null) {
+  const paths: string[] = []
+  const deps: ToolDeps = {
+    async fetch(path, init) {
+      paths.push(`${init?.method ?? "GET"} ${path}`)
+      if (path === "/v1/sessions") return Response.json({ sessions: ROWS })
+      if (path === "/v1/voice/copilot-recap") return recap ?? new Response('{"error":"copilot_key_missing"}', { status: 409 })
+      if (path.startsWith("/v1/transcript")) return Response.json({ entries: [
+        { at: 996_400, role: "tool", text: 'clawdline session report --summary "Five cards 41/56, 15 left."' },
+        { at: 1_000_240, role: "assistant", text: "Documents committed; still installing." },
+      ] })
+      if (path === "/v1/work/v2/session-todos/%252") return Response.json({ assigned_items: [
+        { title: "PA-05", steps: [...Array(12).fill({ done: true }), ...Array(6).fill({ done: false })] },
+        { title: "PA-04", steps: [...Array(9).fill({ status: "done", done: true }), { done: false }, { status: "cancelled", done: false }] },
+        { title: "PA-rest", steps: Array(25).fill({ done: true }) },
+        { title: "PA-02", steps: [...Array(0).fill({}), { done: false }, { done: false }, { done: false }] },
+      ], direct_todos: [] })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    now: () => 1_000_600,
+  }
+  return { deps, paths }
+}
+
+test("a recap the machine cannot write still says the Board's count and how old each report is", async () => {
+  const { deps, paths } = boardMachine(null)
+  const out = JSON.parse((await runCopilotTool("get_session_recap", '{"session_id":"%2"}', deps)).output)
+  assert.equal(out.recap, undefined)
+  assert.deepEqual([out.progress.done_steps, out.progress.total_steps, out.progress.remaining_steps], [46, 56, 10])
+  assert.deepEqual(out.deliveries, [{ when: "1 小時前", text: "Five cards 41/56, 15 left." }])
+  assert.equal(out.last_reply_when, "6 分鐘前")
+  assert.ok(paths.includes("POST /v1/voice/copilot-recap"), "the machine was asked first")
+})
+
+test("a recap the machine writes is said as it is, with the Board's count", async () => {
+  const { deps, paths } = boardMachine(Response.json({ recap: "It aligns with Codync; 46 of 56 steps are done, 10 left.",
+    progress: { done_steps: 46, total_steps: 56, remaining_steps: 10, cards: [{ title: "PA-05", done_steps: 12, total_steps: 18 }] }, complete: true }))
+  const out = JSON.parse((await runCopilotTool("get_session_recap", '{"session_id":"%2"}', deps)).output)
+  assert.match(out.recap, /46 of 56/)
+  assert.equal(out.progress.remaining_steps, 10)
+  assert.equal(out.deliveries, undefined)
+  assert.deepEqual(paths, ["GET /v1/sessions", "POST /v1/voice/copilot-recap"])
+})
+
+test("a Session's summary says the Board's count beside its older words", async () => {
+  const { deps } = boardMachine(null)
+  const out = JSON.parse((await runCopilotTool("get_session_summary", '{"session_id":"%2"}', deps)).output)
+  assert.deepEqual([out.progress.done_steps, out.progress.remaining_steps], [46, 10])
+  assert.equal(out.progress.cards.length, 4)
 })
 
 test("the call opens with the Sessions already in its instructions", async () => {

@@ -326,6 +326,21 @@
       "decode": {"reply": "action", "fields": {"journal": {"type": "object", "max_bytes": 65536, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-journal", "body": {"object": "journal"}}}
     },
     {
+      "op": "copilot-recap",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/voice/copilot-recap",
+      "console_seam": "writer",
+      "console_note": "The voice copilot's Session recap (`realtime/copilot-tools.ts`, `get_session_recap`): the machine holding the Session reads its whole record and Board steps, and a text model on its key writes one spoken recap.",
+      "local": {"method": "POST", "device": true},
+      "example": {"recap": {"session": "%1", "conversation": "c1"}, "request": "req-recap", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["recap", "request", "session"], "path": "/v1/voice/copilot-recap", "local_body": ["conversation", "session"]}
+      ],
+      "decode": {"reply": "action", "fields": {"recap": {"type": "object", "max_bytes": 65536, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-recap", "body": {"object": "recap"}}}
+    },
+    {
       "op": "copilot-session",
       "kind": "command",
       "write_gate": true,

@@ -175,6 +175,24 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		"voice.copilot_journal_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "days of call journals kept on this machine"}
 		},
+		"voice.copilot_recap_pages": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap read of a Session's transcript pages; a longer Session is told it was not read whole"}
+		},
+		"voice.copilot_recap_input_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap model input; the oldest lines after the first request are left out"}
+		},
+		"voice.copilot_recap_line_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap clip of each line, keeping both ends"}
+		},
+		"voice.copilot_recap_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap guard on the model's answer"}
+		},
+		"voice.copilot_recap_timeout_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap deadline; a slower recap leaves the copilot's own read"}
+		},
+		"voice.copilot_recap_body_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap guard on the request body"}
+		},
 		"voice.copilot_key_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-settings-write guard on the pasted key"}
 		},

@@ -133,6 +133,29 @@ arrives, the browser sends it to the call in a second `session.update`; until th
 `get_status_briefing` tool waits for it, and without it the copilot reads the Sessions itself.
 A last reply that ends by asking the person something counts as needing them even when the
 Session is idle: such a question is prose, not a menu, so the Session's state does not show it.
+Each briefed Session with Board steps or direct to-dos also carries `progress`, its counts read
+when the briefing is prepared, and the briefing takes any count from it rather than from a
+delivery.
+
+**What a Session has done.** `get_session_recap` first asks the machine that holds the Session,
+`POST /v1/voice/copilot-recap` (Cloud word `copilot-recap`, API level 59). That machine reads the
+Session's whole record (at most 40 transcript pages): every request, every reply and every
+`clawdline session report` summary, each with when it happened (each line at most 1,200
+characters, both ends kept; at most 60,000 characters in all, the oldest lines after the first
+request left out first). It also counts the Session's Board steps as the Board does (cancelled
+steps are not steps) and its direct to-dos, and asks `gpt-4.1-mini` on the voice copilot key for
+one spoken recap whose counts come only from that `progress`. The call says the recap as written.
+Without a key, on an older daemon, or after 25 s, the call reads the record itself as before, now
+handed the same `progress` (read from `/v1/work/v2/session-todos`), each delivery with its `when`,
+and the last reply's `last_reply_when`; `get_session_summary` carries `progress` too.
+
+On 2026-11-13 a person asked what one Session had done and was told 41 of 56 steps were finished
+with 15 left; the Board said 46 and 10. The recap then read only the requests, the report lines
+and the one last reply, from five pages: the newer count was in an ordinary reply between reports,
+and the one report found was an hour old with nothing saying so. Recording progress while a
+Session works was not chosen: it costs every turn of every Session, and a record the Session must
+remember to write lags exactly as the reports did. The Board's counts are already kept as the
+work happens, and the record is read whole only when someone asks.
 
 **What the copilot can read and do.** `list_sessions`, `get_session_summary`, `get_session_recap`
 (the whole conversation, paged back at most 5 pages), `get_session_activity`,

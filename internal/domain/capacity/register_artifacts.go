@@ -252,6 +252,42 @@ func artifactsBounds() []Entry {
 			Sources: []string{"internal/transport/http.maxCopilotJournalAge"},
 		},
 		{
+			// How many transcript pages one spoken Session recap reads.
+			Name: "voice.copilot_recap_pages", Class: Buffer, Unit: Rows,
+			Limit: 40, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotRecapPages"},
+		},
+		{
+			// What the recap model is shown; the oldest lines after the first request go first.
+			Name: "voice.copilot_recap_input_characters", Class: Buffer, Unit: Characters,
+			Limit: 60000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotRecapInputRunes"},
+		},
+		{
+			// How much of one request, reply or report a recap keeps, both ends.
+			Name: "voice.copilot_recap_line_characters", Class: Buffer, Unit: Characters,
+			Limit: 1200, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotRecapReplyRunes"},
+		},
+		{
+			// A longer recap is not handed to the copilot.
+			Name: "voice.copilot_recap_characters", Class: Buffer, Unit: Characters,
+			Limit: 2500, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotRecapRunes"},
+		},
+		{
+			// A slower recap is abandoned; the copilot reads the record itself.
+			Name: "voice.copilot_recap_timeout_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 25000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxCopilotRecapDuration"},
+		},
+		{
+			// The recap route's request: which Session.
+			Name: "voice.copilot_recap_body_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 4096, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/transport/http.copilotRecapBodyLimit"},
+		},
+		{
 			// A pasted OpenAI key longer than this is refused by the settings route.
 			Name: "voice.copilot_key_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 400, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
