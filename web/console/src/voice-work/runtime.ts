@@ -77,6 +77,9 @@ export const voiceWork = new VoiceWorkRuntime({
     // Confirmation is always an actual UI action on this exact spec version.
     // The planner cannot mint force-close approval.
     delete args.force_confirmed
+    // A rename's consent is the same UI confirmation, never the planner's word.
+    delete args.confirmed
+    if(task.tool==='smart_rename_sessions'&&task.approved_version===task.version)args.confirmed=true
     if(signal.aborted)throw new Error('voice_work_stopped')
     const result=await runCopilotTool(task.tool,JSON.stringify(args),{
       ...base,heard:()=>'',progress,

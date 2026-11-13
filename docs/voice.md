@@ -166,6 +166,17 @@ anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only t
 explicit yes (`force_confirmed`) sends `force: true`, pinned to the version those reasons came
 from, and the machine still decides.
 
+**Smart naming.** Asked which Sessions' names no longer match their work, the copilot reads
+`get_sessions_summary`, says which ones it would rename and why, and asks once. On a yes,
+`smart_rename_sessions` (with `confirmed: true`) posts each named Session to
+`POST /v1/sessions/{id}/smart-title`, the route behind the console's Smart naming, one after
+another with its own Idempotency-Key, and says each old name and the title the machine chose; a
+refusal (no first request yet, naming assistant missing or out of usage) is said for that Session
+and the rest go on. At most 6 Sessions per call (`console.copilot_smart_rename_sessions`), since
+each spends one small model turn. A rename joins the actions the copilot may only claim once the
+machine confirmed it. Before this tool the copilot had no way to rename and, asked to, did not know
+what smart naming was.
+
 **A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
 person), the idle and lately finished ones, or all, newest activity first, each with its goal,
 what it finished lately and what it is doing; only the newest `LIST_LATEST_READS` are read and
@@ -294,6 +305,7 @@ The bounds are registered as `voice.copilot_key_bytes`,
 `voice.copilot_extra_instructions_characters`, `voice.copilot_briefing_timeout_milliseconds`,
 `voice.copilot_briefing_input_characters`, `voice.copilot_briefing_characters`,
 `voice.copilot_briefing_reply_characters`, `console.copilot_reply_characters`,
+`console.copilot_smart_rename_sessions`,
 `console.copilot_memory_turns`, `console.copilot_list_transcript_reads`,
 `console.copilot_recap_pages` and `console.copilot_screen_reads`.
 

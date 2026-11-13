@@ -109,7 +109,7 @@ func CallScoped(tool string, args map[string]any) bool {
 	return slices.Contains([]string{"set_speaking_speed", "set_answer_length", "open_session", "open_snippets", "run_snippet"}, tool) || tool == "get_devstack_links" && args["open"] == true
 }
 func KnownTool(tool string) bool {
-	return IsRead(tool) || slices.Contains([]string{"send_message_to_session", "answer_session_question", "close_session", "start_session", "run_snippet", "open_session", "open_snippets", "set_speaking_speed", "set_answer_length"}, tool)
+	return IsRead(tool) || slices.Contains([]string{"send_message_to_session", "answer_session_question", "close_session", "start_session", "run_snippet", "open_session", "open_snippets", "set_speaking_speed", "set_answer_length", "smart_rename_sessions"}, tool)
 }
 
 func (s *State) AddInput(in Input) (bool, error) {
