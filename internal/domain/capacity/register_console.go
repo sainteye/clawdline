@@ -170,6 +170,13 @@ func consoleBounds() []Entry {
 			Limit: 8000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
 		{
+			// SMART_RENAME_SESSIONS in realtime/copilot-tools.ts: how many
+			// Sessions one smart_rename_sessions call names, one small model
+			// turn each; a longer list is refused and asked to be split.
+			Name: "console.copilot_smart_rename_sessions", Class: Buffer, Unit: Rows,
+			Limit: 6, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// SCREEN_READ_ATTEMPTS in realtime/copilot-tools.ts: how many times
 			// a pending screen capture is read again before the copilot says it
 			// timed out.
