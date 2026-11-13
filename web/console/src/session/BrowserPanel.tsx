@@ -263,7 +263,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         {shotError ? <div className="screen-note err" role="alert">{(shotError as { code?: string })?.code === "browser_other_debugger" ? nextWord("browserPanelOtherDebugger") : said(shotError, "browserPanelReadFailed")}</div> : null}
         {shot && !otherDebugger && (
           <BrowserViewport key={scopeKey + ":" + (shot.layout || "desktop")} shot={shot} canClick={!busy && !controlBusy} person={person} onTap={tap}
-            onKeyboard={(kind, ready) => nativeKeyboard.current?.open(kind, ready)} onCloseKeyboard={() => nativeKeyboard.current?.close()}
+            onKeyboard={(kind, ready) => nativeKeyboard.current?.open(kind, ready)} onFocusKeyboard={() => nativeKeyboard.current?.open()} onCloseKeyboard={() => nativeKeyboard.current?.close()}
             layoutControl={<label className="browser-mode"><span className="sr-only">{nextWord("browserPanelLayout")}</span>
               <select aria-label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy} onChange={e => void changeLayout(e.target.value)}>
                 <option value="mobile">{nextWord("browserPanelMobile")}</option><option value="desktop">{nextWord("browserPanelDesktop")}</option>
