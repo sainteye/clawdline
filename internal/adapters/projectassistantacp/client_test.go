@@ -119,6 +119,11 @@ func TestACPTestPeer(t *testing.T) {
 				send(frame{ID: raw("permission-rpc"), Method: "session/request_permission", Params: raw(map[string]any{"sessionId": "scripted-session", "toolCall": map[string]string{"kind": "read"}, "options": []any{map[string]string{"optionId": "read-once", "name": "Read once", "kind": "allow_once"}, map[string]string{"optionId": "always", "name": "Always", "kind": "allow_always"}, map[string]string{"optionId": "reject", "name": "Reject", "kind": "reject_once"}}})})
 				continue
 			}
+			if mode == "toolcall" {
+				// Native tool use reports content as an array, not one block.
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "tool_call", "toolCallId": "call-1", "title": "Read notes.md", "kind": "read", "status": "pending", "content": []any{map[string]any{"type": "content", "content": map[string]string{"type": "text", "text": "notes"}}}}})})
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{}}})})
+			}
 			if mode == "explicit" {
 				send(frame{ID: raw("message-rpc"), Method: "clawdline/send_message", Params: raw(map[string]string{"sessionId": "scripted-session", "messageId": "one", "text": "explicit"})})
 			}
@@ -402,5 +407,15 @@ func TestACPPersonMayAllowAChangingActionOnce(t *testing.T) {
 	result, err := pending.Wait(context.Background())
 	if err != nil || result.FinalText != "after permission" {
 		t.Fatalf("the allowed action did not continue the turn: %+v %v", result, err)
+	}
+}
+
+// With native tools available, ACP reports tool calls whose content is an
+// array. Such an update is not a chat chunk and must not end the turn.
+func TestACPToolCallUpdatesDoNotEndTheTurn(t *testing.T) {
+	c, _ := openTestClient(t, "toolcall", func(context.Context, app.ProtocolEvent) error { return nil })
+	result, err := sendTestPrompt(t, c).Wait(context.Background())
+	if err != nil || result.FinalText != "partial" {
+		t.Fatalf("a tool call update ended the turn: %+v %v", result, err)
 	}
 }

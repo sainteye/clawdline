@@ -470,10 +470,9 @@ func (c *Client) handle(f frame) error {
 			SessionID string `json:"sessionId"`
 			Update    struct {
 				SessionUpdate string `json:"sessionUpdate"`
-				Content       struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
+				// A message chunk carries one content block; a tool call
+				// carries an array. Only a chunk's block is decoded below.
+				Content json.RawMessage `json:"content"`
 			} `json:"update"`
 		}
 		if err := json.Unmarshal(f.Params, &p); err != nil {
@@ -488,16 +487,26 @@ func (c *Client) handle(f frame) error {
 		if !active {
 			return nil
 		}
-		if p.Update.SessionUpdate == "agent_message_chunk" && p.Update.Content.Type == "text" {
+		if p.Update.SessionUpdate != "agent_message_chunk" {
+			return nil
+		}
+		var content struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(p.Update.Content, &content); err != nil {
+			return refusal(pa.Invalid, "update")
+		}
+		if content.Type == "text" {
 			c.mu.Lock()
-			if len(c.partial)+len(p.Update.Content.Text) > c.l.CaptureBytes {
+			if len(c.partial)+len(content.Text) > c.l.CaptureBytes {
 				c.mu.Unlock()
 				return refusal(pa.CapacityFull, "partial_capture")
 			}
-			c.partial += p.Update.Content.Text
+			c.partial += content.Text
 			c.mu.Unlock()
 			e := c.event(c.eventID())
-			e.Trace = &pa.Trace{TurnID: e.TurnID, Category: "agent_message_chunk", Text: p.Update.Content.Text}
+			e.Trace = &pa.Trace{TurnID: e.TurnID, Category: "agent_message_chunk", Text: content.Text}
 			return c.sink(c.ctx, e)
 		}
 		return nil
