@@ -153,7 +153,7 @@ func CheckMilestoneSummary(data []byte) []MilestoneProblem {
 
 // MilestoneHandoffLine is the line typed into a milestone handoff's receiver.
 func MilestoneHandoffLine(dir string) string {
-	return "You are picking up a Clawdline milestone handoff. Read " + filepath.Join(dir, "handoff.md") +
+	return milestoneLineOpening + filepath.Join(dir, "handoff.md") +
 		" (the sender's summary: Goal, Verified decisions, Blockers, Evidence, Next step) and " +
 		filepath.Join(dir, MilestoneObligationsFile) + " (what the sender still holds) before anything else. " +
 		"Open an Evidence link when the next step needs it, not before; do not ask the person what the summary " +
