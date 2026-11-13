@@ -62,6 +62,10 @@ type voiceWorkRequest struct {
 }
 
 func (s *Server) copilotWorkFailure(w http.ResponseWriter, err error) {
+	if errors.Is(err, voicework.ErrAmbiguous) {
+		writeRawRefusal(w, http.StatusConflict, err.Error(), s.voiceWorkText("More than one Session has that name. Choose the exact recipient on screen before preparing a voice message.", "有不只一個同名 Session，請先從畫面選定確切收件對象，再準備語音訊息。"))
+		return
+	}
 	status := http.StatusServiceUnavailable
 	code := "voice_work_unavailable"
 	if errors.Is(err, voicework.ErrConflict) || errors.Is(err, voicework.ErrUnknown) {
@@ -94,7 +98,7 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 		s.voiceWorkMu.Lock()
 		planning := s.voiceWorkRunning
 		s.voiceWorkMu.Unlock()
-		writeJSON(w, map[string]any{"state": state, "planning": planning, "protocol": voiceWorkProtocol})
+		writeJSON(w, map[string]any{"state": state, "planning": planning, "protocol": voiceWorkProtocol, "message_confirmation": true})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -128,11 +132,55 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 	s.receipted(w, r, store.ReceiptKey{Scope: "voice-assistant-work", Actor: actorOf(r), Key: requestKey}, requestDigest(raw), func(status int) bool { return status < 500 }, func(w http.ResponseWriter) {
 		now := time.Now().Unix()
 		var claimed *voicework.Task
+		var prepared *voicework.Task
 		state, err := s.store.UpdateVoiceWork(r.Context(), func(state *voicework.State) error {
 			switch in.Action {
 			case "input":
 				_, err := state.AddInput(voicework.Input{ID: in.ID, Call: in.Call, Text: in.Text, At: now, Ready: in.Sessions != nil && !in.Deferred, Deferred: in.Deferred, Focus: in.Focus, Context: in.Context})
 				return err
+			case "prepare_message":
+				settings, err := s.readCopilot()
+				if err != nil || !settings.WorkEnabled || len(in.InputIDs) != 1 {
+					return voicework.ErrConflict
+				}
+				var target *copilotDecisionSession
+				for i := range in.Sessions {
+					if in.Sessions[i].ID == in.ID {
+						if target != nil {
+							return voicework.ErrInvalid
+						}
+						target = &in.Sessions[i]
+					}
+				}
+				if target == nil {
+					return voicework.ErrInvalid
+				}
+				for _, row := range in.Sessions {
+					if row.ID != target.ID && row.Label == target.Label {
+						return voicework.ErrAmbiguous
+					}
+				}
+				label := target.Label
+				if label == "" {
+					label = target.ID
+				}
+				taskID := uuid.NewString()
+				if err := state.PrepareMessage(taskID, in.Call, in.InputIDs[0], voicework.Focus{ID: target.ID, Label: label, Machine: target.Machine, Conversation: target.Conversation}, in.Text, now); err != nil {
+					return err
+				}
+				for i := range state.Tasks {
+					if state.Tasks[i].ID == taskID {
+						copy := state.Tasks[i]
+						prepared = &copy
+					}
+				}
+				return nil
+			case "confirm_message":
+				settings, err := s.readCopilot()
+				if err != nil || !settings.WorkEnabled || len(in.InputIDs) != 1 {
+					return voicework.ErrConflict
+				}
+				return state.ConfirmMessage(in.ID, in.Version, in.Call, in.InputIDs[0], now)
 			case "dismiss_input":
 				return state.Dismiss(in.ID)
 			case "park":
@@ -192,7 +240,7 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		// Persist and acknowledge first. No handler waits for a model to answer.
-		writeJSON(w, map[string]any{"state": state, "claimed": claimed, "protocol": voiceWorkProtocol})
+		writeJSON(w, map[string]any{"state": state, "claimed": claimed, "prepared": prepared, "protocol": voiceWorkProtocol, "message_confirmation": true})
 		if in.Action == "plan" || in.Action == "input" && in.Sessions != nil {
 			s.beginVoiceWork(in.Sessions, in.ToolContracts)
 		} else if in.Action == "finish" && len(state.ReadyPending()) > 0 {

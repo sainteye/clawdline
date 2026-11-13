@@ -105,7 +105,7 @@ function VoiceAssistant({shown}:{shown:boolean}) {
         {task.depends_on.length?<p>{W('voiceWorkDepends',{tasks:task.depends_on.map(id=>tasks.find(t=>t.id===id)?.text??id).join(' · ')})}</p>:null}
         <details open={task.status==='waiting_confirmation'}><summary>{W('voiceWorkDetails')}</summary>
           <code>{task.tool}</code>{approvedQuestion(task)?<p>{approvedQuestion(task)}</p>:null}<pre>{JSON.stringify(Object.fromEntries(Object.entries(task.args).filter(([k])=>!k.startsWith('_voice_'))),null,2)}</pre>
-          {task.result?<pre>{task.result}</pre>:null}{task.error?<p role="alert">{task.error}</p>:null}
+          {task.result?<pre>{task.result}</pre>:null}{task.message_receipt&&task.message_receipt!==task.result?<><strong>{W('voiceWorkMessageReceipt')}</strong><pre>{task.message_receipt}</pre></>:null}{task.error?<p role="alert">{task.error}</p>:null}
         </details>
         <div className="voice-work-actions">
           {task.status==='waiting_confirmation'?<button type="button" onClick={()=>{void change(task,'confirm')}}>{W('voiceWorkConfirm')}</button>:null}

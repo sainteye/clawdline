@@ -1,13 +1,13 @@
 /** Durable state belongs to the selected machine, never localStorage. */
 export interface VoiceTask {
   id: string; text: string; tool: string; args: Record<string, unknown>; sources: string[]; depends_on: string[]
-  priority: number; version: number; approved_version?: number; status: string; result?: string; error?: string
+  priority: number; version: number; approved_version?: number; message_receipt?:string; delivered_at?:number; status: string; result?: string; error?: string
   runner?: string; action_key?: string; lease_until?: number; call?: string; attempt?: number; effect_started?: boolean; progress?: {sequence:number;value:string}[]; result_revision?:number
 }
 export interface VoiceFocus {id:string;label:string;machine?:string;conversation?:string}
 export interface VoiceInput { cancelled?:boolean;context?:string;deferred?:boolean;parked?:boolean;focus?:VoiceFocus;planning_error?:string;planning_stage?:string;id: string; text: string; call?: string; planned: boolean; at: number }
 export interface VoiceState { id: string; revision: number; plan_version: number; inputs: VoiceInput[]; tasks: VoiceTask[]; reply?: string; planner_error?: string }
-export interface VoiceAnswer { state: VoiceState; protocol?:number; claimed?: VoiceTask | null; planning?: boolean }
+export interface VoiceAnswer { state: VoiceState; protocol?:number; message_confirmation?:boolean; prepared?:VoiceTask; claimed?: VoiceTask | null; planning?: boolean }
 export const WORK_REQUEST_MS = 10000
 export const WORK_POLL_MS = 1000
 export const WORK_HEARTBEAT_MS = 30000

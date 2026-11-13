@@ -832,3 +832,16 @@
   .realtime-modal-sheet.in-call { gap: 6px; padding-top: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
   .in-call .realtime-transcript-box { min-height: 110px; }
 }
+
+/* Work cues are factual state, separate from generated speech and success. */
+.copilot-progress { font-size: .85rem; color: var(--muted, #aaa); text-align: left; }
+.copilot-progress p { margin: .3rem 0; }
+.copilot-progress .working-indicator { margin: .5rem 0; }
+.copilot-progress-elapsed { display: block; font-variant-numeric: tabular-nums; }
+.copilot-progress a { color: var(--accent, #4ccb7f); }
+.copilot-bubble .copilot-progress { position: absolute; bottom: 100%; width: max-content; max-width: min(220px, calc(100vw - 80px)); padding: .4rem .6rem; background: var(--bg, #111); }
+.copilot-bubble.side-right .copilot-progress { right: 0; }
+.copilot-bubble.side-left .copilot-progress { left: 0; }
+.copilot-processing-sounds { display: flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--muted, #aaa); }
+.copilot-message-proposal { margin: .5rem 0; padding: .6rem; border: 1px solid var(--border, #333); font-size: .9rem; overflow-wrap: anywhere; }
+.copilot-message-proposal blockquote { margin: .5rem 0; white-space: pre-wrap; }

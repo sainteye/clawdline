@@ -395,3 +395,53 @@ func TestVoiceWorkCannotRetryAProviderWhenFailurePersistenceIsBroken(t *testing.
 		t.Fatalf("provider was retried %d times", calls)
 	}
 }
+
+func TestVoiceMessagePreparationAndSpokenConfirmationNeedNoPlanningProvider(t *testing.T) {
+	s := workServer(t)
+	on := true
+	if _, err := s.changeCopilot(copilot.Change{WorkEnabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	was := voiceWorkPlan
+	voiceWorkPlan = func(context.Context, string, string) (planner.VoiceWorkPlan, error) {
+		t.Error("message preparation started a model")
+		return planner.VoiceWorkPlan{}, errors.New("unexpected provider")
+	}
+	t.Cleanup(func() { voiceWorkPlan = was })
+	if w := workCall(t, s, http.MethodPost, `{"action":"input","id":"request","call":"call","text":"Tell the Session the requirement","deferred":true}`, "save-request", true); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	proposal := `{"action":"prepare_message","id":"recipient","call":"call","text":"Please inspect the delay.","input_ids":["request"],"sessions":[{"id":"recipient","label":"Recipient","conversation":"conversation","machine":"machine"}]}`
+	if w := workCall(t, s, http.MethodPost, proposal, "forbidden", false); w.Code != 403 {
+		t.Fatal(w.Code)
+	}
+	w := workCall(t, s, http.MethodPost, proposal, "prepare-once", true)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var answer struct {
+		Prepared            *voicework.Task `json:"prepared"`
+		MessageConfirmation bool            `json:"message_confirmation"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &answer); err != nil || answer.Prepared == nil || !answer.MessageConfirmation {
+		t.Fatal(err, w.Body.String())
+	}
+	if answer.Prepared.Status != "waiting_confirmation" {
+		t.Fatal(answer.Prepared)
+	}
+	again := workCall(t, s, http.MethodPost, proposal, "prepare-once", true)
+	if again.Body.String() != w.Body.String() {
+		t.Fatal("idempotent preparation changed")
+	}
+	if w := workCall(t, s, http.MethodPost, `{"action":"input","id":"consent","call":"call","text":"可以，送出","deferred":true}`, "save-consent", true); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	body, _ := json.Marshal(map[string]any{"action": "confirm_message", "id": answer.Prepared.ID, "version": answer.Prepared.Version, "call": "call", "input_ids": []string{"consent"}})
+	if w := workCall(t, s, http.MethodPost, string(body), "confirm-once", true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	state, err := s.store.VoiceWork(context.Background())
+	if err != nil || len(state.Tasks) != 1 || state.Tasks[0].ApprovedVersion != state.Tasks[0].Version || state.Tasks[0].ConfirmedInput != "consent" {
+		t.Fatal(err, state)
+	}
+}

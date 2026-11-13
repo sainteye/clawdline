@@ -1318,6 +1318,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_idle_fallback_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_list_transcript_reads",
     "Known": true,
     "Note": true
@@ -1339,6 +1344,11 @@
   },
   {
     "Name": "console.copilot_recap_pages",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_recent_idle_seconds",
     "Known": true,
     "Note": true
   },

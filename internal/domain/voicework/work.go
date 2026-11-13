@@ -24,10 +24,11 @@ const (
 )
 
 var (
-	ErrConflict = errors.New("voice_work_conflict")
-	ErrFull     = errors.New("voice_work_full")
-	ErrInvalid  = errors.New("voice_work_invalid")
-	ErrUnknown  = errors.New("voice_work_outcome_unknown")
+	ErrConflict  = errors.New("voice_work_conflict")
+	ErrFull      = errors.New("voice_work_full")
+	ErrInvalid   = errors.New("voice_work_invalid")
+	ErrUnknown   = errors.New("voice_work_outcome_unknown")
+	ErrAmbiguous = errors.New("voice_work_target_ambiguous")
 )
 
 // Focus is captured with the utterance, never read from a later call's screen.
@@ -62,6 +63,9 @@ type Prepared struct {
 }
 
 type Task struct {
+	MessageReceipt  string         `json:"message_receipt,omitempty"`
+	DeliveredAt     int64          `json:"delivered_at,omitempty"`
+	ConfirmedInput  string         `json:"confirmed_input,omitempty"`
 	Call            string         `json:"call,omitempty"`
 	StopAction      string         `json:"stop_action,omitempty"`
 	EffectStarted   bool           `json:"effect_started,omitempty"`
@@ -430,7 +434,7 @@ func (s *State) ApplyPlan(expected int64, sources []string, changes []Change, re
 			}
 			next.Tasks = append(next.Tasks, Task{Call: taskCall, ID: c.ID, Text: c.Text, Tool: c.Tool, Args: c.Args, Sources: slices.Clone(sources), DependsOn: c.DependsOn, Priority: c.Priority, Version: 1, Status: status, At: now, UpdatedAt: now})
 		case "amend":
-			if t == nil || t.Status == "running" || t.Status == "cancel_requested" || t.Status == "done" || t.Status == "outcome_unknown" {
+			if t == nil || t.Status == "running" || t.Status == "cancel_requested" || t.Status == "done" || t.Status == "waiting_result" || t.Status == "outcome_unknown" {
 				return ErrConflict
 			}
 			if !ValidText(c.Text) || !KnownTool(c.Tool) || c.Args == nil {
@@ -447,6 +451,7 @@ func (s *State) ApplyPlan(expected int64, sources []string, changes []Change, re
 				t.Call = ""
 			}
 			t.Version++
+			t.ConfirmedInput = ""
 			t.Result = ""
 			t.Error = ""
 			t.Progress = nil
@@ -561,6 +566,7 @@ func (s *State) Edit(id string, version int64, action string, now int64) error {
 		if t.Status != "waiting_confirmation" {
 			return ErrConflict
 		}
+		t.ConfirmedInput = ""
 		t.Status = "queued"
 		t.ApprovedVersion = t.Version
 	case "resume":
@@ -638,7 +644,7 @@ func (s *State) ClaimFor(runner, call string, tools []string, now int64) *Task {
 				s.Revision++
 				continue
 			}
-			if running > 0 || len(s.Pending()) > 0 {
+			if running > 0 || s.writeBlocked(*t) {
 				continue
 			}
 		}
@@ -714,6 +720,18 @@ func (s *State) Finish(id, runner, key, result, problem string, unknown bool, no
 	if utf8.RuneCountInString(result) > MaxTextRunes || utf8.RuneCountInString(problem) > MaxTextRunes {
 		return ErrInvalid
 	}
+	if t.Tool == "send_message_to_session" && problem == "" && !unknown {
+		var receipt struct {
+			Success bool `json:"success"`
+			Receipt struct {
+				Action string `json:"action"`
+			} `json:"receipt"`
+		}
+		if json.Unmarshal([]byte(result), &receipt) == nil && receipt.Success && receipt.Receipt.Action == "typed" {
+			t.MessageReceipt = result
+			t.DeliveredAt = now
+		}
+	}
 	t.Result, t.Error, t.UpdatedAt = result, problem, now
 	t.ResultRevision = s.Revision + 1
 	switch {
@@ -741,7 +759,7 @@ func (s *State) Finish(id, runner, key, result, problem string, unknown bool, no
 // Admission is not execution: a lost response thereafter remains unknown.
 func (s *State) BeginEffect(id, runner, key string, now int64) error {
 	t := s.task(id)
-	if t == nil || t.Runner != runner || t.ActionKey != key || t.Status != "running" || t.ApprovedVersion != t.Version || len(s.Pending()) > 0 {
+	if t == nil || t.Runner != runner || t.ActionKey != key || t.Status != "running" || t.ApprovedVersion != t.Version || s.writeBlocked(*t) {
 		return ErrConflict
 	}
 	t.EffectStarted = true

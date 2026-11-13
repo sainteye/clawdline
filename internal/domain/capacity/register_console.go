@@ -169,6 +169,9 @@ func consoleBounds() []Entry {
 			Name: "console.copilot_reply_characters", Class: Buffer, Unit: Characters,
 			Limit: 8000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
+		{Name: "console.copilot_recent_idle_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		{Name: "console.copilot_idle_fallback_seconds", Class: Buffer, Unit: Seconds, Limit: 3600, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+
 		{
 			// SMART_RENAME_SESSIONS in realtime/copilot-tools.ts: how many
 			// Sessions one smart_rename_sessions call names, one small model

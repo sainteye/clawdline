@@ -346,3 +346,15 @@ The bounds are registered as `voice.copilot_key_bytes`,
 
 A demo film of a call, recorded from the built console in English and Traditional Chinese, is
 [the voice copilot demo](copilot-demo.md).
+
+
+### Connection and processing acknowledgement
+
+The call does not rely on generated speech to prove connection. The service must
+acknowledge the expected tool configuration; then the browser gives one local
+connection tone and the sheet says it is ready for speech. The Session handover
+still waits for its actual evidence. A separate quiet processing cue, once per
+utterance, and a visible phase distinguish tool waiting from confirmation or
+failure. No tone implies a message was delivered. The message proposal, explicit
+spoken confirmation and typed-input receipt are described in
+[the persistent workspace](voice-assistant-workspace.md#confirmed-messages-connection-cues-and-visible-waiting).

@@ -56,7 +56,7 @@ function fakeMachine(screens: Record<string, unknown[]>, opts: { sessionsStatus?
         reads[id] = n + 1
         return Response.json({ screen: answers[Math.min(n, answers.length - 1)] })
       }
-      if (m && m[2] === "send") return Response.json({ ok: true })
+      if (m && m[2] === "send") return Response.json({ ok: true,id:decodeURIComponent(m[1]),action:"typed" })
       if (/^\/v1\/sessions\/[^/]+\/(key|close)$/.test(path)) return Response.json({ ok: true })
       if (path.startsWith("/v1/snippets?")) return Response.json({ snippets: opts.snippets ?? [] })
       if (path.startsWith("/v1/work/v2/human-interventions/")) return Response.json(opts.notes ?? { ok: true, rows: [], pruned_resolved: 0 })
@@ -933,7 +933,7 @@ test("a group summary reads the working, the idle, or all Sessions, newest activ
   deps.now = () => 1_000_600
   const working = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"working"}', deps)).output)
   assert.ok(working.sessions.every((s: { state: string }) => s.state === "working" || s.state === "needs_you"))
-  const idle = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"idle"}', deps)).output)
+  const idle = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"idle","idle_scope":"all"}', deps)).output)
   assert.ok(idle.sessions.length > 0 && idle.sessions.every((s: { state: string }) => s.state !== "working" && s.state !== "needs_you"))
   const all = JSON.parse((await runCopilotTool("get_sessions_summary", '{"which":"all"}', deps)).output)
   assert.equal(all.count, working.count + idle.count)
@@ -999,7 +999,7 @@ function sameNameFleet() {
     snippets: async (id, request, machine) => { opened.push([id, machine]); return request.start ? "started" : "opened" },
     async fetch(path, init) {
       calls.push({ path, init })
-      if (init?.method === "POST") return Response.json({ ok: true })
+      if (init?.method === "POST") return Response.json({ ok: true, ...(path.endsWith("/send")?{action:"typed",id:"%2"}:{}) })
       if (path.startsWith("/v1/transcript?")) return Response.json({ entries: [{ role: "assistant", text: "Review ready." }] })
       if (path.endsWith("/screen")) return Response.json({ screen: { pending: false, readable: true, text: "Ready" } })
       if (path.startsWith("/v1/snippets?")) return Response.json({ snippets: [
@@ -1415,4 +1415,32 @@ test('opening history cannot turn an earlier approval into a current decision',a
  assert.doesNotMatch(JSON.stringify(output),/Restart now, I approve/)
  assert.match(output.recap.last_reply,/No restart or decision is needed/)
  assert.equal(output.historical_deliveries_are_not_pending,true)
+})
+
+test('recent idle reports use thirty minutes, expand only when empty, and state elapsed idle estimates',async()=>{
+ const read:string[]=[];let age=600
+ const deps:ToolDeps={now:()=>10000,sleep:async()=>{},fetch:async(path)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:[{id:'older',label:'Older',state:'idle',activity:{known:true,at:10000-age}},{id:'newer',label:'Newer',state:'idle',activity:{known:true,at:10000-age+60}},{id:'unknown',label:'Unknown',state:'idle'},{id:'working',label:'Working',state:'working',activity:{known:true,at:9999}}]})
+  read.push(path);return Response.json({entries:[{role:'assistant',text:'The requested work is finished.'}]})
+ }}
+ let result=JSON.parse((await runCopilotTool('get_sessions_summary','{"which":"idle"}',deps)).output)
+ assert.equal(result.idle_window_minutes,30);assert.equal(result.count,2);assert.equal(result.sessions[0].session_id,'newer');assert.equal(result.sessions[0].idle_for_seconds,540);assert.equal(result.unknown_idle_time,1)
+ assert.equal(result.idle_time_basis,'last_confirmed_activity_estimate')
+ age=2700;read.length=0
+ result=JSON.parse((await runCopilotTool('get_sessions_summary','{"which":"idle"}',deps)).output)
+ assert.equal(result.idle_window_minutes,60);assert.equal(result.expanded_from_minutes,30);assert.equal(result.count,2)
+ age=7200;read.length=0
+ result=JSON.parse((await runCopilotTool('get_sessions_summary','{"which":"idle"}',deps)).output)
+ assert.equal(result.count,0);assert.equal(read.length,0,'older transcripts must not be fetched')
+})
+
+test('HTTP acceptance and missing receipts never claim a delivered message',async()=>{
+ const {deps}=fakeMachine({});const original=deps.fetch
+ let body:unknown={ok:true,action:'accepted',id:'%2'}
+ deps.fetch=async(path,init)=>path.endsWith('/send')?Response.json(body):original(path,init)
+ const args='{"session_id":"%2","session_label":"Prepare screenshots","message":"Inspect the result"}'
+ let result=await runCopilotTool('send_message_to_session',args,deps)
+ assert.equal(JSON.parse(result.output).accepted,true);assert.equal(actionNotice('send_message_to_session',result.output),null)
+ body={ok:true};result=await runCopilotTool('send_message_to_session',args,deps)
+ assert.equal(JSON.parse(result.output).error,'voice_work_send_receipt_missing');assert.equal(actionNotice('send_message_to_session',result.output),null)
 })

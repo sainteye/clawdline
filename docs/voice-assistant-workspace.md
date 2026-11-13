@@ -289,3 +289,47 @@ operation, persisted progress and an injected tool-less planner. It proves the
 protocol transitions, not a production latency improvement, native provider
 availability or actual phone audio playback. No paid provider call is needed for
 these checks.
+
+
+## Confirmed messages, connection cues and visible waiting
+
+A plain message has a deterministic preparation path: its original saved input,
+exact recipient identity and text become a durable task with no planning-model
+turn. Preparation never sends. The managed call advertises this path only when
+the selected machine reports `message_confirmation` support. The assistant must
+read the exact recipient and message; only completed audio playback makes that
+proposal eligible for a fresh explicit send utterance. Runtime and server bind
+consent to the saved utterance, call, workspace, task and version. Bare agreement,
+a model-provided confirmation flag, interrupted or inaccurate narration, a changed
+version and another call cannot approve it. The existing work-list button remains
+available for exact-spec confirmation.
+
+This newer consent authorizes only the particular new message over earlier
+unresolved inbox entries. It does not dismiss those entries or release older
+approved writes; a later cancellation still wins at effect admission. The send
+keeps a stable request key. Only an actual `typed` response establishes delivery
+into Session input, not reading by the other assistant or completion of its goal.
+An `accepted` response means only acceptance. Missing or uncertain receipts never
+cause an automatic resend. The durable receipt survives manual goal completion.
+Ordinary acknowledgements cannot consume an action request before work exists.
+Delivery questions read the work ledger rather than inferring from recipient
+activity, and each generated response receives current action evidence at flush.
+
+Connection is acknowledged by local audio after the voice service confirms the
+expected tools. Transport connection alone is not readiness. A configuration
+acknowledgement uses the existing workspace-control request deadline and fails
+explicitly if it never arrives. No generated greeting is required. A distinct
+single soft processing cue plays at most once per utterance, never over either
+speaker; it can be disabled in the call sheet. Active saving, tool waiting,
+planning, execution and response preparation have visible state and elapsed time.
+Confirmation and failure are stopped states, not an animation claiming progress.
+The sheet and minimized bubble both expose state. Local tones use no model call;
+real device playback, accessibility and listener comprehension still need actual
+browser/audio acceptance. Mock audio and event tests cannot establish those.
+
+Recent idle reports use a 30-minute window, expanding to one hour only if empty.
+They include only currently idle Sessions, newest first, and report approximate
+elapsed idle time. The current directory supplies confirmed activity/delivery
+timestamps rather than an exact transition-to-idle timestamp; this estimate and
+unknown times are explicit in the tool result. Older transcripts are not fetched.
+An explicit all-idle request bypasses the recent window.

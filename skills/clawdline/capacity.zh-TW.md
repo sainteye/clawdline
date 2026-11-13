@@ -273,11 +273,13 @@
 | `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
 | `console.copilot_help_section_characters` | 2500 | `characters` | `coalesce` | `diagnostics` | — |
 | `console.copilot_help_sections` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_idle_fallback_seconds` | 3600 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_list_transcript_reads` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_memory_turns` | 24 | `rows` | `evict_oldest` | `sender, diagnostics` | — |
 | `console.copilot_orb_frames_per_second` | 30 | `rows` | `coalesce` | `diagnostics` | — |
 | `console.copilot_orb_pixel_ratio` | 2 | `multipliers` | `coalesce` | `diagnostics` | — |
 | `console.copilot_recap_pages` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_recent_idle_seconds` | 1800 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_reply_characters` | 8000 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_smart_rename_sessions` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |

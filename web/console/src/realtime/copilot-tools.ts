@@ -170,7 +170,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 
 【工具】
 - list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，未讀取逐字稿）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
-- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
+- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
 - get_session_summary：某個 Session 現在的摘要（最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」用這個。
 - get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
@@ -282,7 +282,8 @@ export const COPILOT_TOOLS = [
       type: 'object',
       required: ['which'],
       properties: {
-        which: { type: 'string', enum: ['working', 'idle', 'all'], description: 'working：工作中與等使用者回應的；idle：閒置與最近完成的；all：全部' },
+        which: { type: 'string', enum: ['working', 'idle', 'all'], description: 'working：工作中與等使用者回應的；idle：近期閒置；all：全部' },
+        idle_scope:{type:'string',enum:['recent','all'],description:'idle 預設只查最近30分鐘，沒有才擴到1小時；只有使用者明確要全部閒置時才用all。逐一說明閒置約多久，最近閒置的先報。時間依最後確認活動估計，不能當作精確停止時間。'},
       },
     },
   },
@@ -604,7 +605,7 @@ export const CALL_WORK_TOOLS = [
 export const MANAGED_CALL_GUIDANCE = `# Background work and immediate conversation
 Use immediate read tools to answer questions about the focused Session, its summary, updates, notes, or identity. Do not send these ordinary questions to another planning model.
 Each utterance is saved as conversational input, with an input ID and its own Session focus. Saving is not task submission, planning or completion. Never say an action is queued until queue_voice_work confirms it.
-For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. Every mutation still requires exact-spec confirmation in the work list. You cannot send, rename, close, start, navigate or change settings directly in this mode.
+For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. When send_message_to_session is available in this mode, it only prepares a durable proposal; it does not send. Use it for a single message or plain-text reply, instead of queue_voice_work. Read its exact recipient and message verbatim and ask the person to say "可以，送出" or "yes, send it". Only the application can consume that spoken consent for this exact proposal. Other mutations still need exact-spec confirmation in the work list. Never supply confirmed or infer consent from an earlier call.
 Use get_voice_work for task status. If planning failed, explain which request failed and its reason in everyday language; keep diagnostic stage/codes on screen; do not imply it is still working or invent a confirmation requirement. Only use retry_voice_work after an explicit retry request. Do not announce receipt or planning stages without a useful result.
 `
 
@@ -618,6 +619,7 @@ Use get_voice_work for task status. If planning failed, explain which request fa
  * tools or its instructions.
  */
 export interface CallOptions {
+  messageActions?: boolean
   workEnabled?: boolean
   /** semantic_vad's eagerness: low (default), auto, high. */
   eagerness?: string
@@ -727,7 +729,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
           speed: SPEEDS.includes(options.speed ?? '') ? Number(options.speed) : DEFAULT_SPEED,
         },
       },
-      tools: options.workEnabled ? CALL_WORK_TOOLS : COPILOT_TOOLS,
+      tools: options.workEnabled ? [...CALL_WORK_TOOLS,...(options.messageActions?[{...COPILOT_TOOLS.find(tool=>tool.name==='send_message_to_session')!,description:'Prepare a durable message proposal for one Session, without sending it or using another planning model. State the exact recipient and message for explicit spoken confirmation. The application sends only after the person says confirm and send. Never supply confirmed.'}]:[])] : COPILOT_TOOLS,
       tool_choice: 'auto',
     },
   }
@@ -1114,6 +1116,9 @@ function waits(r: CopilotSessionRow): boolean {
 }
 
 /** When a Session last did something, for the newest-first order of a group summary. */
+export const RECENT_IDLE_SECONDS = 1800
+export const IDLE_FALLBACK_SECONDS = 3600
+
 function lastMoved(r: CopilotSessionRow): number {
   return Math.max(r.last_activity_at ?? 0, r.delivered_at ?? 0, r.working_since ?? 0)
 }
@@ -1124,7 +1129,7 @@ function lastMoved(r: CopilotSessionRow): number {
  * working ones, the idle and lately finished ones, or all, told in that order.
  * Only the newest LIST_LATEST_READS are read; the rest are counted.
  */
-async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working' | 'idle' | 'all'): Promise<unknown> {
+async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working' | 'idle' | 'all',idleScope='recent'): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -1132,9 +1137,22 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   }
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
   const busy = (r: CopilotSessionRow) => waits(r) || r.state === 'working'
-  const group = read.rows
+  let group = read.rows
     .filter((r) => which === 'all' || (which === 'working' ? busy(r) : !busy(r)))
     .sort((a, b) => lastMoved(b) - lastMoved(a))
+  let idleWindow=RECENT_IDLE_SECONDS,expanded=false,unknownIdle=0
+  const idleAt=(row:CopilotSessionRow)=>Math.max(row.last_activity_at??0,row.delivered_at??0)
+  if(which==='idle') {
+    group=group.filter(row=>row.state==='idle')
+    if(idleScope!=='all') {
+      unknownIdle=group.filter(row=>!idleAt(row)||idleAt(row)>now).length
+      const inWindow=(seconds:number)=>group.filter(row=>idleAt(row)>0&&idleAt(row)<=now&&now-idleAt(row)<=seconds)
+      let recent=inWindow(RECENT_IDLE_SECONDS)
+      if(!recent.length){idleWindow=IDLE_FALLBACK_SECONDS;expanded=true;recent=inWindow(idleWindow)}
+      group=recent
+    }
+    group.sort((a,b)=>idleAt(b)-idleAt(a))
+  }
   const shown = group.slice(0, LIST_LATEST_READS)
   const progress = await Promise.all(shown.map(async (r) => {
     const words=await latestWords(deps,r)
@@ -1145,7 +1163,10 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   return {
     which,
     count: group.length,
+    ...(which==='idle'?{idle_window_minutes:idleScope==='all'?null:idleWindow/60,expanded_from_minutes:expanded?RECENT_IDLE_SECONDS/60:undefined,unknown_idle_time:unknownIdle,idle_time_basis:'last_confirmed_activity_estimate',reporting_rule:'Report newest idle first. Say approximately how long each has been idle, based on last confirmed activity. Do not call unknown or working Sessions idle. Say when the 30-minute window was expanded to one hour.'}:{}),
     sessions: shown.map((r, i) => ({
+      session_id:r.id,
+      ...(which==='idle'&&idleAt(r)>0&&idleAt(r)<=now?{idle_for_seconds:now-idleAt(r),idle_for:durationPhrase(now-idleAt(r))}:{}),
       label: r.label,
       state: waits(r) ? 'needs_you' : r.state,
       ...(whenPhrase(lastMoved(r) || undefined, now) ? { last_active: whenPhrase(lastMoved(r) || undefined, now) } : {}),
@@ -1786,11 +1807,12 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: error })
     return { error }
   }
+  const request=(deps.newRequestID??(()=>crypto.randomUUID()))()
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/send`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(),
+      'Idempotency-Key': request,
       [UNOPENED_READ_HEADER]: '1',
     },
     body: JSON.stringify({ text: message }),
@@ -1801,9 +1823,13 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: error })
     return { error }
   }
+  const answer=await res.json().catch(()=>null) as {ok?:boolean;action?:string;id?:string}|null
+  if(answer?.ok!==true||!['typed','accepted'].includes(answer.action??''))return {error:'voice_work_send_receipt_missing',outcome_unknown:true,target:row.label,meaning:'The send request returned without a usable receipt. Delivery is unknown. Do not retry automatically.'}
   deps.focus?.set(row.id)
+  const receipt={request,id:answer.id??sid(row),action:answer.action}
+  if(answer.action==='accepted')return {accepted:true,delivery:'accepted',target:row.label,receipt,meaning:'The recipient service accepted the request; delivery into the Session is not confirmed.'}
   logs.push({ level: 'info', text: `已送出訊息至「${row.label}」` })
-  return { success: true, sent_to: row.label }
+  return { success: true, delivery:'typed', sent_to: row.label, receipt }
 }
 
 /** One reusable text as the copilot is told of it. */
@@ -2456,7 +2482,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'list_sessions') result = await listSessions(deps, logs)
     else if (name === 'clawdline_help') result = await clawdlineHelp(deps, logs, str(args.question), Array.isArray(args.sections) ? args.sections.map(str) : [])
     else if (name === 'get_devstack_links') result = await devstackLinks(deps, logs, str(args.project), args.open === true)
-    else if (name === 'get_sessions_summary') result = await sessionsSummary(deps, logs, args.which === 'working' || args.which === 'idle' ? args.which : 'all')
+    else if (name === 'get_sessions_summary') result = await sessionsSummary(deps, logs, args.which === 'working' || args.which === 'idle' ? args.which : 'all',args.idle_scope==='all'?'all':'recent')
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
@@ -2586,7 +2612,7 @@ export function unbackedClaimEvents(kinds: readonly ActionKind[]): Record<string
 }
 
 /** One tool the copilot used in the current turn, as the call sheet shows it. */
-export interface ToolTrace { name: string; target?: string; ok: boolean; ms: number; outcome: 'done' | 'asked' | 'many' | 'failed' }
+export interface ToolTrace { name: string; target?: string; ok: boolean; ms: number; outcome: 'done' | 'queued' | 'asked' | 'many' | 'failed' }
 
 /**
  * What a tool call was, for the sheet's tool line: its own name, the Session
@@ -2601,7 +2627,7 @@ export function toolTrace(name: string, output: string, ms: number): ToolTrace {
   const target = str(o.label) || str(o.sent_to) || str(o.session) || str(status.label) || str(o.project)
   const ok = !!o && typeof o === 'object' && !('error' in o) && output.trim().startsWith('{')
   // A list of Sessions to choose from, or to read one by one, is no failure.
-  const outcome = ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'
+  const outcome = ok && o.prepared===true ? 'asked' : ok && name==='queue_voice_work' && o.accepted===true ? 'queued' : ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'
   return { name, ...(target ? { target } : {}), ok, ms: Math.max(0, Math.round(ms)), outcome }
 }
 

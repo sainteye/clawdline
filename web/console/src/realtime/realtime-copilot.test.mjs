@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const { outputFiles } = await build({
-  stdin:{contents:'export {RealtimeCopilotClient} from "./realtime-copilot.ts"; export {voiceWork,useCallWorkTools} from "../voice-work/runtime.ts"',resolveDir:fileURLToPath(new URL('.',import.meta.url)),loader:'ts'},
+  stdin:{contents:'export {RealtimeCopilotClient} from "./realtime-copilot.ts"; export {voiceWork,useCallWorkTools} from "../voice-work/runtime.ts"',resolveDir:process.env.COPILOT_SOURCE_DIR??fileURLToPath(new URL('.',import.meta.url)),loader:'ts'},
   bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false,
 })
 const compiled = { exports: {} }
@@ -16,11 +16,12 @@ const row = { ...origin, assistant: 'codex', state: 'idle', sessionId: 'conversa
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
 function fixture(managed, target = origin) {
+  globalThis.document??={documentElement:{lang:'en'}};globalThis.location??={hash:''}
   const sent = [], reads = []
   let release
   const held = new Promise(resolve => { release = resolve })
   const c = new RealtimeCopilotClient()
-  c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
+  c.dc = { readyState: 'open', send: text => {const e=JSON.parse(text);sent.push(e);if(e.type==='session.update')queueMicrotask(()=>void c.handleRealtimeEvent({type:'session.updated',session:e.session}))}, close() {} }
   c.call = { memory: '', snapshot: '', options: { workEnabled: managed, origin: target } }
   c.focus = target?.id
   c.snapshot = Promise.resolve('')
@@ -168,6 +169,7 @@ for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`t
     }
     assert.equal(c.state.status, 'connected')
     await c.sendSessionConfiguration()
+    await c.handleRealtimeEvent({type:'session.updated',session:sent.find(e=>e.type==='session.update').session})
     await tick()
     assert.equal(sent.filter(e => e.type === 'response.create').length, 1)
     assert.equal(requests.filter(r => r.path === '/v1/voice/copilot-work' && r.init?.method === 'POST').length, 0)
@@ -205,9 +207,17 @@ async function withLedger(f,run) {
    if(change){requests.push(change);state.revision++
      if(change.action==='input')state.inputs.push({id:change.id,call:change.call,text:change.text,focus:change.focus,deferred:change.deferred,planned:false,at:1})
      if(change.action==='plan')for(const i of state.inputs)if(change.input_ids.includes(i.id))i.deferred=false
+     if(change.action==='prepare_message'){
+       const source=state.inputs.find(i=>i.id===change.input_ids[0]);assert.ok(source&&!source.planned);source.planned=true;source.deferred=false
+       state.tasks.push({id:'proposal',text:change.text,tool:'send_message_to_session',args:{session_id:change.id,session_label:'Prepare screenshots',message:change.text},version:1,status:'waiting_confirmation',sources:change.input_ids,depends_on:[],priority:0})
+     }
+     if(change.action==='confirm_message'){
+       const task=state.tasks.find(t=>t.id===change.id);assert.equal(task.version,change.version);task.status='queued';task.approved_version=task.version
+       state.inputs.find(i=>i.id===change.input_ids[0]).planned=true
+     }
      if(change.action==='answer')for(const i of state.inputs)if(i.id===change.id)i.planned=true
    }
-   return {protocol:3,state}
+   return {protocol:3,message_confirmation:true,state,prepared:change?.action==='prepare_message'?state.tasks.at(-1):undefined}
  }}
  f.c.journalCall='test-call';useCallWorkTools(f.c.toolDeps(),'test-call')
  try{await run(state,requests);await tick()}finally{useCallWorkTools(undefined);voiceWork.deps=oldDeps;voiceWork.state=oldState}
@@ -303,5 +313,108 @@ test('planner retry requires an explicit new retry utterance and permits one sub
    assert.equal((await f.c.workTool('retry_voice_work',{input_ids:['failed']},'retry')).accepted,true)
    assert.equal((await f.c.workTool('retry_voice_work',{input_ids:['failed']},'retry')).error,'voice_work_explicit_retry_required')
    assert.equal(requests.filter(r=>r.action==='plan'&&r.retry).length,1)
+ })
+})
+
+test('an acknowledgement cannot consume a write request before it has a durable proposal',async()=>{
+ const f=fixture(true)
+ await withLedger(f,async(state)=>{
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'reply-request'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'reply-request'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'reply-request',transcript:'Please reply to the Session: use the customer language.'})
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'ack'}})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'ack',status:'completed',output:[{type:'message'}]}})
+  await tick()
+  assert.equal(state.inputs[0].planned,false,'saying it will reply is not answering the request')
+ })
+})
+
+test('a delivery question reads the actual work receipt, without querying recipient activity',async()=>{
+ const f=fixture(true)
+ await withLedger(f,async(state,requests)=>{
+  state.inputs.push({id:'failed-send',call:'test-call',text:'Send a message',planned:false,planning_error:'voice_work_timeout'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'status'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'status'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'status',transcript:'你有送出嗎？'})
+  const output=f.responses().at(-1).response.instructions
+  assert.match(output,/voice_work_timeout/);assert.match(output,/not sent yet/)
+  assert.equal(f.reads.filter(r=>r.path.startsWith('/v1/transcript?')).length,0)
+  assert.equal(requests.filter(r=>r.action==='plan').length,0)
+ })
+})
+
+test('a message is prepared without planning and confirmed only after exact audible proposal and fresh explicit consent',async()=>{
+ const f=fixture(true);f.c.call.options.messageActions=true
+ await withLedger(f,async(state,requests)=>{
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'message'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'message'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'message',transcript:'Tell the Session to inspect the delay.'})
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'prepare'}})
+  await f.c.handleToolCall({call_id:'prepare',response_id:'prepare',name:'send_message_to_session',arguments:'{"session_id":"%7","message":"Please inspect the delay.","confirmed":true}'})
+  assert.equal(state.tasks[0].status,'waiting_confirmation')
+  assert.equal(requests.some(r=>r.action==='plan'||r.action==='confirm_message'),false)
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'prepare',status:'completed',output:[{type:'function_call'}]}})
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'proposal-read'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Send to Prepare screenshots. Message: Please inspect the delay. Say yes, send it to confirm.'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'proposal-read',status:'completed',output:[{type:'message'}]}})
+  assert.equal(f.c.messageProposal.announced,false,'generation completion is not playback completion')
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
+  assert.equal(f.c.messageProposal.announced,true)
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'consent'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'consent'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'consent',transcript:'可以，送出。'})
+  assert.equal(requests.filter(r=>r.action==='confirm_message').length,1)
+  assert.equal(state.tasks[0].approved_version,1)
+  assert.equal(state.tasks[0].status,'queued','confirmation is still not delivery')
+  assert.ok(!f.reads.some(r=>r.init?.method==='POST'))
+ })
+})
+
+test('connected cue waits for configured tools, plays once, and creates no model greeting',async()=>{
+ const f=fixture(true,null);let connected=0
+ f.c.state.status='connected';f.c.meter={connected:()=>connected++,pending(){}}
+ f.c.dc.send=text=>f.sent.push(JSON.parse(text))
+ await f.c.sendSessionConfiguration()
+ assert.equal(connected,0);assert.equal(f.c.state.connectionReady,undefined)
+ await f.c.handleRealtimeEvent({type:'session.updated',session:{tools:[]}})
+ assert.equal(connected,0)
+ const configured=f.sent.find(e=>e.type==='session.update').session
+ await f.c.handleRealtimeEvent({type:'session.updated',session:configured})
+ await f.c.handleRealtimeEvent({type:'session.updated',session:configured})
+ assert.equal(connected,1);assert.equal(f.c.state.connectionReady,true);assert.equal(f.responses().length,0)
+})
+
+test('a held tool has visible processing and one quiet cue, then clears its running state',async()=>{
+ const f=fixture(true);let cues=0
+ f.c.state.status='connected';f.c.meter={pending:()=>cues++,chime(){}}
+ await withLedger(f,async()=>{
+  const running=f.c.handleToolCall({call_id:'held',name:'get_session_recap',arguments:'{"session_id":"%7"}'})
+  await tick()
+  assert.equal(f.c.state.progress.phase,'reading');assert.equal(cues,1)
+  f.c.updateState({});assert.equal(cues,1)
+  f.release();await running
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'finished',status:'completed',output:[{type:'message'}]}})
+  assert.notEqual(f.c.state.progress?.phase,'reading')
+ })
+})
+
+test('an interrupted or incorrect proposal cannot authorize a send',async()=>{
+ const f=fixture(true)
+ await withLedger(f,async(state,requests)=>{
+  state.inputs.push({id:'original',call:'test-call',text:'Send a message',planned:true})
+  state.tasks.push({id:'proposal',tool:'send_message_to_session',text:'Exact message',args:{session_id:'%7',message:'Exact message'},sources:['original'],version:1,status:'waiting_confirmation'})
+  f.c.messageProposal={id:'proposal',version:1,workspace:state.id,target:'Prepare screenshots',message:'Exact message',announced:false}
+  f.c.activeConversationInput='original'
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'wrong-read'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Send to another Session with a different message.'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'wrong-read',status:'completed',output:[{type:'message'}]}})
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
+  assert.equal(f.c.messageProposal.announced,false)
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'unbound'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'unbound'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'unbound',transcript:'可以，送出。'})
+  assert.equal(requests.some(r=>r.action==='confirm_message'),false)
+  assert.equal(state.tasks[0].status,'waiting_confirmation')
  })
 })

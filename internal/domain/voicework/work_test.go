@@ -514,3 +514,90 @@ func TestInterruptedConversationRemainsUnresolvedUntilExplicitlyRouted(t *testin
 		t.Fatal(s)
 	}
 }
+
+func TestMessagePreparationAndSpokenConsentBindTheExactSavedRequest(t *testing.T) {
+	s := New("workspace")
+	_, _ = s.AddInput(Input{ID: "request", Call: "call", Text: "Tell the Session to inspect the delay", Deferred: true})
+	target := Focus{ID: "recipient", Label: "Recipient", Conversation: "conversation", Machine: "machine"}
+	if err := s.PrepareMessage("send", "call", "request", target, "Please inspect the delay.", 2); err != nil {
+		t.Fatal(err)
+	}
+	if s.Tasks[0].Status != "waiting_confirmation" || s.Tasks[0].ApprovedVersion != 0 {
+		t.Fatal(s)
+	}
+	if s.Claim("runner", 3) != nil {
+		t.Fatal("preparation sent a message")
+	}
+	_, _ = s.AddInput(Input{ID: "not-consent", Call: "call", Text: "Can you send it?", Deferred: true})
+	if err := s.ConfirmMessage("send", 1, "call", "not-consent", 4); err == nil {
+		t.Fatal("a question approved the action")
+	}
+	_, _ = s.AddInput(Input{ID: "consent", Call: "call", Text: "可以，送出。", Deferred: true})
+	if err := s.ConfirmMessage("send", 2, "call", "consent", 5); err == nil {
+		t.Fatal("stale version approved")
+	}
+	if err := s.ConfirmMessage("send", 1, "foreign", "consent", 5); err == nil {
+		t.Fatal("foreign call approved")
+	}
+	if err := s.ConfirmMessage("send", 1, "call", "consent", 5); err != nil {
+		t.Fatal(err)
+	}
+	if s.Tasks[0].ApprovedVersion != 1 || s.Tasks[0].Status != "queued" {
+		t.Fatal(s.Tasks[0])
+	}
+	if err := s.ConfirmMessage("send", 1, "call", "consent", 6); err == nil {
+		t.Fatal("consent reused")
+	}
+	if s.Tasks[0].Args["message"] != "Please inspect the delay." {
+		t.Fatal(s.Tasks[0])
+	}
+}
+
+func TestNewSpokenConsentDoesNotReleaseAnOlderWriteOrOverrideALaterCancellation(t *testing.T) {
+	s := New("workspace")
+	_, _ = s.AddInput(Input{ID: "old", Text: "Old send", Ready: true})
+	_ = s.Apply(s.PlanVersion, []string{"old"}, []Change{{Op: "add", ID: "old-send", Text: "Old send", Tool: "send_message_to_session", Args: map[string]any{"message": "old"}}}, "", 1)
+	_ = s.Edit("old-send", 1, "confirm", 2)
+	_, _ = s.AddInput(Input{ID: "cancel-old", Text: "Cancel the earlier send", Ready: true})
+	s.FailPlanning([]string{"cancel-old"}, "voice_work_timeout", "provider")
+	_, _ = s.AddInput(Input{ID: "new", Call: "call", Text: "Send a separate message", Deferred: true})
+	if err := s.PrepareMessage("new-send", "call", "new", Focus{ID: "recipient", Label: "Recipient"}, "New message", 3); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = s.AddInput(Input{ID: "consent", Call: "call", Text: "可以，送出", Deferred: true})
+	if err := s.ConfirmMessage("new-send", 1, "call", "consent", 4); err != nil {
+		t.Fatal(err)
+	}
+	next := s.Claim("runner", 5)
+	if next == nil || next.ID != "new-send" {
+		t.Fatal(next)
+	}
+	_, _ = s.AddInput(Input{ID: "cancel-new", Text: "Stop the new send"})
+	if err := s.BeginEffect(next.ID, "runner", next.ActionKey, 6); err == nil {
+		t.Fatal("later cancellation lost the race")
+	}
+	if s.Inputs[1].Planned {
+		t.Fatal("earlier unresolved request was erased")
+	}
+}
+
+func TestGoalCompletionPreservesTheActualSendReceipt(t *testing.T) {
+	s := New("workspace")
+	_, _ = s.AddInput(Input{ID: "source", Text: "Send", Ready: true})
+	if err := s.Apply(s.PlanVersion, []string{"source"}, []Change{{Op: "add", ID: "send", Text: "Send", Tool: "send_message_to_session", Args: map[string]any{}}}, "", 1); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Edit("send", 1, "confirm", 2)
+	task := s.Claim("runner", 3)
+	_ = s.BeginEffect(task.ID, "runner", task.ActionKey, 4)
+	receipt := `{"success":true,"sent_to":"Recipient","receipt":{"request":"key","id":"recipient","action":"typed"}}`
+	if err := s.Finish(task.ID, "runner", task.ActionKey, receipt, "", false, 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Edit(task.ID, 1, "complete", 6); err != nil {
+		t.Fatal(err)
+	}
+	if s.Tasks[0].MessageReceipt != receipt || s.Tasks[0].DeliveredAt != 5 {
+		t.Fatal("manual goal completion erased receipt", s.Tasks[0])
+	}
+}

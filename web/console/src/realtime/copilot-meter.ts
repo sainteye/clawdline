@@ -117,6 +117,37 @@ export class CallMeter {
     }
   }
 
+  /** Two low notes acknowledge configured tools, without generating model speech. */
+  connected(): void {
+    const context=this.context
+    if(!context||context.state!=='running')return
+    try {
+      const gain=context.createGain();gain.connect(context.destination)
+      for(const [index,hz] of [480,660].entries()){
+        const tone=context.createOscillator(),at=context.currentTime+index*CHIME_NOTE_S
+        tone.connect(gain);tone.frequency.value=hz
+        gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(RING_LEVEL/4,at+0.01);gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
+        tone.onended=()=>{tone.disconnect();if(index===1)gain.disconnect()}
+        tone.start(at);tone.stop(at+CHIME_NOTE_S)
+      }
+    }catch{/* refusal-ok: the visible connected state remains when local audio is unavailable. */}
+  }
+
+  /** A single soft low note means processing started, never success. No loop. */
+  pending(): void {
+    const context=this.context
+    if(!context||context.state!=='running')return
+    try {
+      const gain=context.createGain(),tone=context.createOscillator(),at=context.currentTime
+      gain.connect(context.destination);tone.connect(gain);tone.frequency.value=330
+      gain.gain.setValueAtTime(0,at)
+      gain.gain.linearRampToValueAtTime(RING_LEVEL/8,at+0.01)
+      gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
+      tone.onended=()=>{tone.disconnect();gain.disconnect()}
+      tone.start(at);tone.stop(at+CHIME_NOTE_S)
+    } catch { /* refusal-ok: unavailable sound leaves the visible processing state. */ }
+  }
+
   /**
    * A short rising two-note chime, played when the copilot has done something
    * on the machine (`actionNotice`), on the context the call's tap opened.

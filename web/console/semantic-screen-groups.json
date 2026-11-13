@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11629,
-  "riskKeys": 5084,
-  "nonRiskCount": 6545,
+  "englishContentKeys": 11651,
+  "riskKeys": 5096,
+  "nonRiskCount": 6555,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 494,
+      "count": 495,
       "sources": [
         null
       ],
@@ -585,6 +585,7 @@
         "capacityRow.console.copilot_orb_pixel_ratio.full",
         "capacityRow.console.copilot_orb_pixel_ratio.what",
         "capacityRow.console.copilot_recap_pages.full",
+        "capacityRow.console.copilot_recent_idle_seconds.what",
         "capacityRow.console.copilot_reply_characters.what",
         "capacityRow.console.copilot_screen_reads.what",
         "capacityRow.console.copilot_smart_rename_sessions.what",
@@ -3852,7 +3853,7 @@
     },
     {
       "name": "next / other",
-      "count": 994,
+      "count": 1003,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4050,6 +4051,8 @@
         "next.copilotCallFromSession",
         "next.copilotCallTitle",
         "next.copilotClose",
+        "next.copilotConfiguring",
+        "next.copilotConnectedReady",
         "next.copilotConnecting",
         "next.copilotCost",
         "next.copilotDemoClose",
@@ -4102,6 +4105,12 @@
         "next.copilotModelLabel",
         "next.copilotOrb",
         "next.copilotOrbResize",
+        "next.copilotProgressOpen",
+        "next.copilotProgressResponding",
+        "next.copilotProgressRunning",
+        "next.copilotProgressSaving",
+        "next.copilotProgressSounds",
+        "next.copilotProposalHint",
         "next.copilotReady",
         "next.copilotRemembered",
         "next.copilotSaid",
@@ -4120,6 +4129,7 @@
         "next.copilotThinking",
         "next.copilotToolAsked",
         "next.copilotToolMany",
+        "next.copilotToolQueued",
         "next.copilotToolsUsed",
         "next.copilotTranscript",
         "next.copilotTranscriptWaiting",
@@ -4828,7 +4838,7 @@
         "next.voiceWorkList",
         "next.voiceWorkLoading",
         "next.voiceWorkManagedSource",
-        "next.voiceWorkManagedSourceHint",
+        "next.voiceWorkMessageReceipt",
         "next.voiceWorkModeEnabled",
         "next.voiceWorkModeLoading",
         "next.voiceWorkPause",

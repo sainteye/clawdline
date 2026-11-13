@@ -3,6 +3,7 @@ import { nextWord } from '../next-strings.js'
 import { BRAND_MARK } from '../brand-mark.js'
 import { formatUSD } from './copilot-cost.js'
 import { CopilotOrb } from './CopilotOrb.js'
+import {CopilotProgress} from './CopilotProgress.js'
 import { CopilotNotice } from './CopilotNotice.js'
 import { CopilotDemoFilm } from './CopilotDemoFilm.js'
 import {
@@ -11,8 +12,8 @@ import {
 } from './realtime-copilot.js'
 
 /** How each tool outcome is marked on its chip, and the word said beside it (`toolTrace`). */
-const TOOL_OUTCOME_MARK = { done: '✓', asked: '?', many: '⋯', failed: '✗' } as const
-const TOOL_OUTCOME_WORD = { done: 'copilotToolDone', asked: 'copilotToolAsked', many: 'copilotToolMany', failed: 'copilotToolFailed' } as const
+const TOOL_OUTCOME_MARK = { done: '✓', queued: '⋯', asked: '?', many: '⋯', failed: '✗' } as const
+const TOOL_OUTCOME_WORD = { done: 'copilotToolDone', queued:'copilotToolQueued', asked: 'copilotToolAsked', many: 'copilotToolMany', failed: 'copilotToolFailed' } as const
 
 /** One stable reader, so the orb is not woken by every render. */
 const readCallLevels = () => realtimeCopilot.readLevels()
@@ -68,10 +69,11 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
   let stateLabel = nextWord('copilotReady')
   if (isConnecting) stateLabel = nextWord('copilotConnecting')
   else if (isConnected) {
-    if (copilotState.toolCallLog) stateLabel = copilotState.toolCallLog
+    if (!copilotState.connectionReady) stateLabel=nextWord('copilotConfiguring')
+    else if (copilotState.toolCallLog) stateLabel = copilotState.toolCallLog
     else if (copilotState.speakingState === 'speaking') stateLabel = nextWord('copilotAnswering')
     else if (copilotState.speakingState === 'thinking') stateLabel = nextWord('copilotThinking')
-    else stateLabel = nextWord('copilotListening')
+    else stateLabel = nextWord('copilotConnectedReady')
   }
 
   return (
@@ -135,9 +137,14 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
             <span className="realtime-orb-grip" aria-hidden="true" />
           </div>
           <div className="realtime-status-label">{stateLabel}</div>
+          <CopilotProgress progress={copilotState.progress}/>
           <CopilotNotice notice={copilotState.notice} className="copilot-notice" />
         </div>
 
+        {isConnected&&copilotState.messageProposal?<section className="copilot-message-proposal" aria-label={nextWord('copilotProposalTitle')}>
+          <strong>{nextWord('copilotProposalTitle')}</strong><p>{copilotState.messageProposal.target}</p><blockquote>{copilotState.messageProposal.message}</blockquote><p>{nextWord('copilotProposalHint')}</p>
+        </section>:null}
+        {isConnected?<label className="copilot-processing-sounds"><input type="checkbox" checked={copilotState.progressSounds!==false} onChange={e=>realtimeCopilot.setProgressSounds(e.target.checked)}/>{nextWord('copilotProgressSounds')}</label>:null}
         {/* Live speech / transcript display */}
         {isConnected && (
           <div className="realtime-transcript-box" ref={transcript} role="region" tabIndex={0}

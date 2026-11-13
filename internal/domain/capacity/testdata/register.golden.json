@@ -5330,6 +5330,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_idle_fallback_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3600,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_list_transcript_reads",
     "Class": "buffer",
     "Unit": "rows",
@@ -5406,6 +5424,24 @@
     "Limit": 5,
     "WarnAt": 0,
     "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_recent_idle_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 1800,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
     "Deviation": "",
     "Told": [
       "sender",

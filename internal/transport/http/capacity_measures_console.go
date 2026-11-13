@@ -280,6 +280,13 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.copilot_reply_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-explanation clip of a last reply; daemon cannot measure another device's reads"}
 		},
+		"console.copilot_recent_idle_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "default recent-idle report window; elapsed idle time is estimated from confirmed activity"}
+		},
+		"console.copilot_idle_fallback_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "fallback idle report window used only when the default window has no matches"}
+		},
+
 		"console.copilot_smart_rename_sessions": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-call rename list guard; daemon cannot measure another device's calls"}
 		},

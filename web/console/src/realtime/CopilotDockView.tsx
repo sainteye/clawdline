@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react"
 import { nextWord } from "../next-strings.js"
 import { realtimeCopilot, type RealtimeCopilotState } from "./realtime-copilot.js"
 import { RealtimeCopilotModal } from "./RealtimeCopilotModal.js"
+import {CopilotProgress} from './CopilotProgress.js'
 import { CopilotNotice } from "./CopilotNotice.js"
 import { DevStackModal } from "./DevStackModal.js"
 import { bubbleSide, copilotDock, firstPoint, isTap, restingPoint, type DockMode, type Insets, type Point } from "./copilot-dock.js"
@@ -127,6 +128,7 @@ function CopilotBubble({ call }: { call: RealtimeCopilotState }) {
         <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
       </svg>
     </button>
+    <CopilotProgress progress={call.progress} compact/>
     <CopilotNotice notice={call.notice} className="copilot-notice copilot-bubble-notice" />
     <button type="button" className="copilot-bubble-hangup" aria-label={nextWord("copilotHangup")} title={nextWord("copilotHangup")}
       onClick={() => { realtimeCopilot.disconnect(); copilotDock.close() }}>
