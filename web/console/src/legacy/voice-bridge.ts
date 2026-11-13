@@ -107,6 +107,13 @@ export interface VoiceJob {
   composer: HTMLElement | null
   /** What the words are for, with what the optional cleanup did to them. Nothing on this path sends. */
   sink: (said: string, polish?: VoicePolishOutcome) => void
+  /**
+   * Where the words go when the person ended the recording with the send
+   * control (`pressSend`) instead of Done: straight to the Session, unread.
+   * Called after the composer may already have gone, so it must not depend
+   * on anything that went with it.
+   */
+  send?: (said: string) => void
   /** A Cloud composer can use the account's existing voice host. Dictation never sends to a Session. */
   transcribe?: (audio: string, rate: number) => Promise<VoiceAnswer>
   /** The machine whose Whisper will receive this recording. Display-only. */
@@ -147,6 +154,8 @@ interface Recording {
   mime: string
   revision: number
   discarded?: boolean
+  /** Ended with the send control: deliver the words instead of writing them into the box. */
+  send?: boolean
   prepared?: { revision: number; promise: Promise<string> }
   closeDecoder?: () => void
   // A cancelled wait may still be executing on the host. Reuse that request
@@ -331,12 +340,35 @@ export function press(job?: VoiceJob): void {
   open()
 }
 
+/**
+ * The send control: end this recording and deliver what it heard without
+ * showing it first. Anything other than a recording that can be sent is an
+ * ordinary press, so the same control still starts one.
+ */
+export function pressSend(job?: VoiceJob): void {
+  if (state === "recording" && recording && activeJob?.send && (!job || job === activeJob)) {
+    recording.send = true
+    stop()
+    return
+  }
+  press(job)
+}
+
+/** True while a finished recording is on its way to a Session rather than into the box. */
+export function sending(): boolean {
+  return state !== "off" && !!recording?.send
+}
+
 function speak(text: string, bad?: boolean): void {
   ;(activeJob?.say ?? host.say)(text, bad)
 }
 
 function changed(): void {
-  ;(activeJob?.changed ?? host.changed)(state)
+  const job = activeJob
+  ;(job?.changed ?? host.changed)(state)
+  // A recording being sent outlives its composer. The one that mounted since
+  // has to see it finish, or its microphone stays disabled for good.
+  if (job?.changed && job.changed !== host.changed && job.guard()) host.changed(state)
 }
 
 /**
@@ -443,8 +475,9 @@ function backgrounded(): void {
 function beat(mine: number): void {
   if (mine !== token) return
   // Whatever this job's own reason to give up early is. Nothing is lost that
-  // was not already only a moment old.
-  if (activeJob?.guard()) {
+  // was not already only a moment old. A recording the person already sent is
+  // not given up on: leaving the Session is exactly what sending lets them do.
+  if (activeJob?.guard() && !recording?.send) {
     cancel()
     return
   }
@@ -516,6 +549,13 @@ function recover(code: VoiceDiagnostic["code"]): void {
   state = "recoverable"
   drawn = ""
   recordVoiceDiagnostic({ stage, code, bytes: recording.bytes, complete: recording.complete })
+  // A sent recording whose composer has gone has no row left to offer Retry
+  // in. Say it did not go, and free the microphone for the page that is open.
+  if (recording.send && activeJob?.guard()) {
+    speak(nextWord("voiceSendFailed"), true)
+    cancel()
+    return
+  }
   show()
 }
 
@@ -606,7 +646,8 @@ function processRecording(): void {
     if (!said) { recover("processing_failed"); speak(S.webVoiceEmpty); return }
     cancel()
     knockTwice()
-    job?.sink(said, polishOutcome(answer))
+    if (take.send && job?.send) job.send(said)
+    else job?.sink(said, polishOutcome(answer))
   }).catch((e: VoiceFailure) => {
     if (!current()) return
     recover("processing_failed")
@@ -1133,6 +1174,7 @@ function show(): void {
     note.className = "note"
     note.textContent = state === "recoverable" ? nextWord(recording?.bytes ? "voiceRecoveryKept"
       : recording?.finished ? "voiceRecoveryEmpty" : "voiceRecoveryNoBytes")
+      : recording?.send ? nextWord("voiceWillSend")
       : state === "reading" ? S.webVoiceSlow : nextWord("voiceMicStopped")
     what.appendChild(said)
     what.appendChild(note)
@@ -1229,7 +1271,8 @@ function say(): void {
   if (state === "reading") {
     said.textContent = fillWords(S.webVoiceReading, { n })
     const note = box.querySelector(".note")
-    if (note) note.textContent = recording && !recording.complete ? nextWord("voicePartialWarning") : S.webVoiceSlow
+    if (note) note.textContent = recording && !recording.complete ? nextWord("voicePartialWarning")
+      : recording?.send ? nextWord("voiceWillSend") : S.webVoiceSlow
     if (recording && !recording.complete) box.setAttribute("data-slow", "1")
     // Twelve seconds of nothing has an explanation and it is worth giving.
     // Anything shorter does not, and a permanent line of it would be an
