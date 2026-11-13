@@ -7,9 +7,9 @@ export type BrowserKeyboardHandle = { open: (kind?: string, ready?: Promise<bool
 
 /** A local draft lives outside the sampled picture. No keystroke changes the
  * remote page until the person sends it; refreshes never replace this editor. */
-export function BrowserComposer({ keyboardRef, person, available, onPrepare, onSend }: {
+export function BrowserComposer({ keyboardRef, person, available, onPrepare, onSend, onDelete }: {
   keyboardRef: Ref<BrowserKeyboardHandle>; person: boolean; available: boolean;
-  onPrepare: () => Promise<boolean>; onSend: (text: string) => Promise<InputReceipt>;
+  onPrepare: () => Promise<boolean>; onSend: (text: string) => Promise<InputReceipt>; onDelete: () => void;
 }) {
   const editor = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const epoch = useRef(0)
@@ -74,6 +74,11 @@ export function BrowserComposer({ keyboardRef, person, available, onPrepare, onS
         ? <input {...props} type="password" ref={element => { editor.current = element }} />
         : <textarea {...props} rows={1} ref={element => { editor.current = element }} />}
       <button type="submit" onPointerDown={event => event.preventDefault()} disabled={!draft || pending || !available}>{nextWord("browserPanelSendText")}</button>
+      {/* One Backspace on the page field. Like Send text it never takes focus,
+          so the phone keyboard stays up; the local draft is edited by the
+          keyboard's own Backspace. */}
+      <button type="button" className="browser-composer-delete" onPointerDown={event => event.preventDefault()} disabled={!person || pending || !available}
+        aria-label={nextWord("browserPanelKeyBackspace")} onClick={onDelete}>⌫</button>
     </div>
     {pending && <span className="browser-input-pending" role="status">{nextWord("browserPanelTyping")}</span>}
     {error && <p className="browser-input-error" role="alert">{nextWord(error === "full" ? "browserPanelInputFull" : "browserPanelInputUnconfirmed")}</p>}

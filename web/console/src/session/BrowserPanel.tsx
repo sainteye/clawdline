@@ -298,7 +298,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         <div className="browser-controls">
           <BrowserComposer key={scopeKey} keyboardRef={nativeKeyboard} person={person}
             available={ready && !otherDebugger && !controlBusy && !busy}
-            onPrepare={ensureControl} onSend={text => act("type", { text })} />
+            onPrepare={ensureControl} onSend={text => act("type", { text })} onDelete={() => void act("key", { key: "Backspace" })} />
           <div className="browser-who" data-person={person ? "true" : undefined}>
             <span aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</span>
             <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={controlBusy || otherDebugger} onClick={() => void control(!person)}>
@@ -312,7 +312,6 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
               <button type="button" className="browser-keyboard-open" disabled={busy || controlBusy || otherDebugger} onClick={() => { nativeKeyboard.current?.open(); setToolsOpen(false) }}>{nextWord("browserPanelKeyboard")}</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Tab" })}>Tab</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Enter" })}>Enter</button>
-              <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Backspace" })}>{nextWord("browserPanelKeyBackspace")}</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "up" })}>{nextWord("browserPanelScrollUp")}</button>
               <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "down" })}>{nextWord("browserPanelScrollDown")}</button>
             </div>
