@@ -312,6 +312,10 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	switch r.State {
 	case StateQueued, StateSpawning:
 		s.Link.State = pa.WorkAccepted
+		if r.State == StateSpawning && !r.AwaitingDialogSince.IsZero() {
+			// The briefing waits for the person to answer the worker's dialog.
+			s.Link.State = pa.WorkWaitingForPerson
+		}
 	case StateBriefed:
 		s.Link.State = pa.WorkExecuting
 	case StateSuccess:

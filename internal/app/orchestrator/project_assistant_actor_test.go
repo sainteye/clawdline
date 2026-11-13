@@ -500,3 +500,21 @@ func TestAssistantBrokerProjectWidePolicyKeepsPathChecks(t *testing.T) {
 		t.Fatalf("a symlinked parent was admitted under a Project-wide policy: %v", err)
 	}
 }
+
+// A worker whose first screen holds a dialog tells the Bot chat that the
+// person must answer it, instead of looking like ordinary acceptance.
+func TestAssistantWorkSnapshotShowsAWorkerWaitingForThePerson(t *testing.T) {
+	owner := &AssistantOwner{Fence: pa.Fence{Key: pa.BotKey{MachineID: "m", BotID: "b"}}, TurnID: "turn"}
+	r := Record{ID: "task", State: StateSpawning, AssistantOwner: owner}
+	if got := AssistantWorkSnapshotOf(r).Link.State; got != pa.WorkAccepted {
+		t.Fatalf("a spawning worker without a dialog: %s", got)
+	}
+	r.AwaitingDialogSince = time.Unix(1700000000, 0)
+	if got := AssistantWorkSnapshotOf(r).Link.State; got != pa.WorkWaitingForPerson {
+		t.Fatalf("a worker holding a dialog was not shown as waiting for the person: %s", got)
+	}
+	r.State = StateSpawnFailed
+	if got := AssistantWorkSnapshotOf(r).Link.State; got != pa.WorkFailed {
+		t.Fatalf("an unanswered dialog that ended the spawn: %s", got)
+	}
+}

@@ -75,7 +75,7 @@ func newSessionHandoff(x Export, turn pa.Turn, filtered pa.ContextSnapshot) (*Se
 			return nil, runtimeFailure(pa.ScopeDenied, "handoff_work")
 		}
 		switch work.State {
-		case pa.WorkAccepted, pa.WorkExecuting, pa.WorkUnknown:
+		case pa.WorkAccepted, pa.WorkWaitingForPerson, pa.WorkExecuting, pa.WorkUnknown:
 			h.Unfinished = append(h.Unfinished, SessionPending{Kind: "work", ID: work.ID, State: string(work.State), TaskID: work.TaskID})
 		}
 	}

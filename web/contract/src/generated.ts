@@ -6080,13 +6080,14 @@ export interface ProjectAssistantWorkLink {
 
 export type ProjectAssistantWorkState =
     "accepted"
+  | "waiting_for_person"
   | "executing"
   | "failed"
   | "completed"
   | "landed"
   | "unknown"
 
-export const ProjectAssistantWorkStateValues: readonly ProjectAssistantWorkState[] = ["accepted", "executing", "failed", "completed", "landed", "unknown"] as const
+export const ProjectAssistantWorkStateValues: readonly ProjectAssistantWorkState[] = ["accepted", "waiting_for_person", "executing", "failed", "completed", "landed", "unknown"] as const
 
 export interface ProjectCatalog {
   /**

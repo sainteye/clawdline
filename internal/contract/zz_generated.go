@@ -5290,16 +5290,17 @@ type ProjectAssistantWorkLink struct {
 type ProjectAssistantWorkState string
 
 const (
-	ProjectAssistantWorkStateAccepted  ProjectAssistantWorkState = "accepted"
-	ProjectAssistantWorkStateExecuting ProjectAssistantWorkState = "executing"
-	ProjectAssistantWorkStateFailed    ProjectAssistantWorkState = "failed"
-	ProjectAssistantWorkStateCompleted ProjectAssistantWorkState = "completed"
-	ProjectAssistantWorkStateLanded    ProjectAssistantWorkState = "landed"
-	ProjectAssistantWorkStateUnknown   ProjectAssistantWorkState = "unknown"
+	ProjectAssistantWorkStateAccepted         ProjectAssistantWorkState = "accepted"
+	ProjectAssistantWorkStateWaitingForPerson ProjectAssistantWorkState = "waiting_for_person"
+	ProjectAssistantWorkStateExecuting        ProjectAssistantWorkState = "executing"
+	ProjectAssistantWorkStateFailed           ProjectAssistantWorkState = "failed"
+	ProjectAssistantWorkStateCompleted        ProjectAssistantWorkState = "completed"
+	ProjectAssistantWorkStateLanded           ProjectAssistantWorkState = "landed"
+	ProjectAssistantWorkStateUnknown          ProjectAssistantWorkState = "unknown"
 )
 
 // ProjectAssistantWorkStateValues is every value the contract allows, in contract order.
-var ProjectAssistantWorkStateValues = []ProjectAssistantWorkState{ProjectAssistantWorkStateAccepted, ProjectAssistantWorkStateExecuting, ProjectAssistantWorkStateFailed, ProjectAssistantWorkStateCompleted, ProjectAssistantWorkStateLanded, ProjectAssistantWorkStateUnknown}
+var ProjectAssistantWorkStateValues = []ProjectAssistantWorkState{ProjectAssistantWorkStateAccepted, ProjectAssistantWorkStateWaitingForPerson, ProjectAssistantWorkStateExecuting, ProjectAssistantWorkStateFailed, ProjectAssistantWorkStateCompleted, ProjectAssistantWorkStateLanded, ProjectAssistantWorkStateUnknown}
 
 type ProjectCatalog struct {
 	// False when the store could not be read at all; `readState.error` says why.

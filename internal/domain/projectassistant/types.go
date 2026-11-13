@@ -263,12 +263,15 @@ type PermissionContext struct {
 type WorkState string
 
 const (
-	WorkAccepted  WorkState = "accepted"
-	WorkExecuting WorkState = "executing"
-	WorkFailed    WorkState = "failed"
-	WorkCompleted WorkState = "completed"
-	WorkLanded    WorkState = "landed"
-	WorkUnknown   WorkState = "unknown"
+	WorkAccepted WorkState = "accepted"
+	// WorkWaitingForPerson is a started worker whose first screen holds a
+	// dialog, such as a folder trust question, that only the person answers.
+	WorkWaitingForPerson WorkState = "waiting_for_person"
+	WorkExecuting        WorkState = "executing"
+	WorkFailed           WorkState = "failed"
+	WorkCompleted        WorkState = "completed"
+	WorkLanded           WorkState = "landed"
+	WorkUnknown          WorkState = "unknown"
 )
 
 type WorkLink struct {

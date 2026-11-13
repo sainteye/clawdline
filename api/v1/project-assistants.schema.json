@@ -87,6 +87,7 @@
       "type": "string",
       "enum": [
         "accepted",
+        "waiting_for_person",
         "executing",
         "failed",
         "completed",

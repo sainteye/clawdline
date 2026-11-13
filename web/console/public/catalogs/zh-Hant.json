@@ -9865,6 +9865,7 @@
   "projectAssistants.waiting_permission": "等待允許",
   "projectAssistants.work": "工作結果",
   "projectAssistants.yes": "已驗證",
+  "projectAssistants.waiting_for_person": "等你處理：派出的工作在終端機裡跳出確認畫面（例如是否信任這個資料夾），請在四分鐘內到那個 Session 回答。",
   "playbook.boardDriveTitle": "看板項目推進",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",

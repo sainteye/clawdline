@@ -9865,6 +9865,7 @@
   "projectAssistants.waiting_permission": "Awaiting permission",
   "projectAssistants.work": "Work result",
   "projectAssistants.yes": "Verified",
+  "projectAssistants.waiting_for_person": "Waiting for you: the worker's terminal is asking a question, such as whether to trust this folder. Answer it in that Session within four minutes.",
   "playbook.boardDriveTitle": "Drive Board Items to Done",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",

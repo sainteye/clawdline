@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11880,
+  "englishKeys": 11881,
   "counts": {
     "negation": 3246,
-    "state": 1987,
+    "state": 1988,
     "permission": 700,
     "deletion": 264,
     "uncertainty": 456
   },
-  "unionCount": 5185,
+  "unionCount": 5186,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5033,6 +5033,7 @@
       "projectAssistants.openWork",
       "projectAssistants.savedMemory",
       "projectAssistants.succeeded",
+      "projectAssistants.waiting_for_person",
       "projectTree.sensitiveDetail",
       "projects.editDone",
       "projects.folderGo",
@@ -11304,6 +11305,7 @@
     "projectAssistants.unavailable",
     "projectAssistants.unknown",
     "projectAssistants.unpaired",
+    "projectAssistants.waiting_for_person",
     "projectAssistants.waiting_permission",
     "projectTree.sensitiveDetail",
     "projectTree.sensitiveLabel",

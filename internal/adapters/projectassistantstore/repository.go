@@ -535,7 +535,7 @@ func validateAggregate(a aggregate) error {
 			return failure(pa.Invalid, "work")
 		}
 		switch w.State {
-		case pa.WorkAccepted, pa.WorkExecuting, pa.WorkFailed, pa.WorkCompleted, pa.WorkLanded, pa.WorkUnknown:
+		case pa.WorkAccepted, pa.WorkWaitingForPerson, pa.WorkExecuting, pa.WorkFailed, pa.WorkCompleted, pa.WorkLanded, pa.WorkUnknown:
 		default:
 			return failure(pa.Invalid, "work_state")
 		}
