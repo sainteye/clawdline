@@ -398,6 +398,11 @@ is now a position, and the call's progress line is text without the mascot.
 The reference window holds 24 recent identities and clears on call end or
 machine switch. The journal stores text and tool evidence, not replayable audio.
 
+A group report goes one Project at a time (asked for on 2026-11-13). Sessions
+of the same Project, named by their repository folder (`project_key`, else
+`cwd`), are kept together; Projects are ordered by their most recently moved
+Session, and a batch never crosses into another Project. Each batch carries its
+`project`, and the voice says which Project it is before its Sessions.
 A call's group report reads two or three Sessions for its current response
 (four remaining are split two and two). Only one next batch is prefetched while
 that response is spoken. It is not sent to the reporter until the current

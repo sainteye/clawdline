@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-expect-error -- Node runs the TypeScript source.
-import {SpokenSessions,SessionReportQueue,relativeSession,sessionBatchSize,sessionNamePosition,type SessionReportPage} from './copilot-reports.ts'
+import {SpokenSessions,SessionReportQueue,relativeSession,groupByProject,projectBatchSize,projectName,sessionBatchSize,sessionNamePosition,type SessionReportPage} from './copilot-reports.ts'
 const a={id:'one',label:'Browser keyboard',machine:'machine-a',conversation:'conversation-a'}
 const b={id:'two',label:'Voice workflow',machine:'machine-b',conversation:'conversation-b'}
 const c={id:'three',label:'Board planning',machine:'machine-a',conversation:'conversation-c'}
@@ -92,4 +92,16 @@ test('a short name inside another word cannot create a spoken identity',()=>{
  assert.equal(sessionNamePosition('A guide is ready.','UI'),-1)
  assert.ok(sessionNamePosition('Read 「Work A」.','Work A')>=0)
  assert.ok(sessionNamePosition('Clawdline 語音與清單正在調整。','Clawdline：語音與清單')>=0)
+})
+
+test('Project batches keep each Project together and never cross into the next one',()=>{
+ assert.equal(projectName('/Users/someone/code/clawdline/'),'clawdline')
+ assert.equal(projectName('C:\\work\\shop'),'shop')
+ const rows=['a','b','a','c','b','a','a'].map((project,i)=>({id:String(i),project}))
+ const grouped=groupByProject(rows)
+ assert.deepEqual(grouped.map(r=>r.project),['a','a','a','a','b','b','c'])
+ assert.deepEqual(grouped.filter(r=>r.project==='a').map(r=>r.id),['0','2','5','6'],'order inside a Project is kept')
+ assert.equal(projectBatchSize(grouped),2,'four of one Project are told two and two')
+ assert.equal(projectBatchSize(grouped.slice(4)),2)
+ assert.equal(projectBatchSize(grouped.slice(6)),1,'a Project with one Session is its own batch')
 })

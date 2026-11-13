@@ -3,7 +3,25 @@ export const SESSION_REPORT_BATCH = 3
 export const SESSION_REPORT_REFS = 24
 export const SESSION_REPORT_SESSIONS = 24
 export function sessionBatchSize(total:number){return total===4?2:Math.min(SESSION_REPORT_BATCH,total)}
-export interface SessionReference {id:string;label:string;machine?:string;conversation?:string}
+export interface SessionReference {id:string;label:string;machine?:string;conversation?:string;project?:string}
+/** The Project a Session belongs to, as said aloud: its repository folder's name (`project_key`, else `cwd`). */
+export function projectName(path:string){const parts=path.replace(/[\\/]+$/,'').split(/[\\/]/).filter(Boolean);return parts.at(-1)??''}
+/**
+ * Sessions of one Project stay together, Projects ordered by their most
+ * recently moved Session and each keeping its own order (asked for on
+ * 2026-11-13: "group by Project, say which Project first, one group at a time").
+ */
+export function groupByProject<T extends {project?:string}>(rows:readonly T[]):T[]{
+ const order:string[]=[],groups=new Map<string,T[]>()
+ for(const row of rows){const key=row.project??'';if(!groups.has(key)){groups.set(key,[]);order.push(key)}groups.get(key)!.push(row)}
+ return order.flatMap(key=>groups.get(key)!)
+}
+/** How many of the leading Sessions one spoken batch takes: two or three, never crossing into another Project. */
+export function projectBatchSize(rows:readonly {project?:string}[]){
+ if(!rows.length)return 0
+ let same=1;while(same<rows.length&&(rows[same].project??'')===(rows[0].project??''))same++
+ return sessionBatchSize(same)
+}
 export interface SpokenReference {target?:SessionReference;candidates:SessionReference[]}
 const plain=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu,'')
 export function sessionNamePosition(text:string,label:string){
@@ -98,7 +116,7 @@ export class SessionReportQueue {
  }
  private prefetch(){
   if(this.loading||this.next||!this.rest.length||!this.load)return
-  const generation=this.generation,refs=this.rest.splice(0,sessionBatchSize(this.rest.length));this.loading=true
+  const generation=this.generation,refs=this.rest.splice(0,projectBatchSize(this.rest));this.loading=true
   void this.load(refs).then(page=>{if(generation!==this.generation)return;this.loading=false;this.next=page;this.advance()},()=>{if(generation!==this.generation)return;this.loading=false;this.next={error:'voice_session_report_read_failed'};this.advance()})
  }
  private advance(){
@@ -108,4 +126,4 @@ export class SessionReportQueue {
   if(!this.page.error)this.prefetch();else this.paused=true
  }
 }
-export const SESSION_REPORT_GUIDANCE=`Explain only the supplied Session batch, at most three Sessions in this response. Do not compress everyone into a short list. For each, say its supplied label once as an exact reference anchor, then use everyday language: what the work is for, what changed, what is happening, and any actual decision. Use two to four connected sentences per Session with pauses and emphasis. Do not read codes, implementation jargon or infer contents from a name. If evidence is sparse, say what is unknown rather than inventing a next step. Follow the supplied order. Remaining batches are prepared separately by the application; never repeat or describe unread ones, claim all Sessions were covered, or ask a generic closing question. This is Session presentation, separate from automatic task execution allowance.`
+export const SESSION_REPORT_GUIDANCE=`Explain only the supplied Session batch, at most three Sessions in this response. Every Session in a batch belongs to the same Project, given as project. Begin by saying in one short sentence which Project these Sessions belong to (for example 「接下來是 clawdline 這個 Project 的 Session」), then report them; when project is empty, say these Sessions have no Project. Do not compress everyone into a short list. For each, say its supplied label once as an exact reference anchor, then use everyday language: what the work is for, what changed, what is happening, and any actual decision. Use two to four connected sentences per Session with pauses and emphasis. Do not read codes, implementation jargon or infer contents from a name. If evidence is sparse, say what is unknown rather than inventing a next step. Follow the supplied order. Remaining batches are prepared separately by the application; never repeat or describe unread ones, claim all Sessions were covered, or ask a generic closing question. This is Session presentation, separate from automatic task execution allowance.`

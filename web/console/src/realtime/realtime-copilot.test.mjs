@@ -530,6 +530,26 @@ for(const mode of ['cleared','changed-version'])test(`a message cannot use an in
  })
 })
 
+test('a Session report goes one Project at a time and names the Project before its Sessions',async()=>{
+ const f=fixture(true);const reads=[]
+ const project=['/w/alpha','/w/beta','/w/alpha','/w/beta','/w/alpha']
+ const rows=project.map((key,i)=>({id:`%${i+1}`,label:`Work ${String.fromCharCode(65+i)}`,assistant:'codex',state:'working',sessionId:`conversation-${i}`,project_key:key,activity:{at:100-i,known:true}}))
+ f.c.toolDeps=()=>({sleep:async()=>{},now:()=>101,fetch:async(path)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:rows})
+  if(path.startsWith('/v1/transcript?')){reads.push(new URLSearchParams(path.split('?')[1]).get('session'));return Response.json({entries:[{role:'assistant',text:'Progress'}]})}
+  assert.fail(path)
+ }})
+ await withLedger(f,async()=>{
+  await f.c.handleToolCall({call_id:'group',name:'get_sessions_summary',arguments:'{"which":"working"}'})
+  const answer=JSON.parse(f.sent.find(e=>e.item?.type==='function_call_output').item.output)
+  assert.equal(answer.project,'alpha')
+  assert.deepEqual(answer.sessions.map(s=>s.session_id),['%1','%3','%5'],'the newest Project comes first, all of it together')
+  assert.match(answer.reporting_rule,/which Project these Sessions belong to/)
+  await tick()
+  assert.deepEqual(reads,['%1','%3','%5','%2','%4'],'the next batch is the next Project, not a mix')
+ })
+})
+
 for(const managed of [false,true])test(`Session reports speak three at a time and retain the actual spoken order (${managed?'managed':'direct'})`,async()=>{
  const f=fixture(managed)
  let releaseNext;const nextReady=new Promise(resolve=>releaseNext=resolve);const reads=[]

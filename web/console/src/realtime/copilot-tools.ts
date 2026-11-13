@@ -27,7 +27,7 @@ import { menuFingerprint } from "../session/fingerprint.ts"
 import { COPILOT_SPEECH_GUIDANCE, COPILOT_WORK_DISABLED_GUIDANCE } from './copilot-speech.ts'
 
 // @ts-expect-error -- Node executes TypeScript sources directly in tests.
-import {SESSION_REPORT_SESSIONS,sessionBatchSize,sessionNamePosition,sameReference,relativeSession,type SessionReference,type SpokenReference} from './copilot-reports.ts'
+import {SESSION_REPORT_SESSIONS,groupByProject,projectBatchSize,projectName,sessionNamePosition,sameReference,relativeSession,type SessionReference,type SpokenReference} from './copilot-reports.ts'
 
 /** Every content read names its Session on purpose: the copilot is opened inside another one. */
 const NAMED_READ: RequestInit = { headers: { [UNOPENED_READ_HEADER]: "1" } }
@@ -780,6 +780,8 @@ export interface CopilotSessionRow {
   assistant: string
   state: string
   work_state: string
+  /** The Project's spoken name: its repository folder (`project_key`, else `cwd`). */
+  project?: string
   /** Unix seconds, when present. */
   working_since?: number
   last_activity_at?: number
@@ -852,6 +854,8 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
         state: str(s.state),
         work_state: str(s.work_state),
       }
+      const project = projectName(str(s.project_key) || str(s.cwd))
+      if (project) row.project = project
       if (typeof s.working_since === 'number' && s.working_since > 0) row.working_since = s.working_since
       const activity = s.activity as { at?: unknown; known?: unknown } | undefined
       if (activity && activity.known === true && typeof activity.at === 'number') row.last_activity_at = activity.at
@@ -1184,8 +1188,9 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   const changed:SessionReference[]=[]
   if(deps.summaryTargets)group=deps.summaryTargets.flatMap(ref=>{const row=uniqueSessionID(read.rows,ref.id);if(row&&sameReference(ref,row))return [row];changed.push(ref);return []})
   if(deps.summaryExclude)group=group.filter(row=>!deps.summaryExclude!.includes(row.id))
-  const shown = group.slice(0, deps.summaryLimit?Math.min(deps.summaryLimit,sessionBatchSize(Math.min(group.length,SESSION_REPORT_SESSIONS))):LIST_LATEST_READS)
-  const ref=(r:CopilotSessionRow):SessionReference=>({id:r.id,label:r.label,machine:r.machine,conversation:r.conversation})
+  if(!deps.summaryTargets)group=groupByProject(group)
+  const shown = group.slice(0, deps.summaryLimit?Math.min(deps.summaryLimit,projectBatchSize(group.slice(0,SESSION_REPORT_SESSIONS))):LIST_LATEST_READS)
+  const ref=(r:CopilotSessionRow):SessionReference=>({id:r.id,label:r.label,machine:r.machine,conversation:r.conversation,...(r.project?{project:r.project}:{})})
   const remaining=deps.summaryLimit?group.slice(shown.length,SESSION_REPORT_SESSIONS).map(ref):[]
   const progress = await Promise.all(shown.map(async (r) => {
     const words=await latestWords(deps,r)
@@ -1198,8 +1203,10 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
     count: group.length,
     ...(deps.summaryLimit?{remaining,more_pending:remaining.length,not_read:Math.max(0,group.length-SESSION_REPORT_SESSIONS),changed:changed.map(ref=>({session_id:ref.id,label:ref.label,error:'voice_session_identity_changed'}))}:{}),
     ...(which==='idle'?{idle_window_minutes:idleScope==='all'?null:idleWindow/60,expanded_from_minutes:expanded?RECENT_IDLE_SECONDS/60:undefined,unknown_idle_time:unknownIdle,idle_time_basis:'last_confirmed_activity_estimate',reporting_rule:'Report newest idle first. Say approximately how long each has been idle, based on last confirmed activity. Do not call unknown or working Sessions idle. Say when the 30-minute window was expanded to one hour.'}:{}),
+    ...(deps.summaryLimit?{project:shown[0]?.project??''}:{}),
     sessions: shown.map((r, i) => {deps.onRead?.(ref(r));return ({
       session_id:r.id,
+      ...(r.project?{project:r.project}:{}),
       ...(which==='idle'&&idleAt(r)>0&&idleAt(r)<=now?{idle_for_seconds:now-idleAt(r),idle_for:durationPhrase(now-idleAt(r))}:{}),
       label: r.label,
       state: waits(r) ? 'needs_you' : r.state,
