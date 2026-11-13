@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11614,
+  "englishContentKeys": 11618,
   "riskKeys": 5080,
-  "nonRiskCount": 6534,
+  "nonRiskCount": 6538,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 490,
+      "count": 494,
       "sources": [
         null
       ],
@@ -588,6 +588,10 @@
         "capacityRow.console.copilot_reply_characters.what",
         "capacityRow.console.copilot_screen_reads.what",
         "capacityRow.console.copilot_smart_rename_sessions.what",
+        "capacityRow.console.copilot_update_marks.full",
+        "capacityRow.console.copilot_update_marks.what",
+        "capacityRow.console.copilot_update_pages.full",
+        "capacityRow.console.copilot_update_pages.what",
         "capacityRow.console.direct_history_machines.what",
         "capacityRow.console.health_ui_body_bytes.what",
         "capacityRow.console.health_ui_budget_seconds.what",

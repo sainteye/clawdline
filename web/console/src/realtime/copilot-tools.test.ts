@@ -2,7 +2,9 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+import { withMark, UPDATE_MARKS } from "./copilot-marks.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -185,7 +187,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -1268,4 +1270,91 @@ test("a message asking a Session to rename itself is refused toward smart naming
 test("only a request to rename the Session itself counts as one", () => {
   for (const asks of ["請使用智慧命名功能重新命名此 Session", "把這個 Session 改名", "請重新命名 Session 名稱", "Please rename this session to match its work", "use smart naming"]) assert.ok(ASKS_A_RENAME.test(asks), asks)
   for (const work of ["請把變數 foo 重新命名為 bar", "rename the helper to parseRows", "改名後的檔案要更新 import"]) assert.ok(!ASKS_A_RENAME.test(work), work)
+})
+
+/** A machine whose one Session's record grows, paged newest first by `before` as the daemon pages it. */
+function growingMachine(pageSize = 4) {
+  const record: Record<string, unknown>[] = []
+  const marks = new Map<string, UpdateMark>()
+  let focus: string | undefined
+  const reads: string[] = []
+  const deps: ToolDeps = {
+    async fetch(path) {
+      if (path === "/v1/sessions") return Response.json({ sessions: ROWS, at: 1 })
+      if (path.startsWith("/v1/transcript?")) {
+        reads.push(path)
+        const before = Number(new URLSearchParams(path.split("?")[1]).get("before")) || record.length
+        const start = Math.max(0, before - pageSize)
+        return Response.json({ entries: record.slice(start, before), ...(start > 0 ? { nextBefore: start } : {}) })
+      }
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    focus: { get: () => focus, set: (id) => { focus = id } },
+    marks: { get: (k) => marks.get(k), set: (k, m) => { marks.set(k, m) } },
+  }
+  const say = (role: string, text: string) => record.push({ id: `e${record.length + 1}`, at: 1000 + record.length, role, text })
+  return { deps, say, marks, reads, setFocus: (id: string) => { focus = id } }
+}
+
+const updatesOf = async (deps: ToolDeps, id = "%2") => JSON.parse((await runCopilotTool("get_session_updates", JSON.stringify(id ? { session_id: id } : {}), deps)).output)
+
+test("get_session_updates tells only what came after the last report, and remembers where it ended", async () => {
+  const m = growingMachine()
+  m.say("user", "Make the screenshots")
+  m.say("assistant", "Six screenshots are captured.")
+  const first = await updatesOf(m.deps)
+  assert.equal(first.first_report, true)
+  assert.deepEqual(first.updates.map((u: { text: string }) => u.text), ["Make the screenshots", "Six screenshots are captured."])
+  m.say("user", "Also crop them")
+  m.say("assistant", "Cropped; one failed to upload, should I retry?")
+  const second = await updatesOf(m.deps)
+  assert.equal(second.first_report, undefined)
+  assert.deepEqual(second.updates.map((u: { text: string }) => u.text), ["Also crop them", "Cropped; one failed to upload, should I retry?"])
+  const third = await updatesOf(m.deps)
+  assert.equal(third.nothing_new, true)
+  assert.equal(third.updates, undefined)
+})
+
+test("updates page back to the last report, and say so when it is further than they read", async () => {
+  const m = growingMachine(2)
+  m.say("assistant", "Started.")
+  await updatesOf(m.deps)
+  for (let i = 0; i < 3; i++) m.say("assistant", `Step ${i}`)
+  const near = await updatesOf(m.deps)
+  assert.deepEqual(near.updates.map((u: { text: string }) => u.text), ["Step 0", "Step 1", "Step 2"])
+  assert.equal(near.partial, undefined)
+  for (let i = 0; i < 2 * UPDATE_PAGES + 2; i++) m.say("assistant", `Later ${i}`)
+  const far = await updatesOf(m.deps)
+  assert.equal(far.partial, true)
+  assert.ok(m.reads.length > 0)
+})
+
+test("without a name, updates are about the Session on screen; and a handover counts as a report", async () => {
+  const m = growingMachine()
+  m.say("user", "Make the screenshots")
+  m.say("assistant", "Done: six screenshots.")
+  m.setFocus("%2")
+  const out = await updatesOf(m.deps, "")
+  assert.equal(out.label, "Prepare screenshots")
+  m.say("assistant", "Pushed them too.")
+  await runCopilotTool("get_session_recap", JSON.stringify({ session_id: "%2" }), m.deps)
+  assert.equal((await updatesOf(m.deps)).nothing_new, true)
+})
+
+test("the Session on screen is found by its id or by its id on its machine, and announced without a reply", () => {
+  const rows = [{ id: "fleet:mac:%3", session: "%3", label: "Billing", assistant: "codex", state: "idle", work_state: "" }]
+  assert.equal(rowOnScreen(rows, ["%3"])?.label, "Billing")
+  assert.equal(rowOnScreen(rows, ["fleet:mac:%3"])?.label, "Billing")
+  assert.equal(rowOnScreen(rows, null), undefined)
+  const ev = screenFocusEvent({ id: "%3", label: "Billing" }) as { type: string; item: { role: string } }
+  assert.equal(ev.type, "conversation.item.create")
+  assert.equal(ev.item.role, "system")
+})
+
+test("this browser keeps the newest report marks within its bound", () => {
+  let marks: Record<string, UpdateMark> = {}
+  for (let i = 0; i < UPDATE_MARKS + 5; i++) marks = withMark(marks, `k${i}`, { id: `e${i}`, saved: i })
+  assert.equal(Object.keys(marks).length, UPDATE_MARKS)
+  assert.ok(!("k0" in marks) && "k104" in marks)
 })

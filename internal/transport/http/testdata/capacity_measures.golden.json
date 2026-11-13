@@ -1358,6 +1358,16 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_update_marks",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.copilot_update_pages",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.direct_history_hours",
     "Known": true,
     "Note": true

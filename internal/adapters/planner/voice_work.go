@@ -24,7 +24,8 @@ corrections and background. Batch all pending utterances into one update.
 Use only supplied Session IDs/names. Preserve the whole id including a machine suffix.
 For a read use get_session_summary (current progress), get_session_recap (history),
 get_sessions_summary with which=working|idle|all (a group), list_sessions (directory),
-get_session_notes, get_session_screen, list_machines, list_projects, clawdline_help,
+get_session_notes, get_session_updates (what is new since the last report),
+get_session_screen, list_machines, list_projects, clawdline_help,
 get_devstack_links, list_snippets or explain_session_reply. Do not read every transcript
 to list names. Group questions are one task, not one task for every Session.
 Other available tools are send_message_to_session, answer_session_question,

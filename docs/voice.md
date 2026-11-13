@@ -200,6 +200,18 @@ counting them off or reading technical words. The person asked for this in a cal
 wanted it from the start of every call; `copilot-speech.ts` carries the same in English for the
 work-list reporter.
 
+**What happened since the last report.** The Session open on screen is the one under discussion:
+while a call is on, opening another Session (the address's `#session=`, on the console and on
+Cloud alike) makes it the focus and tells the call in a system item that asks for no reply.
+`get_session_updates` (no name: that Session) reads the transcript back from the newest page, at
+most 3 pages (`console.copilot_update_pages`), to the entry the last report ended on, and hands
+over everything after it; with no earlier report it gives the recent part, and further back than
+it reads it says so. A report mark is the entry's id (or its time and first words), kept per
+Session in this browser (`console.copilot_update_marks`, the newest 100), and a recap told to the
+person sets it too. Marks are not cursors: Cloud does not carry `after=`, so the same reading
+works on a phone. The person asked for this on 2026-11-13: the copilot could read only a summary
+or the last reply, not what came between two reports.
+
 **A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
 person), the idle and lately finished ones, or all, newest activity first, each with its goal,
 what it finished lately and what it is doing; only the newest `LIST_LATEST_READS` are read and
