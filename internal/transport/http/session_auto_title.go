@@ -17,13 +17,7 @@ func (s *Server) automaticOwnedTitle(ctx context.Context, item session.Session) 
 	if err != nil || ctx.Err() != nil {
 		return
 	}
-	enabled, ok := values.Bool("codex_auto_name")
-	if !ok {
-		if asst, hasAsst := values.String("auto_name_assistant"); hasAsst && asst != "off" {
-			enabled = true
-		}
-	}
-	if !enabled || item.Backend != session.BackendOwned || (item.Assistant != session.AssistantAntigravity && item.Assistant != session.AssistantGrok) || item.Binding != session.BindingProtocol || item.ConversationID == "" {
+	if !automaticNamingEnabled(values) || item.Backend != session.BackendOwned || (item.Assistant != session.AssistantAntigravity && item.Assistant != session.AssistantGrok) || item.Binding != session.BindingProtocol || item.ConversationID == "" {
 		return
 	}
 	// The host has already persisted its native turn. Its naming job must not
@@ -76,13 +70,7 @@ func (s *Server) automaticOwnedTitle(ctx context.Context, item session.Session) 
 	if err != nil {
 		return
 	}
-	enabled, ok = values.Bool("codex_auto_name")
-	if !ok {
-		if asst, hasAsst := values.String("auto_name_assistant"); hasAsst && asst != "off" {
-			enabled = true
-		}
-	}
-	if !enabled {
+	if !automaticNamingEnabled(values) {
 		return
 	}
 	if err = h.SaveAutomaticName(ctx, item, normalizedSessionTitle(title)); err != nil {

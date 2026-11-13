@@ -430,6 +430,17 @@ storage](#transport-is-not-storage) would be a promise nothing implements.
 name for the tab, and if it is not told, it goes without rather than reading the file. That is the
 postman rule, written as one nullable field.
 
+A milestone handoff is the exception, because its summary is not opaque: the daemon has already
+read and checked it before the receiver opens. When a milestone handoff arrives without a `title`
+and automatic naming is on in Settings, the daemon asks the selected naming assistant for a name
+after it answers, reading only the summary's `## Goal` and `## Next step`. The answer becomes the
+handoff's `title` exactly as if the sender had given it, so it outranks the name the receiver's
+assistant derives from the generic handoff line (before 2026-11-13 every untitled receiver was
+called some variant of "picking up a milestone handoff"). A title the sender gave is never
+replaced, a failed or disabled naming turn leaves the field empty, and the summary is read from
+the directory in the handoff's own record, never from a path a line names. **Name with AI** on the
+receiver reads the same Goal and Next step in place of the launch line.
+
 `from_session` used to be the second such field, and that is the hole this route closed. It was
 free-form and optional — "whatever the sending assistant calls the session it is in" — and the
 consequence was not a missing receipt. It was that **the route could not say who sent a handoff**:

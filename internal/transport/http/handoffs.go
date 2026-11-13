@@ -60,6 +60,9 @@ func (s *Server) handoffsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, contract.BrokerHandoffResult{OK: true, Replayed: replayed, Handoff: wireHandoff(h)})
+		if !replayed {
+			go s.nameUntitledHandoff(h)
+		}
 	case id != "" && r.Method == http.MethodGet:
 		h, err := s.broker.HandoffByID(r.Context(), decodeSegment(id))
 		if err != nil {
