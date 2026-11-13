@@ -4018,6 +4018,153 @@
       }
     },
     {
+      "op": "project-assistants.view",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{key.bot_id}/view",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "key": {
+          "machine_id": "source-one",
+          "bot_id": "機器人 α"
+        },
+        "after_seq": 0,
+        "page_size": 100,
+        "session": "__clawdline_machine__",
+        "request": "stable-view",
+        "conversation_id": "chat",
+        "mode": "snapshot",
+        "source_epoch": "",
+        "cursor": ""
+      },
+      "shapes": [
+        {
+          "body": [
+            "after_seq",
+            "conversation_id",
+            "cursor",
+            "key",
+            "mode",
+            "page_size",
+            "request",
+            "session",
+            "source_epoch"
+          ],
+          "path": "/v1/project-assistants/{key.bot_id}/view",
+          "query": [
+            "after_seq",
+            "conversation_id",
+            "cursor",
+            "machine_id",
+            "mode",
+            "page_size",
+            "source_epoch"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "key": {
+            "type": "object",
+            "properties": {
+              "machine_id": {
+                "type": "string",
+                "non_empty": true
+              },
+              "bot_id": {
+                "type": "string",
+                "checks": [
+                  "pa_bot_id"
+                ]
+              }
+            },
+            "required": [
+              "bot_id",
+              "machine_id"
+            ],
+            "closed": true
+          },
+          "after_seq": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 256,
+            "copies": {
+              "max": "projectassistant.MaxEventPageRows"
+            }
+          },
+          "conversation_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "history",
+              "events",
+              "permissions",
+              "traces",
+              "detail"
+            ]
+          },
+          "source_epoch": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string",
+            "max_bytes": 4096,
+            "copies": {
+              "max_bytes": "projectassistant.MaxReadViewCursorBytes"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{key.bot_id}/view",
+          "query": {
+            "machine_id": {
+              "from": "key.machine_id"
+            },
+            "after_seq": {
+              "from": "after_seq"
+            },
+            "page_size": {
+              "from": "page_size"
+            },
+            "conversation_id": {
+              "from": "conversation_id"
+            },
+            "mode": {
+              "from": "mode"
+            },
+            "source_epoch": {
+              "from": "source_epoch"
+            },
+            "cursor": {
+              "from": "cursor"
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-codegraph",
       "kind": "read",
       "write_gate": false,

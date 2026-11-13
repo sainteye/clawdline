@@ -108,6 +108,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.send":            genDecodeProjectAssistantsSend,
 	"project-assistants.status":          genDecodeProjectAssistantsStatus,
 	"project-assistants.stop":            genDecodeProjectAssistantsStop,
+	"project-assistants.view":            genDecodeProjectAssistantsView,
 	"project-codegraph":                  genDecodeProjectCodegraph,
 	"project-codegraph-build":            genDecodeProjectCodegraphBuild,
 	"project-devstack":                   genDecodeProjectDevstack,
@@ -2689,6 +2690,45 @@ func genDecodeProjectAssistantsStop(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "fence": genValue{from: "fence"}, "turn_id": genValue{from: "turn_id"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsView is the `project-assistants.view` row's decode.
+func genDecodeProjectAssistantsView(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "after_seq", "conversation_id", "cursor", "key", "mode", "page_size", "request", "session", "source_epoch"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("after_seq", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("cursor", genRule{kind: "string", maxBytes: 4096}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("mode", genRule{kind: "string", enum: []string{"snapshot", "history", "events", "permissions", "traces", "detail"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("page_size", genRule{kind: "integer", min: genInt(1), max: genInt(256)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("source_epoch", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/view"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"after_seq": genValue{from: "after_seq"}, "conversation_id": genValue{from: "conversation_id"}, "cursor": genValue{from: "cursor"}, "machine_id": genValue{from: "key.machine_id"}, "mode": genValue{from: "mode"}, "page_size": genValue{from: "page_size"}, "source_epoch": genValue{from: "source_epoch"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

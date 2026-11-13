@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export"} {
+	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "view"} {
 		register(op{name: "project-assistants." + word, read: true,
 			shape: projectAssistantReply, partial: projectAssistantFailure})
 	}

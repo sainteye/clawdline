@@ -24,6 +24,8 @@ type projectAssistantHTTPOptions struct {
 	Service   *app.Service
 	MachineID string
 	Status    func(context.Context) (pa.SourceStatus, error)
+	// Private deterministic fixture barrier; production leaves it nil.
+	BeforeViewPublish func()
 }
 
 type projectAssistantHTTP struct{ options projectAssistantHTTPOptions }
@@ -65,6 +67,21 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	payload, err := h.handle(w, r)
 	if err != nil {
 		paWriteHTTPFailure(w, err)
+		return
+	}
+	if view, ok := payload.(paEncodedReadView); ok {
+		if h.options.BeforeViewPublish != nil {
+			h.options.BeforeViewPublish()
+		}
+		if _, err = h.status(r.Context(), true); err == nil {
+			err = view.result.Revalidate(r.Context())
+		}
+		if err != nil {
+			paWriteHTTPFailure(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(view.body)
 		return
 	}
 	encoded, err := json.Marshal(payload)
@@ -139,7 +156,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export":
+					case "events", "export", "view":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -289,6 +306,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 }
 
 func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, error) {
+	if route.action == "view" {
+		return h.readView(r, route)
+	}
 	fields := []string{"machine_id"}
 	switch route.action {
 	case "list":

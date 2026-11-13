@@ -177,6 +177,17 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     if (bot === "status" && !tail) return {word:"project-assistants.status",kind:"read" as const,fields:{},id:""}
     if (!bot) return {word:"project-assistants.list",kind:"read" as const,fields:{...q,page_size:Number(q.page_size)},id:""}
     const key = {machine_id:q.machine_id,bot_id:bot}
+    if (tail === "/view") {
+      const fields = ["machine_id","conversation_id","mode","source_epoch","cursor","after_seq","page_size"]
+      if (init?.body != null || url.searchParams.size !== fields.length || fields.some(field => !url.searchParams.has(field)) ||
+        Object.keys(q).some(field => !fields.includes(field)) || !q.machine_id || !q.conversation_id ||
+        !["snapshot","history","events","permissions","traces","detail"].includes(q.mode) ||
+        !/^(0|[1-9][0-9]*)$/.test(q.after_seq) || !Number.isSafeInteger(Number(q.after_seq)) ||
+        !/^[1-9][0-9]*$/.test(q.page_size) || !Number.isSafeInteger(Number(q.page_size)) || Number(q.page_size) > (q.mode === "events" ? 256 : 100)) throw failure("pa_invalid")
+      // This transport preserves the closed request; the source owns mode-state and cursor authority.
+      const request: W.ProjectAssistantReadViewRequest = {key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size)}
+      return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
+    }
     const action = tail === "/messages" ? "history" : tail === "/events" ? "events" : tail === "/export" ? "export" : tail === "" ? "get" : null
     if (!action) throw failure("pa_invalid")
     const fields = action === "history" ? {key,conversation_id:q.conversation_id,before_seq:Number(q.before_seq),page_size:Number(q.page_size)} : action === "events" ? {key,after_seq:Number(q.after_seq),page_size:Number(q.page_size)} : key

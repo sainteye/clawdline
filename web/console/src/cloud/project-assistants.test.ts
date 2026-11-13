@@ -222,7 +222,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["answer","create","edit","events","export","forget","get","history","list","memory","observed","read","send","status","stop","projects"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["answer","create","edit","events","export","forget","get","history","list","memory","observed","read","send","status","stop","projects","view"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -302,4 +302,38 @@ test("captured Project cursor, revocation and budget refusals retain their entir
     await assert.rejects(source.projects(projectsRequest,signal()),e=>{assert.deepEqual(e,refusal);return true})
     assert.equal(calls,1)
   }
+})
+
+
+test("captured bounded reads preserve all six complete query envelopes", async () => {
+  const key={machine_id:"one",bot_id:"same/id"}
+  const requests:W.ProjectAssistantReadViewRequest[]=[
+    {key,conversation_id:"chat",mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:100},
+    {key,conversation_id:"chat",mode:"history",source_epoch:"epoch",cursor:"signed +<&opaque",after_seq:0,page_size:100},
+    {key,conversation_id:"chat",mode:"events",source_epoch:"epoch",cursor:"",after_seq:602,page_size:256},
+    {key,conversation_id:"chat",mode:"permissions",source_epoch:"epoch",cursor:"",after_seq:0,page_size:100},
+    {key,conversation_id:"chat",mode:"traces",source_epoch:"epoch",cursor:"signed trace",after_seq:0,page_size:100},
+    {key,conversation_id:"chat",mode:"detail",source_epoch:"epoch",cursor:"signed detail",after_seq:0,page_size:1},
+  ]
+  const captured:Record<string,unknown>[]=[]
+  const connection={machineDescriptor:()=>({machine:{commands:["project-assistants.view"]}}),async _machineRequest(machine:string,word:string,fields:Record<string,unknown>){assert.equal(machine,"one");assert.equal(word,"project-assistants.view");captured.push(fields);return {contract_version:"project-assistants.v1"}}}
+  const relay=capturedAssistantRelayFetch("one",()=>connection,["project-assistants.view"])
+  for(const request of requests){
+    const {key,...fields}=request
+    const query=new URLSearchParams(Object.entries({machine_id:key.machine_id,...fields}).map(([k,v])=>[k,String(v)]))
+    await relay("/v1/project-assistants/same%2Fid/view?"+query,{method:"GET"})
+    assert.deepEqual(captured.at(-1),request)
+  }
+  assert.equal(captured.length,6)
+})
+
+test("bounded relay reads refuse malformed queries and bodies before transport", async () => {
+  let calls=0
+  const connection={machineDescriptor:()=>({machine:{commands:["project-assistants.view"]}}),async _machineRequest(){calls++;return {}}}
+  const relay=capturedAssistantRelayFetch("one",()=>connection,["project-assistants.view"])
+  const path="/v1/project-assistants/bot/view?machine_id=one&conversation_id=chat&mode=snapshot&source_epoch=&cursor=&after_seq=0&page_size=100"
+  const invalid=[path+"&cursor=duplicate",path+"&reader_id=forged",path.replace("source_epoch=", "epoch="),path.replace("after_seq=0","after_seq=1e2"),path.replace("after_seq=0","after_seq=9007199254740992"),path.replace("page_size=100","page_size=257"),path.replace("mode=snapshot","mode=export")]
+  for(const query of invalid)await assert.rejects(relay(query),e=>errorCode(e)==="pa_invalid")
+  await assert.rejects(relay(path,{method:"GET",body:"{}"}),e=>errorCode(e)==="pa_invalid")
+  assert.equal(calls,0)
 })

@@ -316,8 +316,9 @@ runtime execution fences or HTTP publication checks. A new request after grant
 renewal keeps the original principal-derived idempotency hash. Replaying an
 existing receipt still does not repeat the external effect.
 The [Server composition](project-assistants-server.md) mounts the HTTP module
-at API level 57 and supplies current gate authority, source identity, selected
-registered Project resolution and an explicit local opt-in. Isolated Server
+with the API57 metadata contract, the API58 Project catalog and the API59
+bounded-view extension. It supplies current gate authority, source identity,
+selected registered Project resolution and an explicit local opt-in. Isolated Server
 fixtures do not establish production Cloud, native or device acceptance. Merely
 importing these modules does not enable the default-off feature or install tables.
 
@@ -371,3 +372,12 @@ ACP Close also avoids redundant signal inventories after its fresh census leaves
 no known owned identity. The direct child's reap receipt and existing unknown
 errors remain required; cleanup limits are unchanged. The runtime document
 records the controlled regression and the retained descendant checks.
+
+
+The [bounded read-view backend](project-assistants-read-http.md) connects the
+optional application read port to the existing borrowed query-only Store reader,
+HTTP publication fence and generated Cloud read word. Complete source replies
+keep the existing byte ceiling and typed failures. The backend retains explicit
+API58 compatibility checks for the original sixteen methods; only the new view
+operation requires API59. Actual TypeScript method17/helper joint acceptance,
+consumer integration and production Cloud/phone acceptance remain separate.

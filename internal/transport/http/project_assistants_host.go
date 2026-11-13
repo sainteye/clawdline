@@ -19,6 +19,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projectassistanthost"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
@@ -39,8 +40,9 @@ type projectAssistantServer struct {
 	stopped          bool
 	inspectionFailed bool
 	// Private fixture seams; production leaves both nil.
-	provider func() (app.Provider, error)
-	limits   *app.RuntimeLimits
+	provider          func() (app.Provider, error)
+	limits            *app.RuntimeLimits
+	beforeViewPublish func()
 }
 
 func (s *Server) projectAssistantIdentity() (adaptercloud.Identity, error) {
@@ -103,8 +105,9 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		limits = *p.limits
 	}
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
-		Database: s.store.ProjectAssistantDatabase(), MachineID: i.MachineID,
-		Projects: projectAssistantProjects{s}, Broker: s.broker, Clock: time.Now,
+		Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
+		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit,
+		Projects:          projectAssistantProjects{s}, Broker: s.broker, Clock: time.Now,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
 		Source: s.projectAssistantSource, Provider: p.provider,
 		// NativeWork and DispatchPolicy require separately verified adapters
@@ -370,7 +373,7 @@ func (s *Server) projectAssistantsRoute(w http.ResponseWriter, r *http.Request) 
 		paWriteHTTPFailure(w, err)
 		return
 	}
-	newProjectAssistantHTTP(projectAssistantHTTPOptions{Service: service, MachineID: i.MachineID,
+	newProjectAssistantHTTP(projectAssistantHTTPOptions{Service: service, MachineID: i.MachineID, BeforeViewPublish: p.beforeViewPublish,
 		Status: func(ctx context.Context) (pa.SourceStatus, error) {
 			a, err := s.projectAssistantAuthority(ctx, pa.BotKey{MachineID: i.MachineID}, false)
 			return a.Source, err

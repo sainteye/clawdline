@@ -30,13 +30,17 @@ type ReaderRepository interface {
 
 type ServiceOptions struct {
 	Repository Repository
-	Memory     Memory
-	Events     EventFeed
-	Runtime    Runtime
-	Projects   ProjectResolver
-	Authorize  func(context.Context, pa.BotKey, bool) (Authority, error)
-	Clock      func() time.Time
-	ID         func() string
+	ReadViews  ReadViews
+	// ReadViewByteLimit is supplied by trusted composition from the existing
+	// Cloud plaintext ceiling. It is never accepted from a wire request.
+	ReadViewByteLimit int
+	Memory            Memory
+	Events            EventFeed
+	Runtime           Runtime
+	Projects          ProjectResolver
+	Authorize         func(context.Context, pa.BotKey, bool) (Authority, error)
+	Clock             func() time.Time
+	ID                func() string
 }
 
 // Service has no startup side effects. Configuration, history, memory and

@@ -24,13 +24,18 @@ type DispatchPolicy struct {
 }
 
 type Options struct {
-	Database  *sql.DB
-	MachineID string
-	Projects  app.ProjectResolver
-	Broker    *orchestrator.Broker
-	Clock     func() time.Time
-	ID        func() string
-	Limits    app.RuntimeLimits
+	Database *sql.DB
+	// Reader borrows Store's existing query-only pool. Host never closes it.
+	Reader *sql.DB
+	// ReadViews is an optional composition override for controlled port fixtures.
+	ReadViews         app.ReadViews
+	ReadViewByteLimit int
+	MachineID         string
+	Projects          app.ProjectResolver
+	Broker            *orchestrator.Broker
+	Clock             func() time.Time
+	ID                func() string
+	Limits            app.RuntimeLimits
 	// Authority derives the current human principal from each request context.
 	Authority func(context.Context, pa.BotKey, bool) (app.Authority, error)
 	// Source reads independent current background policy, not HTTP credentials.
@@ -110,7 +115,15 @@ func (h *Host) makeService() error {
 		return nil
 	}
 	h.store = featurestore.New(h.o.Database)
-	s, err := app.NewService(app.ServiceOptions{Repository: h.store, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	views := h.o.ReadViews
+	if views == nil && h.o.Reader != nil {
+		var err error
+		views, err = featurestore.NewReadViews(h.o.Reader)
+		if err != nil {
+			return err
+		}
+	}
+	s, err := app.NewService(app.ServiceOptions{Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}
@@ -127,6 +140,12 @@ func (h *Host) Service() (*app.Service, error) {
 }
 
 func (h *Host) human(ctx context.Context, key pa.BotKey, write bool) (app.Authority, error) {
+	h.mu.Lock()
+	closed := h.closed
+	h.mu.Unlock()
+	if closed {
+		return app.Authority{}, failure(pa.Disabled, "host_closed")
+	}
 	if key.MachineID != h.o.MachineID {
 		return app.Authority{}, failure(pa.ScopeDenied, "machine")
 	}

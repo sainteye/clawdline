@@ -349,7 +349,7 @@
     }
   ],
   "http_notes": [
-    "API58 source Server routes include the additive /v1/project-assistant-targets metadata catalog. Existing /v1/projects remains a separate intentionally empty legacy route; native readiness and production Cloud/device acceptance are separate.",
+    "API59 Server retains the API58 source Project catalog and adds the bounded read-view operation. Existing /v1/projects remains a separate legacy route; native readiness and production Cloud/device acceptance remain separate.",
     "Route bot/offer IDs and captured machine must match body identities. Get/history/list queries are generated request shapes encoded as query parameters.",
     "Every write carries Idempotency-Key matching command.idempotency_key, rejects unknown fields, rechecks device/feature/source scope, and recomputes content hash. Never trust reader_id, SourceStatus or Capabilities supplied by the browser.",
     "Native capabilities are local attested facts; provider failure preserves metadata functionality.",
@@ -872,7 +872,7 @@
     "cost": 0
   },
   "read_view_extension": {
-    "state": "optional SQL producer implemented; HTTP/Cloud/UI consumer not wired in this module",
+    "state": "Backend read port/HTTP/Cloud module implemented; UI consumer and joint Go-to-TypeScript acceptance remain pending",
     "app_port": "ReadViews.Read(context.Context,ReadViewQuery)(ReadView,error)",
     "domain_request": "ReadViewRequest",
     "wire_request": "ProjectAssistantReadViewRequest",
@@ -905,7 +905,7 @@
       "event_scope": "Outer and nested payloads retain the stored Bot/Project/conversation; execution references retain their complete fence.",
       "checks": "Normal whole Store package and named MarkRead/WAL race cases passed; original whole-package race timeout is retained and is not a pass.",
       "long_history_correction": {
-        "state": "frozen SQL source passed root test-only real Server/Cloud Bridge after-proof; exact-tree full gate still required before commit",
+        "state": "Committed45d4921 with exact full gate31green and root branch integration",
         "seed": "f81c9907dd9b6caf266fec731df3b467b3d253e6",
         "implementation": "Materialized header scalars and collection types per statement; original scope/shape/relation checks retained; TEXT JSON preserved.",
         "unchanged": "60-second source request contexts, byte/row/cursor limits, schema/index/DB/pool/writer/pragma/dependencies",
@@ -927,15 +927,42 @@
           "source_and_index_unchanged": true,
           "boundary": "Temporary canonical Project paths alter bytes across runs; same permanent guard, not byte-identical before/after Bridge fixture or production latency."
         },
-        "pending": "Exact candidate full gate, branch commit/merge, consumer integration and production/native/removal acceptance.",
+        "pending": "Backend/UI consumer integration and production/native/removal acceptance.",
         "cleanup_gate_followup": {
           "owner": "root",
           "behavior": "After a fresh post-grace census leaves no known owned identity, skip redundant signal inventories; keep direct-reap receipt, original deadline and earlier/fresh unknown failures.",
           "controlled_before": "Reaped peer plus two complete empty observations still reached a third blocked census and returned execution-effect-unknown.",
           "checks": "Controlled before failed; corrected new cases, original two failing transport cases and real observed setsid cleanup passed race; whole ACP package passed with its existing denied-inventory conditional test skipped in the inventory-capable environment.",
-          "boundary": "This proves the controlled redundant-inventory defect; it does not establish the cause of every earlier full-suite deadline failure. Full candidate gate is still required."
+          "boundary": "Controlled redundant-inventory defect and exact committed tree passed full31 gate; this does not establish the cause of every earlier deadline failure."
         }
       }
+    },
+    "backend": {
+      "doc": "docs/project-assistants-read-http.md",
+      "service": "ServiceOptions.ReadViews ReadViews and trusted ReadViewByteLimit int; Service.View(ctx,ReadViewRequest)(ReadViewResult,error)",
+      "publication": "ReadViewResult.Revalidate(ctx) privately captures admitted authority; HTTP calls it after complete-byte packing and before successful publication.",
+      "reader": "Host.Options.Reader borrows existing query-only Store reader; NewReadViews is constructed only for an installed feature. No new DB/pool/writer/pragma.",
+      "wire": "GET view has seven strict required query fields and no body; machine/path identities and same principal/reader/source/grant are revalidated.",
+      "byte_budget": "Existing ReadPlaintextBytesLimit; complete generated JSON plus HTTP newline and worst legal Cloud read-correlation wrapper; capacity-only honest prefix, no stale/foreign partial publication.",
+      "compatibility": "Named Legacy16 capture preserves every original API58 method and complete fields. New View Go word/Bridge/real Server checks remain required atAPI59. Actual TypeScript17/helper joint validation is not claimed here.",
+      "checks": "Related five-package normal/race and real Bridge9001 original60s case passed on committed SQL45d4921; exact complete candidate gate still required before module commit."
+    },
+    "joint_acceptance": {
+      "owner": "root",
+      "status": "pending",
+      "entries": [
+        "JRV-01",
+        "JRV-02",
+        "JRV-03",
+        "JRV-04",
+        "JRV-05",
+        "JRV-06",
+        "JRV-07",
+        "JRV-08"
+      ],
+      "when": "After both committed backend and UI branches integrate; actual Go replies must pass actual TS SourceClient.view/captured relay and strict readView helper.",
+      "backend_module_commit_prerequisite": false,
+      "not_a_substitute": "Independent synthetic successes or generic echo do not establish joint acceptance."
     }
   }
 }

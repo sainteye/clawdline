@@ -194,6 +194,7 @@ export const CARRIED = {
   "project-assistants.send": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
   "project-assistants.status": "captured Bot source GET /v1/project-assistants/status",
   "project-assistants.stop": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/stop",
+  "project-assistants.view": "captured Bot source GET /v1/project-assistants/{key.bot_id}/view",
   "project-codegraph": "GET /v1/projects/{project}/codegraph",
   "project-codegraph-build": "POST /v1/projects/{project}/codegraph",
   "project-devstack": "GET /v1/projects/{project}/devstack",

@@ -34,6 +34,7 @@ func projectAssistantOperationCases() []operationCase {
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
 		{"export", "GET", "/bot/export", key, map[string]string{"machine_id": "mac-01"}},
 		{"history", "GET", "/bot/messages", map[string]any{"key": key, "conversation_id": "chat", "before_seq": 3, "page_size": 2}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "before_seq": "3", "page_size": "2"}},
+		{"view", "GET", "/bot/view", map[string]any{"key": key, "conversation_id": "chat", "mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": 0, "page_size": 100}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": "0", "page_size": "100"}},
 		{"events", "GET", "/bot/events", map[string]any{"key": key, "after_seq": 3, "page_size": 2}, map[string]string{"machine_id": "mac-01", "after_seq": "3", "page_size": "2"}},
 		{"create", "POST", "", map[string]any{"settings": map[string]any{"target": map[string]any{"machine_id": "mac-01", "project_id": "project"}, "name": "Name", "appearance": appearance, "agent": "codex", "permission_policy": "ask", "instructions": "", "role_snapshot_ref": ""}}, nil},
 		{"edit", "PATCH", "/bot", map[string]any{"settings": map[string]any{"expected_version": 1, "name": "Name", "appearance": appearance, "instructions": ""}}, nil},
@@ -93,7 +94,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 16 {
+	if len(out) != 17 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -110,15 +111,19 @@ func projectAssistantExample(t *testing.T, row cloudvocab.Operation) body {
 	return b
 }
 
-// A real SourceClient and captured authenticated-connection adapter produce the
-// fixtures at runtime. No browser, daemon, pairing, provider or network is used.
-const projectAssistantCapture = `
+// The original16 API58 methods retain their complete captured request contracts.
+// New View Go transport checks remain mandatory; actual17th TS method/response
+// joint acceptance belongs to the integrating root after both modules commit.
+// No browser, daemon, pairing, provider or network is used by this legacy test.
+const projectAssistantLegacy16Capture = `
 import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const root=process.argv[1];
+const legacyWords=new Set(JSON.parse(process.argv[2]));
 const {ProjectAssistantSourceClient,capturedAssistantRelayFetch}=await import(pathToFileURL(root+'/web/console/src/cloud/project-assistants.ts'));
 const {CARRIED}=await import(pathToFileURL(root+'/web/console/src/cloud/carry-generated.ts'));
-const rows=JSON.parse(readFileSync(root+'/internal/domain/cloudvocab/vocabulary.json','utf8')).operations.filter(x=>x.op.startsWith('project-assistants.'));
+const rows=JSON.parse(readFileSync(root+'/internal/domain/cloudvocab/vocabulary.json','utf8')).operations.filter(x=>legacyWords.has(x.op));
+if(legacyWords.size!==16||rows.length!==16||legacyWords.has('project-assistants.view'))throw new Error('Legacy16 must contain exactly the original API58 words');
 const machine='source-one', fixtures=[], status={contract_version:'project-assistants.v1',sources:[{machine_id:machine,state:'online',access:'interactive',fresh:true,readable:true,writable:true,observed_at:'',capabilities:[]}]};
 let http, sequence=0;
 const connection={machineDescriptor:()=>({machine:{commands:Object.keys(CARRIED)}}),
@@ -126,7 +131,7 @@ const connection={machineDescriptor:()=>({machine:{commands:Object.keys(CARRIED)
  _machineRequestAs:async(ref,machine,word,fields,kind)=>receive(ref,machine,word,fields,kind)};
 function receive(ref,machine,word,fields,kind){fixtures.push({...http,machine,word,ref,kind,plaintext:{type:word,session:'__clawdline_machine__',request:ref,...fields}});return word.endsWith('.status')?status:word.endsWith('.projects')?{contract_version:'project-assistants.v1',source:status.sources[0],agents:['claude','codex'],revision:'catalog-1',items:[{target:{machine_id:machine,project_id:'project'},label:'Project'}],next_cursor:'next',has_more:true}:{contract_version:'project-assistants.v1',echo:word};}
 const relay=capturedAssistantRelayFetch(machine,()=>connection,Object.keys(CARRIED));
-const grant={accountKey:'fixture-account',readerID:'trusted-reader',machineID:machine,authorizationRevision:'revision',apiLevel:999,paired:true,online:true,writable:true};
+const grant={accountKey:'fixture-account',readerID:'trusted-reader',machineID:machine,authorizationRevision:'revision',apiLevel:58,paired:true,online:true,writable:true};
 const source=new ProjectAssistantSourceClient(grant,async(input,init)=>{http={input,method:init.method,body:init.body??null,idempotency:new Headers(init.headers).get('Idempotency-Key')};return relay(input,init)},()=>grant);
 const signal=new AbortController().signal;
 await source.status(signal);
@@ -134,7 +139,19 @@ for(const row of rows){const word=row.op.split('.').at(-1);if(word==='status')co
 process.stdout.write(JSON.stringify(fixtures));
 `
 
-func TestProjectAssistantCapturedSourceRoundTrip(t *testing.T) {
+func TestProjectAssistantCapturedLegacy16SourceRoundTrip(t *testing.T) {
+	legacy := map[string]bool{}
+	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory"} {
+		legacy["project-assistants."+word] = true
+	}
+	words := make([]string, 0, len(legacy))
+	for word := range legacy {
+		words = append(words, word)
+	}
+	encodedWords, err := json.Marshal(words)
+	if err != nil {
+		t.Fatal(err)
+	}
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node is needed for the real captured SourceClient fixture")
@@ -143,7 +160,7 @@ func TestProjectAssistantCapturedSourceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(node, "--input-type=module", "-e", projectAssistantCapture, root)
+	cmd := exec.Command(node, "--input-type=module", "-e", projectAssistantLegacy16Capture, root, string(encodedWords))
 	raw, err := cmd.Output()
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
@@ -166,11 +183,14 @@ func TestProjectAssistantCapturedSourceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(fixtures) != 16 {
-		t.Fatalf("captured %d methods, want all 16", len(fixtures))
+		t.Fatalf("captured %d methods, want the original16 API58 methods", len(fixtures))
 	}
 	seen := map[string]bool{}
 	for _, fixture := range fixtures {
 		t.Run(fixture.Word, func(t *testing.T) {
+			if !legacy[fixture.Word] {
+				t.Fatalf("non-legacy method captured as API58 compatibility: %s", fixture.Word)
+			}
 			if seen[fixture.Word] {
 				t.Fatalf("duplicate %s", fixture.Word)
 			}
@@ -220,9 +240,9 @@ func TestProjectAssistantCapturedSourceRoundTrip(t *testing.T) {
 			}
 		})
 	}
-	for _, row := range projectAssistantRows(t) {
-		if !seen[row.Op] {
-			t.Errorf("uncaptured %s", row.Op)
+	for word := range legacy {
+		if !seen[word] {
+			t.Errorf("uncaptured original API58 method %s", word)
 		}
 	}
 }
