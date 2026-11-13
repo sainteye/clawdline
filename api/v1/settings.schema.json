@@ -4,6 +4,14 @@
   "title": "This app's settings file",
   "description": "GET and POST /v1/settings. The file is ~/.config/clawdline-next/config.json, never the Swift app's; its keys are the Swift app's spellings. A write is a merge onto what is on disk, atomic, and leaves every other key as it was. A file that is not a JSON object is refused rather than replaced. Website Settings is the primary entry. The narrow /v1/settings/default-models route carries launch defaults over the paired Cloud read/write path; retained settings window types remain compatible.",
   "$defs": {
+    "BrowserAutomaticPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["native", "isolated", "user_chrome"],
+      "properties": { "native": { "type": "boolean" }, "isolated": { "type": "boolean" }, "user_chrome": { "type": "boolean" } }
+    },
+    "BrowserSelectionPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["order", "automatic"],
+      "properties": { "order": { "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": { "type": "string", "enum": ["native", "isolated", "user_chrome"] } }, "automatic": { "$ref": "#/$defs/BrowserAutomaticPolicy" } }
+    },
     "SettingsSnapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -16,6 +24,7 @@
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "codegraph_enabled": { "type": "boolean", "nullable": true },
         "browser_enabled": { "type": "boolean", "nullable": true },
+        "browser_policy": { "$ref": "#/$defs/BrowserSelectionPolicy", "nullable": true },
         "browser_mode": { "type": "string", "nullable": true, "enum": ["native", "user_chrome", "isolated"] },
         "browser_notify_new_site": { "type": "boolean", "nullable": true },
         "space_saving_images": { "type": "boolean", "nullable": true },
@@ -320,6 +329,7 @@
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "codegraph_enabled": { "type": "boolean", "nullable": true },
         "browser_enabled": { "type": "boolean", "nullable": true },
+        "browser_policy": { "$ref": "#/$defs/BrowserSelectionPolicy", "nullable": true },
         "browser_mode": { "type": "string", "nullable": true, "enum": ["native", "user_chrome", "isolated"] },
         "browser_notify_new_site": { "type": "boolean", "nullable": true },
         "space_saving_images": { "type": "boolean", "nullable": true },

@@ -31,9 +31,12 @@ func TestBrowserSettingsAreTwoSwitchesOffByDefault(t *testing.T) {
 		return answer.Code, got
 	}
 	code, got := send(f.send, "GET", "")
-	if code != 200 || got["browser_enabled"] != false || got["browser_notify_new_site"] != false || len(got) != 3 || got["browser_mode"] != "native" {
+	if code != 200 || got["browser_enabled"] != false || got["browser_notify_new_site"] != false || len(got) != 4 || got["browser_mode"] != "native" {
 		t.Fatalf("a new machine: %d %v", code, got)
 	}
+	probe, cancelProbe := context.WithCancel(t.Context())
+	cancelProbe()
+	s.browsers().Legacy().Poll(probe, browserbridge.HostInfo{Mode: "isolated", Version: "fixture"})
 	code, got = send(f.send, "POST", `{"browser_enabled":true}`)
 	if code != 200 || got["browser_enabled"] != true || got["browser_notify_new_site"] != false {
 		t.Fatalf("turning browser use on: %d %v", code, got)
@@ -111,7 +114,7 @@ func TestBrowserStopRefusesAnUnsavedControlState(t *testing.T) {
 	f, _ := newGateFixture(t)
 	dir := t.TempDir()
 	s := &Server{cfg: config.Config{Dir: dir}}
-	if err := s.browser().SetMuted("c1", true); err != nil {
+	if err := s.browsers().Legacy().SetMuted("c1", true); err != nil {
 		t.Fatal(err)
 	}
 	backup := dir + "-moved"
@@ -149,7 +152,7 @@ func TestBrowserStopRefusesAnUnsavedControlState(t *testing.T) {
 	}
 }
 
-func TestBothSettingsEntrypointsWithdrawQueuedBrowserCommands(t *testing.T) {
+func TestAutomaticPolicyChangesKeepAlreadyAdmittedBrowserCommands(t *testing.T) {
 	for _, narrow := range []bool{true, false} {
 		t.Run(map[bool]string{true: "browser", false: "general"}[narrow], func(t *testing.T) {
 			f, _ := newGateFixture(t)
@@ -170,8 +173,7 @@ func TestBothSettingsEntrypointsWithdrawQueuedBrowserCommands(t *testing.T) {
 					t.Fatalf("setting: %d %s", result.Code, result.Body)
 				}
 			}
-			set(`{"browser_enabled":true}`)
-			bridge := s.browser()
+			bridge := s.browsers().Legacy()
 			canceled, cancel := context.WithCancel(t.Context())
 			cancel()
 			bridge.Poll(canceled, browserbridge.HostInfo{Version: "test"})
@@ -184,14 +186,22 @@ func TestBothSettingsEntrypointsWithdrawQueuedBrowserCommands(t *testing.T) {
 			if bridge.Status().Pending != 1 {
 				t.Fatal("command did not queue")
 			}
-			set(`{"browser_enabled":false}`)
+			set(`{"browser_policy":{"order":["native","isolated","user_chrome"],"automatic":{"native":true,"isolated":false,"user_chrome":false}}}`)
+			if bridge.Status().Pending != 1 {
+				t.Fatal("automatic preference withdrew an admitted operation")
+			}
+			commands := bridge.Poll(t.Context(), browserbridge.HostInfo{Mode: "isolated", Version: "test"})
+			if len(commands) != 1 {
+				t.Fatalf("lost queued operation: %+v", commands)
+			}
+			bridge.Deliver([]browserbridge.Result{{ID: commands[0].ID, OK: true, Value: json.RawMessage(`[]`)}})
 			select {
 			case err := <-done:
-				if err != browserbridge.Disabled {
-					t.Fatalf("queued command: %v", err)
+				if err != nil {
+					t.Fatalf("admitted operation: %v", err)
 				}
 			case <-time.After(time.Second):
-				t.Fatal("setting acknowledged without withdrawing queued command")
+				t.Fatal("admitted operation did not settle")
 			}
 		})
 	}

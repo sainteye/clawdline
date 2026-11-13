@@ -36,6 +36,11 @@ const browserUsage = `usage: clawdline browser <command>
   install-host [--mode isolated|user_chrome] --extension-id ID [--chrome-dir PATH]
                                  connect the extension to the selected Chrome user-data directory
   open <url>                     open a new tab for this Session
+  open --browser isolated --explicit <url>
+                                 honor the person's explicit test-Chrome request for this Session
+  --browser <mode>                choose an automatically allowed browser for an action
+  --explicit                      use that browser for this Session at the person's explicit request;
+                                 does not change global switches or bypass setup or emergency stop
   tabs                           list the tabs this Session may use
   read [--tab N]                 the page's text and the elements that can be pressed or filled
   click <text> | --x N --y N     press the element whose label is <text>, or a point
@@ -52,7 +57,7 @@ const browserUsage = `usage: clawdline browser <command>
 
 func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		fmt.Fprintln(out, browserUsage)
+		fmt.Fprintln(out, cliCopy("core", "browser.usage", browserUsage))
 		if len(args) == 0 {
 			return 2
 		}
@@ -75,7 +80,11 @@ func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer
 	op, rest := args[0], args[1:]
 	switch op {
 	case "status":
-		a, err := b.request(http.MethodGet, "/v1/browser/status", nil, nil, "")
+		query := map[string][]string{}
+		if conversation, _, err := conversationFromEnv(getenv); err == nil && conversation != "" {
+			query["conversation"] = []string{conversation}
+		}
+		a, err := b.request(http.MethodGet, "/v1/browser/status", query, nil, "")
 		if err != nil {
 			fmt.Fprintln(errOut, err)
 			return 1
@@ -112,7 +121,16 @@ func runBrowser(args []string, getenv func(string) string, out, errOut io.Writer
 	if code != 0 {
 		return code
 	}
-	a, err := b.request(http.MethodPost, "/v1/browser/commands", nil, map[string]any{"conversation": conversation, "op": op, "args": cmdArgs}, "")
+	body := map[string]any{"conversation": conversation, "op": op, "args": cmdArgs}
+	if mode, ok := cmdArgs["browser_mode"]; ok {
+		body["browser_mode"] = mode
+		delete(cmdArgs, "browser_mode")
+	}
+	if explicit, ok := cmdArgs["explicit"]; ok {
+		body["explicit"] = explicit
+		delete(cmdArgs, "explicit")
+	}
+	a, err := b.request(http.MethodPost, "/v1/browser/commands", nil, body, "")
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 1
@@ -132,11 +150,27 @@ func browserArgs(op string, rest []string, stdin io.Reader, errOut io.Writer) (m
 	y := fs.Float64("y", -1, "y")
 	outFile := fs.String("out", "", "file")
 	fromStdin := fs.Bool("stdin", false, "read the text from standard input")
+	browser := fs.String("browser", "", "native, isolated or user_chrome")
+	explicit := fs.Bool("explicit", false, "the person explicitly requested this browser for this Session")
 	if fs.Parse(rest) != nil {
 		return nil, "", 2
 	}
 	words := strings.Join(fs.Args(), " ")
 	args := map[string]any{}
+	if *browser != "" {
+		if *browser != "native" && *browser != "isolated" && *browser != "user_chrome" {
+			fmt.Fprintln(errOut, cliCopy("core", "browser.invalid_selection", "Choose native, isolated or user_chrome with --browser."))
+			return nil, "", 2
+		}
+		args["browser_mode"] = *browser
+	}
+	if *explicit {
+		if *browser == "" {
+			fmt.Fprintln(errOut, cliCopy("core", "browser.explicit_selection_required", "Use --explicit only with a browser the person explicitly requested via --browser."))
+			return nil, "", 2
+		}
+		args["explicit"] = true
+	}
 	if *tab > 0 {
 		args["tab"] = *tab
 	}
@@ -205,7 +239,7 @@ func browserArgs(op string, rest []string, stdin io.Reader, errOut io.Writer) (m
 		}
 	case "tabs", "read", "screenshot", "release":
 	default:
-		fmt.Fprintln(errOut, browserUsage)
+		fmt.Fprintln(errOut, cliCopy("core", "browser.usage", browserUsage))
 		return nil, "", 2
 	}
 	return args, *outFile, 0
@@ -352,7 +386,7 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 			return
 		} else if len(saved) > 0 {
 			resultsPending.Store(true)
-			if !postBrowserHostResults(hostCtx, b, saved, errOut) {
+			if !postBrowserHostResults(hostCtx, b, saved, errOut, mode) {
 				return
 			}
 			if err := os.Remove(spool); err != nil && !os.IsNotExist(err) {
@@ -411,7 +445,7 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 						}
 					}
 				}
-				if !postBrowserHostResults(hostCtx, b, m.Results, errOut) {
+				if !postBrowserHostResults(hostCtx, b, m.Results, errOut, mode) {
 					return
 				}
 				if len(saved) > 0 {
@@ -472,7 +506,7 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 					closeMu.Unlock()
 					fmt.Fprintln(errOut, cliCopy("core", "browser_host.too_many_closes", "browser-host: too many unsettled close commands"))
 					refused, _ := json.Marshal([]browserbridge.Result{{ID: command.ID, Tab: command.Tab, Error: string(browserbridge.QueueFull)}})
-					if !postBrowserHostResults(hostCtx, b, refused, errOut) {
+					if !postBrowserHostResults(hostCtx, b, refused, errOut, mode) {
 						return 1
 					}
 					continue

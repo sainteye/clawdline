@@ -66,6 +66,14 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 	if resume == "" {
 		on, _ := values.Bool("space_saving_images")
 		browser, _ := values.Bool("browser_enabled")
+		if _, configured := values.Raw["browser_policy"]; configured {
+			// Ordered policy also teaches native-first and explicit Session choices.
+			// It grants no browser permission by itself.
+			if _, err := values.BrowserPolicy(); err != nil {
+				return Prepared{}, err
+			}
+			browser = true
+		}
 		if snap.ProfileID == "" {
 			// Legacy parents still cannot acquire today's workflow choice.
 			if !on && !browser {

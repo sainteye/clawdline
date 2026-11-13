@@ -13,6 +13,18 @@ const (
 // BrowserMode treats an absent setting as the old consent: enabled meant
 // Clawdline's isolated profile. An invalid explicit mode fails closed.
 func (v Values) BrowserMode() string {
+	if raw, exists := v.Raw["browser_policy"]; exists {
+		policy, err := DecodeBrowserPolicy(raw)
+		if err != nil {
+			return BrowserModeNative
+		}
+		for _, mode := range policy.Order {
+			if policy.Automatic[mode] {
+				return mode
+			}
+		}
+		return BrowserModeNative
+	}
 	if _, exists := v.Raw["browser_mode"]; exists {
 		mode, _ := v.String("browser_mode")
 		if validBrowserMode(mode) {
@@ -38,10 +50,16 @@ func validBrowserMode(mode string) bool {
 // Legacy writes cannot silently turn an existing user-Chrome choice into an
 // isolated one, or leave a revoked choice enabled through the other key.
 func browserChanges(current Values, changes map[string]any) (map[string]any, error) {
+	if canonical, err := browserPolicyChanges(changes); canonical != nil || err != nil {
+		return canonical, err
+	}
 	modeValue, modeChanged := changes["browser_mode"]
 	enabledValue, enabledChanged := changes["browser_enabled"]
 	if !modeChanged && !enabledChanged {
 		return changes, nil
+	}
+	if _, exists := current.Raw["browser_policy"]; exists {
+		return nil, ErrBrowserPolicy
 	}
 	mode := current.BrowserMode()
 	if modeChanged {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 )
 
 // The console's browser setup guide (web/console/src/session/BrowserSetup.tsx),
@@ -36,13 +37,36 @@ func (s *Server) browserSetupRoute(w http.ResponseWriter, r *http.Request) {
 		profile = browserlaunch.ProfileDir(s.cfg.Dir)
 		running = browserlaunch.Running(s.cfg.Dir)
 	}
+	for key, values := range r.URL.Query() {
+		if key != "browser_mode" || len(values) != 1 || values[0] == "" {
+			writeBrowserError(w, browserbridge.BadRequest)
+			return
+		}
+	}
+	mode := r.URL.Query().Get("browser_mode")
+	if mode == "" {
+		mode = s.browserMode()
+	}
+	if mode != "native" && mode != "isolated" && mode != "user_chrome" {
+		writeBrowserError(w, browserbridge.BadRequest)
+		return
+	}
+	selected := mode
+	if selected == "native" {
+		selected = "isolated"
+	}
+	policy, err := s.browserPolicy()
+	if err != nil {
+		writeBrowserError(w, browserbridge.StateWriteFailed)
+		return
+	}
+	_, _, profiles := s.browsers().SelectedStatus("", policy)
+	if selected != "isolated" {
+		profile = ""
+		running = false
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{
-		"ok": true, "mode": s.browserMode(), "chromium_found": chromium != "", "chromium": chromium, "profile": profile,
-		"running": running, "connected": s.browser().SetupConnected(),
-		"enabled": s.browserSetting("browser_enabled"), "notify_new_site": s.browserSetting("browser_notify_new_site"),
-		"install_command": browserlaunch.InstallCommand,
-	})
+	writeJSON(w, map[string]any{"ok": true, "mode": mode, "chromium_found": chromium != "", "chromium": chromium, "profile": profile, "running": running, "connected": profiles[selected].Ready, "profiles": profiles, "enabled": policy.Automatic[selected], "notify_new_site": s.browserSetting("browser_notify_new_site"), "install_command": browserlaunch.InstallCommand})
 }
 
 func (s *Server) browserLaunchRoute(w http.ResponseWriter, r *http.Request) {
@@ -60,10 +84,7 @@ func (s *Server) browserLaunchRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "Only a person's device that may send can open Clawdline's Chrome.")
 		return
 	}
-	if s.browserMode() == "user_chrome" {
-		writeRefusal(w, http.StatusConflict, "browser_user_chrome_setup_required", "Connect your usual Chrome extension separately before using this mode.")
-		return
-	}
+
 	if s.cfg.Dir == "" {
 		writeRefusal(w, http.StatusServiceUnavailable, "browser_launch_failed", "Clawdline's Chrome could not be started on this machine.")
 		return
@@ -98,10 +119,7 @@ func (s *Server) browserPrepareRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "The browser request is not valid JSON for this route.")
 		return
 	}
-	if s.browserMode() != "user_chrome" {
-		writeRefusal(w, http.StatusConflict, "browser_wrong_mode", "Select your usual Chrome mode before preparing its extension.")
-		return
-	}
+
 	receipt, err := browserlaunch.PrepareUserChrome(s.cfg.Dir)
 	if err != nil {
 		writeRefusal(w, http.StatusInternalServerError, "browser_prepare_failed", "The extension files could not be prepared.")

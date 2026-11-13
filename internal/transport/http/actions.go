@@ -339,6 +339,7 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 }
 
 func (s *Server) recordRootClosure(ctx context.Context, assignment string, closed session.Session, method string, forced bool) error {
+	s.forgetClosedBrowser(closed.ConversationID)
 	if assignment == "" || s.broker == nil {
 		return nil
 	}
@@ -349,6 +350,7 @@ func (s *Server) recordRootClosure(ctx context.Context, assignment string, close
 // turn the earlier Root projection into a receipt for a later Session.
 func (s *Server) recordAuditedRootClosure(ctx context.Context, audit agentCloseAudit, closed session.Session, method string) error {
 	if audit.RootAssignment == "" {
+		s.forgetClosedBrowser(closed.ConversationID)
 		return nil
 	}
 	before := audit.Target

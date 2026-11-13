@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/sainteye/clawdline/internal/adapters/browserlaunch"
-	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/config"
 )
 
@@ -23,15 +22,6 @@ func browserLaunch(args []string, out, errOut io.Writer) int {
 	bin := fs.String("browser", os.Getenv("CLAWDLINE_CHROMIUM"), "Chromium binary (default: CLAWDLINE_CHROMIUM, then Playwright's Chromium)")
 	if fs.Parse(args) != nil {
 		return 2
-	}
-	values, err := nextconfig.Open(config.Dir()).Read()
-	if err != nil {
-		fmt.Fprintln(errOut, err)
-		return 1
-	}
-	if values.BrowserMode() == nextconfig.BrowserModeUserChrome {
-		fmt.Fprintln(errOut, "browser_user_chrome_setup_required: connect your usual Chrome separately; launch only starts the isolated browser")
-		return 1
 	}
 	port, err := daemonPort()
 	if err != nil {

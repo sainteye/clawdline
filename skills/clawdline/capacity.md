@@ -65,7 +65,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `browser.keyboard_pending_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.keyboard_pending_edits` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.pending_commands` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `browser.profile_state_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.result_bytes` | 6291456 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `browser.session_choices` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.stdin_text_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |

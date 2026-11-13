@@ -70,3 +70,22 @@
 .browser-audit-dialog h2 { margin: 0; font-size: 20px; }
 .browser-audit-dialog .chip, .browser-audit-dialog select { min-height: 44px; }
 @media (max-width: 600px) { .browser-audit-dialog { padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); } }
+
+.browser-policy-list { list-style: none; padding: 0; display: grid; gap: 12px; }
+.browser-policy-list > li { border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.browser-policy-row { display: flex; gap: 12px; align-items: flex-start; }
+.browser-policy-rank { color: var(--dim); font: 18px var(--mono); padding-top: 2px; }
+.browser-policy-copy { flex: 1; min-width: 0; }
+.browser-policy-copy strong { display: block; }
+.browser-policy-copy p { margin: 5px 0; color: var(--dim); font-size: 13px; line-height: 1.6; }
+.browser-policy-ready, .browser-policy-unready { color: var(--dim); font-size: 12px; }
+.browser-policy-ready { color: var(--ok); }
+.browser-policy-order { display: flex; gap: 6px; }
+.browser-policy-order .chip { min-height: 44px; min-width: 44px; padding: 8px; }
+.browser-policy-auto { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-top: 14px; }
+.browser-policy-auto > span { color: var(--dim); font-size: 13px; }
+.browser-policy-setup { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+.browser-policy-setup summary { min-height: 44px; display: list-item; align-content: center; cursor: pointer; color: var(--dim); }
+.browser-policy-setup p { color: var(--dim); font-size: 13px; line-height: 1.6; }
+.browser-policy-setup .chip { min-height: 44px; }
+@media (max-width: 520px) { .browser-policy-row { flex-wrap: wrap; } .browser-policy-copy { flex-basis: calc(100% - 40px); } .browser-policy-order { margin-left: auto; } }

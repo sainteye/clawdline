@@ -121,6 +121,7 @@ type HostInfo struct {
 
 // AuditRow is one recorded command.
 type AuditRow struct {
+	Mode         string `json:"browser_mode,omitempty"`
 	ID           string `json:"id,omitempty"`
 	At           int64  `json:"at"`
 	Conversation string `json:"conversation"`
@@ -150,6 +151,7 @@ type Bridge struct {
 	mu              sync.Mutex
 	queue           []Command
 	waiting         map[string]chan Result
+	inflight        map[string]string
 	wake            chan struct{}
 	mode            string   // active Chrome profile kind; native mode only disables this channel
 	setupHost       HostInfo // transport readiness, never grants Agent access
@@ -182,6 +184,7 @@ type Bridge struct {
 func New(onSite func(NewSite)) *Bridge {
 	return &Bridge{
 		waiting:      map[string]chan Result{},
+		inflight:     map[string]string{},
 		mode:         "isolated",
 		closing:      map[int]string{},
 		wake:         make(chan struct{}),
@@ -249,6 +252,7 @@ type Status struct {
 
 // TabInfo is one tab a Session has used: the console finds a Session's tab here.
 type TabInfo struct {
+	Mode         string `json:"browser_mode,omitempty"`
 	Tab          int    `json:"tab"`
 	Conversation string `json:"conversation"`
 	Person       bool   `json:"person"`
@@ -527,6 +531,17 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 
 // PersonDoForMode rejects stale viewer actions even when profiles reuse tab IDs.
 func (b *Bridge) PersonDoForMode(ctx context.Context, op string, tab int, args json.RawMessage, mode string) (json.RawMessage, error) {
+	return b.personDo(ctx, op, tab, args, mode, nil)
+}
+
+func (b *Bridge) PersonDoWithAdmission(ctx context.Context, op string, tab int, args json.RawMessage, mode string, release func()) (json.RawMessage, error) {
+	var once sync.Once
+	unlock := func() { once.Do(release) }
+	defer unlock()
+	return b.personDo(ctx, op, tab, args, mode, unlock)
+}
+
+func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.RawMessage, mode string, admitted func()) (json.RawMessage, error) {
 	if !personOps[op] || tab <= 0 || len(args) > MaxArgBytes {
 		return nil, BadRequest
 	}
@@ -562,9 +577,13 @@ func (b *Bridge) PersonDoForMode(ctx context.Context, op string, tab int, args j
 	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, Person: true, conversation: ""}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
+	b.inflight[c.ID] = b.owner[tab]
 	b.queue = append(b.queue, c)
 	b.signal()
 	b.mu.Unlock()
+	if admitted != nil {
+		admitted()
+	}
 	timer := time.NewTimer(b.timeout)
 	defer timer.Stop()
 	var res Result
@@ -577,6 +596,7 @@ func (b *Bridge) PersonDoForMode(ctx context.Context, op string, tab int, args j
 	}
 	b.mu.Lock()
 	delete(b.waiting, c.ID)
+	delete(b.inflight, c.ID)
 	b.dropQueued(c.ID)
 	if mode != b.mode {
 		res = Result{Error: string(WrongMode)}
@@ -659,7 +679,21 @@ func (b *Bridge) RecentActivity(conversation string, limit int) []Activity {
 }
 
 // Do runs one agent command and waits for the extension's answer.
-func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawMessage) (value json.RawMessage, err error) {
+func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawMessage) (json.RawMessage, error) {
+	return b.do(ctx, conversation, op, args, nil)
+}
+
+// DoWithAdmission releases the selector fence after command admission, before
+// waiting for a host. This gives profile selection and in-flight bookkeeping
+// one order without holding the selector lock across a long poll.
+func (b *Bridge) DoWithAdmission(ctx context.Context, conversation, op string, args json.RawMessage, release func()) (json.RawMessage, error) {
+	var once sync.Once
+	unlock := func() { once.Do(release) }
+	defer unlock()
+	return b.do(ctx, conversation, op, args, unlock)
+}
+
+func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawMessage, admitted func()) (value json.RawMessage, err error) {
 	if !agentOps[op] || conversation == "" || len(args) > MaxArgBytes {
 		return nil, BadRequest
 	}
@@ -754,9 +788,13 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 	}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
+	b.inflight[c.ID] = conversation
 	b.queue = append(b.queue, c)
 	b.signal()
 	b.mu.Unlock()
+	if admitted != nil {
+		admitted()
+	}
 
 	timer := time.NewTimer(b.timeout)
 	defer timer.Stop()
@@ -770,6 +808,7 @@ func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawM
 	}
 	b.mu.Lock()
 	delete(b.waiting, c.ID)
+	delete(b.inflight, c.ID)
 	if op == "close" {
 		for _, queued := range b.queue {
 			if queued.ID == c.ID {
@@ -977,6 +1016,7 @@ func (b *Bridge) record(conversation, op string, tab int, text string, r Result)
 	}
 	var announce *NewSite
 	b.mu.Lock()
+	row.Mode = b.mode
 	if !r.Password && r.Thumb != "" && len(r.Thumb) <= MaxThumbBytes && conversation != "" {
 		b.thumbs = append(b.thumbs, Activity{AuditRow: row, Thumb: r.Thumb})
 		if len(b.thumbs) > MaxActivityThumbs {

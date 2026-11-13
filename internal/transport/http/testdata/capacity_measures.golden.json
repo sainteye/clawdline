@@ -247,7 +247,8 @@
   },
   {
     "Name": "browser.audit_rows",
-    "Known": true
+    "Known": true,
+    "Note": true
   },
   {
     "Name": "browser.audit_text_characters",
@@ -284,12 +285,21 @@
   },
   {
     "Name": "browser.pending_commands",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.profile_state_bytes",
     "Known": true
   },
   {
     "Name": "browser.result_bytes",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "browser.session_choices",
+    "Known": true
   },
   {
     "Name": "browser.stdin_text_bytes",

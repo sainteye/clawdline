@@ -50,11 +50,12 @@ func TestBrowserSetupSeesAnIsolatedHostBeforePermissionIsGranted(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if s.browser().Status().Connected {
-		t.Fatal("setup readiness exposed enabled channel")
+	policy, err := s.browserPolicy()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := s.browser().Do(context.Background(), "c1", "open", json.RawMessage(`{"url":"https://example.com"}`)); err != browserbridge.Disabled {
-		t.Fatalf("agent ran before Finish: %v", err)
+	if _, err := s.browsers().DoSession(context.Background(), "c1", "open", json.RawMessage(`{"url":"https://example.com"}`), policy, "", false); err != browserbridge.NativeTools {
+		t.Fatalf("readiness changed automatic permission: %v", err)
 	}
 	cancel()
 	<-done
@@ -62,9 +63,11 @@ func TestBrowserSetupSeesAnIsolatedHostBeforePermissionIsGranted(t *testing.T) {
 		t.Fatalf("probe got commands: %d %s", response.Code, response.Body)
 	}
 	wrong := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/browser/host/poll", strings.NewReader(`{"mode":"user_chrome"}`)).WithContext(context.WithValue(context.Background(), accessKey{}, access{machine: true}))
+	probe, cancelProbe := context.WithCancel(context.Background())
+	cancelProbe()
+	req := httptest.NewRequest(http.MethodPost, "/v1/browser/host/poll", strings.NewReader(`{"mode":"user_chrome"}`)).WithContext(context.WithValue(probe, accessKey{}, access{machine: true}))
 	s.browserHostPollRoute(wrong, req)
-	if wrong.Code != http.StatusForbidden {
-		t.Fatalf("unselected daily Chrome can probe: %d", wrong.Code)
+	if wrong.Code != http.StatusOK {
+		t.Fatalf("a connected usual-Chrome host cannot report readiness independently: %d", wrong.Code)
 	}
 }

@@ -1207,6 +1207,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "browser.profile_state_bytes",
+    "Class": "idempotency",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxProfileStateBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "browser.result_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1223,6 +1243,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/app/browserbridge.MaxResultBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.session_choices",
+    "Class": "idempotency",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxSessionBrowsers"
     ]
   },
   {

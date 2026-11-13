@@ -181,3 +181,26 @@ func TestCloseNamesAnOwnedTabWithoutTreatingReleaseAsClose(t *testing.T) {
 		t.Fatal("an ambiguous close request was accepted")
 	}
 }
+
+func TestExplicitBrowserFlagsStaySeparateFromPageArguments(t *testing.T) {
+	for _, op := range []string{"open", "read", "type", "close", "viewport"} {
+		rest := []string{"--browser", "isolated", "--explicit"}
+		switch op {
+		case "open":
+			rest = append(rest, "https://example.com")
+		case "type":
+			rest = append(rest, "example text")
+		case "viewport":
+			rest = append(rest, "mobile")
+		}
+		var errors strings.Builder
+		args, _, code := browserArgs(op, rest, strings.NewReader(""), &errors)
+		if code != 0 || args["browser_mode"] != "isolated" || args["explicit"] != true {
+			t.Fatalf("%s lost choice: %+v %d %s", op, args, code, errors.String())
+		}
+	}
+	var errors strings.Builder
+	if _, _, code := browserArgs("read", []string{"--explicit"}, strings.NewReader(""), &errors); code != 2 {
+		t.Fatal("explicit without a browser was accepted")
+	}
+}

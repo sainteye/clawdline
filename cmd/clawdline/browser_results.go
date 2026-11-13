@@ -96,11 +96,16 @@ func saveBrowserCloseResults(path string, raw json.RawMessage) error {
 	return os.Rename(f.Name(), path)
 }
 
-func postBrowserHostResults(ctx context.Context, b *broker, results json.RawMessage, errOut io.Writer) bool {
+func postBrowserHostResults(ctx context.Context, b *broker, results json.RawMessage, errOut io.Writer, modes ...string) bool {
+	mode := ""
+	if len(modes) > 0 {
+		mode = modes[0]
+	}
 	for {
 		a, err := b.requestContext(ctx, http.MethodPost, "/v1/browser/host/results", nil, struct {
+			Mode    string          `json:"browser_mode,omitempty"`
 			Results json.RawMessage `json:"results"`
-		}{results}, "")
+		}{mode, results}, "")
 		if err == nil && a.ok() {
 			var ack struct {
 				OK bool `json:"ok"`

@@ -2,6 +2,8 @@ package capacity
 
 // Rows of the browser bridge (internal/app/browserbridge, docs/browser.md).
 const (
+	BrowserSessionChoices    = "browser.session_choices"
+	BrowserProfileStateBytes = "browser.profile_state_bytes"
 	BrowserCloseReceipts     = "browser.close_receipt_rows"
 	BrowserCloseReceiptBytes = "browser.close_receipt_bytes"
 	BrowserPendingCommands   = "browser.pending_commands"
@@ -18,6 +20,9 @@ const (
 // browserBounds is every registered row named browser.*.
 func browserBounds() []Entry {
 	return []Entry{
+		// Durable choice receipts prevent a later action from being treated as a new selection.
+		{Name: BrowserSessionChoices, Class: Idempotency, Unit: Rows, Limit: 256, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/app/browserbridge.MaxSessionBrowsers"}},
+		{Name: BrowserProfileStateBytes, Class: Idempotency, Unit: Bytes, Limit: 64 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/app/browserbridge.MaxProfileStateBytes"}},
 		{Name: BrowserCloseReceipts, Class: Buffer, Unit: Rows, Limit: 32, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"cmd/clawdline.maxBrowserCloseReceipts"}},

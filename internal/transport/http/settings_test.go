@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 )
@@ -330,6 +332,17 @@ func TestSettingsRouteCarriesWorkGateDefaultsAndUpdates(t *testing.T) {
 func TestSettingsEveryWindowRow(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "clawdline-next")
 	s := &Server{cfg: config.Config{Dir: dir}}
+
+	// Enabling a Chrome row also requires its transport to be ready. This
+	// settings round-trip fixture supplies readiness; native installation is
+	// exercised by the separate real-profile integration test.
+	probe, cancelProbe := context.WithCancel(t.Context())
+	cancelProbe()
+	bridge, err := s.browsers().Channel("isolated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge.Poll(probe, browserbridge.HostInfo{Mode: "isolated", Version: "settings-fixture"})
 
 	// One value per key, each inside what the file accepts.
 	sent := map[string]any{}

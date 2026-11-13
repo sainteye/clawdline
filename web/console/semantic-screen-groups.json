@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11626,
-  "riskKeys": 5083,
-  "nonRiskCount": 6543,
+  "englishContentKeys": 11641,
+  "riskKeys": 5086,
+  "nonRiskCount": 6555,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 494,
+      "count": 495,
       "sources": [
         null
       ],
@@ -460,6 +460,7 @@
         "capacityRow.browser.host_message_bytes.what",
         "capacityRow.browser.pending_commands.what",
         "capacityRow.browser.result_bytes.what",
+        "capacityRow.browser.session_choices.what",
         "capacityRow.browser.stdin_text_bytes.what",
         "capacityRow.cache.claude_usage_refresh_seconds.what",
         "capacityRow.cache.claude_usage_reply_bytes.what",
@@ -3852,7 +3853,7 @@
     },
     {
       "name": "next / other",
-      "count": 991,
+      "count": 1001,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3930,7 +3931,9 @@
         "next.browserModeIsolated",
         "next.browserModeIsolatedHelp",
         "next.browserModeNative",
+        "next.browserModeNativeHelp",
         "next.browserModeUserChrome",
+        "next.browserModeUserChromeHelp",
         "next.browserOpClick",
         "next.browserOpHandback",
         "next.browserOpKey",
@@ -3977,12 +3980,20 @@
         "next.browserPanelZoom",
         "next.browserPanelZoomIn",
         "next.browserPanelZoomOut",
+        "next.browserPolicyAuto",
+        "next.browserPolicyDown",
+        "next.browserPolicyNativeReady",
+        "next.browserPolicyNeedSetup",
+        "next.browserPolicyNeedsUpdate",
+        "next.browserPolicyReady",
+        "next.browserPolicySetUp",
+        "next.browserPolicySetup",
+        "next.browserPolicyUp",
         "next.browserRemind",
         "next.browserSettingsConnected",
         "next.browserSettingsConnectedHost",
         "next.browserSettingsEnabled",
         "next.browserSettingsEnabledHelp",
-        "next.browserSettingsIntro",
         "next.browserSettingsLoading",
         "next.browserSettingsNotify",
         "next.browserSettingsNotifyHelp",
@@ -6696,7 +6707,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 164,
+      "count": 165,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6711,6 +6722,7 @@
         "transparency.card.board.how",
         "transparency.card.board.title",
         "transparency.card.browser-use.condition",
+        "transparency.card.browser-use.summary",
         "transparency.card.browser-use.title",
         "transparency.card.child.effect",
         "transparency.card.child.how",

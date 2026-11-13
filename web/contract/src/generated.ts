@@ -2100,6 +2100,12 @@ export interface BrokerWorktree {
   repository: string
 }
 
+export interface BrowserAutomaticPolicy {
+  isolated: boolean
+  native: boolean
+  user_chrome: boolean
+}
+
 /**
  * A device minted for a browser on this machine. `url` carries the token in its
  * fragment, which a browser never sends and never logs; the page trades it for the
@@ -2120,6 +2126,11 @@ export interface BrowserRequest {
    * Optional local selection; omission preserves read-and-operate.
    */
   permission?: string
+}
+
+export interface BrowserSelectionPolicy {
+  automatic: BrowserAutomaticPolicy
+  order: string[]
 }
 
 /**
@@ -8221,6 +8232,7 @@ export interface SettingsRequest {
   browser_enabled: boolean | null
   browser_mode: string | null
   browser_notify_new_site: boolean | null
+  browser_policy: BrowserSelectionPolicy | null
 
   /**
    * 0 to 1.
@@ -8599,6 +8611,7 @@ export interface SettingsSnapshot {
   browser_enabled: boolean | null
   browser_mode: string | null
   browser_notify_new_site: boolean | null
+  browser_policy: BrowserSelectionPolicy | null
 
   /**
    * The bar card's opacity.

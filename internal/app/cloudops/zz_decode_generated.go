@@ -733,7 +733,7 @@ func genDecodeChromeSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 4096, properties: map[string]genRule{"browser_enabled": genRule{kind: "bool"}, "browser_mode": genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}, "browser_notify_new_site": genRule{kind: "bool"}}, closed: true, minKeys: 1, maxKeys: 2}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 4096, properties: map[string]genRule{"browser_enabled": genRule{kind: "bool"}, "browser_mode": genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}, "browser_notify_new_site": genRule{kind: "bool"}, "browser_policy": genRule{kind: "object", properties: map[string]genRule{"automatic": genRule{kind: "object", properties: map[string]genRule{"isolated": genRule{kind: "bool"}, "native": genRule{kind: "bool"}, "user_chrome": genRule{kind: "bool"}}, required: []string{"native", "isolated", "user_chrome"}, closed: true}, "order": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"native", "isolated", "user_chrome"}}, minItems: genCount(3), maxItems: genCount(3)}}, required: []string{"order", "automatic"}, closed: true}}, closed: true, minKeys: 1, maxKeys: 2}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -751,7 +751,11 @@ func genDecodeChromeSettingsUpdate(b body) (plan, LocalRequest, bool) {
 func genDecodeChromeSetup(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "request", "session"},
+		[]string{"type", "browser_mode", "request", "session"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"isolated", "user_chrome"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := machinePlan(b)
@@ -760,6 +764,7 @@ func genDecodeChromeSetup(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/browser/setup"
 	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"browser_mode": genValue{from: "browser_mode"}})
 	req.Header = asDevice()
 	return p, req, true
 }
@@ -923,7 +928,11 @@ func genDecodeChromeTabScreenshot(b body) (plan, LocalRequest, bool) {
 func genDecodeChromeTabStatus(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "request", "session"},
+		[]string{"type", "conversation", "request", "session"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := machinePlan(b)
@@ -932,6 +941,7 @@ func genDecodeChromeTabStatus(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/browser/status"
 	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"conversation": genValue{from: "conversation"}})
 	req.Header = asDevice()
 	return p, req, true
 }

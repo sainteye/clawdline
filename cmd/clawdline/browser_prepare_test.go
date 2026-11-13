@@ -60,18 +60,21 @@ func TestPreparingChromeRequiresAnExplicitKnownMode(t *testing.T) {
 	}
 }
 
-func TestTheUserChromeChoiceNeverLaunchesAnIsolatedBrowser(t *testing.T) {
+func TestExplicitTestChromeLaunchDoesNotChangeTheUsualChromePreference(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CLAWDLINE_NEXT_DIR", dir)
 	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_mode": "user_chrome"}); err != nil {
 		t.Fatal(err)
 	}
 	var out, errOut strings.Builder
-	if code := runBrowser([]string{"launch", "--browser", "/not/a/browser"}, os.Getenv, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "browser_user_chrome_setup_required") {
+	if code := runBrowser([]string{"launch", "--browser", "/not/a/browser"}, os.Getenv, &out, &errOut); code != 1 || strings.Contains(errOut.String(), "browser_user_chrome_setup_required") {
 		t.Fatalf("wrong profile launch: %d %s", code, errOut.String())
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 1 || entries[0].Name() != nextconfig.FileName {
-		t.Fatal("wrong profile launch wrote data", err)
+	values, err := nextconfig.Open(dir).Read()
+	if err != nil || values.BrowserMode() != "user_chrome" {
+		t.Fatal("test Chrome launch changed automatic preference", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "browser-host-user-chrome.sh")); !os.IsNotExist(err) {
+		t.Fatal("test launch registered a usual-Chrome host")
 	}
 }
