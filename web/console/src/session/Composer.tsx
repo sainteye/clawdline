@@ -15,7 +15,7 @@ import * as L from "../legacy/bridge.js"
 import { createShots, carriesFiles, carriesPicture } from "../legacy/shots-bridge.js"
 import { composerDraftKey, composerDrafts } from "./composer-drafts.js"
 import * as V from "../legacy/voice-bridge.js"
-import { dictatedFrom, polishWord, swapDictation, type Dictated } from "./voice-polish.js"
+import { dictatedFrom, dictationPictures, polishWord, swapDictation, type Dictated } from "./voice-polish.js"
 import { COMPOSE_APPEND } from "../legacy/snippets-bridge.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import {
@@ -551,7 +551,8 @@ export function Composer({
 
   /**
    * A recording ended with the send control: the words go to this Session
-   * unread, by the path `submit` uses, and the box is left as it was. It runs
+   * unread, by the path `submit` uses, with the pictures already in the box;
+   * the box's typed text is left as it was. It runs
    * after the transcription, by which time this composer may have unmounted —
    * so it reads only the last render's values and module-level stores, and
    * what cannot be sent is kept rather than dropped: in the box when it is
@@ -573,9 +574,16 @@ export function Composer({
       }).catch(() => { /* the toast already said it did not go */ })
     }
     if (!on || (target && !target.current())) return keep()
+    // The pictures in the box go with the words, as the send button sends
+    // them, and leave the box with them.
+    const { pictures, hold } = dictationPictures({ here: alive.current, allowed: allowPictures, busy: Shots.busy(), urls: Shots.urls() })
+    if (hold) return keep()
     if (remote) {
-      void remote.onSend(said, []).then(() => chime?.play(), (err) => {
+      if (pictures.length) Shots.clear()
+      void remote.onSend(said, pictures).then(() => chime?.play(), (err) => {
         chime?.drop()
+        // Nothing reached the Session, so the pictures go back where they were.
+        if (pictures.length && alive.current && !Shots.count()) Shots.restore(pictures)
         toast(L.failureSentence(err, T.sendFailed), true)
       })
       return
@@ -586,11 +594,13 @@ export function Composer({
       ((at.state !== "idle" && at.state !== "unknown") || at.menu ||
       pendingSends.of(at.id).some(card => card.state === "queued"))) {
       // Held in this browser until the turn ends: not sent yet, so no chime.
-      if (!nextMessages.add(at.id, said, [], Date.now(), conversation)) keep()
-      else chime?.drop()
+      if (!nextMessages.add(at.id, said, pictures, Date.now(), conversation)) keep()
+      else { chime?.drop(); if (pictures.length) Shots.clear() }
       return
     }
-    void deliverUntilSeen(pendingSends.add(at.id, said, [], Date.now(), false, conversation)).then((code) => {
+    // The card keeps the pictures from here, as it does for the send button.
+    if (pictures.length) Shots.clear()
+    void deliverUntilSeen(pendingSends.add(at.id, said, pictures, Date.now(), false, conversation)).then((code) => {
       if (code) chime?.drop()
       else chime?.play()
       if (alive.current && writeIsOff(code)) setBlocked({ machine, code })

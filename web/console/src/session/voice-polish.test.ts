@@ -46,3 +46,14 @@ test("the last occurrence is swapped, because dictation appends", () => {
   const box = polished + "\n" + polished
   assert.equal(swapDictation(box, d)?.text, polished + "\n" + raw)
 })
+
+test("a dictation sent with the paper plane carries the pictures already in the box", async () => {
+  // @ts-expect-error -- a `.ts` path, for node; see order.test.ts.
+  const { dictationPictures } = await import("./voice-polish.ts")
+  const urls = ["data:image/png;base64,AAAA", "data:image/jpeg;base64,BBBB"]
+  assert.deepEqual(dictationPictures({ here: true, allowed: true, busy: false, urls }), { pictures: urls, hold: false })
+  assert.deepEqual(dictationPictures({ here: true, allowed: true, busy: true, urls }), { pictures: [], hold: true },
+    "a picture still shrinking keeps the message in the box instead of sending it without the picture")
+  assert.deepEqual(dictationPictures({ here: true, allowed: false, busy: false, urls }), { pictures: [], hold: false })
+  assert.deepEqual(dictationPictures({ here: false, allowed: true, busy: false, urls }), { pictures: [], hold: false })
+})

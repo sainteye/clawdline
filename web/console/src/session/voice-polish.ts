@@ -44,3 +44,16 @@ export function swapDictation(box: string, d: Dictated): { text: string; dictate
     dictated: { ...d, showing: d.showing === "polished" ? "raw" : "polished" },
   }
 }
+
+/**
+ * The pictures a dictation sent with the paper plane carries: the ones already
+ * in the box, as the send button would send them. A picture still shrinking
+ * has not arrived, so the message waits in the box (`hold`) rather than going
+ * without it; a destination that takes no pictures leaves them where they are.
+ */
+export function dictationPictures(box: { here: boolean; allowed: boolean; busy: boolean; urls: readonly string[] }):
+  { pictures: string[]; hold: boolean } {
+  if (!box.here || !box.allowed) return { pictures: [], hold: false }
+  if (box.busy) return { pictures: [], hold: true }
+  return { pictures: box.urls.slice(), hold: false }
+}
