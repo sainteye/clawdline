@@ -41,7 +41,7 @@ export interface Snippet {
   /** Origin of an imported Playbook. The launch message remains independent. */
   source?: PlaybookSource
   /** Present while the shipped starter Playbook has not been edited. */
-  builtin?: "zero_review" | "cross_surface_review"
+  builtin?: "zero_review" | "cross_surface_review" | "board_drive"
   position: number
   created_at: number
   updated_at: number

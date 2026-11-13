@@ -34,6 +34,11 @@ let layout = "desktop"
 let frames = 0
 let heldControl: (() => void) | null = null
 let holdControl = false
+let holdType = false
+let heldType: (() => void) | null = null
+let failNextType = false
+let holdNextStatus = false
+let heldStatus: (() => void) | null = null
 let desktopFields: {x:number;y:number;width:number;height:number;kind:string}[] = []
 let mobileFields: typeof desktopFields = []
 
@@ -41,6 +46,7 @@ const row = {
   id: SESSION, label: "Browser Session", backend: "owned", state: "working", work_state: "working",
   evidence: "process", assistant: "codex", sessionId: CONVERSATION, cwd: "/tmp/fixture",
 }
+const activityAt = Math.floor(Date.now() / 1000)
 let sequence = 0
 const snapshot = () => ({ at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: ++sequence }, emptyAuthoritative: true, epoch: 1, generation: sequence, provenance: "fixture" }, sessions: [{ ...row, ...(headerCount !== null ? { identity: "protocol" } : {}), ...(headerCount === 3 ? { persona: "reviewer" } : {}) }] })
 
@@ -71,11 +77,16 @@ function fixture(): Server {
     if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
     if (path === "/__fixture/hold-control") { holdControl = true; return json(res, 200, {}) }
     if (path === "/__fixture/admit") { holdControl = false; heldControl?.(); heldControl = null; return json(res, 200, {}) }
-    if (path === "/__fixture/log") return json(res, 200, { person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes })
+    if (path === "/__fixture/hold-type") { holdType = true; return json(res, 200, {}) }
+    if (path === "/__fixture/release-type") { holdType = false; heldType?.(); heldType = null; return json(res, 200, {}) }
+    if (path === "/__fixture/fail-next-type") { failNextType = true; return json(res, 200, {}) }
+    if (path === "/__fixture/hold-status") { holdNextStatus = true; return json(res, 200, {}) }
+    if (path === "/__fixture/release-status") { heldStatus?.(); heldStatus = null; return json(res, 200, {}) }
+    if (path === "/__fixture/log") return json(res, 200, { person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus })
     if (path === "/v1/browser/activity") return json(res, 200, { ok: true, rows: [
-      { at: Math.floor(Date.now() / 1000), op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
-      { at: Math.floor(Date.now() / 1000) - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
-      ...["release", "release", "close", "read", "screenshot", "takeover", "handback"].map((op, i) => ({ id: "quiet-"+i, at: Math.floor(Date.now()/1000)-i-10, op, site:"example.com", ok:true, thumb:"" })),
+      { at: activityAt, op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
+      { at: activityAt - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
+      ...["release", "release", "close", "read", "screenshot", "takeover", "handback"].map((op, i) => ({ id: "quiet-"+i, at: activityAt-i-10, op, site:"example.com", ok:true, thumb:"" })),
     ] })
     if (req.method === "POST" && path === "/v1/browser/mute") { const b = await body(req); muted = !!b.muted; return json(res, 200, { ok: true, conversation: b.conversation, muted }) }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
@@ -90,8 +101,12 @@ function fixture(): Server {
       return
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "transcript", id: SESSION, signature: "fixture" })
-    if (path === "/v1/browser/status") return json(res, 200, { ok: true, mode:channelMode, enabled: true, notify_new_site: true,
-      status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } })
+    if (path === "/v1/browser/status") {
+      const value = { ok: true, mode:channelMode, enabled: true, notify_new_site: true,
+        status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } }
+      if (holdNextStatus) { holdNextStatus = false; await new Promise<void>(resolve => { heldStatus = resolve }) }
+      return json(res, 200, value)
+    }
     if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); if (b.browser_mode!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); if (holdControl && b.person) await new Promise<void>(resolve => { heldControl = resolve }); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
     if (path === "/v1/browser/screenshot") { if (url.searchParams.get("browser_mode")!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); shotModes.push(channelMode);frames++; return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: layout === "mobile" ? 390 : 1280, height: 720, layout, editables: layout === "mobile" ? mobileFields : desktopFields, data: (layout === "mobile" ? mobilePage : page).toString("base64") } }) }
     if (req.method === "POST" && path === "/v1/browser/person") {
@@ -100,7 +115,11 @@ function fixture(): Server {
       if (b.op === "screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
       if (!person) return json(res, 409, { error: "browser_take_over_first", detail: "Take over the tab before typing or clicking in it." })
       if (b.op === "click") clicks.push({ x: b.args.x, y: b.args.y })
-      if (b.op === "type") typed.push(b.args.text)
+      if (b.op === "type") {
+        typed.push(b.args.text)
+        if (holdType) await new Promise<void>(resolve => { heldType = resolve })
+        if (failNextType) { failNextType = false; return json(res, 503, {error:"browser_timeout",detail:"Synthetic input acknowledgement was lost."}) }
+      }
       if (b.op === "key") keys.push(b.args.key)
       if (b.op === "viewport") layout = b.args.mode
       const field = b.op === "click" ? (layout === "mobile" ? mobileFields : desktopFields).find(f=>b.args.x>=f.x && b.args.x<=f.x+f.width && b.args.y>=f.y && b.args.y<=f.y+f.height) : null
@@ -109,7 +128,7 @@ function fixture(): Server {
     if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, { ok: true, rows: [{
       id: "10000000-0000-4000-8000-000000000059", source_conversation: CONVERSATION, source_label: "Codex", target_conversation: CONVERSATION,
       target_session: SESSION, kind: "browser", title: "Sign in", summary: "The page needs sign-in.", action: "Take over the browser.", reason: "Only the person signs in.",
-      options: [], created_at: Math.floor(Date.now() / 1000), read_at: null, resolved_at: null, version: 1,
+      options: [], created_at: activityAt, read_at: null, resolved_at: null, version: 1,
     }], pruned_resolved: 0 })
     if (path.startsWith("/v1/")) return json(res, 404, { error: "not_found", detail: path })
     if (path === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(document(url.searchParams.get("ui") || "zh-Hant")) }
@@ -241,41 +260,71 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await run(`document.getElementById('session-browser').click()`)
       await until(`document.querySelector('.browser-shot')?.getBoundingClientRect().width>0`)
       assert.equal(await run(`document.querySelector('.browser-host').textContent`), "www.console.example.com")
-      assert.equal(await run(`!!document.querySelector('.browser-type')`),false,"no separate text entry row")
+      assert.ok(await run(`document.querySelector('.browser-composer-input').getBoundingClientRect().height>=44`),"a visible native draft stays in the footer")
       assert.equal(await run(`document.getElementById('browser-tools').hidden`),true)
       if(name==="phone"){
         assert.ok(await run(`document.querySelector('.browser-shot').getBoundingClientRect().width>=1279`),"readable original-size page")
         assert.ok(await run(`parseFloat(getComputedStyle(document.querySelector('.browser-controls')).paddingBottom)>=42`),"home indicator has its full safe touch margin even when env() is zero")
-        assert.ok(await run(`document.querySelector('.browser-viewport').getBoundingClientRect().height>=innerHeight*.6`),"one compact footer leaves the page most of the screen")
+        assert.ok(await run(`document.querySelector('.browser-viewport').getBoundingClientRect().height>=innerHeight*.5`),"one compact footer leaves the page most of the screen")
       }
       await shot("watching-redesign")
       await run(`[...document.querySelectorAll('.browser-zoom button')].find(b=>b.textContent===${JSON.stringify(ui==="en"?"Fit":"符合畫面")}).click()`)
       await fetch(origin+"/__fixture/hold-control")
+      await fetch(origin+"/__fixture/hold-status")
       const f=desktopFields[0]
       const hit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${f.x+f.width/2}/1280*r.width,y:r.top+${f.y+f.height/2}/720*r.height}})()`)
-      assert.equal(await run(`document.elementFromPoint(${hit.x},${hit.y})?.tagName`), "INPUT", "a remote field is a directly touched native input, not focus on a hidden proxy")
-      await run(`window.__touchedField=document.elementFromPoint(${hit.x},${hit.y});true`)
+      assert.equal(await run(`!!document.querySelector('.browser-native-field')`),false,"screenshot geometry does not replace the visible footer editor")
+      await run(`window.__touchedField=document.getElementById('browser-native-keyboard');true`)
       await tap(hit.x,hit.y,name==="phone"&&ui==="zh-Hant"&&width===390)
-      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"the directly touched native field is focused before Cloud approves takeover")
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"the visible footer editor is focused before Cloud approves takeover")
       await browser.send("Input.insertText",{text:"中文試用"},id)
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,[],"typing cannot pass an unconfirmed takeover")
       const other=desktopFields[1]
       const otherHit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${other.x+other.width/2}/1280*r.width,y:r.top+${other.y+other.height/2}/720*r.height}})()`)
       await tap(otherHit.x,otherHit.y)
       assert.equal(await run(`document.activeElement===window.__touchedField`),true,"a blocked second field cannot steal an unconfirmed input queue")
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.statusHeld)` )
       await fetch(origin+"/__fixture/admit")
-      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed[0]==='中文試用')`)
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,[],"takeover alone never sends a local draft")
       assert.equal((await(await fetch(origin+"/__fixture/log")).json()).person,true,"tapping the page takes over and clicks once")
       await until(`!document.querySelector('.browser-input-pending')`)
+      await until(`!!document.querySelector('.browser-who[data-person="true"]')`)
+      const oldFrames = (await(await fetch(origin+"/__fixture/log")).json()).frames
+      await fetch(origin+"/__fixture/release-status")
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.frames>=${oldFrames + 2})`)
+      assert.equal(await run(`document.activeElement === window.__touchedField`), true, "a delayed pre-takeover status and idle screenshot refresh must not dismiss the native keyboard")
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"中文試用","the draft remains visible across refreshes")
+      await fetch(origin+"/__fixture/hold-type")
+      const sendPoint = await pointerCentre('.browser-composer button')
+      await tap(sendPoint.x,sendPoint.y)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed[0]==='中文試用')`)
+      await browser.send("Input.insertText",{text:"下一段"},id)
+      const pendingFrames = (await(await fetch(origin+"/__fixture/log")).json()).frames
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.frames>=${pendingFrames + 2})`)
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"a pending send and screenshot refresh never disable or blur the editor")
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段")
+      await fetch(origin+"/__fixture/release-type")
+      await until(`!document.querySelector('.browser-input-pending')`)
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段","acknowledgement preserves the next draft")
+      await run(`document.getElementById('browser-native-keyboard').select()`)
+      await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+      await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"sending text keeps the same native editor focused")
       await run(`document.documentElement.style.removeProperty('--vvh')`)
       await browser.send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:2,mobile:name==="phone"},id)
       await browser.send("Input.imeSetComposition",{text:"測",selectionStart:1,selectionEnd:1},id)
       await browser.send("Input.insertText",{text:"測試"},id)
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"測試","IME remains a visible local draft until sent")
+      await until(`!document.querySelector('.browser-composer button').disabled`)
+      await run(`document.querySelector('.browser-composer').requestSubmit()`)
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed.length===2)`)
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,["中文試用","測試"],"IME sends the committed Chinese once")
+      await until(`!document.querySelector('.browser-input-pending')`)
+      await browser.send("Input.insertText",{text:"123"},id)
       await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
       await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
-      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.keys.includes('Backspace'))`)
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"12","Backspace edits the local draft without a remote keystroke")
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,[])
       if(name==="phone"){
         await run(`Object.defineProperty(window.visualViewport,'height',{configurable:true,value:Math.round(innerHeight*.58)});window.visualViewport.dispatchEvent(new Event('resize'))`)
         await until(`document.getElementById('browser-panel').getBoundingClientRect().height<innerHeight*.7`)
@@ -291,7 +340,7 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await run(`document.querySelector('.browser-tools-toggle').click()`)
       await run(`document.querySelector('.browser-take').click()`)
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>!log.person)`)
-      assert.equal(await run(`document.activeElement?.matches('.browser-native-keyboard,.browser-native-field')`),false,"handback closes native input")
+      assert.equal(await run(`document.activeElement?.matches('.browser-composer-input')`),false,"handback closes native input")
       const beforeClicks=(await(await fetch(origin+"/__fixture/log")).json()).clicks.length
       await run(`document.querySelector('.browser-zoom button[aria-label=${JSON.stringify(ui==="en"?"Zoom in":"放大")} ]').click()`)
       const c=await pointerCentre('.browser-viewport')
@@ -325,7 +374,19 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
         const nextHit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${field.x+field.width/2}/390*r.width,y:r.top+${field.y+field.height/2}/720*r.height}})()`)
         await tap(nextHit.x,nextHit.y)
         await browser.send("Input.insertText",{text:"新模式輸入"},id)
+        await until(`!document.querySelector('.browser-composer button').disabled`)
+        await run(`document.querySelector('.browser-composer').requestSubmit()`)
         await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed.includes('新模式輸入'))`)
+        await until(`!document.querySelector('.browser-input-pending')`)
+        await browser.send("Input.insertText",{text:"未確認文字"},id)
+        await fetch(origin+"/__fixture/fail-next-type")
+        await until(`!document.querySelector('.browser-composer button').disabled`)
+        await run(`document.querySelector('.browser-composer').requestSubmit()`)
+        await until(`!!document.querySelector('.browser-input-error')`)
+        assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"未確認文字","an uncertain result preserves the draft for inspection")
+        const failedFrames = (await(await fetch(origin+"/__fixture/log")).json()).frames
+        await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.frames>=${failedFrames + 2})`)
+        assert.equal((await(await fetch(origin+"/__fixture/log")).json()).typed.filter((v:string)=>v==='未確認文字').length,1,"an uncertain input is never automatically retried")
       }
 
       if(name==="phone"){
@@ -335,6 +396,8 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       }
     }finally{
       await fetch(origin+"/__fixture/admit").catch(()=>{})
+      await fetch(origin+"/__fixture/release-status").catch(()=>{})
+      await fetch(origin+"/__fixture/release-type").catch(()=>{})
       await browser.send("Target.closeTarget",{targetId}).catch(()=>{})
     }
   })

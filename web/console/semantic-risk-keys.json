@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11685,
+  "englishKeys": 11688,
   "counts": {
-    "negation": 3215,
-    "state": 1947,
+    "negation": 3216,
+    "state": 1948,
     "permission": 682,
     "deletion": 262,
     "uncertainty": 442
   },
-  "unionCount": 5109,
+  "unionCount": 5111,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -367,6 +367,7 @@
       "capacityRow.console.closed_session_receipts.full",
       "capacityRow.console.copilot_idle_fallback_seconds.full",
       "capacityRow.console.copilot_idle_fallback_seconds.what",
+      "capacityRow.console.copilot_list_transcript_reads.full",
       "capacityRow.console.copilot_list_transcript_reads.what",
       "capacityRow.console.copilot_recent_idle_seconds.full",
       "capacityRow.console.copilot_reply_characters.full",
@@ -4953,6 +4954,7 @@
       "plan.proPitch",
       "plan.webhooks",
       "playbook.alreadyRunning",
+      "playbook.boardDriveTitle",
       "playbook.complete",
       "playbook.crossReviewBody",
       "playbook.done",
@@ -7147,6 +7149,7 @@
     "capacityRow.console.community_share_fetch_seconds.what",
     "capacityRow.console.copilot_idle_fallback_seconds.full",
     "capacityRow.console.copilot_idle_fallback_seconds.what",
+    "capacityRow.console.copilot_list_transcript_reads.full",
     "capacityRow.console.copilot_list_transcript_reads.what",
     "capacityRow.console.copilot_recap_pages.what",
     "capacityRow.console.copilot_recent_idle_seconds.full",
@@ -11097,6 +11100,7 @@
     "plan.webhooks",
     "planSimulation.failed",
     "playbook.alreadyRunning",
+    "playbook.boardDriveTitle",
     "playbook.commandImportHint",
     "playbook.complete",
     "playbook.confirmDelete",

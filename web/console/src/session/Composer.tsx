@@ -9,6 +9,7 @@ import { currentCatalogTag, catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
 import { captureMachineFetch } from "../cloud/install.js"
+import { primeChime } from "../realtime/chime.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
 import * as L from "../legacy/bridge.js"
 import { createShots, carriesFiles, carriesPicture } from "../legacy/shots-bridge.js"
@@ -197,6 +198,9 @@ export function Composer({
   // The machine on screen when the send control was pressed. Its words go
   // there or nowhere: the page may have moved to another machine since.
   const voiceTarget = useRef<ReturnType<typeof captureMachineFetch> | null>(null)
+  // The voice copilot's done chime, opened in the send tap so iOS lets it
+  // sound later, and played only once the machine has the message.
+  const voiceChime = useRef<ReturnType<typeof primeChime> | null>(null)
   const voiceInstallDialog = useRef<HTMLDialogElement>(null)
   const [voiceInstall, setVoiceInstall] = useState<{ reason?: string; help: boolean } | null>(null)
   const form = useRef<HTMLFormElement>(null)
@@ -556,8 +560,11 @@ export function Composer({
   const sendDictation = (said: string) => {
     const target = voiceTarget.current
     voiceTarget.current = null
+    const chime = voiceChime.current
+    voiceChime.current = null
     const at = rowRef.current
     const keep = () => {
+      chime?.drop()
       toast(nextWord("voiceSendKept"), true)
       if (alive.current) { sink.current(said); return }
       void composerDrafts.read(draftKey).then((draft) => {
@@ -567,7 +574,10 @@ export function Composer({
     }
     if (!on || (target && !target.current())) return keep()
     if (remote) {
-      void remote.onSend(said, []).catch((err) => toast(L.failureSentence(err, T.sendFailed), true))
+      void remote.onSend(said, []).then(() => chime?.play(), (err) => {
+        chime?.drop()
+        toast(L.failureSentence(err, T.sendFailed), true)
+      })
       return
     }
     if (!at) return keep()
@@ -575,10 +585,14 @@ export function Composer({
     if (protocolOwned && !assistantQueues &&
       ((at.state !== "idle" && at.state !== "unknown") || at.menu ||
       pendingSends.of(at.id).some(card => card.state === "queued"))) {
+      // Held in this browser until the turn ends: not sent yet, so no chime.
       if (!nextMessages.add(at.id, said, [], Date.now(), conversation)) keep()
+      else chime?.drop()
       return
     }
     void deliverUntilSeen(pendingSends.add(at.id, said, [], Date.now(), false, conversation)).then((code) => {
+      if (code) chime?.drop()
+      else chime?.play()
       if (alive.current && writeIsOff(code)) setBlocked({ machine, code })
       if (code && !alive.current) toast(L.failureSentence({ code }, T.sendFailed), true)
       if (!code && alive.current) onSent?.()
@@ -895,6 +909,8 @@ export function Composer({
             // still writes the words into the box for reading first.
             if (!voiceLive) return V.press(job)
             voiceTarget.current = remote ? null : captureMachineFetch()
+            voiceChime.current?.drop()
+            voiceChime.current = primeChime()
             V.pressSend(job)
           }}
           // Pressing it must not take the focus off the box somebody is typing

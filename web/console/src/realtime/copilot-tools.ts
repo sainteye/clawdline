@@ -1025,7 +1025,7 @@ function countBy(rows: readonly CopilotSessionRow[]): Record<string, number> {
   return out
 }
 
-/** How many Sessions' latest words a list carries: each is one transcript read. */
+/** Default non-call group-summary scope; directory listing never reads transcripts. */
 export const LIST_LATEST_READS = 6
 export const LIST_LATEST_CHARS = 300
 export const LIST_GOAL_CHARS = 200
@@ -1147,7 +1147,8 @@ function lastMoved(r: CopilotSessionRow): number {
  * Each Session of a group, newest activity first, with what it set out to do,
  * what it finished lately and what it is doing now. The person asked for the
  * working ones, the idle and lately finished ones, or all, told in that order.
- * Only the newest LIST_LATEST_READS are read; the rest are counted.
+ * Non-call summaries read the newest LIST_LATEST_READS and count the rest.
+ * Calls provide a smaller batch and captured identities for later pages.
  */
 async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working' | 'idle' | 'all',idleScope='recent'): Promise<unknown> {
   const read = await readRows(deps)

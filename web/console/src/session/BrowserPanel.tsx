@@ -5,7 +5,8 @@ import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { browserCall as call } from "./browser-call.js"
 import { openBrowserSetup } from "./BrowserSetup.js"
-import { BrowserViewport, type BrowserKeyboardHandle } from "./BrowserViewport.js"
+import { BrowserViewport } from "./BrowserViewport.js"
+import { BrowserComposer, type BrowserKeyboardHandle } from "./BrowserComposer.js"
 import type { InputReceipt } from "./browser-keyboard.js"
 import "./browser-panel.css"
 
@@ -85,6 +86,8 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const [activity, setActivity] = useState<Activity[]>([])
   const closeRef = useRef<HTMLButtonElement>(null)
   const nativeKeyboard = useRef<BrowserKeyboardHandle>(null)
+  const controlRevision = useRef(0)
+  const controlPending = useRef(false)
 
   const mine = status?.status.tabs.filter((t) => t.conversation === conversation && (!t.browser_mode || t.browser_mode === status?.mode)) ?? []
   const tab = mine.find((t) => t.current) ?? mine[mine.length - 1] ?? null
@@ -101,10 +104,13 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   useEffect(() => {
     if (!open) return
     let alive = true
-    const read = () => call<Status>("GET", "/v1/browser/status?conversation=" + encodeURIComponent(conversation)).then(
-      (s) => { if (alive) { setStatus(s); setStatusError(null) } },
-      (e: unknown) => { if (alive) setStatusError(e) },
-    )
+    const read = () => {
+      const revision = controlRevision.current
+      return call<Status>("GET", "/v1/browser/status?conversation=" + encodeURIComponent(conversation)).then(
+        (s) => { if (alive && revision === controlRevision.current && !controlPending.current) { setStatus(s); setStatusError(null) } },
+        (e: unknown) => { if (alive && revision === controlRevision.current && !controlPending.current) setStatusError(e) },
+      )
+    }
     read()
     const timer = window.setInterval(() => { if (!document.hidden) read() }, STATUS_MS)
     return () => { alive = false; window.clearInterval(timer) }
@@ -151,6 +157,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
 
   useEffect(() => { if (open) closeRef.current?.focus({ preventScroll: true }) }, [open])
   useEffect(() => {
+    if (controlPending.current) { controlRevision.current++; controlPending.current = false }
     setToolsOpen(false); setBusy(false); setControlBusy(false); setActError(null)
     nativeKeyboard.current?.close()
   }, [open, scopeKey])
@@ -163,7 +170,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
       const result = await call<{ value?: { editable?: string | null } }>("POST", "/v1/browser/person", { op, tab: tabID, args, ...(browserMode ? {browser_mode:browserMode} : {}) })
       return scope.current === scopeKey ? { ok: true, editable: result.value?.editable } : { ok: false }
     } catch (e) {
-      if (scope.current === scopeKey) setActError(e)
+      if (scope.current === scopeKey && op !== "type") setActError(e)
       return { ok: false }
     } finally {
       if (scope.current === scopeKey) setBusy(false)
@@ -187,6 +194,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const control = async (on: boolean): Promise<boolean> => {
     if (!tabID || scope.current !== scopeKey) return false
     if (!on) nativeKeyboard.current?.close()
+    controlRevision.current++; controlPending.current = true
     setControlBusy(true)
     setActError(null)
     try {
@@ -198,7 +206,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
       if (scope.current === scopeKey) setActError(e)
       return false
     } finally {
-      if (scope.current === scopeKey) setControlBusy(false)
+      if (scope.current === scopeKey) { controlRevision.current++; controlPending.current = false; setControlBusy(false) }
     }
   }
 
@@ -255,7 +263,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         {shotError ? <div className="screen-note err" role="alert">{(shotError as { code?: string })?.code === "browser_other_debugger" ? nextWord("browserPanelOtherDebugger") : said(shotError, "browserPanelReadFailed")}</div> : null}
         {shot && !otherDebugger && (
           <BrowserViewport key={scopeKey + ":" + (shot.layout || "desktop")} shot={shot} canClick={!busy && !controlBusy} person={person} onTap={tap}
-            onEdit={edit => act(edit.op, edit.args)} onPrepareKeyboard={ensureControl} keyboardRef={nativeKeyboard}
+            onKeyboard={(kind, ready) => nativeKeyboard.current?.open(kind, ready)} onCloseKeyboard={() => nativeKeyboard.current?.close()}
             layoutControl={<label className="browser-mode"><span className="sr-only">{nextWord("browserPanelLayout")}</span>
               <select aria-label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy} onChange={e => void changeLayout(e.target.value)}>
                 <option value="mobile">{nextWord("browserPanelMobile")}</option><option value="desktop">{nextWord("browserPanelDesktop")}</option>
@@ -286,8 +294,11 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         </button>
       </div>
       <div className="scroller panel-view-body" aria-live="polite">{open ? body() : null}</div>
-      {open && ready && (
+      {open && !!tabID && (
         <div className="browser-controls">
+          <BrowserComposer key={scopeKey} keyboardRef={nativeKeyboard} person={person}
+            available={ready && !otherDebugger && !controlBusy && !busy}
+            onPrepare={ensureControl} onSend={text => act("type", { text })} />
           <div className="browser-who" data-person={person ? "true" : undefined}>
             <span aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</span>
             <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={controlBusy || otherDebugger} onClick={() => void control(!person)}>

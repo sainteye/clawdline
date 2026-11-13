@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11685,
-  "riskKeys": 5109,
-  "nonRiskCount": 6576,
+  "englishContentKeys": 11688,
+  "riskKeys": 5111,
+  "nonRiskCount": 6577,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 500,
+      "count": 499,
       "sources": [
         null
       ],
@@ -578,7 +578,6 @@
         "capacityRow.console.copilot_help_section_characters.what",
         "capacityRow.console.copilot_help_sections.full",
         "capacityRow.console.copilot_help_sections.what",
-        "capacityRow.console.copilot_list_transcript_reads.full",
         "capacityRow.console.copilot_memory_turns.full",
         "capacityRow.console.copilot_memory_turns.what",
         "capacityRow.console.copilot_orb_frames_per_second.full",
@@ -3858,7 +3857,7 @@
     },
     {
       "name": "next / other",
-      "count": 1018,
+      "count": 1020,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3953,6 +3952,7 @@
         "next.browserPanelActivity",
         "next.browserPanelAgentActs",
         "next.browserPanelDesktop",
+        "next.browserPanelDraftHint",
         "next.browserPanelFit",
         "next.browserPanelHandBack",
         "next.browserPanelHandBackShort",
@@ -3973,6 +3973,7 @@
         "next.browserPanelScrollDown",
         "next.browserPanelScrollUp",
         "next.browserPanelSend",
+        "next.browserPanelSendText",
         "next.browserPanelTakeOver",
         "next.browserPanelTakeOverShort",
         "next.browserPanelTapHint",

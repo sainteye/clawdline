@@ -18,7 +18,7 @@ func openSnippetStore(t *testing.T) (*Store, context.Context) {
 	}
 	// Most store tests exercise an otherwise empty collection. The new-install
 	// starter is covered separately below; removing it here spends no write quota.
-	if _, err := st.db.Exec(`DELETE FROM snippets WHERE id IN (?, ?)`, snippet.DefaultZeroReviewID, snippet.DefaultCrossReviewID); err != nil {
+	if _, err := st.db.Exec(`DELETE FROM snippets WHERE id IN (?, ?, ?)`, snippet.DefaultZeroReviewID, snippet.DefaultCrossReviewID, snippet.DefaultBoardDriveID); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
@@ -33,7 +33,8 @@ func TestFreshMachineGetsEditableGlobalPlaybookAndDeletedSeedStaysDeleted(t *tes
 	}
 	ctx := context.Background()
 	rows, err := st.Snippets(ctx)
-	if err != nil || len(rows) != 2 || !snippet.IsDefaultZeroReview(rows[0]) || snippet.BuiltinPlaybook(rows[1]) != "cross_surface_review" {
+	if err != nil || len(rows) != 3 || !snippet.IsDefaultZeroReview(rows[0]) || snippet.BuiltinPlaybook(rows[1]) != "cross_surface_review" ||
+		snippet.BuiltinPlaybook(rows[2]) != "board_drive" {
 		t.Fatalf("new machine starter: %#v, %v", rows, err)
 	}
 	if rows[0].Project != "" || rows[0].Scope != snippet.Playbook {
@@ -51,7 +52,7 @@ func TestFreshMachineGetsEditableGlobalPlaybookAndDeletedSeedStaysDeleted(t *tes
 	}
 	defer st.Close()
 	rows, err = st.Snippets(ctx)
-	if err != nil || len(rows) != 1 || rows[0].ID != snippet.DefaultCrossReviewID {
+	if err != nil || len(rows) != 2 || rows[0].ID != snippet.DefaultCrossReviewID || rows[1].ID != snippet.DefaultBoardDriveID {
 		t.Fatalf("deleted starter came back: %#v, %v", rows, err)
 	}
 }
@@ -429,7 +430,8 @@ func TestCrossReviewSeedPreservesAnExistingAuthoredPlaybook(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id=?`, snippet.DefaultCrossReviewID); err != nil {
+			// The board starter is already in the ledger; removing its row isolates the cross-review seed.
+			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id IN (?, ?)`, snippet.DefaultCrossReviewID, snippet.DefaultBoardDriveID); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := st.db.Exec(`DELETE FROM snippet_seeds WHERE seed=?`, snippet.DefaultCrossReviewID); err != nil {
@@ -477,7 +479,8 @@ func TestCrossReviewSeedWaitsForCapacityAndThenStaysDeleted(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { st.Close() }()
-			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id=?`, snippet.DefaultCrossReviewID); err != nil {
+			// The board starter is already in the ledger; removing its row isolates the cross-review seed.
+			if _, err := st.db.Exec(`DELETE FROM snippets WHERE id IN (?, ?)`, snippet.DefaultCrossReviewID, snippet.DefaultBoardDriveID); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := st.db.Exec(`DELETE FROM snippet_seeds WHERE seed=?`, snippet.DefaultCrossReviewID); err != nil {
