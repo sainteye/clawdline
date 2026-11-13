@@ -848,13 +848,13 @@ func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("args", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"direction": genRule{kind: "string", enum: []string{"up", "down"}}, "key": genRule{kind: "string", enum: []string{"Enter", "Tab", "Backspace", "Escape", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp"}}, "mode": genRule{kind: "string", enum: []string{"mobile", "desktop"}}, "text": genRule{kind: "string", maxBytes: 16384}, "x": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}, "y": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}}, closed: true, maxKeys: 3}) {
+	if !b.genValid("args", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"direction": genRule{kind: "string", enum: []string{"up", "down"}}, "key": genRule{kind: "string", enum: []string{"Enter", "Tab", "Backspace", "Escape", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp"}}, "mode": genRule{kind: "string", enum: []string{"mobile", "desktop"}}, "replace": genRule{kind: "bool"}, "text": genRule{kind: "string", maxBytes: 16384}, "x": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}, "y": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}}, closed: true, maxKeys: 3}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("op", genRule{kind: "string", enum: []string{"click", "type", "key", "scroll", "viewport"}}) {
+	if !b.genValid("op", genRule{kind: "string", enum: []string{"click", "type", "key", "scroll", "viewport", "field"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("tab", genRule{kind: "integer", min: genInt(1), max: genInt(2147483647)}) {

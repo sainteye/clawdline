@@ -66,8 +66,8 @@ export const CARRIED = {
   "chrome-tab-activity": "GET /v1/browser/activity",
   // Take over a Session's Chrome tab, or hand it back.
   "chrome-tab-control": "POST /v1/browser/control",
-  // A tap, typed text, a key or a scroll on a tab the person has taken over;
-  // the daemon refuses it otherwise.
+  // A tap, typed or replacing text, a key, a scroll or a read of the focused
+  // field on a tab the person has taken over; the daemon refuses it otherwise.
   "chrome-tab-input": "POST /v1/browser/person",
   // Turn one Session's new-site notification off or back on, from the Chrome
   // tab panel.

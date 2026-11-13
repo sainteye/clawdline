@@ -517,7 +517,9 @@ func (b *Bridge) SetPersonControlForMode(tab int, on bool, mode string) error {
 
 // personOps are what a person's own device may send to a tab: looking at it
 // at any time, and acting on it only while they have taken it over.
-var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true, "viewport": true}
+// field reads the focused field for the person's own check of what they
+// sent; an agent cannot ask for it.
+var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true, "viewport": true, "field": true}
 
 // NotTakenOver is a person's input to a tab they have not taken over.
 const NotTakenOver Refusal = "browser_take_over_first"

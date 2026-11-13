@@ -519,3 +519,28 @@ func TestEmergencyStopSurvivesRestartUntilThePersonResumes(t *testing.T) {
 		t.Fatalf("resume was not retained: %v", err)
 	}
 }
+
+func TestAFieldReadIsThePersonsOwnAndNeverRecorded(t *testing.T) {
+	b, ctx := connected(t)
+	fakeHost(ctx, b, func(c Command) Result {
+		return Result{ID: c.ID, OK: true, Tab: c.Tab, Password: true, Value: json.RawMessage(`{"tab":5,"kind":"text","value":"synthetic-field-text"}`)}
+	})
+	if _, err := b.PersonDo(ctx, "field", 5, json.RawMessage(`{}`)); err != NotTakenOver {
+		t.Fatalf("before takeover: %v, want %s", err, NotTakenOver)
+	}
+	b.SetPersonControl(5, true)
+	value, err := b.PersonDo(ctx, "field", 5, json.RawMessage(`{}`))
+	if err != nil || !strings.Contains(string(value), "synthetic-field-text") {
+		t.Fatalf("person read = %s, %v", value, err)
+	}
+	b.SetPersonControl(5, false)
+	if _, err := b.Do(ctx, "c1", "field", json.RawMessage(`{"tab":5}`)); err != BadRequest {
+		t.Fatalf("an agent read the field: %v", err)
+	}
+	rows, _ := b.Records("", 10)
+	for _, r := range rows {
+		if r.Op == "field" || strings.Contains(r.Text+r.Target+r.URL, "synthetic-field-text") {
+			t.Fatalf("a field read was recorded: %+v", r)
+		}
+	}
+}
