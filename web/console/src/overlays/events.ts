@@ -23,6 +23,15 @@ export const GO_PAGE = "clawdline:go-page"
 export const COPILOT_OPEN = "clawdline:copilot-open"
 /** The voice copilot renamed a Session; the page shows the new title at once, as Session info does. */
 export const COPILOT_TITLE = "clawdline:copilot-title"
+/**
+ * The page's address now names another Session (or none). Pages write it with
+ * history.replaceState/pushState, which fire no hashchange, so a voice call
+ * kept answering about the Session it started on (2026-11-13).
+ */
+export const SESSION_ADDRESS = "clawdline:session-address"
+export function sessionAddressChanged(): void {
+  try { window.dispatchEvent(new Event(SESSION_ADDRESS)) } catch { /* refusal-ok: without events the call keeps its focus. */ }
+}
 
 /** The voice copilot asks which machines a Session can start on; CloudGate answers on Cloud. */
 export const COPILOT_MACHINES = "clawdline:copilot-machines"

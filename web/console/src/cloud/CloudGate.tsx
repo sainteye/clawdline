@@ -14,7 +14,7 @@ import { machineManager } from "./machine-manager.js"
 import { createPortal, flushSync } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import App from "../App.js"
-import { CLOSE_EXECUTION_CHANGED, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN } from "../overlays/events.js"
+import { CLOSE_EXECUTION_CHANGED, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN, sessionAddressChanged } from "../overlays/events.js"
 import { NAVIGATION_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
@@ -1521,6 +1521,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setFleetCloseIntent(null)
     setFleetTarget(target)
     history.replaceState(history.state, "", destinationFragment(target))
+    sessionAddressChanged()
   }
 
   /**
@@ -1539,6 +1540,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setFleetDetailProblem(null)
     if (destinationFromFragment(location.hash)) {
       history.replaceState(history.state, "", location.pathname + location.search + "#all-machines")
+      sessionAddressChanged()
     }
   }, [])
 
@@ -1557,6 +1559,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         setFleetReadAgain((revision) => revision + 1)
         setFleetDetailProblem(null)
         history.replaceState(history.state, "", destinationFragment(next))
+        sessionAddressChanged()
       })
   }, [liveSessionSource])
 

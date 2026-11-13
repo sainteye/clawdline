@@ -53,6 +53,7 @@ import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
 import { scanRecovering, sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import type { MachineOffline } from "./session/machine-offline.js"
 import { CopilotDockView } from "./realtime/CopilotDockView.js"
+import { sessionAddressChanged } from "./overlays/events.js"
 import {
   ActionConfirm,
   BEFORE_PAGE_CHANGE,
@@ -140,6 +141,7 @@ function writeHash(hash: string): void {
   } catch {
     location.hash = hash
   }
+  sessionAddressChanged()
 }
 
 /** The address of the list: the page's own, with no fragment. */
@@ -158,6 +160,7 @@ function leaveAddress(state: unknown): void {
       /* nothing more to do */
     }
   }
+  sessionAddressChanged()
 }
 
 /**
@@ -190,6 +193,7 @@ function stepIntoDetail(id: string, address: string, arrived: boolean, establish
   } catch {
     /* the address stays as it was */
   }
+  sessionAddressChanged()
 }
 
 /** `phone()` (`core/env.js`): the width the stylesheet switches at, asked each time. */

@@ -1,3 +1,5 @@
+import { SESSION_ADDRESS } from '../overlays/events.js'
+import { destinationFromFragment } from '../cloud/all-machine-sessions.js'
 import {SpokenSessions,SessionReportQueue,SESSION_REPORT_BATCH,SESSION_REPORT_GUIDANCE,continueReport,remainingReport,type SessionReportPage} from './copilot-reports.js'
 import {batchKey,batchProposal as makeBatchProposal,batchSpoken,continuationConsent,BATCH_GUIDANCE,type BatchProposal} from '../voice-work/continuation.js'
 import { loadCopilotHelp } from './copilot-help-loader.js'
@@ -250,7 +252,8 @@ export class RealtimeCopilotClient {
     const wanted = sessionsInFragment(location.hash)
     if (!wanted) return
     const attempt = this.attempt, hash = location.hash
-    const row = await this.captureFocus(wanted)
+    // On every machine's list the address also names the machine.
+    const row = await this.captureFocus(wanted, destinationFromFragment(location.hash)?.machineID)
     if (attempt !== this.attempt || hash !== location.hash) return
     if (!row || row.id === this.focus) return
     this.cancelOpening()
@@ -454,6 +457,7 @@ export class RealtimeCopilotClient {
     // Which build and tools this call has: on 2026-11-13 a call could not be
     // told apart from one placed by a page loaded before the tool existed.
     window.addEventListener('hashchange', this.onScreenChange)
+    window.addEventListener(SESSION_ADDRESS, this.onScreenChange)
     this.journal('start', `${navigator.userAgent} · bundle ${document.querySelector('script[type="module"][src]')?.getAttribute('src') ?? '?'} · tools ${COPILOT_TOOLS.length}`)
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
@@ -730,8 +734,9 @@ export class RealtimeCopilotClient {
     if(event.type === 'input_audio_buffer.speech_started'){
       this.personSpoke=true;this.cancelOpening()
       if(this.call.options.workEnabled) {
-        const wanted=sessionsInFragment(location.hash)??this.focus
-        const machine=typeof wanted==='string'&&wanted===this.call.options.origin?.id?this.call.options.origin?.machine:undefined
+        const onScreen=sessionsInFragment(location.hash)
+        const wanted=onScreen??this.focus
+        const machine=onScreen?destinationFromFragment(location.hash)?.machineID:typeof wanted==='string'&&wanted===this.call.options.origin?.id?this.call.options.origin?.machine:undefined
         this.speechContexts.set(String(event.item_id||'current'),this.captureFocus(wanted,machine))
       }
     }
@@ -900,8 +905,10 @@ export class RealtimeCopilotClient {
     const read=await readRows(this.toolDeps()).catch(()=>({error:'focus_unavailable'}))
     if('error' in read)return undefined
     for(const candidate of typeof id==='string'?[id]:id) {
-      const exact=read.rows.filter(row=>row.id===candidate&&(!machine||row.machine===machine))
-      const matches=exact.length?exact:read.rows.filter(row=>row.session===candidate&&(!machine||row.machine===machine))
+      // A row from this machine's own list names no machine.
+      const here=(row:{machine?:string})=>!machine||!row.machine||row.machine===machine
+      const exact=read.rows.filter(row=>row.id===candidate&&here(row))
+      const matches=exact.length?exact:read.rows.filter(row=>row.session===candidate&&here(row))
       if(matches.length===1){const row=matches[0];return {id:row.id,label:row.label,machine:row.machine,conversation:row.conversation}}
       if(matches.length>1)return undefined
     }
@@ -1109,6 +1116,7 @@ export class RealtimeCopilotClient {
     if(this.call.options.workEnabled && this.journalCall)void parkVoiceCall(this.journalCall).catch(error=>this.addLog('error',String(error)))
     this.speechContexts.clear();this.responseInputs.clear();this.activeConversationInput='';this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     window.removeEventListener('hashchange', this.onScreenChange)
+    window.removeEventListener(SESSION_ADDRESS, this.onScreenChange)
     this.releaseWork?.();this.releaseWork=undefined;this.workUnsubscribe?.();this.workUnsubscribe=undefined
     voiceWork.onPrepared=undefined;useCallWorkTools(undefined);this.narrator.reset()
 

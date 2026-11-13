@@ -143,7 +143,8 @@ for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`t
   const stream = { getAudioTracks: () => [{ stop() {} }], getTracks: () => [{ stop() {} }] }
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'synthetic-client', mediaDevices: { getUserMedia: async () => stream } } })
   globalThis.document = { documentElement: { lang: 'en' }, querySelector: () => null, dispatchEvent: () => {}, createElement: () => ({}) }
-  globalThis.window = { addEventListener() {}, removeEventListener() {} }
+  const listening = new Set()
+  globalThis.window = { addEventListener(type) { listening.add(type) }, removeEventListener(type) { listening.delete(type) } }
   globalThis.RTCPeerConnection = class {
     addTrack() {}
     createDataChannel() { return this.channel = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} } }
@@ -179,6 +180,9 @@ for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`t
       return
     }
     assert.equal(c.state.status, 'connected')
+    // Pages change a Session's address with history.replaceState, which fires
+    // no hashchange; the call has to hear their own signal (2026-11-13).
+    assert.ok(listening.has('clawdline:session-address'), 'a call follows the Session the page moves to')
     await c.sendSessionConfiguration()
     await c.handleRealtimeEvent({type:'session.updated',session:sent.find(e=>e.type==='session.update').session})
     await tick()
@@ -286,6 +290,18 @@ test('only explicit queue selection promotes the saved input to background plann
    assert.equal(JSON.parse(f.sent.find(e=>e.item?.call_id==='queue').item.output).accepted,true)
    assert.ok(!requests.some(r=>r.action==='confirm'))
  })
+})
+
+test('moving from Session A to B mid-call makes B the Session the call talks about',async()=>{
+ // 2026-11-13: the page changed its address with history.replaceState, which
+ // fires no hashchange, so 「我現在所在的這個 Session」 kept answering about A.
+ const f=fixture(true);const old=globalThis.location
+ globalThis.location={hash:'#machine=mac-1&session=%258&generation=0123456789abcdef0123456789abcdef'}
+ try {
+  await f.c.onScreenChange();await tick();await tick()
+  assert.equal(f.c.focus,'%8')
+  assert.ok(f.sent.some(e=>JSON.stringify(e).includes('Other work')),'the call is told which Session is on screen')
+ } finally {globalThis.location=old}
 })
 
 test('speech captures the new address before asynchronous screen following finishes',async()=>{
