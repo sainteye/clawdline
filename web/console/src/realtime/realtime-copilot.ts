@@ -280,6 +280,7 @@ export class RealtimeCopilotClient {
       decide: (said, sessions, current) => decideOnMachine(said, sessions, current),
       machines: () => machinesOnThisPage(),
       focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
+      screen: () => { const ids = sessionsInFragment(location.hash); return ids ? { ids, machine: destinationFromFragment(location.hash)?.machineID } : undefined },
       marks: browserMarks,
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
       adjust: (change) => this.adjust(change),

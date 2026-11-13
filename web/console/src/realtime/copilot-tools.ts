@@ -75,6 +75,8 @@ export interface ToolDeps {
   machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
   /** The Session this call is talking about: the one on screen, or the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
+  /** The Session open on this page now: its address's ids, and the machine an every-machine address names. */
+  screen?: () => { ids: readonly string[]; machine?: string } | undefined
   /** Where the copilot last reported each Session up to (`get_session_updates`); kept by this browser. */
   marks?: { get(key: string): UpdateMark | undefined; set(key: string, mark: UpdateMark): void }
   /** The user guide's sections a question is about (`copilot-help.ts`); loaded only when asked. */
@@ -976,6 +978,11 @@ export function resolveSession(
   }
 }
 
+/** Whether a sentence means the Session the person is in: 「我這個 Session」, 「現在所在的」, "this session". */
+export function isHere(text: string): boolean {
+  return /(?:這個|这个)\s*(?:session|工作階段|工作阶段)|我(?:現在|现在|目前)?(?:所在)?的?(?:這個|这个)|(?:現在|现在|目前)(?:所在|在)?的?(?:這個|这个)|(?:所在|開著|开着|正在看)的(?:這個|这个)?\s*session|\bthis session\b|\bthe (?:session|one) I(?:'m| am) (?:in|on|looking at)\b/i.test(text)
+}
+
 /**
  * Whether a sentence asks about what "he/it" said, found or suggested: the
  * Session already being talked about. A bare 「它」 next to a description
@@ -999,7 +1006,7 @@ export interface SessionDecision { id?: string; candidates?: string[]; many?: bo
  * from, as before (`resolveSession`). Writes never come here (`resolveForWrite`).
  */
 export async function resolveRead(
-  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus'>,
+  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus' | 'screen'>,
   rows: readonly CopilotSessionRow[],
   wanted: string,
 ): Promise<ReturnType<typeof resolveSession>> {
@@ -1013,6 +1020,17 @@ export async function resolveRead(
   // A whole name actually spoken by the person is stronger than a new guess.
   const named=rows.filter(row=>sessionNamePosition(asked,row.label)>=0)
   if(!/(?:不是|不要|別|别|\bnot\b)/i.test(asked)&&named.length===1&&uniqueSessionID(rows,named[0].id))return finish({row:named[0]})
+  const denied=/(?:不是|不要|別|别|\bnot\b)/i.test(asked)
+  // Where the person is and what the call is about are the program's facts,
+  // not a guess by the copilot or the Decision API (2026-11-13).
+  const focused=()=>{const id=deps.focus?.get();return id?uniqueSessionID(rows,id):undefined}
+  if(!denied&&isHere(asked)){
+    const screen=deps.screen?.()
+    // A row from this machine's own list names no machine.
+    const shown=screen?rowOnScreen(screen.machine?rows.filter(r=>!r.machine||r.machine===screen.machine):rows,screen.ids):undefined
+    const row=(shown?uniqueSessionID(rows,shown.id):undefined)??focused()
+    if(row)return finish({row})
+  }
   const spoken=deps.spokenReference?.(asked)
   if(spoken || relativeSession(asked)!==undefined){
     const row=spoken?.target?uniqueSessionID(rows,spoken.target.id):undefined
@@ -1023,7 +1041,10 @@ export async function resolveRead(
   // is about the Session the copilot is already reading. On 2026-11-13 the
   // Decision API matched that sentence's 「修正」 to another Session whose
   // delivery said 已修正, and the person heard a third Session's fix.
-  if ('row' in direct && pointsBack(asked)) return finish(direct)
+  if (pointsBack(asked)) {
+    const row = focused() ?? ('row' in direct ? direct.row : undefined)
+    if (row) return finish({ row })
+  }
   if (!asked || !deps.decide || rows.length === 0) return finish(direct)
   let decided: SessionDecision
   try {

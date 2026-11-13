@@ -880,6 +880,27 @@ test("a follow-up that names its Session only by a pronoun stays on the copilot'
   assert.equal(JSON.parse(other).session_id, "%9", other)
 })
 
+test("「我這個 Session」 is the Session on screen, read by the program, never decided by a model", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }, { pending: false, readable: true, text: "login" }], "%7": [{ pending: false, readable: true, text: "flaky" }] })
+  deps.decide = async () => assert.fail("where the person is is not a model's guess")
+  deps.screen = () => ({ ids: ["%9"] })
+  for (const heard of ["我這個Session他最後的結論是什麼", "我現在所在的這個 Session 在做什麼", "what is this session doing?"]) {
+    deps.heard = () => heard
+    const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output)
+    assert.equal(out.session_id, "%9", heard)
+  }
+})
+
+test("a pronoun follow-up is the Session the call is talking about, whatever id the copilot passed", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "voice recap" }] })
+  deps.decide = async () => assert.fail("a pronoun is not a model's guess")
+  let focus: string | undefined = "%9"
+  deps.focus = { get: () => focus, set: (id) => { focus = id } }
+  deps.heard = () => "請問他說的修正法"
+  const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output)
+  assert.equal(out.session_id, "%9")
+})
+
 test("the Decision API is told which Session the copilot is already talking about", async () => {
   const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }], "%7": [{ pending: false, readable: true, text: "flaky" }] })
   const told: (string | undefined)[] = []
