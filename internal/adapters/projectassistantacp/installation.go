@@ -213,10 +213,13 @@ func readInstallation(ctx context.Context, state string) (ClaudeInstallation, er
 }
 
 // claudeResumeQualified admits native session/load for the pinned artifact
-// set under nativeHistoryPolicy. It stays false until a real cross-process
-// round trip on exactly these pinned files has passed; static findings and
-// scripted peers are not that evidence.
-var claudeResumeQualified = false
+// set under nativeHistoryPolicy. A real cross-process round trip on exactly
+// these pinned files passed on 2026-11-14: a new process loaded the same
+// native session and answered a code word that only the earlier turn held,
+// with no credential-shaped file written and forgotten or foreign bindings
+// refused before any native start. Changing a pinned digest or the history
+// policy needs that proof again; scripted peers are not that evidence.
+var claudeResumeQualified = true
 
 func nativeLimits() Limits {
 	return Limits{RPCPending: capacity.MaximumBotRPCPending, IncomingPermissions: capacity.MaximumBotPermissions, Notifications: capacity.MaximumBotNotifications, FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotCaptureBytes, StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants, WriteTimeout: time.Duration(capacity.MaximumBotWriteMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: time.Duration(capacity.MaximumBotRPCMilliseconds) * time.Millisecond, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond}

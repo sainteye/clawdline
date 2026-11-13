@@ -3546,7 +3546,7 @@
     "internal/adapters/planner/voice_work.go": "a687718d648d1924327a74a9a973dd7c34a8d94c7c7d8fb7cb14067019823595",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
     "internal/adapters/projectassistantacp/client.go": "03af753043fa5fe0d0d3282b0c8bc6fa160934090affb6bbc83a3fa50d10131a",
-    "internal/adapters/projectassistantacp/installation.go": "557fa416cc647479b221a2867db2d17d48cb9b6d4443a48472b1df8eb33de29b",
+    "internal/adapters/projectassistantacp/installation.go": "1e1def23e79d3cc63895ee2dae493f4378d140f65bd76ab0cda8084240d08771",
     "internal/adapters/projectassistantacp/installation_isolation.go": "23ef261e0be60a3299bb28996ec2961b98616e161ab08910f2b527966de608a2",
     "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
     "internal/adapters/projectassistantacp/session_configuration.go": "700776ccf31a781ae2478316c99ba4ac1178c2ef38f97847bbe1161ee077b522",
@@ -3652,7 +3652,7 @@
     "web/console/src/voice-work/runtime.ts": "278b3b8bcfce334142062b98e37e8b9229de96dc1fdca92531ed863fea56f656"
   },
   "copyChecks": {
-    "en": "0e0fb9869c5dd082fddcfc4932e47a48d37af4b85cb50de3a5242806ad36f252",
-    "zh-Hant": "c21ec9fc8d716265dcfdf9d0d477bad3f661ffac6700b5d9e85980bed6b03f66"
+    "en": "92331ffac4ef5f77322a5f480eaf98c67de69e5b65895137074b192f1f40e35e",
+    "zh-Hant": "ff9d29b1453cee826fa373dc1231ad4d0eae2de0cd9c0293754e6117a52d39b1"
   }
 }

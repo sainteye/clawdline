@@ -11195,7 +11195,7 @@
   "transparency.card.notice.title": "Child／callback 完成通知",
   "transparency.card.persistent-bots.condition": "只有明確啟用持續 Bots，且所選原生助理通過就緒檢查時才適用。功能預設關閉；缺少證據時無法傳送。",
   "transparency.card.persistent-bots.effect": "建立、瀏覽、切換或匯出紀錄不啟動模型呼叫。唯讀強制與原生記憶隔離須各自取得證據；此清單與合成測試不代表真實原生助理已就緒。明確執行本機設定會固定既有檔案雜湊，並驗證作業系統的寫入、程式執行與記憶限制，不會啟動接頭；設定本身不啟用 Bots，也不證明已登入或能取得模型回覆。",
-  "transparency.card.persistent-bots.how": "新 Session 會收到確切的 Bot、Project、回合指示與過濾後記憶，以及未完工作參照和歷史書籤；這些參照不授權重播。安全的原生接續沿用原路徑；已忘記的來源不得透過舊引用或不安全的接續重新進入。原生 Session 也會收到固定指示與一個自有 MCP 入口，用於明確傳訊、隔離派工及查詢工作狀態；這些設定不代表已證明原生強制限制。已設定的 Claude 路徑會把原生對話存在本功能自有的目錄，依 Bot、Project、對話以及記憶、遺忘與指示版本各自分開；個人 Claude 歷史、其他 Bot 與舊版本都無法讀取，目錄內的原生記憶與憑證檔也一律拒絕。提示建議與進度摘要維持關閉。在另行核准的實際往返驗證之前，不會接續這份原生歷史；程序重開後，仍以新的原生工作階段接收應用程式篩選過的脈絡。",
+  "transparency.card.persistent-bots.how": "新 Session 會收到確切的 Bot、Project、回合指示與過濾後記憶，以及未完工作參照和歷史書籤；這些參照不授權重播。安全的原生接續沿用原路徑；已忘記的來源不得透過舊引用或不安全的接續重新進入。原生 Session 也會收到固定指示與一個自有 MCP 入口，用於明確傳訊、隔離派工及查詢工作狀態；這些設定不代表已證明原生強制限制。已設定的 Claude 路徑會把原生對話存在本功能自有的目錄，依 Bot、Project、對話以及記憶、遺忘與指示版本各自分開；個人 Claude 歷史、其他 Bot 與舊版本都無法讀取，目錄內的原生記憶與憑證檔也一律拒絕。提示建議與進度摘要維持關閉。記憶、已忘記來源與指示都沒變時，程序重開後會接續同一個原生工作階段；任何一項改變都會改用全新的空目錄，以新的原生工作階段接收應用程式篩選過的脈絡。",
   "transparency.card.persistent-bots.summary": "傳送時擷取 Bot 的固定指示與篩選後的儲存脈絡；引用訊息須先查核來源與記憶版本，才會加入。",
   "transparency.card.persistent-bots.title": "持續 Bot 的回合脈絡",
   "transparency.card.playbook.condition": "使用者選了 Playbook 並送出",
