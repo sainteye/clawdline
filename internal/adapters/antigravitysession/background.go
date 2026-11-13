@@ -51,6 +51,8 @@ type nativeWatch struct {
 	offset int64
 	// tasks maps a native background task ID to the tool row it updates.
 	tasks map[string]string
+	// descriptions maps a native background task ID to its command or description.
+	descriptions map[string]string
 	// awaiting lists, in order, the tools of Gemini's own turn whose result
 	// row has not been read yet.
 	awaiting []string
@@ -264,7 +266,7 @@ func (h *Host) watchBackground(c *conversation) {
 			}
 		}
 	}
-	w := &nativeWatch{path: path, file: info, offset: consumed, tasks: map[string]string{}, step: last, stop: make(chan struct{})}
+	w := &nativeWatch{path: path, file: info, offset: consumed, tasks: map[string]string{}, descriptions: map[string]string{}, step: last, stop: make(chan struct{})}
 	for task, desc := range started {
 		var match []string
 		for id, title := range running {
@@ -274,6 +276,7 @@ func (h *Host) watchBackground(c *conversation) {
 		}
 		if len(match) == 1 {
 			w.tasks[task] = match[0]
+			w.descriptions[task] = desc
 			delete(running, match[0])
 		}
 	}
@@ -288,12 +291,14 @@ func (h *Host) watchBackground(c *conversation) {
 	if len(schedules) == 1 && latestTimer != "" {
 		if _, taken := w.tasks[latestTimer]; !taken {
 			w.tasks[latestTimer] = schedules[0]
+			w.descriptions[latestTimer] = started[latestTimer]
 		}
 	}
 	if len(w.tasks) == 0 {
 		return
 	}
 	c.watch = w
+	c.changed()
 	client := c.client
 	h.jobs.Add(1)
 	go h.followBackground(c, w, client)
@@ -397,6 +402,7 @@ func (h *Host) applyNative(c *conversation, w *nativeWatch, r nativeRow) error {
 		}
 		if id, ok := w.tasks[task]; ok {
 			delete(w.tasks, task)
+			delete(w.descriptions, task)
 			if err := c.nativeTool(id, status, nil); err != nil {
 				return err
 			}
@@ -407,6 +413,7 @@ func (h *Host) applyNative(c *conversation, w *nativeWatch, r nativeRow) error {
 			// Gemini answers its own task's message with a turn of its own.
 			c.nativeTurn = true
 			c.touchActivity()
+			c.changed()
 		}
 		return nil
 	}
@@ -452,6 +459,7 @@ func (h *Host) applyNative(c *conversation, w *nativeWatch, r nativeRow) error {
 			if tool, ok := w.tasks[m[1]]; ok {
 				if done := nativeTaskStatus(m[2]); done != "" {
 					delete(w.tasks, m[1])
+					delete(w.descriptions, m[1])
 					if err := c.nativeTool(tool, done, nil); err != nil {
 						return err
 					}
@@ -461,6 +469,8 @@ func (h *Host) applyNative(c *conversation, w *nativeWatch, r nativeRow) error {
 		if r.Status == "RUNNING" {
 			if m := taskStartedPattern.FindStringSubmatch(r.Content); m != nil {
 				w.tasks[m[1]] = id
+				w.descriptions[m[1]] = taskDescription(r.Content)
+				c.changed()
 				return nil
 			}
 		}

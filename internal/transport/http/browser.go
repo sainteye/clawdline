@@ -30,7 +30,7 @@ import (
 //   - POST /v1/browser/mute           {conversation, muted}; one Session's new-site notification, a person who may send
 //   - GET  /v1/browser/activity       ?conversation=; a Session's recent actions with a picture of each, a person who may read
 //   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
-//   - GET/POST /v1/browser/settings   the two browser switches and nothing else; writing needs a person who may send
+//   - GET/POST /v1/browser/settings   ordered automatic selection and new-site notifications; writing needs a person who may send
 //   - GET  /v1/browser/setup          the setup guide's read (browser_launch.go)
 //   - POST /v1/browser/launch         start Clawdline's own Chromium; a person who may send
 func (s *Server) browserRoutes() []route {
@@ -57,6 +57,9 @@ func (s *Server) browserRoutes() []route {
 func (s *Server) browser() *browserbridge.Bridge {
 	s.browserMu.Lock()
 	defer s.browserMu.Unlock()
+	if s.browserProfiles != nil {
+		return s.browserProfiles.Legacy()
+	}
 	if s.browserBridge == nil {
 		if s.cfg.Dir == "" {
 			s.browserBridge = browserbridge.New(s.announceBrowserSite)
@@ -77,30 +80,16 @@ func (s *Server) browser() *browserbridge.Bridge {
 // setBrowserAwareSettings serializes permission changes with bridge refreshes.
 // The config remains the only persisted source of the enabled setting.
 func (s *Server) setBrowserAwareSettings(f *nextconfig.File, changes map[string]any) (nextconfig.Values, error) {
-	s.browserMu.Lock()
-	defer s.browserMu.Unlock()
-	_, modeChanged := changes["browser_mode"]
-	_, enabledChanged := changes["browser_enabled"]
-	if s.browserBridge == nil || (!modeChanged && !enabledChanged) {
-		return f.Set(changes)
+	if _, ok := changes["browser_policy"]; ok {
+		return s.setBrowserPolicySettings(f, changes)
 	}
-	current, err := f.Read()
-	if err != nil {
-		return current, err
+	if _, ok := changes["browser_mode"]; ok {
+		return s.setBrowserPolicySettings(f, changes)
 	}
-	mode := current.BrowserMode()
-	if value, ok := changes["browser_mode"].(string); ok {
-		mode = value
-	} else if enabled, ok := changes["browser_enabled"].(bool); ok {
-		if !enabled {
-			mode = nextconfig.BrowserModeNative
-		} else if mode == nextconfig.BrowserModeNative {
-			mode = nextconfig.BrowserModeIsolated
-		}
+	if _, ok := changes["browser_enabled"]; ok {
+		return s.setBrowserPolicySettings(f, changes)
 	}
-	values := current
-	err = s.browserBridge.ApplyMode(mode, func() error { var writeErr error; values, writeErr = f.Set(changes); return writeErr })
-	return values, err
+	return f.Set(changes)
 }
 
 func (s *Server) browserMode() string {
@@ -168,14 +157,12 @@ func (s *Server) browserCommandRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		Conversation string          `json:"conversation"`
+		Mode         string          `json:"browser_mode,omitempty"`
+		Explicit     bool            `json:"explicit,omitempty"`
 		Op           string          `json:"op"`
 		Args         json.RawMessage `json:"args"`
 	}
 	if !readBrowserBody(w, r, browserbridge.MaxArgBytes+4096, &in) {
-		return
-	}
-	if !s.browserSetting("browser_enabled") {
-		writeRefusal(w, http.StatusForbidden, "browser_disabled", "Clawdline browser access is off. The person can choose a mode in Settings, Sessions and access, Clawdline browser.")
 		return
 	}
 	if s.broker == nil {
@@ -186,7 +173,12 @@ func (s *Server) browserCommandRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "session_unresolved", "Browser commands must come from a live Session on this machine.")
 		return
 	}
-	value, err := s.browser().Do(r.Context(), in.Conversation, in.Op, in.Args)
+	policy, err := s.browserPolicy()
+	if err != nil {
+		writeBrowserError(w, browserbridge.StateWriteFailed)
+		return
+	}
+	value, err := s.browsers().DoSession(r.Context(), in.Conversation, in.Op, in.Args, policy, in.Mode, in.Explicit)
 	if err != nil {
 		writeBrowserError(w, err)
 		return
@@ -198,12 +190,20 @@ func (s *Server) browserCommandRoute(w http.ResponseWriter, r *http.Request) {
 func writeBrowserError(w http.ResponseWriter, err error) {
 	if refusal, ok := browserbridge.IsRefusal(err); ok {
 		switch refusal {
+		case browserbridge.SetupRequired:
+			writeRefusal(w, http.StatusConflict, string(refusal), "This browser's extension setup is not confirmed. Open its setup instructions in Settings, Browser.")
+		case browserbridge.NativeTools:
+			writeRefusal(w, http.StatusConflict, string(refusal), "Use this agent's native browser tools. If they are unavailable, consult the browser priority and automatic-selection switches before choosing another browser.")
+		case browserbridge.SessionChoicesFull:
+			writeRefusal(w, http.StatusTooManyRequests, string(refusal), "The saved Session browser-choice limit has been reached. Existing Sessions and tabs are retained; no new choice was saved.")
+		case browserbridge.SessionBusy:
+			writeRefusal(w, http.StatusConflict, string(refusal), "This Session still has a browser operation in progress. Wait for its result before choosing another browser.")
 		case browserbridge.WrongMode:
 			writeRefusal(w, http.StatusConflict, string(refusal), "This Chrome profile is not the selected browser mode.")
 		case browserbridge.Closing:
 			writeRefusal(w, http.StatusConflict, string(refusal), "This tab is closing. Wait for its result before taking over or sending another command.")
 		case browserbridge.Disabled:
-			writeRefusal(w, http.StatusForbidden, string(refusal), "Clawdline browser access is off. The person can choose a mode in Settings, Sessions and access, Clawdline browser.")
+			writeRefusal(w, http.StatusForbidden, string(refusal), "Automatic selection is off for this browser. Use Settings, Browser, or honor the person's explicit request for this Session after setup is complete.")
 		case browserbridge.StateWriteFailed:
 			writeRefusal(w, http.StatusServiceUnavailable, string(refusal), "The browser control state could not be saved. Keep Clawdline running and retry before restarting. Browser use remains paused.")
 		case browserbridge.SecretInputFailed:
@@ -248,22 +248,17 @@ func (s *Server) browserHostPollRoute(w http.ResponseWriter, r *http.Request) {
 	if !readBrowserBody(w, r, 4096, &info) {
 		return
 	}
-	bridge := s.browser()
-	if !bridge.AcceptsHost(info) {
-		if s.browserMode() == "native" && bridge.ProbeSetupHost(r.Context(), info) {
-			w.Header().Set("Cache-Control", "no-store")
-			writeJSON(w, map[string]any{"commands": []browserbridge.Command{}})
-			return
-		}
-		writeRefusal(w, http.StatusForbidden, "browser_wrong_mode", "This Chrome profile is not the selected browser mode.")
+	profiles := s.browsers()
+	if profiles.StateError() {
+		writeBrowserError(w, browserbridge.StateWriteFailed)
+		return
+	}
+	bridge, err := profiles.Channel(info.Mode)
+	if err != nil || !bridge.AcceptsHost(info) {
+		writeBrowserError(w, browserbridge.WrongMode)
 		return
 	}
 	commands := bridge.Poll(r.Context(), info)
-	if !s.browserSetting("browser_enabled") && len(commands) > 0 {
-		// The setting was turned off while commands waited; none of them runs.
-		s.browser().Deliver(refuseAll(commands))
-		commands = []browserbridge.Command{}
-	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]any{"commands": commands})
 }
@@ -282,12 +277,13 @@ func (s *Server) browserHostResultsRoute(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var in struct {
+		Mode    string                 `json:"browser_mode,omitempty"`
 		Results []browserbridge.Result `json:"results"`
 	}
 	if !readBrowserBody(w, r, browserbridge.MaxResultBytes, &in) {
 		return
 	}
-	if err := s.browser().Deliver(in.Results); err != nil {
+	if err := s.browsers().Deliver(in.Mode, in.Results); err != nil {
 		writeBrowserError(w, err)
 		return
 	}
@@ -311,10 +307,25 @@ func (s *Server) browserStatusRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may read.")
 		return
 	}
-	st := s.browser().Status()
+	for key, values := range r.URL.Query() {
+		if key != "conversation" || len(values) != 1 || values[0] == "" {
+			writeBrowserError(w, browserbridge.BadRequest)
+			return
+		}
+	}
+	conversation := r.URL.Query().Get("conversation")
+	if len(conversation) > 128 {
+		writeBrowserError(w, browserbridge.BadRequest)
+		return
+	}
+	policy, err := s.browserPolicy()
+	if err != nil {
+		writeBrowserError(w, browserbridge.StateWriteFailed)
+		return
+	}
+	mode, st, profiles := s.browsers().SelectedStatus(conversation, policy)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"ok": true, "mode": s.browserMode(), "enabled": s.browserSetting("browser_enabled"),
-		"notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
+	writeJSON(w, map[string]any{"ok": true, "mode": mode, "enabled": mode != "native" && profiles[mode].Ready, "browser_policy": policy, "profiles": profiles, "notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
 }
 
 func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
@@ -344,10 +355,10 @@ func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		filter.Since = since
 	}
-	rows, pruned := s.browser().Find(filter, limit)
+	rows, pruned := s.browsers().Find(filter, limit)
 	w.Header().Set("Cache-Control", "no-store")
 	saved := ""
-	if err := s.browser().JournalErr(); err != nil {
+	if err := s.browsers().JournalErr(); err != nil {
 		saved = "The audit could not be written to disk; recent rows are kept only until the daemon restarts."
 	}
 	writeJSON(w, map[string]any{"ok": true, "rows": rows, "pruned": pruned, "journal_error": saved})
@@ -369,7 +380,7 @@ func (s *Server) browserStopRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
 		return
 	}
-	if err := s.browser().SetStopped(in.Stopped); err != nil {
+	if err := s.browsers().SetStopped(in.Stopped); err != nil {
 		writeBrowserError(w, err)
 		return
 	}
@@ -393,7 +404,7 @@ func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the tab to take over or hand back.")
 		return
 	}
-	if err := s.browser().SetPersonControlForMode(in.Tab, in.Person, in.Mode); err != nil {
+	if err := s.browsers().SetPersonControl(in.Mode, in.Tab, in.Person); err != nil {
 		writeBrowserError(w, err)
 		return
 	}
@@ -426,7 +437,7 @@ func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
 		return
 	}
-	value, err := s.browser().PersonDoForMode(r.Context(), in.Op, in.Tab, in.Args, in.Mode)
+	value, err := s.browsers().PersonDo(r.Context(), in.Mode, in.Op, in.Tab, in.Args)
 	if err != nil {
 		writeBrowserError(w, err)
 		return
@@ -455,7 +466,7 @@ func (s *Server) browserScreenshotRoute(w http.ResponseWriter, r *http.Request) 
 	if q, err := strconv.Atoi(r.URL.Query().Get("quality")); err == nil && q >= 20 && q <= 80 {
 		args = json.RawMessage(`{"quality":` + strconv.Itoa(q) + `}`)
 	}
-	value, err := s.browser().PersonDoForMode(r.Context(), "screenshot", tab, args, r.URL.Query().Get("browser_mode"))
+	value, err := s.browsers().PersonDo(r.Context(), r.URL.Query().Get("browser_mode"), "screenshot", tab, args)
 	if err != nil {
 		writeBrowserError(w, err)
 		return
@@ -480,7 +491,7 @@ func (s *Server) browserMuteRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the Session's conversation.")
 		return
 	}
-	if err := s.browser().SetMuted(in.Conversation, in.Muted); err != nil {
+	if err := s.browsers().SetMuted(in.Conversation, in.Muted); err != nil {
 		writeBrowserError(w, err)
 		return
 	}
@@ -505,14 +516,12 @@ func (s *Server) browserActivityRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"ok": true, "rows": s.browser().RecentActivity(conversation, browserbridge.MaxActivityThumbs)})
+	writeJSON(w, map[string]any{"ok": true, "rows": s.browsers().RecentActivity(conversation, browserbridge.MaxActivityThumbs)})
 }
 
-// browserSettingsRoute is the Settings page's Browser block: the two machine
-// switches and nothing else, so a phone through Clawdline Cloud
-// (chrome-settings, chrome-settings-update) can change only these. Both are
-// off on a new machine. An agent may not turn its own browser use on. (It is
-// not /v1/settings/browser, which is the local console's own settings.)
+// browserSettingsRoute carries only browser priority, automatic switches and
+// notification preference to a sending person device, including through Cloud.
+// Agent commands use the separate Session choice route and cannot write policy.
 func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	if machineAuthed(r) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "Only the person may read or change the browser settings.")
@@ -542,9 +551,18 @@ func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		changes := make(map[string]any, len(body))
 		for name, raw := range body {
-			if name != "browser_mode" && name != "browser_enabled" && name != "browser_notify_new_site" {
+			if name != "browser_policy" && name != "browser_mode" && name != "browser_enabled" && name != "browser_notify_new_site" {
 				writeRefusal(w, http.StatusBadRequest, "bad_request", "Not a browser setting key: "+name)
 				return
+			}
+			if name == "browser_policy" {
+				policy, err := nextconfig.DecodeBrowserPolicy(raw)
+				if err != nil {
+					writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Choose each browser once in priority order with an automatic selection switch.")
+					return
+				}
+				changes[name] = policy
+				continue
 			}
 			if name == "browser_mode" {
 				var mode string
@@ -564,7 +582,11 @@ func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(changes) != 0 {
 			if _, err := s.setBrowserAwareSettings(f, changes); err != nil {
-				writeSettingsFailure(w, f, err)
+				if _, ok := browserbridge.IsRefusal(err); ok {
+					writeBrowserError(w, err)
+				} else {
+					writeSettingsFailure(w, f, err)
+				}
 				return
 			}
 		}
@@ -580,5 +602,10 @@ func (s *Server) browserSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	enabled, _ := values.Bool("browser_enabled")
 	notify, _ := values.Bool("browser_notify_new_site")
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"browser_mode": values.BrowserMode(), "browser_enabled": enabled, "browser_notify_new_site": notify})
+	policy, err := values.BrowserPolicy()
+	if err != nil {
+		writeSettingsFailure(w, f, err)
+		return
+	}
+	writeJSON(w, map[string]any{"browser_policy": policy, "browser_mode": values.BrowserMode(), "browser_enabled": enabled, "browser_notify_new_site": notify})
 }

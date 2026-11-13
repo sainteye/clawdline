@@ -4,6 +4,7 @@ package capacity
 // screens.* and voice.*: pictures, icons, screen captures and voice models.
 func artifactsBounds() []Entry {
 	return []Entry{
+		{Name: "voice.work_auto_continue", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxAutoContinue"}},
 		{Name: "voice.work_plan_rounds", Class: Buffer, Unit: Rows, Limit: 4, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxPlanRounds"}},
 		{Name: "voice.work_progress", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/voicework.MaxProgress"}},
 		{Name: "voice.work_request_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 10000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},

@@ -121,7 +121,8 @@ the exact Session, machine and conversation captured when speech starts. Switchi
 the screen while transcription finishes cannot rewrite that identity. Read tools
 answer ordinary Session questions immediately, without a CLI planning turn. For
 continuing work the voice model calls `queue_voice_work` with original saved input
-IDs; it cannot paraphrase the saved request or perform a direct mutation. This
+IDs; a single plain message instead uses the deterministic proposal path below.
+It cannot paraphrase the saved request or perform a direct mutation. This
 routing still depends on model compliance and needs recorded-call acceptance.
 
 Explicit submission promotes those inputs for the organizer. Each input may carry
@@ -145,16 +146,16 @@ startup and failure polling never retry a provider. If failure metadata cannot b
 saved, the worker stops rather than re-entering the provider loop. Logs retain
 stages, input IDs and error types without prompts, provider output or secrets.
 
-The existing work JSON stores these optional fields without a SQLite schema
-migration. GET/POST work replies advertise protocol 3. Managed calls check the
+The existing work JSON stores these optional fields, batch selections and message
+receipts without a SQLite schema migration. GET/POST work replies advertise protocol 3. Managed calls check the
 selected machine before proceeding and refuse older daemons explicitly. Install
 the compatible daemon before rolling out the new hosted client; a console build
 alone does not upgrade a paired machine. Direct calls keep their existing path.
 
 ## Quiet, evidence-backed call opening
 
-Opening the general assistant waits silently for the person. It creates no
-spoken greeting, durable input or planner turn. A call placed inside a Session
+After the local ready cue, the general assistant waits for the person without
+generating a greeting, durable input or planner turn. A call placed inside a Session
 reads that exact Session's bounded recap and outstanding notes concurrently,
 then requests one short handover containing both results. The call does not
 route that implicit opening through the planner, narrate its internal stages,
@@ -302,7 +303,10 @@ proposal eligible for a fresh explicit send utterance. Runtime and server bind
 consent to the saved utterance, call, workspace, task and version. Bare agreement,
 a model-provided confirmation flag, interrupted or inaccurate narration, a changed
 version and another call cannot approve it. The existing work-list button remains
-available for exact-spec confirmation.
+available for exact-spec confirmation. A mistaken plain-reply tool is converted
+to the same proposal only when the fresh directory has no live menu. Preparation
+and execution both refuse a live structured menu; they never guess a key or
+turn a menu choice into unreviewed text.
 
 This newer consent authorizes only the particular new message over earlier
 unresolved inbox entries. It does not dismiss those entries or release older
@@ -333,3 +337,64 @@ elapsed idle time. The current directory supplies confirmed activity/delivery
 timestamps rather than an exact transition-to-idle timestamp; this estimate and
 unknown times are explicit in the tool result. Older transcripts are not fetched.
 An explicit all-idle request bypasses the recent window.
+
+
+## Automatic continuation allowance
+
+The machine defaults to three automatically continued durable read tasks per
+batch. This is neither the two-read concurrency limit nor the retained inbox
+capacity. A grouped Session summary is one work item; direct conversational
+queries remain immediate reads. The organizer retains overflow, merges duplicate
+requests and preserves real dependencies. It does not gain execution authority.
+Important writes still require exact-spec confirmation, and ambiguous targets or
+missing facts still require a question; model confidence is not authorization.
+
+The ledger stores the batch and exact task versions, shared across executors and
+surviving reloads. A completed, failed, cancelled or superseded slot consumes the
+allowance without implying success. Once the batch settles, queued ready read
+candidates are shown and announced in order. The work-page button or a fresh
+explicit spoken continuation after those titles finish playing admits only that
+selection. A newer task cannot steal an unused reviewed slot. Changed versions,
+selection or settings require a fresh offer. Approval never releases unconfirmed
+writes. The setting applies to the next batch. Explicit retry of a failed read is
+a separate person action, not silent automatic retry. Old machines omit the
+capability and controls; update the machine before relying on batch enforcement.
+
+
+## Spoken Session references and presentation batches
+
+The realtime conversation includes the assistant's previous responses. That
+alone does not give a separate selector model the earlier speaking order. A
+recorded call showed the selector replacing even a correct Session ID when
+it received only the latest relative phrase. Exact names in the actual
+utterance and verified spoken references now take precedence over classification.
+Descriptive words can still use the existing selector; writes retain their
+separate identity and confirmation gates.
+
+A call-local ledger matches known Session names against a completed spoken
+transcript, records their actual text order only after playback finishes, and
+binds each to machine, conversation, label and ID. A fresh directory must still
+match that identity. Generated or interrupted speech, duplicate names and
+unrecognized aliases cannot prove order: ask for a name rather than guessing.
+A later detail keeps the previous multi-Session list available for ordinals.
+The reference window holds 24 recent identities and clears on call end or
+machine switch. The journal stores text and tool evidence, not replayable audio.
+
+A call's group report reads two or three Sessions for its current response
+(four remaining are split two and two). Only one next batch is prefetched while
+that response is spoken. It is not sent to the reporter until the current
+batch's matched names finish playback. Interruption pauses subsequent speech;
+explicit presentation continuation resumes the retained batch. Unheard words
+are not marked as covered. Remaining-only requests exclude recently presented
+IDs. Every later read rechecks the captured identity instead of reading a pane's
+replacement. Each report covers at most 24 Sessions and explicitly discloses
+any unread overflow; it does not claim complete coverage beyond that window.
+This presentation queue is separate from the durable task allowance and grants
+no write approval. Neither reference tracking nor prefetch starts another model.
+Separate spoken responses still consume the existing voice service normally.
+
+Synthetic held-read and event tests exercise sequencing, interruption and
+identity preservation in direct and managed calls. They do not establish actual
+prosody, listener understanding or production latency. If the latest reply is
+only implementation detail, delivery guidance asks for the bounded recap of
+original requests instead of repeating the same jargon or inventing a goal.

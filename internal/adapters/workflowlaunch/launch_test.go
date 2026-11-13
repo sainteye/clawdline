@@ -2,6 +2,7 @@ package workflowlaunch
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/workflow"
@@ -252,5 +253,30 @@ func TestBrowserUseIsToldToEachNewExecutionButNeverToAResume(t *testing.T) {
 	legacy, err := service.Prepare(ctx, t.TempDir(), "", "legacy")
 	if err != nil || legacy.Text != workflow.BrowserUseInstructions() {
 		t.Fatalf("legacy child: %q %v", legacy.Text, err)
+	}
+}
+
+func TestOrderedBrowserPolicyTeachesExplicitChoicesEvenWhenAutomaticUseIsOff(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dir := t.TempDir()
+	service := Service{Store: st, Dir: dir, Resolve: skills.ResolveWorkflow}
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "clawdline", "browser_policy": json.RawMessage(`{"order":["native","isolated","user_chrome"],"automatic":{"native":false,"isolated":false,"user_chrome":false}}`)}); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := service.Prepare(ctx, t.TempDir(), "", "")
+	if err != nil || !strings.Contains(prepared.Text, "--explicit") || !strings.Contains(prepared.Text, "automatic switches") {
+		t.Fatalf("missing policy guidance: %q %v", prepared.Text, err)
+	}
+	if err := prepared.Bind(ctx, "%91", "ordered-browser-parent"); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := service.Prepare(ctx, t.TempDir(), "ordered-browser-parent", "")
+	if err != nil || resumed.Text != "" {
+		t.Fatalf("resume changed frozen launch: %q %v", resumed.Text, err)
 	}
 }

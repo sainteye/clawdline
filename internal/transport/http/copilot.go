@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/copilot"
+	"github.com/sainteye/clawdline/internal/domain/voicework"
 )
 
 // The voice copilot's machine side (docs/voice.md, "Voice copilot").
@@ -103,6 +104,8 @@ func (s *Server) changeCopilot(c copilot.Change) (copilot.Settings, error) {
 // copilotSettingsAnswer is the Settings card: every choice and what the
 // machine offers for it, and of the key only whether it is set.
 type copilotSettingsAnswer struct {
+	WorkAutoContinue   int      `json:"work_auto_continue"`
+	MaxAutoContinue    int      `json:"max_auto_continue"`
 	KeySet             bool     `json:"key_set"`
 	KeyHint            string   `json:"key_hint"`
 	Model              string   `json:"model"`
@@ -126,6 +129,7 @@ type copilotSettingsAnswer struct {
 func copilotAnswer(v copilot.Settings) copilotSettingsAnswer {
 	e := v.Effective()
 	return copilotSettingsAnswer{
+		WorkAutoContinue: e.WorkAutoContinue, MaxAutoContinue: voicework.MaxAutoContinue,
 		KeySet: strings.TrimSpace(v.Key) != "", KeyHint: v.KeyHint(),
 		Model: e.Model, Eagerness: e.Eagerness, Voice: e.Voice, Speed: e.Speed, ExtraInstructions: e.ExtraInstructions,
 		Briefing: !e.BriefingOff, Brief: !e.LongAnswers, BriefingAssistant: e.BriefingAssistant, WorkEnabled: e.WorkEnabled, WorkAssistant: e.WorkAssistant,
@@ -161,7 +165,7 @@ func (s *Server) copilotSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, copilot.ErrBadKey):
 			writeRefusal(w, http.StatusBadRequest, "copilot_bad_key", "An OpenAI API key starts with sk- and has no spaces.")
-		case errors.Is(err, copilot.ErrBadModel), errors.Is(err, copilot.ErrBadEagerness), errors.Is(err, copilot.ErrBadVoice), errors.Is(err, copilot.ErrBadSpeed), errors.Is(err, copilot.ErrBadAssistant):
+		case errors.Is(err, copilot.ErrBadContinuation), errors.Is(err, copilot.ErrBadModel), errors.Is(err, copilot.ErrBadEagerness), errors.Is(err, copilot.ErrBadVoice), errors.Is(err, copilot.ErrBadSpeed), errors.Is(err, copilot.ErrBadAssistant):
 			writeRefusal(w, http.StatusBadRequest, err.Error(), "That choice is not one this machine offers.")
 		case errors.Is(err, copilot.ErrBadInstructions):
 			writeRefusal(w, http.StatusBadRequest, "copilot_bad_instructions", "The extra instructions are too long.")

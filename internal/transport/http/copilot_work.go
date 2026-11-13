@@ -40,6 +40,7 @@ var voiceWorkPlan = func(ctx context.Context, input, assistant string) (planner.
 const voiceWorkProtocol = 3
 
 type voiceWorkRequest struct {
+	Batch           *voicework.BatchOffer    `json:"batch"`
 	Context         string                   `json:"context"`
 	Deferred        bool                     `json:"deferred"`
 	Focus           *voicework.Focus         `json:"focus"`
@@ -98,7 +99,7 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 		s.voiceWorkMu.Lock()
 		planning := s.voiceWorkRunning
 		s.voiceWorkMu.Unlock()
-		writeJSON(w, map[string]any{"state": state, "planning": planning, "protocol": voiceWorkProtocol, "message_confirmation": true})
+		writeJSON(w, map[string]any{"state": state, "planning": planning, "protocol": voiceWorkProtocol, "message_confirmation": true, "continuation": s.voiceContinuation(state), "auto_continue": true})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -152,11 +153,11 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 						target = &in.Sessions[i]
 					}
 				}
-				if target == nil {
+				if target == nil || len(target.Options) > 0 || target.MenuFingerprint != "" {
 					return voicework.ErrInvalid
 				}
 				for _, row := range in.Sessions {
-					if row.ID != target.ID && row.Label == target.Label {
+					if target.Label != "" && row.ID != target.ID && row.Label == target.Label {
 						return voicework.ErrAmbiguous
 					}
 				}
@@ -175,6 +176,16 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				return nil
+			case "continue_batch":
+				settings, err := s.readCopilot()
+				if err != nil || !settings.WorkEnabled || in.Batch == nil || len(in.InputIDs) > 1 {
+					return voicework.ErrConflict
+				}
+				input := ""
+				if len(in.InputIDs) == 1 {
+					input = in.InputIDs[0]
+				}
+				return state.Continue(*in.Batch, settings.Effective().WorkAutoContinue, in.Call, input)
 			case "confirm_message":
 				settings, err := s.readCopilot()
 				if err != nil || !settings.WorkEnabled || len(in.InputIDs) != 1 {
@@ -204,7 +215,7 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 				if in.ExecutorVersion != 2 || in.Tools == nil {
 					return voicework.ErrInvalid
 				}
-				claimed = state.ClaimFor(in.Runner, in.Call, in.Tools, now)
+				claimed = state.ClaimBatch(in.Runner, in.Call, in.Tools, now, settings.Effective().WorkAutoContinue)
 				return nil
 			case "begin_effect":
 				return state.BeginEffect(in.ID, in.Runner, in.Key, now)
@@ -240,7 +251,7 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		// Persist and acknowledge first. No handler waits for a model to answer.
-		writeJSON(w, map[string]any{"state": state, "claimed": claimed, "prepared": prepared, "protocol": voiceWorkProtocol, "message_confirmation": true})
+		writeJSON(w, map[string]any{"state": state, "claimed": claimed, "prepared": prepared, "protocol": voiceWorkProtocol, "message_confirmation": true, "continuation": s.voiceContinuation(state), "auto_continue": true})
 		if in.Action == "plan" || in.Action == "input" && in.Sessions != nil {
 			s.beginVoiceWork(in.Sessions, in.ToolContracts)
 		} else if in.Action == "finish" && len(state.ReadyPending()) > 0 {
@@ -363,7 +374,7 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 				log.Printf("voice-work: stage=admission outcome=focus_changed inputs=%v", ids)
 				continue
 			}
-			raw, _ := json.Marshal(map[string]any{"inputs": pending, "original_inputs": state.Inputs, "tasks": state.Tasks, "sessions": sessions, "tool_contracts": contracts, "language": s.productLanguage()})
+			raw, _ := json.Marshal(map[string]any{"auto_continue_limit": settings.Effective().WorkAutoContinue, "inputs": pending, "original_inputs": state.Inputs, "tasks": state.Tasks, "sessions": sessions, "tool_contracts": contracts, "language": s.productLanguage()})
 			log.Printf("voice-work: stage=provider outcome=start inputs=%v", ids)
 			stage := "provider"
 			plan, err := voiceWorkPlan(ctx, string(raw), settings.Effective().WorkAssistant)
@@ -484,4 +495,12 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 			log.Printf("voice-work: stage=apply outcome=planned inputs=%v changes=%d", ids, len(plan.Changes))
 		}
 	}()
+}
+
+func (s *Server) voiceContinuation(state voicework.State) *voicework.BatchOffer {
+	settings, err := s.readCopilot()
+	if err != nil || !settings.WorkEnabled {
+		return nil
+	}
+	return state.Continuation(settings.Effective().WorkAutoContinue)
 }

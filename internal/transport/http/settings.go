@@ -45,7 +45,7 @@ var browserSettings = map[string]bool{
 	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true, "grok_full_permission": true,
 	"setup_mode": true, "setup_completed_at": true, "setup_app_device": true, "setup_skipped": true,
 	// The browser setup guide (web/console/src/session/BrowserSetup.tsx).
-	"browser_mode": true, "browser_enabled": true, "browser_notify_new_site": true,
+	"browser_policy": true, "browser_mode": true, "browser_enabled": true, "browser_notify_new_site": true,
 }
 
 // notificationSettings is the machine-wide event policy. A device's ability
@@ -522,6 +522,14 @@ func settingsChanges(body map[string]json.RawMessage) (map[string]any, *settings
 			}
 			continue
 		}
+		if name == "browser_policy" {
+			policy, err := nextconfig.DecodeBrowserPolicy(raw)
+			if err != nil {
+				return nil, &settingsRefusal{"browser_bad_request", "The browser policy must list each browser once and give each one an automatic-selection switch."}
+			}
+			changes[name] = policy
+			continue
+		}
 		key, known := nextconfig.SettableByName(name)
 		if !known {
 			return nil, &settingsRefusal{"bad_request", "not a key this app sets: " + name}
@@ -597,7 +605,7 @@ func settingsRefusalMessage(key nextconfig.Settable, raw json.RawMessage) string
 // edit that happens to have written `path` into the file cannot set the answer's
 // own `path`.
 var settingsSnapshotKeys = func() map[string]bool {
-	out := map[string]bool{"on_state_change": true}
+	out := map[string]bool{"on_state_change": true, "browser_policy": true}
 	for _, key := range nextconfig.Settables {
 		out[key.Name] = true
 	}
@@ -629,6 +637,12 @@ func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) settingsSnapshotW
 			continue
 		}
 		raw, ok := v.Raw[name]
+		if name == "browser_policy" {
+			if policy, err := v.BrowserPolicy(); err == nil {
+				raw, _ = json.Marshal(policy)
+				ok = true
+			}
+		}
 		if name == "browser_mode" {
 			raw, _ = json.Marshal(v.BrowserMode())
 			ok = true
@@ -664,8 +678,8 @@ func writeSettingsFailure(w http.ResponseWriter, f *nextconfig.File, err error) 
 		writeBrowserError(w, err)
 		return
 	}
-	if errors.Is(err, nextconfig.ErrBrowserMode) {
-		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Choose one browser mode without conflicting enable settings.")
+	if errors.Is(err, nextconfig.ErrBrowserMode) || errors.Is(err, nextconfig.ErrBrowserPolicy) {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Choose a valid browser policy without mixing ordered selection and legacy mode settings.")
 		return
 	}
 

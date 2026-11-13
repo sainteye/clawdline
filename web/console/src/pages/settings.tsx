@@ -292,6 +292,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
         </div>
 
         <div className="settings-pane" id="settings-pane-0" role="tabpanel" aria-labelledby="settings-tab-0" hidden={tab !== 0}>
+          <BrowserSettingsBlock shown={shown && tab === 0} />
           <div className="settings-grid">
             <div className="settings-column">
 
@@ -484,7 +485,6 @@ function SettingsPage({ shown }: { shown: boolean }) {
         <div className="settings-pane" id="settings-pane-3" role="tabpanel" aria-labelledby="settings-tab-3" hidden={tab !== 3}>
           <WorkflowSettingsBlock shown={shown && tab === 3} />
           <IntegrationSettingsBlock shown={shown && tab === 3} />
-          <BrowserSettingsBlock shown={shown && tab === 3} />
           <IssueTrackersBlock shown={shown && tab === 3} />
         </div>
         {cloud && <div className="settings-pane" id="settings-pane-4" role="tabpanel" aria-labelledby="settings-tab-4" hidden={tab !== 4}>

@@ -1,4 +1,4 @@
-import { openBrowserSetup } from "../../session/BrowserSetup.js"
+import { BrowserPolicyRows } from "./BrowserPolicyRows.js"
 import type { SessionRow } from "@clawdline/contract"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { sessionName } from "../../brand-mark.js"
@@ -7,7 +7,7 @@ import * as L from "../../legacy/bridge.js"
 import { nextWord, type NextWord } from "../../next-strings.js"
 import {
   readBrowserAudit, readChromeSettings, readBrowserStatus, writeChromeSettings, writeBrowserStop,
-  type BrowserMode, type BrowserAudit, type BrowserAuditRow, type ChromeSettings, type BrowserStatus,
+  type BrowserPolicy, type BrowserAudit, type BrowserAuditRow, type ChromeSettings, type BrowserStatus,
 } from "./api.js"
 import { showModalWithoutChoice } from "../../modal-focus.js"
 import { Switch } from "./Switch.js"
@@ -52,15 +52,6 @@ function sinceOf(range: Range, now = new Date()): number {
   if (range === "week") return Math.floor(now.getTime() / 1000) - 7 * 86400
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   return Math.floor(midnight.getTime() / 1000)
-}
-
-/** The extension's browser as a person names it: "Chrome 131", from its user agent. */
-function browserName(agent: string | undefined): string {
-  if (!agent) return ""
-  const match = /\b(Edg|OPR|HeadlessChrome|Chromium|Chrome)\/(\d+)/.exec(agent)
-  if (!match) return agent.length > 40 ? agent.slice(0, 40) + "…" : agent
-  const name = match[1] === "Edg" ? "Edge" : match[1] === "OPR" ? "Opera" : match[1] === "HeadlessChrome" ? "Chrome" : match[1]
-  return name + " " + match[2]
 }
 
 /** A Session's name from the fleet when this console knows it, else its id's first characters. */
@@ -136,7 +127,7 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
   const [readError, setReadError] = useState("")
   const [auditError, setAuditError] = useState("")
   const [said, setSaid] = useState("")
-  const [busy, setBusy] = useState<SettingKey | "mode" | "stop" | null>(null)
+  const [busy, setBusy] = useState<SettingKey | "policy" | "stop" | null>(null)
   const [retry, setRetry] = useState(0)
   const [conversation, setConversation] = useState("")
   const [site, setSite] = useState("")
@@ -206,21 +197,15 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
     }
   }
 
-  const saveMode = async (mode: BrowserMode) => {
+  const savePolicy = async (browser_policy: BrowserPolicy) => {
     if (!settings || busy) return
     const started = ++generation.current
-    setBusy("mode"); setSaid("")
+    setBusy("policy"); setSaid("")
     try {
-      const saved = await writeChromeSettings(settings.browser_mode === undefined ? { browser_enabled: mode !== "native" } : { browser_mode: mode })
-      if (started === generation.current) {
-        setSettings(saved); setSaid(nextWord("browserSettingsSaved"))
-        void readBrowserStatus().then(value => { if (started === generation.current) setStatus(value) }, () => {})
-      }
+      const saved = await writeChromeSettings({ browser_policy })
+      if (started === generation.current) { setSettings(saved); setSaid(nextWord("browserSettingsSaved")) }
     } catch (error) {
-      if (started === generation.current) {
-        setSaid(failed("browserSettingsSaveFailed", error))
-        void readChromeSettings().then(value => { if (started === generation.current) setSettings(value) }, () => {})
-      }
+      if (started === generation.current) setSaid(failed("browserSettingsSaveFailed", error))
     } finally { if (started === generation.current) setBusy(null) }
   }
 
@@ -244,9 +229,7 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
     }
   }
 
-  const connected = status?.status.connected === true
   const stopped = status?.status.stopped === true
-  const host = status?.status.host
   const sessions = [...known.sessions]
   if (conversation && !sessions.includes(conversation)) sessions.push(conversation)
   const sites = [...known.sites]
@@ -258,34 +241,13 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
     { key: "browser_notify_new_site", title: "browserSettingsNotify", help: "browserSettingsNotifyHelp" },
   ]
 
-  const mode = settings?.browser_mode ?? (settings?.browser_enabled ? "isolated" : "native")
-  const modes: { value: BrowserMode; title: NextWord; help: NextWord }[] = [
-    { value: "native", title: "browserModeNative", help: "browserModeNativeHelp" },
-    { value: "user_chrome", title: "browserModeUserChrome", help: "browserModeUserChromeHelp" },
-    { value: "isolated", title: "browserModeIsolated", help: "browserModeIsolatedHelp" },
-  ]
+  const legacy = settings?.browser_mode ?? (settings?.browser_enabled ? "isolated" : "native")
+  const order = ([legacy, "native", "isolated", "user_chrome"] as const).filter((value, index, all) => all.indexOf(value) === index)
+  const policy: BrowserPolicy = settings?.browser_policy ?? { order: [...order], automatic: { native: true, isolated: legacy === "isolated", user_chrome: legacy === "user_chrome" } }
   return <div className="block settings-workflow settings-browser" id="settings-browser" aria-busy={busy !== null}>
     <b>{nextWord("browserSettingsTitle")}</b>
     <p className="say">{nextWord("browserSettingsIntro")}</p>
-    <fieldset className="browser-modes" disabled={!settings || busy !== null}>
-      <legend>{nextWord("browserModeTitle")}</legend>
-      {modes.map(choice => <label className="browser-mode-choice" key={choice.value}>
-        <input type="radio" name="browser-mode" value={choice.value} checked={mode === choice.value} disabled={choice.value === "user_chrome" && settings?.browser_mode === undefined} onChange={() => void saveMode(choice.value)} />
-        <span><strong>{nextWord(choice.title)}</strong><span>{nextWord(choice.help)}</span></span>
-      </label>)}
-    </fieldset>
-    <p className="say">{nextWord("browserModeSwitchHelp")}</p>
-    {settings && mode !== "native" && <button type="button" className="chip" onClick={openBrowserSetup}>{nextWord("browserSetupOpen")}</button>}
-
-    {mode !== "native" && <div className={connected ? "browser-connection connected" : "browser-connection"} role="status" aria-live="polite">
-      <span className="browser-connection-dot" aria-hidden="true" />
-      <div>
-        <strong>{status ? nextWord(connected ? "browserSettingsConnected" : "browserSettingsNotConnected") : nextWord("browserSettingsLoading")}</strong>
-        {status && connected && (host?.browser || host?.version) && <p>{nextWord("browserSettingsConnectedHost", {
-          browser: browserName(host?.browser) || "Chrome", version: host?.version || "?" })}</p>}
-        {status && !connected && <p>{nextWord("browserSettingsNotConnectedHint")}</p>}
-      </div>
-    </div>}
+    <BrowserPolicyRows policy={policy} profiles={status?.profiles} busy={busy !== null} supported={!!settings?.browser_policy} onChange={value => void savePolicy(value)} />
 
     {switches.map(({ key, title, help }) => {
       const id = "browser-setting-" + key

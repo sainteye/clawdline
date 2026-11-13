@@ -15,6 +15,13 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"voice.work_auto_continue": func() capacity.Reading {
+			settings, err := s.readCopilot()
+			if err != nil {
+				return capacity.Unmeasured("voice settings unavailable")
+			}
+			return capacity.Reading{Known: true, Used: int64(settings.Effective().WorkAutoContinue), Note: "configured automatic tasks per batch, default three; next batch requires approval; unrelated to concurrency or retained inbox size"}
+		},
 		"voice.work_request_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-workspace-request transport deadline; no automatic retry of a mutation"}
 		},

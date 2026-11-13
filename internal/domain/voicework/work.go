@@ -92,13 +92,14 @@ type Task struct {
 }
 
 type State struct {
-	ID           string  `json:"id"`
-	Revision     int64   `json:"revision"`
-	PlanVersion  int64   `json:"plan_version"`
-	Inputs       []Input `json:"inputs"`
-	Tasks        []Task  `json:"tasks"`
-	Reply        string  `json:"reply,omitempty"`
-	PlannerError string  `json:"planner_error,omitempty"`
+	AutoBatch    *AutoBatch `json:"auto_batch,omitempty"`
+	ID           string     `json:"id"`
+	Revision     int64      `json:"revision"`
+	PlanVersion  int64      `json:"plan_version"`
+	Inputs       []Input    `json:"inputs"`
+	Tasks        []Task     `json:"tasks"`
+	Reply        string     `json:"reply,omitempty"`
+	PlannerError string     `json:"planner_error,omitempty"`
 }
 
 type Change struct {
@@ -574,6 +575,9 @@ func (s *State) Edit(id string, version int64, action string, now int64) error {
 			return ErrConflict
 		}
 		t.Status = "queued"
+		if ReadTask(*t) {
+			t.ApprovedVersion = t.Version
+		}
 		t.Error = ""
 	case "pause", "cancel":
 		if t.Status == "done" || t.Status == "outcome_unknown" {
@@ -609,6 +613,10 @@ func (s *State) Claim(runner string, now int64) *Task { return s.ClaimFor(runner
 
 // ClaimFor skips work this browser cannot execute, including another live call's settings.
 func (s *State) ClaimFor(runner, call string, tools []string, now int64) *Task {
+	return s.ClaimBatch(runner, call, tools, now, DefaultAutoContinue)
+}
+
+func (s *State) ClaimBatch(runner, call string, tools []string, now int64, limit int) *Task {
 	if runner == "" {
 		return nil
 	}
@@ -659,6 +667,9 @@ func (s *State) ClaimFor(runner, call string, tools []string, now int64) *Task {
 		if !ready {
 			continue
 		}
+		if !s.autoAllowed(*t) {
+			continue
+		}
 		if picked == nil || t.Priority > picked.Priority {
 			picked = t
 		}
@@ -666,6 +677,7 @@ func (s *State) ClaimFor(runner, call string, tools []string, now int64) *Task {
 	if picked == nil {
 		return nil
 	}
+	s.reserveAuto(*picked, limit)
 	picked.Attempt++
 	picked.Progress = nil
 	picked.Result = ""

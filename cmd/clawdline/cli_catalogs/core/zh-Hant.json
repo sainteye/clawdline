@@ -61,5 +61,8 @@
   "squad.invalid_args": "clawdline：squad skill-event 參數無效",
   "squad.invalid_json": "clawdline squad：bad_request：請提供未超過角色小隊請求上限的單一 JSON 請求",
   "squad.key_help": "此次寫入與重試共用的固定 Idempotency-Key",
-  "squad.usage": "用法：clawdline squad skill-event --skill ID --version VERSION --status read|applied|failed [--event-id ID] [--failure-code CODE]"
+  "squad.usage": "用法：clawdline squad skill-event --skill ID --version VERSION --status read|applied|failed [--event-id ID] [--failure-code CODE]",
+  "browser.invalid_selection": "請用 --browser 選擇 native、isolated 或 user_chrome。",
+  "browser.explicit_selection_required": "只有使用者明確指定瀏覽器時，才能搭配 --browser 使用 --explicit。",
+  "browser.usage": "用法：clawdline browser <指令>\n  status                         查看優先順序、自動選用開關、連線與本次 Session 的選擇\n  prepare --mode user_chrome     準備擴充功能資料夾，不更改日常 Chrome\n  launch [--browser PATH]        啟動 Clawdline 專用的測試 Chrome\n  install-host [--mode isolated|user_chrome] --extension-id ID [--chrome-dir PATH]\n                                 連接指定 Chrome 的擴充功能與原生主機\n  open <url>                     為本次 Session 開新分頁\n  open --browser isolated --explicit <url>\n                                 遵照使用者明確要求，本次 Session 使用測試 Chrome\n  --browser <mode>                指定允許自動選用的 native、isolated 或 user_chrome\n  --explicit                     僅在使用者明確指定時使用；不更改全域開關，仍需完成設定且未緊急停止\n  tabs                           列出本次 Session 的分頁\n  read [--tab N]                 讀取網頁文字與可操作的元素\n  click <text> | --x N --y N     點擊文字標籤或座標\n  type <text> | --stdin          在焦點欄位輸入；機密請搭配 Secret Handoff\n  key <name>                     傳送 Enter、Tab、Backspace、Escape 或方向鍵\n  scroll <down|up>               向下或向上捲動\n  viewport <mobile|desktop>      切換網站手機或桌機版面與使用者代理\n  screenshot [--out FILE]        儲存分頁 JPEG 並顯示路徑\n  close [--tab N]                關閉本次 Session 持有的分頁\n  release                        釋放控制權，保留分頁\n  stop                           緊急停止，直到使用者恢復\n  audit [--limit N]              查看本次 Session 的瀏覽器操作紀錄"
 }

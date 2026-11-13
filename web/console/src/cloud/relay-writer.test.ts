@@ -3359,3 +3359,28 @@ test("preparing the current extension carries only an explicit press and returns
   assert.equal((await reader.fetch("/v1/browser/prepare", post({ directory: "other" }))).status, 501)
   assert.equal(client.calls.length, count, "unsupported path/body never reaches the machine")
 })
+
+test("browser policy carries independent switches and profile-scoped reads over Cloud", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const policy = { order: ["native", "user_chrome", "isolated"], automatic: { native: true, isolated: false, user_chrome: true } }
+  assert.equal((await reader.fetch("/v1/browser/settings", post({ browser_policy: policy }, { "Idempotency-Key": "browser-priority-1" }))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "browser-priority-1", "mac-a", "chrome-settings-update", { changes: { browser_policy: policy } }, "action"])
+  assert.equal((await reader.fetch("/v1/browser/status?conversation=20000000-0000-4000-8000-000000000051")).status, 200)
+  assert.deepEqual(client.calls.pop()?.slice(0,5), ["_machineRequest", "mac-a", "chrome-tab-status", { conversation: "20000000-0000-4000-8000-000000000051" }, "read"])
+  assert.equal((await reader.fetch("/v1/browser/setup?browser_mode=user_chrome")).status, 200)
+  assert.deepEqual(client.calls.pop()?.slice(0,5), ["_machineRequest", "mac-a", "chrome-setup", { browser_mode: "user_chrome" }, "read"])
+  const before = client.calls.length
+  for (const path of ["/v1/browser/status?conversation=one&conversation=two", "/v1/browser/status?browser_mode=isolated", "/v1/browser/setup?browser_mode=native", "/v1/browser/setup?browser_mode="]) {
+    assert.equal((await reader.fetch(path)).status, 400, path)
+  }
+  assert.equal(client.calls.length, before, "invalid scopes never reach the machine")
+})
+
+
+test("voice batch continuation keeps the exact reviewed task versions over Cloud", async()=>{
+ const client=new FakeClient();const {reader}=seam(client)
+ const work={action:"continue_batch",batch:{epoch:7,limit:3,tasks:[{id:"read-one",version:2},{id:"read-two",version:4}]},call:"call-one",input_ids:["spoken-consent"]}
+ assert.equal((await reader.fetch("/v1/voice/copilot-work",post(work))).status,200)
+ assert.deepEqual(client.calls.pop(),["_machineRequest","mac-a","copilot-work-update",{work},"action"])
+})

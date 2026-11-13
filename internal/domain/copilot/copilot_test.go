@@ -77,3 +77,21 @@ func TestEveryOfferedVoiceIsKept(t *testing.T) {
 		}
 	}
 }
+
+func TestAutomaticContinuationSettingDefaultsAndRejectsInvalidChanges(t *testing.T) {
+	if (Settings{}).Effective().WorkAutoContinue != 3 {
+		t.Fatal("default is not three")
+	}
+	for _, n := range []int{0, -1, 9} {
+		old := Settings{WorkEnabled: true, WorkAutoContinue: 3}
+		next, err := Apply(old, Change{WorkAutoContinue: &n})
+		if !errors.Is(err, ErrBadContinuation) || next != old {
+			t.Fatalf("invalid setting %d changed state", n)
+		}
+	}
+	n := 2
+	next, err := Apply(Settings{}, Change{WorkAutoContinue: &n})
+	if err != nil || next.Effective().WorkAutoContinue != 2 {
+		t.Fatal(next, err)
+	}
+}

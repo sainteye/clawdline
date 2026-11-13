@@ -54,7 +54,8 @@ func capacityServer(t *testing.T) *Server {
 
 // The register guard's other half (limits §4.1): every registered row has a
 // measurement wired. Daemon-owned usage is readable on a fresh directory;
-// native-host receipt occupancy stays explicitly unknown until it is measured.
+// native-host receipt and call-local browser occupancy stay explicitly unknown
+// until the owning surface can report them.
 func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 	s := capacityServer(t)
 	measures := s.capacityMeasures()
@@ -65,9 +66,10 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 			continue
 		}
 		r := m()
-		if e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes {
+		if e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes ||
+			e.Name == "console.copilot_session_report_batch" || e.Name == "console.copilot_session_report_refs" || e.Name == "console.copilot_session_report_sessions" {
 			if r.Known || r.Err == "" {
-				t.Errorf("%s must explain its unavailable native-host measurement: %+v", e.Name, r)
+				t.Errorf("%s must explain its unavailable external-surface measurement: %+v", e.Name, r)
 			}
 			continue
 		}
@@ -445,5 +447,29 @@ func TestAPassRecordsItsEvents(t *testing.T) {
 	again, _, _ := s.store.Counts(context.Background())
 	if again != after {
 		t.Fatalf("a pass that saw nothing new wrote %d events", again-after)
+	}
+}
+
+func TestSessionPresentationOccupancyIsUnknownWithoutBrowserEvidence(t *testing.T) {
+	s := capacityServer(t)
+	measures := s.capacityMeasures()
+	tracker := capacity.NewTracker()
+	checked := 0
+	for _, entry := range capacity.Register() {
+		if entry.Name != "console.copilot_session_report_batch" && entry.Name != "console.copilot_session_report_refs" && entry.Name != "console.copilot_session_report_sessions" {
+			continue
+		}
+		reading := measures[entry.Name]()
+		status, _ := tracker.Observe(capacity.Resolved{Entry: entry, Limit: entry.Limit}, reading, time.Now())
+		if status.State != capacity.Unknown || status.Reading.Known || status.Reading.Err == "" {
+			t.Fatalf("%s invented a browser reading: %+v", entry.Name, status)
+		}
+		if status.Exhausted {
+			t.Fatalf("%s treated missing browser evidence as exhaustion", entry.Name)
+		}
+		checked++
+	}
+	if checked != 3 {
+		t.Fatalf("checked %d presentation bounds", checked)
 	}
 }

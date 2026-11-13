@@ -312,8 +312,9 @@ person is asked to decide with each choice's cost.
 1.0 or 1.1; it slows the generated audio, and the instructions also ask for a pause between
 sentences. The Session summary names only the kinds it has (no "0 個已完成"). Ordinary answers stay at three sentences while **Short answers** is on (the default; off lets them
 run in full); a report on Sessions goes through each one in
-two or three (its goal, what it delivered recently, what it is doing now), from each busy row's
-`goal` (the person's newest ask), `recent` (its last two delivery summaries) and `latest`. On
+two or three (its goal, what it delivered recently, what it is doing now), using the
+requested summaries and actual delivery evidence. Directory listing does not read
+every busy Session's transcript or infer its contents from its name. On
 2026-11-12 "how are the working Sessions" was answered "four Sessions are working" and nothing
 else until that exception was stated first.
 
@@ -358,3 +359,16 @@ utterance, and a visible phase distinguish tool waiting from confirmation or
 failure. No tone implies a message was delivered. The message proposal, explicit
 spoken confirmation and typed-input receipt are described in
 [the persistent workspace](voice-assistant-workspace.md#confirmed-messages-connection-cues-and-visible-waiting).
+
+
+### Remembering the spoken order
+
+The assistant's conversation history and the identity used by a tool are distinct.
+The call now records verified speaking order after playback, so “the last one”
+or “the second Session” can bind to a real identity before a fresh read. It does
+not ask a separate text model to guess that order. Unknown or changed identities
+need clarification. Group presentation uses two or three Sessions per response
+and one next batch can read in parallel; an interruption pauses the presentation.
+These controls are independent of durable work approval and automatic task
+allowance. See [the workspace's presentation contract](voice-assistant-workspace.md#spoken-session-references-and-presentation-batches)
+for limits and evidence gaps.

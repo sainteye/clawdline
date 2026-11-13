@@ -75,6 +75,10 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_mode": initialMode}); err != nil {
 		t.Fatal(err)
 	}
+	selectedBridge, err := s.browsers().Channel(mode)
+	if err != nil {
+		t.Fatal(err)
+	}
 	srv := &http.Server{Handler: s.Handler()}
 	go srv.Serve(listener)
 	t.Cleanup(func() { srv.Close() })
@@ -126,12 +130,8 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	if out, errOut, code := run("browser", "install-host", "--extension-id", string(id), "--chrome-dir", profile, "--mode", mode); code != 0 {
 		t.Fatalf("install-host: %d %s %s", code, out, errOut)
 	}
-	beforeHostRefusal := "browser_extension_missing"
-	if mode == "isolated" {
-		beforeHostRefusal = "browser_disabled"
-	}
-	if _, errOut, code := run("browser", "open", formURL); code == 0 || !strings.Contains(errOut, beforeHostRefusal) {
-		t.Fatalf("before Chromium starts, open should be refused browser_extension_missing: %d %s", code, errOut)
+	if _, errOut, code := run("browser", "open", "--browser", mode, "--explicit", formURL); code == 0 || !strings.Contains(errOut, "browser_setup_required") {
+		t.Fatalf("an explicit browser request bypassed missing setup: %d %s", code, errOut)
 	}
 	chrome := exec.Command(chromium, "--user-data-dir="+profile, "--load-extension="+ext, "--disable-extensions-except="+ext,
 		"--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--window-size=1280,860", "about:blank")
@@ -150,9 +150,9 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	deadline := time.Now().Add(20 * time.Second)
 	ready := func() bool {
 		if mode == "isolated" {
-			return s.browser().SetupConnected()
+			return selectedBridge.SetupConnected()
 		}
-		return s.browser().Status().Connected
+		return selectedBridge.Status().Connected
 	}
 	for !ready() {
 		if time.Now().After(deadline) {
@@ -189,7 +189,11 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	}
 
 	if mode == "isolated" {
-		if _, err := s.browser().Do(t.Context(), conversation, "open", json.RawMessage(`{"url":"https://example.com"}`)); err != browserbridge.Disabled {
+		policy, err := s.browserPolicy()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.browsers().DoSession(t.Context(), conversation, "open", json.RawMessage(`{"url":"https://example.com"}`), policy, "", false); err != browserbridge.NativeTools {
 			t.Fatalf("setup readiness granted Agent access: %v", err)
 		}
 		rec := httptest.NewRecorder()
@@ -201,14 +205,14 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 			t.Fatalf("Finish settings: %d %s", rec.Code, rec.Body)
 		}
 		deadline = time.Now().Add(10 * time.Second)
-		for !s.browser().Status().Connected {
+		for !selectedBridge.Status().Connected {
 			if time.Now().After(deadline) {
 				t.Fatal("host did not enter operational mode after consent")
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
 	}
-	host := s.browser().Status().Host
+	host := selectedBridge.Status().Host
 	if host.Mode != mode || host.Profile != profile {
 		t.Fatalf("native host binding: %+v, expected %s %s", host, mode, profile)
 	}
@@ -313,7 +317,7 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 
 	// The live panel's own view: the page's CSS size comes with the picture,
 	// so a tap on it can become a click at the same point.
-	raw, err := s.browser().PersonDoForMode(context.Background(), "screenshot", opened.Value.Tab, nil, mode)
+	raw, err := selectedBridge.PersonDoForMode(context.Background(), "screenshot", opened.Value.Tab, nil, mode)
 	var view struct {
 		Width, Height int
 		Data, Title   string
@@ -334,18 +338,18 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 			t.Fatal("keyboard geometry exposed a field value")
 		}
 	}
-	if _, err := s.browser().PersonDoForMode(context.Background(), "click", opened.Value.Tab, json.RawMessage(`{"x":10,"y":10}`), mode); err == nil {
+	if _, err := selectedBridge.PersonDoForMode(context.Background(), "click", opened.Value.Tab, json.RawMessage(`{"x":10,"y":10}`), mode); err == nil {
 		t.Fatal("the person clicked without taking the tab over")
 	}
 
 	// The person takes the tab over: the agent is refused and learns why.
-	s.browser().SetPersonControlForMode(opened.Value.Tab, true, mode)
+	selectedBridge.SetPersonControlForMode(opened.Value.Tab, true, mode)
 	for _, field := range view.Editables {
 		if field.Kind != "password" {
 			continue
 		}
 		args, _ := json.Marshal(map[string]float64{"x": field.X + field.Width/2, "y": field.Y + field.Height/2})
-		answer, err := s.browser().PersonDoForMode(context.Background(), "click", opened.Value.Tab, args, mode)
+		answer, err := selectedBridge.PersonDoForMode(context.Background(), "click", opened.Value.Tab, args, mode)
 		var focus struct {
 			Editable string `json:"editable"`
 		}
@@ -354,13 +358,13 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 		}
 		break
 	}
-	if _, err := s.browser().PersonDoForMode(context.Background(), "key", opened.Value.Tab, json.RawMessage(`{"key":"Tab"}`), mode); err != nil {
+	if _, err := selectedBridge.PersonDoForMode(context.Background(), "key", opened.Value.Tab, json.RawMessage(`{"key":"Tab"}`), mode); err != nil {
 		t.Fatalf("the person's key during takeover: %v", err)
 	}
 	if _, errOut, code := run("browser", "read"); code == 0 || !strings.Contains(errOut, "browser_person_controlling") {
 		t.Fatalf("during takeover: %d %s", code, errOut)
 	}
-	s.browser().SetPersonControlForMode(opened.Value.Tab, false, mode)
+	selectedBridge.SetPersonControlForMode(opened.Value.Tab, false, mode)
 	// The emergency stop: an agent may stop, but not resume.
 	if out, errOut, code := run("browser", "stop"); code != 0 {
 		t.Fatalf("stop: %s %s", out, errOut)
@@ -368,7 +372,7 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	if _, errOut, code := run("browser", "read"); code == 0 || !strings.Contains(errOut, "browser_stopped") {
 		t.Fatalf("after stop: %d %s", code, errOut)
 	}
-	s.browser().SetStopped(false)
+	s.browsers().SetStopped(false)
 
 	var audit struct {
 		Rows []struct {
@@ -403,7 +407,11 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	if !typedName || !typedPassword || !typedShadow || !clickedContinue {
 		t.Fatalf("audit is missing a row (name %v, password %v, continue %v): %s", typedName, typedPassword, clickedContinue, out)
 	}
-	disk, err := os.ReadFile(filepath.Join(dir, browserbridge.JournalFile))
+	journalDir := dir
+	if mode != s.browsers().Legacy().Mode() {
+		journalDir = filepath.Join(dir, "browser-profiles", mode)
+	}
+	disk, err := os.ReadFile(filepath.Join(journalDir, browserbridge.JournalFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +433,68 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 	if len(remaining.Value.Tabs) != 0 {
 		t.Fatalf("Chrome kept the closed tab: %s", out)
 	}
-	if len(s.browser().Status().Tabs) != 0 {
+	if len(selectedBridge.Status().Tabs) != 0 {
 		t.Fatal("closed tab ownership remained")
 	}
+	if mode == "isolated" {
+		testConcurrentNativeProfiles(t, s, bin, chromium, ext, string(id), formURL, run)
+	}
+}
+
+// Keep the first real host running while a second temporary profile connects.
+// Explicit CLI selection must not change the machine's automatic preference.
+func testConcurrentNativeProfiles(t *testing.T, s *Server, bin, chromium, extension, id, page string, run func(...string) (string, string, int)) {
+	t.Helper()
+	profile, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := browserlaunch.InstallHostForMode(s.cfg.Dir, s.cfg.Port, bin, id, profile, "user_chrome"); err != nil {
+		t.Fatal(err)
+	}
+	chrome := exec.Command(chromium, "--user-data-dir="+profile, "--load-extension="+extension, "--disable-extensions-except="+extension, "--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "about:blank")
+	if err := chrome.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = chrome.Process.Kill(); _ = chrome.Wait() })
+	deadline := time.Now().Add(20 * time.Second)
+	for !s.browsers().Ready("user_chrome") {
+		if time.Now().After(deadline) {
+			t.Fatal("second native profile never connected")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	before, err := os.ReadFile(filepath.Join(s.cfg.Dir, nextconfig.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"isolated", "user_chrome"} {
+		out, errs, code := run("browser", "open", "--browser", mode, "--explicit", page)
+		if code != 0 {
+			t.Fatalf("explicit %s open: %d %s %s", mode, code, out, errs)
+		}
+	}
+	isolated, _ := s.browsers().Channel("isolated")
+	usual, _ := s.browsers().Channel("user_chrome")
+	if len(isolated.Status().Tabs) != 1 || len(usual.Status().Tabs) != 1 {
+		t.Fatal("switching lost a profile's owned tab")
+	}
+	after, err := os.ReadFile(filepath.Join(s.cfg.Dir, nextconfig.FileName))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("explicit native-profile selection changed machine settings", err)
+	}
+	for _, mode := range []string{"user_chrome", "isolated"} {
+		out, errs, code := run("browser", "read", "--browser", mode, "--explicit")
+		if code != 0 || !strings.Contains(out, "Sign in to the test site") {
+			t.Fatalf("%s lost its page: %d %s %s", mode, code, out, errs)
+		}
+		out, errs, code = run("browser", "close", "--browser", mode, "--explicit")
+		if code != 0 {
+			t.Fatalf("%s native close: %d %s %s", mode, code, out, errs)
+		}
+	}
+	if len(isolated.Status().Tabs) != 0 || len(usual.Status().Tabs) != 0 {
+		t.Fatal("native profile close left owned tabs")
+	}
+	t.Log("Both real temporary Chrome profiles connected concurrently; explicit CLI choices kept global settings and closed their own tabs")
 }

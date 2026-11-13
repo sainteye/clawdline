@@ -223,6 +223,8 @@ async function callVoiceSettings(init: RequestInit): Promise<VoiceSettingsSnapsh
 
 /** Settings › Voice copilot, as `/v1/settings/copilot` answers it: never the key. */
 export interface CopilotSettingsSnapshot {
+  work_auto_continue?:number
+  max_auto_continue?:number
   work_enabled?: boolean
   work_assistant?: string
   key_set: boolean
@@ -244,6 +246,7 @@ export interface CopilotSettingsSnapshot {
 }
 
 export interface CopilotSettingsChange {
+  work_auto_continue?:number
   work_enabled?: boolean
   work_assistant?: string
   openai_key?: string
@@ -381,7 +384,9 @@ export function writeWorkflowSettings(change: Partial<WorkflowSettingsRequest>, 
 
 /** The Browser block's two machine switches (`/v1/browser/settings`, chrome-settings over Cloud). */
 export type BrowserMode = "native" | "user_chrome" | "isolated"
-export type ChromeSettings = { browser_mode?: BrowserMode; browser_enabled: boolean; browser_notify_new_site: boolean }
+export type BrowserPolicy = { order: BrowserMode[]; automatic: Record<BrowserMode, boolean> }
+export type BrowserProfileReadiness = { ready: boolean; connected: boolean; state_error?: boolean; host?: { version?: string; browser?: string } }
+export type ChromeSettings = { browser_policy?: BrowserPolicy; browser_mode?: BrowserMode; browser_enabled: boolean; browser_notify_new_site: boolean }
 
 export function readChromeSettings(signal?: AbortSignal): Promise<ChromeSettings> {
   return call<ChromeSettings>({ method: "GET" }, "/v1/browser/settings", signal)
@@ -396,6 +401,7 @@ export function writeChromeSettings(change: Partial<ChromeSettings>): Promise<Ch
 
 /** What `/v1/browser/status` says about the extension and the stop. */
 export type BrowserStatus = {
+  profiles?: Partial<Record<BrowserMode, BrowserProfileReadiness>>
   status: { connected: boolean; stopped: boolean; state_error?: boolean; host?: { version?: string; browser?: string } }
 }
 

@@ -32,6 +32,12 @@ in order and the existing tasks. Return changes and a short reply in the person'
 Keep existing work unless the person changes or cancels it. "Also do B" adds B;
 an interruption or a new question never cancels A. Distinguish questions, commands,
 corrections and background. Batch all pending utterances into one update.
+When requests exceed auto_continue_limit, organize and retain every request, merge
+duplicates, and order actual dependencies. Do not discard overflow or ask permission
+just to organize it. The daemon enforces the execution allowance and renewed approval;
+planning never grants authority. Important actions still require separate confirmation.
+If identity, facts or intended action are uncertain, ask one clear question instead
+of inventing arguments or using a self-reported confidence score as consent.
 Use only supplied Session IDs/names. Preserve the whole id including a machine suffix.
 Each input's focus is the exact Session and machine when that input was spoken.
 Resolve "this Session" only against that input's focus, never another input or call.

@@ -1,7 +1,7 @@
-import type {VoiceState} from '../voice-work/engine.js'
+import type {BatchOffer,VoiceState} from '../voice-work/engine.js'
 
 /** This is receipt evidence, never an inference from the recipient's latest reply. */
-export function callWorkEvidence(state:VoiceState|null,call:string,planning:boolean,failure='') {
+export function callWorkEvidence(state:VoiceState|null,call:string,planning:boolean,failure='',continuation?:BatchOffer|null) {
  const inputs=state?.inputs.filter(input=>input.call===call)??[]
  const ids=new Set(inputs.map(input=>input.id))
  const tasks=state?.tasks.filter(task=>task.sources.some(id=>ids.has(id)))??[]
@@ -13,7 +13,7 @@ export function callWorkEvidence(state:VoiceState|null,call:string,planning:bool
   const delivery=delivered?'confirmed':receipt.accepted===true?'accepted':['queued','waiting_confirmation','paused','cancelled'].includes(task.status)?'not_sent':['running','waiting_result','outcome_unknown','done'].includes(task.status)?'unknown':'failed'
   return {id:task.id,version:task.version,target:task.args.session_label??task.args.session_id,status:task.status,delivered,delivery,error:task.error}
  })
- return {known:!!state&&!failure,planning,failure:failure||undefined,
+ return {known:!!state&&!failure,planning,failure:failure||undefined,next_batch:continuation??undefined,
   requests:inputs.filter(input=>!input.planned).map(input=>({id:input.id,queued:!input.deferred,error:input.planning_error,stage:input.planning_stage})),
   tasks:tasks.map(task=>({id:task.id,version:task.version,text:task.text,status:task.status})),messages,
   delivery_confirmed:messages.length>0&&messages.every(message=>message.delivered),
@@ -21,9 +21,9 @@ export function callWorkEvidence(state:VoiceState|null,call:string,planning:bool
  }
 }
 export type CallWorkEvidence=ReturnType<typeof callWorkEvidence>
-export type CallProgressPhase='saving'|'reading'|'responding'|'planning'|'running'|'queued'|'waiting_confirmation'|'failed'
+export type CallProgressPhase='saving'|'reading'|'responding'|'planning'|'running'|'queued'|'waiting_confirmation'|'waiting_batch'|'failed'
 export interface CallProgress {phase:CallProgressPhase;since:number}
-export function activeProgress(phase:CallProgressPhase){return !['waiting_confirmation','failed'].includes(phase)}
+export function activeProgress(phase:CallProgressPhase){return !['waiting_confirmation','waiting_batch','failed'].includes(phase)}
 export function callProgress({saving,reading,responding,work}:{saving:boolean;reading:boolean;responding:boolean;work?:CallWorkEvidence}):{phase:CallProgressPhase}|undefined {
  if(reading)return {phase:'reading'}
  if(saving)return {phase:'saving'}
@@ -31,6 +31,7 @@ export function callProgress({saving,reading,responding,work}:{saving:boolean;re
  if(work?.failure)return {phase:'failed'}
  if(work?.tasks.some(task=>task.status==='running'))return {phase:'running'}
  if(work?.planning&&work.requests.some(input=>input.queued&&!input.error))return {phase:'planning'}
+ if(work?.next_batch)return {phase:'waiting_batch'}
  if(work?.tasks.some(task=>task.status==='queued'))return {phase:'queued'}
  if(work?.requests.some(input=>input.error)||work?.failure||work?.tasks.some(task=>['failed','outcome_unknown'].includes(task.status)))return {phase:'failed'}
  if(work?.tasks.some(task=>task.status==='waiting_confirmation'))return {phase:'waiting_confirmation'}
@@ -53,4 +54,4 @@ export interface MessageProposal {id:string;version:number;workspace:string;targ
 function spokenText(text:string){return text.normalize('NFKC').toLocaleLowerCase().replace(/[\p{P}\p{Z}\s]/gu,'')}
 export function messageConsent(text:string){return ['可以送出','確定送出','確認送出','好送出','可以发送','确认发送','確認發送','yessendit','confirmandsend','sendit'].includes(spokenText(text))}
 export function proposalSpoken(text:string,proposal:MessageProposal){const spoken=spokenText(text);return !!spoken&&spoken.includes(spokenText(proposal.target))&&spoken.includes(spokenText(proposal.message))}
-export function answeredConversation(text:string,read:boolean){return read&&(deliveryQuestion(text)||messageConsent(text))||/^(?:hello|hi|bye|bye bye|thanks|thank you|你好|哈囉|謝謝)[.!。！ ]*$/i.test(text.trim())||read&&!/(?:送|傳|传|發送|发送|回覆|回复|改名|重新命名|關閉|关闭|啟動|启动|取消|暫停|暂停|\b(?:send|forward|tell|reply|rename|close|start|cancel|pause)\b)/i.test(text)}
+export function answeredConversation(text:string,read:boolean){return read&&(deliveryQuestion(text)||messageConsent(text)||read&&/^(?:可以[，, ]*繼續|yes[, ]+continue)[。.! ]*$/i.test(text.trim()))||/^(?:hello|hi|bye|bye bye|thanks|thank you|你好|哈囉|謝謝)[.!。！ ]*$/i.test(text.trim())||read&&!/(?:送|傳|传|發送|发送|回覆|回复|改名|重新命名|關閉|关闭|啟動|启动|取消|暫停|暂停|\b(?:send|forward|tell|reply|rename|close|start|cancel|pause)\b)/i.test(text)}

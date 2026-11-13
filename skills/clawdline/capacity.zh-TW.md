@@ -65,7 +65,9 @@
 | `browser.keyboard_pending_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.keyboard_pending_edits` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.pending_commands` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `browser.profile_state_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.result_bytes` | 6291456 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `browser.session_choices` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.stdin_text_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
@@ -282,6 +284,9 @@
 | `console.copilot_recent_idle_seconds` | 1800 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_reply_characters` | 8000 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_session_report_batch` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_session_report_refs` | 24 | `rows` | `evict_oldest` | `sender, diagnostics` | — |
+| `console.copilot_session_report_sessions` | 24 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_smart_rename_sessions` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_update_marks` | 100 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.copilot_update_pages` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -695,6 +700,7 @@
 | `voice.vocabulary_project_terms` | 40 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.vocabulary_term_characters` | 64 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.vocabulary_terms` | 200 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.work_auto_continue` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_execution_milliseconds` | 120000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `voice.work_heartbeat_milliseconds` | 30000 | `milliseconds` | `coalesce` | `diagnostics` | — |
 | `voice.work_lease_seconds` | 90 | `seconds` | `refuse` | `sender, diagnostics` | — |

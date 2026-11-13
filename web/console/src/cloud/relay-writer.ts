@@ -1705,9 +1705,15 @@ export class RelayWriter {
       }
       case "chrome-tab-status":
       case "chrome-setup": {
-        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        const fields: Record<string, unknown> = {}
+        const allowed = route.op === "chrome-tab-status" ? "conversation" : "browser_mode"
+        for (const [key, value] of url.searchParams) {
+          if (key !== allowed || key in fields || !value) throw failure("invalid_query", "Name one Session or Chrome profile for this reading.", 400)
+          fields[key] = value
+        }
+        if (allowed === "browser_mode" && fields.browser_mode !== undefined && fields.browser_mode !== "isolated" && fields.browser_mode !== "user_chrome") throw failure("invalid_query", "Choose isolated or user_chrome for setup.", 400)
         if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
-        return client._machineRequest(this.host.machine, route.word, {}, "read", undefined, { signal: init?.signal ?? undefined })
+        return client._machineRequest(this.host.machine, route.word, fields, "read", undefined, { signal: init?.signal ?? undefined })
       }
       case "chrome-tab-activity": {
         const conversation = url.searchParams.get("conversation") ?? ""

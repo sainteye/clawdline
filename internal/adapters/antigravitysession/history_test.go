@@ -715,8 +715,8 @@ func TestNativeBackgroundTaskAndTheTurnItWakesAreShown(t *testing.T) {
 		}
 		return ""
 	}
-	if got := state(); got != session.StateIdle {
-		t.Fatalf("a turn that ended is %q", got)
+	if got := state(); got != session.StateWorking {
+		t.Fatalf("a background task running is %q, expected working", got)
 	}
 	// A half-written row is not read until its line is complete.
 	appendRows(`{"step_index":4,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","created_at":"2026-11-11T01:23:13Z","content":"sender=` + native + `/task-2 content=Task id \"` + native + `/task-2\" finished with result:\nCommand exited with code 0.\n"}` + "\n" +

@@ -1070,7 +1070,7 @@ test("fleet decision selection and delayed open retries retain the second machin
     assert.equal(sessions[1].id, second.id)
     return { candidates: [second.id] }
   }
-  const read = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"review","said":"the second one"}', deps)).output)
+  const read = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"review","said":"the one on machine b"}', deps)).output)
   assert.equal(read.session_id, second.id)
   assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b")
   deps.decide = undefined
@@ -1443,4 +1443,33 @@ test('HTTP acceptance and missing receipts never claim a delivered message',asyn
  assert.equal(JSON.parse(result.output).accepted,true);assert.equal(actionNotice('send_message_to_session',result.output),null)
  body={ok:true};result=await runCopilotTool('send_message_to_session',args,deps)
  assert.equal(JSON.parse(result.output).error,'voice_work_send_receipt_missing');assert.equal(actionNotice('send_message_to_session',result.output),null)
+})
+
+test('a spoken ordinal keeps the verified Session even when a fresh classifier picks another one',async()=>{
+ const {deps,calls}=fakeMachine({'%7':[{text:'Correct Session',readable:true}],'%9':[{text:'Wrong Session',readable:true}]})
+ deps.heard=()=> '你最後提到的那個 Session，請讀摘要。'
+ let decisions=0;deps.decide=async()=>{decisions++;return {id:'%9'}}
+ // The reference came from completed playback, not the model's current pick.
+ Object.assign(deps,{spokenReference:()=>({target:{id:'%7',label:'Fix the flaky test',conversation:'conversation-of-the-flaky-test'},candidates:[]})})
+ const out=JSON.parse((await runCopilotTool('get_session_screen','{"session_id":"%9"}',deps)).output)
+ assert.equal(out.session_id,'%7');assert.equal(decisions,0)
+ assert.equal(calls.some(c=>c.path.includes('/%259/')),false)
+})
+
+test('an ordinal without playback evidence asks instead of guessing from current directory order',async()=>{
+ const {deps,calls}=fakeMachine({});deps.heard=()=> '你講的第二個 Session';deps.decide=async()=>assert.fail('directory order is not spoken order')
+ const out=JSON.parse((await runCopilotTool('get_session_summary','{"session_id":"%9"}',deps)).output)
+ assert.equal(out.error,'voice_session_reference_unresolved')
+ assert.equal(calls.some(c=>c.path.startsWith('/v1/transcript')),false)
+})
+test('a replaced spoken identity is refused before reading its successor conversation',async()=>{
+ const {deps,calls}=fakeMachine({});deps.heard=()=> 'the last session'
+ Object.assign(deps,{spokenReference:()=>({target:{id:'%7',label:'Fix the flaky test',conversation:'old-conversation'},candidates:[]})})
+ const out=JSON.parse((await runCopilotTool('get_session_summary','{"session_id":"%7"}',deps)).output)
+ assert.equal(out.error,'voice_session_reference_unresolved');assert.equal(calls.some(c=>c.path.startsWith('/v1/transcript')),false)
+})
+test('a whole name in the actual utterance is not replaced by a classifier guess',async()=>{
+ const {deps}=fakeMachine({'%7':[{text:'correct screen',readable:true}]});deps.heard=()=> 'Read Fix the flaky test.';deps.decide=async()=>assert.fail('an explicit unique name needs no classifier')
+ const out=JSON.parse((await runCopilotTool('get_session_screen','{"session_id":"%9"}',deps)).output)
+ assert.equal(out.session_id,'%7')
 })

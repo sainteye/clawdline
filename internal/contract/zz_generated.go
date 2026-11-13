@@ -1819,6 +1819,12 @@ type BrokerWorktree struct {
 	Repository string `json:"repository"`
 }
 
+type BrowserAutomaticPolicy struct {
+	Isolated   bool `json:"isolated"`
+	Native     bool `json:"native"`
+	UserChrome bool `json:"user_chrome"`
+}
+
 // A device minted for a browser on this machine. `url` carries the token in its
 // fragment, which a browser never sends and never logs; the page trades it for
 // the cookie with /v1/auth/adopt.
@@ -1833,6 +1839,11 @@ type BrowserDevice struct {
 type BrowserRequest struct {
 	// Optional local selection; omission preserves read-and-operate.
 	Permission string `json:"permission,omitempty"`
+}
+
+type BrowserSelectionPolicy struct {
+	Automatic BrowserAutomaticPolicy `json:"automatic"`
+	Order     []string               `json:"order"`
 }
 
 // One build: the commit it was built from and, when its BUILD.json said so,
@@ -6877,10 +6888,11 @@ type SettingsRequest struct {
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// 0 to 1.
-	Backdrop             *float64 `json:"backdrop"`
-	BrowserEnabled       *bool    `json:"browser_enabled"`
-	BrowserMode          *string  `json:"browser_mode"`
-	BrowserNotifyNewSite *bool    `json:"browser_notify_new_site"`
+	Backdrop             *float64                `json:"backdrop"`
+	BrowserEnabled       *bool                   `json:"browser_enabled"`
+	BrowserMode          *string                 `json:"browser_mode"`
+	BrowserNotifyNewSite *bool                   `json:"browser_notify_new_site"`
+	BrowserPolicy        *BrowserSelectionPolicy `json:"browser_policy"`
 
 	// 0 to 1.
 	CardOpacity *float64 `json:"card_opacity"`
@@ -7117,10 +7129,11 @@ type SettingsSnapshot struct {
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// How much the bar blurs what is behind it.
-	Backdrop             *float64 `json:"backdrop"`
-	BrowserEnabled       *bool    `json:"browser_enabled"`
-	BrowserMode          *string  `json:"browser_mode"`
-	BrowserNotifyNewSite *bool    `json:"browser_notify_new_site"`
+	Backdrop             *float64                `json:"backdrop"`
+	BrowserEnabled       *bool                   `json:"browser_enabled"`
+	BrowserMode          *string                 `json:"browser_mode"`
+	BrowserNotifyNewSite *bool                   `json:"browser_notify_new_site"`
+	BrowserPolicy        *BrowserSelectionPolicy `json:"browser_policy"`
 
 	// The bar card's opacity.
 	CardOpacity *float64 `json:"card_opacity"`

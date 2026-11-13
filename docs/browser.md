@@ -101,12 +101,12 @@ and send access to take over and act:
 
 ## The Settings block
 
-Settings, Sessions and access, has a **Browser** block
+Settings has a **Browser** tab
 (`web/console/src/pages/settings/BrowserSettingsBlock.tsx`): whether the extension is connected
-and which browser it is in, three mutually exclusive modes plus `browser_notify_new_site`
+and which browser it is in, three ordered browsers with independent automatic-selection switches, expandable setup instructions, and `browser_notify_new_site`
 (off on a new machine), the emergency stop with its banner and Resume, and a View activity button. The audit is read only while its modal is open,
 narrowed by Session, site and day. Closing or leaving Settings aborts pending reads
-and stops its polling; opening Settings alone makes no audit request. `GET/POST /v1/browser/settings` reads and writes only the mode, its legacy enabled projection, and notification preference; an agent's machine token is refused, and writing needs a device that may send.
+and stops its polling; opening Settings alone makes no audit request. `GET/POST /v1/browser/settings` reads and writes the ordered `browser_policy`, legacy projections and notification preference; an agent's machine token is refused, and writing needs a device that may send.
 `/v1/browser/audit` takes `conversation`, `site` (a registrable domain) and `since` (Unix seconds)
 besides `limit`. Through Clawdline Cloud the block uses four more words:
 
@@ -164,12 +164,12 @@ do not treat a connected old worker as proof that new browser commands are avail
 ## The setup guide
 
 `web/console/src/session/BrowserSetup.tsx` opens from the Chrome panel's **Set up the browser**
-button, which the panel shows when the extension is not connected or `browser_enabled` is off.
+button when the selected profile is not ready. Each browser row also opens its profile-specific instructions.
 Any other screen opens it with `openBrowserSetup()` or the `clawdline-open-browser-setup` window
 event. Its four steps: what browser use is for; **Open Clawdline's Chrome**
 (`POST /v1/browser/launch`, a person who may send), after which it reads `GET /v1/browser/setup`
 every 2 s and moves on by itself once the extension connects; signing in inside that Chrome; two
-switches, both on, for `browser_enabled` and `browser_notify_new_site`, written only when the
+switches, both on, for isolated automatic selection and `browser_notify_new_site`, written only when the
 person presses Finish. A completion summary follows the four steps.
 
 `GET /v1/browser/setup` answers whether a Chromium was found and where, the profile directory,
@@ -181,14 +181,14 @@ window in it.
 
 ## What a new Session is told
 
-When `browser_enabled` is on as a new Claude Code, Codex, Gemini or Grok Session or child starts,
+When a valid ordered browser policy is configured (even with all automatic switches off), or legacy `browser_enabled` is on, as a new Claude Code, Codex, Gemini or Grok Session or child starts,
 `workflow.BrowserUseInstructions()` (`internal/domain/workflow/browser_use.go`) is appended to its
 launch text, the same way the optional space-saving image review is: Claude's
 `--append-system-prompt`, Codex's `developer_instructions`, and the first-input context of Gemini
 and Grok (`internal/app/owned_context.go`). The choice is frozen as `browser_use` in the sealed
 workflow snapshot (schema 2; the digest covers it, schema 1 refuses it), so a resumed Session keeps
 what it was told and turning the setting on or off reaches only executions started afterwards.
-The text grants nothing: the daemon still refuses every action while the setting is off. The same
+The text grants nothing: normal selection obeys automatic switches; an actual explicit request may select a ready browser for this Session without changing them. Emergency stop and setup requirements remain enforced. The same
 rules are `clawdline guide browser`, and the transparency page lists them as `browser-use`.
 
 ## Testing
@@ -254,7 +254,7 @@ Session, and refuses while the person controls it. `release` relinquishes
 ownership and leaves the page open. A late response from a closed tab cannot
 restore its ownership or return old page data.
 
-Settings → Sessions and access → Clawdline browser controls only the Clawdline
+Settings → Browser controls only the Clawdline
 channel. Disabling it cancels queued agent commands and viewer input, and invalidates in-flight
 results, including across a later off/on cycle. An operation already dispatched
 to Chrome may have run; the setting cannot undo it. Agents' native browser tools
@@ -271,23 +271,17 @@ use cancels commands still queued, but a close already sent may finish; its tab
 cannot be acknowledged as taken over in the meantime. No control receipt promises
 to undo an already dispatched browser operation.
 
-## Three browser modes
+## Browser priority and Session choice
 
-`browser_mode` is `native`, `user_chrome` or `isolated`. Native means no Clawdline
-browser commands or new-session browser guidance; agents can use their own tools.
-User Chrome uses the person's usual profile after a separate extension/native-host
-connection. Isolated uses Clawdline's dedicated Chromium or Chrome for Testing.
-An absent mode migrates only from the old boolean: true means isolated, false or
-absent means native. An invalid explicit mode fails closed. `browser_enabled`
-remains a derived runtime projection; conflicting writes are refused. Its raw persisted legacy boolean is true only for isolated mode, so an older daemon fails closed instead of interpreting user_chrome as permission for its old channel.
+`browser_policy` is a closed object with `order` (exactly `native`, `isolated`, and `user_chrome`, each once) and `automatic` (one boolean per browser). Native means the Agent's own tools; the daemon cannot determine or execute them. Isolated uses the dedicated Chromium or Chrome for Testing. User Chrome uses the person's usual profile after separate extension/native-host connection consent.
 
-Changing actual Chrome profiles withdraws queued commands, fences old results and
-viewer input, and relinquishes old tab ownership without closing the old pages.
-Turning access off and back on in the same profile retains its tabs. Viewer
-requests include `browser_mode`; old viewers without it address only isolated
-Chrome. Hosts pin mode/profile in separate launchers and cannot consume commands
-from another selected mode. The worker's hello cannot overwrite that binding.
-A pending close must settle before changing actual profiles.
+Without a policy, migrate only the prior selected Chrome into automatic use, first in the order, with native tools also allowed. Never opt an unselected usual Chrome in. Invalid policy fails closed. A new policy stores raw legacy `browser_mode=native` and `browser_enabled=false` so older daemons cannot misinterpret the new permission model. Current readers receive derived projections. Legacy selection writes are refused once an ordered policy is saved. Both narrow and full settings entrypoints validate the same policy and require real host readiness before newly enabling a Chrome. Preparing files is not connection evidence.
+
+`clawdline browser open --browser isolated --explicit <url>` honors the person's actual explicit request for this Session even when automatic selection is off, without changing machine settings. Without `--explicit`, named choices obey automatic switches. Unnamed new choices skip disconnected Chrome before admission; native availability is checked by the Agent. A remembered choice never falls through after possibly executing an action. An explicit request for an unready browser is refused, not substituted. All choices still obey emergency stop, takeover, and pending-operation fences.
+
+Two independent bridges retain profile-specific tabs, control, close receipts, audit and host binding. The original files remain in their original persisted profile; only the other profile uses `browser-profiles/<mode>`. `browser-profiles.json` schema 1 stores the primary mapping, emergency stop and up to 256 Session choices within 64 KiB. Unknown, oversized or future state is preserved and access pauses. Capacity refuses new choices without silently evicting existing ones. A successful close, archive, or scheduled close removes its choice only when no takeover or operation remains. A failed close or incomplete inventory never removes a choice. Tabs and audit are retained. Sessions ended outside these paths may retain records; the cap refuses rather than guessing liveness.
+
+Policy writes change future automatic selection, not an admitted command, person control, or another Session's choice. Session changes share an admission fence with Agent and person actions. A person-controlled page cannot be replaced even by a new `open` from the same Session. Switching profiles waits for all admitted operations and uncertain close reservations. Equal tab IDs are separate namespaces; status names the conversation, and viewer operations carry `browser_mode`. Host results carry that mode; old results without one are acknowledged only when their ID unambiguously belongs to a channel. No destructive command is replayed to settle an uncertain receipt.
 
 The user-Chrome setup is deliberately separate from choosing the setting:
 
@@ -297,7 +291,7 @@ clawdline browser prepare --mode user_chrome
 
 The guide’s Prepare current extension button calls `POST /v1/browser/prepare`
 (`chrome-prepare` through Cloud). This requires a sending person device, rejects
-machine tokens and other selected modes, and accepts no filesystem path. It
+machine tokens, and accepts no filesystem path. It does not depend on automatic selection. It
 returns the canonical extension folder, its ID, a connection command, and on
 macOS a shell-quoted `open` command. The folder picker also supports
 Command-Shift-G and pasting that path. The Terminal command above uses the same
@@ -312,18 +306,12 @@ These installation steps are not performed by this delivery. Dedicated launch
 continues to register only its own profile. Do not substitute a launch of the
 person's usual Chrome for the separate connection flow.
 
-Cloud carries the selected viewer mode, the three settings choices and responsive
+Cloud carries the viewer Session and mode, ordered policy with all independent switches, profile-specific setup reads and responsive
 layout through the encrypted chrome-* words. Folder preparation adds the
 write-gated `chrome-prepare` word. Tests use temporary profiles and native-host manifests; a test labelled
 user_chrome does not establish installation into the person's real Chrome.
 
-Mode preconditions and config persistence share the bridge's command-admission
-fence. A close cannot enter between a successful profile check and the saved
-choice. A rejected close precondition never writes config. Control-state disk
-failures after a saved choice are reported separately and pause access; the
-settings UI reads back the actual saved choice instead of guessing it rolled
-back. Viewer action callbacks, frames and keyboard lifetime are scoped by mode
-and tab, so profiles reusing a tab number cannot reuse an old callback or image.
+Viewer action callbacks, frames and keyboard lifetime are scoped by Session, mode and tab, so profiles reusing a tab number cannot reuse an old callback or image. Selection write failures pause new access; a failed emergency stop can be retried after storage recovery without resuming. Unknown startup state is never overwritten by that recovery path.
 
 Setup transport readiness does not grant browser access. Close result receipts survive
 service and host restarts without replaying the destructive operation. The protocol,

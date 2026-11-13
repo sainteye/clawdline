@@ -50,7 +50,7 @@ func (s *State) PrepareMessage(id, call, source string, target Focus, message st
 	if err := next.Ready([]string{source}); err != nil {
 		return err
 	}
-	args := map[string]any{"session_id": target.ID, "session_label": target.Label, "message": message, "_voice_target": map[string]any{"id": target.ID, "label": target.Label, "conversation": target.Conversation, "machine": target.Machine}}
+	args := map[string]any{"session_id": target.ID, "session_label": target.Label, "message": message, "_voice_plain_message": true, "_voice_target": map[string]any{"id": target.ID, "label": target.Label, "conversation": target.Conversation, "machine": target.Machine}}
 	if err := next.ApplyPlan(version, []string{source}, []Change{{Op: "add", ID: id, Text: message, Tool: "send_message_to_session", Args: args, DependsOn: []string{}}}, "", nil, now); err != nil {
 		return err
 	}

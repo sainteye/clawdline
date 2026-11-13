@@ -63,7 +63,7 @@ func TestBrowserPrepareRequiresAPersonAndOnlyWritesItsOwnPayload(t *testing.T) {
 	if _, err := nextconfig.Open(dir).Set(map[string]any{"browser_mode": "native"}); err != nil {
 		t.Fatal(err)
 	}
-	if rec := call(device("POST", "{}", auth.Send)); rec.Code != http.StatusConflict {
-		t.Fatalf("wrong mode: %d %s", rec.Code, rec.Body)
+	if rec := call(device("POST", "{}", auth.Send)); rec.Code != http.StatusOK {
+		t.Fatalf("preparation incorrectly depends on automatic selection: %d %s", rec.Code, rec.Body)
 	}
 }

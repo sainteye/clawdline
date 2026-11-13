@@ -445,3 +445,158 @@ func TestVoiceMessagePreparationAndSpokenConfirmationNeedNoPlanningProvider(t *t
 		t.Fatal(err, state)
 	}
 }
+
+func TestVoiceWorkContinuationIsSharedVersionedAndDoesNotApproveWrites(t *testing.T) {
+	s := workServer(t)
+	on := true
+	if _, err := s.changeCopilot(copilot.Change{WorkEnabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.store.UpdateVoiceWork(context.Background(), func(v *voicework.State) error {
+		for i, id := range []string{"a", "b", "c", "d", "e"} {
+			v.Tasks = append(v.Tasks, voicework.Task{ID: id, Text: "Read " + id, Tool: "get_session_summary", Args: map[string]any{"session_id": id}, Status: "queued", Version: 1, Priority: 0, At: int64(i)})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		claim := workCall(t, s, "POST", `{"action":"claim","runner":"device-`+string(rune('a'+i))+`","executor_version":2,"tools":["get_session_summary"]}`, "claim-"+string(rune('a'+i)), true)
+		if claim.Code != 200 {
+			t.Fatal(claim.Code, claim.Body.String())
+		}
+		var body struct {
+			Claimed *voicework.Task `json:"claimed"`
+		}
+		_ = json.Unmarshal(claim.Body.Bytes(), &body)
+		if body.Claimed == nil {
+			t.Fatal("missing claim")
+		}
+		task := body.Claimed
+		// The test completes only the local ledger, never an external read or provider turn.
+		_, err = s.store.UpdateVoiceWork(context.Background(), func(v *voicework.State) error {
+			return v.Finish(task.ID, task.Runner, task.ActionKey, "read evidence", "", false, time.Now().Unix())
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	blocked := workCall(t, s, "POST", `{"action":"claim","runner":"another-device","executor_version":2,"tools":["get_session_summary"]}`, "claim-fourth", true)
+	if blocked.Code != 200 || !strings.Contains(blocked.Body.String(), `"claimed":null`) {
+		t.Fatal(blocked.Code, blocked.Body.String())
+	}
+	get := workCall(t, s, "GET", "", "", false)
+	var body struct {
+		Continuation *voicework.BatchOffer `json:"continuation"`
+		State        voicework.State       `json:"state"`
+	}
+	_ = json.Unmarshal(get.Body.Bytes(), &body)
+	if body.Continuation == nil || len(body.Continuation.Tasks) != 2 {
+		t.Fatal(get.Body.String())
+	}
+	raw, _ := json.Marshal(map[string]any{"action": "continue_batch", "batch": body.Continuation})
+	if w := workCall(t, s, "POST", string(raw), "read-device", false); w.Code != 403 {
+		t.Fatal(w.Code)
+	}
+	w := workCall(t, s, "POST", string(raw), "continue-exact", true)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	repeat := workCall(t, s, "POST", string(raw), "continue-exact", true)
+	if repeat.Code != 200 || repeat.Body.String() != w.Body.String() {
+		t.Fatal("idempotency did not retain approval receipt")
+	}
+	stale := workCall(t, s, "POST", string(raw), "another-approval", true)
+	if stale.Code != 409 {
+		t.Fatal(stale.Code, stale.Body.String())
+	}
+	state, err := s.store.VoiceWork(context.Background())
+	if err != nil || state.AutoBatch == nil || state.AutoBatch.Epoch != 2 {
+		t.Fatal(state, err)
+	}
+}
+
+func TestVoiceMessagePreparationRejectsAmbiguityAndLiveMenusWithoutConsumingInput(t *testing.T) {
+	for _, sessions := range []string{`[{"id":"recipient","label":"Same"},{"id":"other","label":"Same"}]`, `[{"id":"recipient","label":"Recipient","options":[{"n":1,"label":"Proceed"}]}]`} {
+		s := workServer(t)
+		on := true
+		_, _ = s.changeCopilot(copilot.Change{WorkEnabled: &on})
+		if w := workCall(t, s, "POST", `{"action":"input","id":"original","call":"call","text":"Send a plain reply","deferred":true}`, "input", true); w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+		w := workCall(t, s, "POST", `{"action":"prepare_message","id":"recipient","call":"call","text":"Please inspect","input_ids":["original"],"sessions":`+sessions+`}`, "prepare", true)
+		if w.Code < 400 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		state, err := s.store.VoiceWork(context.Background())
+		if err != nil || len(state.Tasks) > 0 || state.Inputs[0].Planned {
+			t.Fatal(state, err)
+		}
+	}
+}
+
+func TestVoiceWorkOrganizesOverflowWithoutGrantingMoreAutomaticActions(t *testing.T) {
+	s := workServer(t)
+	on := true
+	_, _ = s.changeCopilot(copilot.Change{WorkEnabled: &on})
+	was := voiceWorkPlan
+	voiceWorkPlan = func(_ context.Context, raw, _ string) (planner.VoiceWorkPlan, error) {
+		var input struct {
+			Limit  int               `json:"auto_continue_limit"`
+			Inputs []voicework.Input `json:"inputs"`
+		}
+		if err := json.Unmarshal([]byte(raw), &input); err != nil {
+			return planner.VoiceWorkPlan{}, err
+		}
+		if input.Limit != 3 || len(input.Inputs) != 5 {
+			return planner.VoiceWorkPlan{}, errors.New("overflow inputs or allowance missing")
+		}
+		changes := []voicework.Change{}
+		for _, in := range input.Inputs {
+			changes = append(changes, voicework.Change{Op: "add", ID: in.ID, Text: in.Text, Tool: "list_machines", Args: map[string]any{}})
+		}
+		return planner.VoiceWorkPlan{Changes: changes, Reply: "All five requests retained."}, nil
+	}
+	t.Cleanup(func() { voiceWorkPlan = was })
+	ids := []string{"one", "two", "three", "four", "five"}
+	for _, id := range ids {
+		raw, _ := json.Marshal(map[string]any{"action": "input", "id": id, "text": "Inspect " + id})
+		if w := workCall(t, s, "POST", string(raw), "input-"+id, true); w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"action": "plan", "input_ids": ids, "sessions": []any{}})
+	if w := workCall(t, s, "POST", string(raw), "organize-five", true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		s.voiceWorkMu.Lock()
+		running := s.voiceWorkRunning
+		s.voiceWorkMu.Unlock()
+		if !running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("local fake organizer did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	state, err := s.store.VoiceWork(context.Background())
+	if err != nil || len(state.Tasks) != 5 || len(state.Inputs) != 5 {
+		t.Fatal(state, err)
+	}
+	for i := 0; i < 3; i++ {
+		task := state.Claim("executor", 1)
+		if task == nil {
+			t.Fatal("missing automatic task")
+		}
+		if err := state.Finish(task.ID, task.Runner, task.ActionKey, "evidence", "", false, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if state.Claim("executor", 1) != nil || state.Continuation(3) == nil {
+		t.Fatal("organizing overflow granted excess authority")
+	}
+}

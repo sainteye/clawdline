@@ -3,6 +3,7 @@ import type { PageModule } from './types.js'
 import { nextWord as W } from '../next-strings.js'
 import { CopilotSettingsCard } from './settings/window/CopilotSettingsCard.js'
 import { voiceWork, receiveVoiceWork, retryVoicePlanning } from '../voice-work/runtime.js'
+import { batchProposal } from '../voice-work/continuation.js'
 import { WORK_TEXT_RUNES, retryableTask, type VoiceTask } from '../voice-work/engine.js'
 import { COPILOT_OPEN } from '../overlays/events.js'
 import { readCopilotSettings, writeCopilotSettings } from './settings/api.js'
@@ -63,6 +64,7 @@ function VoiceAssistant({shown}:{shown:boolean}) {
     setError('')
     try {await voiceWork.change({action,id:task.id,version:task.version})} catch(e){setError(e instanceof Error?e.message:String(e))}
   }
+  const batch=batchProposal(voiceWork.state,voiceWork.continuation)
   const tasks=voiceWork.state?.tasks??[]
   const unfinished=tasks.filter(t=>t.status!=='done'&&t.status!=='cancelled')
   const pending=voiceWork.state?.inputs.filter(i=>!i.planned)??[]
@@ -85,6 +87,7 @@ function VoiceAssistant({shown}:{shown:boolean}) {
         {modeError?<p className="voice-work-error" role="alert"><strong>{W('voiceWorkIssue')}</strong>{W('voiceWorkFailure',{reason:modeError})}</p>:null}
       </section>
       <aside className="voice-work-notice" role="note"><span className="voice-work-notice-icon" aria-hidden="true">i</span><div><strong>{W('voiceWorkRuntimeLabel')}</strong><p>{W('voiceWorkRuntimeHint')}</p></div></aside>
+      {batch?<aside className="voice-work-notice" role="status"><span className="voice-work-notice-icon" aria-hidden="true">?</span><div><strong>{W('voiceWorkBatchWaiting')}</strong><p>{W('voiceWorkBatchReview')}</p><ol>{batch.titles.map((title,i)=><li key={batch.offer.tasks[i].id}>{title}</li>)}</ol><button type="button" onClick={()=>{setError('');void voiceWork.change({action:'continue_batch',batch:batch.offer}).catch(e=>setError(String(e)))}}>{W('voiceWorkBatchContinue')}</button></div></aside>:null}
       <form className="voice-work-compose" onSubmit={e=>{e.preventDefault();if(!text.trim()||sending)return;setSending(true);setError('');void receiveVoiceWork(text.trim()).then(()=>setText(''),e=>setError(String(e))).finally(()=>setSending(false))}}>
         <label htmlFor="voice-work-input">{W('voiceWorkInput')}</label>
         <textarea id="voice-work-input" rows={3} maxLength={WORK_TEXT_RUNES} value={text} onChange={e=>setText(e.target.value)} placeholder={W('voiceWorkInputPlaceholder')} aria-describedby="voice-work-example" />

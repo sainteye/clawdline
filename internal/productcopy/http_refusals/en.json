@@ -1356,5 +1356,14 @@
   "http.ff821b6116dd9e4a": "An item's phase is not edited; it moves through the item's own actions.",
   "http.ff9859775a615fc4": "This closure records why no delivery named this item — say what was done and where it landed. Without that it is a state change nobody can check later.",
   "http.ffd795cf51e7ebea": "place is board or backlog.",
-  "http.ffed8239d8e297e0": "Supply the expected version and text content."
+  "http.ffed8239d8e297e0": "Supply the expected version and text content.",
+  "http.b387b2cf36c9ba89": "This browser's extension setup is not confirmed. Open its setup instructions in Settings, Browser.",
+  "http.057d54036095121c": "Use this agent's native browser tools. If they are unavailable, consult the browser priority and automatic-selection switches before choosing another browser.",
+  "http.35afd7fafc7893f5": "The saved Session browser-choice limit has been reached. Existing Sessions and tabs are retained; no new choice was saved.",
+  "http.1f456163187ca5d2": "This Session still has a browser operation in progress. Wait for its result before choosing another browser.",
+  "http.81461ccd74106729": "Automatic selection is off for this browser. Use Settings, Browser, or honor the person's explicit request for this Session after setup is complete.",
+  "http.291a0753f47a5a58": "The browser policy must list each browser once and give each one an automatic-selection switch.",
+  "http.6fdaaffd00fdddc0": "Choose a valid browser policy without mixing ordered selection and legacy mode settings.",
+  "http.41accd9f619d48df": "Name one Session or Chrome profile for this reading.",
+  "http.51774ccca1152d03": "Choose isolated or user_chrome for setup."
 }

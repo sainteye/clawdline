@@ -26,6 +26,9 @@ import { menuFingerprint } from "../session/fingerprint.ts"
 // @ts-expect-error -- Node executes the TypeScript source in tests.
 import { COPILOT_SPEECH_GUIDANCE, COPILOT_WORK_DISABLED_GUIDANCE } from './copilot-speech.ts'
 
+// @ts-expect-error -- Node executes TypeScript sources directly in tests.
+import {SESSION_REPORT_SESSIONS,sessionBatchSize,sessionNamePosition,sameReference,relativeSession,type SessionReference,type SpokenReference} from './copilot-reports.ts'
+
 /** Every content read names its Session on purpose: the copilot is opened inside another one. */
 const NAMED_READ: RequestInit = { headers: { [UNOPENED_READ_HEADER]: "1" } }
 
@@ -48,6 +51,12 @@ export interface ToolLog {
 }
 
 export interface ToolDeps {
+  /** Call-local read identity. It is never authority for a mutation. */
+  spokenReference?: (text:string)=>SpokenReference|undefined
+  onRead?: (ref:SessionReference)=>void
+  summaryLimit?:number
+  summaryTargets?:readonly SessionReference[]
+  summaryExclude?:readonly string[]
   /** A prepared group member can be narrated while other reads continue. */
   progress?: (value: string) => Promise<void>
   fetch: (input: string, init?: RequestInit) => Promise<Response>
@@ -170,7 +179,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 
 【工具】
 - list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，未讀取逐字稿）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
-- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
+- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序；通話每次只介紹回傳的最多3個，其他批次由程式接續，不把所有項目壓成一句話。每個先說清楚它的名稱，再用日常語言解釋目的、進展及真正待決事項；不要只重念程式術語。使用者要繼續被打斷的介紹時設 continue_report=true，不要重新查清單。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
 - get_session_summary：某個 Session 現在的摘要（最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」用這個。
 - get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
@@ -283,6 +292,7 @@ export const COPILOT_TOOLS = [
       required: ['which'],
       properties: {
         which: { type: 'string', enum: ['working', 'idle', 'all'], description: 'working：工作中與等使用者回應的；idle：近期閒置；all：全部' },
+        continue_report:{type:'boolean',description:'通話中使用者要繼續剛才被打斷的 Session 介紹時設為 true，沿用已保存的批次，不重查清單或重排順序。這是介紹接續，不是自動工作額度的同意。'},
         idle_scope:{type:'string',enum:['recent','all'],description:'idle 預設只查最近30分鐘，沒有才擴到1小時；只有使用者明確要全部閒置時才用all。逐一說明閒置約多久，最近閒置的先報。時間依最後確認活動估計，不能當作精確停止時間。'},
       },
     },
@@ -947,17 +957,27 @@ export interface SessionDecision { id?: string; candidates?: string[]; many?: bo
  * from, as before (`resolveSession`). Writes never come here (`resolveForWrite`).
  */
 export async function resolveRead(
-  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard'>,
+  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead'>,
   rows: readonly CopilotSessionRow[],
   wanted: string,
 ): Promise<ReturnType<typeof resolveSession>> {
+  const finish=(result:ReturnType<typeof resolveSession>)=>{if('row' in result)deps.onRead?.({id:result.row.id,label:result.row.label,machine:result.row.machine,conversation:result.row.conversation});return result}
   const direct = resolveSession(rows, wanted)
   // The person's words decide when there are any: measured live, the voice
   // model filled in a wrong id itself (「做衣服圖片的那個」 read as another
   // Session), and asked for the person's words it handed over its own pick
   // of a label instead. So the transcribed sentence comes first.
   const asked = (deps.heard?.() ?? '').trim() || (deps.said ?? '').trim() || ('row' in direct ? '' : wanted.trim())
-  if (!asked || !deps.decide || rows.length === 0) return direct
+  // A whole name actually spoken by the person is stronger than a new guess.
+  const named=rows.filter(row=>sessionNamePosition(asked,row.label)>=0)
+  if(!/(?:不是|不要|別|别|\bnot\b)/i.test(asked)&&named.length===1&&uniqueSessionID(rows,named[0].id))return finish({row:named[0]})
+  const spoken=deps.spokenReference?.(asked)
+  if(spoken || relativeSession(asked)!==undefined){
+    const row=spoken?.target?uniqueSessionID(rows,spoken.target.id):undefined
+    if(row&&spoken?.target&&sameReference(spoken.target,row))return finish({row})
+    return {error:'voice_session_reference_unresolved',candidates:(spoken?.candidates??[]).map(ref=>({id:ref.id,label:ref.label})),meaning:'The spoken position has no verified current Session. Ask which name the person means. Never replace it with a guessed Session.'} as ReturnType<typeof resolveSession>
+  }
+  if (!asked || !deps.decide || rows.length === 0) return finish(direct)
   let decided: SessionDecision
   try {
     decided = await deps.decide(asked, rows.map((r) => ({
@@ -967,16 +987,16 @@ export async function resolveRead(
     })))
   } catch {
     // refusal-ok: without a decision the copilot still gets every Session and chooses itself.
-    return direct
+    return finish(direct)
   }
   const near = (decided.candidates ?? []).map((id) => uniqueSessionID(rows, id)).filter((r): r is CopilotSessionRow => !!r)
   // A lone candidate is the decision: asking "is it this one?" about the only
   // match was said to the person as "not found".
   const row = (decided.id ? uniqueSessionID(rows, decided.id) : undefined) ?? (near.length === 1 ? near[0] : undefined)
-  if (row) return { row }
+  if (row) return finish({ row })
   // Words that point nowhere ("它") leave the copilot's own choice standing,
   // and so does a question about several Sessions read one at a time.
-  if ('row' in direct && (near.length === 0 || near.includes(direct.row) || decided.many)) return direct
+  if ('row' in direct && (near.length === 0 || near.includes(direct.row) || decided.many)) return finish(direct)
   if (near.length && decided.many) {
     // Asked about several at once (「他們做了什麼」): every one is read, not
     // put back to the person as a choice. On 2026-11-12 such a question was
@@ -993,7 +1013,7 @@ export async function resolveRead(
       candidates: near.map((r) => ({ id: r.id, label: r.label, state: r.state })),
     }
   }
-  return direct
+  return finish(direct)
 }
 
 function countBy(rows: readonly CopilotSessionRow[]): Record<string, number> {
@@ -1153,7 +1173,12 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
     }
     group.sort((a,b)=>idleAt(b)-idleAt(a))
   }
-  const shown = group.slice(0, LIST_LATEST_READS)
+  const changed:SessionReference[]=[]
+  if(deps.summaryTargets)group=deps.summaryTargets.flatMap(ref=>{const row=uniqueSessionID(read.rows,ref.id);if(row&&sameReference(ref,row))return [row];changed.push(ref);return []})
+  if(deps.summaryExclude)group=group.filter(row=>!deps.summaryExclude!.includes(row.id))
+  const shown = group.slice(0, deps.summaryLimit?Math.min(deps.summaryLimit,sessionBatchSize(Math.min(group.length,SESSION_REPORT_SESSIONS))):LIST_LATEST_READS)
+  const ref=(r:CopilotSessionRow):SessionReference=>({id:r.id,label:r.label,machine:r.machine,conversation:r.conversation})
+  const remaining=deps.summaryLimit?group.slice(shown.length,SESSION_REPORT_SESSIONS).map(ref):[]
   const progress = await Promise.all(shown.map(async (r) => {
     const words=await latestWords(deps,r)
     if(deps.progress) await deps.progress(JSON.stringify({label:r.label,...progressFields(words)}))
@@ -1163,8 +1188,9 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   return {
     which,
     count: group.length,
+    ...(deps.summaryLimit?{remaining,more_pending:remaining.length,not_read:Math.max(0,group.length-SESSION_REPORT_SESSIONS),changed:changed.map(ref=>({session_id:ref.id,label:ref.label,error:'voice_session_identity_changed'}))}:{}),
     ...(which==='idle'?{idle_window_minutes:idleScope==='all'?null:idleWindow/60,expanded_from_minutes:expanded?RECENT_IDLE_SECONDS/60:undefined,unknown_idle_time:unknownIdle,idle_time_basis:'last_confirmed_activity_estimate',reporting_rule:'Report newest idle first. Say approximately how long each has been idle, based on last confirmed activity. Do not call unknown or working Sessions idle. Say when the 30-minute window was expanded to one hour.'}:{}),
-    sessions: shown.map((r, i) => ({
+    sessions: shown.map((r, i) => {deps.onRead?.(ref(r));return ({
       session_id:r.id,
       ...(which==='idle'&&idleAt(r)>0&&idleAt(r)<=now?{idle_for_seconds:now-idleAt(r),idle_for:durationPhrase(now-idleAt(r))}:{}),
       label: r.label,
@@ -1173,8 +1199,8 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
       ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
       ...(r.question ? { question: r.question } : {}),
       ...progressFields(progress[i]),
-    })),
-    ...(group.length > shown.length ? { not_read: group.length - shown.length } : {}),
+    })}),
+    ...(!deps.summaryLimit&&group.length > shown.length ? { not_read: group.length - shown.length } : {}),
   }
 }
 

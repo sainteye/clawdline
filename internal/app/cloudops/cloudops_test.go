@@ -964,10 +964,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "copilot-settings-update",
 		body: map[string]any{"type": "copilot-settings-update", "session": machine, "request": "req-copilot-write",
-			"changes": map[string]any{"eagerness": "auto", "briefing": false}},
+			"changes": map[string]any{"eagerness": "auto", "briefing": false, "work_auto_continue": 3}},
 		session: machine, name: "action:req-copilot-write",
 		method: "POST", path: "/v1/settings/copilot",
-		body2: `{"briefing":false,"eagerness":"auto"}`,
+		body2: `{"briefing":false,"eagerness":"auto","work_auto_continue":3}`,
 	}, {
 		word:    "copilot-session",
 		body:    map[string]any{"type": "copilot-session", "session": machine, "request": "req-call"},
@@ -1669,5 +1669,28 @@ func TestReadonlyViewerKeepsConversationDocumentAndImageReads(t *testing.T) {
 				t.Fatalf("readonly read: %+v", a)
 			}
 		})
+	}
+}
+
+func TestVoiceBatchContinuationCrossesTheCloudWriteGateWithExactVersions(t *testing.T) {
+	r := &router{}
+	b := open(r)
+	work := map[string]any{"action": "continue_batch", "batch": map[string]any{"epoch": 1, "limit": 3, "tasks": []any{map[string]any{"id": "read-four", "version": 2}}}, "call": "call-one", "input_ids": []any{"consent"}}
+	command := request(t, ClassCtl, map[string]any{"type": "copilot-work-update", "session": MachineReplySession, "request": "req-batch", "work": work})
+	b.Authority = func(context.Context, string, ed25519.PublicKey, bool) Authority {
+		return Authority{ClockReady: true, RosterReadable: true, RosterAllowsSender: true, WriteGateAllows: true, ViewerReadOnly: true}
+	}
+	if a := b.Handle(context.Background(), command); a.Code != "viewer_read_only" || len(r.seen) != 0 {
+		t.Fatal(a.Code, "read-only viewer reached update")
+	}
+	b = open(r)
+	a := b.Handle(context.Background(), command)
+	if a.Status != 200 || len(r.seen) != 1 {
+		t.Fatal(a.Status, a.Code)
+	}
+	got := r.last()
+	want, _ := json.Marshal(work)
+	if got.Method != "POST" || got.Path != "/v1/voice/copilot-work" || string(got.Body) != string(want) {
+		t.Fatal(got)
 	}
 }

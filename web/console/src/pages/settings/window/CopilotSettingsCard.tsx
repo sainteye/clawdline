@@ -144,6 +144,9 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
         <Switch label={nextWord("voiceWorkEnable")} on={snapshot.work_enabled === true}
           onChange={(on) => { void change({ work_enabled: on }).catch(() => undefined) }} />
       </Row>
+      {snapshot.max_auto_continue&&snapshot.work_auto_continue?<Row label={nextWord("voiceWorkBatchLimit")} hint={nextWord("voiceWorkBatchHint")}>
+        <PopUp label={nextWord("voiceWorkBatchLimit")} value={String(snapshot.work_auto_continue)} options={Array.from({length:snapshot.max_auto_continue},(_,i)=>({value:String(i+1),label:String(i+1)}))} onPick={picked=>{void change({work_auto_continue:Number(picked)}).catch(()=>undefined)}}/>
+      </Row>:null}
       <Row label={nextWord("voiceWorkPlanner")}>
         <PopUp label={nextWord("voiceWorkPlanner")} value={snapshot.work_assistant ?? snapshot.briefing_assistant}
           options={[{value:"claude",label:nextWord("voiceWorkClaude")},{value:"codex",label:nextWord("voiceWorkCodex")}]}

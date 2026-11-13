@@ -140,3 +140,11 @@ test('fresh state readers await the same held request instead of observing stale
  release({state:state()});await two
  assert.equal(runtime.state?.id,state().id)
 })
+
+test('a waiting batch keeps its offer without hammering claim and clears on machine switch',async()=>{
+ const offer={epoch:1,limit:3,tasks:[{id:'four',version:1}]};const changes:Record<string,unknown>[]=[]
+ const runtime=new VoiceWorkRuntime({request:async(change)=>{if(change)changes.push(change);return {auto_continue:true,continuation:offer,state:{...state(),tasks:[{...task('four'),status:'queued'}]}}},execute:async()=>assert.fail('unapproved batch executed')})
+ const stop=runtime.activate();await runtime.refresh();stop()
+ assert.deepEqual(runtime.continuation,offer);assert.equal(changes.length,0)
+ runtime.switchMachine();assert.equal(runtime.continuation,null)
+})

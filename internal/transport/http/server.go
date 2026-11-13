@@ -71,6 +71,7 @@ type Server struct {
 	codegraphMu        sync.Mutex
 	browserMu          sync.Mutex
 	browserBridge      *browserbridge.Bridge
+	browserProfiles    *browserbridge.Profiles
 	codegraphBuilder   *codegraph.Builder
 	githubMu           sync.Mutex
 	githubConn         *githubissues.Connection

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11651,
-  "riskKeys": 5096,
-  "nonRiskCount": 6555,
+  "englishContentKeys": 11685,
+  "riskKeys": 5109,
+  "nonRiskCount": 6576,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 495,
+      "count": 500,
       "sources": [
         null
       ],
@@ -460,6 +460,7 @@
         "capacityRow.browser.host_message_bytes.what",
         "capacityRow.browser.pending_commands.what",
         "capacityRow.browser.result_bytes.what",
+        "capacityRow.browser.session_choices.what",
         "capacityRow.browser.stdin_text_bytes.what",
         "capacityRow.cache.claude_usage_refresh_seconds.what",
         "capacityRow.cache.claude_usage_reply_bytes.what",
@@ -588,6 +589,9 @@
         "capacityRow.console.copilot_recent_idle_seconds.what",
         "capacityRow.console.copilot_reply_characters.what",
         "capacityRow.console.copilot_screen_reads.what",
+        "capacityRow.console.copilot_session_report_batch.what",
+        "capacityRow.console.copilot_session_report_refs.what",
+        "capacityRow.console.copilot_session_report_sessions.what",
         "capacityRow.console.copilot_smart_rename_sessions.what",
         "capacityRow.console.copilot_update_marks.full",
         "capacityRow.console.copilot_update_marks.what",
@@ -879,6 +883,7 @@
         "capacityRow.voice.vocabulary_project_terms.what",
         "capacityRow.voice.vocabulary_term_characters.what",
         "capacityRow.voice.vocabulary_terms.what",
+        "capacityRow.voice.work_auto_continue.what",
         "capacityRow.voice.work_execution_milliseconds.what",
         "capacityRow.voice.work_parallel_reads.what",
         "capacityRow.voice.work_plan_rounds.what",
@@ -3853,7 +3858,7 @@
     },
     {
       "name": "next / other",
-      "count": 1003,
+      "count": 1018,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3931,7 +3936,9 @@
         "next.browserModeIsolated",
         "next.browserModeIsolatedHelp",
         "next.browserModeNative",
+        "next.browserModeNativeHelp",
         "next.browserModeUserChrome",
+        "next.browserModeUserChromeHelp",
         "next.browserOpClick",
         "next.browserOpHandback",
         "next.browserOpKey",
@@ -3978,12 +3985,20 @@
         "next.browserPanelZoom",
         "next.browserPanelZoomIn",
         "next.browserPanelZoomOut",
+        "next.browserPolicyAuto",
+        "next.browserPolicyDown",
+        "next.browserPolicyNativeReady",
+        "next.browserPolicyNeedSetup",
+        "next.browserPolicyNeedsUpdate",
+        "next.browserPolicyReady",
+        "next.browserPolicySetUp",
+        "next.browserPolicySetup",
+        "next.browserPolicyUp",
         "next.browserRemind",
         "next.browserSettingsConnected",
         "next.browserSettingsConnectedHost",
         "next.browserSettingsEnabled",
         "next.browserSettingsEnabledHelp",
-        "next.browserSettingsIntro",
         "next.browserSettingsLoading",
         "next.browserSettingsNotify",
         "next.browserSettingsNotifyHelp",
@@ -4113,6 +4128,8 @@
         "next.copilotProposalHint",
         "next.copilotReady",
         "next.copilotRemembered",
+        "next.copilotReportContinue",
+        "next.copilotReportPaused",
         "next.copilotSaid",
         "next.copilotSettingsTitle",
         "next.copilotSourceHint",
@@ -4820,6 +4837,9 @@
         "next.voiceStopping",
         "next.voiceTryPartial",
         "next.voiceWaitForAudio",
+        "next.voiceWillSend",
+        "next.voiceWorkBatchContinue",
+        "next.voiceWorkBatchLimit",
         "next.voiceWorkBriefingReplaced",
         "next.voiceWorkCancel",
         "next.voiceWorkCancelRequested",
@@ -6709,7 +6729,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 163,
+      "count": 164,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6724,6 +6744,7 @@
         "transparency.card.board.how",
         "transparency.card.board.title",
         "transparency.card.browser-use.condition",
+        "transparency.card.browser-use.summary",
         "transparency.card.browser-use.title",
         "transparency.card.child.effect",
         "transparency.card.child.how",

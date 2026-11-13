@@ -199,7 +199,8 @@ test('speech during initial directory loading also supersedes the automatic open
 
 
 async function withLedger(f,run) {
- const oldDeps=voiceWork.deps,oldState=voiceWork.state
+ const oldDeps=voiceWork.deps,oldState=voiceWork.state,oldContinuation=voiceWork.continuation
+ let continuation=null
  const requests=[]
  const state={id:'test-workspace',revision:1,plan_version:0,inputs:[],tasks:[],planner_error:'voice_work_planning_failed'}
  voiceWork.state=state
@@ -215,12 +216,13 @@ async function withLedger(f,run) {
        const task=state.tasks.find(t=>t.id===change.id);assert.equal(task.version,change.version);task.status='queued';task.approved_version=task.version
        state.inputs.find(i=>i.id===change.input_ids[0]).planned=true
      }
+     if(change.action==='continue_batch'){continuation=null;state.inputs.find(i=>i.id===change.input_ids?.[0]).planned=true}
      if(change.action==='answer')for(const i of state.inputs)if(i.id===change.id)i.planned=true
    }
-   return {protocol:3,message_confirmation:true,state,prepared:change?.action==='prepare_message'?state.tasks.at(-1):undefined}
+   return {protocol:3,message_confirmation:true,auto_continue:true,continuation,state,prepared:change?.action==='prepare_message'?state.tasks.at(-1):undefined}
  }}
  f.c.journalCall='test-call';useCallWorkTools(f.c.toolDeps(),'test-call')
- try{await run(state,requests);await tick()}finally{useCallWorkTools(undefined);voiceWork.deps=oldDeps;voiceWork.state=oldState}
+ try{await run(state,requests,{setOffer:offer=>continuation=offer});await tick()}finally{useCallWorkTools(undefined);voiceWork.deps=oldDeps;voiceWork.state=oldState;voiceWork.continuation=oldContinuation}
 }
 
 test('managed speech is saved with its original focus but starts no planning or receipt narration',async()=>{
@@ -416,5 +418,125 @@ test('an interrupted or incorrect proposal cannot authorize a send',async()=>{
   await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'unbound',transcript:'可以，送出。'})
   assert.equal(requests.some(r=>r.action==='confirm_message'),false)
   assert.equal(state.tasks[0].status,'waiting_confirmation')
+ })
+})
+
+for(const mode of ['complete','interrupted','changed'])test(`spoken next-batch approval is bound to the heard selection: ${mode}`,async()=>{
+ const f=fixture(true)
+ await withLedger(f,async(state,requests,control)=>{
+  const offer={epoch:1,limit:3,tasks:[{id:'next-a',version:1},{id:'next-b',version:1}]}
+  state.tasks.push(...offer.tasks.map((ref,i)=>({...ref,text:i?'Read deployment status':'Read pending questions',tool:'get_session_summary',args:{session_id:String(i)},sources:[],depends_on:[],priority:0,status:'queued'})))
+  control.setOffer(offer);await voiceWork.refresh();f.c.offerNextBatch()
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'batch-read'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Read pending questions. Read deployment status. Shall I continue this batch?'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'batch-read',status:'completed',output:[{type:'message'}]}})
+  assert.equal(f.c.batchProposal.announced,false)
+  await f.c.handleRealtimeEvent({type:mode==='interrupted'?'output_audio_buffer.cleared':'output_audio_buffer.stopped'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'batch-consent'})
+  if(mode==='changed')control.setOffer({...offer,tasks:[{id:'next-a',version:2},{id:'next-b',version:1}]})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'batch-consent'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'batch-consent',transcript:'可以，繼續。'})
+  assert.equal(requests.filter(r=>r.action==='continue_batch').length,mode==='complete'?1:0)
+  assert.equal(requests.some(r=>r.action==='confirm_message'||r.action==='plan'),false)
+ })
+})
+
+test('a mistaken plain-reply tool is prepared for spoken confirmation without pressing a menu or planning',async()=>{
+ const f=fixture(true);f.c.call.options.messageActions=true
+ await withLedger(f,async(state,requests)=>{
+  state.inputs.push({id:'plain-reply',call:'test-call',text:'Reply with clear everyday language.',deferred:true,planned:false,at:1})
+  f.c.activeConversationInput='plain-reply'
+  await f.c.handleToolCall({call_id:'wrong-tool',name:'answer_session_question',arguments:'{"session_id":"%7","selected_option":"Please use everyday language."}'})
+  assert.equal(requests.filter(r=>r.action==='prepare_message').length,1)
+  assert.equal(state.tasks[0].status,'waiting_confirmation')
+  assert.equal(requests.some(r=>['plan','confirm_message'].includes(r.action)),false)
+  assert.equal(f.reads.some(r=>r.init?.method==='POST'),false)
+ })
+})
+
+for(const mode of ['cleared','changed-version'])test(`a message cannot use an interrupted or stale spoken proposal: ${mode}`,async()=>{
+ const f=fixture(true)
+ await withLedger(f,async(state,requests)=>{
+  state.tasks.push({id:'message',tool:'send_message_to_session',text:'Exact text',args:{session_id:'%7',message:'Exact text'},sources:['original'],version:1,status:'waiting_confirmation'})
+  f.c.messageProposal={id:'message',version:1,workspace:state.id,target:'Prepare screenshots',message:'Exact text',announced:false}
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'read-message'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Prepare screenshots. Exact text. Say yes, send it.'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'read-message',status:'completed',output:[{type:'message'}]}})
+  await f.c.handleRealtimeEvent({type:mode==='cleared'?'output_audio_buffer.cleared':'output_audio_buffer.stopped'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'consent'})
+  if(mode==='changed-version'){state.tasks[0].version=2;state.revision++}
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'consent'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'consent',transcript:'可以，送出。'})
+  assert.equal(requests.some(r=>r.action==='confirm_message'),false)
+ })
+})
+
+for(const managed of [false,true])test(`Session reports speak three at a time and retain the actual spoken order (${managed?'managed':'direct'})`,async()=>{
+ const f=fixture(managed)
+ let releaseNext;const nextReady=new Promise(resolve=>releaseNext=resolve);const reads=[]
+ const rows=Array.from({length:6},(_,i)=>({id:`%${i+1}`,label:`Work ${String.fromCharCode(65+i)}`,assistant:'codex',state:'working',sessionId:`conversation-${i}`,activity:{at:100-i,known:true}}))
+ f.c.toolDeps=()=>({sleep:async()=>{},now:()=>101,decide:async()=>assert.fail('a verified spoken reference must not ask a classifier'),fetch:async(path)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:rows})
+  if(path.startsWith('/v1/transcript?')){const id=new URLSearchParams(path.split('?')[1]).get('session');reads.push(id);if(Number(id.slice(1))>3)await nextReady;return Response.json({entries:[{role:'assistant',text:`Actual progress for ${id}`} ]})}
+  assert.fail(path)
+ }})
+ await withLedger(f,async()=>{
+  await f.c.handleToolCall({call_id:'group',name:'get_sessions_summary',arguments:'{"which":"working"}'})
+  const answer=JSON.parse(f.sent.find(e=>e.item?.type==='function_call_output').item.output)
+  assert.deepEqual(answer.sessions.map(s=>s.session_id),['%1','%2','%3'])
+  assert.equal(answer.more_pending,3);assert.equal(answer.remaining,undefined,'unspoken batch details stay out of this reply')
+  await tick()
+  assert.deepEqual(reads,['%1','%2','%3','%4','%5','%6'],'only one next batch is prefetched')
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'first-batch'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Work A. Work B. Work C.'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'first-batch',status:'completed',output:[{type:'message'}]}})
+  assert.equal(f.c.spokenSessions.resolve('the last session')?.target,undefined)
+  const count=f.responses().length
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
+  assert.equal(f.c.spokenSessions.resolve('the last session').target.id,'%3')
+  assert.equal(f.responses().length,count,'a held next read cannot invent a second report')
+  releaseNext();await tick();await tick()
+  assert.equal(f.responses().length,count+1)
+  assert.equal(f.responses().at(-1).response.tool_choice,'none')
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'second-batch'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Work F. Work D. Work E.'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'second-batch',status:'completed',output:[{type:'message'}]}})
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
+  assert.equal(f.c.spokenSessions.resolve('你講的第二個 Session').target.id,'%4')
+  f.c.heardNow='你最後提到的那個 Session，讀一下摘要。'
+  await f.c.handleToolCall({call_id:'follow-up',name:'get_session_summary',arguments:'{"session_id":"%2","said":"Work B"}'})
+  const follow=JSON.parse(f.sent.find(e=>e.item?.call_id==='follow-up').item.output)
+  assert.equal(follow.session_id,'%5')
+  f.c.resetSessionReports()
+ })
+})
+
+test('a cleared Session introduction exposes resume and reuses prepared content without another read',async()=>{
+ const f=fixture(true)
+ const rows=Array.from({length:4},(_,i)=>({id:`%${i+1}`,label:`Work ${String.fromCharCode(65+i)}`,assistant:'codex',state:'working',sessionId:`conversation-${i}`}))
+ const reads=[];f.c.toolDeps=()=>({sleep:async()=>{},fetch:async path=>{
+  reads.push(path);if(path==='/v1/sessions')return Response.json({sessions:rows})
+  if(path.startsWith('/v1/transcript?'))return Response.json({entries:[{role:'assistant',text:'Confirmed current progress.'}]})
+  assert.fail(path)
+ }})
+ await withLedger(f,async()=>{
+  await f.c.handleToolCall({call_id:'report',name:'get_sessions_summary',arguments:'{"which":"working"}'})
+  await tick()
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'partial'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Work A is handling'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'partial',status:'cancelled',output:[{type:'message'}]}})
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.cleared'})
+  assert.equal(f.c.state.sessionReportCanContinue,true)
+  assert.equal(f.c.spokenSessions.resolve('the last session').target,undefined)
+  const before=reads.length,count=f.responses().length
+  f.c.continueSessionReport()
+  assert.equal(reads.length,before);assert.equal(f.responses().length,count+1)
+  assert.equal(f.c.state.sessionReportCanContinue,false)
+  f.c.resetSessionReports()
  })
 })

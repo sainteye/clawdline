@@ -10,6 +10,7 @@ package copilot
 
 import (
 	"errors"
+	"github.com/sainteye/clawdline/internal/domain/voicework"
 	"strings"
 	"unicode/utf8"
 )
@@ -47,6 +48,7 @@ var BriefingAssistants = []string{"claude", "codex"}
 
 // Settings is the stored file. Key is never sent in any answer.
 type Settings struct {
+	WorkAutoContinue  int    `json:"work_auto_continue,omitempty"`
 	Key               string `json:"openai_key,omitempty"`
 	Model             string `json:"model,omitempty"`
 	Eagerness         string `json:"eagerness,omitempty"`
@@ -64,6 +66,9 @@ type Settings struct {
 
 // Effective fills every unset choice with its default.
 func (s Settings) Effective() Settings {
+	if s.WorkAutoContinue < 1 || s.WorkAutoContinue > voicework.MaxAutoContinue {
+		s.WorkAutoContinue = voicework.DefaultAutoContinue
+	}
 	if !contains(Models, s.Model) {
 		s.Model = Models[0]
 	}
@@ -96,6 +101,7 @@ func (s Settings) KeyHint() string {
 
 // Change is one settings write; a nil field is left as it is.
 type Change struct {
+	WorkAutoContinue  *int    `json:"work_auto_continue"`
 	Key               *string `json:"openai_key"`
 	Model             *string `json:"model"`
 	Eagerness         *string `json:"eagerness"`
@@ -111,6 +117,7 @@ type Change struct {
 
 // Errors a change is refused with; each is the refusal's code.
 var (
+	ErrBadContinuation = errors.New("copilot_bad_auto_continue")
 	ErrBadKey          = errors.New("copilot_bad_key")
 	ErrBadModel        = errors.New("copilot_bad_model")
 	ErrBadEagerness    = errors.New("copilot_bad_eagerness")
@@ -131,6 +138,12 @@ func Apply(original Settings, c Change) (Settings, error) {
 }
 
 func apply(s Settings, c Change) (Settings, error) {
+	if c.WorkAutoContinue != nil {
+		if *c.WorkAutoContinue < 1 || *c.WorkAutoContinue > voicework.MaxAutoContinue {
+			return s, ErrBadContinuation
+		}
+		s.WorkAutoContinue = *c.WorkAutoContinue
+	}
 	if c.Key != nil {
 		k := strings.TrimSpace(*c.Key)
 		if k != "" && (len(k) > MaxKeyBytes || !strings.HasPrefix(k, "sk-") || strings.ContainsAny(k, " \t\r\n\x00")) {

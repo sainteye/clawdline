@@ -28,7 +28,7 @@ import "./browser-panel.css"
  * encrypted like every other word, so the phone sees and acts on the tab too.
  */
 
-type TabInfo = { tab: number; conversation: string; person: boolean; current: boolean }
+type TabInfo = { browser_mode?: string; tab: number; conversation: string; person: boolean; current: boolean }
 type Status = { mode?: string; enabled: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[] } }
 type Activity = { at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; thumb: string }
 
@@ -75,7 +75,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const conversation = row?.sessionId ?? ""
   const [status, setStatus] = useState<Status | null>(null)
   const [statusError, setStatusError] = useState<unknown>(null)
-  const [shotRecord, setShotRecord] = useState<{ value: Shot; tab: number; mode?: string } | null>(null)
+  const [shotRecord, setShotRecord] = useState<{ value: Shot; tab: number; mode?: string; scope: string } | null>(null)
   const [shotError, setShotError] = useState<unknown>(null)
   const [actError, setActError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
@@ -86,14 +86,14 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const closeRef = useRef<HTMLButtonElement>(null)
   const nativeKeyboard = useRef<BrowserKeyboardHandle>(null)
 
-  const mine = status?.status.tabs.filter((t) => t.conversation === conversation) ?? []
+  const mine = status?.status.tabs.filter((t) => t.conversation === conversation && (!t.browser_mode || t.browser_mode === status?.mode)) ?? []
   const tab = mine.find((t) => t.current) ?? mine[mine.length - 1] ?? null
   const tabID = tab?.tab ?? 0
   const browserMode = status?.mode
-  const scopeKey = (browserMode ?? "legacy") + ":" + tabID
+  const scopeKey = (row?.id ?? "") + ":" + conversation + ":" + (browserMode ?? "legacy") + ":" + tabID
   const scope = useRef(scopeKey)
   scope.current = scopeKey
-  const shot = shotRecord?.tab === tabID && shotRecord.mode === browserMode ? shotRecord.value : null
+  const shot = shotRecord?.scope === scopeKey && shotRecord.tab === tabID && shotRecord.mode === browserMode ? shotRecord.value : null
   const otherDebugger = (shotError as { code?: string } | null)?.code === "browser_other_debugger"
   const person = !!tab?.person && status?.enabled !== false && !otherDebugger
   const name = assistantName(row)
@@ -101,7 +101,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   useEffect(() => {
     if (!open) return
     let alive = true
-    const read = () => call<Status>("GET", "/v1/browser/status").then(
+    const read = () => call<Status>("GET", "/v1/browser/status?conversation=" + encodeURIComponent(conversation)).then(
       (s) => { if (alive) { setStatus(s); setStatusError(null) } },
       (e: unknown) => { if (alive) setStatusError(e) },
     )
@@ -123,14 +123,14 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
       // Through Clawdline Cloud the picture travels encrypted through the
       // relay, so it is asked for at a lower quality there.
       call<{ value: Shot }>("GET", "/v1/browser/screenshot?tab=" + tabID + "&quality=" + (relay ? "45" : "55") + (browserMode ? "&browser_mode=" + encodeURIComponent(browserMode) : "")).then(
-        (r) => { if (alive) { setShotRecord({ value: r.value, tab: tabID, mode: browserMode }); setShotError(null) } },
+        (r) => { if (alive) { setShotRecord({ value: r.value, tab: tabID, mode: browserMode, scope: scopeKey }); setShotError(null) } },
         (e: unknown) => { if (alive) setShotError(e) },
       ).finally(() => { inFlight = false })
     }
     read()
     const timer = window.setInterval(read, SHOT_MS)
     return () => { alive = false; window.clearInterval(timer) }
-  }, [open, relay, tabID, browserMode])
+  }, [open, relay, tabID, browserMode, scopeKey])
 
   // What the agent did, with the picture of the page after each action.
   useEffect(() => {
@@ -237,7 +237,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
       return (
         <div className="browser-setup-ask">
           <div className="screen-note" role="status">{nextWord(status.status.connected ? "browserPanelDisabled" : "browserPanelNotConnected")}</div>
-          <button type="button" className="browser-setup-start" onClick={openBrowserSetup}>{nextWord("browserSetupOpen")}</button>
+          <button type="button" className="browser-setup-start" onClick={() => openBrowserSetup()}>{nextWord("browserSetupOpen")}</button>
           {relay && <button type="button" className="chip" disabled={busy || reminded} onClick={async () => {
             setBusy(true);setActError(null)
             try { await call("POST", "/v1/browser/reminder", { conversation }); setReminded(true) }
@@ -329,7 +329,7 @@ export function useBrowserTab(row: SessionRow | null, hidden: boolean): boolean 
     let alive = true
     const read = () => {
       if (document.hidden) return
-      call<Status>("GET", "/v1/browser/status").then(
+      call<Status>("GET", "/v1/browser/status?conversation=" + encodeURIComponent(conversation)).then(
         (s) => { if (alive) setHas(!!s.status?.connected && s.status.tabs.some((t) => t.conversation === conversation)) },
         () => { if (alive) setHas(false) },
       )

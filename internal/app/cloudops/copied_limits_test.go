@@ -13,12 +13,14 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/squadpack"
 	"github.com/sainteye/clawdline/internal/domain/toollibrary"
+	"github.com/sainteye/clawdline/internal/domain/voicework"
 )
 
 // copiedConstants is every Go constant a limit in the vocabulary table is a
 // copy of, by the name the table's `copies` gives it. The generated decoders
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
+	"voicework.MaxAutoContinue":                    voicework.MaxAutoContinue,
 	"browserbridge.MaxAuditRows":                   browserbridge.MaxAuditRows,
 	"capacity.AntigravityConsentRequestBytesLimit": capacity.AntigravityConsentRequestBytesLimit,
 	"ViewerEventsBatchBytesLimit":                  ViewerEventsBatchBytesLimit,

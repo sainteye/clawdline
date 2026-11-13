@@ -63,18 +63,19 @@ export const voiceWork = new VoiceWorkRuntime({
       }
     }
     const args={...task.args}
+    const plainMessage=args._voice_plain_message===true;delete args._voice_plain_message
     const target=args._voice_target as {id:string;label:string;conversation:string;machine:string}|undefined
     delete args._voice_target
     if(target) {
       const rows=await workDirectory(base)
       const row=rows.find(r=>r.id===target.id)
-      if(!row||row.label!==target.label||row.conversation!==target.conversation||row.machine!==target.machine) return {result:'',error:'voice_work_target_changed'}
+      if(!row||row.label!==target.label||row.conversation!==target.conversation||row.machine!==target.machine||plainMessage&&(row.options.length>0||!!row.menu_fingerprint)) return {result:'',error:'voice_work_target_changed'}
     }
     if(signal.aborted)throw new Error('voice_work_stopped')
     if(task.approved_version===task.version)args.switch_confirmed=true
     const definition=COPILOT_TOOLS.find(t=>t.name===task.tool)
     if(!definition)return {result:'',error:'voice_work_unknown_tool'}
-    // Confirmation is always an actual UI action on this exact spec version.
+    // Confirmation is an actual UI action, or bound saved spoken consent, on this exact spec version.
     // The planner cannot mint force-close approval.
     delete args.force_confirmed
     // A rename's consent is the same UI confirmation, never the planner's word.

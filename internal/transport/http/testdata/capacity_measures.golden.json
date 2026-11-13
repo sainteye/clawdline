@@ -247,7 +247,8 @@
   },
   {
     "Name": "browser.audit_rows",
-    "Known": true
+    "Known": true,
+    "Note": true
   },
   {
     "Name": "browser.audit_text_characters",
@@ -284,12 +285,21 @@
   },
   {
     "Name": "browser.pending_commands",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.profile_state_bytes",
     "Known": true
   },
   {
     "Name": "browser.result_bytes",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "browser.session_choices",
+    "Known": true
   },
   {
     "Name": "browser.stdin_text_bytes",
@@ -1361,6 +1371,18 @@
     "Name": "console.copilot_screen_reads",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "console.copilot_session_report_batch",
+    "Err": true
+  },
+  {
+    "Name": "console.copilot_session_report_refs",
+    "Err": true
+  },
+  {
+    "Name": "console.copilot_session_report_sessions",
+    "Err": true
   },
   {
     "Name": "console.copilot_smart_rename_sessions",
@@ -3386,6 +3408,11 @@
   {
     "Name": "voice.vocabulary_terms",
     "Known": true
+  },
+  {
+    "Name": "voice.work_auto_continue",
+    "Known": true,
+    "Note": true
   },
   {
     "Name": "voice.work_execution_milliseconds",

@@ -6,8 +6,10 @@ export interface VoiceTask {
 }
 export interface VoiceFocus {id:string;label:string;machine?:string;conversation?:string}
 export interface VoiceInput { cancelled?:boolean;context?:string;deferred?:boolean;parked?:boolean;focus?:VoiceFocus;planning_error?:string;planning_stage?:string;id: string; text: string; call?: string; planned: boolean; at: number }
-export interface VoiceState { id: string; revision: number; plan_version: number; inputs: VoiceInput[]; tasks: VoiceTask[]; reply?: string; planner_error?: string }
-export interface VoiceAnswer { state: VoiceState; protocol?:number; message_confirmation?:boolean; prepared?:VoiceTask; claimed?: VoiceTask | null; planning?: boolean }
+export interface TaskRef {id:string;version:number}
+export interface BatchOffer {epoch:number;limit:number;tasks:TaskRef[]}
+export interface VoiceState { auto_batch?:{epoch:number;limit:number;selected:TaskRef[];closed:boolean}; id: string; revision: number; plan_version: number; inputs: VoiceInput[]; tasks: VoiceTask[]; reply?: string; planner_error?: string }
+export interface VoiceAnswer { auto_continue?:boolean;continuation?:BatchOffer|null; state: VoiceState; protocol?:number; message_confirmation?:boolean; prepared?:VoiceTask; claimed?: VoiceTask | null; planning?: boolean }
 export const WORK_REQUEST_MS = 10000
 export const WORK_POLL_MS = 1000
 export const WORK_HEARTBEAT_MS = 30000
@@ -51,6 +53,7 @@ export interface WorkRuntimeDeps {
  */
 export class VoiceWorkRuntime {
   state: VoiceState | null = null
+  continuation:BatchOffer|null=null
   planning = false
   failure = ''
   private owners = 0
@@ -68,7 +71,7 @@ export class VoiceWorkRuntime {
   subscribe = (f: () => void) => { this.listeners.add(f); return () => {this.listeners.delete(f)} }
   private publish() { for (const f of this.listeners) f() }
   private accept(answer: VoiceAnswer) {
-    if (!this.state || answer.state.revision >= this.state.revision) this.state = answer.state
+    if (!this.state || answer.state.revision >= this.state.revision) {this.state = answer.state;this.continuation=answer.auto_continue===true?answer.continuation??null:null}
     for(const [id,control] of this.active) {
       const task=this.state?.tasks.find(t=>t.id===id)
       if(task && ['cancel_requested','cancelled','paused'].includes(task.status)) control.abort(new Error('voice_work_stopped'))
@@ -92,7 +95,7 @@ export class VoiceWorkRuntime {
     this.reading?.abort();this.polling=false;this.refreshing=undefined
     this.generation++; this.runner=crypto.randomUUID()
     for (const control of this.active.values()) control.abort()
-    this.active.clear(); this.state=null;this.planning=false;this.failure='';this.publish()
+    this.active.clear(); this.state=null;this.continuation=null;this.planning=false;this.failure='';this.publish()
     if(this.owners) void this.refresh()
   }
   async change(change: Record<string, unknown>): Promise<VoiceAnswer> {
@@ -115,7 +118,7 @@ export class VoiceWorkRuntime {
       const answer=await this.deps.request(undefined,reading.signal)
       if(generation!==this.generation)return
       this.accept(answer)
-      if(this.owners && answer.state.tasks.some(t=>t.status==='queued'||((t.status==='running'||t.status==='cancel_requested')&&(t.lease_until??0)<Date.now()/1000))) {
+      if(this.owners && answer.state.tasks.some(t=>t.status==='queued'&&(!this.continuation||!readTask(t)||t.approved_version===t.version)||((t.status==='running'||t.status==='cancel_requested')&&(t.lease_until??0)<Date.now()/1000))) {
         const claim=await this.deps.request({action:'claim',runner:this.runner,executor_version:2,...this.deps.capabilities?.()},reading.signal)
         if(generation!==this.generation)return
         this.accept(claim)

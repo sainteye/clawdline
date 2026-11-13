@@ -14,7 +14,7 @@ test('running work is visibly active, while confirmation and failure show a stop
   const html=renderToStaticMarkup(createElement(CopilotProgress,{progress:{phase,since:Date.now()}}))
   assert.match(html,/working-indicator/);assert.match(html,/role="status"/)
  }
- for(const phase of ['waiting_confirmation','failed']){
+ for(const phase of ['waiting_confirmation','waiting_batch','failed']){
   const html=renderToStaticMarkup(createElement(CopilotProgress,{progress:{phase,since:Date.now()}}))
   assert.doesNotMatch(html,/working-indicator/);assert.match(html,/#page=voice-assistant/)
  }

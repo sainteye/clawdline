@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client"
 import * as L from "../legacy/bridge.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
 import { nextWord, type NextWord } from "../next-strings.js"
-import { writeChromeSettings } from "../pages/settings/api.js"
+import { readChromeSettings, writeChromeSettings } from "../pages/settings/api.js"
 import { browserCall } from "./browser-call.js"
 import "../setup/setup.css"
 import "./browser-setup.css"
@@ -50,13 +50,13 @@ let root: Root | null = null
 let host: HTMLElement | null = null
 
 /** Open the guide over whatever is on screen; a second call while it is open does nothing. */
-export function openBrowserSetup(): void {
+export function openBrowserSetup(mode?: "isolated" | "user_chrome"): void {
   if (root) return
   host = document.createElement("div")
   host.className = "browser-setup-root"
   document.body.appendChild(host)
   root = createRoot(host)
-  root.render(<BrowserSetup onClose={closeBrowserSetup} />)
+  root.render(<BrowserSetup onClose={closeBrowserSetup} requestedMode={mode} />)
 }
 
 function closeBrowserSetup(): void {
@@ -70,7 +70,7 @@ function closeBrowserSetup(): void {
   })
 }
 
-if (typeof window !== "undefined") window.addEventListener(OPEN_BROWSER_SETUP_EVENT, openBrowserSetup)
+if (typeof window !== "undefined") window.addEventListener(OPEN_BROWSER_SETUP_EVENT, () => openBrowserSetup())
 
 function refusalCode(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code
@@ -82,7 +82,7 @@ function said(error: unknown, lead: "browserSetupLaunchFailed" | "browserSetupRe
   return nextWord(lead, { reason: L.failureSentence(error, { fallback: (error as Error)?.message || "" }) })
 }
 
-export function BrowserSetup({ onClose }: { onClose: () => void }) {
+export function BrowserSetup({ onClose, requestedMode }: { onClose: () => void; requestedMode?: "isolated" | "user_chrome" }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [step, setStep] = useState<Step>("benefits")
   const [enabled, setEnabled] = useState(true)
@@ -92,9 +92,9 @@ export function BrowserSetup({ onClose }: { onClose: () => void }) {
   const [modeError, setModeError] = useState<unknown>(null)
   useEffect(() => {
     let alive = true
-    void browserCall<Setup>("GET", "/v1/browser/setup").then(value => { if (alive) setMode(value.mode ?? "isolated") }, error => { if (alive) setModeError(error) })
+    void browserCall<Setup>("GET", "/v1/browser/setup" + (requestedMode ? "?browser_mode=" + requestedMode : "")).then(value => { if (alive) setMode(requestedMode ?? value.mode ?? "isolated") }, error => { if (alive) setModeError(error) })
     return () => { alive = false }
-  }, [])
+  }, [requestedMode])
   useEffect(() => { showModalWithoutChoice(dialog.current) }, [])
   const at = step === "done" ? STEPS.length : STEPS.indexOf(step)
   return (
@@ -204,7 +204,7 @@ function Prepare({ onBack, onConnected }: { onBack: () => void; onConnected: () 
   const [now, setNow] = useState(() => Date.now())
   const moved = useRef(false)
 
-  const read = useCallback(() => browserCall<Setup>("GET", "/v1/browser/setup").then(
+  const read = useCallback(() => browserCall<Setup>("GET", "/v1/browser/setup?browser_mode=isolated").then(
     (answer) => { setSetup(answer); setReadError(null); return answer },
     (error: unknown) => { setReadError(error); return null },
   ), [])
@@ -339,7 +339,12 @@ function Start({ enabled, notify, onEnabled, onNotify, onBack, onDone }: {
     setSaving(true)
     setError(null)
     try {
-      await writeChromeSettings({ browser_enabled: enabled, browser_notify_new_site: notify })
+      const current = await readChromeSettings()
+      if (current.browser_policy) {
+        await writeChromeSettings({ browser_policy: { ...current.browser_policy, automatic: { ...current.browser_policy.automatic, isolated: enabled } }, browser_notify_new_site: notify })
+      } else {
+        await writeChromeSettings({ browser_enabled: enabled, browser_notify_new_site: notify })
+      }
       onDone()
     } catch (e) {
       setError(e)

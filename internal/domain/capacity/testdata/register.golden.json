@@ -1207,6 +1207,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "browser.profile_state_bytes",
+    "Class": "idempotency",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxProfileStateBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "browser.result_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1223,6 +1243,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/app/browserbridge.MaxResultBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "browser.session_choices",
+    "Class": "idempotency",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/browserbridge.MaxSessionBrowsers"
     ]
   },
   {
@@ -5484,6 +5524,60 @@
       "diagnostics"
     ],
     "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_session_report_batch",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_session_report_refs",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_session_report_sessions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
@@ -13386,6 +13480,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/nextconfig.MaxVoiceVocabularyTerms"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.work_auto_continue",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/voicework.MaxAutoContinue"
     ]
   },
   {

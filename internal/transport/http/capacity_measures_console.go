@@ -9,6 +9,15 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	out := map[string]func() capacity.Reading{
+		"console.copilot_session_report_batch": func() capacity.Reading {
+			return capacity.Unmeasured("per-call presentation batch; at most three Sessions, separate from task allowance")
+		},
+		"console.copilot_session_report_refs": func() capacity.Reading {
+			return capacity.Unmeasured("call-local verified spoken identities; no browser speech state is read by the daemon")
+		},
+		"console.copilot_session_report_sessions": func() capacity.Reading {
+			return capacity.Unmeasured("per-call report scope; overflow remains unread and is disclosed, never presented as complete")
+		},
 		"console.public_analytics_activems": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
 		},

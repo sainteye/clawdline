@@ -34,7 +34,9 @@ function allRows() {
   ]
 }
 
-let settings = { browser_mode:"native", browser_enabled: false, browser_notify_new_site: false }
+const initialSettings = () => ({ browser_mode:"native", browser_enabled: false, browser_notify_new_site: false, browser_policy: { order:["native","isolated","user_chrome"], automatic:{native:true,isolated:false,user_chrome:false} } })
+let settings = initialSettings()
+let usualReady = false
 let launches = 0
 let stopped = false
 let saveFailed = false
@@ -61,7 +63,8 @@ function fixture(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
-    if (path === "/__fixture/reset") { settings = { browser_mode:"native", browser_enabled: false, browser_notify_new_site: false }; launches=0; stopped = false; saveFailed = false; stateError = false; empty = false; queries = []; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { settings = initialSettings(); usualReady=false; launches=0; stopped = false; saveFailed = false; stateError = false; empty = false; queries = []; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/ready") {usualReady=true;return json(res,200,{ok:true})}
     if (path === "/__fixture/fail-stop") {saveFailed = true; return json(res,200,{ok:true})}
     if (path === "/__fixture/recover-stop") {saveFailed = false; return json(res,200,{ok:true})}
     if (path === "/__fixture/empty") { empty = true; return json(res, 200, { ok: true }) }
@@ -79,15 +82,15 @@ function fixture(): Server {
     }
     if (path === "/v1/settings/integrations") return json(res,200,{codegraph_enabled:false,workflow_skills_enabled:false,workflow_profile:"clawdline",space_saving_images:false})
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: settings.browser_enabled, notify_new_site: settings.browser_notify_new_site,
-      status: { connected: true, stopped, state_error: stateError, host: { version: "0.1.0", browser: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36", last_poll: now() }, person_tabs: [], pending: 0, tabs: [], muted: [] } })
+      profiles: { isolated:{ready:true},user_chrome:{ready:usualReady} }, status: { connected: true, stopped, state_error: stateError, host: { version: "0.1.0", browser: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36", last_poll: now() }, person_tabs: [], pending: 0, tabs: [], muted: [] } })
     if (path === "/v1/browser/prepare") return json(res,200,{ok:true,directory:"/test/Clawdline's data/chrome-extension-revision",platform:"darwin",revision:"revision",open_command:"open '/test/Clawdline'\\''s data/chrome-extension-revision'",connect_command:"clawdline browser install-host --mode user_chrome --extension-id " + "a".repeat(32)})
-    if (path === "/v1/browser/setup") return json(res,200,{mode:settings.browser_mode,chromium_found:true,connected:true})
+    if (path === "/v1/browser/setup") return json(res,200,{mode:url.searchParams.get("browser_mode") || settings.browser_mode,chromium_found:true,connected:true})
     if (path === "/v1/browser/launch" && req.method==="POST") {launches++;return json(res,200,{ok:true})}
     if (path === "/v1/browser/settings") {
       if (req.method === "POST") {
         const b = await body(req)
-        for (const k of Object.keys(b)) if (k !== "browser_mode" && k !== "browser_enabled" && k !== "browser_notify_new_site") return json(res, 400, { error: "bad_request", detail: "Not a browser setting key: " + k })
-        settings = { ...settings, ...b }; if (b.browser_mode) settings.browser_enabled=b.browser_mode!=="native"
+        for (const k of Object.keys(b)) if (k !== "browser_policy" && k !== "browser_notify_new_site") return json(res, 400, { error: "bad_request", detail: "Not a browser setting key: " + k })
+        settings = { ...settings, ...b }
       }
       return json(res, 200, settings)
     }
@@ -212,26 +215,17 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
       await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: width < 900 }, id)
       const mark = browser.loadCount; await browser.send("Page.navigate", { url: `${origin}/?ui=${ui}#page=settings` }, id); await browser.loaded(id, mark)
-      await until(`!!document.getElementById("settings-tab-3")`)
-      await run(`document.getElementById("settings-tab-3").click()`)
-      await until(`!!document.querySelector("#settings-pane-3:not([hidden]) #settings-browser")`)
-      await until(`!!document.querySelector('input[name="browser-mode"]:checked') && !document.querySelector(".browser-modes").disabled`)
+      await until(`!!document.getElementById("settings-tab-0")`)
+      await run(`document.getElementById("settings-tab-0").click()`)
+      await until(`!!document.querySelector("#settings-pane-0:not([hidden]) #settings-browser")`)
+      await until(`document.querySelectorAll('.browser-policy-list > li').length === 3 && !document.getElementById('browser-policy-isolated').disabled`)
       await new Promise(resolve => setTimeout(resolve, 200))
       assert.equal((await (await fetch(origin + "/__fixture/log")).json()).queries.length,0,"Settings never reads activity before opening it")
       assert.equal(await run(`document.querySelector('.browser-audit-dialog') === null`),true)
-
-      // Exactly one mode is selected; choosing user Chrome opens instructions
-      // without launching or installing anything in that browser.
-      const choose = async (mode:string) => {
-        await run(`document.querySelector('input[name="browser-mode"][value="${mode}"]').click()`)
-        await until(`document.querySelector('input[name="browser-mode"][value="${mode}"]').checked && !document.querySelector('.browser-modes').disabled`)
-      }
-      assert.equal(await run(`document.querySelectorAll('input[name="browser-mode"]').length`),3)
-      assert.equal(await run(`document.querySelector('input[name="browser-mode"]:checked').value`),"native")
-      await choose("user_chrome")
-      let log = await (await fetch(origin + "/__fixture/log")).json()
-      assert.deepEqual(log.settings,{browser_mode:"user_chrome",browser_enabled:true,browser_notify_new_site:false})
-      await run(`document.querySelector('#settings-browser > button.chip').click()`)
+      const order = () => run(`[...document.querySelectorAll('.browser-policy-list > li')].map(e => e.dataset.browser)`)
+      assert.deepEqual(await order(),["native","isolated","user_chrome"])
+      assert.equal(await run(`document.getElementById('browser-policy-user_chrome').disabled`),true,"unconfigured Chrome cannot be automatically enabled")
+      await run(`document.querySelector('[data-browser="user_chrome"] summary').click(); document.querySelector('[data-browser="user_chrome"] .browser-policy-setup button').click()`)
       await until(`document.querySelector('.browser-setup')?.innerText.includes('chrome://extensions')`)
       assert.ok(await run(`document.querySelector('.browser-setup input[readonly]').value.includes('prepare --mode user_chrome')`))
       await run(`document.getElementById('browser-prepare-extension').click()`)
@@ -243,13 +237,25 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await shot("prepare-guide", ".browser-setup")
       await run(`document.querySelector('.browser-setup .setup-x').click()`)
       await until(`!document.querySelector('.browser-setup')`)
-      await choose("native")
-      await choose("isolated")
+      let log = await (await fetch(origin + "/__fixture/log")).json()
+      assert.equal(log.settings.browser_policy.automatic.user_chrome,false,"preparing files never enables Chrome")
+      await run(`document.querySelector('[data-browser="isolated"] .browser-policy-order button').click()`)
+      await until(`document.querySelector('.browser-policy-list > li').dataset.browser === 'isolated' && !document.getElementById('browser-policy-isolated').disabled`)
+      assert.deepEqual(await order(),["isolated","native","user_chrome"])
+      await run(`document.getElementById('browser-policy-isolated').click()`)
+      await until(`document.getElementById('browser-policy-isolated').getAttribute('aria-checked') === 'true' && !document.getElementById('browser-policy-native').disabled`)
+      await run(`document.getElementById('browser-policy-native').click()`)
+      await until(`document.getElementById('browser-policy-native').getAttribute('aria-checked') === 'false' && !document.getElementById('browser-policy-native').disabled`)
       log = await (await fetch(origin + "/__fixture/log")).json()
-      assert.deepEqual(log.settings,{browser_mode:"isolated",browser_enabled:true,browser_notify_new_site:false})
-      assert.equal(log.launches,0,"mode changes never launch or install Chrome")
-      await until(`document.getElementById("settings-browser").innerText.includes(${JSON.stringify(w.connected)})`)
-      assert.ok((await text()).includes(w.host), await text())
+      assert.deepEqual(log.settings.browser_policy,{order:["isolated","native","user_chrome"],automatic:{native:false,isolated:true,user_chrome:false}})
+      assert.equal(log.launches,0,"sorting and switches never launch or install Chrome")
+      await fetch(origin + "/__fixture/ready")
+      await until(`!document.getElementById('browser-policy-user_chrome').disabled`)
+      await run(`document.getElementById('browser-policy-user_chrome').click()`)
+      await until(`document.getElementById('browser-policy-user_chrome').getAttribute('aria-checked') === 'true' && !document.getElementById('browser-policy-isolated').disabled`)
+      log = await (await fetch(origin + "/__fixture/log")).json()
+      assert.deepEqual(log.settings.browser_policy,{order:["isolated","native","user_chrome"],automatic:{native:false,isolated:true,user_chrome:true}})
+      await shot("policy")
       assert.equal(await run(`document.getElementById("browser-setting-browser_notify_new_site").getAttribute("aria-checked")`), "false")
 
       assert.equal((await (await fetch(origin + "/__fixture/log")).json()).queries.length,0,"mode/status reads never fetch activity")
@@ -326,8 +332,8 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       // An audit with nothing in it.
       await fetch(origin + "/__fixture/empty")
       const again = browser.loadCount; await browser.send("Page.reload", {}, id); await browser.loaded(id, again)
-      await until(`!!document.getElementById("settings-tab-3")`)
-      await run(`document.getElementById("settings-tab-3").click()`)
+      await until(`!!document.getElementById("settings-tab-0")`)
+      await run(`document.getElementById("settings-tab-0").click()`)
       await until(`!!document.getElementById("browser-audit-open")`)
       assert.equal(await run(`!!document.querySelector('.browser-audit-empty')`),false)
       await run(`document.getElementById("browser-audit-open").click()`)
