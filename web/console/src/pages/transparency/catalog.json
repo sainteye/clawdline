@@ -1334,6 +1334,7 @@
         "\t\"github.com/sainteye/clawdline/internal/adapters/projects\"\n",
         "\t\"github.com/sainteye/clawdline/internal/adapters/taskdir\"\n",
         "\t\"github.com/sainteye/clawdline/internal/contract\"\n",
+        "\t\"github.com/sainteye/clawdline/internal/domain/snippet\"\n",
         "\t\"github.com/sainteye/clawdline/internal/domain/work\"\n",
         ")\n",
         "\n",
@@ -1434,7 +1435,12 @@
         "\n",
         "\tw(\"# Clawdline child briefing — task %s\", r.ID)\n",
         "\tw(\"\")\n",
-        "\tif r.Root == nil && r.ScheduleID != \"\" {\n",
+        "\tif r.AssistantOwner != nil {\n",
+        "\t\tw(\"You are a CHILD worker for a persistent Bot, not a human or terminal Root.\")\n",
+        "\t\tw(\"The existing broker returns result.json and landing facts to the source Bot chat.\")\n",
+        "\t\tw(\"You have no authority to approve, claim or finish Board items for a person.\")\n",
+        "\t\tw(\"Your one job is the task under \\\"The task\\\" below.\")\n",
+        "\t} else if r.Root == nil && r.ScheduleID != \"\" {\n",
         "\t\t// A scheduled task has nobody to report back to (D07): it was started\n",
         "\t\t// by a clock, and saying \"a root session\" would send it looking for one.\n",
         "\t\tw(\"You are a CHILD session started by the schedule %q on this machine. No session\", r.ScheduleTitle)\n",
@@ -1630,6 +1636,21 @@
         "\tw(\"- criteria version: `%d`; SHA-256: `%s`\", g.Acceptance.Version, g.Acceptance.Digest)\n",
         "\tw(\"\")\n",
         "\tw(\"HEAD movement elsewhere has no authority here. Check only the detached commit and tree above.\")\n",
+        "\tw(\"\")\n",
+        "\tw(\"## Review scope and integration completeness\")\n",
+        "\tw(\"\")\n",
+        "\tw(\"Use the cycle base and candidate commits above as BASE and HEAD. %s\", snippet.ReviewAssessment)\n",
+        "\tw(\"\")\n",
+        "\tw(\"You remain this round's ONE checker. Do not dispatch additional reviewers or change the gate schema.\")\n",
+        "\tw(\"Always check ordinary correctness. In CROSS-SURFACE mode, also perform the full D pass:\")\n",
+        "\tw(\"%s\", snippet.IntegrationReviewInstructions)\n",
+        "\tw(\"\")\n",
+        "\tw(\"%s\", snippet.ReviewEvidenceLimits)\n",
+        "\tw(\"\")\n",
+        "\tw(\"Record scope, triggers, checked connections, intent questions and remaining gaps in the summary.\")\n",
+        "\tw(\"Map relevant findings to the existing acceptance claims and their evidence. Do not invent criteria or\")\n",
+        "\tw(\"treat unclear intent alone as a confirmed failure. Keep unrelated concerns explicit in the summary;\")\n",
+        "\tw(\"the closed verdict must still follow the specified claims and the evidence rules below.\")\n",
         "\tw(\"\")\n",
         "\tw(\"## Acceptance and required checks\")\n",
         "\tw(\"\")\n",
@@ -2352,7 +2373,7 @@
         },
         {
           "path": "cmd/clawdline/main.go",
-          "line": 330
+          "line": 347
         },
         {
           "path": "internal/adapters/projects/launch.go",
@@ -3463,11 +3484,128 @@
         "voice_assistant_workspace in the existing SQLite store",
         "Tool-less Claude Haiku or Codex Luna planning turn; OpenAI Realtime reports prepared evidence"
       ]
+    },
+    {
+      "id": "persistent-bots",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general",
+        "memory",
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/projectassistantacp/client.go",
+          "line": 288
+        },
+        {
+          "path": "internal/app/projectassistant/runtime.go",
+          "line": 456
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/capabilities.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/session_handoff.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/session_configuration.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/mcp.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/installation.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/installation_isolation.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/project_assistants_host.go",
+          "line": 1
+        },
+        {
+          "path": "cmd/clawdline/project_assistants.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {\n",
+        "\tif err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tif err := pa.ValidateMessage(q.Text); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\t// Prepare the complete opening before claiming the pending prompt lane.\n",
+        "\ttext := q.Turn.Instructions.Text + \"\\n\" + q.Context.Text + \"\\n\" + q.Text\n",
+        "\tif q.Handoff != nil {\n",
+        "\t\topening, err := q.Handoff.Opening(q.Turn, q.Context)\n",
+        "\t\tif err != nil {\n",
+        "\t\t\treturn nil, err\n",
+        "\t\t}\n",
+        "\t\ttext = opening + \"\\n\" + q.Text\n",
+        "\t}\n",
+        "\tc.mu.Lock()\n",
+        "\tif c.permissionsSealed {\n",
+        "\t\tc.mu.Unlock()\n",
+        "\t\treturn nil, refusal(pa.Revoked, \"prompt_lifetime\")\n",
+        "\t}\n",
+        "\tif c.turnID != \"\" {\n",
+        "\t\tc.mu.Unlock()\n",
+        "\t\treturn nil, refusal(pa.CapacityFull, \"active_prompt\")\n",
+        "\t}\n",
+        "\tc.turnID = q.Turn.ID\n",
+        "\tc.partial = \"\"\n",
+        "\tsid := c.sessionID\n",
+        "\tc.mu.Unlock()\n",
+        "\t// Only fresh filtered context is sent. Displayed history is never implicit\n",
+        "\t// model input. Instructions belong to this turn's immutable snapshot.\n",
+        "\tblocks := []any{}\n",
+        "\tif q.Quote != nil {\n",
+        "\t\tif err := pa.ValidateMessage(q.Quote.Text); err != nil {\n",
+        "\t\t\treturn nil, err\n",
+        "\t\t}\n",
+        "\t\tif q.Quote.MessageID == \"\" {\n",
+        "\t\t\treturn nil, refusal(pa.Invalid, \"quote_id\")\n",
+        "\t\t}\n",
+        "\t\tblocks = append(blocks, map[string]string{\"type\": \"text\", \"text\": \"Referenced message (\" + q.Quote.MessageID + \"):\\n\" + q.Quote.Text})\n",
+        "\t}\n",
+        "\tblocks = append(blocks, map[string]string{\"type\": \"text\", \"text\": text})\n",
+        "\tp, err := c.begin(ctx, \"session/prompt\", map[string]any{\"sessionId\": sid, \"prompt\": blocks})\n",
+        "\tif err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\treturn &promptPending{rpc: p}, nil\n",
+        "}\n"
+      ],
+      "locations": [
+        "Source-machine persistent Bot turn snapshot",
+        "ACP session/prompt text blocks",
+        "ACP session/new and session/load settings",
+        "Owned MCP tool descriptions and schemas",
+        "Local installed Claude setup and OS controls",
+        "Per-execution native scratch directory"
+      ]
     }
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "4efec766e028d5296bb89f5b7510d3f6585509a0073d4cb72a622a1d4147de86",
+    "cmd/clawdline/main.go": "1e670ab828c498f072751572fbc627836e95ec677c3dc52df503a818d51450e3",
+    "cmd/clawdline/project_assistants.go": "dda82db88f6602b9aa2af940ddfc8348a1cf3b38fa066b433e1b3a5c0e8dcc31",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3496,11 +3634,18 @@
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
     "internal/adapters/nextconfig/browser_mode.go": "042c8a8abfebcfc6537d2720023443e98a2088032502bb119d4e5e5988f3e90e",
     "internal/adapters/nextconfig/browser_policy.go": "62039a6f023460a6ffa71ee7ee1d548694c8fa74e7327e4971c7ea2eab0ff77c",
-    "internal/adapters/nextconfig/nextconfig.go": "6f45c9f035499c18252880799b42e1f0cb919b9ae723795107edf5c7bc6f8d9f",
+    "internal/adapters/nextconfig/nextconfig.go": "b15f6d232413dfd031579a0b27f3eecd646439a803237e13de0e9b50fa3502b9",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/voice_work.go": "479cc577226c6bb28ec84d56246d206618369a76c3613461013bc9efb1d906a6",
+    "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
+    "internal/adapters/projectassistantacp/client.go": "d5be5f1f51e46f919ac90a2d5d05e121a83239afad36d50f53f118f9d7879094",
+    "internal/adapters/projectassistantacp/installation.go": "214dace5b4dc374400ac09c729f3e637b73b1a69c8e81d17d4f4e5a98fc58a0a",
+    "internal/adapters/projectassistantacp/installation_isolation.go": "aec4ca806c66f7ad527996ee5470a69e52c16b42fea625f94a7a7ccae9a24682",
+    "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
+    "internal/adapters/projectassistantacp/session_configuration.go": "822be5a0770bf28db77950338dadbaf1c858d471f6c5299dd857d41edc676bad",
+    "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "42be85313d854b53a9983e1d62b2221c8e288893532573ab4221670221908c18",
@@ -3512,12 +3657,12 @@
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "d1a5d11509885fa01e5e97e0f2c3bed0b573e34179fb152a8b1e820caba5a5a9",
     "internal/app/browserbridge/profiles.go": "8313095a5af666c1a3eecaa621d82005f905bc1271fb2dd60e8dc599084ef199",
-    "internal/app/orchestrator/brief.go": "4b777f33e9accfaec666cdc7ef838d400b3113b484ab64a28ff63c878b70411f",
+    "internal/app/orchestrator/brief.go": "fe7b695fe0617cfaaa91e98978630972648e257b8dfd1acb3026cfb01fedd4e7",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "baad265baa7f4f3c2a4a49f033e087b0f813fb0aa24aff035e13d839d7508e20",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
-    "internal/app/orchestrator/dispatch.go": "e11257b095450abde28d18d67ffe8024fef6ae7a29da94bd085e998012a350df",
+    "internal/app/orchestrator/dispatch.go": "5b4bee253c2f532f4abea577d050465f0e2d3823a42aa273f807c65ff50237e8",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
     "internal/app/orchestrator/handoffs.go": "c5bec8bf098e10112cff1bd9e4d034310eeb100c98c5d3ff7983e7a2bd53cdeb",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
@@ -3529,6 +3674,8 @@
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
+    "internal/app/projectassistant/runtime.go": "f77b2f05f68c0c056cef185121b3ea9dee310f479646d6a1e5ef3ff63d91d237",
+    "internal/app/projectassistant/session_handoff.go": "cccc0eb9258c533aef4109b1dbb1086747d614f04b375d8e15c5df3da427073a",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
     "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
@@ -3561,6 +3708,7 @@
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
     "internal/transport/http/integration_settings.go": "bd8e1338d9d1383e6a4096f7cac005e0a5109ea926aa0d574d1c9cffa7b11962",
+    "internal/transport/http/project_assistants_host.go": "dc50017d8bcd03bbc70230aea43589f563ec03a124266955117e557e9d30346f",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "dfc0782eb60a8572f8e44734d3b15024ea059d0e3465722a13774cbdcce1f3c7",
     "internal/transport/http/session_handoff_title.go": "b7e73b436265c3ed427bc950e40d29b2cd494ee2590acb71b6722fcd59c641af",
@@ -3608,7 +3756,7 @@
     "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704"
   },
   "copyChecks": {
-    "en": "7571a5fff4fef975630ab7fda788bb40c3fce727de88c17f9b3731e01b097664",
-    "zh-Hant": "b36c979db156c3df6687c6b5b53c66e271e1d028ed9fbdb7201e15a7f475b765"
+    "en": "49d1ad241b5614e09147411d3ec37f1470435f059ba521da5bb756d894d0d4da",
+    "zh-Hant": "b3fc24d809650515fb489e540ee8d72d0da68efaf72d0f4eed0fcb66a923f263"
   }
 }

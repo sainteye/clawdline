@@ -125,6 +125,10 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - name: Install process and terminal test dependencies
         run: |
           sudo apt-get update

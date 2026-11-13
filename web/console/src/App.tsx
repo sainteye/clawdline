@@ -1,6 +1,9 @@
 import { supportWord } from "./support/words.js"
+import { useProjectAssistantsHost } from "./pages/project-assistants.js"
+import type { ProjectAssistantRegistry, AssistantWorkIntent } from "./cloud/project-assistants.js"
+import type { ProjectAssistantWorkLink } from "@clawdline/contract"
 import { macKeyboard, matchShortcut, shortcutAria, shortcutLabel } from "./shortcuts.js"
-import { openNewWorkItem } from "./pages/work/new-item.js"
+import { openNewWorkItem, openWorkItem } from "./pages/work/new-item.js"
 import { QuotaBar } from "./provider-quota/QuotaBar.js"
 import { SessionStateFilterControl } from "./session/SessionStateFilter.js"
 import { matchesLocalStateFilter, stateFilterCounts, type SessionStateFilter } from "./session/state-filter.js"
@@ -239,7 +242,11 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   cloudStartedRow = null, onCloudStartedObserved, cloudMachineOffline = null,
   fleetDetailProblem = null, onFleetDetailPending, onFleetClose, fleetActionIntent = null, onFleetActionIntentHandled,
   fleetCloseIntent = null, onFleetCloseIntentHandled,
-  quotaMachineName, hideSessionCounts = false, onChooseDashboardMachine, dashboardSource, dashboardRequested = false, onDashboardClosed, focusCloudSessions = false, onLeaveCloudSessions, onTitleSaved, confirmedTitle }: {
+  quotaMachineName, hideSessionCounts = false, onChooseDashboardMachine, dashboardSource, dashboardRequested = false, onDashboardClosed, focusCloudSessions = false, onLeaveCloudSessions, onTitleSaved, confirmedTitle, projectAssistants, onOpenAssistantWork, assistantWorkIntent, onAssistantWorkOpened }: {
+  projectAssistants?: ProjectAssistantRegistry | null
+  onOpenAssistantWork?: (work: ProjectAssistantWorkLink) => void
+  assistantWorkIntent?: AssistantWorkIntent | null
+  onAssistantWorkOpened?: (token:string) => void
   quotaMachineName?: string
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
   cloudSessions?: ReactNode
@@ -282,6 +289,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   }, [fleetList, fleet.refresh])
   const light = useConnectionLight(fleet.live, fleet.refresh)
   const machineVersion = useMachineVersion()
+  const assistants = useProjectAssistantsHost({registry:projectAssistants,apiLevel:machineVersion.apiLevel,
+    cloud:!!import.meta.env.VITE_HOSTED_CONSOLE,language:document.documentElement.lang || "en",onOpenWork:onOpenAssistantWork})
   const updateRead = useSyncExternalStore(subscribeUpdate, currentUpdateRead, currentUpdateRead)
   const stagedAppVersion = updateRead?.kind === "status" && updateRead.status.apply?.staged_app
     ? updateRead.status.apply.to : null
@@ -453,6 +462,15 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   }, [page])
   const goRef = useRef(go)
   goRef.current = go
+  const openedAssistantWork = useRef<string | null>(null)
+  useEffect(() => {
+    const intent = assistantWorkIntent
+    if (!intent || intent.machineID !== fleetReaderMachine || openedAssistantWork.current === intent.token) return
+    openedAssistantWork.current = intent.token
+    // Child page effects have installed Board's existing modal listener before this parent effect.
+    if (intent.current() && PAGE_MODULES.work) {goRef.current("work");openWorkItem(intent.item)}
+    onAssistantWorkOpened?.(intent.token)
+  },[assistantWorkIntent,fleetReaderMachine,onAssistantWorkOpened])
   const askedRef = useRef<string[] | null>(null)
   const openAskedRef = useRef<() => Asked>(() => "none")
   useEffect(() => {
@@ -822,6 +840,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   }, [])
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
+      if (assistants.openedRef.current) return
       if (!phone()) return
       // A fragment navigation fires popstate before hashchange. The address
       // already names the document while pageRef still names the Session;
@@ -860,6 +879,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   // to reverse here. The session menu answers its own Escape before this sees
   // it, as `detail-actions.js` does.
   const onKey = (ev: KeyboardEvent) => {
+    if (assistants.openedRef.current) return
     if (ev.defaultPrevented || ev.isComposing || ev.keyCode === 229) return
     if (document.querySelector("#session-state-filter[open]")) return
     const key = ev.key
@@ -1286,7 +1306,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         readingSource={fleet.snapshot?.scan.source}
         scanNotes={fleet.snapshot?.scan.notes}
         scanSources={fleet.snapshot?.scan.sources}
-        shown={page === "sessions"}
+        shown={page === "sessions" && !assistants.opened}
+        assistantEntry={assistants.entry}
         view={view}
         paneOpen={paneOpen}
         filter={filter}
@@ -1337,6 +1358,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       /> : null}
       <NewBuild />
       <CopilotDockView />
+      {assistants.content}
     </>
   )
 }

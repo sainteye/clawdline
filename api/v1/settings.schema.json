@@ -12,6 +12,13 @@
       "type": "object", "additionalProperties": false, "required": ["order", "automatic"],
       "properties": { "order": { "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": { "type": "string", "enum": ["native", "isolated", "user_chrome"] } }, "automatic": { "$ref": "#/$defs/BrowserAutomaticPolicy" } }
     },
+    "ProjectAssistantSettings": {
+      "description": "GET/POST /v1/settings/project-assistants. The response reports actual admitted Host state; POST accepts exactly one local-owner boolean opt-in.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": { "enabled": { "type": "boolean" } }
+    },
     "SettingsSnapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -32,6 +39,7 @@
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "session_todo_auto_take": { "type": "boolean", "nullable": true },
         "grok_full_permission": { "type": "boolean", "nullable": true },
+        "project_assistants_enabled": { "type": "boolean", "nullable": true, "description": "Explicit local-owner Bot opt-in; absent or malformed means false. Actual runtime state and retained history are reported by Bot status." },
         "exists": {
           "description": "False before anything has been written. Every key then has the shell's default.",
           "type": "boolean"
@@ -325,6 +333,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "project_assistants_enabled": { "type": "boolean", "description": "Explicit local-owner opt-in coordinated with Bot enable and durable disable. Null is refused." },
         "workflow_profile": { "type": "string", "nullable": true },
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "codegraph_enabled": { "type": "boolean", "nullable": true },

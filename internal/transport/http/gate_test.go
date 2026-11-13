@@ -23,6 +23,44 @@ type gateFixture struct {
 	machine string
 }
 
+func TestBotMetadataExceptionCrossesOnlyItsExactGateRoutes(t *testing.T) {
+	f, h := newGateFixture(t)
+	_, read, err := f.g.auth.AddDeviceWithPermission("metadata reader", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		method, path string
+		allowed      bool
+	}{
+		{"POST", "/v1/project-assistants/bot/read", true},
+		{"POST", "/v1/project-assistants/bot/observed", true},
+		{"POST", "/v1/project-assistants/bot/messages", false},
+		{"PATCH", "/v1/project-assistants/bot/read", false},
+		{"DELETE", "/v1/project-assistants/bot/observed", false},
+		{"POST", "/v1/other/bot/read", false},
+		{"POST", "/v1/project-assistants/status/read", false},
+		{"POST", "/v1/project-assistants/bot/%72ead", false},
+		{"POST", "/v1/project-assistants/bot/read/", false},
+		{"POST", "/v1/project-assistants//bot/read", false},
+		{"POST", "/v1/project-assistants/a%2Fb/read", false},
+		{"POST", "/v1/project-assistants/%2e/read", false},
+		{"POST", "/v1/project-assistants/bot/nested/read", false},
+	} {
+		t.Run(test.method+test.path, func(t *testing.T) {
+			r := httptest.NewRequest(test.method, test.path, strings.NewReader(`{}`))
+			r.Host = "127.0.0.1:7757"
+			r.Header.Set("Authorization", "Bearer "+read)
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if test.allowed != (w.Code == 200) {
+				t.Fatalf("HTTP %d %s", w.Code, w.Body)
+			}
+		})
+	}
+}
+
 // newGateFixture opens a gate over a fresh directory, behind which every route
 // answers 200 "reached", with a device of each kind.
 func newGateFixture(t *testing.T) (*gateFixture, http.Handler) {

@@ -38,6 +38,7 @@ var areas = []area{
 	{"iterm", []string{"iterm"}, itermBounds},
 	{"memory", []string{"memory"}, memoryBounds},
 	{"places", []string{"places"}, placesBounds},
+	{"projectassistant", []string{"bots"}, projectAssistantBounds},
 	{"projectfiles", []string{"projectfiles", "projects"}, projectFilesBounds},
 	{"projectsync", []string{"projectsync"}, projectSyncBounds},
 	{"release", []string{"release"}, releaseBounds},

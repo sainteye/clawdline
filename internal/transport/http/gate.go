@@ -325,7 +325,13 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 				writeAuthRefusal(w, http.StatusForbidden, "forbidden", "That request did not come from this page.")
 				return
 			}
-			if status, code, msg := writePolicy(r.Method, p, machine, verdict); status != 0 {
+			policyPath := p
+			// The metadata exception applies only to the exact spelling that
+			// will reach the Bot handler, never a mux normalization alias.
+			if projectAssistantMetadataWrite(r.Method, p) && p != r.URL.EscapedPath() {
+				policyPath = ""
+			}
+			if status, code, msg := writePolicy(r.Method, policyPath, machine, verdict); status != 0 {
 				writeAuthRefusal(w, status, code, msg)
 				return
 			}
@@ -492,7 +498,7 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 	send := v.Allowed && v.Caps.Has(auth.Send)
 	if v.Allowed && !v.Local && !send && !machine && !strings.HasPrefix(p, "/v1/auth/") && p != "/v1/terminals" && !strings.HasPrefix(p, "/v1/terminals/") &&
 		p != "/v1/squad-packages/preview" && p != "/v1/squad-packages/export" &&
-		p != "/v1/push/subscribe" && p != "/v1/push/unsubscribe" && p != "/v1/push/test" {
+		p != "/v1/push/subscribe" && p != "/v1/push/unsubscribe" && p != "/v1/push/test" && !projectAssistantMetadataWrite(method, p) {
 		return http.StatusForbidden, "forbidden", "This device may read, and not send."
 	}
 	switch {
@@ -534,7 +540,7 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may read, and not send."
 		}
-	case p == "/v1/settings":
+	case p == "/v1/settings" || p == "/v1/settings/project-assistants":
 		// The Swift app has no such route: its settings are a native window.
 		// Here they are the hotkey, a global keyboard grab, so only this
 		// machine's own token changes them.
@@ -634,6 +640,17 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		}
 	}
 	return 0, "", ""
+}
+
+// Only these two POSTs acknowledge this reader's own metadata. No suffix,
+// alternate method, encoded action, empty/dot ID or nested route inherits it.
+func projectAssistantMetadataWrite(method, p string) bool {
+	if method != http.MethodPost || !strings.HasPrefix(p, "/v1/project-assistants/") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(p, "/v1/project-assistants/"), "/")
+	return len(parts) == 2 && paHTTPSafeBotID(decodeSegment(parts[0])) &&
+		(parts[1] == "read" || parts[1] == "observed")
 }
 
 // crossOriginRefusal is the Host check and the Sec-Fetch-Site check, which

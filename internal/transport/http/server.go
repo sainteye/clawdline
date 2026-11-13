@@ -62,6 +62,7 @@ import (
 )
 
 type Server struct {
+	projectAssistants  projectAssistantServer
 	voiceWorkMu        sync.Mutex
 	voiceWorkWake      uint64
 	voiceWorkSessions  []copilotDecisionSession
@@ -121,6 +122,10 @@ type Server struct {
 	secretHandoffs *app.SecretHandoffs
 	// Tests can supply a machine identity without starting a Cloud link.
 	executionMachineID string
+
+	// Private fixture seam for a policy/metadata change just before publication.
+	projectAssistantTargetsBeforePublish func()
+
 	// replaceMachineItemReceipt is a test seam for a failed post-create
 	// receipt refinement. Nil uses the durable store implementation.
 	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
@@ -729,6 +734,11 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/strings"}, s.strings},
 		{Route{"*", "/v1/settings"}, s.settingsRoute},
 		{Route{"*", "/v1/settings/browser"}, s.settingsRoute},
+		{Route{"*", "/v1/settings/project-assistants"}, s.projectAssistantSettingsRoute},
+		{Route{"*", "/v1/project-assistants"}, s.projectAssistantsRoute},
+		{Route{"*", "/v1/project-assistants/"}, s.projectAssistantsRoute},
+		{Route{"*", "/v1/project-assistants/status"}, s.projectAssistantsRoute},
+		{Route{"*", "/v1/project-assistant-targets"}, s.projectAssistantTargetsRoute},
 		{Route{"*", "/v1/settings/dispatch-policy"}, s.dispatchPolicySettings},
 		{Route{"*", "/v1/notification-rules"}, s.notificationRulesRoute},
 		{Route{"*", "/v1/settings/notifications"}, s.notificationSettingsRoute},

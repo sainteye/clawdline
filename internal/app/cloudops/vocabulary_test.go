@@ -198,7 +198,7 @@ func checkVocabularyLocal(t *testing.T, row cloudvocab.Operation, shape cloudvoc
 	}
 }
 
-var vocabularyPlaceholder = regexp.MustCompile(`\{([a-z_]+)(\*?)\}`)
+var vocabularyPlaceholder = regexp.MustCompile(`\{([a-z_]+(?:\.[a-z_]+)*)(\*?)\}`)
 
 // vocabularyPathMatches reads a path template: a `{field}` segment must carry
 // that example field, escaped as the route escapes it.
@@ -230,7 +230,7 @@ func vocabularyPathMatches(template, path string, example map[string]any) bool {
 		if err != nil {
 			return false
 		}
-		switch want := example[name].(type) {
+		switch want := body(example).genAt(name).(type) {
 		case string:
 			if value != want {
 				return false

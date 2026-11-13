@@ -1625,6 +1625,2563 @@
       }
     },
     {
+      "op": "project-assistants.answer",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/permissions/{offer_id}/answer",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "binding",
+          "generation": 1
+        },
+        "offer_id": "offer",
+        "option_id": "allow-once",
+        "turn_id": "turn",
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "answer",
+          "idempotency_key": "stable-answer",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-answer"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "fence",
+            "offer_id",
+            "option_id",
+            "request",
+            "session",
+            "turn_id"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/permissions/{offer_id}/answer",
+          "local_body": [
+            "command",
+            "fence",
+            "offer_id",
+            "option_id",
+            "turn_id"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "answer"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "offer_id": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/permissions/{offer_id}/answer",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "offer_id": {
+                "from": "offer_id"
+              },
+              "option_id": {
+                "from": "option_id"
+              },
+              "turn_id": {
+                "from": "turn_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.create",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "settings": {
+          "target": {
+            "machine_id": "source-one",
+            "project_id": "project"
+          },
+          "name": "Bot 名稱",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "agent": "codex",
+          "permission_policy": "ask",
+          "instructions": "",
+          "role_snapshot_ref": ""
+        },
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "create",
+          "idempotency_key": "stable-create",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-create"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "request",
+            "session",
+            "settings"
+          ],
+          "path": "/v1/project-assistants",
+          "local_body": [
+            "command",
+            "settings"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "create"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "name": {
+                "type": "string"
+              },
+              "appearance": {
+                "type": "object",
+                "properties": {
+                  "shape": {
+                    "type": "string",
+                    "enum": [
+                      "blob",
+                      "squircle",
+                      "wedge",
+                      "pebble",
+                      "tablet",
+                      "hex",
+                      "cloud",
+                      "teardrop"
+                    ]
+                  },
+                  "color": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "color",
+                  "shape"
+                ],
+                "closed": true
+              },
+              "agent": {
+                "type": "string",
+                "enum": [
+                  "claude",
+                  "codex"
+                ]
+              },
+              "permission_policy": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "auto_read"
+                ]
+              },
+              "instructions": {
+                "type": "string",
+                "max_bytes": 16384,
+                "copies": {
+                  "max_bytes": "projectassistant.MaxInstructionBytes"
+                }
+              },
+              "role_snapshot_ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "agent",
+              "appearance",
+              "instructions",
+              "name",
+              "permission_policy",
+              "role_snapshot_ref",
+              "target"
+            ],
+            "closed": true
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "settings": {
+                "from": "settings"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.edit",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source PATCH /v1/project-assistants/{command.key.bot_id}",
+      "console_seam": "client",
+      "local": {
+        "method": "PATCH",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "settings": {
+          "expected_version": 1,
+          "name": "Bot 名稱",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "instructions": ""
+        },
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "edit",
+          "idempotency_key": "stable-edit",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-edit"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "request",
+            "session",
+            "settings"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}",
+          "local_body": [
+            "command",
+            "settings"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "edit"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              },
+              "name": {
+                "type": "string"
+              },
+              "appearance": {
+                "type": "object",
+                "properties": {
+                  "shape": {
+                    "type": "string",
+                    "enum": [
+                      "blob",
+                      "squircle",
+                      "wedge",
+                      "pebble",
+                      "tablet",
+                      "hex",
+                      "cloud",
+                      "teardrop"
+                    ]
+                  },
+                  "color": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "color",
+                  "shape"
+                ],
+                "closed": true
+              },
+              "instructions": {
+                "type": "string",
+                "max_bytes": 16384,
+                "copies": {
+                  "max_bytes": "projectassistant.MaxInstructionBytes"
+                }
+              }
+            },
+            "required": [
+              "appearance",
+              "expected_version",
+              "instructions",
+              "name"
+            ],
+            "closed": true
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "settings": {
+                "from": "settings"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.events",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{key.bot_id}/events",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "key": {
+          "machine_id": "source-one",
+          "bot_id": "機器人 α"
+        },
+        "after_seq": 0,
+        "page_size": 256,
+        "session": "__clawdline_machine__",
+        "request": "stable-events"
+      },
+      "shapes": [
+        {
+          "body": [
+            "after_seq",
+            "key",
+            "page_size",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{key.bot_id}/events",
+          "query": [
+            "after_seq",
+            "machine_id",
+            "page_size"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "key": {
+            "type": "object",
+            "properties": {
+              "machine_id": {
+                "type": "string",
+                "non_empty": true
+              },
+              "bot_id": {
+                "type": "string",
+                "checks": [
+                  "pa_bot_id"
+                ]
+              }
+            },
+            "required": [
+              "bot_id",
+              "machine_id"
+            ],
+            "closed": true
+          },
+          "after_seq": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 256,
+            "copies": {
+              "max": "projectassistant.MaxEventPageRows"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{key.bot_id}/events",
+          "query": {
+            "machine_id": {
+              "from": "key.machine_id"
+            },
+            "after_seq": {
+              "from": "after_seq"
+            },
+            "page_size": {
+              "from": "page_size"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.export",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{bot_id}/export",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "machine_id": "source-one",
+        "bot_id": "機器人 α",
+        "session": "__clawdline_machine__",
+        "request": "stable-export"
+      },
+      "shapes": [
+        {
+          "body": [
+            "bot_id",
+            "machine_id",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{bot_id}/export",
+          "query": [
+            "machine_id"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "machine_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "bot_id": {
+            "type": "string",
+            "checks": [
+              "pa_bot_id"
+            ]
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{bot_id}/export",
+          "query": {
+            "machine_id": {
+              "from": "machine_id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.forget",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/memory/forget",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "project": {
+          "machine_id": "source-one",
+          "project_id": "project",
+          "canonical_id": "canonical",
+          "kind": "repository"
+        },
+        "expected_revision": 1,
+        "source_ids": [
+          "source"
+        ],
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "forget",
+          "idempotency_key": "stable-forget",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-forget"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "expected_revision",
+            "project",
+            "request",
+            "session",
+            "source_ids"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/memory/forget",
+          "local_body": [
+            "command",
+            "expected_revision",
+            "project",
+            "source_ids"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "forget"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "machine_id": {
+                "type": "string"
+              },
+              "project_id": {
+                "type": "string"
+              },
+              "canonical_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "repository",
+                  "place"
+                ]
+              }
+            },
+            "required": [
+              "canonical_id",
+              "kind",
+              "machine_id",
+              "project_id"
+            ],
+            "closed": true
+          },
+          "expected_revision": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          },
+          "source_ids": {
+            "type": "list",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/memory/forget",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "expected_revision": {
+                "from": "expected_revision"
+              },
+              "project": {
+                "from": "project"
+              },
+              "source_ids": {
+                "from": "source_ids"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.get",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{bot_id}",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "machine_id": "source-one",
+        "bot_id": "機器人 α",
+        "session": "__clawdline_machine__",
+        "request": "stable-get"
+      },
+      "shapes": [
+        {
+          "body": [
+            "bot_id",
+            "machine_id",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{bot_id}",
+          "query": [
+            "machine_id"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "machine_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "bot_id": {
+            "type": "string",
+            "checks": [
+              "pa_bot_id"
+            ]
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{bot_id}",
+          "query": {
+            "machine_id": {
+              "from": "machine_id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.history",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{key.bot_id}/messages",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "key": {
+          "machine_id": "source-one",
+          "bot_id": "機器人 α"
+        },
+        "conversation_id": "chat",
+        "before_seq": 0,
+        "page_size": 100,
+        "session": "__clawdline_machine__",
+        "request": "stable-history"
+      },
+      "shapes": [
+        {
+          "body": [
+            "before_seq",
+            "conversation_id",
+            "key",
+            "page_size",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{key.bot_id}/messages",
+          "query": [
+            "before_seq",
+            "conversation_id",
+            "machine_id",
+            "page_size"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "key": {
+            "type": "object",
+            "properties": {
+              "machine_id": {
+                "type": "string",
+                "non_empty": true
+              },
+              "bot_id": {
+                "type": "string",
+                "checks": [
+                  "pa_bot_id"
+                ]
+              }
+            },
+            "required": [
+              "bot_id",
+              "machine_id"
+            ],
+            "closed": true
+          },
+          "conversation_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "before_seq": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 100,
+            "copies": {
+              "max": "projectassistant.MaxPageRows"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{key.bot_id}/messages",
+          "query": {
+            "machine_id": {
+              "from": "key.machine_id"
+            },
+            "conversation_id": {
+              "from": "conversation_id"
+            },
+            "before_seq": {
+              "from": "before_seq"
+            },
+            "page_size": {
+              "from": "page_size"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.list",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "machine_id": "source-one",
+        "query": "",
+        "cursor": "",
+        "page_size": 100,
+        "session": "__clawdline_machine__",
+        "request": "stable-list"
+      },
+      "shapes": [
+        {
+          "body": [
+            "cursor",
+            "machine_id",
+            "page_size",
+            "query",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants",
+          "query": [
+            "cursor",
+            "machine_id",
+            "page_size",
+            "query"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "machine_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "query": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 100,
+            "copies": {
+              "max": "projectassistant.MaxPageRows"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants",
+          "query": {
+            "machine_id": {
+              "from": "machine_id"
+            },
+            "query": {
+              "from": "query"
+            },
+            "cursor": {
+              "from": "cursor"
+            },
+            "page_size": {
+              "from": "page_size"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.memory",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/memory",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "expected_revision": 1,
+        "entry": {
+          "id": "memory",
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "text": "Remember",
+          "sources": [
+            {
+              "id": "source",
+              "key": {
+                "machine_id": "source-one",
+                "bot_id": "機器人 α"
+              },
+              "project": {
+                "machine_id": "source-one",
+                "project_id": "project",
+                "canonical_id": "canonical",
+                "kind": "repository"
+              },
+              "kind": "message",
+              "revision": 1
+            }
+          ],
+          "revision": 1,
+          "forgotten": false
+        },
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "memory_save",
+          "idempotency_key": "stable-memory",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-memory"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "entry",
+            "expected_revision",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/memory",
+          "local_body": [
+            "command",
+            "entry",
+            "expected_revision"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "memory_save"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "expected_revision": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "text": {
+                "type": "string"
+              },
+              "sources": {
+                "type": "list",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "object",
+                      "properties": {
+                        "machine_id": {
+                          "type": "string"
+                        },
+                        "bot_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "bot_id",
+                        "machine_id"
+                      ],
+                      "closed": true
+                    },
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "machine_id": {
+                          "type": "string"
+                        },
+                        "project_id": {
+                          "type": "string"
+                        },
+                        "canonical_id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "repository",
+                            "place"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "canonical_id",
+                        "kind",
+                        "machine_id",
+                        "project_id"
+                      ],
+                      "closed": true
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "min": 0,
+                      "max": 9007199254740991,
+                      "copies": {
+                        "max": "cloud.MaxSafeInteger"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key",
+                    "kind",
+                    "project",
+                    "revision"
+                  ],
+                  "closed": true
+                }
+              },
+              "revision": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              },
+              "forgotten": {
+                "type": "bool"
+              }
+            },
+            "required": [
+              "forgotten",
+              "id",
+              "key",
+              "project",
+              "revision",
+              "sources",
+              "text"
+            ],
+            "closed": true
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/memory",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "entry": {
+                "from": "entry"
+              },
+              "expected_revision": {
+                "from": "expected_revision"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.observed",
+      "kind": "command",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/observed",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "read_level",
+        "shaped_answer"
+      ],
+      "example": {
+        "receipt_id": "receipt",
+        "event_seq": 2,
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "observe",
+          "idempotency_key": "stable-observed",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-observed"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "event_seq",
+            "receipt_id",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/observed",
+          "local_body": [
+            "command",
+            "event_seq",
+            "receipt_id"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "observe"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "event_seq": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/observed",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "event_seq": {
+                "from": "event_seq"
+              },
+              "receipt_id": {
+                "from": "receipt_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.projects",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistant-targets",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "machine_id": "source-one",
+        "cursor": "",
+        "page_size": 100,
+        "session": "__clawdline_machine__",
+        "request": "stable-projects"
+      },
+      "shapes": [
+        {
+          "body": [
+            "cursor",
+            "machine_id",
+            "page_size",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistant-targets",
+          "query": [
+            "cursor",
+            "machine_id",
+            "page_size"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "machine_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 100,
+            "copies": {
+              "max": "projectassistant.MaxPageRows"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistant-targets",
+          "query": {
+            "machine_id": {
+              "from": "machine_id"
+            },
+            "cursor": {
+              "from": "cursor"
+            },
+            "page_size": {
+              "from": "page_size"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.read",
+      "kind": "command",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/read",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "read_level",
+        "shaped_answer"
+      ],
+      "example": {
+        "cursor": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "conversation_id": "chat",
+          "reader_id": "hint",
+          "message_seq": 2
+        },
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "read",
+          "idempotency_key": "stable-read",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-read"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "cursor",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/read",
+          "local_body": [
+            "command",
+            "cursor"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "read"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "cursor": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "reader_id": {
+                "type": "string"
+              },
+              "message_seq": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "conversation_id",
+              "key",
+              "message_seq",
+              "reader_id"
+            ],
+            "closed": true
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/read",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "cursor": {
+                "from": "cursor"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.send",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "binding",
+          "generation": 1
+        },
+        "text": "Hello",
+        "quote_message_id": "",
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "send",
+          "idempotency_key": "stable-send",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-send"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "fence",
+            "quote_message_id",
+            "request",
+            "session",
+            "text"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/messages",
+          "local_body": [
+            "command",
+            "fence",
+            "quote_message_id",
+            "text"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "send"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "text": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 32768,
+            "checks": [
+              "not_blank"
+            ],
+            "copies": {
+              "max_bytes": "projectassistant.MaxMessageBytes"
+            }
+          },
+          "quote_message_id": {
+            "type": "string"
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/messages",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "quote_message_id": {
+                "from": "quote_message_id"
+              },
+              "text": {
+                "from": "text"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.status",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/status",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "session": "__clawdline_machine__",
+        "request": "stable-status"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/status"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/project-assistants/status"
+        }
+      }
+    },
+    {
+      "op": "project-assistants.stop",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/stop",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "binding",
+          "generation": 1
+        },
+        "turn_id": "turn",
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "stop",
+          "idempotency_key": "stable-stop",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-stop"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "fence",
+            "request",
+            "session",
+            "turn_id"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/stop",
+          "local_body": [
+            "command",
+            "fence",
+            "turn_id"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "stop"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/stop",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "turn_id": {
+                "from": "turn_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.view",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{key.bot_id}/view",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "key": {
+          "machine_id": "source-one",
+          "bot_id": "機器人 α"
+        },
+        "after_seq": 0,
+        "page_size": 100,
+        "session": "__clawdline_machine__",
+        "request": "stable-view",
+        "conversation_id": "chat",
+        "mode": "snapshot",
+        "source_epoch": "",
+        "cursor": ""
+      },
+      "shapes": [
+        {
+          "body": [
+            "after_seq",
+            "conversation_id",
+            "cursor",
+            "key",
+            "mode",
+            "page_size",
+            "request",
+            "session",
+            "source_epoch"
+          ],
+          "path": "/v1/project-assistants/{key.bot_id}/view",
+          "query": [
+            "after_seq",
+            "conversation_id",
+            "cursor",
+            "machine_id",
+            "mode",
+            "page_size",
+            "source_epoch"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "key": {
+            "type": "object",
+            "properties": {
+              "machine_id": {
+                "type": "string",
+                "non_empty": true
+              },
+              "bot_id": {
+                "type": "string",
+                "checks": [
+                  "pa_bot_id"
+                ]
+              }
+            },
+            "required": [
+              "bot_id",
+              "machine_id"
+            ],
+            "closed": true
+          },
+          "after_seq": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 256,
+            "copies": {
+              "max": "projectassistant.MaxEventPageRows"
+            }
+          },
+          "conversation_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "history",
+              "events",
+              "permissions",
+              "traces",
+              "detail"
+            ]
+          },
+          "source_epoch": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string",
+            "max_bytes": 4096,
+            "copies": {
+              "max_bytes": "projectassistant.MaxReadViewCursorBytes"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{key.bot_id}/view",
+          "query": {
+            "machine_id": {
+              "from": "key.machine_id"
+            },
+            "after_seq": {
+              "from": "after_seq"
+            },
+            "page_size": {
+              "from": "page_size"
+            },
+            "conversation_id": {
+              "from": "conversation_id"
+            },
+            "mode": {
+              "from": "mode"
+            },
+            "source_epoch": {
+              "from": "source_epoch"
+            },
+            "cursor": {
+              "from": "cursor"
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-codegraph",
       "kind": "read",
       "write_gate": false,

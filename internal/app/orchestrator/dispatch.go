@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -31,6 +32,9 @@ import (
 // never returns it, and the child receives it in the one line typed into its
 // composer.
 type DispatchRequest struct {
+	// assistant can only be built by DispatchAssistant after private capability
+	// verification. It is unexported and cannot be populated by HTTP JSON.
+	assistant  *assistantAdmission
 	TaskID     string
 	Secret     string
 	Generation string
@@ -131,6 +135,14 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	held, _, err := b.Record(ctx, req.TaskID)
 	switch {
 	case err == nil:
+		if held.AssistantOwner != nil || req.assistant != nil {
+			if req.assistant == nil {
+				return Dispatched{}, assistantFailure(pa.ScopeDenied, "work_owner")
+			}
+			if !sameAssistantOwner(held.AssistantOwner, req.assistant.record.AssistantOwner) {
+				return Dispatched{}, assistantFailure(pa.IdempotencyConflict, "work_command")
+			}
+		}
 		return Dispatched{Record: held, Warnings: quotaWarnings(held.Assistant, held.AssistantQuota), Replayed: true}, nil
 	case !isNotFound(err):
 		return Dispatched{}, err
@@ -140,7 +152,13 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 			"secret must be 64 hex characters.")
 	}
 
-	record, err := b.readDraftAs(req.TaskID, req.Schedule != nil, req.Detached)
+	var record Record
+	if req.assistant != nil {
+		record = req.assistant.record
+		err = nil
+	} else {
+		record, err = b.readDraftAs(req.TaskID, req.Schedule != nil, req.Detached)
+	}
 	if err != nil {
 		return Dispatched{}, err
 	}
@@ -220,8 +238,13 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// who asked for the work never hears that it is done. Resolving it now
 	// turns that into a refusal the dispatcher can act on, rather than a
 	// discovery somebody makes an hour later.
-	rootSession, err := b.resolveRootSession(ctx, record.Root)
-	if err != nil {
+	var rootSession session.Session
+	if req.assistant == nil {
+		rootSession, err = b.resolveRootSession(ctx, record.Root)
+		if err != nil {
+			return Dispatched{}, err
+		}
+	} else if _, err = b.checkAssistantRequest(ctx, req.assistant.request); err != nil {
 		return Dispatched{}, err
 	}
 	rootTerminal := rootSession.ID
@@ -263,6 +286,20 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// Capacity, per root and per machine. Both are 429 with a retry_after,
 	// because "busy" without a number sends a caller into a loop.
 	children := childrenOf(live)
+	if record.AssistantOwner != nil {
+		mine := 0
+		for _, other := range children {
+			if other.AssistantOwner != nil && other.AssistantOwner.Fence.Key == record.AssistantOwner.Fence.Key {
+				mine++
+			}
+		}
+		// Reuse the existing per-owner child capacity, never an unregistered
+		// Bot queue or unlimited detached-dispatch budget.
+		if mine >= b.maxChildren() {
+			return Dispatched{}, refuseRawWith(http.StatusTooManyRequests, "over_capacity",
+				"All child slots for this Bot are busy; retry when one finishes.", map[string]any{"retry_after": 60})
+		}
+	}
 	if record.Root != nil {
 		mine := 0
 		for _, other := range children {
@@ -416,6 +453,15 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// which this process has a queued task it could brief and does not know
 	// it: the beat settles a queued task whose dispatcher is gone (watch.go),
 	// and it must never mistake this one for such a task.
+	if req.assistant != nil {
+		current, err := b.checkAssistantRequest(ctx, req.assistant.request)
+		if err != nil {
+			return Dispatched{}, err
+		}
+		if filepath.Clean(current.Project.Directory) != record.ProjectDir || current.Assistant != record.Assistant || current.PermissionMode != record.PermissionMode || current.TimeoutMinutes != record.TimeoutMinutes {
+			return Dispatched{}, assistantFailure(pa.StaleVersion, "dispatch_policy")
+		}
+	}
 	hash := HashSecret(req.Secret)
 	b.rememberSecret(record.ID, req.Secret)
 	ids, err := b.create(ctx, record, hash, effects...)

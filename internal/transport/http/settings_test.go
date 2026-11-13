@@ -330,8 +330,8 @@ func TestSettingsRouteCarriesWorkGateDefaultsAndUpdates(t *testing.T) {
 // key that reaches the file but comes back missing is a control that silently
 // does nothing, which is the failure this walks the whole table to rule out.
 func TestSettingsEveryWindowRow(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "clawdline-next")
-	s := &Server{cfg: config.Config{Dir: dir}}
+	fixture := newPAServerFixture(t, true)
+	s, dir := fixture.s, fixture.s.cfg.Dir
 
 	// Enabling a Chrome row also requires its transport to be ready. This
 	// settings round-trip fixture supplies readiness; native installation is
@@ -388,13 +388,15 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec, _, refusal := settingsCall(t, s, http.MethodPost, "application/json", string(body))
+	rec := fixture.request(t, http.MethodPost, "/v1/settings", fixture.local, string(body))
+	var refusal contract.Refusal
+	_ = json.Unmarshal(rec.Body.Bytes(), &refusal)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("the whole window: %d %s %s", rec.Code, refusal.Error, rec.Body)
 	}
 
 	// Read it back off disk through the route, as the window does when it opens.
-	rec, _, _ = settingsCall(t, s, http.MethodGet, "", "")
+	rec = fixture.request(t, http.MethodGet, "/v1/settings", fixture.local, nil)
 	var back map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &back); err != nil {
 		t.Fatal(err)

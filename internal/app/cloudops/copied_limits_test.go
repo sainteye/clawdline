@@ -9,7 +9,9 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/cloudvocab"
+	"github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/squadpack"
 	"github.com/sainteye/clawdline/internal/domain/toollibrary"
@@ -21,6 +23,12 @@ import (
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
 	"voicework.MaxAutoContinue":                    voicework.MaxAutoContinue,
+	"cloud.MaxSafeInteger":                         cloud.MaxSafeInteger,
+	"projectassistant.MaxMessageBytes":             projectassistant.MaxMessageBytes,
+	"projectassistant.MaxInstructionBytes":         projectassistant.MaxInstructionBytes,
+	"projectassistant.MaxPageRows":                 projectassistant.MaxPageRows,
+	"projectassistant.MaxEventPageRows":            projectassistant.MaxEventPageRows,
+	"projectassistant.MaxReadViewCursorBytes":      projectassistant.MaxReadViewCursorBytes,
 	"browserbridge.MaxAuditRows":                   browserbridge.MaxAuditRows,
 	"capacity.AntigravityConsentRequestBytesLimit": capacity.AntigravityConsentRequestBytesLimit,
 	"ViewerEventsBatchBytesLimit":                  ViewerEventsBatchBytesLimit,

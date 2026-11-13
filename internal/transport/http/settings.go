@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -103,9 +104,8 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 				"a settings write is application/json")
 			return
 		}
-		var body map[string]json.RawMessage
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, settingsRequestBodyLimit))
-		if err := dec.Decode(&body); err != nil || body == nil {
+		body, decodeErr := decodeSettingsObject(w, r)
+		if decodeErr != nil {
 			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a settings change")
 			return
 		}
@@ -143,9 +143,13 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 		if len(changes) == 0 {
 			v, err = f.Read()
 		} else {
-			v, err = s.setBrowserAwareSettings(f, changes)
+			v, err = s.setProjectAssistantSettings(r.Context(), f, changes)
 		}
 		if err != nil {
+			if _, changed := changes["project_assistants_enabled"]; changed {
+				paWriteHTTPFailure(w, err)
+				return
+			}
 			writeSettingsFailure(w, f, err)
 			return
 		}
@@ -535,6 +539,9 @@ func settingsChanges(body map[string]json.RawMessage) (map[string]any, *settings
 			return nil, &settingsRefusal{"bad_request", "not a key this app sets: " + name}
 		}
 		if string(raw) == "null" {
+			if name == "project_assistants_enabled" {
+				return nil, &settingsRefusal{"bad_request", "project_assistants_enabled requires a boolean"}
+			}
 			continue
 		}
 		value, ok := settingsValue(key, raw)
@@ -643,6 +650,10 @@ func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) settingsSnapshotW
 				ok = true
 			}
 		}
+		if name == "project_assistants_enabled" {
+			raw, _ = json.Marshal(v.ProjectAssistantsEnabled())
+			ok = true
+		}
 		if name == "browser_mode" {
 			raw, _ = json.Marshal(v.BrowserMode())
 			ok = true
@@ -668,6 +679,37 @@ func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) settingsSnapshotW
 	// page say why, once.
 	out.CloudflareTunnelRetired = nextconfig.CloudflareTunnelRetired(v)
 	return out
+}
+
+func decodeSettingsObject(w http.ResponseWriter, r *http.Request) (map[string]json.RawMessage, error) {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, settingsRequestBodyLimit))
+	token, err := dec.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("settings require an object")
+	}
+	body := map[string]json.RawMessage{}
+	for dec.More() {
+		token, err = dec.Token()
+		name, ok := token.(string)
+		if err != nil || !ok {
+			return nil, errors.New("settings require keys")
+		}
+		if _, duplicate := body[name]; duplicate {
+			return nil, errors.New("duplicate setting")
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return nil, err
+		}
+		body[name] = value
+	}
+	if _, err = dec.Token(); err != nil {
+		return nil, err
+	}
+	if _, err = dec.Token(); err != io.EOF {
+		return nil, errors.New("trailing settings value")
+	}
+	return body, nil
 }
 
 // writeSettingsFailure names which of the failures this was. A file somebody

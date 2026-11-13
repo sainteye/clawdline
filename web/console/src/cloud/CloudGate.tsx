@@ -1,4 +1,7 @@
 import { supportWord } from "../support/words.js"
+import { ProjectAssistantRegistry, capturedAssistantRelayFetch, cloudAssistantGrants, type AssistantWorkIntent } from "./project-assistants.js"
+import { words as assistantWords } from "../project-assistants/words.js"
+import { errorCode as assistantErrorCode } from "../project-assistants/client.js"
 import { BrowserPairingBlock } from "../pages/settings/BrowserPairingBlock.js"
 import { LocalMachineSetup } from "./LocalMachineSetup.js"
 import { accessProblemAfterRead, readProblemOffersPairing } from "./state.js"
@@ -12,7 +15,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { MachineSheet } from "../pages/devices/AccountMachines.js"
 import { machineManager } from "./machine-manager.js"
 import { createPortal, flushSync } from "react-dom"
-import type { SessionRow } from "@clawdline/contract"
+import type { SessionRow, ProjectAssistantWorkLink } from "@clawdline/contract"
 import App from "../App.js"
 import { CLOSE_EXECUTION_CHANGED, COPILOT_FLEET, COPILOT_MACHINES, COPILOT_OPEN, sessionAddressChanged } from "../overlays/events.js"
 import { NAVIGATION_MARK } from "../brand-mark.js"
@@ -562,8 +565,25 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<RecoveringCloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
-  const currentActionClient = useCallback(() => client.current, [])
   const [clientEpoch, setClientEpoch] = useState(0)
+  const assistantRegistry = useMemo(() => who?.account ? new ProjectAssistantRegistry(who.account,who.account) : null,[who?.account])
+  const assistantRegistryRef = useRef(assistantRegistry)
+  const [assistantWorkIntent,setAssistantWorkIntent] = useState<AssistantWorkIntent | null>(null)
+  const assistantWorkRequest = useRef(0)
+  const assistantWorkOpened = useCallback((token:string) => setAssistantWorkIntent(held => held?.token === token ? null : held),[])
+  assistantRegistryRef.current = assistantRegistry
+  useEffect(() => () => assistantRegistry?.revoke(),[assistantRegistry])
+  useEffect(() => {
+    if (!assistantRegistry || !machines) return
+    const account = assistantRegistry.accountKey
+    const grants = cloudAssistantGrants(account,machines.filter(machine => !forgotten.includes(machine.id)),
+      id => client.current ? machineApp(client.current,id).api_level : undefined,
+      id => JSON.stringify([account,who?.device,id,machines.find(machine => machine.id === id)?.pairing,
+        machines.find(machine => machine.id === id)?.operationAllowed]))
+    assistantRegistry.sync(grants,grant => capturedAssistantRelayFetch(grant.machineID,() =>
+      client.current?.account === account ? client.current : null,CARRY_TABLE.carried))
+  },[assistantRegistry,machines,clientEpoch,who?.device,forgotten])
+  const currentActionClient = useCallback(() => client.current, [])
   // A renewal replaces the client; the source moves its listeners to the new one.
   const clientChanges = useRef(new Set<() => void>())
   const liveSessionSource = useMemo(() => sessionSource ?? statusSource(() => client.current, (listener) => {
@@ -894,6 +914,23 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setScreen({ at: "console" })
   }, [transport, forgotten, pointAt])
 
+  const openAssistantWork = useCallback((work: ProjectAssistantWorkLink) => {
+    const ticket = ++assistantWorkRequest.current
+    const registry = assistantRegistryRef.current
+    // Task-only links retain their real ID/state until a sanitized task destination exists.
+    if (!registry || !work.board_item_id) return
+    void registry.captureWorkItem(work,new AbortController().signal).then(captured => {
+      if (ticket !== assistantWorkRequest.current || assistantRegistryRef.current !== registry || !captured.current()) return
+      const machine = machinesRef.current?.find(row => row.id === captured.machineID && row.selectable)
+      if (!machine) return
+      // The new App receives the full item as an intent. Its own effect waits for the Board owner.
+      flushSync(() => {
+        setAssistantWorkIntent({...captured,token:crypto.randomUUID()})
+        setFleetScope(false);setFleetTarget(null);choose(machine,false)
+      })
+    }).catch(error => toast(`${assistantWords(document.documentElement.lang).sourceError} (${assistantErrorCode(error)})`))
+  },[choose])
+
   /** The machine this tab remembers choosing, for the account it is signed in to. */
   const remembered = useCallback(() => {
     try {
@@ -923,6 +960,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       setAsking(null)
       setTold({ machine: machine.name || machine.label || machine.id, outcome })
       if (outcome.kind !== "forgotten") return outcome
+      assistantRegistryRef.current?.revoke(machine.id)
       setForgotten((was) => (was.includes(machine.id) ? was : [...was, machine.id]))
       const next = afterForget({
         forgotten: machine.id,
@@ -1243,6 +1281,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       switch (update.state) {
         case "connected": {
           const next = update.client
+          if (assistantRegistryRef.current?.accountKey !== next.account) assistantRegistryRef.current?.revoke()
           client.current = next
           for (const listener of [...clientChanges.current]) listener()
           setClientEpoch((epoch) => epoch + 1)
@@ -1295,7 +1334,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               next.viewerEvents,
               listed?.length === 1 ? listed[0]!.id : null,
             )
-            if (access) setProblem(access)
+            if (access) {
+              if (["revoked","device_revoked","unauthorized","forbidden","machine_pairing_required","unknown_key","unknown_sender","missing_capability","capability_denied"].includes(access.code))
+                assistantRegistryRef.current?.revoke(access.machine)
+              setProblem(access)
+            }
           })
           recoverPairing()
           if (reader.current) {
@@ -1314,6 +1357,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           return
         }
         case "sign_in":
+          assistantRegistryRef.current?.revoke()
           forgetPersonas()
           clearPersonaDisplayCache()
           setOperationsAccess(false)
@@ -1350,6 +1394,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           setScreen({ at: "failed", code: update.error?.code ?? update.reason ?? "terminal_error" })
           return
         case "revoked": {
+          assistantRegistryRef.current?.revoke()
           forgetPersonas()
           clearPersonaDisplayCache()
           reader.current?.lost()
@@ -2115,6 +2160,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       {chosen && who && transport.kind === "cloud" && screen.at === "console" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
           <App cloudOperationsAccess={operationsAccess} cloudOperationsAttention={operationsAttention} key={fleetScope ? "fleet" : reading ?? chosen.id} aside={aside} hideSessionCounts={fleetScope}
+            projectAssistants={assistantRegistry}
+            onOpenAssistantWork={openAssistantWork} assistantWorkIntent={assistantWorkIntent} onAssistantWorkOpened={assistantWorkOpened}
             onChooseDashboardMachine={() => {
               if (!fleetScope) { setDashboardMachine(chosen); return }
               switchOpener.current = document.getElementById("machine-dashboard-open")

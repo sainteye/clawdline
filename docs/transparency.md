@@ -499,3 +499,52 @@ never call a model. Both language explanations name the additional trigger and
 quota boundary. Versioned question approval, effect admission, capability-scoped
 claims and durable cross-browser narration are deterministic execution boundaries,
 not authority granted to the planning model.
+
+Persistent Bots have a separate conditional entry for Claude Code and Codex.
+The default-hidden module records configuration without opening a provider.
+Only an explicitly enabled, authorized send whose native readiness is verified
+may expand captured standing instructions and provenance-checked stored
+context into ACP text blocks. A selected quote is a separate checked block;
+forget revisions reject old or unknown-provenance quoted turns and unsafe
+opaque resume. Queued turns capture instructions at their next idle start.
+
+The reviewed sources include the runtime and native prompt producer. The
+scripted peer in testdata is registered by the conservative producer scan as
+verification code, not as an external provider or evidence of native loading.
+This inventory establishes no native read-only or memory-isolation proof.
+English and Taiwan Traditional Chinese describe the same conditional scope.
+The public website snapshot must be imported and deployed after the reviewed
+product commit lands; no website publication is performed by this change.
+
+Persistent Bot workers reuse the broker's child briefing and result protocol.
+The conditional child card in English and Taiwan Traditional Chinese now names
+this trigger and its exact additional instruction: the worker is neither a human
+nor a terminal Root, returns results and landing facts to the source Bot chat,
+and cannot approve, claim or finish Board items for a person. The reviewed
+excerpt contains the actual branch in ChildBrief. Authenticated source policy,
+process-local capabilities and the broker enforce admission; the instruction
+alone does not establish authorization or successful execution. Native provider
+admission, production host wiring and public website publication remain separate
+acceptance work. The website snapshot must follow this revision when published.
+
+A fresh persistent-Bot native Session also receives a structured handoff from
+source-owned SQLite facts: the exact identity and captured instructions, current
+filtered memory, unfinished-work references and a history bookmark. The runtime
+builds it within the final memory revision fence, and the ACP producer verifies
+that opening against the exact prompt turn/context before writing. No transcript
+excerpt or opaque provider summary is silently substituted for filtered memory.
+Unfinished references grant no replay authority. The existing conditional card,
+source excerpt and both language versions describe this addition; native
+readiness and the eventual public website snapshot remain separate acceptance.
+
+
+The first installed Claude Bot route adds explicit local artifact setup and
+OS controls to the existing lazy production Host. Setup starts no native
+adapter and establishes neither login nor model access. Its session settings
+disable native transcript persistence, prompt suggestions and progress
+summaries; a new process reconstructs the app's filtered context. Review of
+the persistent-Bot card in English and Traditional Chinese distinguishes
+those controls from live-provider evidence. The unrelated Antigravity launch
+context is unchanged; its source link follows the CLI entry-point movement.
+The public website snapshot still follows approval and publication of the
+reviewed product tree.

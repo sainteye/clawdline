@@ -101,6 +101,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "project-assistants":
+		os.Exit(projectAssistantsCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdout, os.Stderr))
 	case "provider":
 		os.Exit(providerObserveCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdin, os.Stdout, os.Stderr))
 	case "serve":
@@ -327,6 +329,17 @@ func serve() {
 	if err := srv.AuthReady(); err != nil {
 		refuseToServe(1, err.Error())
 	}
+	if err := srv.StartProjectAssistants(cloudCtx); err != nil {
+		log.Print("project assistants: startup remains fenced; inspect feature status and cleanup")
+	}
+	stopProjectAssistants := func() {
+		// The feature owns its registered total cleanup deadline. It must
+		// stop before any owner can close the shared database.
+		if err := srv.StopProjectAssistants(context.Background()); err != nil {
+			log.Print("project assistants: shutdown cleanup remains unknown")
+		}
+	}
+	defer stopProjectAssistants()
 	stopAntigravityProjects, projectConsentErr := srv.StartAntigravityProjectConsent(cloudCtx)
 	if projectConsentErr != nil {
 		log.Print("antigravity: antigravity_project_consent_unavailable")
@@ -370,8 +383,12 @@ func serve() {
 		}
 	}
 	defer stopAntigravityAll()
+	stopOwnedHosts := func() {
+		stopProjectAssistants()
+		stopAntigravityAll()
+	}
 	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), func() {
-		stopServing(stopAntigravityAll, stopCloud, stopCodeGraph)
+		stopServing(stopOwnedHosts, stopCloud, stopCodeGraph)
 	})
 	srv.StartScheduler(context.Background())
 	// The broker's beat: collect what children wrote, run the two clocks, and
@@ -399,7 +416,7 @@ func serve() {
 	}
 	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
-		stopServing(stopAntigravityAll, stopCloud, stopCodeGraph)
+		stopServing(stopOwnedHosts, stopCloud, stopCodeGraph)
 		refuseToServe(1, err.Error())
 	}
 }

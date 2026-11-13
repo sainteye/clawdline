@@ -344,7 +344,33 @@ func (a *Authority) Verify(bearer string) Verdict {
 	// store does: a read is not a reason to rewrite the file.
 	matched.LastSeen = a.now()
 	a.devices[matched.ID] = *matched
-	return Verdict{Allowed: true, Device: matched.ID, Caps: matched.Caps, Local: matched.Local}
+	return Verdict{Allowed: true, Device: matched.ID, Caps: append(Caps(nil), matched.Caps...), Local: matched.Local,
+		witness: &verificationWitness{issuer: a, device: matched.ID, hash: matched.Hash,
+			created: matched.Created, local: matched.Local, caps: append(Caps(nil), matched.Caps...)}}
+}
+
+// Revalidate is a narrow proof check for operations that need fresh device
+// authority after the gate has discarded the bearer. It cannot authenticate a
+// constructed Verdict or inherit a replacement device's grant. Every ceiling
+// is intersected, including a Local flag removed by a transport boundary.
+func (a *Authority) Revalidate(v Verdict) Verdict {
+	w := v.witness
+	if a == nil || !v.Allowed || w == nil || w.issuer != a || w.device != v.Device {
+		return Verdict{}
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	d, ok := a.devices[w.device]
+	if !ok || !d.Approved || d.Hash != w.hash || !d.Created.Equal(w.created) || d.Local != w.local {
+		return Verdict{}
+	}
+	var caps Caps
+	for _, c := range w.caps {
+		if v.Caps.Has(c) && d.Caps.Has(c) {
+			caps = append(caps, c)
+		}
+	}
+	return Verdict{Allowed: true, Device: d.ID, Caps: caps, Local: w.local && v.Local && d.Local, witness: w}
 }
 
 // Started is what the asker is told about a pairing: which one, and until

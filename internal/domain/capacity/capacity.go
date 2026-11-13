@@ -701,6 +701,16 @@ func Register() []Entry {
 	return rows
 }
 
+const (
+	BotsReadViewCursorBytes = "bots.read_view_cursor_bytes"
+	BotsNameRunes           = "bots.name_runes"
+	BotsInstructionBytes    = "bots.instruction_bytes"
+	BotsMessageBytes        = "bots.message_bytes"
+	BotsPendingTurns        = "bots.pending_turns"
+	BotsPageRows            = "bots.page_rows"
+	BotsEventRows           = "bots.event_rows"
+)
+
 // Default is a registered row's default limit, and 0 for a name that is not
 // registered. Adapters that enforce a row's limit take their default from
 // here, so the number has one spelling.
@@ -714,3 +724,24 @@ func Default(name string) int64 {
 	}
 	return 0
 }
+
+const (
+	BotsActors          = "bots.actors"
+	BotsProcesses       = "bots.processes"
+	BotsRPCPending      = "bots.rpc_rows"
+	BotsPermissions     = "bots.perm_rows"
+	BotsNotifications   = "bots.notice_rows"
+	BotsFrames          = "bots.frame_bytes"
+	BotsCapture         = "bots.capture_bytes"
+	BotsStderr          = "bots.stderr_bytes"
+	BotsWrite           = "bots.write_ms"
+	BotsCleanup         = "bots.cleanup_ms"
+	BotsRPCDeadline     = "bots.rpc_ms"
+	BotsPrompt          = "bots.prompt_ms"
+	BotsSurvey          = "bots.survey_ms"
+	BotsChatGap         = "bots.chat_gap_ms"
+	BotsEventRefresh    = "bots.refresh_ms"
+	BotsDispatchSeconds = "bots.dispatch_seconds"
+)
+
+const BotsOwnedDescendants = "bots.owned_children"
