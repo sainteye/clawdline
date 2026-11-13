@@ -32,9 +32,13 @@ type AssistantCurrent struct {
 	Project         pa.ProjectResolution
 	DispatchAllowed bool
 	AllowedClaims   []string
-	Assistant       string
-	PermissionMode  string
-	TimeoutMinutes  int
+	// AnyProjectFile admits any exact relative file inside the Project, as
+	// CodyNC lets a Bot work anywhere in its workspace. Path, symlink and
+	// directory checks still apply to every claim.
+	AnyProjectFile bool
+	Assistant      string
+	PermissionMode string
+	TimeoutMinutes int
 }
 
 type AssistantAuthorityOptions struct {
@@ -214,7 +218,7 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	for _, claim := range claims {
 		// Exact relative files only. Ordinary broker callers retain their
 		// existing path contract; a Bot cannot request directories or globs.
-		if claim != filepath.ToSlash(filepath.Clean(claim)) || claim == "." || strings.ContainsAny(claim, "\\*?[]:") || filepath.IsAbs(claim) || !slices.Contains(c.AllowedClaims, claim) {
+		if claim != filepath.ToSlash(filepath.Clean(claim)) || claim == "." || strings.ContainsAny(claim, "\\*?[]:") || filepath.IsAbs(claim) || !c.AnyProjectFile && !slices.Contains(c.AllowedClaims, claim) {
 			return c, assistantFailure(pa.ScopeDenied, "claims")
 		}
 		// Reject existing symlink components, including symlinked directories.

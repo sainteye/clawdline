@@ -343,8 +343,10 @@ func CheckCapabilities(c Capabilities) error {
 	if c.Unavailable != nil {
 		return c.Unavailable
 	}
-	if c.CLIVersion == "" || c.AdapterVersion == "" || c.Evidence == "" || !c.ReadOnlyEnforced {
-		return fail(ReadOnlyUnverified, "native_read_only")
+	// Native tools act in the Bot's Project as in CodyNC; a change needs the
+	// person's per-action approval rather than an enforced read-only boundary.
+	if c.CLIVersion == "" || c.AdapterVersion == "" || c.Evidence == "" {
+		return fail(AdapterNotFound, "native_evidence")
 	}
 	if !c.NativeMemoryVerified || (c.NativeMemory != NativeMemoryDisabled && c.NativeMemory != NativeMemoryIsolated) {
 		return fail(MemoryIsolationUnverified, "native_memory")

@@ -157,6 +157,13 @@ func peerConfiguration(t *testing.T, mode string) Configuration {
 }
 func openTestClient(t *testing.T, mode string, sink func(context.Context, app.ProtocolEvent) error) (*Client, *Process) {
 	t.Helper()
+	return openClassifiedTestClient(t, mode, sink, true)
+}
+
+// openClassifiedTestClient sets what the payload classifier says about every
+// native permission request.
+func openClassifiedTestClient(t *testing.T, mode string, sink func(context.Context, app.ProtocolEvent) error, readOnly bool) (*Client, *Process) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows native supervisor is explicitly unavailable")
 	}
@@ -168,7 +175,7 @@ func openTestClient(t *testing.T, mode string, sink func(context.Context, app.Pr
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := NewClient(p, l, testFence(), sink, func([]byte) bool { return true })
+	c, err := NewClient(p, l, testFence(), sink, func([]byte) bool { return readOnly })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,5 +373,34 @@ func TestACPFreshSessionHandoffTraversesStdinAndRejectsStaleOpeningBeforeWrite(t
 	}
 	if strings.Count(result.FinalText, "Filtered handoff summary") != 1 {
 		t.Fatal("handoff memory duplicated")
+	}
+}
+
+// As in CodyNC, the person may allow an action the host cannot prove
+// read-only, once. A persistent rule is still refused.
+func TestACPPersonMayAllowAChangingActionOnce(t *testing.T) {
+	offers := make(chan pa.PermissionOffer, 1)
+	c, _ := openClassifiedTestClient(t, "permission", func(_ context.Context, e app.ProtocolEvent) error {
+		if e.Permission != nil {
+			offers <- *e.Permission
+		}
+		return nil
+	}, false)
+	pending := sendTestPrompt(t, c)
+	var offer pa.PermissionOffer
+	select {
+	case offer = <-offers:
+	case <-time.After(time.Second):
+		t.Fatal("no permission request")
+	}
+	if err := c.Answer(context.Background(), offer.NativeRequestID, "always"); pa.Code(err) != pa.ScopeExpansionDenied {
+		t.Fatalf("a persistent allow rule was accepted: %v", err)
+	}
+	if err := c.Answer(context.Background(), offer.NativeRequestID, "read-once"); err != nil {
+		t.Fatalf("the person's one-time allow was refused: %v", err)
+	}
+	result, err := pending.Wait(context.Background())
+	if err != nil || result.FinalText != "after permission" {
+		t.Fatalf("the allowed action did not continue the turn: %+v %v", result, err)
 	}
 }

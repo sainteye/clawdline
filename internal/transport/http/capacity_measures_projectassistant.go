@@ -70,5 +70,6 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsSurvey:              pure,
 		capacity.BotsChatGap:             pure,
 		capacity.BotsEventRefresh:        pure,
+		capacity.BotsDispatchSeconds:     pure,
 	}
 }

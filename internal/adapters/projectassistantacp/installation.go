@@ -331,27 +331,27 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 		}
 		history = h.Config
 	}
-	config, cleanup, e := i.isolatedWithHistory(ctx, state, b, nativeLimits(), history)
+	config, cleanup, e := i.isolatedWithHistory(ctx, state, b, history)
 	if e != nil {
 		return config, caps, cleanup, e
 	}
 	caps.CLIVersion, caps.AdapterVersion = ClaudeCLIVersion, ClaudeAdapterVersion
-	caps.Evidence = "pinned artifacts and live OS write/exec/memory controls; no authentication or model assertion"
-	caps.ReadOnlyEnforced, caps.NativeMemoryVerified = true, true
-	caps.NativeMemory = pa.NativeMemoryDisabled
+	caps.Evidence = "pinned artifacts; native tools act in the Project after per-action approval; native config, history and memory isolated per Bot and Project"
+	caps.ReadOnlyEnforced, caps.NativeMemoryVerified = false, true
+	caps.NativeMemory = pa.NativeMemoryIsolated
 	caps.Resume = claudeResumeQualified
 	caps.SendMessage = true
 	return config, caps, cleanup, nil
 }
 
-// CheckClaudeInstallation performs only local artifact and kernel controls.
+// CheckClaudeInstallation verifies only the pinned local artifacts.
 // Success is deliberately not an auth, session/new, prompt or model receipt.
 func CheckClaudeInstallation(ctx context.Context, state string) error {
 	i, e := readInstallation(ctx, state)
 	if e != nil {
 		return e
 	}
-	_, cleanup, e := i.isolated(ctx, state, pa.Bot{}, nativeLimits())
+	_, cleanup, e := i.isolated(ctx, state, pa.Bot{})
 	defer cleanup()
 	return e
 }

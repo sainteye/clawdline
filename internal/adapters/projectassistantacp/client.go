@@ -587,7 +587,9 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 		c.mu.Unlock()
 		return refusal(pa.NotFound, "native_permission")
 	}
-	if option.Kind == pa.AllowAlways || option.Kind == pa.RejectAlways || option.Allow && !option.ReadOnly {
+	// The person approves each action once. A persistent rule would outlive
+	// the turn and the generation that asked for it.
+	if option.Kind == pa.AllowAlways || option.Kind == pa.RejectAlways {
 		c.mu.Unlock()
 		return refusal(pa.ScopeExpansionDenied, "native_permission")
 	}

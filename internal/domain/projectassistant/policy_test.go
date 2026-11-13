@@ -315,10 +315,16 @@ func TestCapabilitiesKeepUnknownAndSourceMismatchUnavailable(t *testing.T) {
 	if Code(CheckCapabilities(c)) != MemoryIsolationUnverified {
 		t.Fatal("unverified native memory admitted")
 	}
+	// Native tools ask the person before acting, as in CodyNC; read-only is
+	// no longer an admission requirement, but pinned evidence still is.
 	c = testCapabilities()
 	c.ReadOnlyEnforced = false
-	if Code(CheckCapabilities(c)) != ReadOnlyUnverified {
-		t.Fatal("prompt-only read-only admitted")
+	if err := CheckCapabilities(c); err != nil {
+		t.Fatalf("per-action approval was refused: %v", err)
+	}
+	c.Evidence = ""
+	if Code(CheckCapabilities(c)) != AdapterNotFound {
+		t.Fatal("capabilities without pinned evidence admitted")
 	}
 	for _, code := range []ErrorCode{AdapterNotFound, AdapterInventoryUnknown, AuthUnavailableInIsolatedRuntime, SandboxUnavailable} {
 		c = testCapabilities()

@@ -18,6 +18,7 @@ import (
 type DispatchPolicy struct {
 	Allowed        bool
 	AllowedClaims  []string
+	AnyProjectFile bool
 	Assistant      string
 	PermissionMode string
 	TimeoutMinutes int
@@ -241,8 +242,11 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 	if h.o.DispatchPolicy != nil {
 		p, e := h.o.DispatchPolicy(ctx, key)
 		if e == nil {
-			out.DispatchAllowed = p.Allowed && p.TimeoutMinutes > 0
+			// Isolated work needs a repository worktree. Another Project kind
+			// keeps chat and never asks the authority for a dispatch actor.
+			out.DispatchAllowed = p.Allowed && p.TimeoutMinutes > 0 && resolved.Scope.Kind == pa.RepositoryProject
 			out.AllowedClaims = append([]string(nil), p.AllowedClaims...)
+			out.AnyProjectFile = p.AnyProjectFile
 			out.Assistant = p.Assistant
 			out.PermissionMode = p.PermissionMode
 			out.TimeoutMinutes = p.TimeoutMinutes

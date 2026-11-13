@@ -256,6 +256,11 @@
     "Note": true
   },
   {
+    "Name": "bots.dispatch_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.event_rows",
     "Known": true,
     "Note": true

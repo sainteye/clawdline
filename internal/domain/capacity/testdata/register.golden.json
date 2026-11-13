@@ -1073,6 +1073,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.dispatch_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3600,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotDispatchSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.event_rows",
     "Class": "buffer",
     "Unit": "rows",

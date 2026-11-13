@@ -3511,7 +3511,7 @@
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
     "cmd/clawdline/main.go": "1e670ab828c498f072751572fbc627836e95ec677c3dc52df503a818d51450e3",
-    "cmd/clawdline/project_assistants.go": "3dcd821debb88c1f7b1e1cb79bb2d5be8beccf523935bfd248f5c18945c191d6",
+    "cmd/clawdline/project_assistants.go": "dda82db88f6602b9aa2af940ddfc8348a1cf3b38fa066b433e1b3a5c0e8dcc31",
     "cmd/clawdline/session.go": "cafde1e2256317a25731543da5579b293cc47a83e48f0ff9c98fbf46309e283b",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3545,11 +3545,11 @@
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/voice_work.go": "a687718d648d1924327a74a9a973dd7c34a8d94c7c7d8fb7cb14067019823595",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
-    "internal/adapters/projectassistantacp/client.go": "03af753043fa5fe0d0d3282b0c8bc6fa160934090affb6bbc83a3fa50d10131a",
-    "internal/adapters/projectassistantacp/installation.go": "1e1def23e79d3cc63895ee2dae493f4378d140f65bd76ab0cda8084240d08771",
-    "internal/adapters/projectassistantacp/installation_isolation.go": "23ef261e0be60a3299bb28996ec2961b98616e161ab08910f2b527966de608a2",
+    "internal/adapters/projectassistantacp/client.go": "d5be5f1f51e46f919ac90a2d5d05e121a83239afad36d50f53f118f9d7879094",
+    "internal/adapters/projectassistantacp/installation.go": "214dace5b4dc374400ac09c729f3e637b73b1a69c8e81d17d4f4e5a98fc58a0a",
+    "internal/adapters/projectassistantacp/installation_isolation.go": "aec4ca806c66f7ad527996ee5470a69e52c16b42fea625f94a7a7ccae9a24682",
     "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
-    "internal/adapters/projectassistantacp/session_configuration.go": "700776ccf31a781ae2478316c99ba4ac1178c2ef38f97847bbe1161ee077b522",
+    "internal/adapters/projectassistantacp/session_configuration.go": "822be5a0770bf28db77950338dadbaf1c858d471f6c5299dd857d41edc676bad",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -3610,7 +3610,7 @@
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
     "internal/transport/http/integration_settings.go": "bd8e1338d9d1383e6a4096f7cac005e0a5109ea926aa0d574d1c9cffa7b11962",
-    "internal/transport/http/project_assistants_host.go": "25dcf20579f172e2b498b5e140bef3c7f844841a7a80e600d06bc5559104583a",
+    "internal/transport/http/project_assistants_host.go": "dc50017d8bcd03bbc70230aea43589f563ec03a124266955117e557e9d30346f",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "9d269ca8d986662ac80cdcb9fc76ea7b898c246b766e40d3c77576b0501e17fd",
     "internal/transport/http/session_naming_context.go": "524e877e5147fe959956900d90056febb7ef2038363f40864ed1b6cede839cb6",
@@ -3652,7 +3652,7 @@
     "web/console/src/voice-work/runtime.ts": "278b3b8bcfce334142062b98e37e8b9229de96dc1fdca92531ed863fea56f656"
   },
   "copyChecks": {
-    "en": "92331ffac4ef5f77322a5f480eaf98c67de69e5b65895137074b192f1f40e35e",
-    "zh-Hant": "ff9d29b1453cee826fa373dc1231ad4d0eae2de0cd9c0293754e6117a52d39b1"
+    "en": "5bec87786951d02315de360f6c13eb7a08e53964e41d4b129bd88fa29c2d5879",
+    "zh-Hant": "24f12ac64b7a3da9b06cf091e0a1e854d255603965167cd47f8e4fc45af314c2"
   }
 }

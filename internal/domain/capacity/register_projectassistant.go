@@ -19,6 +19,8 @@ const (
 	MaximumBotSurveyMilliseconds  = 50
 	MaximumBotChatGapMilliseconds = 3600000
 	MaximumBotRefreshMilliseconds = 3000
+	// The longest isolated work one Bot dispatch may start.
+	MaximumBotDispatchSeconds = 3600
 )
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
@@ -91,5 +93,8 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsEventRefresh, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotRefreshMilliseconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotRefreshMilliseconds"}},
+		{Name: BotsDispatchSeconds, Class: Buffer, Unit: Seconds, Limit: MaximumBotDispatchSeconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotDispatchSeconds"}},
 	}
 }

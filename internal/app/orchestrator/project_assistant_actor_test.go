@@ -469,3 +469,34 @@ func TestAssistantBrokerHistoryReadSurvivesExecutionRevocation(t *testing.T) {
 		t.Fatal("history recovery launched another worker")
 	}
 }
+
+// A Project-wide policy admits a file no list names, as CodyNC lets a Bot
+// work anywhere in its workspace, and still refuses every unsafe path.
+func TestAssistantBrokerProjectWidePolicyKeepsPathChecks(t *testing.T) {
+	b, ctx, c, q, _ := assistantBrokerFixture(t)
+	c.AllowedClaims, c.AnyProjectFile = nil, true
+	q.Claims = []string{"docs/unlisted.md"}
+	if _, err := b.DispatchAssistant(ctx, q); err != nil {
+		t.Fatalf("a Project file was refused under a Project-wide policy: %v", err)
+	}
+	for _, claim := range []string{"../outside.go", "..", ".", "docs/*.md", "/etc/hosts"} {
+		b, ctx, c, q, calls := assistantBrokerFixture(t)
+		c.AllowedClaims, c.AnyProjectFile = nil, true
+		q.Claims = []string{claim}
+		if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.ScopeDenied {
+			t.Fatalf("%q was admitted under a Project-wide policy: %v", claim, err)
+		}
+		if calls.Load() != 0 {
+			t.Fatalf("%q launched a worker", claim)
+		}
+	}
+	b, ctx, c, q, _ = assistantBrokerFixture(t)
+	c.AnyProjectFile = true
+	if err := os.Symlink(t.TempDir(), filepath.Join(c.Project.Directory, "linked")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	q.Claims = []string{"linked/new.go"}
+	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("a symlinked parent was admitted under a Project-wide policy: %v", err)
+	}
+}

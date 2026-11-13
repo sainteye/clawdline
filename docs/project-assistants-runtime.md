@@ -45,8 +45,9 @@ Configuration contains an absolute executable, argument vector and exact
 environment. There is no inherited environment by default, shell command,
 registry resolver, npx, download, provider fallback or login change.
 `Verify(ctx, bot, config)` is a trusted local evidence check: it must return the
-exact CLI/adapter versions, auth readiness, read-only enforcement and native
-memory isolation for this Bot/Project. It must not call a model. The host owns
+exact CLI/adapter versions and native memory isolation for this Bot/Project.
+Read-only enforcement is reported, not required: since 2026-11-14 native tools
+act after the person's per-action approval, as in CodyNC. It must not call a model. The host owns
 those probes and evidence lifetimes. A configuration without Verify is refused.
 
 `StartProcess(ctx, ProcessOptions)` and `NewClient(process, limits, fence, sink,
@@ -190,8 +191,10 @@ supervisor can establish containment before execution. No taskkill fallback is
 presented as equivalent evidence.
 
 The supplied provider capability research found no installed native ACP adapter.
-Actual Claude/Codex read-only enforcement, process memory isolation, OAuth
-graceful exit, real model cancellation and resume remain unproved. Those modes
+This paragraph records the state before 2026-11-14. Claude native resume has
+since passed a real cross-process proof on the pinned artifacts; read-only
+enforcement is no longer pursued for the first version, which follows CodyNC.
+OAuth graceful exit and real model cancellation remain unproved. Those modes
 must stay unavailable. Scripted replies and subscription login observations are
 not native capability evidence. This work makes zero usage-priced API requests.
 

@@ -101,13 +101,21 @@ refusals. Remembering an old path is insufficient. This code does not enumerate
 home/provider history, launch a terminal or change the deliberately empty legacy
 `/v1/projects` endpoint.
 
-Production Provider, NativeWork and DispatchPolicy remain nil. An initial Send
-returns typed `adapter_not_found` until a separately verified provider is wired.
-No native read-only or memory-isolation readiness is invented. Dispatch has no
-source-owned exact AllowedClaims ceiling and remains denied; HTTP/model claims
-cannot supply that ceiling or bypass Board human checks. Private fake-provider
-fixtures exercise lazy first Send, admission revocation, cancellation and Close
-deadlines without establishing ACP/native acceptance.
+The production Provider is the installed Claude route (`InstalledClaudeProvider`);
+without an explicit `setup-claude` an initial Send returns typed
+`adapter_not_found`. Since 2026-11-14 the first version follows CodyNC: the
+native CLI keeps its own tools, works in the Bot's Project as the person and
+asks before acting; the person may allow an action once, and a standing allow
+rule is refused. There is no OS sandbox and no read-only claim. Native config,
+history and memory live in a feature-owned directory per Bot, Project,
+conversation and revision. The production DispatchPolicy is fixed source
+policy (`projectAssistantDispatchPolicy`): any exact relative file inside the
+Bot's repository Project, a Claude worker in `edits` mode, and a timeout from
+`capacity.MaximumBotDispatchSeconds`. HTTP and model arguments cannot widen it,
+and the Broker still applies its path, symlink, worktree, quota and landing
+rules. Private fake-provider fixtures exercise lazy first Send, admission
+revocation, cancellation and Close deadlines without establishing native
+acceptance.
 
 ## Capacity, verification and removal
 

@@ -116,7 +116,10 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
 		Source: s.projectAssistantSource, Provider: provider,
 		// The provider receives only execution-bound NativeTools from Host.
-		// Dispatch still requires separate source-owned exact claims.
+		// Dispatch follows CodyNC: a Bot may hand isolated work on any file
+		// of its own repository Project to a Claude worker that accepts
+		// edits. The Broker still owns claims, worktrees, quota and landing.
+		DispatchPolicy: projectAssistantDispatchPolicy,
 	})
 	if err != nil {
 		p.mu.Lock()
@@ -501,4 +504,11 @@ func (s *Server) setProjectAssistantSettings(ctx context.Context, f *nextconfig.
 	p.allowed = true
 	p.mu.Unlock()
 	return v, nil
+}
+
+// projectAssistantDispatchPolicy is fixed source policy, never model input.
+// Broker admission rejects a non-repository Project and every unsafe path.
+func projectAssistantDispatchPolicy(context.Context, pa.BotKey) (projectassistanthost.DispatchPolicy, error) {
+	return projectassistanthost.DispatchPolicy{Allowed: true, AnyProjectFile: true, Assistant: "claude", PermissionMode: "edits",
+		TimeoutMinutes: capacity.MaximumBotDispatchSeconds / 60}, nil
 }
