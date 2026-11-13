@@ -145,7 +145,6 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
         {isConnected&&copilotState.messageProposal?<section className="copilot-message-proposal" aria-label={nextWord('copilotProposalTitle')}>
           <strong>{nextWord('copilotProposalTitle')}</strong><p>{copilotState.messageProposal.target}</p><blockquote>{copilotState.messageProposal.message}</blockquote><p>{nextWord('copilotProposalHint')}</p>
         </section>:null}
-        {isConnected?<label className="copilot-processing-sounds"><input type="checkbox" checked={copilotState.progressSounds!==false} onChange={e=>realtimeCopilot.setProgressSounds(e.target.checked)}/>{nextWord('copilotProgressSounds')}</label>:null}
         {/* Live speech / transcript display */}
         {isConnected && (
           <div className="realtime-transcript-box" ref={transcript} role="region" tabIndex={0}

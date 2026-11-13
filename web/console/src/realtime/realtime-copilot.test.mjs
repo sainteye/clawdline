@@ -47,16 +47,27 @@ function fixture(managed, target = origin) {
   return { c, sent, reads, release, responses: () => sent.filter(e => e.type === 'response.create') }
 }
 
-test('connecting without a Session waits silently in direct and managed calls', async () => {
+test('connecting without a Session greets once after the ready cue, reads nothing, and yields to the person', async () => {
   globalThis.document = { documentElement: { lang: 'en' } }
   globalThis.location = { hash: '' }
   for (const managed of [false, true]) {
     const f = fixture(managed, null)
     f.c.memory = [{ role: 'user', text: 'An earlier request.', at: Math.floor(Date.now()/1000) }]
+    f.c.dc.send = text => f.sent.push(JSON.parse(text))
     await f.c.sendSessionConfiguration()
-    assert.equal(f.responses().length, 0)
+    assert.equal(f.responses().length, 0, 'nothing is said before the service confirms the tools')
     assert.equal(f.reads.length, 0)
     assert.equal(f.sent.filter(e => e.type === 'session.update').length, 1)
+    await f.c.handleRealtimeEvent({ type: 'session.updated', session: f.sent.find(e => e.type === 'session.update').session })
+    assert.equal(f.responses().length, 1, 'one greeting')
+    assert.match(JSON.stringify(f.responses()[0]), /Greet them in one short/)
+    assert.equal(f.reads.length, 0, 'the greeting reads nothing')
+    const quiet = fixture(managed, null)
+    quiet.c.dc.send = text => quiet.sent.push(JSON.parse(text))
+    await quiet.c.sendSessionConfiguration()
+    await quiet.c.handleRealtimeEvent({ type: 'input_audio_buffer.speech_started', item_id: 'first' })
+    await quiet.c.handleRealtimeEvent({ type: 'session.updated', session: quiet.sent.find(e => e.type === 'session.update').session })
+    assert.doesNotMatch(JSON.stringify(quiet.responses()), /Greet them in one short/, 'speaking first drops the greeting')
   }
 })
 
@@ -373,7 +384,7 @@ test('a message is prepared without planning and confirmed only after exact audi
  })
 })
 
-test('connected cue waits for configured tools, plays once, and creates no model greeting',async()=>{
+test('connected cue waits for configured tools, plays once, and the only response is the greeting',async()=>{
  const f=fixture(true,null);let connected=0
  f.c.state.status='connected';f.c.meter={connected:()=>connected++,pending(){}}
  f.c.dc.send=text=>f.sent.push(JSON.parse(text))
@@ -384,7 +395,8 @@ test('connected cue waits for configured tools, plays once, and creates no model
  const configured=f.sent.find(e=>e.type==='session.update').session
  await f.c.handleRealtimeEvent({type:'session.updated',session:configured})
  await f.c.handleRealtimeEvent({type:'session.updated',session:configured})
- assert.equal(connected,1);assert.equal(f.c.state.connectionReady,true);assert.equal(f.responses().length,0)
+ assert.equal(connected,1);assert.equal(f.c.state.connectionReady,true);assert.equal(f.responses().length,1)
+ assert.match(JSON.stringify(f.responses()[0]),/Greet them in one short/)
 })
 
 test('a held tool has visible processing and one quiet cue, then clears its running state',async()=>{

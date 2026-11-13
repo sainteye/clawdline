@@ -4,7 +4,7 @@ import { onMachineChanged } from "../../../cloud/machine-switch.js"
 import { NeedsUpdate } from "../../../machine/NeedsUpdate.js"
 import { nextWord } from "../../../next-strings.js"
 import { COPILOT_TOOLS, sessionUpdateEvent } from "../../../realtime/copilot-tools.js"
-import { getStoredOpenAIKey, previewVoice, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
+import { getProgressSounds, getStoredOpenAIKey, previewVoice, setProgressSounds, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
 import { formatUSD } from "../../../realtime/copilot-cost.js"
 import { readCopilotSettings, writeCopilotSettings, type CopilotSettingsChange, type CopilotSettingsSnapshot } from "../api.js"
 import { Chip, PopUp, Row, Switch } from "./controls.js"
@@ -23,6 +23,7 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
   const [key, setKey] = useState("")
   const [extra, setExtra] = useState("")
   const [onDevice, setOnDevice] = useState(getStoredOpenAIKey)
+  const [progressSounds, setProgressSoundsOn] = useState(getProgressSounds)
   const [previewing, setPreviewing] = useState(false)
   const [previewSaid, setPreviewSaid] = useState("")
 
@@ -128,6 +129,11 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
       <Row label={nextWord("copilotBriefLabel")} hint={nextWord("copilotBriefHint")}>
         <Switch label={nextWord("copilotBriefLabel")} on={snapshot.brief !== false}
           onChange={(on) => { void change({ brief: on }).catch(() => undefined) }} />
+      </Row>
+
+      <Row label={nextWord("copilotProgressSounds")} hint={nextWord("copilotProgressSoundsHint")}>
+        <Switch label={nextWord("copilotProgressSounds")} on={progressSounds}
+          onChange={(on) => { setProgressSounds(on); setProgressSoundsOn(on) }} />
       </Row>
 
       <Row label={nextWord("copilotEagernessLabel")} hint={nextWord("copilotEagernessHint")}>

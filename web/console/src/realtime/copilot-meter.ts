@@ -140,7 +140,7 @@ export class CallMeter {
       const gain=context.createGain(),tone=context.createOscillator(),at=context.currentTime
       gain.connect(context.destination);tone.connect(gain);tone.frequency.value=330
       gain.gain.setValueAtTime(0,at)
-      gain.gain.linearRampToValueAtTime(RING_LEVEL/8,at+0.01)
+      gain.gain.linearRampToValueAtTime(RING_LEVEL/3,at+0.01)
       gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
       tone.onended=()=>{tone.disconnect();gain.disconnect()}
       tone.start(at);tone.stop(at+CHIME_NOTE_S)

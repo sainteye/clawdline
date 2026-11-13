@@ -9361,6 +9361,7 @@
   "next.copilotProgressOpen": "View work and receipts",
   "next.copilotProgressElapsed": "Waiting {seconds}s",
   "next.copilotProgressSounds": "Processing sounds",
+  "next.copilotProgressSoundsHint": "A soft note sounds when the call starts looking something up, and again every few seconds while it is still waiting. It never plays while you or the assistant is speaking. This browser only.",
   "next.copilotToolQueued": "Recorded for planning",
   "next.copilotConnectedReady": "Connected · speak when ready",
   "next.copilotConfiguring": "Connecting and preparing tools…",

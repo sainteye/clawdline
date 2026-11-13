@@ -154,8 +154,10 @@ alone does not upgrade a paired machine. Direct calls keep their existing path.
 
 ## Quiet, evidence-backed call opening
 
-After the local ready cue, the general assistant waits for the person without
-generating a greeting, durable input or planner turn. A call placed inside a Session
+After the local ready cue, the general assistant says one short greeting and
+waits, without a read, durable input or planner turn; the greeting is dropped if
+the person speaks first (changed on 2026-11-13: silence after the tone read as a
+call that had not started). A call placed inside a Session
 reads that exact Session's bounded recap and outstanding notes concurrently,
 then requests one short handover containing both results. The call does not
 route that implicit opening through the planner, narrate its internal stages,
@@ -323,8 +325,10 @@ Connection is acknowledged by local audio after the voice service confirms the
 expected tools. Transport connection alone is not readiness. A configuration
 acknowledgement uses the existing workspace-control request deadline and fails
 explicitly if it never arrives. No generated greeting is required. A distinct
-single soft processing cue plays at most once per utterance, never over either
-speaker; it can be disabled in the call sheet. Active saving, tool waiting,
+soft processing note plays when work on an utterance starts, again when a new
+lookup starts, and every four seconds while the wait stays silent, never over
+either speaker. On 2026-11-13 the earlier single, quieter note was not heard on a
+phone. It is switched in Voice assistant → Settings, per browser, not in the call sheet. Active saving, tool waiting,
 planning, execution and response preparation have visible state and elapsed time.
 Confirmation and failure are stopped states, not an animation claiming progress.
 The sheet and minimized bubble both expose state. Local tones use no model call;

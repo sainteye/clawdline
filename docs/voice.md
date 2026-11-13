@@ -354,8 +354,8 @@ A demo film of a call, recorded from the built console in English and Traditiona
 The call does not rely on generated speech to prove connection. The service must
 acknowledge the expected tool configuration; then the browser gives one local
 connection tone and the sheet says it is ready for speech. The Session handover
-still waits for its actual evidence. A separate quiet processing cue, once per
-utterance, and a visible phase distinguish tool waiting from confirmation or
+still waits for its actual evidence. A separate soft processing note (at the start of work and of each lookup, then
+every four seconds of silent waiting; switched in Voice assistant → Settings) and a visible phase distinguish tool waiting from confirmation or
 failure. No tone implies a message was delivered. The message proposal, explicit
 spoken confirmation and typed-input receipt are described in
 [the persistent workspace](voice-assistant-workspace.md#confirmed-messages-connection-cues-and-visible-waiting).

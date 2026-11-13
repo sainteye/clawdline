@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11688,
+  "englishKeys": 11689,
   "counts": {
-    "negation": 3216,
-    "state": 1948,
+    "negation": 3217,
+    "state": 1949,
     "permission": 682,
     "deletion": 262,
     "uncertainty": 442
   },
-  "unionCount": 5111,
+  "unionCount": 5112,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2394,6 +2394,7 @@
       "next.copilotMicUnavailable",
       "next.copilotProgressConfirmation",
       "next.copilotProgressPlanning",
+      "next.copilotProgressSoundsHint",
       "next.copilotProposalTitle",
       "next.copilotSettingsHint",
       "next.copilotVoiceHint",
@@ -4659,6 +4660,7 @@
       "next.copilotProgressPlanning",
       "next.copilotProgressQueued",
       "next.copilotProgressReading",
+      "next.copilotProgressSoundsHint",
       "next.copilotProposalTitle",
       "next.copilotRunningTool",
       "next.copilotToolDone",
@@ -10282,6 +10284,7 @@
     "next.copilotProgressPlanning",
     "next.copilotProgressQueued",
     "next.copilotProgressReading",
+    "next.copilotProgressSoundsHint",
     "next.copilotProposalTitle",
     "next.copilotRunningTool",
     "next.copilotSettingsHint",

@@ -6,7 +6,7 @@ import { onMachineChanged } from '../cloud/machine-switch.js'
 import { voiceWork, receiveCallInput, queueVoiceInputs, answerVoiceInput, parkVoiceInput, parkVoiceCall, workDirectory, useCallWorkTools } from '../voice-work/runtime.js'
 import { shortResult,WORK_REQUEST_MS } from '../voice-work/engine.js'
 import { WorkNarrator } from '../voice-work/narrator.js'
-import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence, deliveryQuestion, ProgressCue, answeredConversation, messageConsent, proposalSpoken, type MessageProposal, type CallProgress } from './copilot-feedback.js'
+import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence, deliveryQuestion, ProgressCue, PROGRESS_CUE_REPEAT_MS, answeredConversation, messageConsent, proposalSpoken, type MessageProposal, type CallProgress } from './copilot-feedback.js'
 /**
  * Clawdline Voice Copilot - OpenAI Realtime API WebRTC Client.
  * Enables two-way voice conversation from mobile browser to control and inspect
@@ -39,7 +39,6 @@ export interface RealtimeCopilotState {
   error?: string
   toolCallLog?: string
   progress?: CallProgress
-  progressSounds?: boolean
   messageProposal?: {target:string;message:string}
   sessionReportCanContinue?:boolean
   logs: CopilotLogItem[]
@@ -113,6 +112,17 @@ export function captureCopilotKey(scope: Pick<Window, 'location' | 'history'>): 
   } catch {
     // refusal-ok: localStorage or location access errors in private browsing are ignored.
   }
+}
+
+/** The one opening line of a call not placed inside a Session. */
+export const GENERAL_GREETING = 'The call has just connected and the person has not spoken. Greet them in one short, warm sentence in their language and say you are ready to help. Do not report Sessions, status, counts or reads, and do not list options. Then stop and wait for the person.'
+const PROGRESS_SOUNDS_KEY = 'clawdline.copilot.progressSounds'
+/** Whether this browser plays the processing note (Voice assistant → Settings). On unless turned off. */
+export function getProgressSounds(): boolean {
+  try { return localStorage.getItem(PROGRESS_SOUNDS_KEY) !== 'off' } catch { /* refusal-ok: without storage the note stays on. */ return true }
+}
+export function setProgressSounds(on: boolean): void {
+  try { localStorage.setItem(PROGRESS_SOUNDS_KEY, on ? 'on' : 'off') } catch { /* refusal-ok: without storage the choice lasts until reload. */ }
 }
 
 export function getStoredOpenAIKey(): string {
@@ -195,6 +205,7 @@ export class RealtimeCopilotClient {
   private hearing=false
   private playing=false
   private progressCue=new ProgressCue(()=>this.meter.pending?.())
+  private cueTimer?:ReturnType<typeof setInterval>
   private responseInputs = new Map<string,string>()
   private openingRevision = 0
   private personSpoke = false
@@ -347,7 +358,10 @@ export class RealtimeCopilotClient {
     this.state.sessionReportCanContinue=this.sessionReports.hasPending()&&!this.hearing&&!this.playing&&!this.awaitingResponse&&!this.pendingTools.size
     this.state.messageProposal=this.messageProposal?{target:this.messageProposal.target,message:this.messageProposal.message}:undefined
     this.state.progress=progress?{phase:progress.phase,since:this.state.progress?.phase===progress.phase?this.state.progress.since:Date.now()}:undefined
-    this.progressCue.update(!!progress&&activeProgress(progress.phase),this.hearing||this.playing||this.state.progressSounds===false)
+    const working=!!progress&&activeProgress(progress.phase)
+    this.progressCue.update(working,this.hearing||this.playing||!getProgressSounds(),this.pendingTools.size)
+    if(working&&!this.cueTimer)this.cueTimer=setInterval(()=>this.updateState({}),PROGRESS_CUE_REPEAT_MS/2)
+    if(!working&&this.cueTimer){clearInterval(this.cueTimer);this.cueTimer=undefined}
     if (this.state.status !== 'connecting' && (this.state.status!=='connected'||this.state.connectionReady) && this.stopRing) {
       this.stopRing()
       this.stopRing = null
@@ -358,7 +372,6 @@ export class RealtimeCopilotClient {
   }
 
   continueSessionReport(){this.sessionReports.resume();this.updateState({})}
-  setProgressSounds(enabled:boolean){this.updateState({progressSounds:enabled})}
   private currentWorkEvidence(){return callWorkEvidence(voiceWork.state,this.journalCall,voiceWork.planning,voiceWork.failure,voiceWork.continuation)}
 
   /**
@@ -642,6 +655,10 @@ export class RealtimeCopilotClient {
     const origin = this.call.options.origin
     this.narrator.setReady(this.state.connectionReady===true)
     if (origin && !this.personSpoke) await this.prepareHandover(origin)
+    // A call opened from the list greets once, briefly (asked for on
+    // 2026-11-13: silence after the ready tone read as a call that had not
+    // started). It reads nothing and is dropped if the person speaks first.
+    if (!origin && !this.personSpoke) this.narrator.prepared('opening', JSON.stringify({ opening: 'general_call' }), GENERAL_GREETING)
     if (!origin) void this.followScreen()
   }
 
@@ -1084,6 +1101,7 @@ export class RealtimeCopilotClient {
     clearTimeout(this.configurationTimer);this.configurationTimer=undefined
     this.updateState({connectionReady:false})
     this.pendingTools.clear();this.receivingInputs.clear();this.awaitingResponse=false;this.hearing=false;this.playing=false;this.sendCuePending=false
+    if(this.cueTimer){clearInterval(this.cueTimer);this.cueTimer=undefined}
     if(this.call.options.workEnabled && this.journalCall && voiceWork.state?.inputs.some(i=>i.call===this.journalCall&&i.deferred&&!i.planned&&!i.parked))void parkVoiceCall(this.journalCall).catch(error=>this.addLog('error',String(error)))
     this.speechContexts.clear();this.responseInputs.clear();this.activeConversationInput='';this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     window.removeEventListener('hashchange', this.onScreenChange)

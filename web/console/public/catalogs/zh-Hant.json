@@ -9361,6 +9361,7 @@
   "next.copilotProgressOpen": "查看工作與送達紀錄",
   "next.copilotProgressElapsed": "已等待 {seconds} 秒",
   "next.copilotProgressSounds": "處理提示音",
+  "next.copilotProgressSoundsHint": "查詢 Session、整理資料或等待回覆時會輕響一聲，還在等就每隔幾秒再響一次；你或助理說話時不會響。只套用在這個瀏覽器。",
   "next.copilotToolQueued": "已記下待整理",
   "next.copilotConnectedReady": "已接通・請說話",
   "next.copilotConfiguring": "正在接通並準備工具…",
