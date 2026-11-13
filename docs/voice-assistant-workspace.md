@@ -414,6 +414,10 @@ of the same Project, named by their repository folder (`project_key`, else
 `cwd`), are kept together; Projects are ordered by their most recently moved
 Session, and a batch never crosses into another Project. Each batch carries its
 `project`, and the voice says which Project it is before its Sessions.
+On 所有機器 the page handed the copilot its rows without `cwd` or
+`project_key`, so every batch arrived with `project: ""` and Sessions of
+different Projects were read together unnamed (calls of 2026-11-14 01:04 and
+01:16); those rows now carry both (`copilotFleetRows`).
 A call's group report reads two or three Sessions for its current response
 (four remaining are split two and two). Only one next batch is prefetched while
 that response is spoken. It is not sent to the reporter until the current
