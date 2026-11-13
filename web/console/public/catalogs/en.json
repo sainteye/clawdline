@@ -9314,6 +9314,8 @@
   "next.browserPanelTapToTake": "Tap the page to take over",
   "next.browserPanelNativeInput": "Type into the web page",
   "next.browserPanelTyping": "Typing…",
+  "next.browserPanelSending": "Sending…",
+  "next.browserPanelSent": "Sent",
   "next.browserPanelInputFull": "This draft is too long to send. Shorten it before sending.",
   "next.browserPanelInputUnconfirmed": "Input could not be confirmed. Check the field before continuing.",
   "next.browserPanelTools": "Tools",

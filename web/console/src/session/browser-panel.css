@@ -33,7 +33,14 @@
 .browser-composer .browser-composer-delete { min-width: 46px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 18px; font-weight: 400; -webkit-tap-highlight-color: transparent; }
 .browser-composer .browser-composer-delete:hover:not(:disabled) { background: var(--card-hi); }
 .browser-move-hint { flex: 0 0 auto; margin: 0; padding: 4px 10px; font-size: 11px; color: var(--dim); line-height: 1.4; }
-.browser-input-pending, .browser-input-error { display: block; margin: 4px 0 0; color: var(--dim); font-size: 12px; line-height: 1.4; }
+.browser-input-error { display: block; margin: 4px 0 0; color: var(--dim); font-size: 12px; line-height: 1.4; }
+/* The Send button shows sending; this status remains for screen readers. */
+.browser-input-pending { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.browser-composer button[aria-busy="true"] { display: inline-flex; align-items: center; gap: 6px; opacity: 1; }
+.browser-composer .browser-composer-sent:disabled { opacity: 1; }
+.browser-send-spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: browser-send-spin .8s linear infinite; }
+@keyframes browser-send-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .browser-send-spinner { animation: none; border-right-color: currentColor; opacity: .6; } }
 .browser-input-error { color: var(--warn); }
 /* The app deliberately has no viewport-fit=cover. Its shared --indicator
    reserves the home-indicator touch area even when env() reports zero. */
