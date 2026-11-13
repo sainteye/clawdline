@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { withMark, UPDATE_MARKS } from "./copilot-marks.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -540,12 +540,9 @@ test("the copilot speaks the language the console is shown in", () => {
   const english = (sessionUpdateEvent("", "", { language: "en" }) as { session: { instructions: string } }).session.instructions
   assert.match(english, /全程用英文（en）說話/)
   assert.doesNotMatch(english, /全程台灣繁體中文/)
-  const greeting = (greetingEvent(false, "en") as { response: { instructions: string } }).response.instructions
-  assert.match(greeting, /一句自然的英文問候/)
   // Chinese, and a console whose language is not known, keep the words as they were.
   assert.equal(instructionsFor(true, "zh-Hant"), instructionsFor(true))
   assert.match(instructionsFor(true), /全程台灣繁體中文/)
-  assert.match((greetingEvent(true) as { response: { instructions: string } }).response.instructions, /很短、自然的繁體中文打招呼/)
   // The short-answer setting still applies in another language.
   assert.ok(instructionsFor(false, "en").includes(LONG_RULE))
 })
@@ -942,18 +939,13 @@ test("a group summary reads the working, the idle, or all Sessions, newest activ
   assert.equal(all.count, working.count + idle.count)
 })
 
-test("a call placed from a Session opens with that Session's handover, by its id, through tools the call has", () => {
+test("a call placed from a Session keeps its exact target without directing the model to improvise an opening", () => {
   const origin = { id: "%7", label: "Landing page" }
   const placed = (sessionUpdateEvent("", "", { origin }) as { session: { instructions: string; tools: { name: string }[] } }).session
   assert.match(placed.instructions, /Session「Landing page」/)
   assert.match(placed.instructions, /session_id 是 %7/)
-  assert.match(placed.instructions, /需要使用者處理/)
-  const opening = (originGreetingEvent(origin, "en") as { type: string; response: { instructions: string } })
-  assert.equal(opening.type, "response.create")
-  assert.match(opening.response.instructions, /session_id 填 %7/)
-  assert.match(opening.response.instructions, /英文/)
-  const tools = new Set(placed.tools.map((t) => t.name))
-  for (const name of opening.response.instructions.match(/get_[a-z_]+/g) ?? []) assert.ok(tools.has(name), `${name} is a tool of the call`)
+  assert.match(placed.instructions, /不要自行打招呼/)
+  assert.match(placed.instructions, /依實際工具結果回答/)
   // A call from the Session list says nothing of a Session.
   assert.doesNotMatch((sessionUpdateEvent("", "", {}) as { session: { instructions: string } }).session.instructions, /打來的/)
 })
@@ -1357,4 +1349,46 @@ test("this browser keeps the newest report marks within its bound", () => {
   for (let i = 0; i < UPDATE_MARKS + 5; i++) marks = withMark(marks, `k${i}`, { id: `e${i}`, saved: i })
   assert.equal(Object.keys(marks).length, UPDATE_MARKS)
   assert.ok(!("k0" in marks) && "k104" in marks)
+})
+
+
+test('opening a fleet Session uses its machine for both parallel reads without a decision call', async () => {
+  const {fleet,deps,calls}=sameNameFleet()
+  const target=fleetRowsOf(fleet)[1]
+  deps.decide=async()=>{throw new Error('opening must not ask a model')}
+  const result=await readCallHandover({id:target.session!,machine:target.machine,label:target.label},deps)
+  const body=JSON.parse(result.output)
+  assert.equal(body.session_id,target.id)
+  assert.equal(body.recap.error,undefined)
+  assert.equal(body.notes.error,undefined)
+  assert.ok(calls.some(c=>c.path.startsWith('/v1/transcript?')))
+  assert.ok(calls.some(c=>c.path.includes('/human-interventions/')))
+  for(const call of calls)assert.equal((call.init?.headers as Record<string,string>)['X-Clawdline-Unopened-Machine'],'machine-b')
+})
+
+test('a missing clicked Session is not replaced by a same-name Session', async () => {
+  const {deps,calls}=fakeMachine({})
+  const body=JSON.parse((await readCallHandover({id:'Fix the flaky test',label:'Fix the flaky test'},deps)).output)
+  assert.ok(body.error)
+  assert.equal(calls.length,1)
+})
+
+test('failed notes remain unavailable and do not erase a successful recap or claim there are none', async () => {
+  const {deps}=fakeMachine({}, {transcripts:{'%7':{entries:[{role:'assistant',text:'The test is fixed.'}]}}})
+  const fetch=deps.fetch
+  deps.fetch=async(path,init)=>path.includes('/human-interventions/')?Response.json({error:'forbidden'},{status:403}):fetch(path,init)
+  const body=JSON.parse((await readCallHandover({id:'%7',label:'Fix the flaky test'},deps)).output)
+  assert.match(body.recap.last_reply,/test is fixed/)
+  assert.match(body.notes.error,/403/)
+  assert.equal(body.notes.note,undefined)
+})
+
+test('reading an opening only advances the report mark when narration is submitted', async () => {
+  const {deps}=fakeMachine({}, {transcripts:{'%7':{entries:[{id:'entry-1',role:'assistant',text:'Done.'}]}}})
+  const saved:string[]=[]
+  deps.marks={get:()=>undefined,set:key=>{saved.push(key)}}
+  const result=await readCallHandover({id:'%7',label:'Fix the flaky test'},deps)
+  assert.equal(saved.length,0)
+  result.reported?.()
+  assert.equal(saved.length,1)
 })

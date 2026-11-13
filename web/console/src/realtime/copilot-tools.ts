@@ -622,6 +622,8 @@ export interface CallOptions {
 export interface CallOrigin {
   id: string
   label: string
+  /** The clicked fleet row carries its machine beside the raw Session ID. */
+  machine?: string
 }
 
 /**
@@ -634,11 +636,8 @@ export function originSection(origin?: CallOrigin): string {
   const name = origin.label.trim() || origin.id
   return ['【這通電話是從一個 Session 打來的】',
     `使用者在 Session「${name}」的畫面上撥了這通電話（session_id 是 ${origin.id}，原樣照填）。`,
-    '通話一開始就要交接這個 Session，不打招呼、不自我介紹：',
-    '- 先講它做完了哪些事：依 get_session_recap 的 deliveries 和 requests，用總結一個 Session 的經過的講法，大約四到六句。',
-    '- 再講有什麼事需要使用者處理：它在等的問題（念出選項）、最後一則回覆裡要使用者決定或確認的事、它留給使用者的便條紙。',
-    '- 沒有要使用者處理的事，就明說「這個 Session 沒有要你處理的事」，並說它現在的狀態。',
-    '- 交接完就停，等使用者說話。之後使用者說「它」「這個」，指的就是這個 Session。',
+    '開場交接由程式準備實際紀錄後提供；不要自行打招呼、規劃交接或聲稱已收到使用者尚未說出的要求。',
+    '之後使用者說「它」「這個」，指的就是這個 Session；依實際工具結果回答，不從名稱推測內容。',
   ].join('\n')
 }
 
@@ -711,42 +710,6 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       },
       tools: options.workEnabled ? [] : COPILOT_TOOLS,
       tool_choice: options.workEnabled ? 'none' : 'auto',
-    },
-  }
-}
-
-/**
- * The call's first words. With nothing remembered it introduces itself once;
- * with an earlier call remembered it picks up from there instead of saying
- * the same introduction again.
- */
-export function greetingEvent(remembered = false, language = ''): Record<string, unknown> {
-  const name = spokenLanguage(language) || '繁體中文'
-  return {
-    type: 'response.create',
-    response: {
-      output_modalities: ['audio'],
-      instructions: remembered
-        ? `這不是第一次通話。不要自我介紹、不要說你能做什麼。也不要提任何之前的話題或事情（之前的通話內容只用來理解他接下來說的話）。只像熟悉他的秘書一樣，用一句很短、自然的${name}打招呼。`
-        : `像私人秘書一樣，用一句自然的${name}問候，說你可以幫他看這台電腦上各個 Session 的狀況。不要超過一句。`,
-    },
-  }
-}
-
-/**
- * The first words of a call placed from one Session: read that Session's
- * whole story and its notes, then hand it over (`originSection` says how).
- * Response instructions replace the session's for this one response, so the
- * tool names and the id are spelt out here again.
- */
-export function originGreetingEvent(origin: CallOrigin, language = ''): Record<string, unknown> {
-  const name = spokenLanguage(language) || '繁體中文'
-  const label = origin.label.trim() || origin.id
-  return {
-    type: 'response.create',
-    response: {
-      output_modalities: ['audio'],
-      instructions: `使用者剛從 Session「${label}」打來，要你交接這個 Session。先不要說話：呼叫 get_session_recap，session_id 填 ${origin.id}；它有便條紙就再呼叫 get_session_notes。拿到結果後用${name}講它做完了什麼、有什麼事需要使用者處理；沒有就明說沒有。`,
     },
   }
 }
@@ -1535,8 +1498,11 @@ async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
-  const { row } = found
-  deps.focus?.set(row.id)
+  deps.focus?.set(found.row.id)
+  return recapForRow(deps, logs, found.row)
+}
+
+async function recapForRow(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<unknown> {
   const recap = await readRecap(deps, row)
   if ('error' in recap) {
     const error = `無法讀取「${row.label}」的工作紀錄 (HTTP ${recap.status})：${recap.error}`
@@ -2078,11 +2044,15 @@ async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   } else {
     rows = read.rows.filter((r) => r.notes).slice(0, NOTES_SESSIONS)
   }
+  return notesForRows(deps, logs, rows, !!wanted.trim())
+}
+
+async function notesForRows(deps: ToolDeps, logs: ToolLog[], rows: CopilotSessionRow[], specific = false): Promise<unknown> {
   const out: { session_id: string; label: string; notes: unknown[] }[] = []
   for (const row of rows) {
     if (!row.conversation) continue
     const res = await rowFetch(deps, row)(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${row.conversation}`)}`, NAMED_READ)
-    if (!res.ok) continue
+    if (!res.ok) return { error: `Unable to read Session notes (HTTP ${res.status}): ${await refusalText(res)}` }
     const body = (await res.json()) as { rows?: unknown }
     const notes = (Array.isArray(body.rows) ? body.rows : [])
       .filter((n): n is Record<string, unknown> => !!n && typeof n === 'object')
@@ -2102,7 +2072,31 @@ async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   }
   const count = out.reduce((n, s) => n + s.notes.length, 0)
   logs.push({ level: 'info', text: `讀到 ${count} 張還沒處理的便條` })
-  return count ? { sessions: out } : { note: wanted.trim() ? '這個 Session 沒有還沒處理的便條' : '沒有 Session 留下還沒處理的便條' }
+  return count ? { sessions: out } : { note: specific ? '這個 Session 沒有還沒處理的便條' : '沒有 Session 留下還沒處理的便條' }
+}
+
+/** A clicked Session is already an exact target. Opening reads are GET-only,
+ * share one directory, and never ask a model to choose or plan the target. */
+export async function readCallHandover(origin: CallOrigin, deps: ToolDeps): Promise<ToolResult & { reported?: () => void; targetID?: string }> {
+  const logs: ToolLog[] = []
+  const read = await readRows(deps)
+  if ('error' in read) return { output: JSON.stringify({ error: read.error }), logs }
+  const matches = read.rows.filter(row => origin.machine
+    ? row.machine === origin.machine && (row.id === origin.id || row.session === origin.id)
+    : row.id === origin.id)
+  if (matches.length !== 1) return { output: JSON.stringify({ error: 'opening_session_unavailable' }), logs }
+  const row = matches[0]
+  let reported: (() => void) | undefined
+  const reading = { ...deps, marks: { get: (key: string) => deps.marks?.get(key),
+    set: (key: string, mark: UpdateMark) => { reported = () => deps.marks?.set(key, mark) } } }
+  const results = await Promise.allSettled([
+    recapForRow(reading, logs, row),
+    row.conversation ? notesForRows(deps, logs, [row], true) : Promise.resolve({ unavailable: 'conversation_not_identified' }),
+  ])
+  const value = (result: PromiseSettledResult<unknown>) => result.status === 'fulfilled'
+    ? result.value : { error: 'opening_read_failed', detail: String(result.reason) }
+  return { output: JSON.stringify({ session_id: row.id, label: row.label,
+    recap: value(results[0]), notes: value(results[1]) }), logs, reported, targetID: row.id }
 }
 
 /** The speed a spoken ask lands on: one step slower or faster, normal, or a named rate. */

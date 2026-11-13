@@ -107,3 +107,15 @@ test('partial progress followed by failure never claims that all reads returned'
  assert.doesNotMatch(events[1].value,/All requested reads have returned/)
  assert.match(events[1].value,/outcome_unknown/)
 })
+
+
+test('the first workspace reply is history, even when the call subscribes before loading',()=>{
+ const history={...state(),reply:'An earlier completed request.'}
+ const late=new WorkObservations(null)
+ assert.equal(late.update(history).length,0)
+ assert.equal(late.update(history).length,0)
+ const next=late.update({...history,revision:2,reply:'A new request needs a specific answer.'})
+ assert.equal(next.length,1)
+ assert.match(next[0].value,/specific answer/)
+ assert.equal(late.update({...history,id:'another-machine'}).length,0)
+})
