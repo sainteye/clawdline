@@ -8,6 +8,7 @@ import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, 
 import { currentCatalogTag, catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
+import { captureMachineFetch } from "../cloud/install.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
 import * as L from "../legacy/bridge.js"
 import { createShots, carriesFiles, carriesPicture } from "../legacy/shots-bridge.js"
@@ -193,6 +194,9 @@ export function Composer({
   const shotsBusy = Shots.busy()
   const voiceRow = useRef<HTMLDivElement>(null)
   const voiceJob = useRef<V.VoiceJob | null>(null)
+  // The machine on screen when the send control was pressed. Its words go
+  // there or nowhere: the page may have moved to another machine since.
+  const voiceTarget = useRef<ReturnType<typeof captureMachineFetch> | null>(null)
   const voiceInstallDialog = useRef<HTMLDialogElement>(null)
   const [voiceInstall, setVoiceInstall] = useState<{ reason?: string; help: boolean } | null>(null)
   const form = useRef<HTMLFormElement>(null)
@@ -513,9 +517,10 @@ export function Composer({
   /**
    * `input/composer.js`'s `appendMsg`: what dictation does with the words.
    *
-   * **It stops here.** Nothing on the voice path sends, which is the whole
-   * design rather than a step that was left out — a dictation that heard the
-   * wrong thing is then a typo rather than an incident. The join rule is the
+   * **It stops here.** Done on the voice row never sends — a dictation that
+   * heard the wrong thing is then a typo rather than an incident. Only the
+   * separate send control (`sendDictation`) delivers words unread, because
+   * the person chose that for this message. The join rule is the
    * copied `core/compose-text.js`, so a sentence dictated after a typed one is
    * a sentence and not one long word, and a box holding the `<br>` a browser
    * left behind does not get a leading space.
@@ -539,6 +544,48 @@ export function Composer({
   }
   const sink = useRef(appendMsg)
   sink.current = appendMsg
+
+  /**
+   * A recording ended with the send control: the words go to this Session
+   * unread, by the path `submit` uses, and the box is left as it was. It runs
+   * after the transcription, by which time this composer may have unmounted —
+   * so it reads only the last render's values and module-level stores, and
+   * what cannot be sent is kept rather than dropped: in the box when it is
+   * still here, in the Session's saved draft when it is not.
+   */
+  const sendDictation = (said: string) => {
+    const target = voiceTarget.current
+    voiceTarget.current = null
+    const at = rowRef.current
+    const keep = () => {
+      toast(nextWord("voiceSendKept"), true)
+      if (alive.current) { sink.current(said); return }
+      void composerDrafts.read(draftKey).then((draft) => {
+        const held = decodeToolDraft(draft.text)
+        return composerDrafts.text(draftKey, encodeToolDraft(V.appendedText(held.text.trim() ? held.text : "", said), held.attachment))
+      }).catch(() => { /* the toast already said it did not go */ })
+    }
+    if (!on || (target && !target.current())) return keep()
+    if (remote) {
+      void remote.onSend(said, []).catch((err) => toast(L.failureSentence(err, T.sendFailed), true))
+      return
+    }
+    if (!at) return keep()
+    const conversation = typeof at.sessionId === "string" ? at.sessionId : undefined
+    if (protocolOwned && !assistantQueues &&
+      ((at.state !== "idle" && at.state !== "unknown") || at.menu ||
+      pendingSends.of(at.id).some(card => card.state === "queued"))) {
+      if (!nextMessages.add(at.id, said, [], Date.now(), conversation)) keep()
+      return
+    }
+    void deliverUntilSeen(pendingSends.add(at.id, said, [], Date.now(), false, conversation)).then((code) => {
+      if (alive.current && writeIsOff(code)) setBlocked({ machine, code })
+      if (code && !alive.current) toast(L.failureSentence({ code }, T.sendFailed), true)
+      if (!code && alive.current) onSent?.()
+    })
+  }
+  const dictationSender = useRef(sendDictation)
+  dictationSender.current = sendDictation
   const interventionDestination = useRef(interventionTarget(row))
   interventionDestination.current = interventionTarget(row)
 
@@ -584,6 +631,7 @@ export function Composer({
         sink.current(said)
         setDictated(dictatedFrom(said, polish))
       },
+      send: (said) => dictationSender.current(said),
       transcribe: remote?.transcribe,
       source: voiceSource,
       missingWhisper: (failure) => setVoiceInstall({ reason: failure.reason, help: false }),
@@ -822,7 +870,7 @@ export function Composer({
           +
         </button>
         {/* Two icons and never a label — the words are the `aria-label`, which
-            is swapped for "stop" while it records so that a screen reader is
+            is swapped for "send" while it records so that a screen reader is
             told what the second press will do.
 
             **Except while it is recording, it goes dead for the two waits.**
@@ -836,11 +884,19 @@ export function Composer({
           className="mic"
           id="mic"
           type="button"
-          aria-label={voiceLive ? T.webVoiceStop : T.webVoiceStart}
-          title={voiceLive ? T.webVoiceStop : T.webVoiceStart}
+          aria-label={voiceLive ? nextWord("voiceSendNow") : T.webVoiceStart}
+          title={voiceLive ? nextWord("voiceSendNow") : T.webVoiceStart}
           aria-pressed={voiceLive ? "true" : "false"}
           disabled={voiceLive ? false : !on || sending || voiceBusy}
-          onClick={() => { if (voiceJob.current) V.press(voiceJob.current) }}
+          onClick={() => {
+            const job = voiceJob.current
+            if (!job) return
+            // While it records this is the send control; the row's Done
+            // still writes the words into the box for reading first.
+            if (!voiceLive) return V.press(job)
+            voiceTarget.current = remote ? null : captureMachineFetch()
+            V.pressSend(job)
+          }}
           // Pressing it must not take the focus off the box somebody is typing
           // in; the click still lands.
           onMouseDown={(e) => e.preventDefault()}
@@ -855,8 +911,10 @@ export function Composer({
               strokeLinecap="round"
             ></path>
           </svg>
-          <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
+          {/* `ico-stop` is the class `composer.css` shows while recording;
+              what it draws there is now the paper plane of sending. */}
+          <svg className="ico ico-stop ico-voice-send" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3.5 20.5 21 12 3.5 3.5l.02 6.6L15 12 3.52 13.9z" fill="currentColor"></path>
           </svg>
         </button>
         {/* Uncontrolled: React renders no children here, so it never rewrites

@@ -370,9 +370,25 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 			row.Menu = permissionMenu(c.permission)
 			row.State = session.StateWaiting
 			row.Line = session.MenuRevision(*row.Menu)
-		}
-		if c.nativeTurn && row.State == session.StateIdle {
-			row.State = session.StateWorking
+		} else {
+			hasBgTasks := c.watch != nil && len(c.watch.tasks) > 0
+			hasActiveTools := len(c.activeTools) > 0
+			working := c.busy || c.nativeTurn || hasBgTasks || hasActiveTools || row.State == session.StateWorking
+			if working {
+				row.State = session.StateWorking
+				if row.Line == "" {
+					row.Line = c.workingLine()
+				}
+				if hasBgTasks {
+					for taskID, desc := range c.watch.descriptions {
+						row.Shells = append(row.Shells, session.Shell{
+							ID:      taskID,
+							Command: desc,
+							At:      c.row.Activity.At,
+						})
+					}
+				}
+			}
 		}
 		if c.client != nil && c.client.Err() != nil {
 			row.Menu = nil
@@ -391,6 +407,45 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 		inv.Sessions = append(inv.Sessions, row)
 	}
 	return inv, nil
+}
+
+func (c *conversation) workingLine() string {
+	if c.watch != nil && len(c.watch.descriptions) > 0 {
+		for _, desc := range c.watch.descriptions {
+			if desc != "" {
+				return cleanWorkingLine(desc)
+			}
+		}
+	}
+	if c.store != nil && c.store.db != nil {
+		for id := range c.activeTools {
+			ordinal, e, err := c.readEntry(0, id)
+			if err == nil && ordinal != 0 && toolStillRunning(e) && e.Activity != nil && e.Activity.Title != "" {
+				return cleanWorkingLine(e.Activity.Title)
+			}
+		}
+	} else {
+		for id := range c.activeTools {
+			if idx, ok := c.tools[id]; ok && idx >= 0 && idx < len(c.entries) {
+				e := c.entries[idx]
+				if toolStillRunning(e) && e.Activity != nil && e.Activity.Title != "" {
+					return cleanWorkingLine(e.Activity.Title)
+				}
+			}
+		}
+	}
+	return "Working…"
+}
+
+func cleanWorkingLine(line string) string {
+	line = strings.TrimSpace(line)
+	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	if len(line) > 80 {
+		line = line[:77] + "..."
+	}
+	return line
 }
 
 // SendProtocol keeps the normal operation check immediately before the single
