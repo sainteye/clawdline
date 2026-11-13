@@ -11,7 +11,7 @@ import { WorkNarrator } from '../voice-work/narrator.js'
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
+import { COPILOT_TOOLS, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -357,7 +357,9 @@ export class RealtimeCopilotClient {
     this.focus = origin?.id
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
-    this.journal('start', navigator.userAgent)
+    // Which build and tools this call has: on 2026-11-13 a call could not be
+    // told apart from one placed by a page loaded before the tool existed.
+    this.journal('start', `${navigator.userAgent} · bundle ${document.querySelector('script[type="module"][src]')?.getAttribute('src') ?? '?'} · tools ${COPILOT_TOOLS.length}`)
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     const workspaceSettings = fetch('/v1/settings/copilot').then(async res=>res.ok?await res.json():null).catch(()=>null)
