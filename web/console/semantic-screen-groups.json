@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11708,
-  "riskKeys": 5120,
-  "nonRiskCount": 6588,
+  "englishContentKeys": 11718,
+  "riskKeys": 5122,
+  "nonRiskCount": 6596,
   "groups": [
     {
       "name": "acp / other",
@@ -3865,7 +3865,7 @@
     },
     {
       "name": "next / other",
-      "count": 1021,
+      "count": 1029,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3959,17 +3959,21 @@
         "next.browserOpViewport",
         "next.browserPanelActivity",
         "next.browserPanelAgentActs",
+        "next.browserPanelChecked",
         "next.browserPanelDesktop",
         "next.browserPanelDraftHint",
+        "next.browserPanelFieldNow",
         "next.browserPanelFit",
         "next.browserPanelHandBack",
         "next.browserPanelHandBackShort",
         "next.browserPanelImageAlt",
         "next.browserPanelInputFull",
+        "next.browserPanelKeepPage",
         "next.browserPanelKeyboard",
         "next.browserPanelLayout",
         "next.browserPanelLayoutTakeover",
         "next.browserPanelMenu",
+        "next.browserPanelMismatchNow",
         "next.browserPanelMobile",
         "next.browserPanelMoveHint",
         "next.browserPanelNativeInput",
@@ -3977,6 +3981,10 @@
         "next.browserPanelNotifyOn",
         "next.browserPanelOriginal",
         "next.browserPanelPersonActs",
+        "next.browserPanelPullField",
+        "next.browserPanelReplaceCancel",
+        "next.browserPanelReplaceField",
+        "next.browserPanelReplaceMode",
         "next.browserPanelSampled",
         "next.browserPanelScrollDown",
         "next.browserPanelScrollUp",

@@ -38,6 +38,18 @@
 .browser-input-pending { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .browser-composer button[aria-busy="true"] { display: inline-flex; align-items: center; gap: 6px; opacity: 1; }
 .browser-composer .browser-composer-sent:disabled { opacity: 1; }
+.browser-check-card { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-hi); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.browser-check-card b { font-weight: 600; }
+.browser-check-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.browser-check-actions button, .browser-field-strip button, .browser-replace-mode button { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; font-weight: 400; -webkit-tap-highlight-color: transparent; }
+.browser-check-actions .browser-check-replace { border: 0; background: var(--accent); color: #141413; font-weight: 600; }
+.browser-field-strip { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 0 4px 0 12px; min-height: 48px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+.browser-field-label { color: var(--dim); white-space: nowrap; }
+.browser-field-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A landscape phone keeps the picture usable; the optional pull strip waits
+   for a taller view. The check card still appears. */
+@media (max-height: 500px) { .browser-field-strip { display: none; } }
+.browser-replace-mode { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; font-size: 13px; color: var(--dim); }
 .browser-send-spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: browser-send-spin .8s linear infinite; }
 @keyframes browser-send-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .browser-send-spinner { animation: none; border-right-color: currentColor; opacity: .6; } }
