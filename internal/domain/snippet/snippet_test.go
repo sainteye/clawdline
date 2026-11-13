@@ -385,7 +385,7 @@ func TestDefaultPlaybooksFitTheStoreAndStopLocalizingEdits(t *testing.T) {
 			t.Fatal("linked source is still overridden")
 		}
 	}
-	if !seen[DefaultCrossReviewID] || !seen[DefaultZeroReviewID] {
+	if !seen[DefaultCrossReviewID] || !seen[DefaultZeroReviewID] || !seen[DefaultBoardDriveID] {
 		t.Fatal("missing shipped review")
 	}
 }

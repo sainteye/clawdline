@@ -67,6 +67,23 @@ test("cross-surface review localizes the full launch message and keeps authored 
   } finally { resetCatalogForTest(); globalThis.document = prior }
 })
 
+test("board drive translates only its title and keeps the saved English launch message", () => {
+  const row: Snippet = { id: "00000000-0000-4000-8000-000000000103", title: "Drive Board Items to Done",
+    body: "Drive the open Board items this Session owns to done.", scope: "playbook", builtin: "board_drive", position: 300, created_at: 1, updated_at: 1 }
+  const prior = globalThis.document
+  try {
+    for (const [lang, catalog, title] of [["en", english, "Drive Board Items to Done"], ["zh-Hant", traditionalChinese, "看板項目推進"]] as const) {
+      globalThis.document = { documentElement: { lang } } as Document
+      activateCatalog(catalog, lang)
+      const localized = localizedPlaybook(row)
+      assert.equal(localized.title, title)
+      assert.equal(localized.body, row.body)
+      const edited = { ...row, builtin: undefined, title: "My drive" }
+      assert.equal(localizedPlaybook(edited), edited)
+    }
+  } finally { resetCatalogForTest(); globalThis.document = prior }
+})
+
 
 test("the Playbook card describes the exact native to-do message", () => {
   const text = playbookTodoText(ID, "Review", "Inspect the change.")
