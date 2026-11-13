@@ -1,4 +1,5 @@
 import { onMachineChanged } from '../cloud/machine-switch.js'
+import { VOICE_CALL_HEADER } from '../cloud/voice-call.js'
 import { fleetOnThisPage, machinesOnThisPage, openOnThisPage,titleSavedOnThisPage, openSnippetsOnThisPage, openDevStackOnThisPage } from '../realtime/copilot-open.js'
 import { COPILOT_TOOLS, readRows, runCopilotTool, type ToolDeps } from '../realtime/copilot-tools.js'
 import { menuFingerprint } from '../session/fingerprint.js'
@@ -52,12 +53,13 @@ export const voiceWork = new VoiceWorkRuntime({
     }
     // A request outside a call changes only the next-call defaults.
     if(!inCall && ['set_speaking_speed','set_answer_length'].includes(task.tool)) {
-      const response=await guarded('/v1/settings/copilot')
+      // The next call's defaults live on the machine that holds calls (`voice-call.ts`).
+      const response=await guarded('/v1/settings/copilot',{headers:{[VOICE_CALL_HEADER]:'1'}})
       if(!response.ok)return {result:'',error:'voice_work_settings_unavailable'}
       const settings=await response.json() as {speed?:string;brief?:boolean}
       base.delivery=()=>({speed:settings.speed??'1',brief:settings.brief!==false})
       base.adjust=async(change)=>{
-        const saved=await guarded('/v1/settings/copilot',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':task.action_key!},body:JSON.stringify(change)})
+        const saved=await guarded('/v1/settings/copilot',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':task.action_key!,[VOICE_CALL_HEADER]:'1'},body:JSON.stringify(change)})
         if(!saved.ok)throw new Error('voice_work_settings_refused')
         return {saved:true}
       }

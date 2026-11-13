@@ -41,6 +41,8 @@ import { authenticatedRefusalKey } from "./refusal-client.js"
 import { machineCommands } from "./machine-commands.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { isUnopenedRead, unopenedMachine } from "./unopened-read.ts"
+// @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
+import { isVoiceCall } from "./voice-call.ts"
 
 // One admitted request may wait behind one turn, and each turn may try two
 // 30-second CLIs. Ten seconds leaves the relay enough room to deliver either
@@ -1785,7 +1787,9 @@ export class RelayWriter {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
         }
-        return client._machineRequest(this.host.machine, route.word, {}, "read")
+        // The call reads the settings of the machine that holds it, not the page's.
+        const target = route.op === "copilot-settings" && isVoiceCall(init) ? this.callMachine(client) : this.host.machine
+        return client._machineRequest(target, route.word, {}, "read")
       }
       case "restorable": {
         if (typeof client._machineRequest !== "function") {
@@ -2108,7 +2112,9 @@ export class RelayWriter {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }
-        return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+        // The call's own speed or answer-length change is saved where the call is.
+        const target = route.op === "copilot-settings-update" && isVoiceCall(init) ? this.callMachine(client) : this.host.machine
+        return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"), target)
       }
       case "notification-rules-update": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
@@ -2123,7 +2129,7 @@ export class RelayWriter {
         }
         if (route.op === "copilot-briefing") {
           // The briefing is prepared by the machine that opened the call.
-          return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+          return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"), this.callMachine(client))
         }
         return this.copilotSession(client, headerOf(init, "idempotency-key"))
       }
@@ -2135,7 +2141,7 @@ export class RelayWriter {
         }
         const sent = await bodyOf(init)
         const sessions = Array.isArray(sent.sessions) ? sent.sessions : []
-        return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? ""), ...(sessions.length ? { sessions } : {}) } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+        return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? ""), ...(sessions.length ? { sessions } : {}) } }, headerOf(init, "idempotency-key"), this.callMachine(client))
       }
       case "copilot-recap": {
         // A Session's spoken recap is written by the machine that holds the
@@ -2150,11 +2156,11 @@ export class RelayWriter {
       case "copilot-work": {
         if (url.search) throw failure("invalid_query", "Voice work has no query parameters.", 400)
         if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
-        return client._machineRequest(this.host.machine, route.word, {}, "read", undefined, {signal:init?.signal ?? undefined})
+        return client._machineRequest(this.callMachine(client), route.word, {}, "read", undefined, {signal:init?.signal ?? undefined})
       }
       case "copilot-work-update": {
         if (url.search) throw failure("invalid_query", "Voice work has no query parameters.", 400)
-        return this.machineWorkV2(client, route.word, {work:await bodyOf(init)}, headerOf(init,"idempotency-key"), this.host.machine)
+        return this.machineWorkV2(client, route.word, {work:await bodyOf(init)}, headerOf(init,"idempotency-key"), this.callMachine(client))
       }
       case "copilot-journal": {
         // A call's lines for the journal of the machine that gave it its pass.
@@ -2162,7 +2168,7 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         }
         const sent = await bodyOf(init)
-        return this.machineWorkV2(client, route.word, { journal: { call: String(sent.call ?? ""), entries: Array.isArray(sent.entries) ? sent.entries : [] } }, headerOf(init, "idempotency-key"), this.copilotMachine ?? this.host.machine)
+        return this.machineWorkV2(client, route.word, { journal: { call: String(sent.call ?? ""), entries: Array.isArray(sent.entries) ? sent.entries : [] } }, headerOf(init, "idempotency-key"), this.callMachine(client))
       }
       case "update-apply": {
         // The press installs the newest release of the machine's channel and
@@ -2424,10 +2430,20 @@ export class RelayWriter {
   }
 
   /**
+   * The machine that holds this page's voice call: the one that gave its pass,
+   * or, before a pass, the one that will be asked first (`copilotMachines`).
+   * The call's settings, voice work, briefing, decisions and journal all go
+   * there, so a call on the Mac never reads a Linux machine's mode.
+   */
+  private callMachine(client: CloudWriteClient): string {
+    return this.copilotMachine ?? copilotMachines(client, this.host.machine)[0]!
+  }
+
+  /**
    * A call pass from a machine that can give one, as dictation asks only a
-   * machine that transcribes (`_machinesFor("voice")`, status-client.js): the
-   * reading machine first, then each other current machine that declares
-   * `copilot-session`. A machine without the word, or without an OpenAI key,
+   * machine that transcribes (`_machinesFor("voice")`, status-client.js): a
+   * current Mac first, then the reading machine, then each other current
+   * machine that declares `copilot-session`. A machine without the word, or without an OpenAI key,
    * passes the call to the next; the first other refusal is the answer. The
    * machine that answers also prepares the call's briefing.
    */
@@ -2818,11 +2834,17 @@ export class RelayWriter {
 const COPILOT_PASSES_ON: ReadonlySet<string> = new Set(["copilot_key_missing", "unknown_command", "cloud_feature_unavailable", "cloud_machine_unsupported", "offline"])
 
 /**
- * The machines to ask for a call pass, in order: `reading` first, then every
- * current machine that declares `copilot-session`. Without a fleet view the
- * reading machine alone is asked.
+ * The machines to ask for a call pass, in order: every Mac before every other
+ * machine, and among each, `reading` first, then every current machine that
+ * declares `copilot-session`. Without a fleet view the reading machine alone
+ * is asked.
+ *
+ * On 2026-11-13 a page reading a Linux machine started its calls there, and
+ * the person asked for the Mac by default whenever there are several
+ * machines: the copilot's voice and its key live on the Mac they use. A Mac
+ * that refuses the pass still hands the call on to the next machine.
  */
-export function copilotMachines(client: Pick<CloudWriteClient, "_machinesFor">, reading: string): string[] {
+export function copilotMachines(client: Pick<CloudWriteClient, "_machinesFor" | "machineDescriptor">, reading: string): string[] {
   const found = typeof client._machinesFor === "function" ? client._machinesFor("copilot-session") : null
   const out = [reading]
   for (const row of found?.capable ?? []) {
@@ -2830,7 +2852,8 @@ export function copilotMachines(client: Pick<CloudWriteClient, "_machinesFor">, 
     if (row.freshness !== undefined && row.freshness !== "current") continue
     out.push(row.id)
   }
-  return out
+  const mac = (id: string) => ["darwin", "macos"].includes(String(client.machineDescriptor?.(id)?.machine?.platform ?? "").toLowerCase())
+  return [...out.filter(mac), ...out.filter((id) => !mac(id))]
 }
 
 function declaredCommands(client: CloudWriteClient, machine: string): string[] | null {
