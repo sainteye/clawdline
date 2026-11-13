@@ -142,9 +142,21 @@ async function evaluate(tabId, fn, ...args) {
   return r.result.value
 }
 
+// Under the phone layout's device emulation the page lays out at the emulated
+// size whatever the tab's zoom, yet Chrome multiplies dispatched mouse
+// coordinates by that zoom. Divide it back out so a point read from the
+// picture lands on the same element. The desktop layout already reflows with
+// zoom and needs no correction.
+async function inputScale(tabId) {
+  if (layouts.get(tabId) !== "mobile") return 1
+  const zoom = await chrome.tabs.getZoom(tabId).catch(() => 1)
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1
+}
+
 async function click(tabId, x, y) {
+  const s = await inputScale(tabId)
   for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
-    await cdp(tabId, "Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" ? "none" : "left", clickCount: 1 })
+    await cdp(tabId, "Input.dispatchMouseEvent", { type, x: x / s, y: y / s, button: type === "mouseMoved" ? "none" : "left", clickCount: 1 })
   }
 }
 
@@ -258,7 +270,8 @@ async function run(c) {
     case "scroll": {
       const m = await cdp(tab, "Page.getLayoutMetrics")
       const vw = m.cssLayoutViewport.clientWidth, vh = m.cssLayoutViewport.clientHeight
-      await cdp(tab, "Input.dispatchMouseEvent", { type: "mouseWheel", x: vw / 2, y: vh / 2, deltaX: 0, deltaY: (a.direction === "up" ? -1 : 1) * vh * 0.8 })
+      const s = await inputScale(tab)
+      await cdp(tab, "Input.dispatchMouseEvent", { type: "mouseWheel", x: vw / 2 / s, y: vh / 2 / s, deltaX: 0, deltaY: (a.direction === "up" ? -1 : 1) * vh * 0.8 })
       await new Promise((r) => setTimeout(r, 250))
       return { tab, url: await tabURL(tab), value: { tab, direction: a.direction } }
     }

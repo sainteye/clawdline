@@ -237,6 +237,30 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     assert.equal(await page("plain.type"), "text")
     assert.equal(await page("plain.value.length"), before + 9)
   })
+  // Under phone emulation the layout ignores the tab's zoom, but Chrome
+  // multiplies dispatched mouse coordinates by it. A tester tab left at 200%
+  // once sent every pictured tap to twice its position: the field never
+  // focused and the person's text had nowhere to go.
+  for (const zoom of [2, 0.5]) {
+    await t.test(`a pictured phone tap focuses its field at ${zoom * 100}% zoom`, async () => {
+      assert.equal((await command({op:"viewport", tab, person:true, args:{mode:"mobile"}})).ok, true)
+      await evaluate(`chrome.tabs.setZoom(${tab}, ${zoom})`)
+      try {
+        await page("document.activeElement.blur(); plain.value = ''")
+        const shot = await command({op:"screenshot", tab, person:true, args:{}})
+        assert.equal(shot.value.layout, "mobile")
+        const field = shot.value.editables[0]
+        const tap = await command({op:"click", tab, person:true, args:{x:Math.floor(field.x + field.width / 2), y:Math.floor(field.y + field.height / 2)}})
+        assert.equal(tap.value.editable, "text", "the tap must focus the field it was pictured on")
+        assert.equal(await page("document.activeElement.id"), "plain")
+        assert.equal((await command({op:"type", tab, person:true, args:{text:"手機"}})).ok, true)
+        assert.equal(await page("plain.value"), "手機")
+      } finally {
+        await evaluate(`chrome.tabs.setZoom(${tab}, 1)`)
+        await command({op:"viewport", tab, person:true, args:{mode:"desktop"}})
+      }
+    })
+  }
   await t.test("explicit secret flag is preserved", async () => {
     await page("plain.focus()")
     const result = await command({op:"type", tab, args:{text:"secret",secret:true}})
