@@ -47,6 +47,9 @@ func sandboxPath(path string) bool {
 // Every feature-owned directory under the state is unreadable except this
 // execution's scratch and, when present, this binding's exact history config.
 // Inside that config, native memory and credential-shaped files stay denied.
+// The login keychain files are readable so the native CLI can use the
+// person's existing login; every write there stays denied, so the native
+// process cannot add, change or delete a keychain item through these files.
 // An allow names file-read-data explicitly: Seatbelt does not let a broader
 // file-read* allowance override an earlier, more specific file-read-data deny.
 func claudeProfile(b claudeBoundary) string {
@@ -68,12 +71,13 @@ func claudeProfile(b claudeBoundary) string {
 (deny file-read-data (subpath %s))
 (deny file-read-data (subpath %s))
 (allow file-read* file-read-data (subpath %s) (subpath %s) (literal %s) (literal %s))
+(allow file-read* file-read-data (subpath %s))
 %s(deny file-read-data (with errno ENOENT) (regex #"(^|/)\.claude(/|$)") (subpath "/Library/Application Support/ClaudeCode") (subpath "/Library/Managed Preferences"))
 (deny file-write* (regex #"(^|/)\.claude(/|$)"))
 (allow file-read-data (literal %s) (literal %s))
 (deny process-exec)
 (allow process-exec (literal %s) (literal %s) (literal "/usr/bin/security"))
-`, quoted(b.Owned), quoted(b.Home), quoted(filepath.Join(b.State, "project-assistants")), quoted(b.Owned), quoted(b.Modules), quoted(b.Node), quoted(b.CLI), history, quoted(filepath.Join(b.Home, ".claude.json")), quoted(filepath.Join(b.Home, ".claude", ".credentials.json")), quoted(b.Node), quoted(b.CLI))
+`, quoted(b.Owned), quoted(b.Home), quoted(filepath.Join(b.State, "project-assistants")), quoted(b.Owned), quoted(b.Modules), quoted(b.Node), quoted(b.CLI), quoted(filepath.Join(b.Home, "Library", "Keychains")), history, quoted(filepath.Join(b.Home, ".claude.json")), quoted(filepath.Join(b.Home, ".claude", ".credentials.json")), quoted(b.Node), quoted(b.CLI))
 }
 
 // probeProject is a reserved project key no native working directory maps to.
@@ -91,6 +95,7 @@ const x=cp.spawnSync('/usr/bin/true',[]);r.foreign_exec=x.error?.code==='EPERM';
 const memory=path.join(owned,'.claude','memory','control');
 try{fs.readFileSync(memory);r.memory_read=false}catch(e){r.memory_read=e.code==='EPERM'||e.code==='ENOENT'}
 try{fs.writeFileSync(memory,'forbidden');r.memory_write=false}catch(e){r.memory_write=e.code==='EPERM'}
+try{fs.readdirSync(path.join(process.env.HOME,'Library','Keychains'));r.keychain_read=true}catch(e){r.keychain_read=false}
 fs.writeFileSync(path.join(owned,'control'),'owned');r.owned_write=fs.readFileSync(path.join(owned,'control'),'utf8')==='owned';
 const denied=p=>{let a,b;try{fs.readFileSync(p);a=false}catch(e){a=e.code==='EPERM'}try{fs.writeFileSync(p,'forbidden');b=false}catch(e){b=e.code==='EPERM'}return a&&b};
 const refused=p=>{try{fs.writeFileSync(p,'forbidden');return false}catch(e){return e.code==='EPERM'}};
@@ -242,7 +247,7 @@ func seedHistoryControls(history string) (string, func(), error) {
 }
 
 func verifyClaudeIsolation(ctx context.Context, config Configuration, owned, foreign, history string, l Limits) error {
-	keys := []string{"foreign_write", "foreign_exec", "memory_read", "memory_write", "owned_write"}
+	keys := []string{"foreign_write", "foreign_exec", "memory_read", "memory_write", "keychain_read", "owned_write"}
 	args := []string{"-p", config.Arguments[1], config.Arguments[2], "-e", claudeIsolationProbe, owned, foreign}
 	credentials := []string{}
 	if history != "" {
