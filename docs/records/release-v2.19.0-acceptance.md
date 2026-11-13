@@ -74,9 +74,15 @@ README download links in English and Taiwan Traditional Chinese and the fixed-ve
 installation example name v2.19.0 and its released source. `install.sh` is unchanged since the
 pin `773e04fc70bdb88d864dc2d4e125946e9f0e29a5`: the official short URL redirects to that pin, and
 its bytes and this release's `install.sh` match with SHA-256
-`65fd5f2d4aa57e4ece0799089ab5f6c7caf59c40da16e9a13b3b31df0e46b78f`. The website's download link,
-in the private Cloud service repository, still named v2.17.0 on 2026-11-14 and was not changed
-by this operation.
+`65fd5f2d4aa57e4ece0799089ab5f6c7caf59c40da16e9a13b3b31df0e46b78f`.
+
+The website's download link, in the private Cloud service repository, still named v2.17.0. At
+the person's request it was moved to v2.19.0 and deployed by the Cloud runbook from a clean
+worktree at its exact commit: `https://clawdline.com/.clawdline-release.json` names that commit,
+the English and Traditional Chinese homepages link only the v2.19.0 DMG, which answers 200,
+`/install.sh` still redirects to the pin above, and `cloud-health.py --strict` reported 4/4
+online. The build first refused a stale transparency page; its reviewed snapshot was re-imported
+from this repository's `9067df395` after both languages of the one new card were read.
 
 ## Not checked
 
