@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -223,7 +224,7 @@ func InstalledClaudeProvider(state string) app.Provider { return &installedClaud
 type installedClaude struct{ state string }
 
 func (p *installedClaude) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabilities, error) {
-	_, caps, cleanup, e := p.prepare(ctx, b)
+	_, caps, cleanup, e := p.prepare(ctx, b, nil)
 	defer cleanup()
 	return caps, e
 }
@@ -243,7 +244,8 @@ func (p *installedClaude) Open(ctx context.Context, q app.OpenRequest, sink func
 			return nil, refusal(pa.ScopeDenied, "native_state_project_overlap")
 		}
 	}
-	config, caps, cleanup, e := p.prepare(ctx, q.Bot)
+	q.PersistNativeSession = true
+	config, caps, cleanup, e := p.prepare(ctx, q.Bot, &q)
 	if e != nil {
 		cleanup()
 		return nil, e
@@ -266,9 +268,31 @@ func (p *installedClaude) Open(ctx context.Context, q app.OpenRequest, sink func
 		cleanup()
 		return nil, e
 	}
-	return &isolatedNativeSession{ProviderSession: session, cleanup: cleanup}, e
+	if e == nil {
+		state, err := filepath.EvalSymlinks(p.state)
+		if err == nil {
+			h, planErr := historyForRequest(state, q)
+			err = planErr
+			if err == nil {
+				err = h.recordID(session.SessionID())
+			}
+		}
+		if err != nil {
+			e = err
+		}
+	}
+	if e != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), nativeLimits().CleanupTimeout)
+		defer cancel()
+		if closeErr := session.Close(ctx); closeErr != nil {
+			return &isolatedNativeSession{ProviderSession: session, cleanup: cleanup}, errors.Join(e, closeErr)
+		}
+		cleanup()
+		return nil, e
+	}
+	return &isolatedNativeSession{ProviderSession: session, cleanup: cleanup}, nil
 }
-func (p *installedClaude) prepare(ctx context.Context, b pa.Bot) (Configuration, pa.Capabilities, func(), error) {
+func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.OpenRequest) (Configuration, pa.Capabilities, func(), error) {
 	caps := pa.Capabilities{Key: b.Key, Project: b.Project, Agent: b.Agent, NativeMemory: pa.NativeMemoryUnknown}
 	if b.Agent != pa.ClaudeCode {
 		return Configuration{}, caps, func() {}, refusal(pa.AdapterNotFound, "native_provider")
@@ -277,7 +301,28 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot) (Configuration,
 	if e != nil {
 		return Configuration{}, caps, func() {}, e
 	}
-	config, cleanup, e := i.isolated(ctx, p.state, b, nativeLimits())
+	state, e := filepath.EvalSymlinks(p.state)
+	if e != nil {
+		return Configuration{}, caps, func() {}, refusal(pa.Invalid, "native_state")
+	}
+	history := ""
+	if request != nil {
+		h, err := historyForRequest(state, *request)
+		if err != nil {
+			return Configuration{}, caps, func() {}, err
+		}
+		if err = privateDirectory(state, h.Config); err == nil {
+			err = privateDirectory(state, h.Owners)
+		}
+		if err == nil && request.Resume {
+			err = h.verifyID(request.Binding.NativeSessionID)
+		}
+		if err != nil {
+			return Configuration{}, caps, func() {}, err
+		}
+		history = h.Config
+	}
+	config, cleanup, e := i.isolatedWithHistory(ctx, state, b, nativeLimits(), history)
 	if e != nil {
 		return config, caps, cleanup, e
 	}
@@ -285,8 +330,9 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot) (Configuration,
 	caps.Evidence = "pinned artifacts and live OS write/exec/memory controls; no authentication or model assertion"
 	caps.ReadOnlyEnforced, caps.NativeMemoryVerified = true, true
 	caps.NativeMemory = pa.NativeMemoryDisabled
-	// Native transcripts are not written into the person's CLI directory. The
-	// app's durable context reconstructs a fresh native session on restart.
+	// The owned persistence candidate is wired, but native new/load has not
+	// been qualified under this policy. Keep resume admission closed until the
+	// separately authorized fixed-version round trip supplies that evidence.
 	caps.Resume = false
 	caps.SendMessage = true
 	return config, caps, cleanup, nil

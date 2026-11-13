@@ -83,14 +83,14 @@ func TestACPTestPeer(t *testing.T) {
 					os.Exit(5)
 				}
 			}
-			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": "scripted-session"})})
+			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": peerSessionID("CLAWDLINE_ACP_NEW_ID")})})
 		case "session/load":
 			if path := os.Getenv("CLAWDLINE_ACP_PARAMS_FILE"); path != "" {
 				if err := os.WriteFile(path, scanner.Bytes(), 0600); err != nil {
 					os.Exit(5)
 				}
 			}
-			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": "scripted-session"})})
+			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": peerSessionID("CLAWDLINE_ACP_LOAD_ID")})})
 		case "session/prompt":
 			promptID = f.ID
 			if mode == "quote" || mode == "handoff" {
@@ -137,6 +137,14 @@ func TestACPTestPeer(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+// peerSessionID lets a test choose what native session ID the peer answers.
+func peerSessionID(name string) string {
+	if id := os.Getenv(name); id != "" {
+		return id
+	}
+	return "scripted-session"
 }
 
 func peerConfiguration(t *testing.T, mode string) Configuration {

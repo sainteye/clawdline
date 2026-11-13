@@ -3545,11 +3545,11 @@
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/voice_work.go": "a687718d648d1924327a74a9a973dd7c34a8d94c7c7d8fb7cb14067019823595",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
-    "internal/adapters/projectassistantacp/client.go": "527105f02769fb26a55c21b3ee9b82588fe3188c8946adb4838a358a4fd78cca",
-    "internal/adapters/projectassistantacp/installation.go": "ca758eb0b55f14b280199eb5de199bff21d74eb9902e4c78e696dcc163e4a3d1",
-    "internal/adapters/projectassistantacp/installation_isolation.go": "cf04f7a98f642f000408346c37f2e937899898ea406c6927b6594dff9956b591",
+    "internal/adapters/projectassistantacp/client.go": "03af753043fa5fe0d0d3282b0c8bc6fa160934090affb6bbc83a3fa50d10131a",
+    "internal/adapters/projectassistantacp/installation.go": "a7367999d6cab89e12a9b77a155ea6d6ec83813c16d77adf76832e0f6249de12",
+    "internal/adapters/projectassistantacp/installation_isolation.go": "67afd8fa3035334d044b7bb4e01ca5cbed226e9e4719763ca962ca341c8c1470",
     "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
-    "internal/adapters/projectassistantacp/session_configuration.go": "88601599acf7e706a4a4475f25b2c106738f1d0a6f6236b70cb8261d794d6d20",
+    "internal/adapters/projectassistantacp/session_configuration.go": "700776ccf31a781ae2478316c99ba4ac1178c2ef38f97847bbe1161ee077b522",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -3652,7 +3652,7 @@
     "web/console/src/voice-work/runtime.ts": "278b3b8bcfce334142062b98e37e8b9229de96dc1fdca92531ed863fea56f656"
   },
   "copyChecks": {
-    "en": "3b911d2e8265d2d878335d116593d9ae6a79d6fcc6be411a96c292cc538f885a",
-    "zh-Hant": "2124b76158dd1675a8b1023ead288a615652d1584eef2b81a816baa3a145e0fd"
+    "en": "0e0fb9869c5dd082fddcfc4932e47a48d37af4b85cb50de3a5242806ad36f252",
+    "zh-Hant": "c21ec9fc8d716265dcfdf9d0d477bad3f661ffac6700b5d9e85980bed6b03f66"
   }
 }

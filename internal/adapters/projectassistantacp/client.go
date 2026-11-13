@@ -126,6 +126,9 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	if c.ownedMCP != nil && !initialized.AgentCapabilities.MCPCapabilities.HTTP {
 		return refusal(pa.Unsupported, "http_mcp")
 	}
+	if q.Resume && q.PersistNativeSession && !nativeSessionUUID.MatchString(q.Binding.NativeSessionID) {
+		return refusal(pa.ScopeDenied, "native_session_id")
+	}
 	params, err := sessionParameters(q, c.ownedMCP)
 	if err != nil {
 		return err
@@ -153,6 +156,12 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	}
 	if q.Resume && session.SessionID == "" {
 		session.SessionID = q.Binding.NativeSessionID
+	}
+	if q.Resume && session.SessionID != q.Binding.NativeSessionID {
+		return refusal(pa.ScopeDenied, "native_session_id_changed")
+	}
+	if q.PersistNativeSession && !nativeSessionUUID.MatchString(session.SessionID) {
+		return refusal(pa.Invalid, "native_session_id")
 	}
 	if session.SessionID == "" {
 		return refusal(pa.Invalid, "session_id")

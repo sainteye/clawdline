@@ -26,6 +26,9 @@ type OpenRequest struct {
 	Binding   pa.ExecutionBinding
 	Directory string
 	Resume    bool
+	// PersistNativeSession is set only by the source-owned installed provider.
+	// It never arrives through an HTTP command or model argument.
+	PersistNativeSession bool `json:"-"`
 	// Tools is execution-bound by the host. No model-supplied identity or
 	// machine credential can construct authority through this interface.
 	Tools NativeTools `json:"-"`
