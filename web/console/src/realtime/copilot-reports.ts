@@ -15,8 +15,10 @@ export function sessionNamePosition(text:string,label:string){
  const right=/[a-z0-9]$/i.test(normalized)?'(?![a-z0-9])':''
  return new RegExp(left+escaped+right,'iu').exec(text.normalize('NFKC'))?.index??-1
 }
+/** A label without the trailing 「（machine）」 the fleet adds when several machines are listed. */
+export function spokenName(label:string){return label.replace(/\s*\uff08[^\uff08\uff09]+\uff09\s*$/u,'')||label}
 export function relativeSession(text:string):number|'last'|undefined {
- if(/(?:最後|最后)(?:一)?(?:個|个)|(?:最後|最后).*(?:提到|介紹|介绍|說|说|講|讲)|\b(?:last|previous) (?:one|session)\b|\b(?:one|session) you (?:mentioned|described) last\b/i.test(text))return 'last'
+ if(/(?:最後|最后)(?:的)?(?:那|这|這)?(?:一)?(?:個|个|位)|(?:最後|最后).*(?:提到|介紹|介绍|說|说|講|讲)|\b(?:last|previous) (?:one|session)\b|\b(?:one|session) you (?:mentioned|described) last\b/i.test(text))return 'last'
  const cn=/第\s*([一二三四五六七八九十兩两\d]+)\s*(?:個|个|項|项|session|station|stage)/i.exec(text)
  if(cn){const n:Record<string,number>={一:1,二:2,三:3,兩:2,两:2};return n[cn[1]]??Number(cn[1])}
  const en=/\b(first|second|third) (?:one|session)\b/i.exec(text)
@@ -39,9 +41,13 @@ export class SpokenSessions {
  observe(ref:SessionReference){this.evidence=this.evidence.filter(r=>r.id!==ref.id);this.evidence.push({...ref});this.evidence=this.evidence.slice(-SESSION_REPORT_REFS)}
  generated(text:string,completed:boolean){
   this.candidate=[];this.noAnchor=false;if(!completed)return
+  // On 所有機器 a label ends in its machine's name (「名稱（機器）」), which the
+  // voice leaves out when it says the name; the bare name is the anchor then,
+  // as long as no other Session read in this call shares it (2026-11-13).
   const names=new Map<string,SessionReference[]>()
-  for(const ref of this.evidence){const key=plain(ref.label);if(key)names.set(key,[...(names.get(key)??[]),ref])}
-  this.candidate=[...names.values()].filter(refs=>refs.length===1&&sessionNamePosition(text,refs[0].label)>=0).sort((a,b)=>sessionNamePosition(text,a[0].label)-sessionNamePosition(text,b[0].label)).map(refs=>refs[0])
+  for(const ref of this.evidence){const key=plain(spokenName(ref.label));if(key)names.set(key,[...(names.get(key)??[]),ref])}
+  const at=(ref:SessionReference)=>{const full=sessionNamePosition(text,ref.label);return full>=0?full:sessionNamePosition(text,spokenName(ref.label))}
+  this.candidate=[...names.values()].filter(refs=>refs.length===1&&at(refs[0])>=0).sort((a,b)=>at(a[0])-at(b[0])).map(refs=>refs[0])
   this.noAnchor=!this.candidate.length&&/(?:session|工作階段)/i.test(text)
  }
  played():SessionReference[]{
