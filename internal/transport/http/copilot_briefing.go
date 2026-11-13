@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/planner"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The voice copilot's prepared briefing (docs/voice.md, "Voice copilot").
@@ -45,8 +47,8 @@ var copilotBriefingSessionsOf = func(s *Server, ctx context.Context) ([]copilotB
 }
 
 // copilotBriefRun is the turn; tests replace it.
-var copilotBriefRun = func(ctx context.Context, input, assistant string) (string, error) {
-	return planner.New().Briefing(ctx, input, assistant)
+var copilotBriefRun = func(ctx context.Context, input, assistant, language string) (string, error) {
+	return planner.New().Briefing(ctx, input, assistant, language)
 }
 
 type copilotBriefingAnswer struct {
@@ -55,6 +57,9 @@ type copilotBriefingAnswer struct {
 	Sessions   int    `json:"sessions"`
 	Assistant  string `json:"assistant"`
 	Millis     int64  `json:"ms"`
+	// Language is the console language it was written for; another console
+	// gets its own.
+	Language string `json:"language,omitempty"`
 }
 
 // copilotBriefingSession is what the assistant is told about one Session.
@@ -120,6 +125,15 @@ func whenPhrase(at, now time.Time) string {
 		return "昨天 " + at.Format("15:04")
 	}
 	return fmt.Sprintf("%d/%d %s", int(m1), d1, at.Format("15:04"))
+}
+
+// copilotLanguage is the console language a voice request names, resolved to
+// a shipped catalog, or the machine's product language when it names none.
+func (s *Server) copilotLanguage(language string) string {
+	if strings.TrimSpace(language) == "" {
+		return s.productLanguage()
+	}
+	return productcopy.Resolve(language)
 }
 
 // copilotOwnRead answers one of this daemon's own read routes in-process.
@@ -299,13 +313,19 @@ func (s *Server) copilotBriefingRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusInternalServerError, "copilot_settings_unreadable", "The voice copilot settings on this machine cannot be read.")
 		return
 	}
+	var body struct {
+		Language string `json:"language"`
+	}
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	_ = json.Unmarshal(raw, &body) // an older phone sends {}; the machine's language answers it
+	language := s.copilotLanguage(body.Language)
 	e := settings.Effective()
 	if e.BriefingOff {
 		writeRefusal(w, http.StatusConflict, "copilot_briefing_off", "The prepared briefing is turned off in Settings › Voice copilot.")
 		return
 	}
 	copilotBriefing.Lock()
-	if held := copilotBriefing.held; held.Briefing != "" && held.Assistant == e.BriefingAssistant &&
+	if held := copilotBriefing.held; held.Briefing != "" && held.Assistant == e.BriefingAssistant && held.Language == language &&
 		time.Since(time.Unix(held.PreparedAt, 0)) < copilotBriefingFresh {
 		copilotBriefing.Unlock()
 		writeJSON(w, held)
@@ -315,7 +335,7 @@ func (s *Server) copilotBriefingRoute(w http.ResponseWriter, r *http.Request) {
 		done := make(chan struct{})
 		copilotBriefing.running, copilotBriefing.started = done, time.Now()
 		copilotBriefing.lastErr, copilotBriefing.lastCode = nil, ""
-		go s.prepareCopilotBriefing(e.BriefingAssistant, done)
+		go s.prepareCopilotBriefing(e.BriefingAssistant, language, done)
 	}
 	done, started := copilotBriefing.running, copilotBriefing.started
 	copilotBriefing.Unlock()
@@ -349,7 +369,7 @@ func (s *Server) copilotBriefingRoute(w http.ResponseWriter, r *http.Request) {
 
 // prepareCopilotBriefing runs one briefing; it outlives the request that
 // started it, so a phone that asks again is handed the answer.
-func (s *Server) prepareCopilotBriefing(assistant string, done chan struct{}) {
+func (s *Server) prepareCopilotBriefing(assistant, language string, done chan struct{}) {
 	ctx, cancel := context.WithTimeout(context.Background(), planner.MaxBriefingDuration+10*time.Second)
 	defer cancel()
 	started := time.Now()
@@ -362,7 +382,7 @@ func (s *Server) prepareCopilotBriefing(assistant string, done chan struct{}) {
 		if err != nil {
 			return copilotBriefingAnswer{}, "copilot_briefing_failed", err
 		}
-		text, err := copilotBriefRun(ctx, input, assistant)
+		text, err := copilotBriefRun(ctx, input, assistant, language)
 		switch {
 		case errors.Is(err, planner.ErrNoPlanner):
 			return copilotBriefingAnswer{}, "copilot_briefing_no_assistant", err
@@ -372,7 +392,7 @@ func (s *Server) prepareCopilotBriefing(assistant string, done chan struct{}) {
 			return copilotBriefingAnswer{}, "copilot_briefing_failed", err
 		}
 		return copilotBriefingAnswer{Briefing: text, PreparedAt: time.Now().Unix(), Sessions: len(sessions),
-			Assistant: assistant, Millis: time.Since(started).Milliseconds()}, "", nil
+			Assistant: assistant, Millis: time.Since(started).Milliseconds(), Language: language}, "", nil
 	}()
 	copilotBriefing.Lock()
 	if err == nil {

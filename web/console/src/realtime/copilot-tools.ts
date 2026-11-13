@@ -1658,13 +1658,19 @@ export const MACHINE_RECAP_MS = 30_000
  * what to say. Undefined when the machine cannot (no key, an older daemon, a
  * slow answer), and the call reads the record itself.
  */
+/** The console's language (`<html lang>`), or "" outside a page. */
+function pageLanguage(): string {
+  return typeof document === 'undefined' ? '' : document.documentElement.lang || ''
+}
+
 async function machineRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
   let res: Response
   try {
     res = await rowFetch(deps, row)('/v1/voice/copilot-recap', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
-      body: JSON.stringify({ session: sid(row), ...(row.conversation ? { conversation: row.conversation } : {}) }),
+      // The recap is spoken in the console's language, as the call is.
+      body: JSON.stringify({ session: sid(row), ...(row.conversation ? { conversation: row.conversation } : {}), ...(pageLanguage() ? { language: pageLanguage() } : {}) }),
       signal: AbortSignal.timeout(MACHINE_RECAP_MS),
     })
   } catch {

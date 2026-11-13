@@ -1031,7 +1031,11 @@ func genDecodeCoordinationWaits(b body) (plan, LocalRequest, bool) {
 func genDecodeCopilotBriefing(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "request", "session"},
+		[]string{"type", "language", "request", "session"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("language", genRule{kind: "string", maxBytes: 35}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -1041,7 +1045,7 @@ func genDecodeCopilotBriefing(b body) (plan, LocalRequest, bool) {
 	path := "/v1/voice/copilot-briefing"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
-	req.Body = []byte("{}")
+	req.Body = b.genFields(map[string]genValue{"language": genValue{from: "language", omitEmpty: true}})
 	return p, req, true
 }
 

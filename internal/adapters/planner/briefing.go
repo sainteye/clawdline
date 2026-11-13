@@ -53,8 +53,28 @@ const briefingPrompt = `你替一位軟體開發者的語音助理準備「現�
 
 const briefingSchema = `{"type":"object","properties":{"briefing":{"type":"string"}},"required":["briefing"],"additionalProperties":false}`
 
-// BriefingPrompt is the instruction one briefing turn runs with.
-func BriefingPrompt() string { return briefingPrompt }
+// BriefingPrompt is the instruction one briefing turn runs with for a
+// console shown in language (a BCP 47 tag).
+func BriefingPrompt(language string) string {
+	return strings.Replace(briefingPrompt, ChineseOutput, OutputLanguage(language), 1)
+}
+
+// ChineseOutput is the output-language rule the Chinese-written prompts state
+// for a console shown in Taiwan Traditional Chinese.
+const ChineseOutput = "全部用台灣繁體中文"
+
+// OutputLanguage is the output-language rule for a console shown in language.
+// The prompts are written in Chinese, but what they produce is spoken to the
+// person, so it follows the console: on 2026-11-13 the briefing and the
+// Session recap were Chinese even for an English console.
+func OutputLanguage(language string) string {
+	tag := strings.TrimSpace(language)
+	switch strings.ToLower(tag) {
+	case "", "zh-hant", "zh-tw", "zh-hk", "zh":
+		return ChineseOutput
+	}
+	return "全部用使用者介面的語言（BCP 47：" + tag + "）寫，Session 的名稱與原文照原樣保留"
+}
 
 // BriefingInput is the inert content of one turn: the Sessions as JSON.
 func BriefingInput(sessions any) (string, error) {
@@ -68,14 +88,14 @@ func BriefingInput(sessions any) (string, error) {
 // Briefing runs one briefing turn with the named assistant ("claude" or
 // "codex"). It never falls back to the other: the setting names whose account
 // is used.
-func (p Planner) Briefing(ctx context.Context, input, assistant string) (string, error) {
+func (p Planner) Briefing(ctx context.Context, input, assistant, language string) (string, error) {
 	if utf8.RuneCountInString(input) > MaxBriefingInputRunes {
 		return "", ErrBriefingTooLong
 	}
 	if assistant != "codex" {
 		assistant = "claude"
 	}
-	object, err := p.runTurn(ctx, assistant, briefingPrompt, input, briefingSchema, MaxBriefingDuration, "briefing.json")
+	object, err := p.runTurn(ctx, assistant, BriefingPrompt(language), input, briefingSchema, MaxBriefingDuration, "briefing.json")
 	if errors.Is(err, errTurnTimeout) {
 		return "", ErrBriefingTimeout
 	}

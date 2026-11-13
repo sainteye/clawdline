@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
@@ -106,7 +107,7 @@ const copilotRecapPrompt = `你替一位軟體開發者的語音助理整理「�
 
 回傳一個 JSON 物件，只有一個欄位 recap：匯報全文。`
 
-func copilotRecapRequest(input []byte) map[string]any {
+func copilotRecapRequest(input []byte, language string) map[string]any {
 	return map[string]any{
 		"model":       copilotRecapModel,
 		"temperature": 0.2,
@@ -124,7 +125,7 @@ func copilotRecapRequest(input []byte) map[string]any {
 			},
 		},
 		"messages": []map[string]string{
-			{"role": "system", "content": copilotRecapPrompt},
+			{"role": "system", "content": strings.Replace(copilotRecapPrompt, planner.ChineseOutput, planner.OutputLanguage(language), 1)},
 			{"role": "user", "content": string(input)},
 		},
 	}
@@ -309,6 +310,8 @@ func (s *Server) copilotRecapRoute(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Session      string `json:"session"`
 		Conversation string `json:"conversation"`
+		// Language is the console language the recap is spoken in.
+		Language string `json:"language"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, copilotRecapBodyLimit+1))
 	if err != nil || len(raw) > copilotRecapBodyLimit || json.Unmarshal(raw, &body) != nil {
@@ -342,7 +345,7 @@ func (s *Server) copilotRecapRoute(w http.ResponseWriter, r *http.Request) {
 	lines, clipped := copilotRecapFit(lines)
 	progress := s.copilotRecapProgressFor(ctx, session, strings.TrimSpace(body.Conversation), now)
 	input, _ := json.Marshal(map[string]any{"progress": progress, "timeline": lines, "complete": complete && !clipped})
-	content, status, detail := copilotChatJSON(ctx, v.Key, copilotRecapRequest(input))
+	content, status, detail := copilotChatJSON(ctx, v.Key, copilotRecapRequest(input, s.copilotLanguage(body.Language)))
 	if detail != "" {
 		code := "copilot_recap_failed"
 		if status == http.StatusUnauthorized {
