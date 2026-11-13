@@ -70,11 +70,15 @@ type copilotDecisionAnswer struct {
 	Many bool `json:"many"`
 }
 
-const copilotDecisionPrompt = "下面是使用者在語音通話裡說的一句話（語音辨識的結果，會有同音字、錯字、中英混雜，或只講主題），裡面提到他電腦上的一個 AI 程式開發 Session。從清單裡挑出他指的那一個，依名稱、狀態、助理與交付摘要的意思判斷，不是只比對字面。很確定就填 id；有兩三個都說得通就把它們放進 candidates、id 填 null；清單裡沒有相符的、或這句話沒有指向任何特定 Session（例如只說「它」「這個」或在問整體狀況），就兩個都留空。如果他一次問的是好幾個 Session（例如「它們」「那幾個」「處理中的那些」「最近做完的」），把符合的都放進 candidates（最多五個）、id 填 null、many 填 true；只問一個時 many 填 false。"
+const copilotDecisionPrompt = "下面是使用者在語音通話裡說的一句話（語音辨識的結果，會有同音字、錯字、中英混雜，或只講主題），裡面提到他電腦上的一個 AI 程式開發 Session。從清單裡挑出他指的那一個，依名稱、狀態、助理與交付摘要的意思判斷，不是只比對字面。很確定就填 id；有兩三個都說得通就把它們放進 candidates、id 填 null；清單裡沒有相符的、或這句話沒有指向任何特定 Session（例如只說「它」「這個」或在問整體狀況），就兩個都留空。如果他一次問的是好幾個 Session（例如「它們」「那幾個」「處理中的那些」「最近做完的」），把符合的都放進 candidates（最多五個）、id 填 null、many 填 true；只問一個時 many 填 false。有 current 時，它是語音助理正在講的那個 Session：句子只用「他」「它」「這個」指 Session，或問的是它講過的內容（結論、原因、建議、修正方法、下一步），id 就填 current；只有句子清楚說出另一個 Session 的名稱或主題時才改選別的。不要因為某個 Session 的交付摘要剛好出現句子裡的詞（例如「修正」）就改選它。"
 
 // copilotDecisionRequest is the Chat Completions body for one sentence.
-func copilotDecisionRequest(said string, sessions []copilotDecisionSession) map[string]any {
-	user, _ := json.Marshal(map[string]any{"said": said, "sessions": sessions})
+func copilotDecisionRequest(said, current string, sessions []copilotDecisionSession) map[string]any {
+	content := map[string]any{"said": said, "sessions": sessions}
+	if current != "" {
+		content["current"] = current
+	}
+	user, _ := json.Marshal(content)
 	return map[string]any{
 		"model":       copilotDecisionModel,
 		"temperature": 0,
@@ -136,6 +140,10 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 		// machine's own: a page showing every machine names each machine's
 		// Sessions, and a decision over this machine's alone named none of them.
 		Sessions []copilotDecisionSession `json:"sessions"`
+		// Current is the Session the call is already talking about, when the
+		// copilot named it by its exact id or name. On 2026-11-13 「請問他說的
+		// 修正法」 was matched to another Session whose delivery said 已修正.
+		Current string `json:"current"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, copilotDecisionBodyLimit+1))
 	if err != nil || len(raw) > copilotDecisionBodyLimit || json.Unmarshal(raw, &body) != nil {
@@ -184,7 +192,13 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, copilotDecisionAnswer{Candidates: []string{}})
 		return
 	}
-	answer, status, detail := decideCopilotSession(ctx, v.Key, said, sessions)
+	current := ""
+	for _, row := range sessions {
+		if row.ID == body.Current {
+			current = row.ID
+		}
+	}
+	answer, status, detail := decideCopilotSession(ctx, v.Key, said, current, sessions)
 	if detail != "" {
 		code := "copilot_decision_failed"
 		if status == http.StatusUnauthorized {
@@ -198,8 +212,8 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 
 // decideCopilotSession asks the decision model once. Only ids from sessions
 // survive its answer.
-func decideCopilotSession(ctx context.Context, key, said string, sessions []copilotDecisionSession) (copilotDecisionAnswer, int, string) {
-	content, status, detail := copilotChatJSON(ctx, key, copilotDecisionRequest(said, sessions))
+func decideCopilotSession(ctx context.Context, key, said, current string, sessions []copilotDecisionSession) (copilotDecisionAnswer, int, string) {
+	content, status, detail := copilotChatJSON(ctx, key, copilotDecisionRequest(said, current, sessions))
 	if detail != "" {
 		return copilotDecisionAnswer{}, status, detail
 	}

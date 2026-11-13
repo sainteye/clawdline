@@ -182,7 +182,13 @@ read, opened or acted on; a write to another one is refused until the person con
 (`switch_confirmed`). On 2026-11-12 a message went to the wrong Session; replayed against this
 machine's Sessions, the copilot asked to send to an unrelated one when the named Session had been
 closed, and after the rule "a Session not in the list is said to be missing, never replaced" it
-said so instead. `close_session` closes a Session the person named and confirmed, with `force:
+said so instead. A call placed from a Session on 所有機器 is first told the raw id the page gave
+(`%2`), while the tools list that Session as `fleet:<machine>:%252`. In call `eae13140`
+(2026-11-13) the copilot sent "push to GitHub and deploy" with `%2` twice, both refused, and
+asked the person to confirm three times before a send by whole name went through. Once the
+opening handover finds the listed row, the instructions are resent with its id, and a write or
+read naming the raw id of the Session under discussion resolves to that row; a raw id never
+selects another machine's Session of the same id. `close_session` closes a Session the person named and confirmed, with `force:
 false` and that reading's version when its row's closeability is `safe`. When it is not, or the
 machine answers 409 with reasons, the copilot says the reasons and asks again whether to close
 anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only the person's

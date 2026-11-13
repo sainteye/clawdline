@@ -277,9 +277,10 @@ export class RealtimeCopilotClient {
       heard: () => this.heardNow,
       spokenReference:text=>this.spokenSessions.resolve(text),
       onRead:ref=>this.spokenSessions.observe(ref),
-      decide: (said, sessions) => decideOnMachine(said, sessions),
+      decide: (said, sessions, current) => decideOnMachine(said, sessions, current),
       machines: () => machinesOnThisPage(),
       focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
+      screen: () => { const ids = sessionsInFragment(location.hash); return ids ? { ids, machine: destinationFromFragment(location.hash)?.machineID } : undefined },
       marks: browserMarks,
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
       adjust: (change) => this.adjust(change),
@@ -697,6 +698,13 @@ export class RealtimeCopilotClient {
       const { output, logs, reported, targetID } = await readCallHandover(origin, this.toolDeps())
       if (revision !== this.openingRevision || attempt !== this.attempt || this.dc !== dc || dc?.readyState !== 'open') return
       if (targetID) this.focus = targetID
+      // The instructions named the raw id the page gave ("%2"); on 所有機器
+      // the tools list it as `fleet:<machine>:%252`. Name the listed id so
+      // a send does not use an id the tools refuse (2026-11-13).
+      if (targetID && targetID !== origin.id && this.call.options.origin === origin) {
+        this.call.options = { ...this.call.options, origin: { ...origin, id: targetID } }
+        dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+      }
       for (const log of logs) this.addLog(log.level, log.text)
       this.journal('tool', 'opening_handover', { args: JSON.stringify({ session_id: origin.id }), ms: performance.now() - started, answer: output.slice(0, 1500) })
       this.narrator.prepared('opening', output,
@@ -1241,11 +1249,11 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
  * person's sentence means. A refusal is thrown; the tool then lets the copilot
  * choose from the list itself.
  */
-async function decideOnMachine(said: string, sessions: unknown[]): Promise<{ id?: string; candidates?: string[] }> {
+async function decideOnMachine(said: string, sessions: unknown[], current?: string): Promise<{ id?: string; candidates?: string[] }> {
   // The call's own list goes with the sentence: on a page showing every
   // machine it is not the deciding machine's own.
   const res = await fetch('/v1/voice/copilot-decide', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said, sessions }),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said, sessions, ...(current ? { current } : {}) }),
   })
   const body = (await res.json().catch(() => null)) as { id?: unknown; candidates?: unknown } | null
   // refusal-ok: a refused decision falls back to the copilot's own choice in `resolveRead`, which is said in the tool's answer.

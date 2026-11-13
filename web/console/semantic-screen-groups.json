@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11701,
-  "riskKeys": 5116,
-  "nonRiskCount": 6585,
+  "englishContentKeys": 11706,
+  "riskKeys": 5119,
+  "nonRiskCount": 6587,
   "groups": [
     {
       "name": "acp / other",
@@ -6738,7 +6738,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 164,
+      "count": 166,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6809,6 +6809,8 @@
         "transparency.card.grok-acp-context.condition",
         "transparency.card.grok-acp-context.summary",
         "transparency.card.grok-acp-context.title",
+        "transparency.card.handoff-auto-name.summary",
+        "transparency.card.handoff-auto-name.title",
         "transparency.card.handoff.condition",
         "transparency.card.handoff.effect",
         "transparency.card.handoff.how",

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/productcopy"
@@ -131,6 +132,11 @@ func (s *Server) resolveWrapper(ctx context.Context, first string) string {
 	if m := childTaskID.FindStringSubmatch(text); m != nil {
 		if r, _, err := s.broker.Record(ctx, m[1]); err == nil {
 			return "A delegated task: " + strings.TrimSpace(r.Title) + "\n" + strings.TrimSpace(r.Instructions)
+		}
+	}
+	if h, ok := s.broker.MilestoneHandoffForLine(ctx, text); ok {
+		if asked, ok := orchestrator.MilestoneNamingText(h); ok {
+			return asked
 		}
 	}
 	return text

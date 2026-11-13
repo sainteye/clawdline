@@ -75,6 +75,8 @@ export interface ToolDeps {
   machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
   /** The Session this call is talking about: the one on screen, or the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
+  /** The Session open on this page now: its address's ids, and the machine an every-machine address names. */
+  screen?: () => { ids: readonly string[]; machine?: string } | undefined
   /** Where the copilot last reported each Session up to (`get_session_updates`); kept by this browser. */
   marks?: { get(key: string): UpdateMark | undefined; set(key: string, mark: UpdateMark): void }
   /** The user guide's sections a question is about (`copilot-help.ts`); loaded only when asked. */
@@ -88,7 +90,8 @@ export interface ToolDeps {
    * by a text model on the machine from the whole list. Asked only when a read
    * names no Session by its id or whole name (`resolveRead`).
    */
-  decide?: (said: string, sessions: DecisionSession[]) => Promise<SessionDecision>
+  /** `current` is the Session the copilot already chose by its exact id or name, if any. */
+  decide?: (said: string, sessions: DecisionSession[], current?: string) => Promise<SessionDecision>
   /** The person's own words for the Session in the current tool call (`said`). */
   said?: string
   /** What the person last said in the call, as transcribed: the words the Decision API judges first. */
@@ -935,16 +938,34 @@ function uniqueSessionID(rows: readonly CopilotSessionRow[], id: string): Copilo
 }
 
 /** Resolve an ID, pane shorthand or whole label without guessing between rows. */
+/**
+ * The rows an id names: the tool id, a pane id without its sign ("2" for
+ * "%2", never a position in the list), or the raw id on its own machine of
+ * the Session under discussion. A call placed from a Session on 所有機器 was
+ * told that Session's raw id ("%2") while the tools list it as
+ * `fleet:<machine>:%252`; on 2026-11-13 three sends were refused for it
+ * and the person was asked to confirm the same message three times. Only
+ * the focused row is matched that way, so a raw id never picks a machine.
+ */
+function rowsByID(rows: readonly CopilotSessionRow[], w: string, focus?: string): CopilotSessionRow[] {
+  let byId = rows.filter((r) => r.id === w)
+  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  if (!byId.length && focus) {
+    const raw = /^\d+$/.test(w) ? `%${w}` : w
+    const focused = rows.filter((r) => r.id === focus)
+    if (focused.length === 1 && focused[0].session && focused[0].session !== focused[0].id && focused[0].session === raw) byId = focused
+  }
+  return byId
+}
+
 export function resolveSession(
   rows: readonly CopilotSessionRow[],
   wanted: string,
+  focus?: string,
 ): { row: CopilotSessionRow } | { error: string; candidates?: { id: string; label: string; state?: string }[] } {
   const w = wanted.trim()
   if (!w) return { error: '沒有指定要看哪一個 Session' }
-  let byId = rows.filter((r) => r.id === w)
-  // A tmux pane id said or typed without its sign: "2" for "%2". Never a
-  // position in the list, which changes as Sessions start and stop.
-  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  const byId = rowsByID(rows, w, focus)
   if (byId.length === 1) return { row: byId[0] }
   const lower = w.toLowerCase()
   const exact = rows.filter((r) => r.label.toLowerCase() === lower)
@@ -960,6 +981,21 @@ export function resolveSession(
   }
 }
 
+/** Whether a sentence means the Session the person is in: 「我這個 Session」, 「現在所在的」, "this session". */
+export function isHere(text: string): boolean {
+  return /(?:這個|这个)\s*(?:session|工作階段|工作阶段)|我(?:現在|现在|目前)?(?:所在)?的?(?:這個|这个)|(?:現在|现在|目前)(?:所在|在)?的?(?:這個|这个)|(?:所在|開著|开着|正在看)的(?:這個|这个)?\s*session|\bthis session\b|\bthe (?:session|one) I(?:'m| am) (?:in|on|looking at)\b/i.test(text)
+}
+
+/**
+ * Whether a sentence asks about what "he/it" said, found or suggested: the
+ * Session already being talked about. A bare 「它」 next to a description
+ * (「登入那個，它怎樣」) is still decided on; 「其他」, 「他們」 and a denial point elsewhere.
+ */
+export function pointsBack(text: string): boolean {
+  if (/(?:不是|不要|別|别|\bnot\b)/i.test(text)) return false
+  return /(?<![其吉])[他她它祂](?![們们])(?:剛剛|剛才|刚刚|刚才|最後|最后|之前|一開始|一开始)?(?:說|说|講|讲|提|建議|建议|發現|发现|找到|認為|认为|覺得|觉得|問|问|要我|推薦|推荐|的(?:結論|结论|建議|建议|原因|發現|发现|修正|修改|做法|方法|意思|說法|说法|回覆|回复|回答|問題|问题|計畫|计划|下一步))|\bwhat (?:did|does|is) (?:it|she|he) (?:say|said|suggest|find|found|recommend|mean|want|propose|saying|suggesting|asking)|\b(?:its|his|her) (?:conclusion|suggestion|fix|reason|answer|reply|plan|finding)/i.test(text)
+}
+
 /** One Session as the Decision API is shown it. */
 export interface DecisionSession { id: string; label: string; state: string; assistant: string; delivered?: string; question?: string }
 
@@ -973,12 +1009,12 @@ export interface SessionDecision { id?: string; candidates?: string[]; many?: bo
  * from, as before (`resolveSession`). Writes never come here (`resolveForWrite`).
  */
 export async function resolveRead(
-  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead'>,
+  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus' | 'screen'>,
   rows: readonly CopilotSessionRow[],
   wanted: string,
 ): Promise<ReturnType<typeof resolveSession>> {
   const finish=(result:ReturnType<typeof resolveSession>)=>{if('row' in result)deps.onRead?.({id:result.row.id,label:result.row.label,machine:result.row.machine,conversation:result.row.conversation});return result}
-  const direct = resolveSession(rows, wanted)
+  const direct = resolveSession(rows, wanted, deps.focus?.get())
   // The person's words decide when there are any: measured live, the voice
   // model filled in a wrong id itself (「做衣服圖片的那個」 read as another
   // Session), and asked for the person's words it handed over its own pick
@@ -987,11 +1023,30 @@ export async function resolveRead(
   // A whole name actually spoken by the person is stronger than a new guess.
   const named=rows.filter(row=>sessionNamePosition(asked,row.label)>=0)
   if(!/(?:不是|不要|別|别|\bnot\b)/i.test(asked)&&named.length===1&&uniqueSessionID(rows,named[0].id))return finish({row:named[0]})
+  const denied=/(?:不是|不要|別|别|\bnot\b)/i.test(asked)
+  // Where the person is and what the call is about are the program's facts,
+  // not a guess by the copilot or the Decision API (2026-11-13).
+  const focused=()=>{const id=deps.focus?.get();return id?uniqueSessionID(rows,id):undefined}
+  if(!denied&&isHere(asked)){
+    const screen=deps.screen?.()
+    // A row from this machine's own list names no machine.
+    const shown=screen?rowOnScreen(screen.machine?rows.filter(r=>!r.machine||r.machine===screen.machine):rows,screen.ids):undefined
+    const row=(shown?uniqueSessionID(rows,shown.id):undefined)??focused()
+    if(row)return finish({row})
+  }
   const spoken=deps.spokenReference?.(asked)
   if(spoken || relativeSession(asked)!==undefined){
     const row=spoken?.target?uniqueSessionID(rows,spoken.target.id):undefined
     if(row&&spoken?.target&&sameReference(spoken.target,row))return finish({row})
     return {error:'voice_session_reference_unresolved',candidates:(spoken?.candidates??[]).map(ref=>({id:ref.id,label:ref.label})),meaning:'The spoken position has no verified current Session. Ask which name the person means. Never replace it with a guessed Session.'} as ReturnType<typeof resolveSession>
+  }
+  // A follow-up that names its Session only by a pronoun (「請問他說的修正法」)
+  // is about the Session the copilot is already reading. On 2026-11-13 the
+  // Decision API matched that sentence's 「修正」 to another Session whose
+  // delivery said 已修正, and the person heard a third Session's fix.
+  if (pointsBack(asked)) {
+    const row = focused() ?? ('row' in direct ? direct.row : undefined)
+    if (row) return finish({ row })
   }
   if (!asked || !deps.decide || rows.length === 0) return finish(direct)
   let decided: SessionDecision
@@ -1000,7 +1055,7 @@ export async function resolveRead(
       id: r.id, label: r.label, state: r.state, assistant: r.assistant,
       ...(r.delivered ? { delivered: clip(r.delivered, LIST_GOAL_CHARS) } : {}),
       ...(r.question ? { question: clip(r.question, LIST_GOAL_CHARS) } : {}),
-    })))
+    })), 'row' in direct ? direct.row.id : undefined)
   } catch {
     // refusal-ok: without a decision the copilot still gets every Session and chooses itself.
     return finish(direct)
@@ -1910,11 +1965,10 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
  * its whole name, never an assistant type or part of a name, which read
  * tools accept. A message once went to the wrong Session (2026-11-12).
  */
-export function resolveForWrite(rows: readonly CopilotSessionRow[], wanted: string): { row: CopilotSessionRow } | { error: string; candidates: { id: string; label: string }[] } {
+export function resolveForWrite(rows: readonly CopilotSessionRow[], wanted: string, focus?: string): { row: CopilotSessionRow } | { error: string; candidates: { id: string; label: string }[] } {
   const w = wanted.trim()
   const candidates = rows.map((r) => ({ id: r.id, label: r.label }))
-  let byId = rows.filter((r) => r.id === w)
-  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  const byId = rowsByID(rows, w, focus)
   if (byId.length === 1) return { row: byId[0] }
   const byName = rows.filter((r) => r.label.trim().toLowerCase() === w.toLowerCase())
   if (!byId.length && byName.length === 1 && uniqueSessionID(rows, byName[0].id)) return { row: byName[0] }
@@ -1953,7 +2007,7 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -2088,7 +2142,7 @@ async function runSnippet(deps: ToolDeps, logs: ToolLog[], wanted: string, name:
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -2190,7 +2244,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -2362,7 +2416,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -2440,7 +2494,7 @@ async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: stri
   const failed: { session: string; error: string }[] = []
   // One after another: the machine runs one naming turn at a time.
   for (const name of names) {
-    const found = resolveForWrite(read.rows, name)
+    const found = resolveForWrite(read.rows, name, deps.focus?.get())
     if ('error' in found) {
       failed.push({ session: name, error: '找不到這個名稱的 Session，或有好幾個同名的' })
       continue

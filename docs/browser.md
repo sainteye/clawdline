@@ -153,6 +153,12 @@ After takeover, **Mobile site** changes this tab to a 390 × 720 mobile viewport
 and touch emulation; **Desktop site** clears those overrides. An agent can request the same with
 `clawdline browser viewport mobile` or `desktop`, subject to the existing ownership, stop and
 takeover fences. This reflows responsive pages without reloading or discarding form input.
+Under that emulation the page lays out at 390 × 720 whatever the real view is, but Chrome can still
+map dispatched mouse coordinates through a scale: tab zoom multiplies them, and an emulated size
+larger than the actual view is fitted into it. No CDP metric reports that scale, so before each phone
+click or scroll the worker moves the mouse to a known point, reads where the page saw it, and divides
+the target by the measured ratio. On 2026-11-13 the tester's agent view measured 195 × 360: every
+pictured tap reached twice its position, the field never focused, and Send text was refused.
 Server-selected mobile pages may need a subsequent navigation; changing layout does not guarantee
 that a site has a mobile design. The encrypted Cloud person-input route carries the same command.
 

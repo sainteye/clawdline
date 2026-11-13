@@ -142,9 +142,53 @@ async function evaluate(tabId, fn, ...args) {
   return r.result.value
 }
 
+// Under the phone layout's device emulation the page lays out at the emulated
+// 390 x 720 whatever the real view is, but Chrome can still map dispatched
+// mouse coordinates through a scale: the tab's zoom multiplies them, and an
+// emulated size larger than the actual view is fitted into it. The tester's
+// agent view once measured 195 x 360, so every pictured tap reached twice its
+// position. No CDP metric reported that scale, so measure it: move the mouse
+// to a known point and read where the page saw it. The desktop layout reflows
+// with the view and maps 1:1. Two alternating probe points guarantee that
+// each probe is an actual movement.
+const PROBES = [[37, 41], [43, 47]]
+const probeTurn = new Map()
+
+async function inputScale(tabId) {
+  if (layouts.get(tabId) !== "mobile") return [1, 1]
+  const turn = probeTurn.get(tabId) || 0
+  probeTurn.set(tabId, 1 - turn)
+  const [px, py] = PROBES[turn]
+  await evaluate(tabId, () => {
+    const w = window
+    if (w.__clawdlineProbe) removeEventListener("mousemove", w.__clawdlineProbe, true)
+    w.__clawdlineSeen = null
+    w.__clawdlineProbe = (e) => {
+      w.__clawdlineSeen = [e.clientX, e.clientY]
+      removeEventListener("mousemove", w.__clawdlineProbe, true)
+      w.__clawdlineProbe = null
+    }
+    addEventListener("mousemove", w.__clawdlineProbe, true)
+  })
+  await cdp(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x: px, y: py, button: "none" })
+  const seen = await evaluate(tabId, () => {
+    const w = window, seen = w.__clawdlineSeen
+    if (w.__clawdlineProbe) removeEventListener("mousemove", w.__clawdlineProbe, true)
+    delete w.__clawdlineProbe; delete w.__clawdlineSeen
+    return seen
+  })
+  // A page that swallowed the probe, or a probe outside the fitted picture,
+  // leaves the identity mapping: the same behaviour as before measuring.
+  if (!Array.isArray(seen)) return [1, 1]
+  const sx = seen[0] / px, sy = seen[1] / py
+  const sane = (s) => Number.isFinite(s) && s > 0.05 && s < 20
+  return [sane(sx) ? sx : 1, sane(sy) ? sy : 1]
+}
+
 async function click(tabId, x, y) {
+  const [sx, sy] = await inputScale(tabId)
   for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
-    await cdp(tabId, "Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" ? "none" : "left", clickCount: 1 })
+    await cdp(tabId, "Input.dispatchMouseEvent", { type, x: x / sx, y: y / sy, button: type === "mouseMoved" ? "none" : "left", clickCount: 1 })
   }
 }
 
@@ -258,7 +302,8 @@ async function run(c) {
     case "scroll": {
       const m = await cdp(tab, "Page.getLayoutMetrics")
       const vw = m.cssLayoutViewport.clientWidth, vh = m.cssLayoutViewport.clientHeight
-      await cdp(tab, "Input.dispatchMouseEvent", { type: "mouseWheel", x: vw / 2, y: vh / 2, deltaX: 0, deltaY: (a.direction === "up" ? -1 : 1) * vh * 0.8 })
+      const [sx, sy] = await inputScale(tab)
+      await cdp(tab, "Input.dispatchMouseEvent", { type: "mouseWheel", x: vw / 2 / sx, y: vh / 2 / sy, deltaX: 0, deltaY: (a.direction === "up" ? -1 : 1) * vh * 0.8 })
       await new Promise((r) => setTimeout(r, 250))
       return { tab, url: await tabURL(tab), value: { tab, direction: a.direction } }
     }

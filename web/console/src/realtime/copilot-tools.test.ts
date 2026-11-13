@@ -922,6 +922,54 @@ test("a sentence that points nowhere, a refused decision, or an unknown id leave
   }
 })
 
+test("a follow-up that names its Session only by a pronoun stays on the copilot's Session", async () => {
+  // 2026-11-13: in one call about one Session, 「請問他說的修正法」 was judged
+  // by its word 「修正」 and answered from another Session whose delivery said 已修正.
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "keyboard fix" }], "%7": [{ pending: false, readable: true, text: "voice recap" }] })
+  deps.decide = async () => ({ id: "%9" })
+  for (const heard of ["請問他說的修正法", "它建議怎麼改", "我這個Session他最後的結論是什麼", "what did it suggest?"]) {
+    deps.heard = () => heard
+    const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output)
+    assert.equal(out.session_id, "%7", heard)
+  }
+  // 「其他」 and 「他們」 are not the Session being talked about.
+  deps.heard = () => "其他的登入測試呢"
+  const other = (await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output
+  assert.equal(JSON.parse(other).session_id, "%9", other)
+})
+
+test("「我這個 Session」 is the Session on screen, read by the program, never decided by a model", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }, { pending: false, readable: true, text: "login" }], "%7": [{ pending: false, readable: true, text: "flaky" }] })
+  deps.decide = async () => assert.fail("where the person is is not a model's guess")
+  deps.screen = () => ({ ids: ["%9"] })
+  for (const heard of ["我這個Session他最後的結論是什麼", "我現在所在的這個 Session 在做什麼", "what is this session doing?"]) {
+    deps.heard = () => heard
+    const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output)
+    assert.equal(out.session_id, "%9", heard)
+  }
+})
+
+test("a pronoun follow-up is the Session the call is talking about, whatever id the copilot passed", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "voice recap" }] })
+  deps.decide = async () => assert.fail("a pronoun is not a model's guess")
+  let focus: string | undefined = "%9"
+  deps.focus = { get: () => focus, set: (id) => { focus = id } }
+  deps.heard = () => "請問他說的修正法"
+  const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output)
+  assert.equal(out.session_id, "%9")
+})
+
+test("the Decision API is told which Session the copilot is already talking about", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }], "%7": [{ pending: false, readable: true, text: "flaky" }] })
+  const told: (string | undefined)[] = []
+  deps.heard = () => "那修正方法呢"
+  deps.decide = async (_said, _sessions, current) => { told.push(current); return {} }
+  await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)
+  deps.heard = () => "the login one"
+  await runCopilotTool("get_session_screen", '{"session_id":"the login one","said":"the login one"}', deps)
+  assert.deepEqual(told, ["%7", undefined])
+})
+
 test("a lone candidate is the Session; two are put to the person", async () => {
   const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }] })
   deps.heard = () => "the test one"
@@ -1163,6 +1211,25 @@ test("fleet selectors refuse legacy, malformed and ambiguous IDs without routing
   }
   assert.equal(calls.length, 0)
   assert.equal(opened.length, 0)
+})
+
+test("a call placed from a Session on every machine's page can write to it by the raw id it was told", async () => {
+  // Call eae13140 on 2026-11-13: told the raw pane id, refused twice, asked three times.
+  const { fleet, deps, calls } = sameNameFleet()
+  const [first, second] = fleetRowsOf(fleet)
+  deps.focus?.set(second.id)
+  const sent = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: "%2", session_label: "Review（Office）", message: "push and deploy" }), deps)).output)
+  assert.equal(sent.success, true, JSON.stringify(sent))
+  assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b")
+  const read = JSON.parse((await runCopilotTool("explain_session_reply", '{"session_id":"%2"}', deps)).output)
+  assert.equal(read.error, undefined, JSON.stringify(read))
+  assert.equal(deps.focus?.get(), second.id)
+  // The raw id never reaches another machine's Session of the same id.
+  calls.length = 0
+  deps.focus?.set(first.id + "x")
+  const refused = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: "%2", session_label: "Review（Office）", message: "check" }), deps)).output)
+  assert.ok(refused.error)
+  assert.equal(calls.length, 0)
 })
 
 test("fleet identity components cannot collide at separators and rows without machines are not routable", () => {

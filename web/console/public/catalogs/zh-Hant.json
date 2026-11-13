@@ -11701,5 +11701,10 @@
   "capacityRow.console.copilot_session_report_sessions.what": "單次通話報告讀取的 Session 範圍上限。",
   "capacityRow.console.copilot_session_report_sessions.full": "單次最多 24 個，超出部分會明示未讀，請縮小查詢範圍。重新撥打或重新載入不會保留這份介紹佇列。",
   "next.copilotReportPaused": "Session 介紹還有未講完的部分。",
-  "next.copilotReportContinue": "繼續介紹 Session"
+  "next.copilotReportContinue": "繼續介紹 Session",
+  "transparency.card.handoff-auto-name.title": "里程碑交接自動命名",
+  "transparency.card.handoff-auto-name.condition": "寄件方沒有提供標題的里程碑交接開啟接手 Session 後，僅在開啟「自動命名新 Session」時適用。",
+  "transparency.card.handoff-auto-name.summary": "依接手 Session 實際延續的工作命名，取代助理依通用交接句自行取的名稱。命名偏好跟隨 Session 時使用接手 Session 的供應商，否則使用明確設定的命名助理及其額度。",
+  "transparency.card.handoff-auto-name.how": "只讀取交接自身封包目錄中摘要的 Goal 與 Next step 兩段，不讀 Evidence，也不讀訊息中提到的路徑。交接完成回應後，才以這裡列出的標題提示執行一次有上限的本機命名回合；Auto 可改試另一個助理，最多兩次。",
+  "transparency.card.handoff-auto-name.effect": "結果存為該交接的標題，接手 Session 會優先顯示它，而不是助理自己取的名稱。寄件方提供的標題與手動名稱一律不會被取代。失敗後不會自動重試；執行中關閉偏好會阻止套用名稱。接手 Session 上的「智慧命名」也讀取同樣兩段。"
 }

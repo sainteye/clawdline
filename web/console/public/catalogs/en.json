@@ -11701,5 +11701,10 @@
   "capacityRow.console.copilot_session_report_sessions.what": "Sessions read in one bounded call report.",
   "capacityRow.console.copilot_session_report_sessions.full": "At most 24 per report. Overflow is explicitly unread. Narrow the requested scope for more. A new call or refresh does not retain this presentation queue.",
   "next.copilotReportPaused": "Session introduction has more to cover.",
-  "next.copilotReportContinue": "Continue introducing Sessions"
+  "next.copilotReportContinue": "Continue introducing Sessions",
+  "transparency.card.handoff-auto-name.title": "Automatic names for milestone handoffs",
+  "transparency.card.handoff-auto-name.condition": "After a milestone handoff opens its receiver without a title from the sender, only when Auto-name new sessions is enabled.",
+  "transparency.card.handoff-auto-name.summary": "Names the receiving Session after the work it continues instead of the generic handoff line its assistant would otherwise name itself from. Uses the receiver's provider when the naming preference follows the Session, or the explicitly configured naming assistant and its quota.",
+  "transparency.card.handoff-auto-name.how": "Reads only the Goal and Next step sections of the summary in the handoff's own package directory, never its evidence or a path named in a message. A bounded local naming turn uses the title prompt shown here, after the handoff has already answered; Auto may try the other assistant, for at most two attempts.",
+  "transparency.card.handoff-auto-name.effect": "Saves the answer as the handoff's title, so the receiver shows it above the name its assistant chose. A title given by the sender, and a manual name, are never replaced. Failure is not retried automatically; turning the preference off during naming prevents publication. Name with AI on the receiver reads the same two sections."
 }

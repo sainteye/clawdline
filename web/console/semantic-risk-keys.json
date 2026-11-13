@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11701,
+  "englishKeys": 11706,
   "counts": {
-    "negation": 3219,
+    "negation": 3222,
     "state": 1950,
     "permission": 683,
     "deletion": 262,
     "uncertainty": 442
   },
-  "unionCount": 5116,
+  "unionCount": 5119,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3105,6 +3105,9 @@
       "transparency.card.gemini-turn-end.summary",
       "transparency.card.grok-acp-context.effect",
       "transparency.card.grok-acp-context.how",
+      "transparency.card.handoff-auto-name.condition",
+      "transparency.card.handoff-auto-name.effect",
+      "transparency.card.handoff-auto-name.how",
       "transparency.card.investigation.effect",
       "transparency.card.investigation.summary",
       "transparency.card.machine-codegraph.effect",
@@ -11488,6 +11491,9 @@
     "transparency.card.gemini-turn-end.summary",
     "transparency.card.grok-acp-context.effect",
     "transparency.card.grok-acp-context.how",
+    "transparency.card.handoff-auto-name.condition",
+    "transparency.card.handoff-auto-name.effect",
+    "transparency.card.handoff-auto-name.how",
     "transparency.card.handoff.summary",
     "transparency.card.investigation.effect",
     "transparency.card.investigation.how",
