@@ -353,14 +353,46 @@ func (s *State) Park(id, call string) error {
 	}
 	return ErrInvalid
 }
-func (s *State) ParkCall(call string) error {
+
+// EndCall closes what a call left open when it hangs up. Work does not cross
+// calls (2026-11-13): a request a call never carried out was taken up by the
+// next one and sent to the Session that call was placed from. Every utterance
+// still unplanned is dismissed, and every task it produced that was not
+// confirmed is cancelled. A write the person confirmed in the call, and
+// anything already running or finished, is left to complete and report.
+func (s *State) EndCall(call string) error {
 	if !ValidText(call) {
 		return ErrInvalid
 	}
+	ids := map[string]bool{}
 	for i := range s.Inputs {
-		if s.Inputs[i].Call == call && s.Inputs[i].Deferred && !s.Inputs[i].Planned && !s.Inputs[i].Parked {
-			s.Inputs[i].Parked = true
+		in := &s.Inputs[i]
+		if in.Call != call {
+			continue
+		}
+		ids[in.ID] = true
+		if !in.Planned {
+			in.Cancelled, in.Planned, in.Parked, in.WaitFor = true, true, false, nil
 			s.Revision++
+		}
+	}
+	for i := range s.Tasks {
+		t := &s.Tasks[i]
+		if !slices.ContainsFunc(t.Sources, func(id string) bool { return ids[id] }) {
+			continue
+		}
+		confirmedWrite := !ReadTask(*t) && t.Status == "queued" && t.ApprovedVersion == t.Version
+		if confirmedWrite || !slices.Contains([]string{"waiting_confirmation", "queued", "paused", "failed"}, t.Status) {
+			continue
+		}
+		t.Status = "cancelled"
+		s.Revision++
+	}
+	s.PlannerError = ""
+	for _, in := range s.Inputs {
+		if !in.Planned && in.PlanningError != "" {
+			s.PlannerError = in.PlanningError
+			break
 		}
 	}
 	return nil

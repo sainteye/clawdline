@@ -294,6 +294,17 @@ availability or actual phone audio playback. No paid provider call is needed for
 these checks.
 
 
+## Work ends with its call
+
+Work does not cross calls (decided on 2026-11-13). A request one call never
+carried out was taken up by the next call and aimed at the Session that call
+was placed from. Hanging up now ends the call on the machine (`park_call`,
+kept as the action's name so an older machine still parks): every utterance it
+left unplanned is dismissed with its words kept, and every task it produced
+that was not confirmed is cancelled. A write the person confirmed during the
+call, and anything already running or finished, completes and reports as
+before. This replaces parking an interrupted conversation for a later call.
+
 ## Confirmed messages, connection cues and visible waiting
 
 A plain message has a deterministic preparation path: its original saved input,

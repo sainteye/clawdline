@@ -196,8 +196,8 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 				return state.Dismiss(in.ID)
 			case "park":
 				return state.Park(in.ID, in.Call)
-			case "park_call":
-				return state.ParkCall(in.Call)
+			case "park_call", "end_call":
+				return state.EndCall(in.Call)
 			case "answer":
 				return state.Answer(in.ID, in.Call)
 			case "plan":

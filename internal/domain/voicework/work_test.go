@@ -495,23 +495,23 @@ func TestFailedInstructionsStillFenceWritesUntilExplicitlyDismissed(t *testing.T
 	}
 }
 
-func TestInterruptedConversationRemainsUnresolvedUntilExplicitlyRouted(t *testing.T) {
+func TestAHungUpCallLeavesNothingForTheNextCallToRoute(t *testing.T) {
 	s := New("work")
 	_, _ = s.AddInput(Input{ID: "chat", Call: "call", Text: "What is the summary?", Deferred: true})
 	if len(s.Pending()) != 1 {
 		t.Fatal(s)
 	}
-	if err := s.ParkCall("call"); err != nil {
+	if err := s.EndCall("call"); err != nil {
 		t.Fatal(err)
 	}
-	if s.Inputs[0].Planned || len(s.Pending()) != 1 {
+	if !s.Inputs[0].Planned || !s.Inputs[0].Cancelled || len(s.Pending()) != 0 {
 		t.Fatal(s)
 	}
-	if err := s.Ready([]string{"chat"}); err != nil {
-		t.Fatal(err)
+	if err := s.Ready([]string{"chat"}); err == nil {
+		t.Fatal("a later call routed an utterance from a call that hung up")
 	}
-	if s.Inputs[0].Deferred || s.Inputs[0].Parked || len(s.ReadyPending()) != 1 {
-		t.Fatal(s)
+	if s.Inputs[0].Text != "What is the summary?" {
+		t.Fatal("ending the call erased the original words")
 	}
 }
 
@@ -633,6 +633,45 @@ func TestAPlainYesAfterTheRequestConfirmsOnlyAsTheNewestUtterance(t *testing.T) 
 	for _, no := range []string{"不要", "先不要送", "可以改成別的嗎"} {
 		if PlainConsent(no) {
 			t.Fatalf("%q read as consent", no)
+		}
+	}
+}
+
+// 2026-11-13: a request left unexecuted in one call was taken up by the next
+// call and sent to the Session that call was placed from. Work does not cross
+// calls: hanging up ends what the call left open, except what was confirmed.
+func TestHangingUpClearsTheCallsOpenWorkButKeepsWhatWasConfirmed(t *testing.T) {
+	s := New("workspace")
+	_, _ = s.AddInput(Input{ID: "said", Call: "call", Text: "Tell it to stop", Deferred: true})
+	_, _ = s.AddInput(Input{ID: "asked", Call: "call", Text: "Rename it", Deferred: false, Ready: true})
+	_, _ = s.AddInput(Input{ID: "other-call", Call: "other", Text: "Keep me", Deferred: true})
+	s.Tasks = []Task{
+		{ID: "proposal", Tool: "send_message_to_session", Sources: []string{"said"}, Version: 1, Status: "waiting_confirmation"},
+		{ID: "approved", Tool: "send_message_to_session", Sources: []string{"said"}, Version: 1, ApprovedVersion: 1, Status: "queued"},
+		{ID: "read", Tool: "get_session_summary", Sources: []string{"asked"}, Version: 1, ApprovedVersion: 1, Status: "queued"},
+		{ID: "sending", Tool: "send_message_to_session", Sources: []string{"said"}, Version: 1, ApprovedVersion: 1, Status: "running"},
+		{ID: "elsewhere", Tool: "send_message_to_session", Sources: []string{"other-call"}, Version: 1, Status: "waiting_confirmation"},
+	}
+	if err := s.EndCall("call"); err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]string{}
+	for _, task := range s.Tasks {
+		status[task.ID] = task.Status
+	}
+	want := map[string]string{"proposal": "cancelled", "approved": "queued", "read": "cancelled", "sending": "running", "elsewhere": "waiting_confirmation"}
+	for id, w := range want {
+		if status[id] != w {
+			t.Errorf("%s: %s, want %s", id, status[id], w)
+		}
+	}
+	for _, in := range s.Inputs {
+		open := !in.Planned
+		if in.Call == "call" && open {
+			t.Errorf("%s is still open after hanging up", in.ID)
+		}
+		if in.Call == "other" && !open {
+			t.Errorf("another call's %s was closed", in.ID)
 		}
 	}
 }

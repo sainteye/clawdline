@@ -1102,7 +1102,10 @@ export class RealtimeCopilotClient {
     this.updateState({connectionReady:false})
     this.pendingTools.clear();this.receivingInputs.clear();this.awaitingResponse=false;this.hearing=false;this.playing=false;this.sendCuePending=false
     if(this.cueTimer){clearInterval(this.cueTimer);this.cueTimer=undefined}
-    if(this.call.options.workEnabled && this.journalCall && voiceWork.state?.inputs.some(i=>i.call===this.journalCall&&i.deferred&&!i.planned&&!i.parked))void parkVoiceCall(this.journalCall).catch(error=>this.addLog('error',String(error)))
+    // Hanging up ends the call's open work on the machine (`EndCall`): nothing
+    // is carried into the next call (2026-11-13). The action keeps its old
+    // name, so a machine that predates it still parks instead of refusing.
+    if(this.call.options.workEnabled && this.journalCall)void parkVoiceCall(this.journalCall).catch(error=>this.addLog('error',String(error)))
     this.speechContexts.clear();this.responseInputs.clear();this.activeConversationInput='';this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     window.removeEventListener('hashchange', this.onScreenChange)
     this.releaseWork?.();this.releaseWork=undefined;this.workUnsubscribe?.();this.workUnsubscribe=undefined
