@@ -6,10 +6,11 @@ export class WorkObservations {
   private seen = new Set<string>()
   private primed = false
   private reply = ''
+  private failures = new Map<string,string>()
   constructor(initial:VoiceState|null) { if(initial)this.update(initial,true) }
   update(state:VoiceState|null,baseline=false):{key:string;value:string}[] {
     if(!state)return []
-    if(this.workspace && this.workspace!==state.id){this.seen.clear();this.primed=false}
+    if(this.workspace && this.workspace!==state.id){this.seen.clear();this.failures.clear();this.primed=false}
     this.workspace=state.id
     const silent=baseline||!this.primed
     this.primed=true
@@ -27,6 +28,13 @@ export class WorkObservations {
     if(state.reply && state.reply !== this.reply && !silent)output.push({key:'plan',value:JSON.stringify({
       planner_reply:state.reply,tasks:state.tasks.filter(t=>t.status==='waiting_confirmation').map(t=>({text:t.text,status:t.status})),
     })})
+    const failures=[]
+    for(const input of state.inputs) {
+      const fingerprint=JSON.stringify([input.planning_error,input.planning_stage])
+      if(!silent && !input.planned && input.planning_error && this.failures.get(input.id)!==fingerprint)failures.push({input_id:input.id,request:input.text,error:input.planning_error,stage:input.planning_stage})
+      this.failures.set(input.id,fingerprint)
+    }
+    if(failures.length)output.push({key:'planning-error',value:JSON.stringify({planning_failed:failures,meaning:'These requests stopped and will not retry automatically. Explain the failure briefly in plain language; codes are diagnostic details. Immediate Session queries still work. No completion or confirmation is implied.'})})
     this.reply=state.reply??''
     return output
   }

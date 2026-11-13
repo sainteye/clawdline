@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -23,5 +24,18 @@ func TestVoiceWorkPlansOneStructuredTurnWithoutExecutingATool(t *testing.T) {
 	i := slices.Index(args, "--tools")
 	if i < 0 || args[i+1] != "" || !slices.Contains(args, "--no-session-persistence") {
 		t.Fatalf("not tool-less: %v", args)
+	}
+}
+
+func TestVoiceWorkRefusesMissingOrEmptyPlanFieldsWithSafeDiagnostics(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"changes":[],"reply":"Recorded."}`, `{"changes":null,"reply":"Recorded.","wait_for":[]}`, `{"changes":[],"reply":"","wait_for":[]}`, `{"changes":[],"reply":"Recorded.","wait_for":[],"extra":true}`} {
+		p := Planner{LookPath: func(name string) (string, error) { return "/bin/" + name, nil }, Run: func(context.Context, string, []string, string, string, []string) ([]byte, error) {
+			return []byte(`{"structured_output":` + raw + `}`), nil
+		}}
+		_, err := p.VoiceWork(context.Background(), "synthetic input", "claude")
+		var failure *VoiceWorkFailure
+		if !errors.As(err, &failure) || failure.Code != "voice_work_invalid_plan" || failure.Stage != "decode" {
+			t.Fatalf("%s: %v", raw, err)
+		}
 	}
 }

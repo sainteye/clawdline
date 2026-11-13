@@ -415,3 +415,102 @@ func TestSessionUpdatesAreAReadThatRunsWithoutConfirmation(t *testing.T) {
 		t.Fatalf("a read waits for confirmation: %+v", s.Tasks[0])
 	}
 }
+
+func TestConversationInputWaitsForRoutingAndKeepsItsFocus(t *testing.T) {
+	s := New("workspace")
+	focus := &Focus{ID: "fleet:machine-a:%257", Label: "Review", Machine: "machine-a", Conversation: "conversation-a"}
+	_, err := s.AddInput(Input{ID: "utterance", Call: "call", Text: "Summarize this Session", Deferred: true, Focus: focus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	focus.ID = "changed"
+	if len(s.ReadyPending()) != 0 || s.Inputs[0].Focus.ID != "fleet:machine-a:%257" {
+		t.Fatal(s)
+	}
+	if err = s.Answer("utterance", "another-call"); err == nil {
+		t.Fatal("wrong call resolved input")
+	}
+	if err = s.Answer("utterance", "call"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Pending()) != 0 || !s.Inputs[0].Planned {
+		t.Fatal(s)
+	}
+}
+
+func TestFailedInputDoesNotRetryOrBlockNewPlanning(t *testing.T) {
+	s := New("workspace")
+	input(t, &s, "failed", "Read A")
+	s.FailPlanning([]string{"failed"}, "voice_work_invalid_plan", "validate")
+	input(t, &s, "new", "Read B")
+	ready := s.ReadyPending()
+	if len(ready) != 1 || ready[0].ID != "new" || s.Inputs[0].PlanningError == "" {
+		t.Fatal(s)
+	}
+	if err := s.RetryPlanning([]string{"failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.ReadyPending()) != 2 {
+		t.Fatal(s)
+	}
+}
+
+func TestLegacyPlanningFailureIsIsolatedBeforeNewInput(t *testing.T) {
+	s := New("workspace")
+	input(t, &s, "old", "Read A")
+	s.PlannerError = "voice_work_planning_failed"
+	input(t, &s, "new", "Read B")
+	if s.Inputs[0].PlanningError == "" || len(s.ReadyPending()) != 1 || s.ReadyPending()[0].ID != "new" {
+		t.Fatal(s)
+	}
+}
+
+func TestFailedInstructionsStillFenceWritesUntilExplicitlyDismissed(t *testing.T) {
+	s := New("work")
+	input(t, &s, "send-input", "Send A")
+	apply(t, &s, "send-input", add("send", "send_message_to_session", "A"))
+	if err := s.Edit("send", 1, "confirm", 3); err != nil {
+		t.Fatal(err)
+	}
+	input(t, &s, "correction", "Wait, cancel that")
+	s.FailPlanning([]string{"correction"}, "voice_work_invalid_plan", "validate")
+	if s.Claim("runner", 4) != nil {
+		t.Fatal("failed cancellation silently released a write")
+	}
+	input(t, &s, "read-input", "Read B")
+	apply(t, &s, "read-input", add("read", "get_session_summary", "B"))
+	read := s.Claim("runner", 5)
+	if read == nil || read.ID != "read" {
+		t.Fatal("unrelated reads were blocked", read)
+	}
+	_ = s.Finish("read", "runner", read.ActionKey, "Read B", "", false, 6)
+	if err := s.Dismiss("correction"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Inputs[1].Cancelled || s.Inputs[1].Text != "Wait, cancel that" {
+		t.Fatal("dismiss erased the original words")
+	}
+	if next := s.Claim("runner", 7); next == nil || next.ID != "send" {
+		t.Fatal(next)
+	}
+}
+
+func TestInterruptedConversationRemainsUnresolvedUntilExplicitlyRouted(t *testing.T) {
+	s := New("work")
+	_, _ = s.AddInput(Input{ID: "chat", Call: "call", Text: "What is the summary?", Deferred: true})
+	if len(s.Pending()) != 1 {
+		t.Fatal(s)
+	}
+	if err := s.ParkCall("call"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Inputs[0].Planned || len(s.Pending()) != 1 {
+		t.Fatal(s)
+	}
+	if err := s.Ready([]string{"chat"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.Inputs[0].Deferred || s.Inputs[0].Parked || len(s.ReadyPending()) != 1 {
+		t.Fatal(s)
+	}
+}

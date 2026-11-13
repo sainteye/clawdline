@@ -589,6 +589,25 @@ export const COPILOT_TOOLS = [
   },
 ] as const
 
+/** Closed immediate read path. Changes stay owned by the durable executor. */
+const IMMEDIATE_READS = new Set(['get_status_briefing','list_sessions','get_sessions_summary','get_session_recap','get_session_summary','get_session_activity','explain_session_reply','get_session_screen','get_session_updates','get_session_notes','list_snippets','clawdline_help','get_devstack_links','list_machines','list_projects'])
+export function immediateVoiceRead(name:string,args:Record<string,unknown>):boolean {
+  return IMMEDIATE_READS.has(name) && !(name==='get_devstack_links' && args.open===true)
+}
+export const CALL_WORK_TOOLS = [
+  ...COPILOT_TOOLS.filter(tool=>IMMEDIATE_READS.has(tool.name)),
+  {type:'function',name:'get_voice_work',description:'Read the saved voice requests, pending tasks and planning errors. Use this before discussing work progress or retrying a failed request.',parameters:{type:'object',properties:{}}},
+  {type:'function',name:'queue_voice_work',description:'Submit saved input IDs as continuing work when the person asks for an action, a multi-step task, or ongoing tracking. Do not queue an ordinary question that immediate read tools can answer. Use only the exact input IDs supplied by the application; never invent or rewrite the request. Mutations still require confirmation in the work list.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
+  {type:'function',name:'retry_voice_work',description:'Retry the exact failed saved input IDs only when the person explicitly asks to retry. Read get_voice_work first. Never retry automatically or approve a mutation.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
+]
+
+export const MANAGED_CALL_GUIDANCE = `# Background work and immediate conversation
+Use immediate read tools to answer questions about the focused Session, its summary, updates, notes, or identity. Do not send these ordinary questions to another planning model.
+Each utterance is saved as conversational input, with an input ID and its own Session focus. Saving is not task submission, planning or completion. Never say an action is queued until queue_voice_work confirms it.
+For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. Every mutation still requires exact-spec confirmation in the work list. You cannot send, rename, close, start, navigate or change settings directly in this mode.
+Use get_voice_work for task status. If planning failed, explain which request failed and its reason in everyday language; keep diagnostic stage/codes on screen; do not imply it is still working or invent a confirmation requirement. Only use retry_voice_work after an explicit retry request. Do not announce receipt or planning stages without a useful result.
+`
+
 /**
  * The session configuration in the Realtime GA shape.
  *
@@ -693,7 +712,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [options.workEnabled ? "You are the voice assistant reporter. User utterances are saved and planned by a separate durable pipeline. Never execute tools or invent progress. Speak only when supplied with machine evidence, in the interface language." : instructionsFor(options.brief !== false, options.language ?? ''), COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -708,8 +727,8 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
           speed: SPEEDS.includes(options.speed ?? '') ? Number(options.speed) : DEFAULT_SPEED,
         },
       },
-      tools: options.workEnabled ? [] : COPILOT_TOOLS,
-      tool_choice: options.workEnabled ? 'none' : 'auto',
+      tools: options.workEnabled ? CALL_WORK_TOOLS : COPILOT_TOOLS,
+      tool_choice: 'auto',
     },
   }
 }
@@ -2096,7 +2115,7 @@ export async function readCallHandover(origin: CallOrigin, deps: ToolDeps): Prom
   const value = (result: PromiseSettledResult<unknown>) => result.status === 'fulfilled'
     ? result.value : { error: 'opening_read_failed', detail: String(result.reason) }
   return { output: JSON.stringify({ session_id: row.id, label: row.label,
-    recap: value(results[0]), notes: value(results[1]) }), logs, reported, targetID: row.id }
+    recap: (()=>{const v=value(results[0]) as Record<string,unknown>;const {requests,...current}=v;return current})(), notes: value(results[1]), decision_sources:['current_question','unresolved_notes','latest_reply'], historical_deliveries_are_not_pending:true }), logs, reported, targetID: row.id }
 }
 
 /** The speed a spoken ask lands on: one step slower or faster, normal, or a named rate. */

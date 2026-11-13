@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,7 +37,12 @@ var voiceWorkPlan = func(ctx context.Context, input, assistant string) (planner.
 	return planner.New().VoiceWork(ctx, input, assistant)
 }
 
+const voiceWorkProtocol = 3
+
 type voiceWorkRequest struct {
+	Context         string                   `json:"context"`
+	Deferred        bool                     `json:"deferred"`
+	Focus           *voicework.Focus         `json:"focus"`
 	ExecutorVersion int                      `json:"executor_version"`
 	Tools           []string                 `json:"tools"`
 	ToolContracts   json.RawMessage          `json:"tool_contracts"`
@@ -88,7 +94,7 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 		s.voiceWorkMu.Lock()
 		planning := s.voiceWorkRunning
 		s.voiceWorkMu.Unlock()
-		writeJSON(w, map[string]any{"state": state, "planning": planning})
+		writeJSON(w, map[string]any{"state": state, "planning": planning, "protocol": voiceWorkProtocol})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -125,19 +131,21 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 		state, err := s.store.UpdateVoiceWork(r.Context(), func(state *voicework.State) error {
 			switch in.Action {
 			case "input":
-				_, err := state.AddInput(voicework.Input{ID: in.ID, Call: in.Call, Text: in.Text, At: now, Ready: in.Sessions != nil})
+				_, err := state.AddInput(voicework.Input{ID: in.ID, Call: in.Call, Text: in.Text, At: now, Ready: in.Sessions != nil && !in.Deferred, Deferred: in.Deferred, Focus: in.Focus, Context: in.Context})
 				return err
+			case "dismiss_input":
+				return state.Dismiss(in.ID)
+			case "park":
+				return state.Park(in.ID, in.Call)
+			case "park_call":
+				return state.ParkCall(in.Call)
+			case "answer":
+				return state.Answer(in.ID, in.Call)
 			case "plan":
 				if in.Retry {
-					state.PlannerError = ""
-					for i := range state.Inputs {
-						for _, id := range in.InputIDs {
-							if state.Inputs[i].ID == id && !state.Inputs[i].Planned {
-								state.Inputs[i].PlanRounds = 0
-							}
-						}
+					if err := state.RetryPlanning(in.InputIDs); err != nil {
+						return err
 					}
-					state.Revision++
 				}
 				return state.Ready(in.InputIDs)
 			case "claim":
@@ -184,10 +192,10 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		// Persist and acknowledge first. No handler waits for a model to answer.
-		writeJSON(w, map[string]any{"state": state, "claimed": claimed})
+		writeJSON(w, map[string]any{"state": state, "claimed": claimed, "protocol": voiceWorkProtocol})
 		if in.Action == "plan" || in.Action == "input" && in.Sessions != nil {
 			s.beginVoiceWork(in.Sessions, in.ToolContracts)
-		} else if in.Action == "finish" && len(state.ReadyPending()) > 0 && state.PlannerError == "" {
+		} else if in.Action == "finish" && len(state.ReadyPending()) > 0 {
 			s.beginVoiceWork(nil)
 		}
 	})
@@ -196,6 +204,7 @@ func (s *Server) copilotWorkRoute(w http.ResponseWriter, r *http.Request) {
 func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...json.RawMessage) {
 	settings, err := s.readCopilot()
 	if err != nil || !settings.WorkEnabled {
+		log.Printf("voice-work: stage=admission outcome=disabled")
 		return
 	}
 	s.voiceWorkMu.Lock()
@@ -207,6 +216,7 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 		s.voiceWorkContracts = append(json.RawMessage(nil), contracts[0]...)
 	}
 	if s.voiceWorkRunning {
+		log.Printf("voice-work: stage=admission outcome=wake_running")
 		s.voiceWorkMu.Unlock()
 		return
 	}
@@ -227,10 +237,12 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 		}()
 		for {
 			if ctx.Err() != nil {
+				log.Printf("voice-work: stage=admission outcome=context_stopped")
 				return
 			}
 			settings, err := s.readCopilot()
 			if err != nil || !settings.WorkEnabled {
+				log.Printf("voice-work: stage=admission outcome=disabled")
 				return
 			}
 			s.voiceWorkMu.Lock()
@@ -240,11 +252,10 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 			s.voiceWorkMu.Unlock()
 			state, err := s.store.VoiceWork(ctx)
 			if err != nil {
+				log.Printf("voice-work: stage=store outcome=read_failed type=%T", err)
 				return
 			}
-			if state.PlannerError != "" {
-				return
-			}
+
 			if len(state.ReadyPending()) == 0 {
 				s.voiceWorkMu.Lock()
 				changed := wake != s.voiceWorkWake
@@ -271,14 +282,46 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 			}
 			if exhausted {
 				_, _ = s.store.UpdateVoiceWork(ctx, func(next *voicework.State) error {
-					next.PlannerError = "voice_work_continuation_limit"
-					next.Revision++
+					next.FailPlanning(ids, "voice_work_continuation_limit", "admission")
 					return nil
 				})
 				return
 			}
+			stale := false
+			for _, input := range pending {
+				if input.Focus == nil {
+					continue
+				}
+				found := false
+				for _, row := range sessions {
+					if input.Focus.ID == row.ID && input.Focus.Machine == row.Machine && input.Focus.Conversation == row.Conversation {
+						found = true
+						break
+					}
+				}
+				if !found {
+					stale = true
+					_, failureErr := s.store.UpdateVoiceWork(ctx, func(next *voicework.State) error {
+						next.FailPlanning([]string{input.ID}, "voice_work_focus_changed", "admission")
+						return nil
+					})
+					if failureErr != nil {
+						log.Printf("voice-work: stage=store outcome=failure_not_saved type=%T", failureErr)
+						return
+					}
+				}
+			}
+			if stale {
+				log.Printf("voice-work: stage=admission outcome=focus_changed inputs=%v", ids)
+				continue
+			}
 			raw, _ := json.Marshal(map[string]any{"inputs": pending, "original_inputs": state.Inputs, "tasks": state.Tasks, "sessions": sessions, "tool_contracts": contracts, "language": s.productLanguage()})
+			log.Printf("voice-work: stage=provider outcome=start inputs=%v", ids)
+			stage := "provider"
 			plan, err := voiceWorkPlan(ctx, string(raw), settings.Effective().WorkAssistant)
+			if err == nil {
+				stage = "validate"
+			}
 			if err == nil {
 				// Temporary ids are only model-local names; storage assigns identities.
 				names := map[string]string{}
@@ -347,6 +390,7 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 						}
 					}
 					if err == nil {
+						stage = "apply"
 						_, err = s.store.UpdateVoiceWork(ctx, func(next *voicework.State) error {
 							current, readErr := s.readCopilot()
 							if readErr != nil || !current.WorkEnabled {
@@ -359,6 +403,19 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 			}
 			if err != nil {
 				code := "voice_work_planning_failed"
+				reason := "operation_failed"
+				var failure *planner.VoiceWorkFailure
+				if errors.As(err, &failure) {
+					code = failure.Code
+					stage = failure.Stage
+					reason = failure.Reason
+				}
+				if errors.Is(err, voicework.ErrInvalid) {
+					code = "voice_work_invalid_plan"
+				}
+				if errors.Is(err, context.DeadlineExceeded) {
+					code = "voice_work_timeout"
+				}
 				if errors.Is(err, planner.ErrOutOfQuota) {
 					code = "voice_work_quota"
 				}
@@ -368,9 +425,15 @@ func (s *Server) beginVoiceWork(sessions []copilotDecisionSession, contracts ...
 				if errors.Is(err, voicework.ErrConflict) {
 					code = "voice_work_plan_changed"
 				}
-				_, _ = s.store.UpdateVoiceWork(ctx, func(next *voicework.State) error { next.PlannerError = code; next.Revision++; return nil })
-				return
+				log.Printf("voice-work: stage=%s outcome=failed inputs=%v code=%s reason=%s type=%T", stage, ids, code, reason, err)
+				_, failureErr := s.store.UpdateVoiceWork(ctx, func(next *voicework.State) error { next.FailPlanning(ids, code, stage); return nil })
+				if failureErr != nil {
+					log.Printf("voice-work: stage=store outcome=failure_not_saved type=%T", failureErr)
+					return
+				}
+				continue
 			}
+			log.Printf("voice-work: stage=apply outcome=planned inputs=%v changes=%d", ids, len(plan.Changes))
 		}
 	}()
 }

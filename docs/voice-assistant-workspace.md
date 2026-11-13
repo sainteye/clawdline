@@ -115,14 +115,41 @@ behind a completed checkmark. The initial ledger refuses new input or tasks at
 256 retained records per collection; it never silently evicts a person's work.
 An archive/retention workflow remains a follow-up.
 
-Managed calls have a single speech owner and no Realtime tool execution. ASR
-utterances are first acknowledged by the durable inbox, then organized in the
-background. A group summary is one task, with parallel content reads and a
-prepared update for each member; it does not invoke a separate summarizer per
-Session. Prepared updates wait while the person speaks, a response is being
-generated, or its audio is still playing. `response.done` alone cannot release
-that queue: WebRTC playback must report stopped/cleared. Interrupting speech
-never erases or cancels earlier requested tasks.
+Managed calls share one speech owner between immediate queries and prepared work
+updates. ASR utterances are first saved as deferred conversational inputs, with
+the exact Session, machine and conversation captured when speech starts. Switching
+the screen while transcription finishes cannot rewrite that identity. Read tools
+answer ordinary Session questions immediately, without a CLI planning turn. For
+continuing work the voice model calls `queue_voice_work` with original saved input
+IDs; it cannot paraphrase the saved request or perform a direct mutation. This
+routing still depends on model compliance and needs recorded-call acceptance.
+
+Explicit submission promotes those inputs for the organizer. Each input may carry
+bounded earlier read evidence from the same Session, identified as historical,
+untrusted context rather than fresh status or approval. A group summary remains
+one task with parallel content reads and prepared member updates. Tool results
+from the same response share one continuation, after all outstanding tools finish.
+The narrator waits for durable intake, generation and WebRTC playback; a
+`response.done` event alone does not mean playback finished. Silent pipeline
+reads do not advance the browser's spoken-report cursor, so unheard content is
+not skipped on the next query. They may therefore repeat content later.
+
+Planning failures retain a safe error code and stage on each affected input.
+Fresh reads and explicitly submitted new planning can proceed without retrying
+failed inputs. Unresolved inputs, including interrupted conversation, still fence
+writes: a failed cancellation must not accidentally release an earlier approved
+send. The person must explicitly retry, organize or skip the retained request.
+Skipping never completes or approves a task. Retry from a call requires an
+explicit retry utterance, with at most one submission for that utterance. GET,
+startup and failure polling never retry a provider. If failure metadata cannot be
+saved, the worker stops rather than re-entering the provider loop. Logs retain
+stages, input IDs and error types without prompts, provider output or secrets.
+
+The existing work JSON stores these optional fields without a SQLite schema
+migration. GET/POST work replies advertise protocol 3. Managed calls check the
+selected machine before proceeding and refuse older daemons explicitly. Install
+the compatible daemon before rolling out the new hosted client; a console build
+alone does not upgrade a paired machine. Direct calls keep their existing path.
 
 ## Quiet, evidence-backed call opening
 
@@ -141,7 +168,10 @@ Speaking, changing the focused Session, hanging up or replacing the call
 supersedes an unfinished opening. Late data must not speak into the next call.
 The first workspace load primes both task evidence and the planner reply as
 history, so reconnecting does not replay an earlier planner explanation. Actual
-utterances retain their durable intake, planning and execution workflow.
+utterances retain their durable intake and explicit routing into immediate reads
+or continuing work. Historical requests are omitted from the opening evidence;
+only a live question, unresolved notes or the latest reply may establish a current
+decision. Earlier approvals cannot override a newer reply saying no action is due.
 
 A local recorded call reported on 2026-11-13 contained zero transcribed user
 utterances but five assistant replies. Read-only inspection found an automatic

@@ -2,9 +2,12 @@ package http
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -139,7 +142,7 @@ func waitVoicePlanner(t *testing.T, s *Server) {
 		time.Sleep(time.Millisecond)
 	}
 }
-func TestVoiceWorkQuotaRetainsInputAndGETDoesNotRetry(t *testing.T) {
+func TestVoiceWorkFailureIsIsolatedAndGETNeverRetries(t *testing.T) {
 	s := workServer(t)
 	on := true
 	_, _ = s.changeCopilot(copilot.Change{WorkEnabled: &on})
@@ -161,7 +164,7 @@ func TestVoiceWorkQuotaRetainsInputAndGETDoesNotRetry(t *testing.T) {
 	workCall(t, s, http.MethodPost, `{"action":"input","id":"two","text":"Also read another Session","sessions":[]}`, "second-input", true)
 	waitVoicePlanner(t, s)
 	state, _ := s.store.VoiceWork(context.Background())
-	if calls != 1 || len(state.Pending()) != 2 || state.PlannerError != "voice_work_quota" {
+	if calls != 2 || len(state.Inputs) != 2 || len(state.Pending()) != 2 || state.Inputs[0].PlanningError != "voice_work_quota" || state.Inputs[1].PlanningError != "voice_work_quota" {
 		t.Fatalf("calls %d state %+v", calls, state)
 	}
 }
@@ -184,7 +187,7 @@ func TestVoiceWorkDisabledDuringPlanningCannotPublishAPlan(t *testing.T) {
 	close(release)
 	waitVoicePlanner(t, s)
 	state, _ := s.store.VoiceWork(context.Background())
-	if len(state.Tasks) != 0 || len(state.Pending()) != 1 {
+	if len(state.Tasks) != 0 || len(state.Inputs) != 1 || state.Inputs[0].Planned {
 		t.Fatal(state)
 	}
 }
@@ -292,7 +295,103 @@ func TestVoiceWorkContinuationStopsBeforeAFifthModelTurn(t *testing.T) {
 	s.beginVoiceWork([]copilotDecisionSession{})
 	waitVoicePlanner(t, s)
 	state, _ := s.store.VoiceWork(context.Background())
-	if called || state.PlannerError != "voice_work_continuation_limit" || len(state.Pending()) != 1 {
+	if called || state.PlannerError != "voice_work_continuation_limit" || len(state.Inputs) != 1 || state.Inputs[0].Planned || state.Inputs[0].PlanningError != "voice_work_continuation_limit" {
 		t.Fatal(called, state)
+	}
+}
+
+func TestVoiceConversationFocusIsSavedWithoutAPlanningTurn(t *testing.T) {
+	s := workServer(t)
+	on := true
+	_, _ = s.changeCopilot(copilot.Change{WorkEnabled: &on})
+	original := voiceWorkPlan
+	defer func() { voiceWorkPlan = original }()
+	calls := 0
+	voiceWorkPlan = func(_ context.Context, raw, _ string) (planner.VoiceWorkPlan, error) {
+		calls++
+		var input struct {
+			Inputs []voicework.Input `json:"inputs"`
+		}
+		if err := json.Unmarshal([]byte(raw), &input); err != nil {
+			t.Fatal(err)
+		}
+		if len(input.Inputs) != 1 || input.Inputs[0].Focus == nil || input.Inputs[0].Focus.ID != "session-a" {
+			t.Error(raw)
+		}
+		return planner.VoiceWorkPlan{Reply: "Recorded."}, nil
+	}
+	body := `{"action":"input","id":"conversation","call":"call-a","text":"Do this later","deferred":true,"focus":{"id":"session-a","label":"Review","machine":"machine-a","conversation":"conversation-a"}}`
+	if w := workCall(t, s, http.MethodPost, body, "save", true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if calls != 0 {
+		t.Fatal("saving conversation called a model")
+	}
+	get := workCall(t, s, http.MethodGet, "", "", false)
+	if !strings.Contains(get.Body.String(), `"protocol":3`) {
+		t.Fatal(get.Body.String())
+	}
+	if w := workCall(t, s, http.MethodPost, `{"action":"answer","id":"conversation","call":"wrong"}`, "wrong", true); w.Code != 409 {
+		t.Fatal(w.Code)
+	}
+	plan := `{"action":"plan","input_ids":["conversation"],"sessions":[{"id":"session-a","label":"Review","machine":"machine-a","conversation":"conversation-a"}]}`
+	if w := workCall(t, s, http.MethodPost, plan, "queue", true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	waitVoicePlanner(t, s)
+	if calls != 1 {
+		t.Fatal(calls)
+	}
+}
+
+func TestVoiceWorkRejectsChangedFocusBeforeCallingAProvider(t *testing.T) {
+	s := workServer(t)
+	on := true
+	_, _ = s.changeCopilot(copilot.Change{WorkEnabled: &on})
+	original := voiceWorkPlan
+	defer func() { voiceWorkPlan = original }()
+	voiceWorkPlan = func(context.Context, string, string) (planner.VoiceWorkPlan, error) {
+		t.Error("stale focus called provider")
+		return planner.VoiceWorkPlan{}, nil
+	}
+	workCall(t, s, http.MethodPost, `{"action":"input","id":"request","text":"Read this","focus":{"id":"same-pane","conversation":"old"}}`, "save", true)
+	workCall(t, s, http.MethodPost, `{"action":"plan","input_ids":["request"],"sessions":[{"id":"same-pane","conversation":"replacement"}]}`, "plan", true)
+	waitVoicePlanner(t, s)
+	state, _ := s.store.VoiceWork(context.Background())
+	if state.Inputs[0].PlanningError != "voice_work_focus_changed" {
+		t.Fatal(state)
+	}
+}
+
+func TestVoiceWorkCannotRetryAProviderWhenFailurePersistenceIsBroken(t *testing.T) {
+	s := workServer(t)
+	on := true
+	_, _ = s.changeCopilot(copilot.Change{WorkEnabled: &on})
+	original := voiceWorkPlan
+	defer func() { voiceWorkPlan = original }()
+	started, release := make(chan struct{}), make(chan struct{})
+	calls := 0
+	voiceWorkPlan = func(context.Context, string, string) (planner.VoiceWorkPlan, error) {
+		calls++
+		if calls == 1 {
+			close(started)
+			<-release
+		}
+		return planner.VoiceWorkPlan{}, errors.New("synthetic provider failure")
+	}
+	workCall(t, s, http.MethodPost, `{"action":"input","id":"one","text":"Read a Session","sessions":[]}`, "input", true)
+	<-started
+	db, err := sql.Open("sqlite", filepath.Join(s.cfg.Dir, store.DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(`CREATE TRIGGER refuse_voice_update BEFORE UPDATE ON voice_assistant_workspace BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	waitVoicePlanner(t, s)
+	if calls != 1 {
+		t.Fatalf("provider was retried %d times", calls)
 	}
 }
