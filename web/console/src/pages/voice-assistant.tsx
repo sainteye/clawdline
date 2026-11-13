@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PageModule } from './types.js'
 import { nextWord as W } from '../next-strings.js'
 import { CopilotSettingsCard } from './settings/window/CopilotSettingsCard.js'
 import { voiceWork, receiveVoiceWork, retryVoicePlanning } from '../voice-work/runtime.js'
 import { WORK_TEXT_RUNES, retryableTask, type VoiceTask } from '../voice-work/engine.js'
 import { COPILOT_OPEN } from '../overlays/events.js'
-import { readCopilotSettings } from './settings/api.js'
+import { readCopilotSettings, writeCopilotSettings } from './settings/api.js'
+import { Switch } from './settings/window/controls.js'
 import { onMachineChanged } from '../cloud/machine-switch.js'
 import { getStoredOpenAIKey } from '../realtime/realtime-copilot.js'
 import './voice-assistant.css'
@@ -23,15 +24,18 @@ function VoiceAssistant({shown}:{shown:boolean}) {
   const [tab,setTab]=useState(location.hash.includes('tab=settings')?'settings':'work')
   const [history,setHistory]=useState(false)
   const [mode,setMode]=useState<'loading'|'enabled'|'disabled'|'unknown'>('loading')
+  const [savingMode,setSavingMode]=useState(false)
+  const [modeError,setModeError]=useState('')
+  const modeRevision=useRef(0)
   useEffect(()=>voiceWork.subscribe(()=>redraw(n=>n+1)),[])
   useEffect(()=>shown?voiceWork.activate():undefined,[shown])
   useEffect(()=>{
     if(!shown||tab!=='work')return
-    let live=true,revision=0
+    let live=true
     const read=()=>{
-      const current=++revision;setMode('loading')
+      const current=++modeRevision.current;setMode('loading');setSavingMode(false);setModeError('')
       void readCopilotSettings().then(answer=>{
-        if(!live||current!==revision)return
+        if(!live||current!==modeRevision.current)return
         setMode(answer.work_enabled===true?'enabled':'disabled')
         const route=new URLSearchParams(location.hash.slice(1))
         if(!answer.key_set&&!getStoredOpenAIKey()&&!route.has('tab')){
@@ -39,11 +43,21 @@ function VoiceAssistant({shown}:{shown:boolean}) {
           window.history.replaceState(window.history.state,'',`#${route}`)
           setTab('settings')
         }
-      },()=>{if(live&&current===revision)setMode('unknown')})
+      },()=>{if(live&&current===modeRevision.current)setMode('unknown')})
     }
     read();const stop=onMachineChanged(read)
-    return()=>{live=false;stop()}
+    return()=>{live=false;modeRevision.current++;stop()}
   },[shown,tab])
+  const changeMode=async(enabled:boolean)=>{
+    if(savingMode||mode==='loading'||mode==='unknown')return
+    const current=modeRevision.current;setSavingMode(true);setModeError('')
+    try {
+      const answer=await writeCopilotSettings({work_enabled:enabled})
+      if(current===modeRevision.current)setMode(answer.work_enabled===true?'enabled':'disabled')
+    } catch(e){
+      if(current===modeRevision.current){setMode('unknown');setModeError(e instanceof Error?e.message:String(e))}
+    } finally {if(current===modeRevision.current)setSavingMode(false)}
+  }
   useEffect(()=>{const changed=()=>setTab(location.hash.includes('tab=settings')?'settings':'work');window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed)},[])
   const change=async(task:VoiceTask,action:string)=>{
     setError('')
@@ -61,15 +75,20 @@ function VoiceAssistant({shown}:{shown:boolean}) {
       <a href="#page=voice-assistant&tab=settings" aria-current={tab==='settings'?'page':undefined}>{W('voiceWorkSettings')}</a>
     </nav>
     <div hidden={tab!=='work'}>
-      <div className="voice-work-mode" role="status">
-        <strong>{W(mode==='enabled'?'voiceWorkModeEnabled':mode==='disabled'?'voiceWorkModeDisabled':mode==='unknown'?'voiceWorkModeUnknown':'voiceWorkModeLoading')}</strong>
-        {mode==='disabled'?<p>{W('voiceWorkModeDisabledHint')}</p>:null}
-        {mode==='disabled'||mode==='unknown'?<a href="#page=voice-assistant&tab=settings">{W('voiceWorkSettings')}</a>:null}
-      </div>
-      <p className="voice-work-note">{W('voiceWorkRuntimeHint')}</p>
+      <section className="voice-work-mode" aria-labelledby="voice-work-mode-heading" aria-describedby="voice-work-mode-hint">
+        <div className="voice-work-mode-row"><div>
+          <h2 id="voice-work-mode-heading">{W('voiceWorkEnable')}</h2>
+          <p role="status">{W(savingMode?'voiceWorkSaving':mode==='enabled'?'voiceWorkModeEnabled':mode==='disabled'?'voiceWorkModeDisabled':mode==='unknown'?'voiceWorkModeUnknown':'voiceWorkModeLoading')}</p>
+        </div><Switch label={W('voiceWorkEnable')} on={mode==='enabled'} disabled={savingMode||mode==='loading'||mode==='unknown'} onChange={on=>{void changeMode(on)}} /></div>
+        <p id="voice-work-mode-hint" className="voice-work-field-hint">{W('voiceWorkInlineHint')}</p>
+        {mode==='unknown'?<a href="#page=voice-assistant&tab=settings">{W('voiceWorkSettings')}</a>:null}
+        {modeError?<p className="voice-work-error" role="alert"><strong>{W('voiceWorkIssue')}</strong>{W('voiceWorkFailure',{reason:modeError})}</p>:null}
+      </section>
+      <aside className="voice-work-notice" role="note"><span className="voice-work-notice-icon" aria-hidden="true">i</span><div><strong>{W('voiceWorkRuntimeLabel')}</strong><p>{W('voiceWorkRuntimeHint')}</p></div></aside>
       <form className="voice-work-compose" onSubmit={e=>{e.preventDefault();if(!text.trim()||sending)return;setSending(true);setError('');void receiveVoiceWork(text.trim()).then(()=>setText(''),e=>setError(String(e))).finally(()=>setSending(false))}}>
         <label htmlFor="voice-work-input">{W('voiceWorkInput')}</label>
-        <textarea id="voice-work-input" rows={3} maxLength={WORK_TEXT_RUNES} value={text} onChange={e=>setText(e.target.value)} placeholder={W('voiceWorkPlaceholder')} />
+        <textarea id="voice-work-input" rows={3} maxLength={WORK_TEXT_RUNES} value={text} onChange={e=>setText(e.target.value)} placeholder={W('voiceWorkInputPlaceholder')} aria-describedby="voice-work-example" />
+        <p id="voice-work-example" className="voice-work-field-hint">{W('voiceWorkPlaceholder')}</p>
         <button type="submit" disabled={sending||!text.trim()}>{W(sending?'voiceWorkSaving':'voiceWorkReceive')}</button>
       </form>
       {voiceWork.state?.reply?<p className="voice-work-reply" role="status">{voiceWork.state.reply}</p>:null}
@@ -77,8 +96,8 @@ function VoiceAssistant({shown}:{shown:boolean}) {
         <button type="button" disabled={voiceWork.planning} onClick={()=>{setError('');void retryVoicePlanning(pending.map(i=>i.id)).catch(e=>setError(String(e)))}}>{W(voiceWork.planning?'voiceWorkPlanning':'voiceWorkPlan')}</button>
         <p>{W('voiceWorkEnableReminder')}</p>
       </section>:null}
-      {voiceWork.state?.planner_error?<p role="alert">{W('voiceWorkPlannerFailed',{reason:voiceWork.state.planner_error})}</p>:null}
-      {error||voiceWork.failure?<p role="alert">{W('voiceWorkFailure',{reason:error||voiceWork.failure})}</p>:null}
+      {voiceWork.state?.planner_error?<p className="voice-work-error" role="alert"><strong>{W('voiceWorkIssue')}</strong>{W('voiceWorkPlannerFailed',{reason:voiceWork.state.planner_error})}</p>:null}
+      {error||voiceWork.failure?<p className="voice-work-error" role="alert"><strong>{W('voiceWorkIssue')}</strong>{W('voiceWorkFailure',{reason:error||voiceWork.failure})}</p>:null}
       {!voiceWork.state&&!voiceWork.failure?<p role="status">{W('voiceWorkLoading')}</p>:null}
       {voiceWork.state&&!unfinished.length?<p className="voice-work-empty">{W('voiceWorkEmpty')}</p>:null}
       <div className="voice-work-tasks">{(history?tasks:unfinished).map(task=><article key={task.id} className="voice-work-task">

@@ -20,6 +20,10 @@ const words = {
     voiceWorkBriefingReplaced: "Background planning replaces the opening briefing in this mode. This setting applies to the next call.",
 
     voiceWorkTitle: "Voice assistant",
+    voiceWorkInlineHint: "Applies to new calls and uses your selected CLI assistant's quota. Text requests can be saved even while planning is off.",
+    voiceWorkRuntimeLabel: "How work runs",
+    voiceWorkInputPlaceholder: "Enter a request…",
+    voiceWorkIssue: "Needs attention",
     voiceWorkModeLoading: "Checking background request planning…",
     voiceWorkModeEnabled: "Background request planning is on · new calls add requests to this work list",
     voiceWorkModeDisabled: "Background request planning is off · calls do not add work items",
@@ -2940,6 +2944,10 @@ const words = {
     voiceWorkBriefingReplaced: "此模式以背景工作流程取代開場匯報，設定從下一通電話開始生效。",
 
     voiceWorkTitle: "語音助理",
+    voiceWorkInlineHint: "從下一通通話開始生效，會使用所選 CLI 助理的額度。關閉時仍可先保存文字要求。",
+    voiceWorkRuntimeLabel: "執行方式",
+    voiceWorkInputPlaceholder: "輸入你要交代的事…",
+    voiceWorkIssue: "需要處理",
     voiceWorkModeLoading: "正在確認背景整理要求的設定…",
     voiceWorkModeEnabled: "背景整理要求已開啟 · 新通話會把要求加入這份工作清單",
     voiceWorkModeDisabled: "背景整理要求尚未開啟 · 通話不會加入工作項目",

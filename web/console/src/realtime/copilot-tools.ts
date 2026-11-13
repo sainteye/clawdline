@@ -62,8 +62,10 @@ export interface ToolDeps {
   openSession?: (id: string, machine?: string) => Promise<boolean>
   /** The machines a new Session can be started on, as the page knows them. */
   machines?: () => Promise<{ id: string; name: string; online: boolean; current: boolean }[]>
-  /** The Session this call is talking about: the last one a tool read, opened or acted on. */
+  /** The Session this call is talking about: the one on screen, or the last one a tool read, opened or acted on. */
   focus?: { get(): string | undefined; set(id: string): void }
+  /** Where the copilot last reported each Session up to (`get_session_updates`); kept by this browser. */
+  marks?: { get(key: string): UpdateMark | undefined; set(key: string, mark: UpdateMark): void }
   /** The user guide's sections a question is about (`copilot-help.ts`); loaded only when asked. */
   help?: () => Promise<HelpSection[]>
   /** Opens a Project's Dev Stack tab on this page (`copilot-open.ts`). */
@@ -126,6 +128,11 @@ export const REPLY_CHARS = 8000
  * keep the person waiting in silence.
  */
 export const SMART_RENAME_SESSIONS = 6
+/** How far back get_session_updates pages to find where the last report ended. */
+export const UPDATE_PAGES = 3
+
+/** The last transcript entry a report covered: its id when the record has one, and its time. */
+export interface UpdateMark { id?: string; at?: number; text?: string; saved: number }
 
 export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也是使用者的私人秘書。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
 
@@ -133,21 +140,26 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 使用者問 Clawdline 本身怎麼用（任何功能、設定、畫面、按鈕在哪、能不能做某件事），一定先呼叫 clawdline_help，只照它回傳的說明講；你自己對 Clawdline 的印象一律不能用，因為很可能是錯的。但使用者是要你「做」一件你有工具可以做的事時（例如「用智慧命名重新命名」就是 smart_rename_sessions），直接照那個工具的規則做，不要先查說明。
 - 「智慧命名」「重新命名 Session」「改 Session 名稱」一律用 smart_rename_sessions 由機器直接改名；絕對不要用 send_message_to_session 傳訊息請 Session 自己改名。
 - 回答問題的第一個字就是答案本身：絕對不要用「好」「好的」「我來說明」「我來跟你說」開頭。
-- 講多個 Session 時用它的簡稱帶出每一個，絕對不要說「第一個是」「第二個是」。
+- 講多個 Session 時用你替它取的白話稱呼帶出每一個（見【稱呼 Session】），絕對不要說「第一個是」「第二個是」「接著是」「下一個是」。
 - 最後一個重點講完就停：絕對不要加「這就是目前的狀況」「以上」「這兩個都在進行中」這類收尾。
 
 【語氣：像秘書當面跟你報告】
 - 像一位熟悉使用者工作的私人秘書，當面口頭跟他報告：親切、從容、有條理，用日常口語（說中文時用台灣口語），稱呼他「你」。
 - 用完整的口語句子和自然的連接詞串起來（「另外」「還有一件比較急的」「這個不用擔心」「我看了一下」），不要像在唸清單、報表或公文。
 - 替他分輕重：要他處理的先講並說一句為什麼；一切正常的就直接說「這個沒問題」，不必細講。
-- Session 名稱很長時，用他聽得懂的簡稱，不要唸方括號或斜線。
+- 技術用語（gate、Bridge、SourceClient、harness、snapshot、API 名稱、檔名）不要照念，改說它對使用者的作用，例如「完整測試」「跟後端接的那一層」「網站上看到的畫面」。
+
+【稱呼 Session】
+- 預設不照念 Session 原本的名稱：原本的名稱常常是當初的第一個要求，和現在在做的事對不上。先看它的目標、最近完成和現在在做的事，自己替它取一個白話、一聽就懂的稱呼，五到十二個字，講它在解決什麼問題，例如「語音助理變慢的原因排查」「手機換裝功能接上後端」「網站被假 IP 攻擊的調查」。
+- 同一通電話裡，同一個 Session 一直用同一個稱呼，不要每次換。不要唸方括號、[Task]、英文代號或 Session ID。
+- 只有使用者問原本叫什麼，或要送出、回答、關閉、改名而需要確認對象時，才補一句原本的名稱（「就是原本叫某某的那個」）；工具的 session_label 仍然照填原本的完整名稱。
 - 只有他要你去做一件事（送訊息、打開、關閉、開新 Session）時，才先用一句很短的口語回應（例如「好，我幫你送過去」）。他是在問問題時，不要說「好」「好的，我來說明」，第一句直接就是答案。
 - 講到某個 Session 的內容，一律來自快照或工具結果；快照裡沒有它的細節（例如閒置、已完成的只有數量），就先呼叫 get_session_summary 再講，絕對不要自己編。
 - 不要客服腔、不要過度客氣或道歉、不要誇張的情緒或驚嘆。
 
 【說話方式】
 - 一般問答要短：最多三句，能一句講完就一句。這是語音，不是文章。
-- 例外：使用者要 Session 的狀況、進度、匯報或「在做什麼」時，不受三句限制。一定要逐一講完每個相關的 Session，每個兩到三句（目標、最近完成什麼、現在在做什麼），不可以只報數量就停下來。
+- 例外：使用者要 Session 的狀況、進度、匯報或「在做什麼」時，不受三句限制。一定要逐一講完每個相關的 Session，不可以只報數量就停下來。每個 Session 先用一句講這個工作在做什麼（用你取的稱呼帶出來），再用兩到四句白話講做到哪、卡在哪或接下來要做什麼、要不要使用者處理；句子有長有短，像當面解釋給一個不寫程式的人聽。
 - 講話放慢、口氣從容：句子之間自然換氣，數字和名稱講清楚，不要連珠炮。主題切換時停頓，讓使用者跟得上；使用者打斷或表示聽不懂時，先處理他不懂的地方，不要急著把原稿唸完。
 - 第一句就是內容，最後一個重點講完就停。內容的份量照舊，只省掉頭尾的客套。
 - 不要開場白：不說「好的」「我來查看」「請稍等」「我來幫你整理一下」「以下是目前的狀況」「根據最新的資料」，也不要重複使用者的問題。
@@ -166,6 +178,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
 - open_session：在使用者通話的這個畫面上打開某個 Session。使用者說「切到／打開／讓我看某某」就呼叫。打開後結果附 status（它的交代、交付與最後回覆）：先說「已經打開某某」，接著用三到五句講它的狀況：它做了哪些事、還有什麼沒完成、有沒有在等使用者決定。
 - answer_session_question：替使用者回答某個 Session 在等的問題（選項選單）。
+- get_session_updates：某個 Session 從你上次跟使用者匯報它之後，新增的所有紀錄（使用者交代、它的回報與說明、它做了什麼、現在在等什麼）。使用者問「後來呢」「有什麼新進展」「從上次之後怎樣」「有什麼我該知道的」時用這個；沒填 session_id 就是正在討論的那個（使用者畫面上打開的 Session）。見【上次之後的新進展】。
 - get_session_notes：讀 Session 留給使用者的便條紙。
 - list_snippets、open_snippets、run_snippet：Session 的 Snippet（存好的常用文字）與 Playbook（存好的工作流程）。使用者要「打開 snippet／playbook 列表」就呼叫 open_snippets；要你「執行某某」就先用 list_snippets 找出它的完整名稱（依使用者說的意思自己判斷是哪一個，找不到就說找不到並唸兩三個最接近的），再講「要在『Session 名稱』執行『名稱』，對嗎？」，使用者說好才呼叫 run_snippet；使用者一句話已經講清楚 Session 和名稱的，照只確認一次的規則直接執行。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
@@ -174,6 +187,12 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - send_message_to_session：替使用者把文字送進某個 Session。
 - clawdline_help：使用者問 Clawdline 怎麼用、功能在哪、怎麼設定時呼叫，只依回傳的說明段落回答，兩三句講出步驟與位置；沒有回傳任何段落，就說說明文件沒有寫到這個，不要自己猜。
 - get_devstack_links：使用者要看或打開某個專案的 Dev Stack（連結清單、網站、伺服器）時呼叫；要在畫面上打開就填 open=true。專案名稱不確定就先呼叫 list_projects。念連結時只說名稱和狀態，絕對不要念網址（使用者要網址時才念）。
+【上次之後的新進展（get_session_updates）】
+- 結果的 updates 是上次匯報之後的新紀錄，由舊到新；first_report 為 true 表示之前沒匯報過，只給了最近的部分。
+- 不要逐條念。整理成使用者該知道的事：先一句說「上次之後它主要做了什麼」，再挑重要的講：完成了什麼成果、遇到的錯誤或卡住的地方、它改變了做法或發現的事、在等使用者決定或確認的事（念出它問什麼）。例行的讀檔、跑指令、測試通過的細節合併成一句或略過。
+- nothing_new 為 true 就說「上次之後它沒有新的進展」，再一句說它現在的狀態。partial 為 true 時說「上次之後內容很多，我只看了最近的部分」。
+- 這是匯報，可以比平常長，大約四到八句，用白話講。
+
 【智慧命名】
 - 使用者要你「看看哪些 Session 的名稱和工作內容不符，用智慧命名重新命名」時：先呼叫 get_sessions_summary（他說工作中的就用 which=working，沒說就用 all），逐一比對每個 Session 的名稱和它的目標、最近完成、現在在做的事。
 - 名稱已經大致講得出它在做什麼的，就算用字不同也不要改；只挑名稱明顯對不上、太籠統（例如只有「新 Session」、專案名或一個指令）、或工作已經轉到別件事的。
@@ -378,6 +397,17 @@ export const COPILOT_TOOLS = [
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
       },
       required: ['session_id', 'choice', 'session_label'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'get_session_updates',
+    description: '讀取某個 Session 從你上次跟使用者匯報它之後新增的紀錄（使用者的交代、它的回報與說明、做了哪些事、現在在等什麼），並記下這次匯報到哪裡。使用者問「後來呢」「有什麼新進展」「從上次之後怎樣」「有什麼我該知道的」時用這個。',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'Session 的完整名稱（label）或 id；省略就是正在討論的那個（使用者畫面上打開的 Session）' },
+      },
     },
   },
   {
@@ -1321,6 +1351,8 @@ export interface RecapRead {
   lastReply: string
   pages: number
   complete: boolean
+  /** The newest entry read, where a report of this recap ends. */
+  newest?: Record<string, unknown>
 }
 
 /**
@@ -1337,6 +1369,7 @@ export async function readRecap(deps: ToolDeps, at: string | Pick<CopilotSession
   let before: number | undefined
   let pages = 0
   let complete = false
+  let newest: Record<string, unknown> | undefined
   while (pages < RECAP_PAGES) {
     const path = `/v1/transcript?session=${encodeURIComponent(id)}${before ? `&before=${before}` : ''}`
     const res = await fetchRow(path, NAMED_READ)
@@ -1347,6 +1380,7 @@ export async function readRecap(deps: ToolDeps, at: string | Pick<CopilotSession
     const page = (await res.json()) as { entries?: unknown; nextBefore?: unknown }
     pages++
     const entries = Array.isArray(page.entries) ? page.entries : []
+    if (pages === 1 && entries.length && entries[entries.length - 1] && typeof entries[entries.length - 1] === 'object') newest = entries[entries.length - 1] as Record<string, unknown>
     const pageRequests: RecapRead['requests'] = []
     const pageDeliveries: RecapRead['deliveries'] = []
     for (const raw of entries) {
@@ -1378,7 +1412,116 @@ export async function readRecap(deps: ToolDeps, at: string | Pick<CopilotSession
   }
   // The newest are the ones worth keeping when there are too many; the first request is the goal.
   const keptRequests = requests.length > RECAP_REQUESTS ? [requests[0], ...requests.slice(-(RECAP_REQUESTS - 1))] : requests
-  return { requests: keptRequests, deliveries: deliveries.slice(-RECAP_DELIVERIES), lastReply, pages, complete }
+  return { requests: keptRequests, deliveries: deliveries.slice(-RECAP_DELIVERIES), lastReply, pages, complete, ...(newest ? { newest } : {}) }
+}
+
+/**
+ * Tells the call which Session the person now has open on screen, without
+ * asking for a reply: "it" and "this one" mean that Session from now on.
+ */
+export function screenFocusEvent(row: Pick<CopilotSessionRow, 'id' | 'label'>): Record<string, unknown> {
+  return { type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text',
+    text: `使用者現在畫面上打開的是 Session「${row.label}」（session_id ${row.id}，原樣照填）。之後使用者說「它」「這個」「這個 Session」，指的就是它；問進展時用 get_session_updates 讀它。不用回應這則訊息。` }] } }
+}
+
+/** The Session a page's address names among `rows`: its own id, or its id on its machine. */
+export function rowOnScreen(rows: readonly CopilotSessionRow[], wanted: readonly string[] | null): CopilotSessionRow | undefined {
+  if (!wanted?.length) return undefined
+  for (const id of wanted) {
+    const row = rows.find((r) => r.id === id) ?? rows.find((r) => r.session === id)
+    if (row) return row
+  }
+  return undefined
+}
+
+/** Which Session a report mark belongs to: its conversation when known, so a reused pane is a new one. */
+function markKey(row: CopilotSessionRow): string {
+  return `${row.machine ?? ''}|${row.conversation || sid(row)}`
+}
+
+function markOf(e: Record<string, unknown>): UpdateMark {
+  const id = str(e.id)
+  const at = Number(e.at) || undefined
+  return { ...(id ? { id } : {}), ...(at ? { at } : {}), ...(!id ? { text: str(e.text).slice(0, 80) } : {}), saved: Date.now() }
+}
+
+/** Whether entry `e` is the one the mark names. */
+function isMarked(e: Record<string, unknown>, mark: UpdateMark): boolean {
+  if (mark.id) return str(e.id) === mark.id
+  return (Number(e.at) || undefined) === mark.at && str(e.text).slice(0, 80) === (mark.text ?? '')
+}
+
+/** Records that the copilot reported `row` up to its newest entry. */
+function markReported(deps: ToolDeps, row: CopilotSessionRow, newest: Record<string, unknown> | undefined) {
+  if (newest) deps.marks?.set(markKey(row), markOf(newest))
+}
+
+async function sessionUpdates(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+  const read = await readRows(deps)
+  if ('error' in read) {
+    logs.push({ level: 'error', text: read.error })
+    return { error: read.error }
+  }
+  const target = wanted.trim() || deps.focus?.get() || ''
+  if (!target) return { error: '沒有正在討論的 Session：先問使用者是哪一個，或填 session_id', candidates: read.rows.map((r) => ({ id: r.id, label: r.label })) }
+  const found = await resolveRead(deps, read.rows, target)
+  if ('error' in found) {
+    logs.push({ level: 'error', text: found.error })
+    return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
+  }
+  const { row } = found
+  deps.focus?.set(row.id)
+  const mark = deps.marks?.get(markKey(row))
+  const fetchRow = rowFetch(deps, row)
+  // Newest page first, then older ones, until the entry the last report ended on is found.
+  let entries: Record<string, unknown>[] = []
+  let before: number | undefined
+  let found_ = false
+  for (let pages = 0; pages < UPDATE_PAGES; pages++) {
+    const res = await fetchRow(`/v1/transcript?session=${encodeURIComponent(sid(row))}${before ? `&before=${before}` : ''}`, NAMED_READ)
+    if (!res.ok) {
+      if (pages === 0) {
+        const error = `無法讀取「${row.label}」的紀錄 (HTTP ${res.status})${(await refusalText(res)) ? `：${await refusalText(res)}` : ''}`
+        logs.push({ level: 'error', text: error })
+        return { error }
+      }
+      break
+    }
+    const page = (await res.json()) as { entries?: unknown; nextBefore?: unknown }
+    const got = (Array.isArray(page.entries) ? page.entries : []).filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
+    entries = [...got, ...entries]
+    if (!mark) break
+    const at = entries.findIndex((e) => isMarked(e, mark))
+    if (at >= 0) {
+      entries = entries.slice(at + 1)
+      found_ = true
+      break
+    }
+    // An entry older than the mark is past it: the marked entry itself is gone from the record.
+    if (mark.at && got.length && (Number(got[0].at) || Infinity) < mark.at) {
+      entries = entries.filter((e) => (Number(e.at) || 0) > (mark.at ?? 0))
+      found_ = true
+      break
+    }
+    const next = Number(page.nextBefore)
+    if (!next) break
+    before = next
+  }
+  const newest = entries.length ? entries[entries.length - 1] : undefined
+  const updates = activityOf(entries)
+  markReported(deps, row, newest)
+  logs.push({ level: 'info', text: `讀了「${row.label}」上次匯報之後的 ${updates.length} 筆紀錄` })
+  return {
+    session_id: row.id,
+    label: row.label,
+    state: waits(row) ? 'needs_you' : row.state,
+    ...(mark ? {} : { first_report: true }),
+    ...(mark && !found_ ? { partial: true } : {}),
+    ...(updates.length ? { updates } : { nothing_new: true }),
+    ...(row.question ? { question: row.question } : {}),
+    ...(row.options?.length ? { options: row.options } : {}),
+    ...(row.notes ? { notes: row.notes } : {}),
+  }
 }
 
 async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
@@ -1400,6 +1543,8 @@ async function sessionRecap(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     logs.push({ level: 'error', text: error })
     return { error }
   }
+  // A recap told to the person is a report: "what happened since" starts after it.
+  markReported(deps, row, recap.newest)
   logs.push({ level: 'info', text: `成功讀取「${row.label}」經過：${recap.requests.length} 個交代、${recap.deliveries.length} 次交付（讀了 ${recap.pages} 頁）` })
   return {
     session_id: row.id,
@@ -2306,6 +2451,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true, str(args.expected_question))
+    else if (name === 'get_session_updates') result = await sessionUpdates(deps, logs, str(args.session_id))
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
     else if (name === 'list_snippets') result = await listSnippets(deps, logs, str(args.session_id))
     else if (name === 'open_snippets') result = await openSnippets(deps, logs, str(args.session_id), args.kind === 'playbook' ? 'playbook' : 'snippet')

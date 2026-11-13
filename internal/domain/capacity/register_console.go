@@ -177,6 +177,19 @@ func consoleBounds() []Entry {
 			Limit: 6, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
 		{
+			// UPDATE_PAGES in realtime/copilot-tools.ts: how many transcript
+			// pages get_session_updates reads back to find where the last
+			// report ended; further back, it reports the recent part and says so.
+			Name: "console.copilot_update_pages", Class: Buffer, Unit: Rows,
+			Limit: 3, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// UPDATE_MARKS in realtime/copilot-marks.ts: how many Sessions'
+			// report marks one browser keeps; the least recently saved is dropped.
+			Name: "console.copilot_update_marks", Class: UserInput, Unit: Rows,
+			Limit: 100, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// SCREEN_READ_ATTEMPTS in realtime/copilot-tools.ts: how many times
 			// a pending screen capture is read again before the copilot says it
 			// timed out.

@@ -405,3 +405,13 @@ func TestASmartRenameIsWorkThatWaitsForConfirmation(t *testing.T) {
 		t.Fatalf("a confirmed rename did not run: %+v", claimed)
 	}
 }
+
+// "What happened since" is a read: the work list runs it without asking.
+func TestSessionUpdatesAreAReadThatRunsWithoutConfirmation(t *testing.T) {
+	s := New("assistant")
+	input(t, &s, "a", "What happened in this Session since you last told me?")
+	apply(t, &s, "a", add("updates", "get_session_updates", "%2"))
+	if s.Tasks[0].Status != "queued" {
+		t.Fatalf("a read waits for confirmation: %+v", s.Tasks[0])
+	}
+}
