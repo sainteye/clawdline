@@ -226,3 +226,38 @@ its internal Project ID. The host now passes the same source-authorized label,
 keyed by machine and Project ID, into Chat. Missing catalog metadata retains
 the existing ID fallback. This changes presentation only; the captured scope,
 fences and request identities still use their original IDs.
+
+## Connected source acceptance
+
+`TestProjectAssistantJointCapturedSourceAndRealReadViews` runs the actual
+TypeScript SourceClient, captured relay and strict readView helper against the
+real in-process Go Bridge, Router, Server, Host and SQL Store. The six View
+modes use real source bodies. Only the original sixteen API58 compatibility
+methods use the explicitly separate request-capture router; View cannot enter
+that router.
+
+The targeted run retained 43 hashed Bridge replies: 27 actual source responses
+and 16 compatibility captures. It covered all six successful modes, twelve
+single-field rejection controls derived from valid Go bodies, machine event
+frontiers, late old-generation work, signed summary/detail cursors, typed
+cursor/scope/capacity failures, post-pack revocation, delayed grant changes,
+read-only and disabled history, API59 admission and API58 compatibility.
+A missing conversation retains the Store's existing `pa_not_found` contract;
+a separate mismatched stored identity proves `pa_scope_denied` crosses the
+client unchanged. Source content is never repaired into a successful page, and
+View performs no Export fallback or provider initialization.
+
+Run this connected check with Node24 available:
+
+```sh
+go test -count=1 -v \
+  -run=^TestProjectAssistantJointCapturedSourceAndRealReadViews$ \
+  ./internal/transport/http
+```
+
+`CLAWDLINE_PA_JOINT_ARTIFACTS` optionally retains raw Go response digests and the
+Node report in an empty task-owned evidence directory. The test installs no
+runtime or dependency. Its synthetic data and in-process transport do not
+establish production Cloud encryption, physical phone behavior, native provider
+admission, full feature removal or Codync parity. Those acceptance boundaries
+remain independent.
