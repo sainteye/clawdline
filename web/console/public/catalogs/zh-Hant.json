@@ -9316,6 +9316,7 @@
   "next.browserPanelTyping": "輸入中…",
   "next.browserPanelSending": "送出中…",
   "next.browserPanelSent": "已送出",
+  "next.interventionReplyContext": "(Clawdline 便條 {id}：「{title}」；待回覆事項：{action})",
   "next.browserPanelChecked": "已核對",
   "next.browserPanelMismatchTitle": "網頁欄位和你送出的不一樣",
   "next.browserPanelMismatchSent": "你送出：「{text}」",

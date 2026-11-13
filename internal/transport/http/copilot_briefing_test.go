@@ -113,12 +113,22 @@ func TestABriefingThatIsOffOrFailsIsATypedRefusal(t *testing.T) {
 	}
 }
 
+// briefingLanguages records the console language each stubbed turn was asked for.
+var briefingLanguages atomic.Value
+
+func briefingLanguagesSeen() []string {
+	seen, _ := briefingLanguages.Load().([]string)
+	return append([]string(nil), seen...)
+}
+
 func stubBriefing(t *testing.T, run func() (string, error)) *int32 {
 	t.Helper()
+	briefingLanguages.Store([]string(nil))
 	var calls int32
 	wasRun, wasRead, wasWait := copilotBriefRun, copilotBriefingSessionsOf, copilotBriefingWait
-	copilotBriefRun = func(context.Context, string, string) (string, error) {
+	copilotBriefRun = func(_ context.Context, _, _, language string) (string, error) {
 		atomic.AddInt32(&calls, 1)
+		briefingLanguages.Store(append(briefingLanguagesSeen(), language))
 		return run()
 	}
 	copilotBriefingSessionsOf = func(*Server, context.Context) ([]copilotBriefingSession, error) {
@@ -238,5 +248,26 @@ func TestTheBriefingSaysWhenInWordsNotMinutes(t *testing.T) {
 		if got := whenPhrase(at, now); got != want {
 			t.Errorf("%v: %q, want %q", at, got, want)
 		}
+	}
+}
+
+// On 2026-11-13 the briefing prompt said 全部用台灣繁體中文 whatever the
+// console showed, so an English console was briefed in Chinese.
+func TestABriefingIsWrittenInTheConsolesLanguageAndHeldPerLanguage(t *testing.T) {
+	if p := planner.BriefingPrompt("en"); strings.Contains(p, planner.ChineseOutput) || !strings.Contains(p, "BCP 47：en") {
+		t.Fatalf("an English console's briefing rule: %q", p)
+	}
+	if p := planner.BriefingPrompt("zh-Hant"); !strings.Contains(p, planner.ChineseOutput) {
+		t.Fatal("a Taiwan Traditional Chinese console lost its rule")
+	}
+	calls := stubBriefing(t, func() (string, error) { return "Nothing needs you.", nil })
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	for _, body := range []string{`{"language":"en"}`, `{"language":"en"}`, `{"language":"zh-Hant"}`} {
+		if rec := copilotCall(t, s, s.copilotBriefingRoute, http.MethodPost, "/v1/voice/copilot-briefing", body); rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", body, rec.Code, rec.Body)
+		}
+	}
+	if got := briefingLanguagesSeen(); atomic.LoadInt32(calls) != 2 || strings.Join(got, ",") != "en,zh-Hant" {
+		t.Fatalf("turns %d for languages %v; want one English turn reused, then one Chinese turn", atomic.LoadInt32(calls), got)
 	}
 }

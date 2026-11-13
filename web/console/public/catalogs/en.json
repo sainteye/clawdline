@@ -9316,6 +9316,7 @@
   "next.browserPanelTyping": "Typing…",
   "next.browserPanelSending": "Sending…",
   "next.browserPanelSent": "Sent",
+  "next.interventionReplyContext": "(Clawdline note {id}: “{title}”; awaiting reply: {action})",
   "next.browserPanelChecked": "Checked",
   "next.browserPanelMismatchTitle": "The page field differs from what you sent",
   "next.browserPanelMismatchSent": "You sent: “{text}”",

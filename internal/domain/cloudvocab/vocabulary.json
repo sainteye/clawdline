@@ -287,13 +287,14 @@
       "console": "carried",
       "console_route": "POST /v1/voice/copilot-briefing",
       "console_seam": "writer",
-      "console_note": "The voice copilot's prepared briefing (`realtime/realtime-copilot.ts`): the machine reads its own Sessions and has the chosen assistant write one spoken briefing, a machine command with no body.",
+      "console_note": "The voice copilot's prepared briefing (`realtime/realtime-copilot.ts`): the machine reads its own Sessions and has the chosen assistant write one spoken briefing, a machine command whose only field is the console language it is spoken in.",
       "local": {"method": "POST", "device": true},
-      "example": {"request": "req-brief", "session": "__clawdline_machine__"},
+      "example": {"language": "en", "request": "req-brief", "session": "__clawdline_machine__"},
       "shapes": [
-        {"body": ["request", "session"], "path": "/v1/voice/copilot-briefing", "local_body": []}
+        {"body": ["request", "session"], "path": "/v1/voice/copilot-briefing", "local_body": []},
+        {"body": ["language", "request", "session"], "path": "/v1/voice/copilot-briefing", "local_body": ["language"]}
       ],
-      "decode": {"reply": "action", "route": {"path": "/v1/voice/copilot-briefing", "body": {"empty": true}}}
+      "decode": {"reply": "action", "fields": {"language": {"type": "string", "max_bytes": 35}}, "route": {"path": "/v1/voice/copilot-briefing", "body": {"fields": {"language": {"from": "language", "omit_empty": true}}}}}
     },
     {
       "op": "copilot-decide",

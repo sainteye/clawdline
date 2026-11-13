@@ -315,7 +315,8 @@ export class RealtimeCopilotClient {
     while (Date.now() < until && this.state.status !== 'disconnected' && this.state.status !== 'error') {
       let res: Response
       try {
-        res = await fetch('/v1/voice/copilot-briefing', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}' })
+        // The machine writes the briefing in the console's language, as the call speaks.
+        res = await fetch('/v1/voice/copilot-briefing', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(consoleLanguage() ? { language: consoleLanguage() } : {}) })
       } catch {
         // refusal-ok: the briefing is optional; an unreachable one leaves the call going and the copilot reads the Sessions itself.
         this.addLog('error', nextWord('copilotLogBriefingUnreachable'))

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/work"
@@ -147,7 +148,7 @@ func TestARecapIsWrittenFromTheBoardCountAndTheRecord(t *testing.T) {
 	}
 	seen := fakeDecision(t, `{"recap":"It aligns with Codync. The Board says 46 of 56 steps are done, 10 left."}`)
 	input := []byte(`{"progress":{"done_steps":46,"total_steps":56,"remaining_steps":10},"timeline":[],"complete":true}`)
-	content, _, detail := copilotChatJSON(t.Context(), testCopilotKey, copilotRecapRequest(input))
+	content, _, detail := copilotChatJSON(t.Context(), testCopilotKey, copilotRecapRequest(input, "zh-Hant"))
 	if detail != "" || !strings.Contains(content, "46 of 56") {
 		t.Fatalf("%q %q", content, detail)
 	}
@@ -159,5 +160,21 @@ func TestARecapIsWrittenFromTheBoardCountAndTheRecord(t *testing.T) {
 	system, _ := msgs[0].(map[string]any)
 	if !strings.Contains(system["content"].(string), "進度數字只能用 progress 的數字") {
 		t.Fatal("the recap prompt does not say where counts come from")
+	}
+}
+
+func TestARecapIsWrittenInTheConsolesLanguage(t *testing.T) {
+	system := func(language string) string {
+		messages, _ := copilotRecapRequest([]byte(`{}`), language)["messages"].([]map[string]string)
+		if len(messages) == 0 {
+			t.Fatal("no messages")
+		}
+		return messages[0]["content"]
+	}
+	if en := system("en"); strings.Contains(en, planner.ChineseOutput) || !strings.Contains(en, "BCP 47：en") {
+		t.Fatalf("an English console's recap rule: %q", en)
+	}
+	if !strings.Contains(system("zh-Hant"), planner.ChineseOutput) {
+		t.Fatal("a Taiwan Traditional Chinese console lost its rule")
 	}
 }

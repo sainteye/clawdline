@@ -84,7 +84,8 @@ export const CARRIED = {
   "coordination.waits": "GET /v1/orchestrator/waits",
   // The voice copilot's prepared briefing (`realtime/realtime-copilot.ts`): the
   // machine reads its own Sessions and has the chosen assistant write one
-  // spoken briefing, a machine command with no body.
+  // spoken briefing, a machine command whose only field is the console language
+  // it is spoken in.
   "copilot-briefing": "POST /v1/voice/copilot-briefing",
   // The voice copilot's Decision API (`realtime/copilot-tools.ts`,
   // `resolveRead`): the person's transcribed sentence, which the machine judges
