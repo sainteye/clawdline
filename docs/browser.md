@@ -153,6 +153,10 @@ After takeover, **Mobile site** changes this tab to a 390 × 720 mobile viewport
 and touch emulation; **Desktop site** clears those overrides. An agent can request the same with
 `clawdline browser viewport mobile` or `desktop`, subject to the existing ownership, stop and
 takeover fences. This reflows responsive pages without reloading or discarding form input.
+Under that emulation the page ignores the tab's browser zoom for layout, but Chrome still
+multiplies dispatched mouse coordinates by it; the worker divides clicks and scrolls by
+`chrome.tabs.getZoom` so a tap on the picture reaches the pictured element. On 2026-11-13 a tester tab
+at 200% sent every tap to twice its position: the field never focused, and Send text was refused.
 Server-selected mobile pages may need a subsequent navigation; changing layout does not guarantee
 that a site has a mobile design. The encrypted Cloud person-input route carries the same command.
 
