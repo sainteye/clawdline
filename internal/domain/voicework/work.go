@@ -100,7 +100,7 @@ func ValidText(s string) bool {
 
 // IsRead is deliberately closed: a model cannot turn an unknown tool into a read.
 func IsRead(tool string) bool {
-	return slices.Contains([]string{"list_sessions", "get_sessions_summary", "get_session_summary", "get_session_recap", "get_session_activity", "explain_session_reply", "get_session_notes", "get_session_screen", "list_machines", "list_projects", "get_devstack_links", "clawdline_help", "list_snippets"}, tool)
+	return slices.Contains([]string{"list_sessions", "get_sessions_summary", "get_session_summary", "get_session_recap", "get_session_activity", "explain_session_reply", "get_session_notes", "get_session_updates", "get_session_screen", "list_machines", "list_projects", "get_devstack_links", "clawdline_help", "list_snippets"}, tool)
 }
 func ReadTask(t Task) bool {
 	return IsRead(t.Tool) && !(t.Tool == "get_devstack_links" && t.Args["open"] == true)

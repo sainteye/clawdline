@@ -11,11 +11,13 @@ import { WorkNarrator } from '../voice-work/narrator.js'
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { COPILOT_TOOLS, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
+import { COPILOT_TOOLS, readRows, rowOnScreen, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
+import { browserMarks } from './copilot-marks.js'
+import { sessionsInFragment } from '../session/address.js'
 
 export interface CopilotLogItem {
   id: string
@@ -187,6 +189,27 @@ export class RealtimeCopilotClient {
   private briefing: Promise<string | null> = Promise.resolve(null)
   /** The Session this call is talking about (`ToolDeps.focus`); a new call starts with none. */
   private focus: string | undefined
+  /** Follows the Session the person opens on screen while a call is on (`followScreen`). */
+  private onScreenChange = () => { void this.followScreen() }
+
+  /**
+   * Makes the Session open on screen the one under discussion, and tells the
+   * call when it changes. The person asked for this on 2026-11-13: the
+   * Session they are looking at is the one they mean.
+   */
+  private async followScreen() {
+    const wanted = sessionsInFragment(location.hash)
+    if (!wanted) return
+    const read = await readRows(this.toolDeps())
+    if ('error' in read) return
+    const row = rowOnScreen(read.rows, wanted)
+    if (!row || row.id === this.focus) return
+    this.focus = row.id
+    if (this.dc && this.dc.readyState === 'open' && !this.call.options.workEnabled) {
+      this.dc.send(JSON.stringify(screenFocusEvent(row)))
+      this.addLog('info', nextWord('copilotLogFocus', { name: row.label || row.id }))
+    }
+  }
   private toolDeps(): ToolDeps {
     return {
       fetch: (input, init) => fetch(input, init),
@@ -201,6 +224,7 @@ export class RealtimeCopilotClient {
       decide: (said, sessions) => decideOnMachine(said, sessions),
       machines: () => machinesOnThisPage(),
       focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
+      marks: browserMarks,
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
       adjust: (change) => this.adjust(change),
     }
@@ -359,6 +383,7 @@ export class RealtimeCopilotClient {
     this.journalLines = []
     // Which build and tools this call has: on 2026-11-13 a call could not be
     // told apart from one placed by a page loaded before the tool existed.
+    window.addEventListener('hashchange', this.onScreenChange)
     this.journal('start', `${navigator.userAgent} · bundle ${document.querySelector('script[type="module"][src]')?.getAttribute('src') ?? '?'} · tools ${COPILOT_TOOLS.length}`)
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
@@ -541,6 +566,7 @@ export class RealtimeCopilotClient {
       if(origin) void receiveVoiceWork(`請交接 Session「${origin.label}」目前做完的事和需要我處理的問題。`,this.journalCall).catch(error=>this.addLog('error',String(error)))
     } else this.dc.send(JSON.stringify(origin ? originGreetingEvent(origin, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
     this.addLog('info', origin ? nextWord('copilotLogFocus', { name: origin.label || origin.id }) : nextWord('copilotLogGreeting'))
+    if (!origin) void this.followScreen()
   }
 
   /**
@@ -717,6 +743,7 @@ export class RealtimeCopilotClient {
   }
 
   disconnect() {
+    window.removeEventListener('hashchange', this.onScreenChange)
     this.releaseWork?.();this.releaseWork=undefined;this.workUnsubscribe?.();this.workUnsubscribe=undefined
     voiceWork.onPrepared=undefined;useCallWorkTools(undefined);this.narrator.reset()
 

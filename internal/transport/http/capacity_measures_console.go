@@ -283,6 +283,12 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.copilot_smart_rename_sessions": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-call rename list guard; daemon cannot measure another device's calls"}
 		},
+		"console.copilot_update_pages": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read paging budget; daemon cannot measure another device's reads"}
+		},
+		"console.copilot_update_marks": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser report marks; daemon cannot measure another device's storage"}
+		},
 		"console.copilot_screen_reads": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-screen-read retry budget; daemon cannot measure another device's reads"}
 		},
