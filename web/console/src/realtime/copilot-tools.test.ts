@@ -1134,6 +1134,25 @@ test("fleet selectors refuse legacy, malformed and ambiguous IDs without routing
   assert.equal(opened.length, 0)
 })
 
+test("a call placed from a Session on every machine's page can write to it by the raw id it was told", async () => {
+  // Call eae13140 on 2026-11-13: told the raw pane id, refused twice, asked three times.
+  const { fleet, deps, calls } = sameNameFleet()
+  const [first, second] = fleetRowsOf(fleet)
+  deps.focus?.set(second.id)
+  const sent = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: "%2", session_label: "Review（Office）", message: "push and deploy" }), deps)).output)
+  assert.equal(sent.success, true, JSON.stringify(sent))
+  assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b")
+  const read = JSON.parse((await runCopilotTool("explain_session_reply", '{"session_id":"%2"}', deps)).output)
+  assert.equal(read.error, undefined, JSON.stringify(read))
+  assert.equal(deps.focus?.get(), second.id)
+  // The raw id never reaches another machine's Session of the same id.
+  calls.length = 0
+  deps.focus?.set(first.id + "x")
+  const refused = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: "%2", session_label: "Review（Office）", message: "check" }), deps)).output)
+  assert.ok(refused.error)
+  assert.equal(calls.length, 0)
+})
+
 test("fleet identity components cannot collide at separators and rows without machines are not routable", () => {
   const rows = fleetRowsOf([
     { machine: "b:c", machineName: "Office", row: { id: "a" } },

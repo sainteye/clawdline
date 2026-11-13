@@ -933,16 +933,34 @@ function uniqueSessionID(rows: readonly CopilotSessionRow[], id: string): Copilo
 }
 
 /** Resolve an ID, pane shorthand or whole label without guessing between rows. */
+/**
+ * The rows an id names: the tool id, a pane id without its sign ("2" for
+ * "%2", never a position in the list), or the raw id on its own machine of
+ * the Session under discussion. A call placed from a Session on 所有機器 was
+ * told that Session's raw id ("%2") while the tools list it as
+ * `fleet:<machine>:%252`; on 2026-11-13 three sends were refused for it
+ * and the person was asked to confirm the same message three times. Only
+ * the focused row is matched that way, so a raw id never picks a machine.
+ */
+function rowsByID(rows: readonly CopilotSessionRow[], w: string, focus?: string): CopilotSessionRow[] {
+  let byId = rows.filter((r) => r.id === w)
+  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  if (!byId.length && focus) {
+    const raw = /^\d+$/.test(w) ? `%${w}` : w
+    const focused = rows.filter((r) => r.id === focus)
+    if (focused.length === 1 && focused[0].session && focused[0].session !== focused[0].id && focused[0].session === raw) byId = focused
+  }
+  return byId
+}
+
 export function resolveSession(
   rows: readonly CopilotSessionRow[],
   wanted: string,
+  focus?: string,
 ): { row: CopilotSessionRow } | { error: string; candidates?: { id: string; label: string; state?: string }[] } {
   const w = wanted.trim()
   if (!w) return { error: '沒有指定要看哪一個 Session' }
-  let byId = rows.filter((r) => r.id === w)
-  // A tmux pane id said or typed without its sign: "2" for "%2". Never a
-  // position in the list, which changes as Sessions start and stop.
-  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  const byId = rowsByID(rows, w, focus)
   if (byId.length === 1) return { row: byId[0] }
   const lower = w.toLowerCase()
   const exact = rows.filter((r) => r.label.toLowerCase() === lower)
@@ -981,12 +999,12 @@ export interface SessionDecision { id?: string; candidates?: string[]; many?: bo
  * from, as before (`resolveSession`). Writes never come here (`resolveForWrite`).
  */
 export async function resolveRead(
-  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead'>,
+  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus'>,
   rows: readonly CopilotSessionRow[],
   wanted: string,
 ): Promise<ReturnType<typeof resolveSession>> {
   const finish=(result:ReturnType<typeof resolveSession>)=>{if('row' in result)deps.onRead?.({id:result.row.id,label:result.row.label,machine:result.row.machine,conversation:result.row.conversation});return result}
-  const direct = resolveSession(rows, wanted)
+  const direct = resolveSession(rows, wanted, deps.focus?.get())
   // The person's words decide when there are any: measured live, the voice
   // model filled in a wrong id itself (「做衣服圖片的那個」 read as another
   // Session), and asked for the person's words it handed over its own pick
@@ -1804,11 +1822,10 @@ async function sessionActivity(deps: ToolDeps, logs: ToolLog[], wanted: string):
  * its whole name, never an assistant type or part of a name, which read
  * tools accept. A message once went to the wrong Session (2026-11-12).
  */
-export function resolveForWrite(rows: readonly CopilotSessionRow[], wanted: string): { row: CopilotSessionRow } | { error: string; candidates: { id: string; label: string }[] } {
+export function resolveForWrite(rows: readonly CopilotSessionRow[], wanted: string, focus?: string): { row: CopilotSessionRow } | { error: string; candidates: { id: string; label: string }[] } {
   const w = wanted.trim()
   const candidates = rows.map((r) => ({ id: r.id, label: r.label }))
-  let byId = rows.filter((r) => r.id === w)
-  if (!byId.length && /^\d+$/.test(w)) byId = rows.filter((r) => r.id === `%${w}`)
+  const byId = rowsByID(rows, w, focus)
   if (byId.length === 1) return { row: byId[0] }
   const byName = rows.filter((r) => r.label.trim().toLowerCase() === w.toLowerCase())
   if (!byId.length && byName.length === 1 && uniqueSessionID(rows, byName[0].id)) return { row: byName[0] }
@@ -1847,7 +1864,7 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -1982,7 +1999,7 @@ async function runSnippet(deps: ToolDeps, logs: ToolLog[], wanted: string, name:
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -2084,7 +2101,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -2256,7 +2273,7 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
-  const found = resolveForWrite(read.rows, wanted)
+  const found = resolveForWrite(read.rows, wanted, deps.focus?.get())
   if ('error' in found) {
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
@@ -2334,7 +2351,7 @@ async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: stri
   const failed: { session: string; error: string }[] = []
   // One after another: the machine runs one naming turn at a time.
   for (const name of names) {
-    const found = resolveForWrite(read.rows, name)
+    const found = resolveForWrite(read.rows, name, deps.focus?.get())
     if ('error' in found) {
       failed.push({ session: name, error: '找不到這個名稱的 Session，或有好幾個同名的' })
       continue

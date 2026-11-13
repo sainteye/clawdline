@@ -697,6 +697,13 @@ export class RealtimeCopilotClient {
       const { output, logs, reported, targetID } = await readCallHandover(origin, this.toolDeps())
       if (revision !== this.openingRevision || attempt !== this.attempt || this.dc !== dc || dc?.readyState !== 'open') return
       if (targetID) this.focus = targetID
+      // The instructions named the raw id the page gave ("%2"); on 所有機器
+      // the tools list it as `fleet:<machine>:%252`. Name the listed id so
+      // a send does not use an id the tools refuse (2026-11-13).
+      if (targetID && targetID !== origin.id && this.call.options.origin === origin) {
+        this.call.options = { ...this.call.options, origin: { ...origin, id: targetID } }
+        dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+      }
       for (const log of logs) this.addLog(log.level, log.text)
       this.journal('tool', 'opening_handover', { args: JSON.stringify({ session_id: origin.id }), ms: performance.now() - started, answer: output.slice(0, 1500) })
       this.narrator.prepared('opening', output,
