@@ -3,12 +3,16 @@ import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFragmentWithOutput, destinationFromFragment,
-  displayedPresentationStatus, fleetRowTitle, mergeListPresentation, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
+  copilotFleetRows, displayedPresentationStatus, fleetRowTitle, mergeListPresentation, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   destinationKey, prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache, shownDestinationKeys,
   SessionExecutionRecovery, supersedingDestination,
   type MachineSessionProjection, type ProjectedSession,
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
 } from "./all-machine-sessions.ts"
+// @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
+import { fleetRowsOf } from "../realtime/copilot-tools.ts"
+// @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
+import { groupByProject, projectBatchSize } from "../realtime/copilot-reports.ts"
 
 const row = (machineID: string, sessionID: string, executionGeneration: string): ProjectedSession => ({
   destination: { machineID, sessionID, executionGeneration: executionGeneration.padStart(32, "0") }, state: "working",
@@ -412,4 +416,20 @@ test("opening a pinned Session retains its file destination without carrying it 
   }
   assert.equal(destinationFragmentWithOutput(target, address + "&output=" + "c".repeat(64)), destinationFragment(target))
   assert.equal(destinationFragmentWithOutput(target, destinationFragment(target) + "&output=../../private"), destinationFragment(target))
+})
+
+test("the voice copilot's fleet rows keep each Session's Project folder", async () => {
+  const at = (sessionID: string, cwd: string, projectKey?: string) => ({
+    destination: { machineID: "mac_a", sessionID, executionGeneration: "g1" }, title: sessionID, assistant: "claude" as const,
+    cwd, ...(projectKey ? { projectKey } : {}), status: { state: "working", work_state: "none" } as unknown as Partial<SessionRow>,
+  })
+  const rows = fleetRowsOf(copilotFleetRows([
+    at("%1", "/Users/me/code/clawdline/sub", "/Users/me/code/clawdline"),
+    at("%2", "/Users/me/code/shop"),
+    at("%3", "/Users/me/code/clawdline"),
+  ], new Map([["mac_a", "studio"]])))
+  assert.deepEqual(rows.map((r) => r.project), ["clawdline", "shop", "clawdline"])
+  const grouped = groupByProject(rows)
+  assert.deepEqual(grouped.map((r) => r.session), ["%1", "%3", "%2"])
+  assert.equal(projectBatchSize(grouped), 2)
 })

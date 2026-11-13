@@ -51,6 +51,25 @@ export interface MachineListPresentation extends SessionListPresentation {
   projection?: ProjectedSession
 }
 
+/**
+ * Every machine's Sessions as the voice copilot reads them on 所有機器: the
+ * page's own presentations, each with its machine and the folder facts the
+ * copilot groups a spoken report by. Without `cwd` and `project_key` every
+ * Session fell into one unnamed Project (calls of 2026-11-14 01:04, `project: ""`).
+ */
+export function copilotFleetRows(presentations: Iterable<MachineListPresentation>,
+  machineNames: ReadonlyMap<string, string>): { machine: string; machineName: string; row: Record<string, unknown> }[] {
+  return [...presentations].map((p) => ({
+    machine: p.destination.machineID,
+    machineName: machineNames.get(p.destination.machineID) ?? p.destination.machineID,
+    row: {
+      ...(p.status ?? {}), id: p.destination.sessionID, label: p.title,
+      assistant: p.assistant ?? p.status?.assistant ?? "",
+      ...(p.cwd ? { cwd: p.cwd } : {}), ...(p.projectKey ? { project_key: p.projectKey } : {}),
+    },
+  }))
+}
+
 /** Retain display facts only from the same execution's keyed list cache. */
 export function mergeListPresentation(row: SessionListPresentation,
   previous?: SessionListPresentation): SessionListPresentation {

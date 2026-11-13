@@ -89,7 +89,7 @@ import { CarrierDot } from "./CarrierDot.js"
 import { carrierReading, machineLight, type CarrierReading } from "./carrier-state.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PeerAccessPage } from "./PeerAccessPage.js"
-import { destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
+import { copilotFleetRows, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
   SessionExecutionRecovery, supersedingDestination, type FleetDetailProblem, type MachineListPresentation,
   type MachineSessionProjection, type ProjectedSession, type SessionContent, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource } from "./all-machine-sessions.js"
@@ -1830,12 +1830,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       const answer = detail.answer
       detail.answer = undefined
       const names = new Map(copilotMachines.current.map((m) => [m.id, m.name]))
-      const rows = [...fleetPresentations.current.values()].map((p) => ({
-        machine: p.destination.machineID,
-        machineName: names.get(p.destination.machineID) ?? p.destination.machineID,
-        row: { ...(p.status ?? {}), id: p.destination.sessionID, label: p.title, assistant: p.assistant ?? p.status?.assistant ?? "" },
-      }))
-      answer(rows)
+      answer(copilotFleetRows(fleetPresentations.current.values(), names))
     }
     document.addEventListener(COPILOT_FLEET, onAsk)
     return () => document.removeEventListener(COPILOT_FLEET, onAsk)
