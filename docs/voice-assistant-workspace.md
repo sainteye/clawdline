@@ -124,6 +124,36 @@ generated, or its audio is still playing. `response.done` alone cannot release
 that queue: WebRTC playback must report stopped/cleared. Interrupting speech
 never erases or cancels earlier requested tasks.
 
+## Quiet, evidence-backed call opening
+
+Opening the general assistant waits silently for the person. It creates no
+spoken greeting, durable input or planner turn. A call placed inside a Session
+reads that exact Session's bounded recap and outstanding notes concurrently,
+then requests one short handover containing both results. The call does not
+route that implicit opening through the planner, narrate its internal stages,
+or ask for an unspecified confirmation. The same policy applies with background
+planning on or off, including turning an existing call to another Session.
+The opening speech is instructed to give the actual outcome/current work and a
+concrete decision, when one exists, in at most two sentences. That instruction
+still requires recorded audio and human listening for model compliance.
+
+Speaking, changing the focused Session, hanging up or replacing the call
+supersedes an unfinished opening. Late data must not speak into the next call.
+The first workspace load primes both task evidence and the planner reply as
+history, so reconnecting does not replay an earlier planner explanation. Actual
+utterances retain their durable intake, planning and execution workflow.
+
+A local recorded call reported on 2026-11-13 contained zero transcribed user
+utterances but five assistant replies. Read-only inspection found an automatic
+handover input, two completed reads (latest summary and notes) and two planning
+rounds. This establishes unnecessary startup generation and fragmented reporting;
+it does not establish that no reads ran or what the provider billed. Private
+call text and identifiers remain outside this public repository.
+
+Regression tests exercise the actual client with held transcript responses,
+GET-only transport, suppressed openings after speech/call replacement and one
+combined response after recap plus notes. No live speech/provider call is used.
+
 ## Performance evidence
 
 Affected action: listing Sessions and preparing the call's opening directory.

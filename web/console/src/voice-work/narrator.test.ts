@@ -17,3 +17,15 @@ test('continued speech waits for a durable acknowledgement and coalesces superse
  n.received();assert.equal(sent.length,1);assert.match(JSON.stringify(sent[0]),/new/);assert.doesNotMatch(JSON.stringify(sent[0]),/Evidence: old/)
  n.reset();n.event('response.done');assert.equal(sent.length,1)
 })
+
+
+test('a discarded opening never advances the Session report cursor',()=>{
+ const sent:Record<string,unknown>[]=[];let reported=0
+ const n=new WorkNarrator(e=>sent.push(e),()=> 'en')
+ n.setReady(false)
+ n.prepared('opening','old recap','',()=>{reported++})
+ n.discard('opening');n.setReady(true)
+ assert.equal(sent.length,0);assert.equal(reported,0)
+ n.prepared('opening','current recap','',()=>{reported++})
+ assert.equal(sent.length,1);assert.equal(reported,1)
+})

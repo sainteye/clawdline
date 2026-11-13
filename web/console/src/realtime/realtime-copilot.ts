@@ -11,7 +11,7 @@ import { WorkNarrator } from '../voice-work/narrator.js'
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { COPILOT_TOOLS, readRows, rowOnScreen, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, greetingEvent, originGreetingEvent, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
+import { COPILOT_TOOLS, readRows, rowOnScreen, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -159,8 +159,9 @@ export class RealtimeCopilotClient {
    * decision never judges the sentence before.
    */
   private heardNow = ''
+  private openingRevision = 0
+  private personSpoke = false
   private releaseWork?: () => void
-  private workReply = ''
   private narrator = new WorkNarrator(event => {
     if(this.dc?.readyState==='open')this.dc.send(JSON.stringify(event))
   },()=>consoleLanguage()||'zh-Hant')
@@ -204,6 +205,7 @@ export class RealtimeCopilotClient {
     if ('error' in read) return
     const row = rowOnScreen(read.rows, wanted)
     if (!row || row.id === this.focus) return
+    this.cancelOpening()
     this.focus = row.id
     if (this.dc && this.dc.readyState === 'open' && !this.call.options.workEnabled) {
       this.dc.send(JSON.stringify(screenFocusEvent(row)))
@@ -347,7 +349,7 @@ export class RealtimeCopilotClient {
 
   /**
    * Starts a call. With `origin` the call was placed from that Session, and its
-   * first words hand that Session over instead of greeting. A call already
+   * single opening hands that Session over after reading its records. A call already
    * going (or connecting) is turned to the Session instead of starting again.
    */
   async start(origin?: CallOrigin): Promise<void> {
@@ -379,6 +381,7 @@ export class RealtimeCopilotClient {
     // was placed from, and that Session is the one under discussion.
     this.call = { memory: '', snapshot: '', options: { origin } }
     this.focus = origin?.id
+    this.personSpoke = false
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
     // Which build and tools this call has: on 2026-11-13 a call could not be
@@ -422,14 +425,12 @@ export class RealtimeCopilotClient {
       this.briefing = !managed && grant.briefing && machines.size <= 1 ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
+      this.narrator.reset();this.narrator.setReady(false)
       if(managed) {
-        this.narrator.reset();this.narrator.setReady(false);this.workReply=voiceWork.state?.reply??''
         useCallWorkTools(this.toolDeps(),this.journalCall);this.releaseWork=voiceWork.activate()
         const observed=new WorkObservations(voiceWork.state)
         this.workUnsubscribe=voiceWork.subscribe(()=>{
           for(const evidence of observed.update(voiceWork.state))this.narrator.prepared(evidence.key,evidence.value)
-          const reply=voiceWork.state?.reply
-          if(reply&&reply!==this.workReply){this.workReply=reply;this.narrator.prepared('plan',JSON.stringify({planner_reply:reply,tasks:voiceWork.state?.tasks.filter(t=>t.status==='waiting_confirmation').map(t=>({text:t.text,status:t.status}))}))}
         })
       }
       check()
@@ -550,22 +551,22 @@ export class RealtimeCopilotClient {
     if (!this.dc || this.dc.readyState !== 'open') return
 
     this.addLog('info', nextWord('copilotLogConfiguring'))
-    // Waits for the snapshot at most SNAPSHOT_WAIT_MS: a slow machine must not hold the call's first words.
+    const dc = this.dc
+    const attempt = this.attempt
+    // A slow directory must not hold the microphone setup.
+    let timer: ReturnType<typeof setTimeout> | undefined
     const snapshot = await Promise.race([this.snapshot,
-      new Promise<string>((resolve) => setTimeout(() => resolve(''), SNAPSHOT_WAIT_MS))])
-    if (!this.dc || this.dc.readyState !== 'open') return
+      new Promise<string>((resolve) => { timer = setTimeout(() => resolve(''), SNAPSHOT_WAIT_MS) })])
+    clearTimeout(timer)
+    if (this.dc !== dc || attempt !== this.attempt || dc.readyState !== 'open') return
     this.addLog(snapshot ? 'info' : 'error', nextWord(snapshot ? 'copilotLogSnapshot' : 'copilotLogNoSnapshot'))
     const section = memorySection(this.memory, nowSeconds())
     if (section) this.addLog('info', nextWord('copilotLogMemory', { count: this.memory.length }))
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
     const origin = this.call.options.origin
-    if(this.call.options.workEnabled) {
-      this.narrator.prepared('greeting',JSON.stringify({greeting:'A short hello. New requests will be saved in the voice assistant workspace.'}))
-      this.narrator.setReady(true)
-      if(origin) void receiveVoiceWork(`請交接 Session「${origin.label}」目前做完的事和需要我處理的問題。`,this.journalCall).catch(error=>this.addLog('error',String(error)))
-    } else this.dc.send(JSON.stringify(origin ? originGreetingEvent(origin, consoleLanguage()) : greetingEvent(!!section, consoleLanguage())))
-    this.addLog('info', origin ? nextWord('copilotLogFocus', { name: origin.label || origin.id }) : nextWord('copilotLogGreeting'))
+    this.narrator.setReady(true)
+    if (origin && !this.personSpoke) await this.prepareHandover(origin)
     if (!origin) void this.followScreen()
   }
 
@@ -575,21 +576,44 @@ export class RealtimeCopilotClient {
    * are resent with it and the copilot is asked for the handover now.
    */
   private turnTo(origin: CallOrigin) {
+    this.cancelOpening()
     this.call.options = { ...this.call.options, origin }
     this.focus = origin.id
     if (!this.dc || this.dc.readyState !== 'open') return
     this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
-    // Only a response in progress can be cancelled; cancelling none is an error event.
     if (this.state.speakingState === 'speaking' || this.state.speakingState === 'thinking') this.dc.send(JSON.stringify({ type: 'response.cancel' }))
-    this.dc.send(JSON.stringify(originGreetingEvent(origin, consoleLanguage())))
-    this.addLog('info', nextWord('copilotLogFocus', { name: origin.label || origin.id }))
+    void this.prepareHandover(origin)
   }
 
+  private cancelOpening() {
+    this.openingRevision++
+    this.narrator.discard('opening')
+  }
+
+  private async prepareHandover(origin: CallOrigin) {
+    const revision = ++this.openingRevision
+    const attempt = this.attempt
+    const dc = this.dc
+    this.addLog('info', nextWord('copilotLogFocus', { name: origin.label || origin.id }))
+    try {
+      const started = performance.now()
+      const { output, logs, reported, targetID } = await readCallHandover(origin, this.toolDeps())
+      if (revision !== this.openingRevision || attempt !== this.attempt || this.dc !== dc || dc?.readyState !== 'open') return
+      if (targetID) this.focus = targetID
+      for (const log of logs) this.addLog(log.level, log.text)
+      this.journal('tool', 'opening_handover', { args: JSON.stringify({ session_id: origin.id }), ms: performance.now() - started, answer: output.slice(0, 1500) })
+      this.narrator.prepared('opening', output,
+        'This is the single opening handover of the Session the person clicked. In at most two sentences, state the actual outcome or current work and any concrete pending decision. No greeting, acknowledgements, planning or reading status, generic next steps, or invitation to assign work. Do not ask for confirmation unless the evidence contains a specific unresolved decision. If a read failed or history is partial, say that briefly without inventing its contents. Then stop and wait for the person.', reported)
+    } catch (error) {
+      if (revision === this.openingRevision && attempt === this.attempt) this.addLog('error', String(error))
+    }
+  }
 
   // Both spellings of the output events are handled: GA names them
   // `response.output_audio*`, the beta `response.audio*`.
   private async handleRealtimeEvent(event: any) {
-    if(this.call.options.workEnabled)this.narrator.event(event.type)
+    if(event.type === 'input_audio_buffer.speech_started'){this.personSpoke=true;this.cancelOpening()}
+    this.narrator.event(event.type)
     switch (event.type) {
       case 'session.updated':
         this.addLog('info', nextWord('copilotLogConfigured', { count: Array.isArray(event.session?.tools) ? event.session.tools.length : 0 }))
@@ -646,12 +670,13 @@ export class RealtimeCopilotClient {
             } catch(error) {
               this.narrator.prepared('receive-error',JSON.stringify({error:String(error),meaning:'The request was not confirmed saved. Ask the person to check the workspace.'}))
             } finally {this.narrator.received()}
-          }
+          } else this.narrator.received()
           this.addLog('info', nextWord('copilotLogHeard', { text: event.transcript }))
         }
         break
       case 'conversation.item.input_audio_transcription.failed':
-        if(this.call.options.workEnabled){this.narrator.prepared('transcription-error',JSON.stringify({error:'Could not transcribe this utterance. It was not saved as a request.'}));this.narrator.received()}
+        if(this.call.options.workEnabled)this.narrator.prepared('transcription-error',JSON.stringify({error:'Could not transcribe this utterance. It was not saved as a request.'}))
+        this.narrator.received()
         break
       case 'response.done': {
         const spoken = this.state.lastAssistantSpeech
@@ -743,6 +768,7 @@ export class RealtimeCopilotClient {
   }
 
   disconnect() {
+    this.cancelOpening()
     window.removeEventListener('hashchange', this.onScreenChange)
     this.releaseWork?.();this.releaseWork=undefined;this.workUnsubscribe?.();this.workUnsubscribe=undefined
     voiceWork.onPrepared=undefined;useCallWorkTools(undefined);this.narrator.reset()

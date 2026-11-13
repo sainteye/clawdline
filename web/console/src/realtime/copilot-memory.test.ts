@@ -6,7 +6,7 @@ import { MEMORY_MAX_AGE_S, MEMORY_TURNS, MEMORY_TURN_CHARS, memorySection, parse
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { addUsage, emptyCost, formatUSD, usageUSD, RATES } from "./copilot-cost.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { greetingEvent, sessionUpdateEvent, COPILOT_INSTRUCTIONS } from "./copilot-tools.ts"
+import { sessionUpdateEvent, COPILOT_INSTRUCTIONS } from "./copilot-tools.ts"
 
 const NOW = 2_000_000_000
 
@@ -28,13 +28,6 @@ test("with nothing remembered the call adds no conversation-history section", ()
   const instructions = (sessionUpdateEvent(memorySection([], NOW)) as { session: { instructions: string } }).session.instructions
   assert.ok(instructions.startsWith(COPILOT_INSTRUCTIONS))
   assert.doesNotMatch(instructions, /【之前的通話】/)
-})
-
-test("a remembered call opens without the introduction", () => {
-  const first = (greetingEvent(false) as { response: { instructions: string } }).response.instructions
-  const again = (greetingEvent(true) as { response: { instructions: string } }).response.instructions
-  assert.match(first, /說你可以幫他看/)
-  assert.match(again, /不要自我介紹/)
 })
 
 test("memory keeps only the newest turns, each clipped, none too old", () => {
