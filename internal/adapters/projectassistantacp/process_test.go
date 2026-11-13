@@ -70,7 +70,9 @@ func TestProcessCleansObservedSetsidDescendant(t *testing.T) {
 	}
 	defer p.Close(context.Background())
 	var pid int
-	deadline := time.Now().Add(time.Second * 3)
+	// /usr/bin/python3 is an Xcode shim; its first start on a cold CI runner
+	// has exceeded three seconds. Readiness is not what this test measures.
+	deadline := time.Now().Add(time.Second * 30)
 	for time.Now().Before(deadline) {
 		b, _ := os.ReadFile(file)
 		pid, _ = strconv.Atoi(string(b))
