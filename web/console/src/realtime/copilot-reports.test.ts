@@ -32,6 +32,14 @@ test('a spoken list on 所有機器 binds positions even though labels carry the
  spoken.generated('「對齊 CodyNC：以瀏覽器實測迭代修正 Clawdline UI」',true);spoken.played()
  assert.equal(spoken.resolve('最後那個')?.target,undefined,'the same name on two machines is not guessed')
 })
+test('a later call: 「你剛剛講的最後一個」 is the last name spoken even when an earlier name was misspelled',()=>{
+ // Call at 16:58 on 2026-11-13: the old build answered voice_session_reference_unresolved with no candidates.
+ const m=(id:string,label:string)=>({id,label:`${label}\uff08work-box\uff09`,machine:'mac-1',conversation:id})
+ const p=m('s-browser','接續瀏覽器排序發布與手機試用'),q=m('s-third','Clawdline 語音與清單延遲瓶頸盤查')
+ const spoken=new SpokenSessions();spoken.observe(p);spoken.observe(q)
+ spoken.generated('好的，目前有兩個閒置的 Session。第一個是「接續瀏覧器排序發布與手機試用」，它大約閒置了1分鐘。第二個是「Clawdline 語音與清單延遲瓶頸盤查」，它大約閒置了28分鐘。',true);spoken.played()
+ assert.equal(spoken.resolve('你剛剛講的最後一個在幹嘛')?.target?.id,'s-third')
+})
 test('positional words are recognized as positions, not handed to a guess',()=>{
  for(const words of ['跟我講你最後的那一個','最後那個','最后那个','最後一個','你最後提到的'])assert.equal(relativeSession(words),'last',words)
  for(const words of ['最後怎麼了','它最後做完什麼'])assert.equal(relativeSession(words),undefined,words)
