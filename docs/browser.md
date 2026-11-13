@@ -130,14 +130,24 @@ remeasures and clamps it. The single bottom row uses the app's shared `--indicat
 not `env()` alone (the page intentionally has no `viewport-fit=cover`), and `--vvh`/`--vvt` keep
 it above a raised keyboard. Keys, notifications and recent actions are in **Tools**.
 
-Screenshots include visible editable rectangles and input kinds, never field values or labels.
-A native input covers each editable rectangle and follows the image's zoom and pan.
-The phone directly touches that input, preserving its native keyboard focus action rather
-than relying only on programmatic focus of a hidden proxy. This happens before waiting for Cloud. Text waits for takeover and the remote field click to succeed. Chinese
-IME composition sends only committed text; Backspace, Enter and Tab use the same ordered input
-queue. It coalesces adjacent text, holds at most 32 edits and 16 KiB, and never retries an unknown
-result. Handback cancels unsent input. For fields the geometry cannot describe, including some
-cross-origin frames, **Tools → Keyboard** provides a native keyboard fallback.
+Screenshots include editable rectangles and input kinds, never field values or labels.
+The panel keeps one visible native draft editor below the picture. Tapping a page
+field selects the remote target and focuses that editor in the same trusted tap;
+the person can also touch the editor directly. Screenshots and field geometry do
+not own its DOM node. Normal fields use a textarea; password targets use a masked
+input. The draft stays local, including Chinese IME composition and Backspace,
+until **Send text** inserts it into the selected page field. Enter creates a local
+newline; the Tools Enter key acts on the remote page. The existing native-input
+byte limit also bounds each submitted draft. The editor remains editable while a
+send is pending; a failed or uncertain result restores the submitted text for
+inspection without retrying it. Handback and Session/profile/tab changes clear the
+draft and invalidate late callbacks.
+
+A local control revision rejects status reads that started before or during a
+control change. A delayed pre-takeover snapshot therefore cannot overwrite its
+successful receipt and dismiss the keyboard. The editor survives screenshot and
+viewport updates, and its input is never disabled merely because a command is in
+flight. Physical phone keyboard presentation still needs actual-device acceptance.
 
 After takeover, **Mobile site** changes this tab to a 390 × 720 mobile viewport, mobile user agent
 and touch emulation; **Desktop site** clears those overrides. An agent can request the same with
