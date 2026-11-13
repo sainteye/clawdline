@@ -20,9 +20,12 @@ export function BrowserComposer({ keyboardRef, person, available, onPrepare, onS
   const [draft, setDraft] = useState("")
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<"full" | "unconfirmed" | null>(null)
+  // A short "Sent" on the button after the page acknowledged the text.
+  const [sent, setSent] = useState(false)
+  const sentTimer = useRef(0)
   const close = () => {
     epoch.current++; targetReady.current = null; sending.current = false; composing.current = false
-    editor.current?.blur(); setDraft(""); setPending(false); setError(null)
+    editor.current?.blur(); setDraft(""); setPending(false); setError(null); setSent(false); window.clearTimeout(sentTimer.current)
   }
   useImperativeHandle(keyboardRef, () => ({
     open: (next, ready) => {
@@ -35,17 +38,21 @@ export function BrowserComposer({ keyboardRef, person, available, onPrepare, onS
     close,
   }))
   useEffect(() => { if (!person) close() }, [person])
-  useEffect(() => () => { epoch.current++ }, [])
+  useEffect(() => () => { epoch.current++; window.clearTimeout(sentTimer.current) }, [])
 
   const send = async () => {
     if (!draft || sending.current || composing.current || !available) return
     if (new TextEncoder().encode(draft).length > BROWSER_INPUT_BYTES) { setError("full"); return }
     const text = draft, current = epoch.current
-    sending.current = true; setPending(true); setError(null); setDraft("")
+    sending.current = true; setPending(true); setError(null); setSent(false); setDraft("")
     try {
       if (!await (targetReady.current ?? onPrepare())) throw new Error("takeover not confirmed")
       if (epoch.current !== current) return
       if (!(await onSend(text)).ok) throw new Error("input not confirmed")
+      if (epoch.current === current) {
+        setSent(true); window.clearTimeout(sentTimer.current)
+        sentTimer.current = window.setTimeout(() => setSent(false), 1500)
+      }
     } catch {
       if (epoch.current === current) {
         // Keep the draft for inspection. An uncertain insertion is never retried.
@@ -63,6 +70,11 @@ export function BrowserComposer({ keyboardRef, person, available, onPrepare, onS
     onCompositionStart: () => { composing.current = true }, onCompositionEnd: () => { composing.current = false },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       event.stopPropagation()
+      // An empty draft has nothing left to delete here, so the keyboard's
+      // Backspace continues into the page field, exactly like Delete.
+      if (!event.nativeEvent.isComposing && !composing.current && event.key === "Backspace" && !draft && person && available) {
+        event.preventDefault(); onDelete(); return
+      }
       if (!event.nativeEvent.isComposing && !composing.current && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault(); void send()
       }
@@ -73,14 +85,16 @@ export function BrowserComposer({ keyboardRef, person, available, onPrepare, onS
       {kind === "password"
         ? <input {...props} type="password" ref={element => { editor.current = element }} />
         : <textarea {...props} rows={1} ref={element => { editor.current = element }} />}
-      <button type="submit" onPointerDown={event => event.preventDefault()} disabled={!draft || pending || !available}>{nextWord("browserPanelSendText")}</button>
+      <button type="submit" className={sent ? "browser-composer-sent" : undefined} aria-busy={pending ? "true" : undefined} onPointerDown={event => event.preventDefault()} disabled={!draft || pending || !available}>
+        {pending ? <><span className="browser-send-spinner" aria-hidden="true" />{nextWord("browserPanelSending")}</> : sent ? <>✓ {nextWord("browserPanelSent")}</> : nextWord("browserPanelSendText")}
+      </button>
       {/* One Backspace on the page field. Like Send text it never takes focus,
           so the phone keyboard stays up; the local draft is edited by the
           keyboard's own Backspace. */}
       <button type="button" className="browser-composer-delete" onPointerDown={event => event.preventDefault()} disabled={!person || pending || !available}
         aria-label={nextWord("browserPanelKeyBackspace")} onClick={onDelete}>⌫</button>
     </div>
-    {pending && <span className="browser-input-pending" role="status">{nextWord("browserPanelTyping")}</span>}
+    {pending && <span className="browser-input-pending" role="status">{nextWord("browserPanelSending")}</span>}
     {error && <p className="browser-input-error" role="alert">{nextWord(error === "full" ? "browserPanelInputFull" : "browserPanelInputUnconfirmed")}</p>}
   </form>
 }

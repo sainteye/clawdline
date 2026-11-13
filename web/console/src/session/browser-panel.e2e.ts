@@ -308,8 +308,13 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.frames>=${pendingFrames + 2})`)
       assert.equal(await run(`document.activeElement === window.__touchedField`),true,"a pending send and screenshot refresh never disable or blur the editor")
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段")
+      // The person could not tell that text was on its way; the button says so.
+      const sending=ui==="en"?"Sending…":"送出中…", sent=ui==="en"?"Sent":"已送出"
+      assert.equal(await run(`document.querySelector('.browser-composer button').getAttribute('aria-busy')`),"true")
+      assert.ok((await run(`document.querySelector('.browser-composer button').textContent`)).includes(sending),"the Send button shows that text is being sent")
       await fetch(origin+"/__fixture/release-type")
       await until(`!document.querySelector('.browser-input-pending')`)
+      await until(`document.querySelector('.browser-composer button').textContent.includes(${JSON.stringify(sent)})`)
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"下一段","acknowledgement preserves the next draft")
       await run(`document.getElementById('browser-native-keyboard').select()`)
       await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
@@ -338,6 +343,16 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,["Backspace"],"Delete sends one Backspace to the page")
       assert.equal(await run(`document.activeElement === window.__touchedField`),true,"Delete keeps the footer editor focused")
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"12","Delete leaves the local draft alone")
+      // The keyboard's own Backspace edits the draft while it has text and,
+      // once it is empty, reaches the page field like Delete.
+      for (let i=0;i<3;i++){
+        await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+        await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
+      }
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"","two Backspaces empty the draft")
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.keys.length===2)`)
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,["Backspace","Backspace"],"a Backspace on an empty draft reaches the page")
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"forwarding Backspace keeps the footer editor focused")
       if(name==="phone"){
         await run(`Object.defineProperty(window.visualViewport,'height',{configurable:true,value:Math.round(innerHeight*.58)});window.visualViewport.dispatchEvent(new Event('resize'))`)
         await until(`document.getElementById('browser-panel').getBoundingClientRect().height<innerHeight*.7`)
