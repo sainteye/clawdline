@@ -105,5 +105,12 @@
   "sessions.terminal_assistant_state_work_task_label_cwd": "TERMINAL\tASSISTANT\tSTATE\tWORK\tTASK\tLABEL\tCWD",
   "sessions.the_daemon_s_port_default_clawdline_next_port": "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)",
   "sessions.usage_clawdline_sessions_json_port_n": "usage: clawdline sessions [--json] [--port n]",
-  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE must name a readable plain JSON file with assistant antigravity or grok and a nonempty conversation_id"
+  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE must name a readable plain JSON file with assistant antigravity or grok and a nonempty conversation_id",
+  "session.usage_clawdline_session_smart_title": "usage: clawdline session smart-title [--conversation id | --terminal id] [--port n]",
+  "session.renames_this_session_with_smart_naming": "  renames this Session with Smart naming, as Session info's button does, and prints the new title",
+  "session.the_terminal_to_rename_default_this_session_s": "the terminal to rename (default: this Session's own)",
+  "session.clawdline_session_smart_title": "clawdline session smart-title:",
+  "session.smart_title_cannot_tell_which_session": "clawdline session smart-title: cannot tell which Session this is: none of %s is set. Pass --conversation or --terminal.\n",
+  "session.smart_title_whoami_without_terminal": "clawdline session smart-title: whoami answered without a terminal id. Nothing was renamed.",
+  "session.smart_title_renamed": "This Session is now named \"%s\".\n"
 }

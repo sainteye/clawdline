@@ -177,6 +177,15 @@ each spends one small model turn. A rename joins the actions the copilot may onl
 machine confirmed it. Before this tool the copilot had no way to rename and, asked to, did not know
 what smart naming was.
 
+In the first call after it shipped (2026-11-13) the copilot still read the guide when it heard
+"smart naming", the rule for any question about Clawdline, and then typed "please use smart naming
+to rename this Session" into the Session, which tried to drive the app's window. The instructions
+now say a request to do something a tool does is done with that tool, and `send_message_to_session`
+refuses a message asking a Session to rename itself (`ASKS_A_RENAME`), pointing at
+`smart_rename_sessions`. Each call's journal now starts with its bundle and tool count, since that
+call could not be told apart from one placed by a page loaded before the tool existed. A Session
+asked directly has `clawdline session smart-title`, documented in the agent guide (§7).
+
 **A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
 person), the idle and lately finished ones, or all, newest activity first, each with its goal,
 what it finished lately and what it is doing; only the newest `LIST_LATEST_READS` are read and

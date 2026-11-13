@@ -130,7 +130,8 @@ export const SMART_RENAME_SESSIONS = 6
 export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也是使用者的私人秘書。使用者在手機上用語音問你，這台電腦上各個 AI 程式開發 Session（Claude Code、Codex 等）的狀況。
 
 【最重要的三條】
-- 使用者問 Clawdline 本身怎麼用（任何功能、設定、畫面、按鈕在哪、能不能做某件事），一定先呼叫 clawdline_help，只照它回傳的說明講；你自己對 Clawdline 的印象一律不能用，因為很可能是錯的。
+- 使用者問 Clawdline 本身怎麼用（任何功能、設定、畫面、按鈕在哪、能不能做某件事），一定先呼叫 clawdline_help，只照它回傳的說明講；你自己對 Clawdline 的印象一律不能用，因為很可能是錯的。但使用者是要你「做」一件你有工具可以做的事時（例如「用智慧命名重新命名」就是 smart_rename_sessions），直接照那個工具的規則做，不要先查說明。
+- 「智慧命名」「重新命名 Session」「改 Session 名稱」一律用 smart_rename_sessions 由機器直接改名；絕對不要用 send_message_to_session 傳訊息請 Session 自己改名。
 - 回答問題的第一個字就是答案本身：絕對不要用「好」「好的」「我來說明」「我來跟你說」開頭。
 - 講多個 Session 時用它的簡稱帶出每一個，絕對不要說「第一個是」「第二個是」。
 - 最後一個重點講完就停：絕對不要加「這就是目前的狀況」「以上」「這兩個都在進行中」這類收尾。
@@ -177,7 +178,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 使用者要你「看看哪些 Session 的名稱和工作內容不符，用智慧命名重新命名」時：先呼叫 get_sessions_summary（他說工作中的就用 which=working，沒說就用 all），逐一比對每個 Session 的名稱和它的目標、最近完成、現在在做的事。
 - 名稱已經大致講得出它在做什麼的，就算用字不同也不要改；只挑名稱明顯對不上、太籠統（例如只有「新 Session」、專案名或一個指令）、或工作已經轉到別件事的。
 - 用名稱逐一說哪幾個要改、各用半句說為什麼（例如「『修 bug』其實在做語音匯報」），然後問一次「要用智慧命名重新命名這幾個嗎？」；都對得上就直接說「名稱都對得上，不用改」。
-- 使用者說好，才呼叫 smart_rename_sessions，sessions 填這些 Session 的完整名稱（label），一字不差照抄，並帶 confirmed: true。使用者自己一句話就點名要智慧命名哪個 Session 的，照只確認一次的規則直接做。
+- 使用者說好，才呼叫 smart_rename_sessions，sessions 填這些 Session 的完整名稱（label），一字不差照抄，並帶 confirmed: true。就算使用者已經點名是哪個 Session，也先用名稱問一次「要用智慧命名重新命名某某嗎？」，他說好才做。
 - 做完照結果逐一講「某某改成了某某」；失敗的照實說原因。新名稱是機器上的助理取的，不要自己改字。
 
 【開新的 Session】
@@ -1626,6 +1627,9 @@ export function writeGuard(deps: ToolDeps, row: CopilotSessionRow, said: string,
   return null
 }
 
+/** A message that asks a Session to rename itself, which smart naming does instead. */
+export const ASKS_A_RENAME = /智慧命名|smart[\s-]?(?:naming|title)|(?:重新命名|改名|rename)[^。\n]{0,12}(?:session|名稱|名字)|session[^。\n]{0,8}(?:重新命名|改名|名稱)/i
+
 async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, message: string, said = '', switchConfirmed = false): Promise<unknown> {
   if (!message.trim()) return { error: '沒有要送出的內容' }
   const read = await readRows(deps)
@@ -1643,6 +1647,14 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
   if (refused) {
     logs.push({ level: 'error', text: refused })
     return { error: refused }
+  }
+  // On 2026-11-13, asked to smart-name a Session, the copilot typed "please
+  // use smart naming to rename this Session" into it instead; the Session
+  // then tried to drive the app's window. The machine renames, not a message.
+  if (ASKS_A_RENAME.test(message)) {
+    const error = '這是要 Session 改名：改名要用 smart_rename_sessions 由機器直接智慧命名，不要傳訊息請 Session 自己改。先問使用者「要用智慧命名重新命名某某嗎？」，他說好再呼叫 smart_rename_sessions'
+    logs.push({ level: 'error', text: error })
+    return { error }
   }
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/send`, {
     method: 'POST',

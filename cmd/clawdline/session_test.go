@@ -637,3 +637,40 @@ func TestDeliveryEvidenceFilesAreBoundedPlainAndNonempty(t *testing.T) {
 		t.Fatalf("plain file %s %v", raw, err)
 	}
 }
+
+// Smart naming from inside a Session: whoami turns this conversation into its
+// terminal, and the button's own route names it, with a fresh Idempotency-Key.
+func TestSessionSmartTitleNamesThisSessionThroughItsRoute(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if strings.HasSuffix(r.URL.Path, "/whoami") {
+			return 200, `{"conversation_id":"` + thinConversation + `","terminal_id":"%47","assistant":"codex"}`
+		}
+		return 200, `{"ok":true,"title":"Swap the API and finish the UI","display_title":"Swap the API and finish the UI","named_by":"claude"}`
+	})
+	var out, errs bytes.Buffer
+	code := smartTitleSession(&out, &errs, b, "", "", envOf(map[string]string{"CODEX_THREAD_ID": thinConversation}))
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[1].Method != "POST" || seen[1].EscapedPath != "/v1/sessions/%2547/smart-title" ||
+		!strings.HasPrefix(seen[1].Key, "smart-title-") || seen[1].Token != thinToken || len(seen[1].Body) != 0 {
+		t.Fatalf("requests: %+v", seen)
+	}
+	if !strings.Contains(out.String(), "Swap the API and finish the UI") {
+		t.Fatalf("stdout: %q", out.String())
+	}
+}
+
+func TestSessionSmartTitleSaysTheMachinesRefusal(t *testing.T) {
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 409, `{"error":{"code":"conversation_empty","message":"This session has no first request to name yet."}}`
+	})
+	var out, errs bytes.Buffer
+	if code := smartTitleSession(&out, &errs, b, "", "%47", envOf(nil)); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(errs.String(), "conversation_empty") {
+		t.Fatalf("stderr: %q", errs.String())
+	}
+}
