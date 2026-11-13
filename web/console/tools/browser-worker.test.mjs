@@ -238,9 +238,9 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     assert.equal(await page("plain.value.length"), before + 9)
   })
   // Under phone emulation the layout ignores the tab's zoom, but Chrome
-  // multiplies dispatched mouse coordinates by it. A tester tab left at 200%
-  // once sent every pictured tap to twice its position: the field never
-  // focused and the person's text had nowhere to go.
+  // multiplies dispatched mouse coordinates by it; a tester view smaller than
+  // the emulated size scaled them the same way and sent every pictured tap to
+  // twice its position. Zoom is the reproducible way to drive that mapping.
   for (const zoom of [2, 0.5]) {
     await t.test(`a pictured phone tap focuses its field at ${zoom * 100}% zoom`, async () => {
       assert.equal((await command({op:"viewport", tab, person:true, args:{mode:"mobile"}})).ok, true)
