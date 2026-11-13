@@ -50,7 +50,7 @@ func TestClaudeIsolationRejectsAnUnprotectedProcess(t *testing.T) {
 				if protected {
 					profile = claudeProfile(claudeBoundary{Home: home, State: state, Owned: owned, Node: node, CLI: "/usr/bin/false", Modules: filepath.Join(state, "node_modules"), History: history})
 				}
-				config := Configuration{Executable: "/usr/bin/sandbox-exec", Arguments: []string{"-p", profile, node}, Environment: []string{"HOME=" + home, "PATH=/usr/bin:/bin", "LC_ALL=C"}}
+				config := Configuration{Executable: "/usr/bin/sandbox-exec", Arguments: []string{"-p", profile, node}, Environment: []string{"HOME=" + home, "USER=" + os.Getenv("USER"), "PATH=/usr/bin:/bin", "LC_ALL=C"}}
 				e = verifyClaudeIsolation(context.Background(), config, owned, filepath.Join(state, "foreign"), history, testLimits())
 				if protected && e != nil {
 					t.Fatalf("OS boundary refused: %v", e)
@@ -92,7 +92,7 @@ func TestClaudeIsolationRejectsABroadHistoryGrant(t *testing.T) {
 		}
 	}
 	broad := claudeProfile(claudeBoundary{Home: home, State: state, Owned: owned, Node: node, CLI: "/usr/bin/false", Modules: filepath.Join(state, "node_modules"), History: filepath.Join(state, "project-assistants", "native")})
-	config := Configuration{Executable: "/usr/bin/sandbox-exec", Arguments: []string{"-p", broad, node}, Environment: []string{"HOME=" + home, "PATH=/usr/bin:/bin", "LC_ALL=C"}}
+	config := Configuration{Executable: "/usr/bin/sandbox-exec", Arguments: []string{"-p", broad, node}, Environment: []string{"HOME=" + home, "USER=" + os.Getenv("USER"), "PATH=/usr/bin:/bin", "LC_ALL=C"}}
 	if e := verifyClaudeIsolation(context.Background(), config, owned, filepath.Join(state, "foreign"), history, testLimits()); pa.Code(e) != pa.ReadOnlyUnverified {
 		t.Fatalf("broad history grant was admitted: %v", e)
 	}

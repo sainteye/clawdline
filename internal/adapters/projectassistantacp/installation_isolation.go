@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -47,6 +48,9 @@ func sandboxPath(path string) bool {
 // Every feature-owned directory under the state is unreadable except this
 // execution's scratch and, when present, this binding's exact history config.
 // Inside that config, native memory and credential-shaped files stay denied.
+// The native CLI reads its login with `security`, once through a shell
+// string (/bin/sh hands it to /bin/bash on macOS) and once directly. Both need USER, because os.userInfo() cannot reach directory
+// services here; the shell may exec only the same literal programs.
 // The login keychain files are readable so the native CLI can use the
 // person's existing login; every write there stays denied, so the native
 // process cannot add, change or delete a keychain item through these files.
@@ -76,7 +80,7 @@ func claudeProfile(b claudeBoundary) string {
 (deny file-write* (regex #"(^|/)\.claude(/|$)"))
 (allow file-read-data (literal %s) (literal %s))
 (deny process-exec)
-(allow process-exec (literal %s) (literal %s) (literal "/usr/bin/security"))
+(allow process-exec (literal %s) (literal %s) (literal "/usr/bin/security") (literal "/bin/sh") (literal "/bin/bash"))
 `, quoted(b.Owned), quoted(b.Home), quoted(filepath.Join(b.State, "project-assistants")), quoted(b.Owned), quoted(b.Modules), quoted(b.Node), quoted(b.CLI), quoted(filepath.Join(b.Home, "Library", "Keychains")), history, quoted(filepath.Join(b.Home, ".claude.json")), quoted(filepath.Join(b.Home, ".claude", ".credentials.json")), quoted(b.Node), quoted(b.CLI))
 }
 
@@ -96,6 +100,7 @@ const memory=path.join(owned,'.claude','memory','control');
 try{fs.readFileSync(memory);r.memory_read=false}catch(e){r.memory_read=e.code==='EPERM'||e.code==='ENOENT'}
 try{fs.writeFileSync(memory,'forbidden');r.memory_write=false}catch(e){r.memory_write=e.code==='EPERM'}
 try{fs.readdirSync(path.join(process.env.HOME,'Library','Keychains'));r.keychain_read=true}catch(e){r.keychain_read=false}
+try{cp.execSync('true',{stdio:['ignore','pipe','pipe']});r.login_lookup=!!process.env.USER}catch(e){r.login_lookup=false}
 fs.writeFileSync(path.join(owned,'control'),'owned');r.owned_write=fs.readFileSync(path.join(owned,'control'),'utf8')==='owned';
 const denied=p=>{let a,b;try{fs.readFileSync(p);a=false}catch(e){a=e.code==='EPERM'}try{fs.writeFileSync(p,'forbidden');b=false}catch(e){b=e.code==='EPERM'}return a&&b};
 const refused=p=>{try{fs.writeFileSync(p,'forbidden');return false}catch(e){return e.code==='EPERM'}};
@@ -130,6 +135,13 @@ func (i ClaudeInstallation) isolatedWithHistory(ctx context.Context, state strin
 	if e != nil || !filepath.IsAbs(home) {
 		return Configuration{}, none, refusal(pa.Invalid, "native_home")
 	}
+	// The OS account names the existing login item; nothing else is taken
+	// from the person's environment.
+	current, e := user.Current()
+	if e != nil || current.Username == "" || strings.ContainsAny(current.Username, "=\x00\n") {
+		return Configuration{}, none, refusal(pa.Invalid, "native_account")
+	}
+	account := current.Username
 	if !sandboxPath(state) || !sandboxPath(home) {
 		return Configuration{}, none, refusal(pa.Invalid, "native_state")
 	}
@@ -186,7 +198,7 @@ func (i ClaudeInstallation) isolatedWithHistory(ctx context.Context, state strin
 	}
 	boundary := claudeBoundary{Home: home, State: state, Owned: owned, Node: i.Node, CLI: i.CLI, Modules: modules, History: history}
 	environment := []string{
-		"HOME=" + home, "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C", "TMPDIR=" + tmp,
+		"HOME=" + home, "USER=" + account, "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C", "TMPDIR=" + tmp,
 		"CLAUDE_CODE_EXECUTABLE=" + i.CLI, "CLAUDE_AGENT_ACP_PROTOCOL=v1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
 		"DISABLE_TELEMETRY=1", "DISABLE_ERROR_REPORTING=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 	}
@@ -247,7 +259,7 @@ func seedHistoryControls(history string) (string, func(), error) {
 }
 
 func verifyClaudeIsolation(ctx context.Context, config Configuration, owned, foreign, history string, l Limits) error {
-	keys := []string{"foreign_write", "foreign_exec", "memory_read", "memory_write", "keychain_read", "owned_write"}
+	keys := []string{"foreign_write", "foreign_exec", "memory_read", "memory_write", "keychain_read", "login_lookup", "owned_write"}
 	args := []string{"-p", config.Arguments[1], config.Arguments[2], "-e", claudeIsolationProbe, owned, foreign}
 	credentials := []string{}
 	if history != "" {

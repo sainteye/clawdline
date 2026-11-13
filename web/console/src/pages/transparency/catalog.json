@@ -3547,7 +3547,7 @@
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
     "internal/adapters/projectassistantacp/client.go": "03af753043fa5fe0d0d3282b0c8bc6fa160934090affb6bbc83a3fa50d10131a",
     "internal/adapters/projectassistantacp/installation.go": "557fa416cc647479b221a2867db2d17d48cb9b6d4443a48472b1df8eb33de29b",
-    "internal/adapters/projectassistantacp/installation_isolation.go": "84b568443943ced9b8b3e74cd2caa669e352ad8a06f342f153aaad769f5b5967",
+    "internal/adapters/projectassistantacp/installation_isolation.go": "23ef261e0be60a3299bb28996ec2961b98616e161ab08910f2b527966de608a2",
     "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
     "internal/adapters/projectassistantacp/session_configuration.go": "700776ccf31a781ae2478316c99ba4ac1178c2ef38f97847bbe1161ee077b522",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
