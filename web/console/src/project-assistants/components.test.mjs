@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url"
 import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {PermissionCard} from "./PermissionCard";export {BotStatus} from "./BotStatus";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {BotStatus} from "./BotStatus";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotOrb,PermissionCard,BotStatus,ChatRows,fixtureSource,words}=compiled.exports
+const {BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,BotStatus,ChatRows,fixtureSource,words}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
   let opened=0
@@ -56,4 +56,47 @@ test("durable messages and work retain their original execution in the source sn
   assert.equal(snapshot.work_links.length,1)
   assert.equal(snapshot.work_links[0].state,"landed")
   assert.equal(snapshot.work_links[0].fence.generation,1)
+})
+test("bounded fixture snapshots begin after a genuine600-event machine frontier and never call Export",async()=>{
+  const source=fixtureSource(),signal=new AbortController().signal,key=source.bots[0].key
+  source.seedHistory(600);source.configureViews({forbidLegacy:true})
+  const request={key,conversation_id:source.bots[0].conversation_id,mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:100}
+  const page=readView(await source.view(request,signal),request,{key,project:source.bots[0].project,conversation_id:request.conversation_id})
+  assert.equal(page.items.length,100);assert.equal(page.head.event_frontier,602)
+  source.emitMessage("603");source.emitMessage("604")
+  const next=await source.view({...request,mode:"events",source_epoch:page.source_epoch,after_seq:602,page_size:256},signal)
+  assert.deepEqual(next.items.map(row=>row.event.seq),[603,604])
+  assert.equal(next.next_seq,604)
+  assert.equal(source.log.filter(row=>["export","get","history","events"].includes(row.method)).length,0)
+})
+test("101 permission and trace summaries remain separate from complete detail and honest totals",async()=>{
+  const source=fixtureSource(),signal=new AbortController().signal,key=source.bots[0].key
+  source.seedCollections(101)
+  const base={key,conversation_id:source.bots[0].conversation_id,mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:100}
+  const snapshot=await source.view(base,signal)
+  assert.equal(snapshot.head.pending_permission_count,101);assert.equal(snapshot.head.trace_category_count,101)
+  const first=await source.view({...base,mode:"permissions",source_epoch:snapshot.source_epoch},signal)
+  assert.equal(first.items.length,100);assert.equal(first.has_more,true)
+  const summary=first.items[0].permission_summary
+  const html=render(PermissionCard,{summary,enabled:true,onDetail:()=>assert.fail("render loaded detail"),onAnswer:()=>assert.fail("summary answered"),w:words("en")})
+  assert.match(html,/View details/);assert.doesNotMatch(html,/Allow once/)
+  const last=await source.view({...base,mode:"permissions",source_epoch:snapshot.source_epoch,cursor:first.next_cursor},signal)
+  assert.equal(last.items.length,1);assert.equal(last.has_more,false)
+  const detail=await source.view({...base,mode:"detail",source_epoch:snapshot.source_epoch,cursor:summary.detail_cursor,page_size:1},signal)
+  assert.equal(detail.items[0].permission.options.length,101)
+  const traces=await source.view({...base,mode:"traces",source_epoch:snapshot.source_epoch},signal)
+  const traceHTML=render(Trace,{summaries:traces.items.map(row=>row.trace_summary),total:snapshot.head.trace_category_count,more:true,w:words("zh-Hant")})
+  assert.match(traceHTML,/101/);assert.match(traceHTML,/查看詳細內容/);assert.doesNotMatch(traceHTML,/Complete trace/)
+})
+test("a late second permission preflight refusal latches only its current scope and never enters the answer effect",async()=>{
+  for(const code of ["pa_cursor_expired","pa_stale_generation","pa_capacity_full"])for(const current of [true,false]){
+    const refusal={contract_version:"project-assistants.v1",error:{code,field:"detail",retry_after_seconds:0}}
+    let rejectDetail,locks=0,effects=0,attempts=0
+    const detail=new Promise((_,reject)=>{rejectDetail=reject})
+    const attempt=withPermissionRecovery(async()=>{attempts++;await detail;effects++;return "answered"},()=>current,()=>{locks++})
+    rejectDetail(refusal)
+    await assert.rejects(attempt,error=>error===refusal)
+    assert.equal(locks,current&&code!=="pa_capacity_full"?1:0,`${code} current=${current}`)
+    assert.equal(effects,0);assert.equal(attempts,1,"no automatic permission replay")
+  }
 })

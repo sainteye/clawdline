@@ -10,14 +10,43 @@ import { CloudClient } from "../legacy/js/net/cloud-client.js"
 import { CARRIED } from "./carry-generated.ts"
 
 const signal = () => new AbortController().signal
+const viewRequest:W.ProjectAssistantReadViewRequest={key:{machine_id:"one",bot_id:"same/id"},conversation_id:"chat",mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:100}
+test("bounded view keeps API58 metadata and requires API59 only for its captured read",async()=>{
+  let calls=0
+  const old=make(async()=>{calls++;return Response.json(sourceStatus())}).source
+  await old.status(signal())
+  await assert.rejects(old.view(viewRequest,signal()),e=>errorCode(e)==="pa_unsupported")
+  assert.equal(calls,1)
+  const paths:string[]=[]
+  const fresh=make(async path=>{paths.push(path);return Response.json(viewWire())},{...grant(),apiLevel:59}).source
+  await fresh.view(viewRequest,signal())
+  const routed=assistantRelayRequest(paths[0])
+  assert.equal(routed.word,"project-assistants.view");assert.equal(routed.kind,"read")
+  assert.deepEqual(routed.fields,viewRequest)
+  assert.equal(new URL(paths[0],"http://source.invalid").pathname,"/v1/project-assistants/same%2Fid/view")
+})
 const key = {machine_id:"one",bot_id:"same/id"}
 const grant = (machineID = "one"): AssistantGrant => ({accountKey:"account",readerID:"trusted-reader",machineID,authorizationRevision:"grant-1",apiLevel:58,paired:true,online:true,writable:true})
 const sourceStatus = (access: W.ProjectAssistantAccess = "interactive"): W.ProjectAssistantSourcesResponse => ({contract_version:"project-assistants.v1",sources:[{machine_id:"one",access,state:"online",fresh:true,readable:true,writable:access === "interactive",observed_at:"",capabilities:[]}]})
+const viewWire=():W.ProjectAssistantReadViewResponse=>{
+  const project:W.ProjectAssistantProjectScope={machine_id:"one",project_id:"project",canonical_id:"canonical",kind:"repository"}
+  const fence:W.ProjectAssistantFence={key,project,conversation_id:"chat",binding_id:"",generation:0}
+  const bot:W.ProjectAssistantBot={key,project,conversation_id:"chat",name:"Synthetic Bot",agent:"codex",permission_policy:"ask",appearance:{shape:"blob",color:"#e39567"},instructions:{text:"",revision:1,role_snapshot_ref:""},version:1,created_at:"2026-11-12T00:00:00Z",updated_at:"2026-11-12T00:00:00Z"}
+  return {contract_version:"project-assistants.v1",mode:"snapshot",source:sourceStatus().sources[0],source_epoch:"epoch",head:{key,project,current_fence:fence,conversation:{key,id:"chat",binding_id:"",generation:0,active_turn_id:"",last_message_seq:0,memory_revision:1,version:1},memory_revision:1,bot_version:1,event_frontier:0,unknown_turn_count:0,pending_permission_count:0,trace_category_count:0},snapshot:{bot,pending_turns:[],queued_messages:[]},items:[],has_more:false,next_cursor:"",next_seq:0}
+}
 const make = (transport: AssistantFetch, first = grant()) => {
   let current: AssistantGrant | null = first
   const source = new ProjectAssistantSourceClient(first,transport,() => current)
   return {source,setGrant(next: AssistantGrant | null) {current = next}}
 }
+test("view rejects raw truthy Source flags before a captured writable grant can coerce them",async()=>{
+  for(const writable of [true,false])for(const field of ["readable","writable","fresh"]){
+    const source=sourceStatus().sources[0]
+    ;(source as unknown as Record<string,unknown>)[field]="false"
+    const client=make(async()=>Response.json({...viewWire(),source}),{...grant(),apiLevel:59,writable}).source
+    await assert.rejects(client.view(viewRequest,signal()),e=>errorCode(e)==="pa_invalid")
+  }
+})
 test("old, unknown, unpaired and offline sources issue no nonexistent API requests",async () => {
   let calls = 0
   for (const changed of [{apiLevel:57},{apiLevel:undefined},{paired:false},{online:false}]) {
@@ -232,6 +261,37 @@ test("every Bot word is carried and read-only metadata retains action refs",asyn
     assert.equal(captured.at(-1)?.ref,"stable-"+word)
     assert.deepEqual(captured.at(-1)?.fields,fields)
   }
+})
+
+test("view checks API59 and every captured authority again after delayed JSON decoding",async()=>{
+  for(const change of ["abort","account","reader","machine","revision","api"]){
+    let release!:(answer:unknown)=>void,started!:()=>void
+    const body=new Promise(resolve=>{release=resolve}),reading=new Promise<void>(resolve=>{started=resolve})
+    const response=new Response("{}");response.json=()=>{started();return body}
+    const first={...grant(),apiLevel:59},{source,setGrant}=make(async()=>response,first),control=new AbortController()
+    const waiting=source.view(viewRequest,control.signal)
+    await reading
+    if(change==="abort")control.abort()
+    else setGrant({...first,...change==="api"?{apiLevel:58}:change==="account"?{accountKey:"other"}:change==="reader"?{readerID:"other"}:change==="machine"?{machineID:"two"}:{authorizationRevision:"grant-2"}})
+    release({})
+    await assert.rejects(waiting,e=>change==="abort"?(e as Error).name==="AbortError":errorCode(e)===(change==="api"?"pa_unsupported":"pa_revoked"))
+  }
+})
+test("view Cloud routing keeps empty strings and zeroes and rejects extra or duplicate query fields",()=>{
+  const path="/v1/project-assistants/same%2Fid/view?machine_id=one&conversation_id=chat&mode=snapshot&source_epoch=&cursor=&after_seq=0&page_size=100"
+  assert.deepEqual(assistantRelayRequest(path).fields,viewRequest)
+  for(const invalid of [path+"&cursor=x",path+"&reader_id=forged",path.replace("after_seq=0","after_seq=1e2"),path.replace("source_epoch=", "epoch="),path.replace("page_size=100","page_size=257"),path.replace("mode=snapshot","mode=export")])assert.throws(()=>assistantRelayRequest(invalid),e=>errorCode(e)==="pa_invalid")
+  const history={...viewRequest,mode:"history",source_epoch:"epoch",cursor:"signed +<&opaque"}
+  const query=new URLSearchParams({machine_id:"one",conversation_id:"chat",mode:"history",source_epoch:history.source_epoch,cursor:history.cursor,after_seq:"0",page_size:"100"})
+  assert.deepEqual(assistantRelayRequest("/v1/project-assistants/same%2Fid/view?"+query).fields,history)
+})
+test("captured view transport sends the generated request once and preserves typed refusals",async()=>{
+  let calls=0
+  const refusal:W.ProjectAssistantErrorResponse={contract_version:"project-assistants.v1",error:{code:"pa_capacity_full",field:"snapshot",retry_after_seconds:7}}
+  const connection={machineDescriptor:()=>({machine:{commands:["project-assistants.view"]}}),async _machineRequest(machine:string,word:string,fields:Record<string,unknown>){calls++;assert.equal(machine,"one");assert.equal(word,"project-assistants.view");assert.deepEqual(fields,viewRequest);return refusal}}
+  const first={...grant(),apiLevel:59},source=new ProjectAssistantSourceClient(first,capturedAssistantRelayFetch("one",()=>connection,["project-assistants.view"]),()=>first)
+  await assert.rejects(source.view(viewRequest,signal()),e=>{assert.deepEqual(e,refusal);return true})
+  assert.equal(calls,1)
 })
 
 const projectsRequest: W.ProjectAssistantProjectsRequest={machine_id:"one",cursor:"opaque +<&page",page_size:100}

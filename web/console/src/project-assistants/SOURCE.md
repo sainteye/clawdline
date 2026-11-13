@@ -6,7 +6,7 @@ This removable React module implements the approved BR-01 through BR-06 presenta
 
 - `Bots(props: BotsProps)` from `Bots.tsx` receives `sources: readonly SourceClient[]`, `onClose: () => void`, and optional `language: string` (English by default), `accountKey: string`, `readerID: string`, `viewState: ViewState`, `returnFocus: HTMLElement | null`, `onOpenWork: (ProjectAssistantWorkLink) => void`, `manageHistory: boolean` (false by default), and `onSelectionChange: (ProjectAssistantBotKey | null) => void`.
 - `BotOrb(props: BotOrbProps)` from `BotOrb.tsx` receives `onOpen: (opener?: HTMLElement) => void` and optional `language`, `unread`, and `pendingPermissions`. The host sums counts only from currently readable sources. The global entry always uses the approved blob and `#e39567`; it never derives appearance from a selected Bot.
-- `SourceClient` is defined only in `client.ts`, with the exact frozen readonly `machineID`, `authorizationRevision`, sixteen methods, generated request/response types and final `AbortSignal` argument. It is injected. No feature HTTP transport or global active-machine fetch is created here.
+- `SourceClient` is defined only in `client.ts`, with the exact frozen readonly `machineID`, `authorizationRevision`, seventeen methods, generated request/response types and final `AbortSignal` argument. It is injected. No feature HTTP transport or global active-machine fetch is created here.
 - `createViewState(storage?)` from `view-state.ts` retains staged drafts, reply IDs, reading positions and recovery-required scopes. Supply one host-owned instance to preserve these through host remounts. Drafts use account namespace, machine ID and Bot ID, and flush on leaving or hiding instead of per keystroke. Without an explicit account key the source grant namespace is used, so renewed authorization does not reuse another account's drafts. The host should always supply its authenticated account namespace and reader principal.
 - `words(language)` and the exported `en` / `zhHant` tables from `words.ts` provide English and Taiwan Traditional Chinese together. Register every key as `projectAssistants.<key>` in both shipped catalogs and register this table with the source catalog checker. No shared catalog was edited by PA-04.
 
@@ -34,7 +34,7 @@ The approved previews were all visually inspected before implementation. Actual 
 
 ## Verification and remaining integration
 
-Run the `.test.ts` and `components.test.mjs` tests through the existing console runner. They exercise observable drafts, fences, replay/grouping, queue transitions, composition, source grant invalidation and rendered controls. The e2e harness additionally builds an in-memory bundle, starts one temporary server bound to `127.0.0.1`, rejects all `/v1` calls, exercises Chromium and WebKit at 320, 390 and 1440 pixels, records BR screenshots and requests in both languages, checks 150-message pagination and replay, offline/disabled history and opener restoration, and closes every page/browser/server in `finally`.
+Run the `.test.ts` and `components.test.mjs` tests through the existing console runner. They exercise observable drafts, fences, replay/grouping, queue transitions, composition, source grant invalidation and rendered controls. The e2e harness additionally builds an in-memory bundle, starts one temporary server bound to `127.0.0.1`, rejects all `/v1` calls, exercises Chromium and WebKit at 390 and 1440 pixels, records BR screenshots and requests in both languages, checks bounded600-event entry, frontier continuation, live-history races, offline/disabled history and opener restoration, and closes every page/browser/server in `finally`.
 
 ```sh
 PLAYWRIGHT_MODULE=/absolute/path/to/existing/playwright/index.mjs \
@@ -44,13 +44,40 @@ PLAYWRIGHT_MODULE=/absolute/path/to/existing/playwright/index.mjs \
 
 No dependency is installed by the harness. Its fixture has no real provider, Cloud account, personal Session, microphone or model. Real native read-only enforcement, native memory isolation and resume remain typed unavailable until independently proved by adapter owners. Actual metadata persistence across daemon restart, cross-device monotonic reads, production Cloud grants, physical iPhone keyboard/gestures, runtime work dispatch and production voice coexistence require the integrated candidate and their owning acceptance steps.
 
-Capacity owner must register `chat-items.ts:ChatSeparatorGapMs` (3,600,000 ms) and `Chat.tsx:EventRefreshMs` (3,000 ms). List/history/event request sizes reuse the frozen 100/100/256 contract limits. Polling is serialized, only scheduled for a visible online writable source, aborted on hide/destination/grant change/unmount, and stops on failure until manual refresh.
+Capacity owner must register `chat-items.ts:ChatSeparatorGapMs` (3,600,000 ms) and `Chat.tsx:EventRefreshMs` (3,000 ms). List/history/view request sizes reuse the frozen100/100/256 limits,16 pending turns and4096 cursor bytes. Polling is serialized, only scheduled for a visible online writable source, aborted on hide/destination/grant change/unmount, and stops on failure until manual refresh.
 
 Authenticated persisted messages and work links belong to the exact source machine, Bot, full Project (machine, project ID, canonical ID and kind) and conversation. Their original execution binding and generation remain visible after replacement. Both the event envelope and its nested durable payload must match that scope; initial history, earlier history and recovery snapshots apply the same filter. Permission offers, turn control and traces still require the complete current execution fence, including binding and generation. This UI distinction does not relax native callbacks or Broker work ownership, and does not introduce a model-controlled native trust entry point.
 
-An expired event cursor latches a separate recovery-required state, aborts in-flight mutations and obtains the existing authenticated transactional `export` snapshot. The latch belongs to the existing host-owned ViewState under the account/Bot draft identity: leaving Chat, switching Bots, or remounting the host with that same ViewState cannot clear it. It is not a new registry or cross-account persistent storage. A later fresh GET, history page or successful event page cannot unlock the UI or mutation handlers. Mutations recheck the latch after their own GET, including when a source ignores cancellation. Only successful publication of a verified same-scope snapshot clears the latch. Snapshot failures preserve history, drafts and unknown receipts, prohibit writes, and stop polling and visibility-triggered recovery until explicit retry. The snapshot's conversation/binding/generation and own event frontier remain authoritative; no later GET is substituted into that snapshot. Root verified the store's aggregate/events/receipts share one SQLite read transaction; integrated concurrent-write acceptance remains with the store/root. Unknown send outcomes retain draft and receipt and are never automatically retried.
+Chat entry now calls the additive API59 `view(snapshot)` directly with the
+selected summary's captured conversation. The consistent mandatory snapshot
+replaces the window/control state and adopts the source epoch and machine
+`head.event_frontier`. It never initializes via GET/history, replays events
+from zero or falls back to Export. Refresh uses one bounded `view(events)`
+page and advances only to the last included event. History uses opaque live
+cursors; work facts merge by identity and observation sequence, including
+facts from older executions. Page heads do not move replay past unseen events.
 
-Two known limits remain outside this bounded UI correction: initialization still reads events from zero after its first 100-message history page, so journal replay can expand the initial window; recovery still requires the full Export, which can exceed the Cloud plaintext capacity. A capacity failure remains locked and does not manufacture a cursor, truncate facts, enlarge a cap or replay a send. The root owns a subsequent bounded, consistent read projection. Synthetic Chromium/WebKit acceptance at 390 and 1440 pixels proves the classified durable facts and recovery lock; it does not establish complete PA-04/PA-05, production Cloud or large-archive recovery acceptance. Use `BOTS_TARGETED=1` for this four-case, English-only regression subset of the existing browser harness.
+An expired cursor or changed execution fence latches account/Bot recovery,
+clears current actions and attempts a fresh bounded snapshot. Snapshot failure
+preserves the existing window and draft and stops background recovery. Returning
+to the Bot or remounting the same host does not release that latch: only an
+explicit retry that publishes a validated bounded snapshot can do so. A fresh
+mutation preflight uses this same bounded snapshot port, checks current source,
+epoch and full fence after the await, and never advances the displayed replay
+cursor. A snapshot with no receipt information cannot resolve an unknown effect.
+The existing ViewState holds one unresolved intent/receipt for each account/Bot,
+without a new registry, storage format, TTL or automatic effect replay.
+
+Permissions and traces load one summary page, show the exact source totals and
+require manual more. Only a complete current-fence stored permission detail
+renders answer options; unsafe and persistent options keep the existing denial.
+Trace text is fetched only after selection. Capacity refusals retain source
+error codes and never produce truncated successful details. See
+[the bounded UI record](../../../../docs/project-assistants-read-ui.md) for
+validation, race coverage, rerun commands and the remaining integration gates.
+Memory inspection/explicit export remain manual transfer operations, with the
+pre-existing complete-archive capacity limit; they are not recovery paths.
+
 
 
 Removal consists of deleting this subtree and the explicit fixture HTML, then removing only root-owned imports, page admission, entry slot, route coordination and catalog/table registrations. Do not delete persisted Bot data, Project memory or existing voice owners. No production integration import is introduced by this module commit.
@@ -65,7 +92,7 @@ Project destination; this adaptation uses source-registered IDs instead of a
 filesystem picker. No arbitrary directory, provider-ready fixture or global
 active-machine lookup is introduced.
 
-The sixteen-method SourceClient now takes
+The SourceClient retains the API58 catalog method
 `projects(ProjectAssistantProjectsRequest, AbortSignal)` and returns the
 frozen `ProjectAssistantProjectsResponse`. The host's API58 transport owns the
 independent `/v1/project-assistant-targets` route and current captured grant.
@@ -122,3 +149,83 @@ passes normal and race runs against the actual local Bridge/Router/Server,
 device gate and PlaceRegistry, including typed cursor/revocation errors and
 zero provider initialization. These results do not establish production Cloud
 signatures/networking, persistence across devices or physical phone acceptance.
+
+
+## Additive bounded read port
+
+`view(ProjectAssistantReadViewRequest, AbortSignal)` is method17. Only this
+method requires API59. The existing16 methods, metadata catalog and roster
+retain API58 support. Unsupported view is a typed, read-only Chat failure;
+there is no old-API fallback. The captured Cloud adapter maps exactly
+`GET /v1/project-assistants/{encodedBot}/view` and seven query fields to
+`project-assistants.view` (read), retaining empty strings and zeroes.
+Account, reader, machine, grant revision and API59 are rechecked after transport
+and JSON decoding. Metadata does not upgrade native capability readiness.
+
+The added visible key is `projectAssistants.details`: `View details` /
+`查看詳細內容`. Root owns the shipped catalogs and generated registrations.
+The independent pure read validator rejects malformed mode/payload, scope,
+epoch, counts and cursor progression. Source tuple IDs/anchors remain intact;
+an older history observation cannot replace a newer work event.
+
+The v3 child ran32 focused helper/component/ViewState tests successfully.
+Its captured-source suite passed26 of27; the existing every-word assertion
+correctly awaited the backend-owned generated carry addition. The child did
+not copy or weaken that assertion. TypeScript checking passed. Chromium and
+WebKit were denied at launch by the restricted child environment; these are
+not passing UI results. Root owns normal-environment execution of the eight
+real browser groups and the original-Chat red control before module acceptance.
+No product model, media, paid external API, native provider, production Cloud
+or physical phone acceptance is claimed. All product model requests:0.
+
+The default browser harness now exercises the bounded Chat matrix. Set
+`BOTS_CATALOG_ONLY=1` for the preserved catalog matrix. For the original-Chat
+red control, set `BOTS_CHAT_SOURCE` to the retained seed Chat source; the
+harness overrides only that module in memory and never rewrites the checkout.
+The first600-journal-event assertion must reject the original implementation.
+
+The next controlled race revision retains the prior v1 Chat separately.
+`BOTS_READ_RACE=permission` verifies that second-detail cursor expiry or a
+changed generation latches recovery before answering. `BOTS_READ_RACE=parallel`
+holds both Send and settings preflights, releases a same-fence recovery first,
+then releases ignored-abort old reads and requires zero effects. It also checks
+all controllers on unmount. The implementation tracks every active mutation
+until its promise settles and aborts all on recovery/snapshot/unmount. Both
+races are in the default eight-group matrix; the existing-engine/width/language
+environment selectors are for focused red controls only. Root owns real browser
+execution of v1 versus this revision; child launch refusal is still not a pass.
+
+
+The v3 read boundary validates raw Source booleans/enums/capability metadata
+and the consumed mandatory Bot, message, work, permission, trace and event
+fields before grant composition or publication. Event kind must own exactly
+its declared payload. It reuses existing generated enum values and adds no
+external runtime dependency. Truthy-string Source and missing Bot counterexamples
+were retained red before the correction. The same new view validation runs in
+the captured transport; the original16 methods remain unchanged.
+
+Producer-compatible snapshots may include user messages for every counted
+pending turn, including running/waiting-permission states. Messages must match
+both summary MessageID and TurnID; accepted/queued messages remain mandatory.
+Only accepted/queued states appear in the queued footer. A conversation's
+retained memory revision may precede the source head, while execution identity
+still requires the complete current fence. Both legal inputs have direct tests.
+
+The v4 identity correction preserves another legal producer shape: message and
+work rows may share the same ID string. Duplicate checks use kind plus ID,
+without changing the source IDs or relaxing duplicate rejection within a kind.
+Root supplied a real Store Restore/Read positive control and an exact consumer
+Node counterexample; the child retained its own before/after runs and passed
+all14 read-view helper tests. Chat, fixture, harness, transport and ViewState
+remained byte-identical to v3 for this correction.
+
+Normal v5 browser execution subsequently exposed that the second permission
+detail error still reached display without invoking recovery. The v6 actual
+permission attempt is wrapped in `withPermissionRecovery`; a late expiry or
+changed generation locks the still-current scope and rethrows the original
+error, while a stale account/source cannot lock another scope. A direct delayed
+operation test checks latch/effects/error identity and no retry; all9 component
+tests pass. The mobile browser route now goes Chat → Bots → Sessions before
+the existing opener-focus assertion. These correct the observed failed paths;
+they do not turn the failed v5 matrix into a passing UI receipt. Normal eight
+groups and the retained red controls remain the root's acceptance gate.

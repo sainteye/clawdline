@@ -3,11 +3,14 @@ import type { SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { failure, projectChoices } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
+import { readViewRequest, readView } from "../project-assistants/read-views.ts"
+// @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { createViewState, canRead } from "../project-assistants/view-state.ts"
 import type { CloudClientHandle, CloudMachine } from "./copied.js"
 import type { WorkV2Item } from "../pages/work/api.js"
 
 export const PROJECT_ASSISTANTS_API_LEVEL = 58
+export const PROJECT_ASSISTANTS_VIEW_API_LEVEL = 59
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -56,13 +59,13 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   revoke() { this.lifetime.abort() }
   current(): boolean { try {this.check(new AbortController().signal,false,false);return true} catch {return false} }
-  private check(signal: AbortSignal, write: boolean, content: boolean) {
+  private check(signal: AbortSignal, write: boolean, content: boolean, minimum = PROJECT_ASSISTANTS_API_LEVEL) {
     const live = this.currentGrant()
     if (!live || this.lifetime.signal.aborted || live.accountKey !== this.grant.accountKey ||
       live.readerID !== this.grant.readerID || live.machineID !== this.machineID || live.authorizationRevision !== this.authorizationRevision) throw failure("pa_revoked")
     if (signal.aborted) throw new DOMException("Aborted", "AbortError")
     if (!live.paired) throw failure("pa_unpaired")
-    if (live.apiLevel === undefined || live.apiLevel < PROJECT_ASSISTANTS_API_LEVEL) throw failure("pa_unsupported")
+    if (live.apiLevel === undefined || live.apiLevel < minimum) throw failure("pa_unsupported")
     if (!live.online) throw failure("pa_offline")
     if (write && content && (!live.writable || this.access !== "interactive" || !this.lastStatus?.writable || !this.lastStatus.fresh)) throw failure("pa_read_only")
     if (write && !content) {
@@ -71,23 +74,23 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
-  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand }, method = "GET", content = true): Promise<T> {
+  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand }, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL): Promise<T> {
     const write = method !== "GET"
-    this.check(signal,write,content)
+    this.check(signal,write,content,minimum)
     if (body) this.key(body.command.key)
     const control = new AbortController(), abort = () => control.abort()
     signal.addEventListener("abort",abort,{once:true}); this.lifetime.signal.addEventListener("abort",abort,{once:true})
     try {
       const response = await this.transport(path,{method,signal:control.signal,cache:"no-store",
         ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":body.command.idempotency_key}} : {})})
-      this.check(signal,write,content)
+      this.check(signal,write,content,minimum)
       const answer: unknown = await response.json()
-      this.check(signal,write,content)
+      this.check(signal,write,content,minimum)
       if (sourceFailure(answer)) throw answer
       if (!response.ok) throw new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : write ? "pa_outcome_unknown" : "pa_offline",answer)
       return answer as T
     } catch (error) {
-      this.check(signal,write,content)
+      this.check(signal,write,content,minimum)
       if (sourceFailure(error)) throw error
       throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : "pa_offline",error)
     } finally { signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
@@ -138,6 +141,18 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key),s,r,"PATCH") }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
+  async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
+    this.key(r.key);readViewRequest(r)
+    const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size}),s,undefined,"GET",true,PROJECT_ASSISTANTS_VIEW_API_LEVEL)
+    this.check(s,false,false,PROJECT_ASSISTANTS_VIEW_API_LEVEL)
+    if(!answer?.head)throw failure("pa_invalid")
+    // The path owns Bot identity. Chat independently checks the captured Project scope.
+    readView(answer,r,{key:r.key,project:answer.head.project,conversation_id:r.conversation_id})
+    const source=answer.source
+    answer.source={...source,writable:source.writable&&this.currentGrant()?.writable===true}
+    this.access=answer.source.access;this.lastStatus=answer.source
+    return answer
+  }
   send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST") }
   stop(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST") }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
@@ -177,15 +192,11 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     if (bot === "status" && !tail) return {word:"project-assistants.status",kind:"read" as const,fields:{},id:""}
     if (!bot) return {word:"project-assistants.list",kind:"read" as const,fields:{...q,page_size:Number(q.page_size)},id:""}
     const key = {machine_id:q.machine_id,bot_id:bot}
-    if (tail === "/view") {
-      const fields = ["machine_id","conversation_id","mode","source_epoch","cursor","after_seq","page_size"]
-      if (init?.body != null || url.searchParams.size !== fields.length || fields.some(field => !url.searchParams.has(field)) ||
-        Object.keys(q).some(field => !fields.includes(field)) || !q.machine_id || !q.conversation_id ||
-        !["snapshot","history","events","permissions","traces","detail"].includes(q.mode) ||
-        !/^(0|[1-9][0-9]*)$/.test(q.after_seq) || !Number.isSafeInteger(Number(q.after_seq)) ||
-        !/^[1-9][0-9]*$/.test(q.page_size) || !Number.isSafeInteger(Number(q.page_size)) || Number(q.page_size) > (q.mode === "events" ? 256 : 100)) throw failure("pa_invalid")
-      // This transport preserves the closed request; the source owns mode-state and cursor authority.
-      const request: W.ProjectAssistantReadViewRequest = {key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size)}
+    if(tail==="/view") {
+      const fields=["machine_id","conversation_id","mode","source_epoch","cursor","after_seq","page_size"]
+      if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(field=>!url.searchParams.has(field))||Object.keys(q).some(field=>!fields.includes(field))||! /^(0|[1-9][0-9]*)$/.test(q.after_seq)||! /^[1-9][0-9]*$/.test(q.page_size))throw failure("pa_invalid")
+      const request:W.ProjectAssistantReadViewRequest={key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size)}
+      readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
     }
     const action = tail === "/messages" ? "history" : tail === "/events" ? "events" : tail === "/export" ? "export" : tail === "" ? "get" : null

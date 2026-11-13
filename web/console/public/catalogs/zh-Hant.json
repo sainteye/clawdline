@@ -10076,6 +10076,7 @@
   "projectAssistants.createHint": "建立只儲存設定；第一次傳訊息才開始執行。",
   "projectAssistants.createSubmit": "建立",
   "projectAssistants.delivered": "已交付",
+  "projectAssistants.details": "查看詳細內容",
   "projectAssistants.draftUnavailable": "無法在此裝置儲存草稿",
   "projectAssistants.earlier": "較早的訊息",
   "projectAssistants.empty": "還沒有 Bot",

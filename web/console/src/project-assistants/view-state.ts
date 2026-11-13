@@ -24,11 +24,14 @@ export function mergeRoster(pages: readonly (readonly W.ProjectAssistantBotSumma
 }
 
 export interface ReadingPosition { top: number; following: boolean }
+/** One unresolved effect per account/Bot, owned by the existing host lifetime. Never replayed. */
+export interface HeldOutcome { intent: W.ProjectAssistantSendRequest | W.ProjectAssistantPermissionAnswerRequest; receipt: W.ProjectAssistantReceipt | null }
 /** Owned by the feature host so destination remounts keep drafts and reading positions. */
 export function createViewState(storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">) {
   const drafts = new Map<string, string>(), positions = new Map<string, ReadingPosition>()
   const quotes = new Map<string, string>()
   const recoveryRequired = new Set<string>()
+  const heldOutcomes = new Map<string,HeldOutcome>()
   return {
     draft(key: string) {
       if (!drafts.has(key)) { try { drafts.set(key, storage?.getItem(key) ?? "") } catch { drafts.set(key, "") } }
@@ -41,6 +44,7 @@ export function createViewState(storage?: Pick<Storage, "getItem" | "setItem" | 
     position: positions,
     quotes,
     recoveryRequired,
+    heldOutcomes,
   }
 }
 export type ViewState = ReturnType<typeof createViewState>

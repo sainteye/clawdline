@@ -21,7 +21,7 @@ export function buildChat(messages: readonly W.ProjectAssistantMessage[]): ChatI
   return out
 }
 /** A queued user message stays in exactly one surface, including the transition to idle. */
-export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly W.ProjectAssistantTurn[]) {
+export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly Pick<W.ProjectAssistantReadTurnSummary,"message_id"|"state">[]) {
   const queuedIDs = new Set(turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id))
   return { queued: messages.filter(m=>m.kind==="user" && queuedIDs.has(m.id)), chat: messages.filter(m=>!queuedIDs.has(m.id) || m.kind!=="user") }
 }

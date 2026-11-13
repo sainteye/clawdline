@@ -10076,6 +10076,7 @@
   "projectAssistants.createHint": "Creation saves settings. The first message starts execution.",
   "projectAssistants.createSubmit": "Create",
   "projectAssistants.delivered": "Delivered",
+  "projectAssistants.details": "View details",
   "projectAssistants.draftUnavailable": "Draft could not be saved on this device",
   "projectAssistants.earlier": "Earlier messages",
   "projectAssistants.empty": "No Bots yet",

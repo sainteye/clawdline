@@ -2,8 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import { authorized, command, errorCode, failure } from "./client"
-import { botIdentity, canRead, canWrite, draftIdentity, sameBot, sameConversation, sameFence, type ViewState } from "./view-state"
-import { mergeMessages, partitionMessages } from "./chat-items"
+import { botIdentity, canRead, canWrite, draftIdentity, sameConversation, sameFence, type ViewState } from "./view-state"
+import { partitionMessages } from "./chat-items"
+import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import { BotAvatar } from "./BotAvatar"
 import { BotSettings } from "./BotSettings"
 import { ChatRows } from "./ChatRows"
@@ -14,6 +15,15 @@ import { WorkResultCard } from "./WorkResultCard"
 import type { Words } from "./words"
 
 export const EventRefreshMs = 3000
+/** Covers every await of a permission attempt, including the second detail preflight. */
+export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>boolean,recover:()=>void):Promise<T> {
+  try{return await run()}
+  catch(error){
+    const code=errorCode(error)
+    if(current()&&(code==="pa_cursor_expired"||code==="pa_stale_generation"))recover()
+    throw error
+  }
+}
 export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
@@ -24,119 +34,136 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const grant=useRef(source.authorizationRevision).current
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
-  const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null),[messages,setMessages]=useState<W.ProjectAssistantMessage[]>([])
-  const [permissions,setPermissions]=useState<W.ProjectAssistantPermissionOffer[]>([]),[turns,setTurns]=useState<W.ProjectAssistantTurn[]>([])
-  const [traces,setTraces]=useState<W.ProjectAssistantTrace[]>([]),[works,setWorks]=useState<W.ProjectAssistantWorkLink[]>([])
+  const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
+  const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
+  const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([])
+  const permissionRows=useRef(permissions)
+  const [traceSummaries,setTraceSummaries]=useState<W.ProjectAssistantReadTraceSummary[]>([])
+  const traceRows=useRef(traceSummaries)
+  const [details,setDetails]=useState<Record<string,W.ProjectAssistantPermissionOffer|W.ProjectAssistantTrace>>({})
+  const detailRows=useRef(details)
+  const [permissionMore,setPermissionMore]=useState(""),[traceMore,setTraceMore]=useState("")
+  const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
   const [text,setText]=useState(()=>view.draft(draftKey)),[quote,setQuote]=useState(view.quotes.get(draftKey)??"")
-  const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(null),[busy,setBusy]=useState(false)
-  const [unknown,setUnknown]=useState(false),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null)
-  const [sourceIDs,setSourceIDs]=useState(""),[more,setMore]=useState(0),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
-  const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),seen=useRef(new Set<string>())
-  const refreshBusy=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),mutationControl=useRef<AbortController|null>(null)
+  const [error,setError]=useState(()=>recoveryRequired?"pa_read_only":""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false)
+  const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null)
+  const [sourceIDs,setSourceIDs]=useState(""),[more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
+  const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
+  const refreshBusy=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),activeMutations=useRef(new Set<AbortController>())
+  const reads=useRef(new Set<AbortController>()),collectionBusy=useRef(new Map<string,AbortController>()),historyCursors=useRef(new Set<string>())
+  const collectionCursors=useRef({permissions:new Set<string>(),traces:new Set<string>()})
   const lastRead=useRef(0),restored=useRef(false),followingRef=useRef(true)
-  const receiptRef=useRef(receipt);receiptRef.current=receipt
-  currentData.current=data
+  const messages=timeline.flatMap(row=>row.message?[row.message]:[]),works=timeline.flatMap(row=>row.work?[row.work]:[])
+  currentData.current=data;timelineRef.current=timeline;headRef.current=head;permissionRows.current=permissions;traceRows.current=traceSummaries;detailRows.current=details
   const fence=useCallback((d:W.ProjectAssistantGetResponse):W.ProjectAssistantFence=>({key:d.bot.key,project:d.bot.project,conversation_id:d.conversation.id,binding_id:d.conversation.binding_id,generation:d.conversation.generation}),[])
-  const valid=useCallback(()=>alive.current&&current().some(s=>s===source&&s.authorizationRevision===grant),[source,current,grant])
+  const valid=useCallback(()=>alive.current&&current().some(s=>s===source&&s.machineID===key.machine_id&&s.authorizationRevision===grant),[source,current,grant,key.machine_id])
   const fail=useCallback((e:unknown)=>{if(valid())setError(errorCode(e))},[valid])
   const changeText=(value:string)=>{view.stage(draftKey,value);setText(value)}
   const flush=()=>setDraftDurable(view.flush(draftKey))
+  const lock=useCallback(()=>{
+    view.recoveryRequired.add(draftKey);recovery.current=true;setRecoveryRequired(true)
+    activeMutations.current.forEach(control=>control.abort());setTurns([]);setPermissions([]);permissionRows.current=[];setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
+    for(const control of reads.current)control.abort()
+    if(timer.current){clearTimeout(timer.current);timer.current=null}
+  },[view,draftKey])
+  const request=useCallback((mode:W.ProjectAssistantReadViewMode,cursor="",page_size=100):W.ProjectAssistantReadViewRequest=>({key:scope.key,conversation_id:scope.conversation_id,mode,source_epoch:mode==="snapshot"?"":epoch.current,cursor,after_seq:mode==="events"?lastSeq.current:0,page_size}),[scope])
+  const read=useCallback(async(q:W.ProjectAssistantReadViewRequest,signal:AbortSignal)=>{
+    const answer=await authorized(source,current,s=>typeof source.view==="function"?source.view(q,s):Promise.reject(failure("pa_unsupported")),signal)
+    return readView(answer,q,scope)
+  },[source,current,scope])
+  const adoptHead=useCallback((page:W.ProjectAssistantReadViewResponse)=>{
+    const before=headRef.current
+    if(before&&(page.head.event_frontier<before.event_frontier||page.head.bot_version<before.bot_version))return
+    headRef.current=page.head;setHead(page.head)
+    const d=currentData.current
+    if(d){const next={...d,bot:page.snapshot?.bot??d.bot,conversation:page.head.conversation,source:page.source};currentData.current=next;setData(next)}
+  },[])
   const recoverSnapshot=useCallback(async(signal:AbortSignal)=>{
-    const {snapshot,fresh}=await authorized(source,current,async s=>{
-      const status=await source.status(s),own=status.sources.find(row=>row.machine_id===key.machine_id)
-      if(!own||!canRead(own))throw failure("pa_revoked")
-      if(own.state!=="online")throw failure("pa_offline")
-      const snapshot=await source.export(key,s)
-      if(!sameBot(snapshot.conversation.key,key)||!sameConversation({key:snapshot.bot.key,project:snapshot.bot.project,conversation_id:snapshot.conversation.id},scope)||snapshot.bot.conversation_id!==scope.conversation_id)throw failure("pa_scope_denied")
-      // The transactional export is the execution authority. Do not replace it with a later GET.
-      const fresh:W.ProjectAssistantGetResponse={contract_version:snapshot.contract_version,bot:snapshot.bot,conversation:snapshot.conversation,source:own}
-      return {snapshot,fresh}
-    },signal)
+    const page=await read(request("snapshot"),signal)
     if(!valid()||signal.aborted)return
-    const currentFence=fence(fresh)
-    mutationControl.current?.abort()
-    setPermissions(snapshot.permissions.filter(p=>sameFence(p.fence,currentFence)))
-    setTurns(snapshot.turns.filter(t=>sameFence(t.fence,currentFence)))
-    setWorks(snapshot.work_links.filter(work=>sameConversation(work.fence,currentFence)))
-    setTraces(snapshot.events.filter(e=>sameFence(e.fence,currentFence)&&e.trace).reduce<W.ProjectAssistantTrace[]>((rows,event)=>[...rows.filter(t=>!(t.turn_id===event.trace!.turn_id&&t.category===event.trace!.category)),event.trace!],[]))
-    // Export must read facts and the retained event frontier in one source transaction.
-    lastSeq.current=snapshot.events.reduce((seq,event)=>Math.max(seq,event.seq),0)
-    seen.current=new Set(snapshot.events.map(event=>event.id))
-    setMessages(snapshot.messages.filter(m=>sameConversation(m.fence,currentFence)))
-    setMore(0);lastRead.current=0;setMemory(old=>old?snapshot:null)
-    currentData.current=fresh;setData(fresh);setError("")
-    const ownReceipts=snapshot.receipts.filter(r=>sameBot(r.command.key,key))
-    const pending=ownReceipts.find(r=>r.id===receiptRef.current?.id)
-    if(pending){setReceipt(pending);setUnknown(pending.state==="unknown")}
+    const snapshot=page.snapshot!,fresh:W.ProjectAssistantGetResponse={contract_version:page.contract_version,bot:snapshot.bot,conversation:page.head.conversation,source:page.source}
+    activeMutations.current.forEach(control=>control.abort())
+    for(const control of reads.current)control.abort()
+    reads.current.clear();collectionBusy.current.clear()
+    collectionCursors.current={permissions:new Set(),traces:new Set()};historyCursors.current=new Set()
+    setPermissions([]);permissionRows.current=[];setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
+    setTurns([...snapshot.pending_turns,...snapshot.last_turn?[snapshot.last_turn]:[]])
+    const queued=snapshot.queued_messages.map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:page.head.event_frontier,message}))
+    const rows=mergeTimeline([page.items,queued]);timelineRef.current=rows;setTimeline(rows)
+    epoch.current=page.source_epoch;lastSeq.current=page.head.event_frontier
+    headRef.current=page.head;setHead(page.head);currentData.current=fresh;setData(fresh)
+    setMore(page.next_cursor);lastRead.current=0;setError("")
+    // No receipts in a bounded snapshot means an unknown local intent remains unknown.
     view.recoveryRequired.delete(draftKey);recovery.current=false;setRecoveryRequired(false)
-    return fresh
-  },[source,current,identity,valid,fence,scope,view,draftKey])
-
-  const refresh=useCallback(async()=>{
-    if(refreshBusy.current||!valid()||document.visibilityState==="hidden")return
+    return page
+  },[read,request,valid,view,draftKey])
+  const collection=useCallback(async(mode:"permissions"|"traces",cursor="")=>{
+    const before=headRef.current,capturedEpoch=epoch.current
+    if(!before||recovery.current||!valid()||collectionBusy.current.has(mode))return
+    const control=new AbortController();reads.current.add(control);collectionBusy.current.set(mode,control)
+    try{
+      const page=await read(request(mode,cursor),control.signal)
+      if(!valid()||control.signal.aborted||epoch.current!==capturedEpoch||!headRef.current||!sameFence(before.current_fence,headRef.current.current_fence)||recovery.current)return
+      if(!sameFence(page.head.current_fence,before.current_fence)){lock();throw failure("pa_stale_generation")}
+      const cursors=collectionCursors.current[mode]
+      if(page.has_more&&cursors.has(page.next_cursor))throw failure("pa_invalid")
+      if(cursor)cursors.add(cursor)
+      adoptHead(page)
+      if(mode==="permissions"){
+        const added=page.items.map(row=>row.permission_summary!)
+        const base=cursor?permissionRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];permissionRows.current=rows;setPermissions(rows);setPermissionMore(page.next_cursor)
+      }else{
+        const added=page.items.map(row=>row.trace_summary!)
+        const base=cursor?traceRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];traceRows.current=rows;setTraceSummaries(rows);setTraceMore(page.next_cursor)
+      }
+    }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
+    finally{reads.current.delete(control);if(collectionBusy.current.get(mode)===control)collectionBusy.current.delete(mode)}
+  },[read,request,valid,adoptHead,lock,fail])
+  const refresh=useCallback(async(manual=false)=>{
+    if(refreshBusy.current||!valid()||document.visibilityState==="hidden"||recovery.current&&!manual)return
     if(timer.current){clearTimeout(timer.current);timer.current=null}
     refreshBusy.current=true
-    const control=new AbortController();eventControl.current=control
+    const control=new AbortController(),rebuilding=recovery.current||!currentData.current;eventControl.current=control
     try {
-      const snapshot=await authorized(source,current,s=>source.get(key,s),control.signal)
-      if(!canRead(snapshot.source))throw failure("pa_revoked")
-      if(!sameBot(snapshot.conversation.key,key)||!sameConversation(fence(snapshot),scope))throw failure("pa_scope_denied")
-      if(!valid()||control.signal.aborted)return
-      const before=currentData.current
-      currentData.current=snapshot;setData(snapshot)
-      if(before&&!sameFence(fence(before),fence(snapshot))) {
-        mutationControl.current?.abort();setPermissions([]);setTurns([]);setTraces([])
-      }
-      if(snapshot.source.state!=="online")return
-      let moreEvents=true
-      while(moreEvents&&!control.signal.aborted&&valid()) {
-        const page=await authorized(source,current,s=>source.events({key,after_seq:lastSeq.current,page_size:256},s),control.signal)
-        if(!valid()||control.signal.aborted)return
-        for(const event of page.items) {
-          if(seen.current.has(event.id)||event.seq<=lastSeq.current||!sameConversation(event.fence,scope))continue
-          seen.current.add(event.id)
-          // Authenticated durable facts outlive their execution. Both envelopes must own this scope.
-          if(event.message&&sameConversation(event.message.fence,scope))setMessages(old=>mergeMessages([old,[event.message!]]))
-          if(event.work&&sameConversation(event.work.fence,scope))setWorks(old=>[...old.filter(t=>t.id!==event.work!.id),event.work!])
-          // Permission, turn and trace authority still requires the complete execution fence.
-          if(!sameFence(event.fence,fence(snapshot)))continue
-          if(event.permission&&sameFence(event.permission.fence,fence(snapshot)))setPermissions(old=>[...old.filter(p=>p.id!==event.permission!.id),event.permission!])
-          if(event.turn&&sameFence(event.turn.fence,fence(snapshot)))setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),event.turn!])
-          if(event.trace)setTraces(old=>[...old.filter(t=>!(t.turn_id===event.trace!.turn_id&&t.category===event.trace!.category)),event.trace!])
-          if(event.kind==="feature_disabled"){setData({...snapshot,source:{...snapshot.source,access:"history_only",writable:false}});mutationControl.current?.abort()}
-          if(event.source){setData({...snapshot,source:event.source});if(!canWrite(event.source))mutationControl.current?.abort()}
+      if(recovery.current||!currentData.current){await recoverSnapshot(control.signal);if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")])}
+      else {
+        const before=headRef.current!,capturedEpoch=epoch.current
+        const page=await read(request("events","",256),control.signal)
+        if(!valid()||control.signal.aborted||capturedEpoch!==epoch.current||recovery.current)return
+        if(!sameFence(before.current_fence,page.head.current_fence)) {
+          lock();await recoverSnapshot(control.signal)
+          if(!valid()||control.signal.aborted)return
+          await Promise.all([collection("permissions"),collection("traces")])
+        }else{
+          adoptHead(page)
+          const rows=eventTimeline(timelineRef.current,page.items);timelineRef.current=rows;setTimeline(rows)
+          for(const row of page.items){const event=row.event!
+            if(!sameFence(event.fence,page.head.current_fence))continue
+            if(event.turn&&sameFence(event.turn.fence,page.head.current_fence))setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),turnSummary(event.turn!)])
+            if(event.permission){const next={...detailRows.current};delete next[event.permission.id];detailRows.current=next;setDetails(next)}
+            if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
+          }
+          lastSeq.current=page.next_seq;setError("")
+          await Promise.all([
+            before.pending_permission_count!==page.head.pending_permission_count||page.items.some(row=>row.event?.permission)?collection("permissions"):undefined,
+            before.trace_category_count!==page.head.trace_category_count||page.items.some(row=>row.event?.trace)?collection("traces"):undefined,
+          ])
         }
-        if(page.has_more&&page.next_seq<=lastSeq.current)throw failure("pa_cursor_expired")
-        lastSeq.current=page.next_seq;moreEvents=page.has_more
       }
-      // A fresh GET or event page cannot resolve a previously failed recovery.
-      if(recovery.current){const recovered=await recoverSnapshot(control.signal);if(recovered&&canWrite(recovered.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs);return}
-      setError("")
-      if(canWrite(snapshot.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)
-    }catch(e){if(!control.signal.aborted){
-      if(errorCode(e)==="pa_cursor_expired") {
-        view.recoveryRequired.add(draftKey);recovery.current=true;setRecoveryRequired(true)
-        mutationControl.current?.abort()
-        if(currentData.current){const stale={...currentData.current,source:{...currentData.current.source,fresh:false,writable:false}};currentData.current=stale;setData(stale)}
-        try{const recovered=await recoverSnapshot(control.signal);if(recovered&&canWrite(recovered.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}catch(snapshotError){fail(snapshotError);if(valid())setData(old=>old?{...old,source:{...old.source,fresh:false,writable:false}}:old)}
-      }else{fail(e);if(valid())setData(old=>old?{...old,source:{...old.source,fresh:false,writable:false}}:old)}
+      if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)
+    }catch(e){if(!control.signal.aborted&&valid()){
+      lock()
+      if(errorCode(e)==="pa_cursor_expired"&&!rebuilding){try{await recoverSnapshot(control.signal);if(valid()&&!control.signal.aborted){await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source))timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}}catch(snapshotError){fail(snapshotError)}}else fail(e)
     }}finally{refreshBusy.current=false}
-  },[source,current,identity,valid,fence,fail,recoverSnapshot,scope,view,draftKey])
-
+  },[valid,read,request,recoverSnapshot,collection,adoptHead,lock,fail])
   useEffect(()=>{
     alive.current=true;const control=new AbortController()
-    void authorized(source,current,async s=>{
-      const snapshot=await source.get(key,s)
-      if(!canRead(snapshot.source))throw failure("pa_revoked")
-      if(!sameBot(snapshot.conversation.key,key)||!sameConversation(fence(snapshot),scope))throw failure("pa_scope_denied")
-      const page=await source.history({key,conversation_id:snapshot.conversation.id,before_seq:0,page_size:100},s)
-      if(!sameBot(page.conversation.key,key)||page.conversation.id!==scope.conversation_id)throw failure("pa_scope_denied")
-      if(!control.signal.aborted&&valid()) {setData(snapshot);currentData.current=snapshot;setMessages(page.items.filter(m=>sameConversation(m.fence,scope)));setMore(page.has_more?page.next_before_seq:0)}
-    },control.signal).then(()=>{if(!control.signal.aborted)void refresh()}).catch(e=>{if(!control.signal.aborted)fail(e)})
-    const visibility=()=>{if(document.visibilityState==="hidden"){eventControl.current?.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey)}else if(!recovery.current)void refresh()}
+    // Initial entry uses only the new consistent bounded snapshot.
+    if(!recovery.current)void recoverSnapshot(control.signal).then(async()=>{if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}).catch(e=>{if(!control.signal.aborted&&valid()){lock();fail(e)}})
+    const visibility=()=>{if(document.visibilityState==="hidden"){eventControl.current?.abort();if(timer.current)clearTimeout(timer.current);for(const read of reads.current)read.abort();view.flush(draftKey)}else if(!recovery.current)void refresh()}
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",visibility)
-    return()=>{alive.current=false;control.abort();eventControl.current?.abort();mutationControl.current?.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",visibility)}
-  },[identity,source,current,refresh,valid,fail,draftKey,view,fence,scope])
+    return()=>{alive.current=false;control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",visibility)}
+  },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
 
   useLayoutEffect(()=>{
     const el=scroll.current;if(!el||!data)return
@@ -173,54 +200,132 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[settings])
   const onScroll=()=>{const el=scroll.current;if(!el)return;const end=el.scrollHeight-el.scrollTop-el.clientHeight<=1;followingRef.current=end;setFollowing(end);view.position.set(draftKey,{top:el.scrollTop,following:end});markVisible()}
   const mutate=async<T,>(operation:(d:W.ProjectAssistantGetResponse,s:AbortSignal)=>Promise<T>):Promise<T>=>{
-    const captured=currentData.current;if(recovery.current||!captured||!canWrite(captured.source)||!valid())throw failure("pa_read_only")
-    const control=new AbortController();mutationControl.current=control
-    return authorized(source,current,async s=>{
-      const fresh=await source.get(key,s)
-      if(recovery.current||s.aborted||!valid())throw failure("pa_read_only")
-      if(!canWrite(fresh.source))throw failure("pa_read_only")
-      if(!sameFence(fence(captured),fence(fresh)))throw failure("pa_stale_generation")
+    const captured=currentData.current,capturedEpoch=epoch.current
+    if(recovery.current||!captured||!canWrite(captured.source)||!valid())throw failure("pa_read_only")
+    const control=new AbortController();activeMutations.current.add(control)
+    try{return await authorized(source,current,async s=>{
+      let page:W.ProjectAssistantReadViewResponse
+      try{page=await read(request("snapshot"),s)}catch(e){if(!s.aborted&&valid())lock();throw e}
+      if(recovery.current||s.aborted||!valid()||epoch.current!==capturedEpoch)throw failure("pa_read_only")
+      if(!canWrite(page.source))throw failure("pa_read_only")
+      if(page.source_epoch!==capturedEpoch){lock();throw failure("pa_cursor_expired")}
+      if(!sameFence(fence(captured),page.head.current_fence)){lock();throw failure("pa_stale_generation")}
+      adoptHead(page)
+      const fresh:W.ProjectAssistantGetResponse={contract_version:page.contract_version,bot:page.snapshot!.bot,conversation:page.head.conversation,source:page.source}
+      // Preflight cannot replace the visible window or advance replay past unseen facts.
+      if(recovery.current||s.aborted||!valid()||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence))throw failure("pa_read_only")
       return operation(fresh,s)
-    },control.signal)
+    },control.signal)}finally{activeMutations.current.delete(control)}
   }
   const send=async()=>{
-    if(busy||unknown||!text.trim())return
-    const submitted=text;setBusy(true)
-    try{const result=await mutate((d,s)=>source.send({command:command(key,"send"),fence:fence(d),text:submitted,quote_message_id:quote},s));if(!valid())return;setReceipt(result.receipt);if(result.receipt.state==="unknown"){setUnknown(true)}else if(result.receipt.state!=="failed"){if(view.draft(draftKey)===submitted)changeText("");setQuote("");view.quotes.delete(draftKey);flush()}void refresh()}
-    catch(e){if(valid()){fail(e);if(errorCode(e)==="pa_outcome_unknown"||errorCode(e)==="execution_effect_unknown"||errorCode(e)==="unavailable")setUnknown(true)}}finally{if(valid())setBusy(false)}
+    if(busy||unknown||view.heldOutcomes.has(draftKey)||(headRef.current?.unknown_turn_count??0)>0||!text.trim()||!currentData.current)return
+    const submitted=text,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote}
+    let attempted=false;setBusy(true)
+    try{
+      const result=await mutate((_,s)=>{
+        if((headRef.current?.unknown_turn_count??0)>0||view.heldOutcomes.has(draftKey))throw failure("pa_read_only")
+        attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
+        return source.send(intent,s)
+      })
+      if(result.receipt.state==="unknown")view.heldOutcomes.set(draftKey,{intent,receipt:result.receipt})
+      else view.heldOutcomes.delete(draftKey)
+      if(!valid()||recovery.current)return
+      setReceipt(result.receipt);setUnknown(result.receipt.state==="unknown")
+      if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed"){
+        if(view.draft(draftKey)===submitted)changeText("")
+        setQuote("");view.quotes.delete(draftKey);flush()
+      }
+      void refresh()
+    }catch(e){
+      const code=errorCode(e),unresolved=attempted&&(code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
+      if(attempted&&!unresolved)view.heldOutcomes.delete(draftKey)
+      if(valid()){fail(e);if(unresolved)setUnknown(true)}
+    }finally{if(valid())setBusy(false)}
+  }
+
+  const detail=async(kind:"permission"|"trace",id:string,reference:string)=>{
+    const captured=headRef.current,capturedEpoch=epoch.current
+    if(!captured||!valid()||recovery.current||collectionBusy.current.has(reference))return
+    const control=new AbortController();reads.current.add(control);collectionBusy.current.set(reference,control)
+    try{
+      const page=await read(request("detail",reference,1),control.signal)
+      if(!valid()||control.signal.aborted||recovery.current||capturedEpoch!==epoch.current||!headRef.current||!sameFence(captured.current_fence,headRef.current.current_fence))return
+      if(!sameFence(page.head.current_fence,captured.current_fence)){lock();throw failure("pa_stale_generation")}
+      const row=page.items[0]
+      if(row.kind!==kind||kind==="permission"&&row.permission?.id!==id||kind==="trace"&&!traceSummaries.some(t=>t.id===id&&t.turn_id===row.trace?.turn_id&&t.category===row.trace?.category))throw failure("pa_invalid")
+      adoptHead(page);const next={...detailRows.current,[id]:row.permission??row.trace!};detailRows.current=next;setDetails(next)
+    }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
+    finally{reads.current.delete(control);if(collectionBusy.current.get(reference)===control)collectionBusy.current.delete(reference)}
   }
   const answer=async(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption)=>{
-    try{const result=await mutate((d,s)=>{
-      const live=permissions.find(p=>p.id===offer.id)
-      if(!live||live.state!=="pending"||Date.parse(live.expires_at)<=Date.now()||!sameFence(offer.fence,fence(d)))throw failure("pa_stale_generation")
-      return source.answer({command:command(key,"answer"),fence:offer.fence,offer_id:offer.id,turn_id:offer.turn_id,option_id:option.id},s)
-    });if(valid()){setReceipt(result.receipt);setPermissions(old=>old.map(p=>p.id===offer.id?{...p,state:result.receipt.state==="unknown"?"unknown":"answered",selected_option_id:option.id}:p))}}
-    catch(e){fail(e)}
+    let attempted=false
+    try{
+      const result=await withPermissionRecovery(()=>mutate(async(d,s)=>{
+        if(view.heldOutcomes.has(draftKey)||detailRows.current[offer.id]!==offer)throw failure("pa_read_only")
+        const summary=permissionRows.current.find(p=>p.id===offer.id),capturedEpoch=epoch.current
+        if(!summary)throw failure("pa_stale_generation")
+        const page=await read(request("detail",summary.detail_cursor,1),s),live=page.items[0].permission
+        // The second read also has an effect fence; ignored cancellation grants no action.
+        if(!valid()||s.aborted||recovery.current||capturedEpoch!==epoch.current||view.heldOutcomes.has(draftKey)||detailRows.current[offer.id]!==offer)throw failure("pa_read_only")
+        if(!canWrite(page.source)||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence)||!sameFence(page.head.current_fence,fence(d)))throw failure("pa_stale_generation")
+        if(!live||live.id!==offer.id||live.turn_id!==offer.turn_id||live.state!=="pending"||Date.parse(live.expires_at)<=Date.now()||!sameFence(live.fence,fence(d)))throw failure("pa_stale_generation")
+        if(!live.options.some(o=>o.id===option.id&&(o.kind==="reject_once"||o.kind==="allow_once"&&o.read_only)))throw failure("pa_scope_denied")
+        const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option.id}
+        attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
+        return source.answer(intent,s)
+      }),valid,lock)
+      const held=view.heldOutcomes.get(draftKey)
+      if(result.receipt.state==="unknown"&&held){view.heldOutcomes.set(draftKey,{...held,receipt:result.receipt});if(valid())setUnknown(true)}else view.heldOutcomes.delete(draftKey)
+      if(valid()&&!recovery.current){
+        setReceipt(result.receipt)
+        const next={...detailRows.current,[offer.id]:{...offer,state:result.receipt.state==="unknown"?"unknown" as const:"answered" as const,selected_option_id:option.id}}
+        detailRows.current=next;setDetails(next)
+      }
+    }catch(e){
+      const code=errorCode(e)
+      if(attempted&&code!=="pa_outcome_unknown"&&code!=="execution_effect_unknown"&&code!=="unavailable"&&code!=="pa_revoked"&&(e as Error)?.name!=="AbortError")view.heldOutcomes.delete(draftKey)
+      if(valid()&&view.heldOutcomes.has(draftKey))setUnknown(true)
+      fail(e)
+    }
   }
+
   const earlier=async()=>{
-    if(!data||!more)return
+    const captured=headRef.current,capturedEpoch=epoch.current,cursor=more
+    if(!data||!cursor||!captured||recovery.current||collectionBusy.current.has("history"))return
+    const control=new AbortController();reads.current.add(control);collectionBusy.current.set("history",control)
     const el=scroll.current,oldHeight=el?.scrollHeight??0,oldTop=el?.scrollTop??0
-    try{const page=await authorized(source,current,s=>source.history({key,conversation_id:data.conversation.id,before_seq:more,page_size:100},s),new AbortController().signal);if(!valid())return;if(!sameBot(page.conversation.key,key)||page.conversation.id!==scope.conversation_id)throw failure("pa_scope_denied");setMessages(old=>mergeMessages([page.items.filter(m=>sameConversation(m.fence,scope)),old]));setMore(page.has_more?page.next_before_seq:0);requestAnimationFrame(()=>{if(el&&valid())el.scrollTop=oldTop+el.scrollHeight-oldHeight})}catch(e){fail(e)}
+    try{
+      const page=await read(request("history",cursor),control.signal)
+      if(!valid()||control.signal.aborted||epoch.current!==capturedEpoch||recovery.current)return
+      if(page.has_more&&historyCursors.current.has(page.next_cursor))throw failure("pa_invalid")
+      if(!headRef.current||!sameFence(captured.current_fence,headRef.current.current_fence))return
+      if(!sameFence(page.head.current_fence,captured.current_fence)){lock();throw failure("pa_stale_generation")}
+      historyCursors.current.add(cursor)
+      const rows=mergeTimeline([timelineRef.current,page.items]);timelineRef.current=rows;setTimeline(rows)
+      setMore(page.next_cursor)
+      requestAnimationFrame(()=>{if(el&&valid()&&epoch.current===capturedEpoch)el.scrollTop=oldTop+el.scrollHeight-oldHeight})
+    }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
+    finally{reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history")}
   }
   const loadExport=async()=>{
-    try {const value=await authorized(source,current,s=>source.export(key,s),new AbortController().signal);if(valid())setMemory(value)}catch(e){fail(e)}
+    try {const value=await authorized(source,current,s=>source.export(key,s),new AbortController().signal);if(valid()&&sameConversation({key:value.bot.key,project:value.bot.project,conversation_id:value.conversation.id},scope))setMemory(value)}catch(e){fail(e)}
   }
   const bot=data?.bot??summary.bot,enabled=!recoveryRequired&&!!data&&canWrite(data.source), parts=partitionMessages(messages,turns)
   return <section className="pa-chat" aria-label={bot.name}>
     <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36}/><div><h2 tabIndex={-1}>{bot.name}</h2><small>{bot.project.project_id} · {bot.agent==="claude"?"Claude Code":"Codex"} · {key.machine_id}</small></div><button className="pa-circle" aria-label={w.settings} onClick={()=>setSettings(true)}>···</button></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
-      <div className="pa-chat-content">{!data&&!error&&<p role="status">{w.loading}</p>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{w.unavailable} ({error}) <button onClick={()=>void refresh()}>{w.refresh}</button></p>}
-      {more>0&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector("textarea")?.focus()}} w={w} language={language}/>
-      {works.map(work=><WorkResultCard key={work.id} work={work} w={w} onOpen={onOpenWork}/>)}<Trace items={traces} w={w}/>
-      {permissions.map(offer=><PermissionCard key={offer.id} offer={offer} enabled={enabled} onAnswer={answer} w={w}/>)}
-      {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=><p className="pa-turn" key={t.id}>{w[t.state]}{t.failure&&` (${t.failure.code})`}</p>)}
+      <div className="pa-chat-content">{!data&&!error&&<p role="status">{w.loading}</p>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{w.unavailable} ({error}) <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
+      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector("textarea")?.focus()}} w={w} language={language}/>
+      {works.map(work=><WorkResultCard key={work.id} work={work} w={w} onOpen={onOpenWork}/>)}<Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
+      {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
+      {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=><p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
       {memory&&<section className="pa-card"><h3>{w.memoryRevision}: {memory.memory.revision}</h3><p>{w.forgetScope}</p><p>{w.forgotten}: {memory.memory.forgotten_source_ids.join(", ")||"—"}</p>{memory.memory_entries.filter(e=>!e.forgotten).map(e=><p key={e.id}>{e.id}: {e.text}</p>)}<label>{w.sourceIDs}<textarea value={sourceIDs} onChange={e=>setSourceIDs(e.target.value)}/></label><button disabled={!enabled||!sourceIDs.trim()} onClick={()=>void mutate((d,s)=>source.forget({command:command(key,"forget"),project:d.bot.project,expected_revision:memory.memory.revision,source_ids:sourceIDs.split("\n").map(v=>v.trim()).filter(Boolean)},s)).then(()=>loadExport()).catch(fail)}>{w.forget}</button></section>}
       </div>
     </div>
-    <div className="pa-chat-footer">{parts.queued.map(m=><div className="pa-queued" key={m.id}>{w.queued}: {m.text}</div>)}{receipt&&<p role="status">{w[receipt.state]} · {receipt.id}</p>}{unknown&&<p role="status">{w.unknown}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
+    <div className="pa-chat-footer">{parts.queued.map(m=><div className="pa-queued" key={m.id}>{w.queued}: {m.text}</div>)}{receipt&&<p role="status">{w[receipt.state]} · {receipt.id}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
       {!following&&<button className="pa-pill" onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>{w.jump}</button>}
-      <div className="pa-chat-tools"><button onClick={()=>void refresh()}>{w.refresh}</button><button onClick={()=>void loadExport()}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void mutate((d,s)=>source.stop({command:command(key,"stop"),fence:fence(d),turn_id:d.conversation.active_turn_id},s)).then(r=>{if(valid())setReceipt(r.receipt);void refresh()}).catch(fail)}>{w.stop}</button>}</div>
-      <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w}/>
+      <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>void loadExport()}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void mutate((d,s)=>source.stop({command:command(key,"stop"),fence:fence(d),turn_id:d.conversation.active_turn_id},s)).then(r=>{if(valid())setReceipt(r.receipt);void refresh()}).catch(fail)}>{w.stop}</button>}</div>
+      <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown||(head?.unknown_turn_count??0)>0} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w}/>
     </div>
     {settings&&<BotSettings bot={bot} enabled={enabled} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>

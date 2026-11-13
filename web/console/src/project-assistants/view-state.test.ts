@@ -31,6 +31,18 @@ test("host-owned recovery requirements are isolated by account and Bot without s
   assert.equal(view.recoveryRequired.has(otherBot),true)
   assert.equal(createViewState().recoveryRequired.size,0)
 })
+test("one held unknown intent survives host consumers, remains separate from recovery and never crosses accounts or Bots",()=>{
+  const view=createViewState(),own=draftIdentity("account",key)
+  const intent:W.ProjectAssistantSendRequest={command:{key,operation:"send",idempotency_key:"same-request",content_hash:""},fence,text:"retained draft",quote_message_id:"original-quote"}
+  view.heldOutcomes.set(own,{intent,receipt:null})
+  view.recoveryRequired.add(own);view.recoveryRequired.delete(own)
+  const remountedConsumer=view
+  assert.deepEqual(remountedConsumer.heldOutcomes.get(own),{intent,receipt:null})
+  assert.equal(view.heldOutcomes.has(draftIdentity("other",key)),false)
+  assert.equal(view.heldOutcomes.has(draftIdentity("account",{...key,bot_id:"other"})),false)
+  assert.equal(createViewState().heldOutcomes.size,0)
+  assert.equal(view.heldOutcomes.size,1)
+})
 test("a revoked, stale or disabled source never admits a write",()=>{
   const source={state:"online",access:"interactive",readable:true,writable:true,fresh:true} as W.ProjectAssistantSourceStatus
   assert.equal(canWrite(source),true)
