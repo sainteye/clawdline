@@ -216,3 +216,13 @@ catalog registrations and the captured Cloud view route only with their owners.
 Keep persisted Bot/Project memory and the original voice owner. Backend/store
 read ports and shared generated contracts have their own ownership; deleting
 this module alone does not prove full feature removal or rollback.
+
+
+## Browser-driven Project label correction
+
+A browser run against the real Go Server, gate, Host and Store showed that the
+roster resolved the registered Project label while the chat header displayed
+its internal Project ID. The host now passes the same source-authorized label,
+keyed by machine and Project ID, into Chat. Missing catalog metadata retains
+the existing ID fallback. This changes presentation only; the captured scope,
+fences and request identities still use their original IDs.
