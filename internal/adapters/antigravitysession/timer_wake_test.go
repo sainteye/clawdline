@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // 2026-11-11 13:05: a turn ended with a deploy running as a background task
@@ -207,4 +208,62 @@ func TestAppDataDirAcceptsOnlyOneDirectoryName(t *testing.T) {
 			t.Errorf("%q: %q, want %q", args, got, want)
 		}
 	}
+}
+
+func TestGeminiBackgroundTaskShowsAsWorkingInInventory(t *testing.T) {
+	t.Setenv("CLW_NATIVE_WAKE_PEER", "yes")
+	prior := backgroundPollInterval
+	backgroundPollInterval = 5 * time.Millisecond
+	t.Cleanup(func() { backgroundPollInterval = prior })
+	h, row, opts := persistentFixture(t)
+	if err := h.Send(context.Background(), row, "deploy"); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, row)
+	c, err := h.lookup(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	native := c.row.ConversationID
+	c.mu.Unlock()
+
+	inv, err := h.Inventory(context.Background())
+	if err != nil || len(inv.Sessions) != 1 {
+		t.Fatalf("unexpected inventory: %+v, %v", inv, err)
+	}
+	s := inv.Sessions[0]
+	if s.State != session.StateWorking {
+		t.Fatalf("expected StateWorking while background task runs, got %q", s.State)
+	}
+	if !strings.Contains(s.Line, "./deploy web") {
+		t.Fatalf("expected line to name the running command, got %q", s.Line)
+	}
+	if len(s.Shells) != 1 || !strings.Contains(s.Shells[0].Command, "./deploy web") {
+		t.Fatalf("expected shells to carry the running task, got %+v", s.Shells)
+	}
+
+	// Task completes and Gemini reports
+	logPath := filepath.Join(opts.AccountDir, "antigravity-acp", "brain", native, ".system_generated", "logs", "transcript_full.jsonl")
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(`{"step_index":4,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","created_at":"2026-11-11T05:39:23Z","content":"sender=` + native + `/task-2 content=Task id \"` + native + `/task-2\" finished with result:\nCommand exited with code 0.\n"}` + "\n" +
+		`{"step_index":5,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-11T05:39:47Z","content":"Deploy finished successfully."}` + "\n")
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		inv, _ = h.Inventory(context.Background())
+		if len(inv.Sessions) == 1 && inv.Sessions[0].State == session.StateIdle {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	inv, _ = h.Inventory(context.Background())
+	t.Fatalf("expected session to settle to idle after task and report finished, got %+v", inv.Sessions)
 }
