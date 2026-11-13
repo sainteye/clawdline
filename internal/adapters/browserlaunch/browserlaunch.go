@@ -320,6 +320,20 @@ type Started struct {
 	ExtensionID string `json:"extension_id"`
 }
 
+// keepRendering keeps the dedicated browser painting while the machine's
+// display sleeps. On 2026-11-13, with the display asleep and the system
+// awake, the tester's pages turned hidden and every screenshot the phone
+// asked for timed out after 30 s (504 browser_timeout), so the Session's
+// Chrome panel showed black. Relaunched with these switches, the page stayed
+// visible and the phone's next 13 minutes of screenshots and input had no
+// timeout. A display sleep is the person's setting; this only stops Chromium
+// treating its own window as occluded.
+var keepRendering = []string{
+	"--disable-backgrounding-occluded-windows",
+	"--disable-renderer-backgrounding",
+	"--disable-background-timer-throttling",
+}
+
 // Launch writes the extension, registers the host in Clawdline's profile and
 // starts Chromium on that profile, detached, without waiting for it. When a
 // Chromium already holds the profile, the new process hands its arguments to
@@ -350,8 +364,10 @@ func Launch(o Options) (Started, error) {
 	if _, err := InstallHost(o.Dir, o.Port, exe, id, profile); err != nil {
 		return Started{}, fmt.Errorf("the native messaging host could not be registered: %w", err)
 	}
-	cmd := exec.Command(o.Browser, "--user-data-dir="+profile, "--load-extension="+real, "--disable-extensions-except="+real,
-		"--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--window-size=1280,860", "about:blank")
+	args := []string{"--user-data-dir=" + profile, "--load-extension=" + real, "--disable-extensions-except=" + real,
+		"--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--window-size=1280,860"}
+	args = append(args, keepRendering...)
+	cmd := exec.Command(o.Browser, append(args, "about:blank")...)
 	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return Started{}, err
