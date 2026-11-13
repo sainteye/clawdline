@@ -212,6 +212,12 @@ func readInstallation(ctx context.Context, state string) (ClaudeInstallation, er
 	return i, nil
 }
 
+// claudeResumeQualified admits native session/load for the pinned artifact
+// set under nativeHistoryPolicy. It stays false until a real cross-process
+// round trip on exactly these pinned files has passed; static findings and
+// scripted peers are not that evidence.
+var claudeResumeQualified = false
+
 func nativeLimits() Limits {
 	return Limits{RPCPending: capacity.MaximumBotRPCPending, IncomingPermissions: capacity.MaximumBotPermissions, Notifications: capacity.MaximumBotNotifications, FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotCaptureBytes, StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants, WriteTimeout: time.Duration(capacity.MaximumBotWriteMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: time.Duration(capacity.MaximumBotRPCMilliseconds) * time.Millisecond, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond}
 }
@@ -330,10 +336,7 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 	caps.Evidence = "pinned artifacts and live OS write/exec/memory controls; no authentication or model assertion"
 	caps.ReadOnlyEnforced, caps.NativeMemoryVerified = true, true
 	caps.NativeMemory = pa.NativeMemoryDisabled
-	// The owned persistence candidate is wired, but native new/load has not
-	// been qualified under this policy. Keep resume admission closed until the
-	// separately authorized fixed-version round trip supplies that evidence.
-	caps.Resume = false
+	caps.Resume = claudeResumeQualified
 	caps.SendMessage = true
 	return config, caps, cleanup, nil
 }
