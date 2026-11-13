@@ -226,3 +226,17 @@ missing/foreign message or source turn, tombstones, old/zero/unknown provenance
 after forgetting, oversized content and unknown-effect idempotency.
 PA-05 must repeat key cases with PA-03's real SQLite adapter and then perform
 cross-module and actual UI acceptance on its pinned integrated candidate.
+
+
+A fresh post-grace census that leaves no known owned identity does not require
+another census for each signal: no PID or process group remains authorized for
+such a signal. Close skips those redundant signal inventories and still waits
+for the direct child's reap receipt within the same original cleanup deadline.
+An earlier or fresh inventory failure remains typed execution-effect-unknown;
+an empty ownership map does not erase that failure. Observed escaped descendants
+keep the original birth-identity checks and TERM/KILL path. A controlled reaped
+child fixture makes any third census exhaust the existing deadline, proving the
+old false-unknown result and the corrected two-observation result. Separate
+unknown-preservation, original transport, and real observed-setsid cleanup
+tests cover the unchanged failure and ownership boundaries. This does not admit
+a native provider or establish cleanup of an unobserved escaped descendant.

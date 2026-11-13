@@ -903,7 +903,39 @@
       "database": "Borrowed existing query-only pool; no open/close/pragma/schema/index/writer changes.",
       "candidate_budget": "Head/control/candidate raw JSON share the trusted existing Cloud byte ceiling; engine scans, Go allocations and exact HTTP/Cloud encoding are separate.",
       "event_scope": "Outer and nested payloads retain the stored Bot/Project/conversation; execution references retain their complete fence.",
-      "checks": "Normal whole Store package and named MarkRead/WAL race cases passed; original whole-package race timeout is retained and is not a pass."
+      "checks": "Normal whole Store package and named MarkRead/WAL race cases passed; original whole-package race timeout is retained and is not a pass.",
+      "long_history_correction": {
+        "state": "frozen SQL source passed root test-only real Server/Cloud Bridge after-proof; exact-tree full gate still required before commit",
+        "seed": "f81c9907dd9b6caf266fec731df3b467b3d253e6",
+        "implementation": "Materialized header scalars and collection types per statement; original scope/shape/relation checks retained; TEXT JSON preserved.",
+        "unchanged": "60-second source request contexts, byte/row/cursor limits, schema/index/DB/pool/writer/pragma/dependencies",
+        "store_fixture": {
+          "messages": 9001,
+          "message_json_bytes": 5209366,
+          "source_frontier": 602,
+          "before": "snapshot context deadline exceeded at60.009718s",
+          "after": "same fixed-input Store snapshots/history/events passed; exact measurements in Store document"
+        },
+        "root_bridge_after_proof": {
+          "messages": 9001,
+          "message_json_bytes": 5514371,
+          "source_frontier": 602,
+          "snapshot_seconds": 1.161056875,
+          "history_seconds": 0.90461175,
+          "events_seconds": 0.214835792,
+          "http_status": 200,
+          "source_and_index_unchanged": true,
+          "boundary": "Temporary canonical Project paths alter bytes across runs; same permanent guard, not byte-identical before/after Bridge fixture or production latency."
+        },
+        "pending": "Exact candidate full gate, branch commit/merge, consumer integration and production/native/removal acceptance.",
+        "cleanup_gate_followup": {
+          "owner": "root",
+          "behavior": "After a fresh post-grace census leaves no known owned identity, skip redundant signal inventories; keep direct-reap receipt, original deadline and earlier/fresh unknown failures.",
+          "controlled_before": "Reaped peer plus two complete empty observations still reached a third blocked census and returned execution-effect-unknown.",
+          "checks": "Controlled before failed; corrected new cases, original two failing transport cases and real observed setsid cleanup passed race; whole ACP package passed with its existing denied-inventory conditional test skipped in the inventory-capable environment.",
+          "boundary": "This proves the controlled redundant-inventory defect; it does not establish the cause of every earlier full-suite deadline failure. Full candidate gate is still required."
+        }
+      }
     }
   }
 }

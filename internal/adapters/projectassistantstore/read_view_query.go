@@ -12,29 +12,49 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-const viewAggregateSQL = `WITH a AS MATERIALIZED (
+// Materialize header scalars once per statement. Extracting them from the
+// complete JSON in each member's fence predicate repeatedly compares the large
+// aggregate in SQLite's JSON parse cache. Keep j as TEXT so returned objects
+// and raw-byte budgets preserve their existing JSON semantics.
+const viewAggregateSQL = `WITH aggregate AS MATERIALIZED (
  SELECT CAST(data AS TEXT) j FROM project_assistant_bots WHERE machine=? AND bot=?
+), a AS MATERIALIZED (
+ SELECT j,
+ json_extract(j,'$.Bot.key.machine_id') machine_id,
+ json_extract(j,'$.Bot.key.bot_id') bot_id,
+ json_extract(j,'$.Bot.project.machine_id') project_machine_id,
+ json_extract(j,'$.Bot.project.project_id') project_id,
+ json_extract(j,'$.Bot.project.canonical_id') canonical_id,
+ json_extract(j,'$.Bot.project.kind') project_kind,
+ json_extract(j,'$.Conversation.id') conversation_id,
+ json_extract(j,'$.Conversation.binding_id') binding_id,
+ json_extract(j,'$.Conversation.generation') generation,
+ coalesce(json_type(j,'$.Turns'),'null') turns_type,
+ coalesce(json_type(j,'$.Messages'),'null') messages_type,
+ coalesce(json_type(j,'$.Permissions'),'null') permissions_type,
+ coalesce(json_type(j,'$.WorkLinks'),'null') work_links_type
+ FROM aggregate
 ) `
 
 // All expressions passed to these builders are adapter-owned SQL, never wire
 // identifiers or JSON paths from a token. Values remain bound parameters.
 func viewFenceSQL(value string, current bool) string {
 	fields := [][2]string{
-		{"key.machine_id", "Bot.key.machine_id"}, {"key.bot_id", "Bot.key.bot_id"},
-		{"project.machine_id", "Bot.project.machine_id"}, {"project.project_id", "Bot.project.project_id"},
-		{"project.canonical_id", "Bot.project.canonical_id"}, {"project.kind", "Bot.project.kind"},
-		{"conversation_id", "Conversation.id"},
+		{"key.machine_id", "machine_id"}, {"key.bot_id", "bot_id"},
+		{"project.machine_id", "project_machine_id"}, {"project.project_id", "project_id"},
+		{"project.canonical_id", "canonical_id"}, {"project.kind", "project_kind"},
+		{"conversation_id", "conversation_id"},
 	}
 	if current {
-		fields = append(fields, [2]string{"binding_id", "Conversation.binding_id"}, [2]string{"generation", "Conversation.generation"})
+		fields = append(fields, [2]string{"binding_id", "binding_id"}, [2]string{"generation", "generation"})
 	}
 	conditions := []string{`json_type(` + value + `,'$.fence')='object'`}
 	for _, field := range fields {
-		conditions = append(conditions, fmt.Sprintf("json_extract(%s,'$.fence.%s')=json_extract(a.j,'$.%s')", value, field[0], field[1]))
+		conditions = append(conditions, fmt.Sprintf("json_extract(%s,'$.fence.%s')=a.%s", value, field[0], field[1]))
 	}
 	if !current {
 		conditions = append(conditions, `json_type(`+value+`,'$.fence.generation')='integer'`,
-			`json_extract(`+value+`,'$.fence.generation') BETWEEN 0 AND json_extract(a.j,'$.Conversation.generation')`,
+			`json_extract(`+value+`,'$.fence.generation') BETWEEN 0 AND a.generation`,
 			`json_type(`+value+`,'$.fence.binding_id')='text'`)
 	}
 	return "coalesce((" + strings.Join(conditions, " AND ") + "),0)"
@@ -114,7 +134,7 @@ SELECT version,valid AND json_type(j)='object'
 	h.CurrentFence = pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
 	if c.BindingID != "" {
 		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Bindings') b
- WHERE CASE WHEN b.type!='object' THEN 0 ELSE b.key=json_extract(a.j,'$.Conversation.binding_id') AND ` + viewFenceSQL("b.value", true) + ` END)`
+ WHERE CASE WHEN b.type!='object' THEN 0 ELSE b.key=a.binding_id AND ` + viewFenceSQL("b.value", true) + ` END)`
 		var current bool
 		if err = tx.QueryRowContext(ctx, statement, b.Key.MachineID, b.Key.BotID).Scan(&current); err != nil {
 			return h, b, err
@@ -138,23 +158,23 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
 	// Detect malformed members rather than filtering them into an empty view.
 	// Do not copy complete turns/instructions into Go just to validate relations.
 	statement := viewAggregateSQL + `SELECT
- NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Turns') t WHERE coalesce(json_type(a.j,'$.Turns'),'null')!='null' AND
+ NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Turns') t WHERE a.turns_type!='null' AND
  CASE WHEN t.type!='object' THEN 1 ELSE NOT coalesce((json_type(t.value,'$.id')='text' AND t.key=json_extract(t.value,'$.id') AND t.key!=''
  AND json_type(t.value,'$.message_id')='text' AND json_extract(t.value,'$.message_id')!=''
  AND json_extract(t.value,'$.state') IN ('accepted','queued','running','waiting_permission','succeeded','failed','cancelled','unknown')
  AND ` + viewFenceSQL("t.value", false) + `),0) END)
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Messages') m WHERE coalesce(json_type(a.j,'$.Messages'),'null')!='null' AND
+ AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Messages') m WHERE a.messages_type!='null' AND
  CASE WHEN m.type!='object' THEN 1 ELSE NOT coalesce((json_type(m.value,'$.id')='text' AND json_extract(m.value,'$.id')!=''
  AND json_type(m.value,'$.seq')='integer' AND json_extract(m.value,'$.seq')>0
  AND json_extract(m.value,'$.kind') IN ('user','assistant','work','notice')
  AND json_type(m.value,'$.text')='text'
  AND ` + viewFenceSQL("m.value", false) + `),0) END)
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p WHERE coalesce(json_type(a.j,'$.Permissions'),'null')!='null' AND
+ AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p WHERE a.permissions_type!='null' AND
  CASE WHEN p.type!='object' THEN 1 ELSE NOT coalesce((json_type(p.value,'$.id')='text' AND p.key=json_extract(p.value,'$.id') AND p.key!=''
  AND json_type(p.value,'$.turn_id')='text' AND json_extract(p.value,'$.turn_id')!=''
  AND json_extract(p.value,'$.state') IN ('pending','answered','expired','cancelled','unknown')
  AND ` + viewFenceSQL("p.value", false) + `),0) END)
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.WorkLinks') w WHERE coalesce(json_type(a.j,'$.WorkLinks'),'null')!='null' AND
+ AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.WorkLinks') w WHERE a.work_links_type!='null' AND
  CASE WHEN w.type!='object' THEN 1 ELSE NOT coalesce((json_type(w.value,'$.id')='text' AND w.key=json_extract(w.value,'$.id') AND w.key!=''
  AND json_type(w.value,'$.turn_id')='text' AND json_extract(w.value,'$.turn_id')!=''
  AND json_type(w.value,'$.task_id')='text' AND json_extract(w.value,'$.task_id')!=''

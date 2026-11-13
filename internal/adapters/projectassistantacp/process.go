@@ -342,11 +342,21 @@ func (p *Process) Close(ctx context.Context) error {
 		_ = waitOwnedDone(grace, p.done)
 		graceCancel()
 		p.captureOwned()
-		if err := p.signalOwned(false); err != nil {
-			p.setCleanupError(err)
-		}
-		if err := p.signalOwned(true); err != nil {
-			p.setCleanupError(err)
+		// The fresh post-grace census has already removed every absent or
+		// replaced identity. With no known owned process, another census for
+		// each signal cannot authorize any action and can only exhaust the
+		// remaining cleanup budget. Preserve any earlier inventory failure;
+		// the direct child still has to provide its reap receipt below.
+		p.mu.Lock()
+		hasOwned := len(p.owned) > 0
+		p.mu.Unlock()
+		if hasOwned {
+			if err := p.signalOwned(false); err != nil {
+				p.setCleanupError(err)
+			}
+			if err := p.signalOwned(true); err != nil {
+				p.setCleanupError(err)
+			}
 		}
 		if !waitOwnedDone(cleanup, p.done) {
 			_ = p.cmd.Process.Kill()

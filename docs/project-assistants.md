@@ -350,3 +350,24 @@ acknowledgements remain read-level actions; content changes keep their write
 gate. A whole archive that exceeds the existing plaintext ceiling is explicitly
 refused rather than truncated. Transport module evidence is separate from
 production Cloud rollout, long-history UI recovery and phone acceptance.
+
+
+The optional [consistent SQL read views](project-assistants-read-store.md) return
+bounded snapshot/history/event prefixes without loading a whole archive into Go.
+The long-history correction materializes scalar header values once per SQL
+statement while retaining the original member, nested-event and relation checks.
+A frozen test-only overlay passed the original real Server/Cloud Bridge guard
+with 9,001 messages and each existing 60-second request context: snapshot, older
+history and after-frontier events all returned complete bounded responses.
+The generated temporary Project path changes fixture byte lengths across runs;
+the Bridge after-proof contained 5,514,371 message bytes and is not presented as
+a byte-identical timing comparison with the earlier Bridge timeout. The fixed
+Store fixture provides the separate same-input before/after measurements.
+No deadline, capacity, schema, index, pool or writer was changed. SQL still scans
+aggregate data; this is neither an O(page) engine guarantee nor production Cloud,
+phone, native-provider, archive-transfer or removal acceptance.
+
+ACP Close also avoids redundant signal inventories after its fresh census leaves
+no known owned identity. The direct child's reap receipt and existing unknown
+errors remain required; cleanup limits are unchanged. The runtime document
+records the controlled regression and the retained descendant checks.

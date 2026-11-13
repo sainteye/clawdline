@@ -606,3 +606,110 @@ func TestReadViewGiantTraceAndCapturedInstructionsStayOutOfMandatoryState(t *tes
 	_, err := views.Read(testContext, q)
 	requireCode(t, err, pa.CapacityFull)
 }
+
+// This is the legal long-history shape that exceeded the existing source read
+// deadline. Message positions remain contiguous; source events are independent.
+func viewDeadlineFixture(t *testing.T) (*sql.DB, *Store, *ViewStore, pa.Bot, []pa.Message) {
+	t.Helper()
+	started := time.Now()
+	_, template, _ := testDB(t)
+	b := seed(t, template, strings.Repeat("b", 36))
+	b.Key.MachineID = strings.Repeat("m", 36)
+	b.Project = pa.ProjectScope{MachineID: b.Key.MachineID, ProjectID: strings.Repeat("p", 36), CanonicalID: strings.Repeat("c", 72), Kind: pa.RepositoryProject}
+	b.ConversationID = strings.Repeat("v", 36)
+	db, store, _ := testDB(t)
+	c := pa.Conversation{Key: b.Key, ID: b.ConversationID, Version: 1, MemoryRevision: 1}
+	fence := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: b.ConversationID}
+	summary := pa.BotSummary{Bot: b}
+	if _, err := store.Commit(testContext, app.Mutation{Command: command(b.Key, pa.CreateOperation, "create"), Bot: &b, Conversation: &c,
+		Receipt: pa.Receipt{ID: "create", State: pa.EffectDelivered}, Events: []pa.Event{{Version: pa.ContractVersion, ID: "create", Fence: fence, Kind: pa.BotCreated, Bot: &summary}}}); err != nil {
+		t.Fatal(err)
+	}
+	messages := make([]pa.Message, 9001)
+	for i := range messages {
+		messages[i] = pa.Message{ID: fmt.Sprintf("message-%d", i+1), Fence: fence, Seq: int64(i + 1), Kind: pa.AssistantMessage, Text: "synthetic visible fact", At: b.CreatedAt}
+	}
+	events := make([]pa.Event, 600)
+	for i := range events {
+		events[i] = pa.Event{Version: pa.ContractVersion, ID: fmt.Sprintf("source-%d", i+1), Fence: fence, Kind: pa.SourceUpdated, At: b.CreatedAt,
+			Source: &pa.SourceStatus{MachineID: b.Key.MachineID, State: pa.SourceOnline, Fresh: true, Readable: true, Writable: true, Access: pa.Interactive}}
+	}
+	if _, err := store.Commit(testContext, app.Mutation{Command: command(b.Key, pa.SendOperation, "history"), ExpectedVersion: 1, Messages: messages, Events: events,
+		Receipt: pa.Receipt{ID: "history", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	other := b
+	other.Key.BotID, other.ConversationID = "other-bot", "other-conversation"
+	otherConversation := pa.Conversation{Key: other.Key, ID: other.ConversationID, Version: 1, MemoryRevision: 1}
+	otherSummary := pa.BotSummary{Bot: other}
+	if _, err := store.Commit(testContext, app.Mutation{Command: command(other.Key, pa.CreateOperation, "other"), Bot: &other, Conversation: &otherConversation,
+		Receipt: pa.Receipt{ID: "other", State: pa.EffectDelivered}, Events: []pa.Event{{Version: pa.ContractVersion, ID: "other", Fence: pa.Fence{Key: other.Key, Project: other.Project, ConversationID: other.ConversationID}, Kind: pa.BotCreated, Bot: &otherSummary}}}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("legal long-history fixture rows=%d messages_json_bytes=%d events=600 machine_frontier=602 build_write=%s", len(messages), len(raw), time.Since(started))
+	return db, store, newTestViews(t, db), b, messages
+}
+
+func TestReadViewLongHistoryWithinSourceDeadline(t *testing.T) {
+	db, _, views, b, messages := viewDeadlineFixture(t)
+	q := viewQuery(b)
+	read := func() app.ReadView {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(testContext, time.Minute)
+		defer cancel()
+		started := time.Now()
+		v, err := views.Read(ctx, q)
+		t.Logf("read mode=%s after_seq=%d rows=%d elapsed=%s error=%v", q.Request.Mode, q.Request.AfterSeq, len(v.Items), time.Since(started), err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if db.Stats().InUse != 0 || v.Head.EventFrontier != 602 {
+			t.Fatal("read retained its transaction or confused the machine frontier")
+		}
+		return v
+	}
+	v := read()
+	if v.Snapshot == nil || len(v.Items) != 100 || !v.HasMore {
+		t.Fatal("long-history snapshot lost mandatory state or page")
+	}
+	check := func(v app.ReadView, first int) {
+		t.Helper()
+		for i, item := range v.Items {
+			if item.Kind != app.ReadItemMessage || item.Failure != nil || item.CursorFailure != nil || item.AfterCursor == "" || item.ObservedEventSeq != 602 || item.Message == nil || !reflect.DeepEqual(*item.Message, messages[first-i-1]) {
+				t.Fatalf("page changed complete stored message at %d: %+v", first-i, item)
+			}
+		}
+	}
+	check(v, 9001)
+	q.Request.Mode, q.Request.SourceEpoch, q.Request.Cursor = pa.ReadViewHistory, v.SourceEpoch, v.Items[len(v.Items)-1].AfterCursor
+	v = read()
+	if len(v.Items) != 100 || !v.HasMore || v.NextSeq != 0 {
+		t.Fatal("long-history continuation lost its position")
+	}
+	check(v, 8901)
+	q.Request.Mode, q.Request.Cursor, q.Request.AfterSeq = pa.ReadViewEvents, "", 1
+	v = read()
+	if len(v.Items) != 100 || v.NextSeq != 101 || !v.HasMore {
+		t.Fatal("long-history event page lost its complete prefix")
+	}
+	for i, item := range v.Items {
+		expected := pa.Event{Version: pa.ContractVersion, ID: fmt.Sprintf("source-%d", i+1), Seq: int64(i + 2),
+			Fence: pa.Fence{Key: b.Key, Project: b.Project, ConversationID: b.ConversationID}, Kind: pa.SourceUpdated, At: b.CreatedAt,
+			Source: &pa.SourceStatus{MachineID: b.Key.MachineID, State: pa.SourceOnline, Fresh: true, Readable: true, Writable: true, Access: pa.Interactive}}
+		if item.Kind != app.ReadItemEvent || item.ID != expected.ID || item.Failure != nil || item.ObservedEventSeq != expected.Seq || item.Event == nil || !reflect.DeepEqual(*item.Event, expected) {
+			t.Fatalf("event page changed complete stored event at %d: %+v", expected.Seq, item)
+		}
+	}
+	q.Request.Mode, q.Request.Cursor, q.Request.AfterSeq, q.Request.PageSize = pa.ReadViewEvents, "", 602, 256
+	v = read()
+	if len(v.Items) != 0 || v.NextSeq != 602 || v.HasMore {
+		t.Fatal("snapshot replayed its initial events")
+	}
+	q.Request.AfterSeq = 603
+	_, err := views.Read(testContext, q)
+	requireCode(t, err, pa.CursorExpired)
+}

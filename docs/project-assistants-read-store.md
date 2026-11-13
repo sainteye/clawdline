@@ -33,6 +33,14 @@ MATERIALIZED CTEs and window functions operate on the existing tables; there is
 no Go aggregate unmarshal, `load`, Export, Repository.Bot or Conversation call
 on the read path.
 
+Subsequent statements materialize the stored header scalars and collection
+types once before iterating members. Fence predicates still compare every
+required key, Project, conversation and execution component, but use those
+scalar columns rather than extracting each header field from the complete
+aggregate for each member. The aggregate and returned member JSON remain TEXT;
+raw-byte accounting and complete-object decoding are unchanged. This is a
+statement-local SQL projection, not a retained cache or schema change.
+
 ## Complete control state and paged facts
 
 Snapshot contains the complete stored Bot, every counted accepted/queued/
@@ -136,3 +144,40 @@ There are zero product-model or paid external API requests in this module work.
 Removal consists of detaching the optional ReadViews composition and deleting
 the three adapter sources/two tests/this document; no schema or stored-data
 rollback is necessary.
+
+### Long-history source deadline
+
+Initial/recovery snapshot reads exposed a failure on a legal long conversation.
+The independent Store regression fixture writes 9,001 contiguous messages
+(5,209,366 JSON bytes), 600 durable source events and another Bot's creation
+event, which owns machine frontier 602. It uses real Store Commit and ViewStore,
+synthetic fixed-length scopes, the existing 100-row page and the original
+60-second read context. Fixture creation took 130ms in the failing run; the
+head took 76ms, then the first fact-shape SQL statement exhausted the context.
+Snapshot returned `context deadline exceeded` after 60.010s. This is separate
+from the transport fixtures with different scope lengths and JSON byte counts.
+
+The saved CPU profile contains 53.33s sampled CPU, including 52.83s cumulative
+under SQLite's JSON extraction, 52.73s under its JSON cache search and 51.82s
+flat in the underlying byte comparison. EXPLAIN QUERY PLAN and the captured SQL
+retain the aggregate lookup and member scans; materializing scalars removes
+the repeated large-TEXT header lookups from the per-member predicates. The
+profile does not establish a bound on SQLite CPU, memory or parse work.
+
+With those statement-local scalars, the same fixture and deadline returned a
+100-row snapshot in 2.414s, its 100-row history continuation in 2.121s and an
+empty events page in 344ms. Every returned message equals the complete stored
+object, the continuation starts at message 8,901, frontier remains 602, the
+initial events are not replayed, an ahead cursor is still typed `cursor_expired`,
+and no transaction remains borrowed after Read. The regression also checks a
+100-row events prefix against complete stored source-event objects. A separate
+SQL probe records each statement and its duration; its snapshot shape/relation checks took
+382/376ms. These are local synthetic source measurements with substantial
+margin inside the existing deadline, not complete Cloud latency or a production
+ceiling. Real usage frequency has not been measured for this unreleased feature.
+
+The retained implementation adds one scalar-projection boundary and a behavior
+regression test; it keeps the existing shape, fence, relationship and byte-budget
+checks. Malformed facts, nested foreign events, missing event bindings and
+Trace-to-Turn ownership remain refusals. The bounded transport/Bridge deadline
+guard and exact response-envelope verification belong to the integration owner.
