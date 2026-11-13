@@ -189,6 +189,17 @@ to `/v1/orchestrator/sessions/{terminal}/smart-title`, the same naming turn behi
 token: the paired-device route answered that token 403, which the first real run of the command
 showed and its stand-in test had not.
 
+**How it names and explains Sessions.** A Session's label is often its first request and no
+longer says what it is doing. By default the copilot calls each Session by a plain name it gives
+it from the work (a few words a non-programmer would follow), keeps that name for the call, and
+says the original label only when the person asks or a send, answer, close or rename needs the
+target confirmed; tools still take the original label. A status answer gives each Session one
+sentence on what it is for and two to four everyday sentences on where it stands, without
+counting them off or reading technical words. The person asked for this in a call on 2026-11-13
+("don't mind their names; name them as you would, then tell me plainly, with rise and fall") and
+wanted it from the start of every call; `copilot-speech.ts` carries the same in English for the
+work-list reporter.
+
 **A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
 person), the idle and lately finished ones, or all, newest activity first, each with its goal,
 what it finished lately and what it is doing; only the newest `LIST_LATEST_READS` are read and
