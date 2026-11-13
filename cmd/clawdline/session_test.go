@@ -653,7 +653,7 @@ func TestSessionSmartTitleNamesThisSessionThroughItsRoute(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
 	seen := s.requests()
-	if len(seen) != 2 || seen[1].Method != "POST" || seen[1].EscapedPath != "/v1/sessions/%2547/smart-title" ||
+	if len(seen) != 2 || seen[1].Method != "POST" || seen[1].EscapedPath != "/v1/orchestrator/sessions/%2547/smart-title" ||
 		!strings.HasPrefix(seen[1].Key, "smart-title-") || seen[1].Token != thinToken || len(seen[1].Body) != 0 {
 		t.Fatalf("requests: %+v", seen)
 	}

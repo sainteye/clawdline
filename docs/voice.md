@@ -184,7 +184,10 @@ now say a request to do something a tool does is done with that tool, and `send_
 refuses a message asking a Session to rename itself (`ASKS_A_RENAME`), pointing at
 `smart_rename_sessions`. Each call's journal now starts with its bundle and tool count, since that
 call could not be told apart from one placed by a page loaded before the tool existed. A Session
-asked directly has `clawdline session smart-title`, documented in the agent guide (§7).
+asked directly has `clawdline session smart-title`, documented in the agent guide (§7). It posts
+to `/v1/orchestrator/sessions/{terminal}/smart-title`, the same naming turn behind the orchestrator
+token: the paired-device route answered that token 403, which the first real run of the command
+showed and its stand-in test had not.
 
 **A group of Sessions.** `get_sessions_summary` reads the working ones (with those waiting on the
 person), the idle and lately finished ones, or all, newest activity first, each with its goal,
