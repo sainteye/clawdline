@@ -377,6 +377,13 @@ binds each to machine, conversation, label and ID. A fresh directory must still
 match that identity. Generated or interrupted speech, duplicate names and
 unrecognized aliases cannot prove order: ask for a name rather than guessing.
 A later detail keeps the previous multi-Session list available for ordinals.
+On 所有機器 a label ends in 「（machine）」, which speech leaves out; the bare
+name anchors it only while no other Session read in the call shares that name.
+On 2026-11-13 (call f91a9eb8) both gaps showed together: three idle Sessions
+were read without their machine suffix, so none was recorded, and
+「跟我講你最後的那一個」 was not recognized as a position, so the classifier
+replaced the copilot's correct third Session with the second. 「最後（的）那個」
+is now a position, and the call's progress line is text without the mascot.
 The reference window holds 24 recent identities and clears on call end or
 machine switch. The journal stores text and tool evidence, not replayable audio.
 

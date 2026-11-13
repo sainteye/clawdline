@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-expect-error -- Node runs the TypeScript source.
-import {SpokenSessions,SessionReportQueue,sessionBatchSize,sessionNamePosition,type SessionReportPage} from './copilot-reports.ts'
+import {SpokenSessions,SessionReportQueue,relativeSession,sessionBatchSize,sessionNamePosition,type SessionReportPage} from './copilot-reports.ts'
 const a={id:'one',label:'Browser keyboard',machine:'machine-a',conversation:'conversation-a'}
 const b={id:'two',label:'Voice workflow',machine:'machine-b',conversation:'conversation-b'}
 const c={id:'three',label:'Board planning',machine:'machine-a',conversation:'conversation-c'}
@@ -18,6 +18,23 @@ test('relative references use actual completed speech order, not read or directo
  assert.equal(spoken.resolve('the last one')?.target?.id,'one')
  assert.equal(spoken.resolve('the second session')?.target?.id,'one','a detail preserves the previous list')
  spoken.reset();assert.equal(spoken.resolve('the second session')?.target,undefined)
+})
+test('a spoken list on 所有機器 binds positions even though labels carry the machine name',()=>{
+ // Call f91a9eb8 on 2026-11-13: three idle Sessions were read aloud without
+ // their （machine） suffix, and 「跟我講你最後的那一個」 was answered with the second.
+ const m=(id:string,label:string)=>({id,label:`${label}\uff08work-box\uff09`,machine:'mac-1',conversation:id})
+ const x=m('s-first','對齊 CodyNC：以瀏覽器實測迭代修正 Clawdline UI'),y=m('s-second','閱讀交接摘要並接續里程碑'),z=m('s-third','Clawdline 語音與清單延遲瓶頸盤查')
+ const spoken=new SpokenSessions();for(const ref of [x,y,z])spoken.observe(ref)
+ spoken.generated('目前有三個閒置的 Session。第一個是「對齊 CodyNC：以瀏覽器實測迭代修正 Clawdline UI」，第二個是「閱讀交接摘要並接續里程碑」，第三個是「Clawdline 語音與清單延遲瓶頸盤查」。',true);spoken.played()
+ for(const words of ['跟我講你最後的那一個','最後那個','最後那一個呢','the last one'])assert.equal(spoken.resolve(words)?.target?.id,'s-third',words)
+ assert.equal(spoken.resolve('第二個')?.target?.id,'s-second')
+ spoken.reset();spoken.observe(x);spoken.observe({...x,id:'s-other',machine:'mac-2',label:'對齊 CodyNC：以瀏覽器實測迭代修正 Clawdline UI\uff08home-box\uff09'})
+ spoken.generated('「對齊 CodyNC：以瀏覽器實測迭代修正 Clawdline UI」',true);spoken.played()
+ assert.equal(spoken.resolve('最後那個')?.target,undefined,'the same name on two machines is not guessed')
+})
+test('positional words are recognized as positions, not handed to a guess',()=>{
+ for(const words of ['跟我講你最後的那一個','最後那個','最后那个','最後一個','你最後提到的'])assert.equal(relativeSession(words),'last',words)
+ for(const words of ['最後怎麼了','它最後做完什麼'])assert.equal(relativeSession(words),undefined,words)
 })
 test('interrupted, duplicate-name and unanchored speech cannot silently reuse an old identity',()=>{
  const spoken=new SpokenSessions();spoken.observe(a);spoken.observe(b)
