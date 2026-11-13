@@ -552,6 +552,12 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
 	resume := decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	// Preparation can block on capability, memory or history reads. Authority
+	// checked before those reads does not authorize a later execution start.
+	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	c.Generation++
 	c.BindingID = r.o.ID()
 	t.Fence = currentFence(bot, c)
@@ -607,6 +613,9 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	}
 	bot, err = r.o.Repository.Bot(ctx, a.key)
 	if err == nil {
+		err = r.authorized(ctx, a.key, bot.Project)
+	}
+	if err == nil {
 		binding.NativeSessionID = session.SessionID()
 		cmd = r.command(a.key, pa.SendOperation, "runtime-bound-"+t.ID, binding)
 		_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Binding: &binding, Receipt: pa.Receipt{State: pa.EffectExecuting, ResourceID: t.ID}})
@@ -630,6 +639,11 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 			if err != nil {
 				return err
 			}
+		}
+		// WithCurrent may wait behind a memory writer. Check again at the
+		// actual send boundary rather than trusting the pre-lock snapshot.
+		if err := r.authorized(ctx, a.key, bot.Project); err != nil {
+			return err
 		}
 		var e error
 		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff})
