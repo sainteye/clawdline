@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11614,
-  "riskKeys": 5079,
-  "nonRiskCount": 6535,
+  "englishContentKeys": 11618,
+  "riskKeys": 5080,
+  "nonRiskCount": 6538,
   "groups": [
     {
       "name": "acp / other",
@@ -3852,7 +3852,7 @@
     },
     {
       "name": "next / other",
-      "count": 983,
+      "count": 986,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4817,6 +4817,8 @@
         "next.voiceWorkEnableReminder",
         "next.voiceWorkHint",
         "next.voiceWorkInput",
+        "next.voiceWorkInputPlaceholder",
+        "next.voiceWorkIssue",
         "next.voiceWorkList",
         "next.voiceWorkLoading",
         "next.voiceWorkManagedSource",
@@ -4832,6 +4834,7 @@
         "next.voiceWorkResume",
         "next.voiceWorkRetryRead",
         "next.voiceWorkRunning",
+        "next.voiceWorkRuntimeLabel",
         "next.voiceWorkSaving",
         "next.voiceWorkSettings",
         "next.voiceWorkSettingsLink",

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11614,
+  "englishKeys": 11618,
   "counts": {
     "negation": 3193,
-    "state": 1933,
+    "state": 1934,
     "permission": 681,
     "deletion": 262,
     "uncertainty": 438
   },
-  "unionCount": 5079,
+  "unionCount": 5080,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -4892,6 +4892,7 @@
       "next.voiceWorkDone",
       "next.voiceWorkFailed",
       "next.voiceWorkHistory",
+      "next.voiceWorkInlineHint",
       "next.voiceWorkModeDisabledHint",
       "next.voiceWorkPlan",
       "next.voiceWorkPlannerFailed",
@@ -10942,6 +10943,7 @@
     "next.voiceWorkFailure",
     "next.voiceWorkHistory",
     "next.voiceWorkInbox",
+    "next.voiceWorkInlineHint",
     "next.voiceWorkManagedSourceHint",
     "next.voiceWorkModeDisabled",
     "next.voiceWorkModeDisabledHint",

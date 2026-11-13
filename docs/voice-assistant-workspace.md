@@ -58,6 +58,13 @@ claim that an utterance or tool result was queued in the persistent work list.
 Entering from the sidebar without a machine key or legacy browser key opens
 Settings by default. An explicit Work tab remains accessible without a key;
 default routing neither enables planning nor starts a call.
+The Work tab also carries the background-planning switch, backed by the same
+settings endpoint as the Settings tab. A pending save disables that switch;
+only the server answer changes its displayed state. A failed save becomes an
+explicit unknown state, and a late answer from a previous machine or hidden
+tab cannot replace the current view. Toggling the setting does not submit an
+input for planning. The compose example is a separate, associated field hint;
+runtime notes and action failures have distinct informational and error styles.
 
 Both direct calls and evidence-driven updates share delivery guidance: lead
 with the practical consequence, explain one connected thought at a time, use
