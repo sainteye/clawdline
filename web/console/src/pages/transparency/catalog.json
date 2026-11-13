@@ -3409,7 +3409,7 @@
       "sources": [
         {
           "path": "internal/adapters/projectassistantacp/client.go",
-          "line": 237
+          "line": 238
         },
         {
           "path": "internal/app/projectassistant/runtime.go",
@@ -3417,6 +3417,10 @@
         },
         {
           "path": "internal/adapters/projectassistantacp/capabilities.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/session_handoff.go",
           "line": 1
         }
       ],
@@ -3427,6 +3431,15 @@
         "\t}\n",
         "\tif err := pa.ValidateMessage(q.Text); err != nil {\n",
         "\t\treturn nil, err\n",
+        "\t}\n",
+        "\t// Prepare the complete opening before claiming the pending prompt lane.\n",
+        "\ttext := q.Turn.Instructions.Text + \"\\n\" + q.Context.Text + \"\\n\" + q.Text\n",
+        "\tif q.Handoff != nil {\n",
+        "\t\topening, err := q.Handoff.Opening(q.Turn, q.Context)\n",
+        "\t\tif err != nil {\n",
+        "\t\t\treturn nil, err\n",
+        "\t\t}\n",
+        "\t\ttext = opening + \"\\n\" + q.Text\n",
         "\t}\n",
         "\tc.mu.Lock()\n",
         "\tif c.turnID != \"\" {\n",
@@ -3439,7 +3452,6 @@
         "\tc.mu.Unlock()\n",
         "\t// Only fresh filtered context is sent. Displayed history is never implicit\n",
         "\t// model input. Instructions belong to this turn's immutable snapshot.\n",
-        "\ttext := q.Turn.Instructions.Text + \"\\n\" + q.Context.Text + \"\\n\" + q.Text\n",
         "\tblocks := []any{}\n",
         "\tif q.Quote != nil {\n",
         "\t\tif err := pa.ValidateMessage(q.Quote.Text); err != nil {\n",
@@ -3455,7 +3467,8 @@
         "\tif err != nil {\n",
         "\t\treturn nil, err\n",
         "\t}\n",
-        "\treturn &promptPending{rpc: p}, nil\n"
+        "\treturn &promptPending{rpc: p}, nil\n",
+        "}\n"
       ],
       "locations": [
         "Source-machine persistent Bot turn snapshot",
@@ -3499,7 +3512,7 @@
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/voice_work.go": "a687718d648d1924327a74a9a973dd7c34a8d94c7c7d8fb7cb14067019823595",
     "internal/adapters/projectassistantacp/capabilities.go": "8f41f5b889d4f1d2dbdd0681ae3a946e338584f251fdf4ae6df95d77795a75e0",
-    "internal/adapters/projectassistantacp/client.go": "846e9a4f0803f36f2dbb884a6b59c280f639293de2b20987392ae994d33af328",
+    "internal/adapters/projectassistantacp/client.go": "779bba966f1533a646f8ed24f2c67186a84b4577c18b4bdfe64449e346ded234",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -3527,7 +3540,8 @@
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
-    "internal/app/projectassistant/runtime.go": "479ad6e485908348ad90a5892b8ff0ec37b560e90a0a45d48dee1285c81e40ec",
+    "internal/app/projectassistant/runtime.go": "ee4a4bdfc35ab2e938b259471768b02fc15f4463afb306775eb9d63d213dee0a",
+    "internal/app/projectassistant/session_handoff.go": "cccc0eb9258c533aef4109b1dbb1086747d614f04b375d8e15c5df3da427073a",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
     "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
@@ -3600,7 +3614,7 @@
     "web/console/src/voice-work/runtime.ts": "278b3b8bcfce334142062b98e37e8b9229de96dc1fdca92531ed863fea56f656"
   },
   "copyChecks": {
-    "en": "a051a9c6ea96eddcf8138f01b6193325616b3db48a1f178cf0abf87c76f199af",
-    "zh-Hant": "4a2836eefe876c018e9f903f143d498ccea193418abcbc5a44192834746f1ccf"
+    "en": "9ee7cc5d6eab39718965376cc05fbd63bf5c7806522535a4ea8ef3dd21f60b3c",
+    "zh-Hant": "36600ccc21dfaa34c5120c2b6967a90c937c98e3151a503aeda97429a7fb7930"
   }
 }

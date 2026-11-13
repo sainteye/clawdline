@@ -194,3 +194,26 @@ These are module tests. A specified older executable doing original Session,
 Board and schedule work on an isolated copy, actual feature source removal and
 rebuild, UI/Cloud acceptance and native provider behavior remain integration
 responsibilities. Simulated host-table operations do not establish those claims.
+
+## Fresh-session handoff data
+
+The runtime reconstructs a `SessionHandoff` from the existing SQLite Bot,
+conversation, turn, work and memory facts. There is no second handoff database,
+Markdown authority, summary cache or automatic summary generation. The opening
+carries the exact execution identity and immutable instruction/role snapshot,
+current provenance-complete memory text, unfinished turn/work references and a
+message-ID/sequence bookmark. A reopen reconstructs those fields from the same
+facts rather than treating an old serialized opening as current authority.
+
+Only `Memory.Snapshot`/`WithCurrent` supplies summary text. Remembered summaries
+and handoff notes remain normal source-bearing memory entries, so Forget removes
+them from the next opening. Neither readable transcript text nor an opaque native
+summary repairs missing provenance. The bookmark and unfinished IDs preserve
+navigation and state, not requests or authority to replay unknown work.
+
+This follows the pinned Codync `host/src/chat/handoff.rs` division between a
+handoff's summary, open work and history bookmark. The first-version difference
+is deliberate: no automatic rollover schedule, last-four-message transcript copy,
+background compaction or model-generated draft is added. Clawdline's SQLite
+memory/provenance rules remain authoritative. Native provider acceptance and
+production Cloud behavior are separate from this data path.

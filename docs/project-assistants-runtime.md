@@ -240,3 +240,28 @@ old false-unknown result and the corrected two-observation result. Separate
 unknown-preservation, original transport, and real observed-setsid cleanup
 tests cover the unchanged failure and ownership boundaries. This does not admit
 a native provider or establish cleanup of an unobserved escaped descendant.
+
+## Fresh native sessions receive a source-owned handoff
+
+A turn that cannot safely resume an opaque native session now constructs its
+opening inside the final `Memory.WithCurrent` boundary. `SessionHandoff` binds
+the Bot, Project, conversation, newly minted binding/generation, Agent and exact
+turn instruction/role snapshot to that filtered memory revision. It also carries
+read-only unfinished turn/work references and a stable message bookmark. It
+copies no implicit transcript into the prompt and does not retry an unknown
+intent. Old-generation persisted work remains descriptive conversation data.
+
+`PromptRequest.Handoff` is additive to the internal provider port. The ACP
+client binds it to the exact prompt fence/instructions and freshly checked
+context, then sends that opening and the user's new input through the existing
+`session/prompt` path. A safely resumed session retains its existing prompt path.
+The existing frame/capture limits still refuse oversized data without silently
+truncating it; this change introduces no additional bound or public operation.
+
+The source is pinned Codync's `host/src/chat/handoff.rs` and
+`host/src/agent/bot/compaction.rs`: summaries, open work and a history bookmark
+cross a fresh-session boundary. Automatic compaction/rollover, a new editable
+handoff card and transcript excerpt copying are outside this first-version data
+unit. Filtered SQLite memory, rather than opaque provider context, is the source
+for the new opening after forgetting. This does not establish real Claude/Codex
+adapter admission or claim that a native provider erased its external memory.

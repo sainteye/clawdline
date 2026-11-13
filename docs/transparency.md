@@ -522,3 +522,13 @@ process-local capabilities and the broker enforce admission; the instruction
 alone does not establish authorization or successful execution. Native provider
 admission, production host wiring and public website publication remain separate
 acceptance work. The website snapshot must follow this revision when published.
+
+A fresh persistent-Bot native Session also receives a structured handoff from
+source-owned SQLite facts: the exact identity and captured instructions, current
+filtered memory, unfinished-work references and a history bookmark. The runtime
+builds it within the final memory revision fence, and the ACP producer verifies
+that opening against the exact prompt turn/context before writing. No transcript
+excerpt or opaque provider summary is silently substituted for filtered memory.
+Unfinished references grant no replay authority. The existing conditional card,
+source excerpt and both language versions describe this addition; native
+readiness and the eventual public website snapshot remain separate acceptance.

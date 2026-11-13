@@ -538,8 +538,38 @@ func TestHostForgetUsesOneStoreAndFreshBindingWithoutForeignContext(t *testing.T
 	if before.Context.Text != "Private note" {
 		t.Fatal(before.Context)
 	}
+	if before.Handoff == nil || before.Handoff.Context.Text != "Private note" || before.Handoff.Bookmark.MessageSeq != 1 {
+		t.Fatal("first session lost stored handoff", before.Handoff)
+	}
+
 	native.reply <- app.PromptResult{FinalText: "Done"}
 	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+	// Reopen the actual SQLite store and composition owner before forgetting.
+	// A cached opening from the original Host cannot satisfy this boundary.
+	var dbSequence int
+	var dbName, dbPath string
+	if err = f.o.Database.QueryRow("PRAGMA database_list").Scan(&dbSequence, &dbName, &dbPath); err != nil || dbName != "main" || dbPath == "" {
+		t.Fatal("fixture database path", err, dbName)
+	}
+	if err = f.h.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.st, err = hoststore.Open(filepath.Dir(dbPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldBroker := f.o.Broker
+	f.o.Database = f.st.ProjectAssistantDatabase()
+	f.o.Broker = &orchestrator.Broker{Store: f.st, Tasks: oldBroker.Tasks, Git: oldBroker.Git, Dir: oldBroker.Dir, Launcher: oldBroker.Launcher, ScreenReadEvery: oldBroker.ScreenReadEvery, Terminal: oldBroker.Terminal, Live: oldBroker.Live, Type: oldBroker.Type, Screen: oldBroker.Screen}
+	f.start(t)
+	f.enable(t)
+	s, err = f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.Forget(context.Background(), app.ForgetRequest{Command: pa.Command{Key: b.Key, Operation: pa.ForgetOperation, IdempotencyKey: "forget"}, Project: b.Project, ExpectedRevision: memory.Revision, SourceIDs: []string{"manual:note"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -551,6 +581,19 @@ func TestHostForgetUsesOneStoreAndFreshBindingWithoutForeignContext(t *testing.T
 	if after.Context.Text != "" || after.Turn.Fence.BindingID == before.Turn.Fence.BindingID || native.q.Resume {
 		t.Fatal("forgotten or foreign context resumed", after, native.q)
 	}
+	if after.Handoff == nil || after.Handoff.Identity != after.Turn.Fence || after.Handoff.Bookmark.MessageSeq != 3 {
+		t.Fatal("reopened source lost fresh handoff", after.Handoff)
+	}
+	opening, err := after.Handoff.Opening(after.Turn, after.Context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, absent := range []string{"Private note", "Other Bot note", "Hello before"} {
+		if strings.Contains(opening, absent) {
+			t.Fatal("new session copied forgotten, foreign or transcript text")
+		}
+	}
+
 	otherMemory, err := f.h.store.Snapshot(context.Background(), other.Key)
 	if err != nil || otherMemory.Text != "Other Bot note" {
 		t.Fatal(otherMemory, err)

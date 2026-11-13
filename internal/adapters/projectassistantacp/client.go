@@ -242,6 +242,15 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err := pa.ValidateMessage(q.Text); err != nil {
 		return nil, err
 	}
+	// Prepare the complete opening before claiming the pending prompt lane.
+	text := q.Turn.Instructions.Text + "\n" + q.Context.Text + "\n" + q.Text
+	if q.Handoff != nil {
+		opening, err := q.Handoff.Opening(q.Turn, q.Context)
+		if err != nil {
+			return nil, err
+		}
+		text = opening + "\n" + q.Text
+	}
 	c.mu.Lock()
 	if c.turnID != "" {
 		c.mu.Unlock()
@@ -253,7 +262,6 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	c.mu.Unlock()
 	// Only fresh filtered context is sent. Displayed history is never implicit
 	// model input. Instructions belong to this turn's immutable snapshot.
-	text := q.Turn.Instructions.Text + "\n" + q.Context.Text + "\n" + q.Text
 	blocks := []any{}
 	if q.Quote != nil {
 		if err := pa.ValidateMessage(q.Quote.Text); err != nil {

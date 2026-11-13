@@ -494,6 +494,13 @@ func TestRuntimeForgetStartsFilteredBindingAndNextInstructionSnapshot(t *testing
 	if second.Turn.Instructions.Revision != 2 || second.Turn.MemoryRevision != 2 || second.Context.Text != "" {
 		t.Fatalf("snapshot=%+v", second)
 	}
+	if first.Handoff == nil || second.Handoff == nil || second.Handoff.Identity != second.Turn.Fence || second.Handoff.Instructions != second.Turn.Instructions {
+		t.Fatal("fresh binding did not receive its captured handoff", first.Handoff, second.Handoff)
+	}
+	if _, err := second.Handoff.Opening(second.Turn, second.Context); err != nil {
+		t.Fatal(err)
+	}
+
 	f.provider.mu.Lock()
 	open := f.provider.opens[len(f.provider.opens)-1]
 	f.provider.mu.Unlock()

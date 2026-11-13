@@ -623,8 +623,16 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		if err := pa.CheckContext(filtered, current); err != nil {
 			return err
 		}
+		var handoff *SessionHandoff
+		if !resume {
+			var err error
+			handoff, err = newSessionHandoff(export, t, filtered)
+			if err != nil {
+				return err
+			}
+		}
 		var e error
-		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote})
+		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff})
 		return e
 	})
 	if err != nil {

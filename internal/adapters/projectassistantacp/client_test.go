@@ -71,16 +71,20 @@ func TestACPTestPeer(t *testing.T) {
 			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": "scripted-session"})})
 		case "session/prompt":
 			promptID = f.ID
-			if mode == "quote" {
+			if mode == "quote" || mode == "handoff" {
 				var payload struct {
 					Prompt []struct {
 						Text string `json:"text"`
 					} `json:"prompt"`
 				}
-				if json.Unmarshal(f.Params, &payload) != nil || len(payload.Prompt) != 2 {
+				if json.Unmarshal(f.Params, &payload) != nil || mode == "quote" && len(payload.Prompt) != 2 || mode == "handoff" && len(payload.Prompt) != 1 {
 					os.Exit(4)
 				}
-				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn", "text": payload.Prompt[0].Text + "\n" + payload.Prompt[1].Text})})
+				texts := []string{}
+				for _, block := range payload.Prompt {
+					texts = append(texts, block.Text)
+				}
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn", "text": strings.Join(texts, "\n")})})
 				continue
 			}
 			if mode == "exit" {
@@ -303,4 +307,34 @@ func processAlive(pid int) bool {
 func inventoryUnavailable() bool {
 	_, err := exec.Command("/bin/ps", "-axo", "pid=,ppid=,lstart=").Output()
 	return err != nil
+}
+
+func TestACPFreshSessionHandoffTraversesStdinAndRejectsStaleOpeningBeforeWrite(t *testing.T) {
+	c, _ := openTestClient(t, "handoff", func(context.Context, app.ProtocolEvent) error { return nil })
+	f := testFence()
+	memory := pa.MemoryRevision{Key: f.Key, Project: f.Project, Revision: 2}
+	filtered := pa.ContextSnapshot{Memory: memory, ProvenanceComplete: true, Text: "Filtered handoff summary", Sources: []pa.MemorySource{{ID: "verified-source", Key: f.Key, Project: f.Project, Revision: 1, Kind: "human"}}}
+	turn := pa.Turn{ID: "fresh-turn", Fence: f, MemoryRevision: 2, Instructions: pa.InstructionSnapshot{Revision: 3, Text: "Captured standing instructions", RoleSnapshotRef: "role@3"}}
+	handoff := &app.SessionHandoff{Identity: f, Agent: pa.Codex, Instructions: turn.Instructions, Context: filtered, Bookmark: app.SessionBookmark{MessageID: "stored-bookmark", MessageSeq: 42}, Unfinished: []app.SessionPending{{Kind: "work", ID: "old-work", State: "unknown", TaskID: "task-reference"}}}
+	stale := *handoff
+	stale.Instructions.RoleSnapshotRef = "stale-role"
+	if _, err := c.Send(context.Background(), app.PromptRequest{Turn: turn, Context: filtered, Text: "New input", Handoff: &stale}); pa.Code(err) != pa.ContextStale {
+		t.Fatal("stale opening entered native prompt", err)
+	}
+	pending, err := c.Send(context.Background(), app.PromptRequest{Turn: turn, Context: filtered, Text: "New input", Handoff: handoff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := pending.Wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"Filtered handoff summary", "Captured standing instructions", "stored-bookmark", "task-reference", "role@3", "New input"} {
+		if !strings.Contains(result.FinalText, text) {
+			t.Fatal("actual ACP wire omitted", text)
+		}
+	}
+	if strings.Count(result.FinalText, "Filtered handoff summary") != 1 {
+		t.Fatal("handoff memory duplicated")
+	}
 }

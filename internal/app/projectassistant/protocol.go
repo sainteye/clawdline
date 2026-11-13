@@ -47,6 +47,7 @@ type PromptRequest struct {
 	Text    string
 	Context pa.ContextSnapshot
 	Quote   *PromptQuote
+	Handoff *SessionHandoff
 }
 type PromptQuote struct {
 	MessageID string
