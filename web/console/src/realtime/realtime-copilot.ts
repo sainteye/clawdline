@@ -5,6 +5,7 @@ import {batchKey,batchProposal as makeBatchProposal,batchSpoken,continuationCons
 import { loadCopilotHelp } from './copilot-help-loader.js'
 import { WorkObservations } from '../voice-work/observations.js'
 import { onMachineChanged } from '../cloud/machine-switch.js'
+import { VOICE_CALL_HEADER } from '../cloud/voice-call.js'
 import { voiceWork, receiveCallInput, queueVoiceInputs, answerVoiceInput, parkVoiceInput, parkVoiceCall, workDirectory, useCallWorkTools } from '../voice-work/runtime.js'
 import { shortResult,WORK_REQUEST_MS } from '../voice-work/engine.js'
 import { WorkNarrator } from '../voice-work/narrator.js'
@@ -295,7 +296,7 @@ export class RealtimeCopilotClient {
     }
     try {
       const res = await fetch('/v1/settings/copilot', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), [VOICE_CALL_HEADER]: '1' },
         body: JSON.stringify(change),
       })
       return { saved: res.ok }
@@ -462,7 +463,8 @@ export class RealtimeCopilotClient {
     this.journal('start', `${navigator.userAgent} · bundle ${document.querySelector('script[type="module"][src]')?.getAttribute('src') ?? '?'} · tools ${COPILOT_TOOLS.length}`)
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
-    const workspaceSettings = fetch('/v1/settings/copilot').then(async res=>res.ok?await res.json():null).catch(()=>null)
+    // The settings of the machine that will hold the call (a Mac when there is one), not the page's (`voice-call.ts`).
+    const workspaceSettings = fetch('/v1/settings/copilot', { headers: { [VOICE_CALL_HEADER]: '1' } }).then(async res=>res.ok?await res.json():null).catch(()=>null)
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
     this.updateState({ status: 'connecting', connectionReady:false, error: undefined, toolCallLog: undefined, remembered: this.memory.length })
     this.addLog('info', nextWord('copilotLogStarting'))

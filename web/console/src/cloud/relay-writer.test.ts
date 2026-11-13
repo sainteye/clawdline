@@ -3289,6 +3289,69 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
   assert.deepEqual(client.calls[0].slice(1, 5), ["journal-1", "mac-b", "copilot-journal", { journal: { call: "call-0001", entries: [{ at: 1, kind: "heard", text: "hi" }] } }])
 })
 
+test("a page reading a Linux machine holds its voice call on the macOS machine, settings and all", async () => {
+  class Fleet extends FakeClient {
+    _machinesFor() { return { capable: [{ id: "box-l", freshness: "current" }, { id: "mac-m", freshness: "current" }] } }
+    _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action") {
+      this.calls.push(["_machineRequestAs", request, machine, word, body, kind])
+      return Promise.resolve(word === "copilot-session" ? { client_secret: "ek_mac", model: "gpt-realtime-mini" } : {})
+    }
+  }
+  const client = new Fleet()
+  client.descriptors.set("box-l", { machine: { ...GO_DAEMON.machine, platform: "linux" } })
+  client.descriptors.set("mac-m", { machine: { ...GO_DAEMON.machine, platform: "darwin" } })
+  const reader = new RelayReader("box-l", {})
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "req-1" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const call = { "X-Clawdline-Voice-Call": "1" }
+
+  // Before the pass: the call reads the Mac's mode and voice work, not the page's.
+  await reader.fetch("/v1/settings/copilot", { headers: call })
+  await reader.fetch("/v1/voice/copilot-work")
+  assert.deepEqual(client.calls.map((c) => [c[0], c[1]]), [["_machineRequest", "mac-m"], ["_machineRequest", "mac-m"]])
+  // The Settings page, which sends no header, still shows the machine it reads.
+  client.calls.length = 0
+  await reader.fetch("/v1/settings/copilot")
+  assert.deepEqual(client.calls.map((c) => [c[0], c[1]]), [["_machineRequest", "box-l"]])
+
+  client.calls.length = 0
+  const opened = await reader.fetch("/v1/voice/copilot-session", post({}, { "Idempotency-Key": "call-mac" }))
+  assert.equal((await json<{ client_secret: string }>(opened)).client_secret, "ek_mac")
+  assert.deepEqual(client.calls.map((c) => c[2]), ["mac-m"], "the macOS machine is asked first and the Linux one not at all")
+
+  // The call's own speed change is kept on the Mac; the Settings page's on the page's machine.
+  client.calls.length = 0
+  await reader.fetch("/v1/settings/copilot", post({ speed: "1.2" }, { "Idempotency-Key": "speed-1", ...call }))
+  await reader.fetch("/v1/settings/copilot", post({ speed: "1.1" }, { "Idempotency-Key": "speed-2" }))
+  assert.deepEqual(client.calls.map((c) => c[2]), ["mac-m", "box-l"])
+})
+
+test("a call pass still falls back to the reading Linux machine when the macOS one has no key", async () => {
+  class Fleet extends FakeClient {
+    _machinesFor() { return { capable: [{ id: "mac-m", freshness: "current" }] } }
+    _machineRequestAs(request: string, machine: string, word: string) {
+      this.calls.push(["_machineRequestAs", request, machine, word])
+      if (machine === "mac-m") return Promise.reject(refusal("copilot_key_missing", { status: 412, layer: "mac_route", message: "no key" }))
+      return Promise.resolve({ client_secret: "ek_linux" })
+    }
+  }
+  const client = new Fleet()
+  client.descriptors.set("box-l", { machine: { ...GO_DAEMON.machine, platform: "linux" } })
+  client.descriptors.set("mac-m", { machine: { ...GO_DAEMON.machine, platform: "macos" } })
+  const reader = new RelayReader("box-l", {})
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "req-1" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const opened = await reader.fetch("/v1/voice/copilot-session", post({}, { "Idempotency-Key": "call-x" }))
+  assert.equal((await json<{ client_secret: string }>(opened)).client_secret, "ek_linux")
+  assert.deepEqual(client.calls.map((c) => c[2]), ["mac-m", "box-l"])
+  // Once Linux gave the pass, the call's briefing is prepared there.
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-briefing", post({}, { "Idempotency-Key": "brief-x" }))
+  assert.equal(client.calls[0][2], "box-l")
+})
+
 test("a call pass no machine can give names the missing key, in the flat spelling the page reads", async () => {
   class Keyless extends FakeClient {
     _machinesFor() { return { capable: [{ id: "mac-b", freshness: "current" }] } }
