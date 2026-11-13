@@ -49,6 +49,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null)
   const [sourceIDs,setSourceIDs]=useState(""),[more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
+  const stopping=useRef(false)
   const refreshBusy=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),activeMutations=useRef(new Set<AbortController>())
   const reads=useRef(new Set<AbortController>()),collectionBusy=useRef(new Map<string,AbortController>()),historyCursors=useRef(new Set<string>())
   const collectionCursors=useRef({permissions:new Set<string>(),traces:new Set<string>()})
@@ -243,6 +244,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     }finally{if(valid())setBusy(false)}
   }
 
+  const stop=async()=>{
+    if(stopping.current||busy||!valid()||recovery.current)return
+    stopping.current=true;setBusy(true)
+    const action=command(key,"stop")
+    try{
+      const result=await mutate((d,s)=>source.stop({command:action,fence:fence(d),turn_id:d.conversation.active_turn_id},s))
+      if(valid()){setReceipt(result.receipt);void refresh()}
+    }catch(e){fail(e)}
+    finally{stopping.current=false;if(valid())setBusy(false)}
+  }
+
   const detail=async(kind:"permission"|"trace",id:string,reference:string)=>{
     const captured=headRef.current,capturedEpoch=epoch.current
     if(!captured||!valid()||recovery.current||collectionBusy.current.has(reference))return
@@ -324,7 +336,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     </div>
     <div className="pa-chat-footer">{parts.queued.map(m=><div className="pa-queued" key={m.id}>{w.queued}: {m.text}</div>)}{receipt&&<p role="status">{w[receipt.state]} · {receipt.id}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
       {!following&&<button className="pa-pill" onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>{w.jump}</button>}
-      <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>void loadExport()}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void mutate((d,s)=>source.stop({command:command(key,"stop"),fence:fence(d),turn_id:d.conversation.active_turn_id},s)).then(r=>{if(valid())setReceipt(r.receipt);void refresh()}).catch(fail)}>{w.stop}</button>}</div>
+      <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>void loadExport()}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button>}</div>
       <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown||(head?.unknown_turn_count??0)>0} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w}/>
     </div>
     {settings&&<BotSettings bot={bot} enabled={enabled} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}

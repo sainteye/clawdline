@@ -261,3 +261,15 @@ runtime or dependency. Its synthetic data and in-process transport do not
 establish production Cloud encryption, physical phone behavior, native provider
 admission, full feature removal or Codync parity. Those acceptance boundaries
 remain independent.
+
+
+## One stop action while its receipt is pending
+
+Stopping active and queued work owns its waiting state for the complete fresh
+snapshot preflight and source request. A synchronous latch also rejects a second
+activation before React renders the disabled button. The action uses the current
+turn from that preflight, retains one command identity for its attempt, presents
+the actual stop receipt and refreshes the bounded conversation. It never retries
+the stop automatically or turns an accepted stop into a claim that an external
+effect is known. Reading and quoting stored history do not start a provider;
+only an explicit message does.
