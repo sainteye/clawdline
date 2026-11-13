@@ -33,11 +33,12 @@ in a subdirectory or worktree can see its canonical Project Playbook. If that
 read is unavailable on an older machine, the Snippet tab still works and the
 Playbook tab names the update requirement.
 
-## Built-in review Playbooks
+## Built-in Playbooks
 
-A fresh machine receives two editable global starters: **Zero-Based Review**
-(`zero_review`) and **Cross-Surface Code Review** (`cross_surface_review`). The
-latter is shown as **跨面向 Code Review** in Taiwan Traditional Chinese. Unedited
+A fresh machine receives three editable global starters: **Zero-Based Review**
+(`zero_review`), **Cross-Surface Code Review** (`cross_surface_review`) and
+**Drive Board Items to Done** (`board_drive`). Cross-Surface Code Review is shown
+as **跨面向 Code Review** in Taiwan Traditional Chinese. Unedited
 starters use the reader's English or Traditional Chinese message; edited or linked
 rows keep the person's saved words. Each launch still freezes the displayed title
 and complete message in its Session to-do.
@@ -46,6 +47,21 @@ Each starter has its own seed-ledger entry. Deleting one does not bring it back
 on restart. An existing global definition with its English or Traditional Chinese
 title is retained without being overwritten, reidentified or duplicated; it keeps
 its authored text. Capacity refusal defers an absent seed until space is available.
+
+Drive Board Items to Done is shown as **看板項目推進** in Taiwan Traditional
+Chinese, but only its title is translated: its launch message is the saved English
+text in every interface language. It addresses a Root that keeps testing while its
+Board steps stay unchecked. Progress is the count of checked steps. The Root first
+builds a minimal working version that runs the main path end to end on the real
+surface (for an Issue, a failing reproducer made to pass), then grows from it. After
+every child report it merges, rereads the item's steps and checks off each step whose
+change is on main and whose focused check passed. It runs the repository's commit
+gate and the minimal path after every one to three newly checked steps, complete
+acceptance once at the end, and never reruns a check without a new change. A
+blocked minimal version stops the run; any other blocked step is asked once and
+skipped. The run ends when every step is done or cancelled with a reason and each
+item reached done under its deployment policy, or when only steps waiting on the
+person remain. Clawdline does not enforce this cadence; it is instruction text.
 
 Cross-surface review first freezes the candidate and assesses affected surfaces:
 A means at least two surfaces; B covers permission/visibility defaults, auth,

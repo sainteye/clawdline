@@ -115,7 +115,9 @@ Sessions while a picture is shrinking cannot attach it to the newly opened Sessi
   or every project. Pressing one only fills the box; you still send it.
 - **Playbooks** hold a complete launch message. Open the
   Playbook tab, select one, then press **Start Playbook**. The shipped **Zero-Based Review** example reviews the current
-  Project and is available in every Project. Its unedited text follows the interface language;
+  Project and is available in every Project. **Drive Board Items to Done** has a Root push its
+  Board items' steps to completion from a minimal working version, testing in batches; its
+  message is English in every language. Unedited review text follows the interface language;
   you can edit or delete it like another Playbook. A deleted example stays deleted after restart.
 - **Skills:** type `/` (or `$` for Codex) as the whole message to list the session's skills and
   commands. Choosing one writes it into the box and does not send.
