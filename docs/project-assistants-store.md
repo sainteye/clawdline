@@ -195,6 +195,61 @@ Board and schedule work on an isolated copy, actual feature source removal and
 rebuild, UI/Cloud acceptance and native provider behavior remain integration
 responsibilities. Simulated host-table operations do not establish those claims.
 
+## Local rollback, removal and reinstall rehearsal
+
+On 2026-11-13 the integrating root completed the five separate lifecycle
+checks using synthetic data and real local executable artifacts. The tested
+feature commit was `414eff0410557e351126bc02047445afa9b8e7ed`, tree
+`8dd21619cedc47ce5c1bff3ecbc47fb303ec159a`. The specified pre-feature executable
+was built from `96af39ebce0e5bb55942cfe9025384cc863a7c8e`.
+
+The removal checkout physically deleted 145 feature files and restored 59
+individually reviewed wiring files. It retained the unrelated atomic-argument
+fixture fix. The resulting tree was
+`f73ed5b8fd14117708b546a4baf10914f5a63ba1`; its executable was built and run.
+The [handoff removal inventory](project-assistants-handoff.json) partitions the
+new files and lists the wiring. That inventory is revision-specific: do not
+blanket restore a baseline over later or foreign work.
+
+The same lifecycle sequence established:
+
+1. The specified old executable could read/forget synthetic archived Session
+   metadata, edit/read back a Board item, and save/read back a disabled schedule
+   on a data copy. The schedule did not execute. Upgrading the same copy to the
+   feature executable preserved the complete Bot export.
+2. The source-removed executable could perform those original operations.
+   Its Bot status API returned 501; the console document returned 200.
+   Restoring the compatible feature executable over that data made the stored
+   Bot readable again.
+3. Disabled feature sources remained `history_only`; a real HTTP send request
+   was rejected with `pa_disabled`. The full HTTP export remained available.
+4. ExportArchive/RestoreArchive restored all facts into an empty compatible
+   database. A newly started feature executable read the restored data over
+   HTTP. Explicit enable switched the source to `interactive`; disable restored
+   `history_only` without submitting a model turn.
+5. Original Project memory and the synthetic Project instruction file had
+   unchanged file hashes. All five owned daemon PIDs and listening ports were
+   independently checked absent after the exercise.
+
+Full archive data compared equal after rollback, upgrade, source removal,
+reinstallation and empty-database restore. The canonical export hash was
+`2592d72864d2bb38513f9b307bd60749e15eb6557f277aeabed94267248b80bd`:
+120 messages, two turns, two bindings, three permission offers, one unknown
+work link, two memory entries, 609 events, five receipts and one read cursor.
+The forgotten-source tombstone, unknown effects and cursor at message 120
+survived. Three real HTTP exports also compared equal. Checking table existence
+alone was not used as preservation evidence.
+
+The OS sandbox denied personal-home reads/writes, external network access and
+other executables. The old executable's mandatory legacy icon path stayed
+unreadable but returned ENOENT to select its default icon. The existing
+`CLAWDLINE_NEXT_PLACES_FIXTURE` selected only the temporary synthetic Project;
+this bypassed no data, authority or feature-capability gate. No native CLI/model
+Session, production Cloud flow or physical phone was tested in this rehearsal.
+Native provider/tool containment remains a separate acceptance obligation.
+Private raw logs, complete exports and executable hashes stay with the owning
+Board evidence; they are not copied into this public repository.
+
 ## Fresh-session handoff data
 
 The runtime reconstructs a `SessionHandoff` from the existing SQLite Bot,
