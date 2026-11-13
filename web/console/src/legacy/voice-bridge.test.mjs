@@ -88,10 +88,12 @@ function harness(options = {}) {
   }
   runInNewContext(code, sandbox)
   const voice = sandbox.exports, box = new Element()
+  const sent = [], toasts = [], states = []
   const job = { host: box, composer: new Element(), guard: () => !box.isConnected, sink: text => words.push(text),
+    send: text => sent.push(text), say: (text, bad) => toasts.push({ text, bad: !!bad }), changed: state => states.push(state),
     transcribe: async (audio, rate) => { posts++; return options.transcribe ? options.transcribe(audio, rate) : { text: "Recovered speech" } } }
   const flush = () => new Promise(resolve => setImmediate(resolve))
-  return { voice, box, words, recorders, tracks, diagnostics, options,
+  return { voice, box, words, sent, toasts, states, job, recorders, tracks, diagnostics, options,
     get posts() { return posts }, get opens() { return opens }, get contextCloses() { return contextCloses },
     async start() { voice.press(job); await flush() },
     click(kind) { const button = box.querySelector(`.${kind}`); assert.ok(button, `${kind} button absent in ${voice.voiceState()}`); button.listeners.click() },
@@ -258,4 +260,53 @@ test("a finished recorder with no bytes explains the loss and offers only explic
   assert.match(h.box.textContent, /no audio to retry/)
   assert.equal(h.box.querySelector(".go"), null)
   h.click("drop"); assert.equal(h.voice.voiceState(), "off")
+})
+
+test("the send control delivers the transcription instead of writing it into the box", async () => {
+  const h = harness(); await h.start()
+  h.voice.pressSend(h.job); await h.flush()
+  assert.deepEqual(h.sent, ["Recovered speech"]); assert.deepEqual(h.words, [])
+  assert.equal(h.voice.voiceState(), "off"); assert.equal(h.tracks[0].readyState, "ended"); assert.equal(h.posts, 1)
+})
+
+test("Done still writes the words into the box and sends nothing", async () => {
+  const h = harness(); await h.start(); h.click("go"); await h.flush()
+  assert.deepEqual(h.words, ["Recovered speech"]); assert.deepEqual(h.sent, [])
+})
+
+test("a sent recording keeps going after its composer leaves the page", async () => {
+  let answer
+  const h = harness({ transcribe: () => new Promise(resolve => { answer = resolve }) }); await h.start()
+  h.voice.pressSend(h.job); await h.flush()
+  assert.equal(h.voice.voiceState(), "reading"); assert.ok(h.voice.sending())
+  assert.match(h.box.textContent, /as soon as it is transcribed/)
+  h.box.isConnected = false
+  await h.advance(1000)
+  assert.equal(h.voice.voiceState(), "reading")
+  answer({ text: "Sent while away" }); await h.flush()
+  assert.deepEqual(h.sent, ["Sent while away"]); assert.deepEqual(h.words, []); assert.equal(h.voice.voiceState(), "off")
+})
+
+test("leaving the page while still recording, without sending, still discards it", async () => {
+  const h = harness(); await h.start()
+  h.box.isConnected = false
+  await h.advance(1000)
+  assert.equal(h.voice.voiceState(), "off"); assert.deepEqual(h.sent, []); assert.deepEqual(h.words, []); assert.equal(h.posts, 0)
+})
+
+test("a sent recording that fails after its composer left says so and frees the microphone", async () => {
+  const h = harness({ transcribe: () => Promise.reject(Object.assign(new Error("host down"), { code: "unexpected_error" })) })
+  await h.start(); h.box.isConnected = true
+  h.voice.pressSend(h.job); h.box.isConnected = false; await h.flush()
+  assert.equal(h.voice.voiceState(), "off"); assert.deepEqual(h.sent, [])
+  assert.ok(h.toasts.some(t => t.bad && /was not sent/.test(t.text)))
+})
+
+test("a sent recording that fails while its composer is open stays retryable and still sends", async () => {
+  let fail = true
+  const h = harness({ transcribe: () => fail ? Promise.reject(new Error("host down")) : { text: "Second try" } }); await h.start()
+  h.voice.pressSend(h.job); await h.flush()
+  assert.equal(h.voice.voiceState(), "recoverable")
+  fail = false; h.click("go"); await h.flush()
+  assert.deepEqual(h.sent, ["Second try"]); assert.deepEqual(h.words, [])
 })
