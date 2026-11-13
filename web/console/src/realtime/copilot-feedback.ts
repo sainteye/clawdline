@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node executes TypeScript sources directly in tests.
+import {spokenName} from './copilot-reports.ts'
 import type {BatchOffer,VoiceState} from '../voice-work/engine.js'
 
 /** This is receipt evidence, never an inference from the recipient's latest reply. */
@@ -70,5 +72,13 @@ export const ACTION_STATUS_GUIDANCE = `Current application action status is auth
 export interface MessageProposal {id:string;version:number;workspace:string;target:string;message:string;announced:boolean}
 function spokenText(text:string){return text.normalize('NFKC').toLocaleLowerCase().replace(/[\p{P}\p{Z}\s]/gu,'')}
 export function messageConsent(text:string){return ['可以送出','確定送出','確認送出','好送出','可以发送','确认发送','確認發送','yessendit','confirmandsend','sendit'].includes(spokenText(text))}
-export function proposalSpoken(text:string,proposal:MessageProposal){const spoken=spokenText(text);return !!spoken&&spoken.includes(spokenText(proposal.target))&&spoken.includes(spokenText(proposal.message))}
+/** A target is spoken with or without the （machine） suffix the fleet adds to its label. */
+export function proposalSpoken(text:string,proposal:MessageProposal){const spoken=spokenText(text);return !!spoken&&(spoken.includes(spokenText(proposal.target))||spoken.includes(spokenText(spokenName(proposal.target))))&&spoken.includes(spokenText(proposal.message))}
+/**
+ * A plain yes, answered right after an exact read-back. It counts only when
+ * the application bound that read-back to this utterance (consentAtSpeech);
+ * on 2026-11-13 「可以」「Okay」「我確認」 were all refused for not being
+ * 「可以，送出」, and the message never went.
+ */
+export function plainConsent(text:string){return /^(?:(?:嗯|恩|對|是|好|好的|好啊|好喔|可以|可以啊|沒問題|没问题|確認|确认|我確認|我确认|確定|确定|送出|送吧|傳吧|传吧|發吧|发吧|請送出|请送出|送出去|就這樣|就这样|ok|okay|yes|yeah|yep|sure|sendit|goahead)(?:吧|喔|哦|啊|呀|的)?)+$/i.test(spokenText(text))}
 export function answeredConversation(text:string,read:boolean){return read&&(deliveryQuestion(text)||messageConsent(text)||read&&/^(?:可以[，, ]*繼續|yes[, ]+continue)[。.! ]*$/i.test(text.trim()))||/^(?:hello|hi|bye|bye bye|thanks|thank you|你好|哈囉|謝謝)[.!。！ ]*$/i.test(text.trim())||read&&!/(?:送|傳|传|發送|发送|回覆|回复|改名|重新命名|關閉|关闭|啟動|启动|取消|暫停|暂停|\b(?:send|forward|tell|reply|rename|close|start|cancel|pause)\b)/i.test(text)}

@@ -601,3 +601,38 @@ func TestGoalCompletionPreservesTheActualSendReceipt(t *testing.T) {
 		t.Fatal("manual goal completion erased receipt", s.Tasks[0])
 	}
 }
+
+// Calls on 2026-11-13 answered an exact read-back with 「可以」, "Okay" and
+// 「我確認」; every one was refused for not being 「可以，送出」 and nothing sent.
+func TestAPlainYesAfterTheRequestConfirmsOnlyAsTheNewestUtterance(t *testing.T) {
+	prepared := func() State {
+		s := New("workspace")
+		_, _ = s.AddInput(Input{ID: "early-yes", Call: "call", Text: "好", Deferred: true})
+		_, _ = s.AddInput(Input{ID: "request", Call: "call", Text: "Tell the Session to inspect the delay", Deferred: true})
+		if err := s.PrepareMessage("send", "call", "request", Focus{ID: "r", Label: "R", Conversation: "c", Machine: "m"}, "Please inspect the delay.", 2); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	for _, yes := range []string{"可以", "Okay", "我確認", "好，送出吧"} {
+		s := prepared()
+		_, _ = s.AddInput(Input{ID: "yes", Call: "call", Text: yes, Deferred: true})
+		if err := s.ConfirmMessage("send", 1, "call", "yes", 5); err != nil {
+			t.Fatalf("%q: %v", yes, err)
+		}
+	}
+	s := prepared()
+	if err := s.ConfirmMessage("send", 1, "call", "early-yes", 5); err == nil {
+		t.Fatal("a yes said before the request approved it")
+	}
+	_, _ = s.AddInput(Input{ID: "yes", Call: "call", Text: "可以", Deferred: true})
+	_, _ = s.AddInput(Input{ID: "later", Call: "call", Text: "先等一下", Deferred: true})
+	if err := s.ConfirmMessage("send", 1, "call", "yes", 5); err == nil {
+		t.Fatal("a yes followed by another utterance approved it")
+	}
+	for _, no := range []string{"不要", "先不要送", "可以改成別的嗎"} {
+		if PlainConsent(no) {
+			t.Fatalf("%q read as consent", no)
+		}
+	}
+}

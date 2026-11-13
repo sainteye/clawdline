@@ -302,9 +302,16 @@ turn. Preparation never sends. The managed call advertises this path only when
 the selected machine reports `message_confirmation` support. The assistant must
 read the exact recipient and message; only completed audio playback makes that
 proposal eligible for a fresh explicit send utterance. Runtime and server bind
-consent to the saved utterance, call, workspace, task and version. Bare agreement,
-a model-provided confirmation flag, interrupted or inaccurate narration, a changed
-version and another call cannot approve it. The existing work-list button remains
+consent to the saved utterance, call, workspace, task and version. A plain yes
+(「可以」「好」「送出」, "okay") answers the read-back like a conversation: it counts
+only when the browser bound it to a completed exact read-back and the daemon sees
+it as the call's newest utterance after the request. On 2026-11-13 the earlier
+rule, which accepted only 「可以，送出」, refused 「可以」「Okay」「我確認」 in four
+calls and nothing was sent. A model-provided confirmation flag, interrupted or
+inaccurate narration, a changed version and another call cannot approve it.
+Opening a Session or its snippets on screen changes only this browser, so a
+managed call runs open_session and open_snippets at once; on 2026-11-13 opening
+a Session was queued for the work list twice and never happened. The existing work-list button remains
 available for exact-spec confirmation. A mistaken plain-reply tool is converted
 to the same proposal only when the fresh directory has no live menu. Preparation
 and execution both refuse a live structured menu; they never guess a key or

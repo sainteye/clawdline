@@ -300,6 +300,51 @@ test('speech captures the new address before asynchronous screen following finis
  })}finally{globalThis.location=old}
 })
 
+for (const yes of ['可以','Okay','我確認','好，送出吧']) test(`a plain yes right after the exact read-back sends the message (${yes})`,async()=>{
+ // Calls on 2026-11-13: 「可以」「Okay」「我確認」 were refused and the message never went.
+ const f=fixture(true);f.c.call.options.messageActions=true
+ await withLedger(f,async(state,requests)=>{
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'message'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'message'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'message',transcript:'Tell the Session to inspect the delay.'})
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'prepare'}})
+  await f.c.handleToolCall({call_id:'prepare',response_id:'prepare',name:'send_message_to_session',arguments:'{"session_id":"%7","message":"Please inspect the delay."}'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'prepare',status:'completed',output:[{type:'function_call'}]}})
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'proposal-read'}})
+  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Send to Prepare screenshots: Please inspect the delay. Send it?'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'proposal-read',status:'completed',output:[{type:'message'}]}})
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'consent'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'consent'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'consent',transcript:yes})
+  assert.equal(requests.filter(r=>r.action==='confirm_message').length,1)
+  assert.equal(state.tasks[0].status,'queued')
+ })
+})
+
+test('a plain yes with no read-back bound to it confirms nothing',async()=>{
+ const f=fixture(true);f.c.call.options.messageActions=true
+ await withLedger(f,async(state,requests)=>{
+  state.tasks.push({id:'proposal',tool:'send_message_to_session',text:'Exact message',args:{session_id:'%7',message:'Exact message'},sources:['original'],version:1,status:'waiting_confirmation'})
+  f.c.messageProposal={id:'proposal',version:1,workspace:state.id,target:'Prepare screenshots',message:'Exact message',announced:false}
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'unbound'})
+  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'unbound'})
+  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'unbound',transcript:'好'})
+  assert.equal(requests.some(r=>r.action==='confirm_message'),false)
+  assert.equal(state.tasks[0].status,'waiting_confirmation')
+ })
+})
+
+test('a managed call opens a Session on screen at once instead of planning it',async()=>{
+ // Call 8e9e22c2 on 2026-11-13: open_session was refused twice and queued for the work list.
+ const f=fixture(true)
+ await f.c.handleToolCall({call_id:'open',name:'open_session',arguments:'{"session_id":"%7"}'})
+ const output=JSON.parse(f.sent.find(e=>e.item?.call_id==='open').item.output)
+ assert.notEqual(output.error,'voice_work_confirmation_required')
+ assert.ok(f.reads.length>0,'it read the directory to open the Session')
+})
+
 test('a managed read cannot open a browser as an undeclared side effect',async()=>{
  const f=fixture(true)
  await f.c.handleToolCall({call_id:'open-link',name:'get_devstack_links',arguments:'{"open":true}'})

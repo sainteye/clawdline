@@ -605,8 +605,15 @@ const IMMEDIATE_READS = new Set(['get_status_briefing','list_sessions','get_sess
 export function immediateVoiceRead(name:string,args:Record<string,unknown>):boolean {
   return IMMEDIATE_READS.has(name) && !(name==='get_devstack_links' && args.open===true)
 }
+/**
+ * Changes only what this browser shows, never a Session or the machine, so a
+ * managed call does them at once. On 2026-11-13 「幫我開啟…那個 Session」 was
+ * turned into planned work awaiting confirmation twice and never opened.
+ */
+const IMMEDIATE_VIEW_ACTIONS = new Set(['open_session','open_snippets'])
+export function immediateVoiceAction(name:string):boolean { return IMMEDIATE_VIEW_ACTIONS.has(name) }
 export const CALL_WORK_TOOLS = [
-  ...COPILOT_TOOLS.filter(tool=>IMMEDIATE_READS.has(tool.name)),
+  ...COPILOT_TOOLS.filter(tool=>IMMEDIATE_READS.has(tool.name)||IMMEDIATE_VIEW_ACTIONS.has(tool.name)),
   {type:'function',name:'get_voice_work',description:'Read the saved voice requests, pending tasks and planning errors. Use this before discussing work progress or retrying a failed request.',parameters:{type:'object',properties:{}}},
   {type:'function',name:'queue_voice_work',description:'Submit saved input IDs as continuing work when the person asks for an action, a multi-step task, or ongoing tracking. Do not queue an ordinary question that immediate read tools can answer. Use only the exact input IDs supplied by the application; never invent or rewrite the request. Mutations still require confirmation in the work list.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
   {type:'function',name:'retry_voice_work',description:'Retry the exact failed saved input IDs only when the person explicitly asks to retry. Read get_voice_work first. Never retry automatically or approve a mutation.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
@@ -615,7 +622,7 @@ export const CALL_WORK_TOOLS = [
 export const MANAGED_CALL_GUIDANCE = `# Background work and immediate conversation
 Use immediate read tools to answer questions about the focused Session, its summary, updates, notes, or identity. Do not send these ordinary questions to another planning model.
 Each utterance is saved as conversational input, with an input ID and its own Session focus. Saving is not task submission, planning or completion. Never say an action is queued until queue_voice_work confirms it.
-For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. When send_message_to_session is available in this mode, it only prepares a durable proposal; it does not send. Use it for a single message or plain-text reply, instead of queue_voice_work. Read its exact recipient and message verbatim and ask the person to say "可以，送出" or "yes, send it". Only the application can consume that spoken consent for this exact proposal. Other mutations still need exact-spec confirmation in the work list. Never supply confirmed or infer consent from an earlier call.
+For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. When send_message_to_session is available in this mode, it only prepares a durable proposal; it does not send. Use it for a single message or plain-text reply, instead of queue_voice_work. Read its exact recipient and message verbatim and ask in one short question whether to send it. A plain yes from the person right after that (「可以」「好」「送出」, "okay", "yes") is their consent; only the application consumes it for this exact proposal, and the message then sends without the work list. Opening a Session or its snippets on screen (open_session, open_snippets) runs at once without confirmation. Other mutations still need exact-spec confirmation in the work list. Never supply confirmed or infer consent from an earlier call.
 Use get_voice_work for task status. If planning failed, explain which request failed and its reason in everyday language; keep diagnostic stage/codes on screen; do not imply it is still working or invent a confirmation requirement. Only use retry_voice_work after an explicit retry request. Do not announce receipt or planning stages without a useful result.
 `
 
@@ -739,7 +746,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
           speed: SPEEDS.includes(options.speed ?? '') ? Number(options.speed) : DEFAULT_SPEED,
         },
       },
-      tools: options.workEnabled ? [...CALL_WORK_TOOLS,...(options.messageActions?[{...COPILOT_TOOLS.find(tool=>tool.name==='send_message_to_session')!,description:'Prepare a durable message proposal for one Session, without sending it or using another planning model. State the exact recipient and message for explicit spoken confirmation. The application sends only after the person says confirm and send. Never supply confirmed.'}]:[])] : COPILOT_TOOLS,
+      tools: options.workEnabled ? [...CALL_WORK_TOOLS,...(options.messageActions?[{...COPILOT_TOOLS.find(tool=>tool.name==='send_message_to_session')!,description:'Prepare a durable message proposal for one Session, without sending it or using another planning model. State the exact recipient and message for explicit spoken confirmation. The application sends only after the person answers yes to your read-back. Never supply confirmed.'}]:[])] : COPILOT_TOOLS,
       tool_choice: 'auto',
     },
   }

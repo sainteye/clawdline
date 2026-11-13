@@ -2,12 +2,14 @@ package voicework
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"unicode"
 )
 
-// MessageConfirmation accepts an explicit send instruction, not a bare yes or
-// a model's confirmed flag. The stored utterance is the source of consent.
+// MessageConfirmation accepts an explicit send instruction, never a model's
+// confirmed flag. The stored utterance is the source of consent; a bare yes is
+// PlainConsent, which ConfirmMessage accepts only in its place.
 func MessageConfirmation(text string) bool {
 	normalized := strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) || unicode.IsPunct(r) {
@@ -20,6 +22,23 @@ func MessageConfirmation(text string) bool {
 		return true
 	}
 	return false
+}
+
+// plainYes is a whole utterance of agreement, the way a person answers a
+// question in conversation. The browser mirrors it (`plainConsent`).
+var plainYes = regexp.MustCompile(`^(?:(?:嗯|恩|對|是|好|好的|好啊|好喔|可以|可以啊|沒問題|没问题|確認|确认|我確認|我确认|確定|确定|送出|送吧|傳吧|传吧|發吧|发吧|請送出|请送出|送出去|就這樣|就这样|ok|okay|yes|yeah|yep|sure|sendit|goahead)(?:吧|喔|哦|啊|呀|的)?)+$`)
+
+// PlainConsent accepts a bare yes. It approves a message only as the newest
+// utterance of the call, said after the request (ConfirmMessage), and the
+// browser only offers it right after the exact recipient and message were
+// played back. On 2026-11-13 「可以」「Okay」「我確認」 were all refused.
+func PlainConsent(text string) bool {
+	return plainYes.MatchString(strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, text))
 }
 
 // PrepareMessage records a single known action without a second planning model.
@@ -76,9 +95,23 @@ func (s *State) ConfirmMessage(id string, version int64, call, consent string, n
 	if !belongs {
 		return ErrConflict
 	}
-	index := -1
+	index, request, newest := -1, -1, -1
 	for i, in := range s.Inputs {
-		if in.ID == consent && in.Call == call && in.Deferred && !in.Planned && MessageConfirmation(in.Text) {
+		if in.Call != call {
+			continue
+		}
+		newest = i
+		for _, source := range task.Sources {
+			if in.ID == source {
+				request = i
+			}
+		}
+	}
+	for i, in := range s.Inputs {
+		if in.ID != consent || in.Call != call || !in.Deferred || in.Planned {
+			continue
+		}
+		if MessageConfirmation(in.Text) || PlainConsent(in.Text) && i > request && i == newest {
 			index = i
 		}
 	}

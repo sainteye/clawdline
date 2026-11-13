@@ -6,7 +6,7 @@ import { onMachineChanged } from '../cloud/machine-switch.js'
 import { voiceWork, receiveCallInput, queueVoiceInputs, answerVoiceInput, parkVoiceInput, parkVoiceCall, workDirectory, useCallWorkTools } from '../voice-work/runtime.js'
 import { shortResult,WORK_REQUEST_MS } from '../voice-work/engine.js'
 import { WorkNarrator } from '../voice-work/narrator.js'
-import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence, deliveryQuestion, ProgressCue, PROGRESS_CUE_REPEAT_MS, answeredConversation, messageConsent, proposalSpoken, type MessageProposal, type CallProgress } from './copilot-feedback.js'
+import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence, deliveryQuestion, ProgressCue, PROGRESS_CUE_REPEAT_MS, answeredConversation, messageConsent, plainConsent, proposalSpoken, type MessageProposal, type CallProgress } from './copilot-feedback.js'
 /**
  * Clawdline Voice Copilot - OpenAI Realtime API WebRTC Client.
  * Enables two-way voice conversation from mobile browser to control and inspect
@@ -15,7 +15,7 @@ import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence,
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { COPILOT_TOOLS, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
+import { COPILOT_TOOLS, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
@@ -820,7 +820,7 @@ export class RealtimeCopilotClient {
                 this.answeredReads.add(id);this.activeConversationInput=id;this.sessionReports.resume()
               } else if(continuationConsent(event.transcript)){
                 await this.confirmBatch(id,batchConfirmation,attempt,dc)
-              } else if(messageConsent(event.transcript)) {
+              } else if(messageConsent(event.transcript)||confirmation&&plainConsent(event.transcript)) {
                 await this.confirmMessage(id,confirmation,attempt,dc)
               } else if(deliveryQuestion(event.transcript)) {
                 const status=await this.workTool('get_voice_work',{},id);this.answeredReads.add(id)
@@ -1032,7 +1032,7 @@ export class RealtimeCopilotClient {
         this.messageProposal={id:task.id,version:task.version,workspace:answer.state.id,target:String(task.args.session_label??task.args.session_id),message:String(task.args.message),announced:false}
         output=JSON.stringify({prepared:true,message_delivered:false,proposal:this.messageProposal,meaning:'NOT SENT. Read this exact recipient and message verbatim, then ask the person to say confirm and send. Never claim submission or delivery. Only the application may consume spoken consent.'})
       }catch(error){output=JSON.stringify({error:String(error),message_delivered:false})}
-    } else if(managed && !immediateVoiceRead(event.name,args)) {
+    } else if(managed && !immediateVoiceRead(event.name,args) && !immediateVoiceAction(event.name)) {
       output=JSON.stringify({error:'voice_work_confirmation_required',meaning:'Direct mutations are unavailable. Submit the saved input with queue_voice_work; confirmation remains in the work list.'})
     } else {
       const deps=this.toolDeps()
