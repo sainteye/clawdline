@@ -17,7 +17,11 @@ A native host waits for an explicit successful result acknowledgment, including
 when the HTTP request succeeds with a non-2xx response or its response is lost.
 It retries the same result, never the browser operation. While a result is pending,
 it pauses further polling instead of collecting an unbounded result backlog.
-Closing Chrome cancels outstanding HTTP requests and retries.
+Closing Chrome cancels outstanding HTTP requests and retries. Admitted actions
+retain their command IDs in the existing bounded audit, so a legacy host's result
+retry without a mode can still identify its profile after the caller returns or
+the daemon restarts. Unknown or ambiguous legacy IDs remain refused; a result
+acknowledgment never repeats the browser action or restores stale page content.
 
 Before posting a close result, the host atomically saves a minimal receipt in
 `browser-close-results-<profile-hash>.json` in the daemon directory. The hash binds

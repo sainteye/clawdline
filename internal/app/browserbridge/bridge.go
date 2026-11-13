@@ -996,6 +996,11 @@ func (b *Bridge) deliver(r Result) error {
 func (b *Bridge) record(conversation, op string, tab int, text string, r Result) {
 	row := AuditRow{ID: newID(), At: b.now().Unix(), Conversation: conversation, Op: op, Tab: tab, URL: r.URL,
 		Site: Site(r.URL), Target: r.Target, OK: r.OK, Error: r.Error, Password: r.Password}
+	// Retain the admitted command identity so legacy result retries still
+	// resolve to this profile after its waiting caller has returned.
+	if r.ID != "" {
+		row.ID = r.ID
+	}
 	if r.Tab != 0 {
 		row.Tab = r.Tab
 	}
