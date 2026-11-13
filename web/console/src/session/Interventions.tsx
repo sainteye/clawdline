@@ -418,7 +418,8 @@ function InterventionCard({ note, disabled, sending, secretReceived, onReplace, 
 }
 
 function interventionReplyText(note: HumanInterventionV2, draft: string): string {
-  const context = `(Clawdline 便條 ${note.id}：「${note.title}」；待回覆事項：${note.action})`
+  // Shown in the transcript under the reply; it was Chinese only until 2026-11-13.
+  const context = nextWord("interventionReplyContext", { id: note.id, title: note.title, action: note.action })
   return `${draft.replace(/[\r\n]+$/, "")}\n\n${context}`
 }
 
