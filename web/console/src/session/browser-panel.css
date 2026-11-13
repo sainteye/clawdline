@@ -30,6 +30,8 @@
 .browser-composer-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .browser-composer button { flex: 0 0 auto; min-height: 46px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--accent); color: #141413; font: inherit; font-size: 13px; font-weight: 600; }
 .browser-composer button:disabled { opacity: .45; }
+.browser-composer .browser-composer-delete { min-width: 46px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 18px; font-weight: 400; -webkit-tap-highlight-color: transparent; }
+.browser-composer .browser-composer-delete:hover:not(:disabled) { background: var(--card-hi); }
 .browser-move-hint { flex: 0 0 auto; margin: 0; padding: 4px 10px; font-size: 11px; color: var(--dim); line-height: 1.4; }
 .browser-input-pending, .browser-input-error { display: block; margin: 4px 0 0; color: var(--dim); font-size: 12px; line-height: 1.4; }
 .browser-input-error { color: var(--warn); }

@@ -330,6 +330,14 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8},id)
       assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"12","Backspace edits the local draft without a remote keystroke")
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,[])
+      // Delete beside Send text removes a character from the page field and,
+      // like Send text, never takes focus: the phone keyboard stays up.
+      const del=await run(`(()=>{const r=document.querySelector('.browser-composer-delete').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`)
+      await tap(del.x,del.y)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.keys.length===1)`)
+      assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).keys,["Backspace"],"Delete sends one Backspace to the page")
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"Delete keeps the footer editor focused")
+      assert.equal(await run(`document.getElementById('browser-native-keyboard').value`),"12","Delete leaves the local draft alone")
       if(name==="phone"){
         await run(`Object.defineProperty(window.visualViewport,'height',{configurable:true,value:Math.round(innerHeight*.58)});window.visualViewport.dispatchEvent(new Event('resize'))`)
         await until(`document.getElementById('browser-panel').getBoundingClientRect().height<innerHeight*.7`)
