@@ -618,7 +618,7 @@ func smartTitleSession(stdout, stderr io.Writer, b *broker, conversation, termin
 		}
 		terminal = id.TerminalID
 	}
-	a, err := b.request(http.MethodPost, "/v1/sessions/"+url.PathEscape(terminal)+"/smart-title", nil, nil, newKey("smart-title"))
+	a, err := b.request(http.MethodPost, "/v1/orchestrator/sessions/"+url.PathEscape(terminal)+"/smart-title", nil, nil, newKey("smart-title"))
 	if err != nil {
 		fmt.Fprintln(stderr, prefix, err)
 		return 1
