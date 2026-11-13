@@ -26,12 +26,14 @@ export function BrowserViewport({ shot, canClick, person, onTap, onEdit, onPrepa
   const pointers = useRef(new Map<number, Point>())
   const gesture = useRef<Gesture | null>(null)
   const press = useRef<Point | null>(null)
+  const nativePress = useRef<{ element: HTMLInputElement; point: Point } | null>(null)
   const moved = useRef(false)
   const mode = useRef<"fit" | "native" | "custom">(window.matchMedia("(pointer: coarse) and (max-width: 899px)").matches ? "native" : "fit")
   const fitted = useRef(0)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [view, setView] = useState(zoom.current.state())
   const editor = useRef<HTMLInputElement>(null)
+  const manualEditor = useRef<HTMLInputElement>(null)
   const composing = useRef(false)
   const keyboardEpoch = useRef(0)
   const activeField = useRef<Point | null>(null)
@@ -43,8 +45,9 @@ export function BrowserViewport({ shot, canClick, person, onTap, onEdit, onPrepa
   if (!input.current) input.current = new BrowserInputQueue(edit => send.current(edit), reason => { setInputError(reason); editor.current?.blur() }, setInputPending, next => { if (next === null) editor.current?.blur() })
   const draw = () => setView({ ...zoom.current.state() })
   const closeKeyboard = () => { keyboardEpoch.current++; input.current!.cancel(); editor.current?.blur(); activeField.current = null; composing.current = false }
-  const openKeyboard = (next: string, ready: Promise<boolean>, point: Point | null = null) => {
+  const openKeyboard = (next: string, ready: Promise<boolean>, point: Point | null = null, element = manualEditor.current) => {
     const epoch = ++keyboardEpoch.current
+    editor.current = element
     input.current!.start(ready); activeField.current = point
     flushSync(() => { setKind(next); setInputError(null) })
     if (editor.current) {
@@ -77,7 +80,8 @@ export function BrowserViewport({ shot, canClick, person, onTap, onEdit, onPrepa
       if (!box.width || !box.height || !shot.width || !shot.height) return
       const scale = Math.min(1, box.width / shot.width, box.height / shot.height)
       const before = fitted.current * zoom.current.state().scale
-      pointers.current.clear(); gesture.current = null; press.current = null
+      // Native focus can resize the viewport before pointerup. Keep that
+      // gesture; its original remote coordinate is retained below.
       zoom.current.layout({ frame: box, content: { width: shot.width * scale, height: shot.height * scale }, natural: { width: shot.width, height: shot.height } })
       fitted.current = scale
       setSize({ width: shot.width * scale, height: shot.height * scale })
@@ -98,7 +102,7 @@ export function BrowserViewport({ shot, canClick, person, onTap, onEdit, onPrepa
 
   useEffect(() => {
     // Handback, a refusal, or a newly busy command cancels an unfinished tap.
-    pointers.current.clear(); gesture.current = null; press.current = null
+    pointers.current.clear(); gesture.current = null; press.current = null; nativePress.current = null
   }, [canClick, shot.width, shot.height])
 
   const scaleTo = (scale: number, x?: number, y?: number) => {
@@ -116,17 +120,30 @@ export function BrowserViewport({ shot, canClick, person, onTap, onEdit, onPrepa
     if (held.length === 1) return { ...held[0], span: 0 }
     return { x: (held[0].x + held[1].x) / 2, y: (held[0].y + held[1].y) / 2, span: Math.hypot(held[1].x - held[0].x, held[1].y - held[0].y) }
   }
-  const start = (event: PointerEvent<HTMLDivElement>) => {
+  const start = (event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
-    event.preventDefault()
+    const native = event.currentTarget instanceof HTMLInputElement
+    if (native && (!canClick || input.current!.pending) && editor.current !== event.currentTarget) { event.preventDefault(); return }
+    if (native && editor.current !== event.currentTarget) input.current!.cancel()
+    // A real field under the finger keeps the browser's native focus action.
+    // Focusing an invisible proxy only establishes DOM focus on some phones.
+    if (!native) event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const point = { x: event.clientX, y: event.clientY }
-    if (pointers.current.size === 0) { press.current = point; moved.current = false }
+    if (pointers.current.size === 0) {
+      press.current = point; moved.current = false; nativePress.current = null
+      if (native && image.current) {
+        const box = image.current.getBoundingClientRect()
+        const remote = { x: Math.floor((point.x - box.left) / box.width * shot.width), y: Math.floor((point.y - box.top) / box.height * shot.height) }
+        nativePress.current = { element: event.currentTarget as HTMLInputElement, point: remote }
+        activeField.current = remote
+      }
+    }
     pointers.current.set(event.pointerId, point)
     if (pointers.current.size > 1) moved.current = true
     gesture.current = currentGesture()
   }
-  const move = (event: PointerEvent<HTMLDivElement>) => {
+  const move = (event: PointerEvent<HTMLElement>) => {
     if (!pointers.current.has(event.pointerId)) return
     event.preventDefault()
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
@@ -145,27 +162,53 @@ export function BrowserViewport({ shot, canClick, person, onTap, onEdit, onPrepa
     }
     gesture.current = now
   }
-  const finish = (event: PointerEvent<HTMLDivElement>, cancelled = false) => {
+  const finish = (event: PointerEvent<HTMLElement>, cancelled = false) => {
     if (!pointers.current.has(event.pointerId)) return
+    const originalNative = nativePress.current
     const tap = !cancelled && !moved.current && pointers.current.size === 1 && press.current && Math.hypot(event.clientX - press.current.x, event.clientY - press.current.y) <= 12
     pointers.current.delete(event.pointerId)
     gesture.current = currentGesture()
-    if (pointers.current.size === 0) press.current = null
+    if (pointers.current.size === 0) { press.current = null; nativePress.current = null }
     else moved.current = true
-    if (!tap || !canClick || input.current!.pending || !image.current) return
+    const native = event.currentTarget instanceof HTMLInputElement ? event.currentTarget : null
+    if (!tap || !canClick || input.current!.pending || !image.current) {
+      if (native) { event.preventDefault(); if (!tap) native.blur() }
+      return
+    }
     const box = image.current.getBoundingClientRect()
     const x = (event.clientX - box.left) / box.width, y = (event.clientY - box.top) / box.height
-    if (x < 0 || x >= 1 || y < 0 || y >= 1) return
-    const remote = { x: Math.min(shot.width - 1, Math.floor(x * shot.width)), y: Math.min(shot.height - 1, Math.floor(y * shot.height)) }
+    if (!originalNative && (x < 0 || x >= 1 || y < 0 || y >= 1)) return
+    const remote = native && originalNative?.element === native ? originalNative.point : { x: Math.min(shot.width - 1, Math.floor(x * shot.width)), y: Math.min(shot.height - 1, Math.floor(y * shot.height)) }
     const field = shot.editables?.find(f => remote.x >= f.x && remote.x <= f.x + f.width && remote.y >= f.y && remote.y <= f.y + f.height)
     const answer = onTap(remote.x, remote.y)
     // Focus inside the original trusted tap. Waiting for Cloud before focus
     // loses iOS's keyboard activation, so geometry arrives with the picture.
-    if (field) openKeyboard(field.kind, answer.then(value => value.ok && value.editable !== null), remote)
+    if (field) openKeyboard(field.kind, answer.then(value => value.ok && value.editable !== null), remote, native ?? manualEditor.current)
     else closeKeyboard()
     const epoch = keyboardEpoch.current
     void answer.then(value => { if (epoch === keyboardEpoch.current && (!value.ok || value.editable === null)) closeKeyboard() })
   }
+
+  const nativeInput = (field?: Editable, index?: number) => <input key={index} ref={field ? undefined : manualEditor}
+    id={field ? undefined : "browser-native-keyboard"} className={field ? "browser-native-field" : "browser-native-keyboard"}
+    style={field ? { left: field.x / shot.width * size.width, top: field.y / shot.height * size.height,
+      width: field.width / shot.width * size.width, height: field.height / shot.height * size.height,
+      fontSize: 16 / (fitted.current * view.scale || 1) } : undefined}
+    tabIndex={-1} type={(field?.kind ?? kind) === "password" ? "password" : "text"}
+    inputMode={(field?.kind ?? kind) === "email" ? "email" : (field?.kind ?? kind) === "number" ? "decimal" : (field?.kind ?? kind) === "tel" ? "tel" : (field?.kind ?? kind) === "url" ? "url" : "text"}
+    aria-label={nextWord("browserPanelNativeInput")} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+    onFocus={e => {
+      if (editor.current !== e.currentTarget && nativePress.current?.element !== e.currentTarget) { e.currentTarget.blur(); return }
+      editor.current = e.currentTarget
+    }}
+    onPointerDown={field ? e => { e.stopPropagation(); start(e) } : undefined}
+    onPointerMove={field ? e => { e.stopPropagation(); move(e) } : undefined}
+    onPointerUp={field ? e => { e.stopPropagation(); finish(e) } : undefined}
+    onPointerCancel={field ? e => { e.stopPropagation(); finish(e, true) } : undefined}
+    onLostPointerCapture={field ? e => { e.stopPropagation(); finish(e, true) } : undefined}
+    onInput={e => { if (!(e.nativeEvent as InputEvent).isComposing) commitInput((e.nativeEvent as InputEvent).inputType || "insertText") }}
+    onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false; commitInput("insertText") }}
+    onKeyDown={e => { e.stopPropagation(); if (e.nativeEvent.isComposing || composing.current) return; if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); input.current!.add({ op: "key", args: { key: e.key } }) } }} />
 
   return <div className="browser-picture">
     <div className="browser-zoom" role="group" aria-label={nextWord("browserPanelZoom")}>
@@ -188,12 +231,9 @@ export function BrowserViewport({ shot, canClick, person, onTap, onEdit, onPrepa
       <img ref={image} className="browser-shot" src={"data:image/jpeg;base64," + shot.data} draggable={false}
         width={shot.width} height={shot.height} alt={nextWord("browserPanelImageAlt", { title: shot.title || shot.url })}
         style={{ width: size.width, height: size.height, marginLeft: -size.width / 2, marginTop: -size.height / 2, transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }} />
-      <input ref={editor} id="browser-native-keyboard" className="browser-native-keyboard" tabIndex={-1} type={kind === "password" ? "password" : "text"}
-        inputMode={kind === "email" ? "email" : kind === "number" ? "decimal" : kind === "tel" ? "tel" : kind === "url" ? "url" : "text"}
-        aria-label={nextWord("browserPanelNativeInput")} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-        onInput={e => { if (!(e.nativeEvent as InputEvent).isComposing) commitInput((e.nativeEvent as InputEvent).inputType || "insertText") }}
-        onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false; commitInput("insertText") }}
-        onKeyDown={e => { e.stopPropagation(); if (e.nativeEvent.isComposing || composing.current) return; if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); input.current!.add({ op: "key", args: { key: e.key } }) } }} />
+      <div className="browser-fields" style={{ width: size.width, height: size.height, marginLeft: -size.width / 2, marginTop: -size.height / 2,
+        transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}>{shot.editables?.map(nativeInput)}</div>
+      {nativeInput()}
       {inputPending && <span className="browser-input-pending" role="status">{nextWord("browserPanelTyping")}</span>}
       {inputError && <p className="browser-input-error" role="alert">{nextWord(inputError === "full" ? "browserPanelInputFull" : "browserPanelInputUnconfirmed")}</p>}
     </div>

@@ -1,3 +1,5 @@
 .browser-action .body { display: grid; gap: .5rem; min-width: 0; }
 .browser-action .body > span { color: var(--dim); overflow-wrap: anywhere; }
 .browser-action img { display: block; width: min(100%, 280px); height: auto; border-radius: 6px; }
+.browser-action-picture { display: block; width: fit-content; max-width: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: zoom-in; }
+.browser-action-picture:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

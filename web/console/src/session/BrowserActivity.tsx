@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactElement } from "react"
+import { useEffect, useRef, useState, type ReactElement } from "react"
 import { nextWord } from "../next-strings.js"
 import * as L from "../legacy/bridge.js"
+import { openImagePreview } from "../legacy/images-bridge.js"
 import "./browser-activity.css"
 
 type Action = { id?: string; at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; error?: string; thumb: string }
@@ -14,6 +15,18 @@ const words: Record<string, Parameters<typeof nextWord>[0]> = {
 // The conversation shows changes to the page instead of a second debug log.
 const quietOperations = new Set(["read", "screenshot", "release", "close", "takeover", "handback"])
 const hostOf = (action: Action) => { try { return new URL(action.url || "").host || action.site } catch { return action.site } }
+
+function ActionPicture({ thumb, title }: { thumb: string; title: string }) {
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [preview, setPreview] = useState(false)
+  const source = "data:image/jpeg;base64," + thumb
+  useEffect(() => {
+    if (preview && trigger.current) return openImagePreview(trigger.current, source, "clawdline-browser.jpg", () => setPreview(false))
+  }, [preview, source])
+  return <button type="button" ref={trigger} className="browser-action-picture" aria-label={L.strings.webImagePreview} onClick={() => setPreview(true)}>
+    <img src={source} alt={nextWord("browserPanelImageAlt", { title })} loading="lazy" />
+  </button>
+}
 
 /** Audit pictures already captured by page actions; this never requests a frame. */
 const reasons = {browser_disabled:"browserAuditWhyDisabled",browser_wrong_mode:"browserAuditWhyMode",browser_tab_closing:"browserAuditWhyClosing",browser_stopped:"browserAuditWhyStopped",browser_person_controlling:"browserAuditWhyPerson",browser_timeout:"browserAuditWhyTimeout"} as const
@@ -48,7 +61,7 @@ export function useBrowserActivity(conversation: string | undefined): { at: numb
       <b>{words[action.op] ? nextWord(words[action.op]) : action.op}</b>
       <span>{action.op === "type" ? (action.password ? nextWord("browserAuditPrivateInput", { count: action.text_length ?? 0 }) : "") : action.op === "viewport" && (action.target === "mobile" || action.target === "desktop") ? nextWord(action.target === "mobile" ? "browserPanelMobile" : "browserPanelDesktop") : action.target || hostOf(action)}</span>
       {!action.ok && <p role="status">{action.error && Object.hasOwn(reasons,action.error) ? nextWord(reasons[action.error as keyof typeof reasons]) : action.error}</p>}
-      {action.thumb && <img src={"data:image/jpeg;base64," + action.thumb} alt={nextWord("browserPanelImageAlt", { title: action.site || "" })} loading="lazy" />}
+      {action.thumb && <ActionPicture thumb={action.thumb} title={action.site || ""} />}
     </div>
   </article> }))
   if (error && cards.length) cards.push({ at: actions[0].at, node: <p key="browser-read-failed" className="screen-note err" role="status">{nextWord("browserPanelReadFailed", { reason: L.strings.webOffline })}</p> })

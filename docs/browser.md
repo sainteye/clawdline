@@ -129,8 +129,9 @@ not `env()` alone (the page intentionally has no `viewport-fit=cover`), and `--v
 it above a raised keyboard. Keys, notifications and recent actions are in **Tools**.
 
 Screenshots include visible editable rectangles and input kinds, never field values or labels.
-A tap on such a rectangle focuses the phone's native input within the original user gesture,
-before waiting for Cloud. Text waits for takeover and the remote field click to succeed. Chinese
+A native input covers each editable rectangle and follows the image's zoom and pan.
+The phone directly touches that input, preserving its native keyboard focus action rather
+than relying only on programmatic focus of a hidden proxy. This happens before waiting for Cloud. Text waits for takeover and the remote field click to succeed. Chinese
 IME composition sends only committed text; Backspace, Enter and Tab use the same ordered input
 queue. It coalesces adjacent text, holds at most 32 edits and 16 KiB, and never retries an unknown
 result. Handback cancels unsent input. For fields the geometry cannot describe, including some
@@ -212,6 +213,8 @@ release, close and control bookkeeping stay in the full activity audit without f
 conversation. The transcript reads stored audit
 rows and thumbnails, without requesting new page frames. Secret input and failed actions remain
 visible as steps without a picture; neither secret text nor a secret-field screenshot is retained.
+Clicking a captured picture opens the shared image lightbox, with zoom, touch controls and
+focus returned to the picture when it closes. The preview keeps that action's captured image.
 The audit survives a restart; recent pictures are memory-only and bounded separately. A successfully saved emergency
 stop also survives a restart. A failed control-state write returns `browser_state_write_failed`,
 keeps agent access paused and shows a retry warning. A failed request is not a durable receipt;

@@ -65,7 +65,7 @@ function fixture(): Server {
     if (path === "/v1/sessions/" + SESSION + "/outputs") return json(res, 200, { files: headerCount !== null && headerCount >= 2 ? [{ id: "a".repeat(64), name: "result.txt", path: "result.txt", absolute_path: "/synthetic/result.txt", kind: "created", first_at: 1, updated_at: 1, updates: 1, bytes: 10, state: "available", media_type: "text/plain", source: "fixture", anchor: 0 }] : [], more: false, partial: false, coverage: "complete" })
     if (path === "/__fixture/page") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
-      return res.end(`<!doctype html><html><meta name=viewport content="width=device-width,initial-scale=1"><style>body{margin:0;font:18px system-ui;color:#1e293b;background:#f2f5f8}header{padding:22px 28px;background:#17344d;color:white}main{max-width:850px;margin:36px auto;padding:0 24px}article{background:white;border-radius:12px;padding:28px;border:1px solid #d7e0e9}h1{font-size:28px;margin-top:0}label{display:block;margin-top:20px}input{display:block;box-sizing:border-box;width:100%;padding:14px;border:1px solid #a7b5c5;border-radius:6px;font:inherit;margin:8px 0 20px}button{background:#167349;color:white;border:0;border-radius:6px;padding:14px 24px;font:inherit}@media(min-width:700px){main{display:grid;grid-template-columns:220px 1fr;gap:24px}}small{color:#596b7e}</style><header>Example · Browser trial</header><main><aside><h2>Welcome</h2><p>Use the form to try the page.</p><small>This is a local test page.</small></aside><article><h1>Try the browser</h1><p>Zoom in, move the picture, then tap a field.</p><label>Your name<input placeholder="Enter a name"></label><button>Continue</button></article></main></html>`)
+      return res.end(`<!doctype html><html><meta name=viewport content="width=device-width,initial-scale=1"><style>body{margin:0;font:18px system-ui;color:#1e293b;background:#f2f5f8}header{padding:22px 28px;background:#17344d;color:white}main{max-width:850px;margin:36px auto;padding:0 24px}article{background:white;border-radius:12px;padding:28px;border:1px solid #d7e0e9}h1{font-size:28px;margin-top:0}label{display:block;margin-top:20px}input{display:block;box-sizing:border-box;width:100%;padding:14px;border:1px solid #a7b5c5;border-radius:6px;font:inherit;margin:8px 0 20px}button{background:#167349;color:white;border:0;border-radius:6px;padding:14px 24px;font:inherit}@media(min-width:700px){main{display:grid;grid-template-columns:220px 1fr;gap:24px}}small{color:#596b7e}</style><header>Example · Browser trial</header><main><aside><h2>Welcome</h2><p>Use the form to try the page.</p><small>This is a local test page.</small></aside><article><h1>Try the browser</h1><p>Zoom in, move the picture, then tap a field.</p><label>Your name<input placeholder="Enter a name"></label><label>Other text<input placeholder="Another field"></label><button>Continue</button></article></main></html>`)
     }
     if (path === "/__fixture/reset") { headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
@@ -204,9 +204,13 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       while(!await run(expression)){if(Date.now()>deadline)assert.fail("did not reach "+expression+": "+await run(`document.getElementById('browser-panel')?.innerText`));await new Promise(r=>setTimeout(r,30))}
     }
     const shot = async (label:string) => {if(!shots)return;const {data}=await browser.send("Page.captureScreenshot",{format:"png"},id);writeFileSync(join(shots,`browser-panel-${label}-${ui}-${name}-${width}.png`),Buffer.from(data,"base64"))}
-    const tap = async (x:number,y:number) => {
+    const tap = async (x:number,y:number, resize=false) => {
       if(name==="phone"){
         await browser.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x,y,id:1}]},id)
+        if(resize){
+          await run(`document.documentElement.style.setProperty('--vvh','540px')`)
+          await run(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`)
+        }
         await browser.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]},id)
       }else{
         await browser.send("Input.dispatchMouseEvent",{type:"mousePressed",x,y,button:"left",clickCount:1},id)
@@ -223,6 +227,15 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await until(`!!document.querySelector('.browser-chip')`)
       await until(`document.querySelectorAll('.browser-action').length===2`)
       assert.ok(await run(`Array.from(document.querySelectorAll('.browser-action span')).some(el=>el.textContent==='www.console.example.com')`), "the transcript preserves the subdomain instead of showing the notification grouping domain")
+      const activityURL = await run(`location.href`)
+      const activityPicture = await run(`document.querySelector('.browser-action img').src`)
+      await run(`document.querySelector('.browser-action img').click()`)
+      await until(`document.getElementById('image-lightbox')?.hidden===false`)
+      assert.equal(await run(`document.getElementById('image-lightbox-image').src`),activityPicture,"preview shows the captured action picture")
+      await run(`document.getElementById('image-lightbox-close').click()`)
+      await until(`document.getElementById('image-lightbox').hidden`)
+      assert.equal(await run(`location.href`),activityURL,"closing the picture preserves the Session")
+      assert.ok(await run(`!!document.activeElement?.closest('.browser-action')`),"focus returns to the action picture")
       await run(`document.getElementById('detail-actions-trigger').click()`)
       await until(`!document.getElementById('session-browser').hidden`)
       await run(`document.getElementById('session-browser').click()`)
@@ -240,14 +253,22 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await fetch(origin+"/__fixture/hold-control")
       const f=desktopFields[0]
       const hit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${f.x+f.width/2}/1280*r.width,y:r.top+${f.y+f.height/2}/720*r.height}})()`)
-      await tap(hit.x,hit.y)
-      assert.equal(await run(`document.activeElement?.id`),"browser-native-keyboard","native input is focused synchronously, before Cloud approves takeover")
+      assert.equal(await run(`document.elementFromPoint(${hit.x},${hit.y})?.tagName`), "INPUT", "a remote field is a directly touched native input, not focus on a hidden proxy")
+      await run(`window.__touchedField=document.elementFromPoint(${hit.x},${hit.y});true`)
+      await tap(hit.x,hit.y,name==="phone"&&ui==="zh-Hant"&&width===390)
+      assert.equal(await run(`document.activeElement === window.__touchedField`),true,"the directly touched native field is focused before Cloud approves takeover")
       await browser.send("Input.insertText",{text:"中文試用"},id)
       assert.deepEqual((await(await fetch(origin+"/__fixture/log")).json()).typed,[],"typing cannot pass an unconfirmed takeover")
+      const other=desktopFields[1]
+      const otherHit=await run(`(()=>{const r=document.querySelector('.browser-shot').getBoundingClientRect();return {x:r.left+${other.x+other.width/2}/1280*r.width,y:r.top+${other.y+other.height/2}/720*r.height}})()`)
+      await tap(otherHit.x,otherHit.y)
+      assert.equal(await run(`document.activeElement===window.__touchedField`),true,"a blocked second field cannot steal an unconfirmed input queue")
       await fetch(origin+"/__fixture/admit")
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed[0]==='中文試用')`)
       assert.equal((await(await fetch(origin+"/__fixture/log")).json()).person,true,"tapping the page takes over and clicks once")
       await until(`!document.querySelector('.browser-input-pending')`)
+      await run(`document.documentElement.style.removeProperty('--vvh')`)
+      await browser.send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:2,mobile:name==="phone"},id)
       await browser.send("Input.imeSetComposition",{text:"測",selectionStart:1,selectionEnd:1},id)
       await browser.send("Input.insertText",{text:"測試"},id)
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.typed.length===2)`)
@@ -270,7 +291,7 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await run(`document.querySelector('.browser-tools-toggle').click()`)
       await run(`document.querySelector('.browser-take').click()`)
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>!log.person)`)
-      assert.notEqual(await run(`document.activeElement?.id`),"browser-native-keyboard","handback closes native input")
+      assert.equal(await run(`document.activeElement?.matches('.browser-native-keyboard,.browser-native-field')`),false,"handback closes native input")
       const beforeClicks=(await(await fetch(origin+"/__fixture/log")).json()).clicks.length
       await run(`document.querySelector('.browser-zoom button[aria-label=${JSON.stringify(ui==="en"?"Zoom in":"放大")} ]').click()`)
       const c=await pointerCentre('.browser-viewport')
