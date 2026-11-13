@@ -323,6 +323,10 @@ func CanTransition(from, to TurnState) bool {
 		return to == TurnWaitingPermission || to == TurnSucceeded || to == TurnFailed || to == TurnCancelled || to == TurnUnknown
 	case TurnWaitingPermission:
 		return to == TurnRunning || to == TurnCancelled || to == TurnFailed || to == TurnUnknown
+	case TurnUnknown:
+		// Only the person's next explicit message acknowledges an unknown
+		// turn. Its receipt stays unknown and it is never replayed.
+		return to == TurnFailed
 	}
 	return false
 }

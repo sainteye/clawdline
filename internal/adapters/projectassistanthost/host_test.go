@@ -355,23 +355,39 @@ func TestHostLazySendDisablePreservesUnknownAndExistingHostWork(t *testing.T) {
 		t.Fatal(schedules, e)
 	}
 	f.enable(t)
-	if _, e = f.send(t, b, "after-unknown"); pa.Code(e) != pa.OutcomeUnknown {
-		t.Fatal(e)
-	}
 	if e = f.h.Recover(context.Background(), b.Key); e != nil {
 		t.Fatal(e)
 	}
 	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
 	if f.factories.Load() != 1 || f.p.opens.Load() != 1 {
-		t.Fatal("unknown turn initialized provider or replayed")
+		t.Fatal("recovery initialized provider or replayed the unknown turn")
 	}
-	other := f.create(t, "other")
-	if _, e = f.send(t, other, "fresh"); e != nil {
-		t.Fatal(e)
+	// As in CodyNC, the person may continue after an unknown turn. The new
+	// message is a new turn; the unknown one stays unknown and is not resent.
+	if _, e = f.send(t, b, "after-unknown"); e != nil {
+		t.Fatalf("a new message after an unknown turn was refused: %v", e)
 	}
 	fixtureReceive(t, f.p.sent)
-	if f.factories.Load() != 2 {
-		t.Fatal("reenable did not use a fresh provider owner")
+	if f.factories.Load() != 2 || f.p.opens.Load() != 2 {
+		t.Fatalf("expected exactly one new native open on a fresh owner: factories=%d opens=%d", f.factories.Load(), f.p.opens.Load())
+	}
+	x, e = f.h.store.Export(context.Background(), b.Key)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, turn := range x.Turns {
+		if turn.ID == first.ResourceID && (turn.State != pa.TurnFailed || turn.Failure == nil || turn.Failure.Code != pa.ExecutionEffectUnknown || turn.Failure.Field != "acknowledged") {
+			t.Fatalf("the unknown turn was not acknowledged as an unknown effect: %+v", turn)
+		}
+	}
+	unknownReceipt := false
+	for _, receipt := range x.Receipts {
+		if receipt.ResourceID == first.ResourceID && receipt.State == pa.EffectUnknown && receipt.Command.IdempotencyKey == "runtime-acknowledge-"+first.ResourceID {
+			unknownReceipt = true
+		}
+	}
+	if !unknownReceipt {
+		t.Fatal("acknowledgement did not keep the effect unknown in its receipt")
 	}
 }
 

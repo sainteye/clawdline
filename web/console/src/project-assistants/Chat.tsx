@@ -225,12 +225,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     },control.signal)}finally{activeMutations.current.delete(control)}
   }
   const send=async()=>{
-    if(busy||unknown||view.heldOutcomes.has(draftKey)||(headRef.current?.unknown_turn_count??0)>0||!text.trim()||!currentData.current)return
+    if(busy||unknown||view.heldOutcomes.has(draftKey)||!text.trim()||!currentData.current)return
     const submitted=text,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote}
     let attempted=false;setBusy(true)
     try{
       const result=await mutate((_,s)=>{
-        if((headRef.current?.unknown_turn_count??0)>0||view.heldOutcomes.has(draftKey))throw failure("pa_read_only")
+        // An earlier unknown turn stays visible and is never resent; a new
+        // message from the person is a new turn. Only this tab's own
+        // uncertain send is held.
+        if(view.heldOutcomes.has(draftKey))throw failure("pa_read_only")
         attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
         return source.send(intent,s)
       })
@@ -380,7 +383,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     <div className="pa-chat-footer">{parts.queued.map(m=><div className="pa-queued" key={m.id}>{w.queued}: {m.text}</div>)}{receipt&&<p role="status">{w[receipt.state]} · {receipt.id}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
       {!following&&<button className="pa-pill" onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>{w.jump}</button>}
       <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>{memoryShown.current=true;void loadExport().catch(fail)}}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button>}</div>
-      <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown||(head?.unknown_turn_count??0)>0} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w}/>
+      <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w}/>
     </div>
     {settings&&<BotSettings bot={bot} enabled={enabled} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>

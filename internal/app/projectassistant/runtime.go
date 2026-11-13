@@ -273,12 +273,28 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err != nil {
 		return pa.Receipt{}, err
 	}
+	// An unknown turn is never replayed. A queue admitted before it ended
+	// stays held behind it, and so does a new message. When only unknown
+	// turns remain, as in CodyNC, the person's new message acknowledges
+	// them: each becomes failed with an unknown effect, its receipt stays
+	// unknown, and the new turn runs. An owned process whose cleanup is
+	// unknown was already refused by acquire.
+	var unknown []pa.Turn
+	waiting := 0
 	for _, t := range pending {
-		if t.State == pa.TurnUnknown || (!a.working && (t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission)) {
+		if t.State == pa.TurnUnknown {
+			unknown = append(unknown, t)
+			continue
+		}
+		if !a.working && (t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission) {
 			return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
 		}
+		waiting++
 	}
-	if err = pa.CheckAdmission(len(pending)); err != nil {
+	if len(unknown) > 0 && waiting > 0 {
+		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
+	}
+	if err = pa.CheckAdmission(waiting); err != nil {
 		return pa.Receipt{}, err
 	}
 	// Capability admission is local evidence inspection, not a model request.
@@ -302,6 +318,17 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		c.Generation = 1
 		b := pa.ExecutionBinding{Fence: currentFence(bot, c), Agent: bot.Agent, MemoryRevision: memory.Revision, ForgottenThrough: memory.ForgottenThrough, InstructionRevision: bot.Instructions.Revision}
 		binding = &b
+	}
+	for _, t := range unknown {
+		t.State = pa.TurnFailed
+		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acknowledged"}
+		cmd := r.command(a.key, pa.SendOperation, "runtime-acknowledge-"+t.ID, t)
+		if _, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: t.ID}, Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}}); err != nil {
+			return pa.Receipt{}, err
+		}
+		if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
+			return pa.Receipt{}, err
+		}
 	}
 	fence := currentFence(bot, c)
 	turn := pa.Turn{ID: r.o.ID(), Fence: fence, MessageID: r.o.ID(), State: pa.TurnQueued, IdempotencyKey: s.Command.IdempotencyKey}
@@ -720,7 +747,9 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 			return nil, runtimeFailure(pa.ContextStale, "forgotten_quote")
 		}
 	}
-	if memory.ForgottenThrough > 0 && (source.MemoryRevision < memory.ForgottenThrough || source.State == pa.TurnUnknown) {
+	// An acknowledged unknown turn keeps the same provenance doubt.
+	effectUnknown := source.State == pa.TurnUnknown || source.Failure != nil && source.Failure.Code == pa.ExecutionEffectUnknown
+	if memory.ForgottenThrough > 0 && (source.MemoryRevision < memory.ForgottenThrough || effectUnknown) {
 		return nil, runtimeFailure(pa.ContextStale, "quote_memory_revision")
 	}
 	if source.MemoryRevision > memory.Revision {
