@@ -88,7 +88,8 @@ export interface ToolDeps {
    * by a text model on the machine from the whole list. Asked only when a read
    * names no Session by its id or whole name (`resolveRead`).
    */
-  decide?: (said: string, sessions: DecisionSession[]) => Promise<SessionDecision>
+  /** `current` is the Session the copilot already chose by its exact id or name, if any. */
+  decide?: (said: string, sessions: DecisionSession[], current?: string) => Promise<SessionDecision>
   /** The person's own words for the Session in the current tool call (`said`). */
   said?: string
   /** What the person last said in the call, as transcribed: the words the Decision API judges first. */
@@ -957,6 +958,16 @@ export function resolveSession(
   }
 }
 
+/**
+ * Whether a sentence asks about what "he/it" said, found or suggested: the
+ * Session already being talked about. A bare 「它」 next to a description
+ * (「登入那個，它怎樣」) is still decided on; 「其他」, 「他們」 and a denial point elsewhere.
+ */
+export function pointsBack(text: string): boolean {
+  if (/(?:不是|不要|別|别|\bnot\b)/i.test(text)) return false
+  return /(?<![其吉])[他她它祂](?![們们])(?:剛剛|剛才|刚刚|刚才|最後|最后|之前|一開始|一开始)?(?:說|说|講|讲|提|建議|建议|發現|发现|找到|認為|认为|覺得|觉得|問|问|要我|推薦|推荐|的(?:結論|结论|建議|建议|原因|發現|发现|修正|修改|做法|方法|意思|說法|说法|回覆|回复|回答|問題|问题|計畫|计划|下一步))|\bwhat (?:did|does|is) (?:it|she|he) (?:say|said|suggest|find|found|recommend|mean|want|propose|saying|suggesting|asking)|\b(?:its|his|her) (?:conclusion|suggestion|fix|reason|answer|reply|plan|finding)/i.test(text)
+}
+
 /** One Session as the Decision API is shown it. */
 export interface DecisionSession { id: string; label: string; state: string; assistant: string; delivered?: string; question?: string }
 
@@ -990,6 +1001,11 @@ export async function resolveRead(
     if(row&&spoken?.target&&sameReference(spoken.target,row))return finish({row})
     return {error:'voice_session_reference_unresolved',candidates:(spoken?.candidates??[]).map(ref=>({id:ref.id,label:ref.label})),meaning:'The spoken position has no verified current Session. Ask which name the person means. Never replace it with a guessed Session.'} as ReturnType<typeof resolveSession>
   }
+  // A follow-up that names its Session only by a pronoun (「請問他說的修正法」)
+  // is about the Session the copilot is already reading. On 2026-11-13 the
+  // Decision API matched that sentence's 「修正」 to another Session whose
+  // delivery said 已修正, and the person heard a third Session's fix.
+  if ('row' in direct && pointsBack(asked)) return finish(direct)
   if (!asked || !deps.decide || rows.length === 0) return finish(direct)
   let decided: SessionDecision
   try {
@@ -997,7 +1013,7 @@ export async function resolveRead(
       id: r.id, label: r.label, state: r.state, assistant: r.assistant,
       ...(r.delivered ? { delivered: clip(r.delivered, LIST_GOAL_CHARS) } : {}),
       ...(r.question ? { question: clip(r.question, LIST_GOAL_CHARS) } : {}),
-    })))
+    })), 'row' in direct ? direct.row.id : undefined)
   } catch {
     // refusal-ok: without a decision the copilot still gets every Session and chooses itself.
     return finish(direct)

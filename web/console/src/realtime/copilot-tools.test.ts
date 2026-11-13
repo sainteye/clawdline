@@ -864,6 +864,33 @@ test("a sentence that points nowhere, a refused decision, or an unknown id leave
   }
 })
 
+test("a follow-up that names its Session only by a pronoun stays on the copilot's Session", async () => {
+  // 2026-11-13: in one call about one Session, 「請問他說的修正法」 was judged
+  // by its word 「修正」 and answered from another Session whose delivery said 已修正.
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "keyboard fix" }], "%7": [{ pending: false, readable: true, text: "voice recap" }] })
+  deps.decide = async () => ({ id: "%9" })
+  for (const heard of ["請問他說的修正法", "它建議怎麼改", "我這個Session他最後的結論是什麼", "what did it suggest?"]) {
+    deps.heard = () => heard
+    const out = JSON.parse((await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output)
+    assert.equal(out.session_id, "%7", heard)
+  }
+  // 「其他」 and 「他們」 are not the Session being talked about.
+  deps.heard = () => "其他的登入測試呢"
+  const other = (await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)).output
+  assert.equal(JSON.parse(other).session_id, "%9", other)
+})
+
+test("the Decision API is told which Session the copilot is already talking about", async () => {
+  const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }], "%7": [{ pending: false, readable: true, text: "flaky" }] })
+  const told: (string | undefined)[] = []
+  deps.heard = () => "那修正方法呢"
+  deps.decide = async (_said, _sessions, current) => { told.push(current); return {} }
+  await runCopilotTool("get_session_screen", '{"session_id":"%7","said":"Fix the flaky test"}', deps)
+  deps.heard = () => "the login one"
+  await runCopilotTool("get_session_screen", '{"session_id":"the login one","said":"the login one"}', deps)
+  assert.deepEqual(told, ["%7", undefined])
+})
+
 test("a lone candidate is the Session; two are put to the person", async () => {
   const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }] })
   deps.heard = () => "the test one"

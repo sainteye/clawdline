@@ -277,7 +277,7 @@ export class RealtimeCopilotClient {
       heard: () => this.heardNow,
       spokenReference:text=>this.spokenSessions.resolve(text),
       onRead:ref=>this.spokenSessions.observe(ref),
-      decide: (said, sessions) => decideOnMachine(said, sessions),
+      decide: (said, sessions, current) => decideOnMachine(said, sessions, current),
       machines: () => machinesOnThisPage(),
       focus: { get: () => this.focus, set: (id: string) => { this.focus = id } },
       marks: browserMarks,
@@ -1241,11 +1241,11 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
  * person's sentence means. A refusal is thrown; the tool then lets the copilot
  * choose from the list itself.
  */
-async function decideOnMachine(said: string, sessions: unknown[]): Promise<{ id?: string; candidates?: string[] }> {
+async function decideOnMachine(said: string, sessions: unknown[], current?: string): Promise<{ id?: string; candidates?: string[] }> {
   // The call's own list goes with the sentence: on a page showing every
   // machine it is not the deciding machine's own.
   const res = await fetch('/v1/voice/copilot-decide', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said, sessions }),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ said, sessions, ...(current ? { current } : {}) }),
   })
   const body = (await res.json().catch(() => null)) as { id?: unknown; candidates?: unknown } | null
   // refusal-ok: a refused decision falls back to the copilot's own choice in `resolveRead`, which is said in the tool's answer.

@@ -39,7 +39,7 @@ var decisionSessions = []copilotDecisionSession{
 
 func TestADecisionKeepsOnlySessionsFromTheMachinesOwnList(t *testing.T) {
 	seen := fakeDecision(t, `{"id":"owned:acp:AAAA","candidates":["%2","%88"]}`)
-	got, _, detail := decideCopilotSession(context.Background(), testCopilotKey, "the clothes photo one", decisionSessions)
+	got, _, detail := decideCopilotSession(context.Background(), testCopilotKey, "the clothes photo one", "", decisionSessions)
 	if detail != "" || got.ID != "owned:acp:AAAA" || len(got.Candidates) != 1 || got.Candidates[0] != "%2" || got.Many {
 		t.Fatalf("%+v %q", got, detail)
 	}
@@ -55,7 +55,7 @@ func TestADecisionKeepsOnlySessionsFromTheMachinesOwnList(t *testing.T) {
 
 	// An id the model invents is not a decision.
 	fakeDecision(t, `{"id":"%88","candidates":[]}`)
-	got, _, _ = decideCopilotSession(context.Background(), testCopilotKey, "that one", decisionSessions)
+	got, _, _ = decideCopilotSession(context.Background(), testCopilotKey, "that one", "", decisionSessions)
 	if got.ID != "" || len(got.Candidates) != 0 {
 		t.Fatalf("an unknown id survived: %+v", got)
 	}
@@ -78,7 +78,7 @@ func TestADecisionRefusesWithoutASentenceOrAKey(t *testing.T) {
 
 func TestADecisionOnSeveralSessionsSaysSo(t *testing.T) {
 	fakeDecision(t, `{"id":null,"candidates":["%2","owned:acp:AAAA"],"many":true}`)
-	got, _, _ := decideCopilotSession(context.Background(), testCopilotKey, "what did the finished ones do", decisionSessions)
+	got, _, _ := decideCopilotSession(context.Background(), testCopilotKey, "what did the finished ones do", "", decisionSessions)
 	if !got.Many || len(got.Candidates) != 2 {
 		t.Fatalf("%+v", got)
 	}
@@ -97,5 +97,36 @@ func TestADecisionUsesTheListTheCallReads(t *testing.T) {
 	user, _ := msgs[1].(map[string]any)
 	if !strings.Contains(user["content"].(string), "Content review") {
 		t.Fatalf("the decision was not shown the call's list: %v", user["content"])
+	}
+}
+
+func TestADecisionIsToldTheSessionTheCallIsAbout(t *testing.T) {
+	// 2026-11-13: 「請問他說的修正法」 in a call about one Session was matched to
+	// another whose delivery said 已修正. The decision now sees which Session
+	// the call is about; a current id that is not in the list is not passed on.
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	copilotCall(t, s, s.copilotSettingsRoute, http.MethodPost, "/v1/settings/copilot", `{"openai_key":"`+testCopilotKey+`"}`)
+	seen := fakeDecision(t, `{"id":"%2","candidates":[],"many":false}`)
+	list := `[{"id":"%2","label":"Content review","state":"idle","assistant":"claude"},{"id":"%3","label":"Keyboard fix","state":"idle","assistant":"codex"}]`
+	for _, tc := range []struct{ current, want string }{{"%2", `"current":"%2"`}, {"%88", ""}, {"", ""}} {
+		*seen = nil
+		body := `{"said":"請問他說的修正法","sessions":` + list
+		if tc.current != "" {
+			body += `,"current":"` + tc.current + `"`
+		}
+		rec := copilotCall(t, s, s.copilotDecideRoute, http.MethodPost, "/v1/voice/copilot-decide", body+`}`)
+		if rec.Code != http.StatusOK || len(*seen) != 1 {
+			t.Fatalf("%q: %d %s", tc.current, rec.Code, rec.Body)
+		}
+		msgs, _ := (*seen)[0]["messages"].([]any)
+		user, _ := msgs[1].(map[string]any)
+		content := user["content"].(string)
+		if tc.want != "" && !strings.Contains(content, tc.want) || tc.want == "" && strings.Contains(content, `"current"`) {
+			t.Fatalf("%q: the decision was shown %s", tc.current, content)
+		}
+	}
+	system, _ := (*seen)[0]["messages"].([]any)[0].(map[string]any)
+	if !strings.Contains(system["content"].(string), "current") {
+		t.Fatalf("the prompt does not say what current means")
 	}
 }
