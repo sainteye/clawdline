@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+import { ACTIVITY_TOTAL_CHARS, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, greetingEvent, originGreetingEvent, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -1256,4 +1256,16 @@ test("a rename the machine did is a notice, and a claimed one it did not is caug
   assert.equal(noticeOf("smart_rename_sessions", JSON.stringify({ failed: [{ session: "a", error: "x" }] })), null)
   assert.deepEqual(claimsOf("我已經幫你重新命名好了。", new Set()), ["rename"])
   assert.deepEqual(claimsOf("要用智慧命名重新命名這幾個嗎？", new Set()), [])
+})
+
+test("a message asking a Session to rename itself is refused toward smart naming, and is not sent", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: "%2", session_label: "Prepare screenshots", message: "請使用智慧命名功能重新命名此 Session，使其名稱更符合目標" }), deps)).output)
+  assert.match(out.error, /smart_rename_sessions/)
+  assert.ok(!calls.some((c) => c.path.endsWith("/send")))
+})
+
+test("only a request to rename the Session itself counts as one", () => {
+  for (const asks of ["請使用智慧命名功能重新命名此 Session", "把這個 Session 改名", "請重新命名 Session 名稱", "Please rename this session to match its work", "use smart naming"]) assert.ok(ASKS_A_RENAME.test(asks), asks)
+  for (const work of ["請把變數 foo 重新命名為 bar", "rename the helper to parseRows", "改名後的檔案要更新 import"]) assert.ok(!ASKS_A_RENAME.test(work), work)
 })

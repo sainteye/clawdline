@@ -105,5 +105,12 @@
   "sessions.terminal_assistant_state_work_task_label_cwd": "終端機\t助理\t狀態\t工作\t任務\t標籤\t目錄",
   "sessions.the_daemon_s_port_default_clawdline_next_port": "daemon 的連接埠（預設 CLAWDLINE_NEXT_PORT，否則 7727）",
   "sessions.usage_clawdline_sessions_json_port_n": "用法：clawdline sessions [--json] [--port n]",
-  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE 必須指向可讀取的一般 JSON 檔案，assistant 為 antigravity 或 grok，且 conversation_id 不得為空"
+  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE 必須指向可讀取的一般 JSON 檔案，assistant 為 antigravity 或 grok，且 conversation_id 不得為空",
+  "session.usage_clawdline_session_smart_title": "用法：clawdline session smart-title [--conversation id | --terminal id] [--port n]",
+  "session.renames_this_session_with_smart_naming": "  用智慧命名重新命名這個 Session（與 Session 資訊的按鈕相同），並印出新名稱",
+  "session.the_terminal_to_rename_default_this_session_s": "要重新命名的終端機（預設：這個 Session 自己的）",
+  "session.clawdline_session_smart_title": "clawdline session smart-title：",
+  "session.smart_title_cannot_tell_which_session": "clawdline session smart-title：無法判斷這是哪個 Session：%s 都沒有設定。請傳入 --conversation 或 --terminal。\n",
+  "session.smart_title_whoami_without_terminal": "clawdline session smart-title：whoami 的回答沒有終端機 id，沒有重新命名。",
+  "session.smart_title_renamed": "這個 Session 現在名為「%s」。\n"
 }
