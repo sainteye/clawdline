@@ -207,12 +207,19 @@ func TestPermissionCannotWidenScopeOrAnswerAnotherGeneration(t *testing.T) {
 	if err := check(); err != nil {
 		t.Fatalf("allowing one native action was refused: %v", err)
 	}
-	offer.Options = append(offer.Options, PermissionOption{ID: "always", Allow: true, Kind: AllowAlways}, PermissionOption{ID: "never", Kind: RejectAlways})
+	// As in Codync (decided 2026-11-14), the person may also allow or refuse
+	// requests like this for good; an option whose allow flag contradicts its
+	// kind is still refused.
+	offer.Options = append(offer.Options, PermissionOption{ID: "always", Allow: true, Kind: AllowAlways}, PermissionOption{ID: "never", Kind: RejectAlways}, PermissionOption{ID: "bad-never", Allow: true, Kind: RejectAlways})
 	for _, standing := range []string{"always", "never"} {
 		answer.OptionID = standing
-		if Code(check()) != ScopeExpansionDenied {
-			t.Fatalf("standing %s rule accepted", standing)
+		if err := check(); err != nil {
+			t.Fatalf("standing %s rule refused: %v", standing, err)
 		}
+	}
+	answer.OptionID = "bad-never"
+	if Code(check()) != Invalid {
+		t.Fatal("a never option that allows was accepted")
 	}
 	answer.OptionID = "deny"
 	if err := check(); err != nil {

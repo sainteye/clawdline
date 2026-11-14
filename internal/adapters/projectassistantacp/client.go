@@ -700,13 +700,8 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 		c.mu.Unlock()
 		return refusal(pa.NotFound, "native_permission")
 	}
-	// The person approves each action once. A persistent rule would outlive
-	// the turn and the generation that asked for it.
-	if option.Kind == pa.AllowAlways || option.Kind == pa.RejectAlways {
-		c.mu.Unlock()
-		return refusal(pa.ScopeExpansionDenied, "native_permission")
-	}
-	if option.Kind != pa.AllowOnce && option.Kind != pa.RejectOnce {
+	// As in Codync, an always option hands the agent the rule it defines.
+	if option.Kind != pa.AllowOnce && option.Kind != pa.RejectOnce && option.Kind != pa.AllowAlways && option.Kind != pa.RejectAlways {
 		c.mu.Unlock()
 		return refusal(pa.Invalid, "native_permission")
 	}

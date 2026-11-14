@@ -15,11 +15,11 @@ test("fixed global entry is bilingual and has no microphone or model side effect
   for(const language of ["en","zh-Hant"]){const html=render(BotOrb,{onOpen:()=>opened++,language,unread:2,pendingPermissions:1});assert.match(html,/aria-label=/);assert.match(html,/#e39567/);assert.match(html,/>3</);assert.doesNotMatch(html,/microphone|mic|audio/)}
   assert.equal(opened,0)
 })
-test("permission options preserve unavailable persistent grants and disabled history",async()=>{
+test("permission options keep the persistent grants and disable them in history",async()=>{
   const s=fixtureSource(),page=await s.events({key:s.bots[1].key,after_seq:0,page_size:256},new AbortController().signal),offer=page.items[0].permission
   const html=render(PermissionCard,{offer,enabled:false,onAnswer:()=>assert.fail("render answered"),w:words("en")})
   assert.equal((html.match(/disabled=""/g)||[]).length,3)
-  assert.match(html,/Always allow \(unavailable\)/)
+  assert.match(html,/Always allow/)
 })
 test("offline status remains distinct from an empty source",async()=>{
   const s=fixtureSource();s.setState("offline")
@@ -100,12 +100,13 @@ test("a late second permission preflight refusal latches only its current scope 
     assert.equal(effects,0);assert.equal(attempts,1,"no automatic permission replay")
   }
 })
-test("an enabled permission card can allow one action that changes something",()=>{
+// As in Codync (decided 2026-11-14), Always allow and Never are offered.
+test("an enabled permission card offers allowing once and always",()=>{
   const offer={id:"offer",fence:{key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1},turn_id:"t",native_request_id:"1",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",
     options:[{id:"once",kind:"allow_once",allow:true,read_only:false,label:"Yes"},{id:"always",kind:"allow_always",allow:true,read_only:false,label:"Always"},{id:"no",kind:"reject_once",allow:false,read_only:false,label:"No"}]}
   const html=render(PermissionCard,{offer,enabled:true,onAnswer:async()=>{},w:words("en")})
   const buttons=[...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map(m=>[m[1],/disabled=""/.test(m[0])])
-  assert.deepEqual(buttons,[["Allow once",false],["Always allow (unavailable)",true],["Reject once",false]])
+  assert.deepEqual(buttons,[["Allow once",false],["Always allow",false],["Reject once",false]])
 })
 test("a permission card says what the tool will do before it is answered",()=>{
   const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}

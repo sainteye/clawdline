@@ -298,9 +298,6 @@ func TestACPIncomingPermissionDoesNotWaitForPrompt(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("permission blocked behind prompt")
 	}
-	if err := c.Answer(context.Background(), offer.NativeRequestID, "always"); pa.Code(err) != pa.ScopeExpansionDenied {
-		t.Fatal(err)
-	}
 	if err := c.Answer(context.Background(), offer.NativeRequestID, "read-once"); err != nil {
 		t.Fatal(err)
 	}
@@ -442,9 +439,6 @@ func TestACPPersonMayAllowAChangingActionOnce(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("no permission request")
 	}
-	if err := c.Answer(context.Background(), offer.NativeRequestID, "always"); pa.Code(err) != pa.ScopeExpansionDenied {
-		t.Fatalf("a persistent allow rule was accepted: %v", err)
-	}
 	if err := c.Answer(context.Background(), offer.NativeRequestID, "read-once"); err != nil {
 		t.Fatalf("the person's one-time allow was refused: %v", err)
 	}
@@ -585,5 +579,30 @@ func TestASessionIsPutInTheBotsMode(t *testing.T) {
 	}
 	if err := c.applyMode(context.Background(), claude("default"), "scripted-session", "plan", offered("default", "plan")); pa.Code(err) != pa.Unsupported {
 		t.Fatalf("a refused switch: %v", err)
+	}
+}
+
+// As in Codync, Always allow hands the agent its own standing rule: the
+// option goes to the agent like a one-time answer and the turn carries on.
+func TestAlwaysAllowGoesToTheAgent(t *testing.T) {
+	offers := make(chan pa.PermissionOffer, 1)
+	c, _ := openTestClient(t, "permission", func(_ context.Context, e app.ProtocolEvent) error {
+		if e.Permission != nil {
+			offers <- *e.Permission
+		}
+		return nil
+	})
+	pending := sendTestPrompt(t, c)
+	var offer pa.PermissionOffer
+	select {
+	case offer = <-offers:
+	case <-time.After(time.Second):
+		t.Fatal("no permission request")
+	}
+	if err := c.Answer(context.Background(), offer.NativeRequestID, "always"); err != nil {
+		t.Fatalf("always allow: %v", err)
+	}
+	if result, err := pending.Wait(context.Background()); err != nil || result.FinalText != "after permission" {
+		t.Fatalf("the turn did not carry on: %+v %v", result, err)
 	}
 }
