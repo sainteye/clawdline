@@ -118,8 +118,11 @@ func ValidateCreate(in CreateBot, resolved ProjectResolution) error {
 	if in.Agent != ClaudeCode && in.Agent != Codex {
 		return fail(Unsupported, "agent")
 	}
-	if in.PermissionPolicy != Ask && in.PermissionPolicy != AutoRead {
+	if in.PermissionPolicy != Ask && in.PermissionPolicy != AutoRead && in.PermissionPolicy != Approve {
 		return fail(Invalid, "permission_policy")
+	}
+	if err := ValidateMode(in.Agent, in.Mode); err != nil {
+		return err
 	}
 	return validateSettings(in.Name, in.Appearance, in.Instructions)
 }
@@ -129,6 +132,15 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 	}
 	if err := validateSettings(in.Name, in.Appearance, in.Instructions); err != nil {
 		return bot, err
+	}
+	if in.PermissionPolicy != "" {
+		if in.PermissionPolicy != Ask && in.PermissionPolicy != AutoRead && in.PermissionPolicy != Approve {
+			return bot, fail(Invalid, "permission_policy")
+		}
+		if err := ValidateMode(bot.Agent, in.Mode); err != nil {
+			return bot, err
+		}
+		bot.PermissionPolicy, bot.Mode = in.PermissionPolicy, in.Mode
 	}
 	bot.Name = in.Name
 	bot.Appearance = in.Appearance

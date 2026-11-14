@@ -4420,12 +4420,16 @@ type ProjectAssistantAttachment struct {
 }
 
 type ProjectAssistantBot struct {
-	Agent            ProjectAssistantAgent            `json:"agent"`
-	Appearance       ProjectAssistantAppearance       `json:"appearance"`
-	ConversationID   string                           `json:"conversation_id"`
-	CreatedAt        string                           `json:"created_at"`
-	Instructions     ProjectAssistantInstructions     `json:"instructions"`
-	Key              ProjectAssistantBotKey           `json:"key"`
+	Agent          ProjectAssistantAgent        `json:"agent"`
+	Appearance     ProjectAssistantAppearance   `json:"appearance"`
+	ConversationID string                       `json:"conversation_id"`
+	CreatedAt      string                       `json:"created_at"`
+	Instructions   ProjectAssistantInstructions `json:"instructions"`
+	Key            ProjectAssistantBotKey       `json:"key"`
+
+	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+	// otherwise one the agent offers (API level 65).
+	Mode             string                           `json:"mode,omitempty"`
 	Name             string                           `json:"name"`
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
 	Project          ProjectAssistantProjectScope     `json:"project"`
@@ -4511,9 +4515,13 @@ type ProjectAssistantCreateRequest struct {
 // Six settings. Creating, cancelling, reading, selecting and searching start no
 // process or model. Only first send binds execution.
 type ProjectAssistantCreateSettings struct {
-	Agent            ProjectAssistantAgent            `json:"agent"`
-	Appearance       ProjectAssistantAppearance       `json:"appearance"`
-	Instructions     string                           `json:"instructions"`
+	Agent        ProjectAssistantAgent      `json:"agent"`
+	Appearance   ProjectAssistantAppearance `json:"appearance"`
+	Instructions string                     `json:"instructions"`
+
+	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+	// otherwise one the agent offers (API level 65).
+	Mode             string                           `json:"mode,omitempty"`
 	Name             string                           `json:"name"`
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
 	RoleSnapshotRef  string                           `json:"role_snapshot_ref"`
@@ -4531,7 +4539,14 @@ type ProjectAssistantEditSettings struct {
 	Appearance      ProjectAssistantAppearance `json:"appearance"`
 	ExpectedVersion int64                      `json:"expected_version"`
 	Instructions    string                     `json:"instructions"`
-	Name            string                     `json:"name"`
+
+	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+	// otherwise one the agent offers (API level 65).
+	Mode string `json:"mode,omitempty"`
+	Name string `json:"name"`
+
+	// Empty leaves the permission setting unchanged (API level 65).
+	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
 }
 
 // Acceptance is durable admission; delivery is a persisted reply; observation
@@ -4936,10 +4951,11 @@ type ProjectAssistantPermissionPolicy string
 const (
 	ProjectAssistantPermissionPolicyAsk      ProjectAssistantPermissionPolicy = "ask"
 	ProjectAssistantPermissionPolicyAutoRead ProjectAssistantPermissionPolicy = "auto_read"
+	ProjectAssistantPermissionPolicyApprove  ProjectAssistantPermissionPolicy = "approve"
 )
 
 // ProjectAssistantPermissionPolicyValues is every value the contract allows, in contract order.
-var ProjectAssistantPermissionPolicyValues = []ProjectAssistantPermissionPolicy{ProjectAssistantPermissionPolicyAsk, ProjectAssistantPermissionPolicyAutoRead}
+var ProjectAssistantPermissionPolicyValues = []ProjectAssistantPermissionPolicy{ProjectAssistantPermissionPolicyAsk, ProjectAssistantPermissionPolicyAutoRead, ProjectAssistantPermissionPolicyApprove}
 
 type ProjectAssistantPermissionState string
 

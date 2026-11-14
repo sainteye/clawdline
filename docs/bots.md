@@ -79,9 +79,21 @@ starts from the whole memory as it is now; forgetting starts a fresh
 conversation that carries only what is still remembered. A Bot keeps at most
 256 entries.
 
-Claude Code's default mode decides which actions it asks about. When it
-asks, a permission card appears in the chat and you can allow that action
-once. If a worker's terminal shows a question, such as whether to trust a
+**Permissions**, in the Bot's settings and when you create it, decides how
+much the agent does on its own before it asks, as in Codync. It lists the
+agent's modes, its Auto mode first, then **Approve automatically**:
+
+| Setting | What happens |
+| --- | --- |
+| **Auto** (Claude Code), **Auto review** (Codex) | The agent decides what's safe and does it, and asks you about the rest. New Bots start here. |
+| The agent's other modes: **Manual**, **Accept edits**, **Plan** (Claude Code); **Read-only**, **Workspace access**, **Full access** (Codex) | The agent works in that mode; anything it asks about appears as a permission card. |
+| **Approve automatically** | Each request is allowed for you with the agent's allow-once option. |
+
+With any setting your agent's own settings still apply. On a model without
+Claude Code's Auto mode, Claude Code works in Accept edits instead. A mode
+the agent does not offer stops the turn with a reason rather than run it in
+another. When the agent asks, a permission card appears in the chat and you
+can allow that action once. If a worker's terminal shows a question, such as whether to trust a
 folder, the work card tells you to answer it in that Session.
 
 ## If something is missing

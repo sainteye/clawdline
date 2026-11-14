@@ -73,6 +73,7 @@
 .project-assistants .pa-queued>span { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .project-assistants .pa-queued-send,.project-assistants .pa-queued-remove { flex:none;width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:inherit;font-size:15px;line-height:1;cursor:pointer; }
 .project-assistants .pa-queued-send:hover:not(:disabled),.project-assistants .pa-queued-remove:hover:not(:disabled) { background:var(--pa-line); }
+.project-assistants .pa-approval-detail { display:block;margin-top:4px;font-size:11px;color:var(--pa-dim);line-height:1.4; }
 .project-assistants .pa-working { display:flex;align-items:center;gap:8px;font-size:12px; }
 .project-assistants .pa-working-dot { width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7;animation:pa-working-pulse 1.2s ease-in-out infinite; }
 .project-assistants .pa-working[data-waiting] { color:var(--warn,#d29a3a); }

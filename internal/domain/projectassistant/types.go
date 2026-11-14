@@ -92,6 +92,9 @@ type PermissionPolicy string
 const (
 	Ask      PermissionPolicy = "ask"
 	AutoRead PermissionPolicy = "auto_read"
+	// Approve is Codync's "Approve automatically": each request is allowed
+	// with the agent's allow-once option; the agent's own settings still apply.
+	Approve PermissionPolicy = "approve"
 )
 
 // Instructions and RoleSnapshotRef are versioned together. Running turns keep
@@ -102,17 +105,20 @@ type InstructionSnapshot struct {
 	RoleSnapshotRef string `json:"role_snapshot_ref"`
 }
 type Bot struct {
-	Key              BotKey              `json:"key"`
-	Project          ProjectScope        `json:"project"`
-	ConversationID   string              `json:"conversation_id"`
-	Name             string              `json:"name"`
-	Appearance       Appearance          `json:"appearance"`
-	Agent            Agent               `json:"agent"`
-	PermissionPolicy PermissionPolicy    `json:"permission_policy"`
-	Instructions     InstructionSnapshot `json:"instructions"`
-	Version          int64               `json:"version"`
-	CreatedAt        time.Time           `json:"created_at"`
-	UpdatedAt        time.Time           `json:"updated_at"`
+	Key              BotKey           `json:"key"`
+	Project          ProjectScope     `json:"project"`
+	ConversationID   string           `json:"conversation_id"`
+	Name             string           `json:"name"`
+	Appearance       Appearance       `json:"appearance"`
+	Agent            Agent            `json:"agent"`
+	PermissionPolicy PermissionPolicy `json:"permission_policy"`
+	// Mode is the agent mode the Bot works in, as in Codync: AutoMode (or
+	// empty) is the agent's own Auto mode, otherwise one of AgentModes.
+	Mode         string              `json:"mode,omitempty"`
+	Instructions InstructionSnapshot `json:"instructions"`
+	Version      int64               `json:"version"`
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
 }
 
 type CreateBot struct {
@@ -121,6 +127,7 @@ type CreateBot struct {
 	Appearance       Appearance       `json:"appearance"`
 	Agent            Agent            `json:"agent"`
 	PermissionPolicy PermissionPolicy `json:"permission_policy"`
+	Mode             string           `json:"mode,omitempty"`
 	Instructions     string           `json:"instructions"`
 	RoleSnapshotRef  string           `json:"role_snapshot_ref"`
 }
@@ -132,6 +139,10 @@ type EditBot struct {
 	Name            string     `json:"name"`
 	Appearance      Appearance `json:"appearance"`
 	Instructions    string     `json:"instructions"`
+	// An empty policy leaves the permission setting as it is, so a console
+	// older than this setting cannot reset it.
+	PermissionPolicy PermissionPolicy `json:"permission_policy,omitempty"`
+	Mode             string           `json:"mode,omitempty"`
 }
 
 type Conversation struct {

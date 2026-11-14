@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11990,
+  "englishKeys": 11994,
   "counts": {
     "negation": 3261,
     "state": 2004,
-    "permission": 702,
+    "permission": 705,
     "deletion": 267,
     "uncertainty": 456
   },
-  "unionCount": 5216,
+  "unionCount": 5219,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5868,6 +5868,9 @@
       "playbook.linkedMessageHint",
       "projectAssistants.allow_always",
       "projectAssistants.allow_once",
+      "projectAssistants.approvalApprove",
+      "projectAssistants.approvalAuto",
+      "projectAssistants.approvalMode",
       "projectAssistants.auto_read",
       "projectAssistants.history_only",
       "projectAssistants.pending",
@@ -11339,6 +11342,9 @@
     "projectAssistants.accepted",
     "projectAssistants.allow_always",
     "projectAssistants.allow_once",
+    "projectAssistants.approvalApprove",
+    "projectAssistants.approvalAuto",
+    "projectAssistants.approvalMode",
     "projectAssistants.auto_read",
     "projectAssistants.cancelled",
     "projectAssistants.clearQuote",

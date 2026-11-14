@@ -176,6 +176,12 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	}
 	var session struct {
 		SessionID string `json:"sessionId"`
+		Modes     *struct {
+			CurrentModeID  string `json:"currentModeId"`
+			AvailableModes []struct {
+				ID string `json:"id"`
+			} `json:"availableModes"`
+		} `json:"modes"`
 	}
 	if err = json.Unmarshal(b, &session); err != nil {
 		return refusal(pa.Invalid, "session_response")
@@ -195,6 +201,37 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	c.mu.Lock()
 	c.sessionID = session.SessionID
 	c.mu.Unlock()
+	if session.Modes == nil {
+		return nil
+	}
+	return c.applyMode(ctx, q.Bot, session.SessionID, session.Modes.CurrentModeID, func(id string) bool {
+		for _, m := range session.Modes.AvailableModes {
+			if m.ID == id {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// applyMode puts the session in the Bot's mode, as Codync does with
+// session/set_mode. Claude's adapter already falls back from Auto to Accept
+// edits on a model without Auto, so that session is left as it is; any other
+// mode the agent does not offer refuses the turn rather than run it in another.
+func (c *Client) applyMode(ctx context.Context, bot pa.Bot, sid, current string, offered func(string) bool) error {
+	want := pa.NativeMode(bot.Agent, bot.Mode)
+	if current == want {
+		return nil
+	}
+	if !offered(want) {
+		if bot.Agent == pa.ClaudeCode && want == "auto" && current == "acceptEdits" {
+			return nil
+		}
+		return refusal(pa.Unsupported, "agent_mode")
+	}
+	if _, err := c.call(ctx, "session/set_mode", map[string]string{"sessionId": sid, "modeId": want}); err != nil {
+		return refusal(pa.Unsupported, "agent_mode")
+	}
 	return nil
 }
 func (c *Client) SessionID() string { c.mu.Lock(); defer c.mu.Unlock(); return c.sessionID }

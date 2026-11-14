@@ -1093,3 +1093,30 @@ func TestAStartResumesOnlyATurnTheShutdownCutOff(t *testing.T) {
 		}
 	}
 }
+
+// As Codync's "Approve automatically", an Approve Bot allows each request with
+// the agent's allow-once option, a write as well as a read, never a standing
+// allow.
+func TestRuntimeApproveAnswersEachRequestOnce(t *testing.T) {
+	f := newRuntimeFixture(t)
+	f.store.mu.Lock()
+	f.store.bot.PermissionPolicy = pa.Approve
+	f.store.mu.Unlock()
+	if _, err := f.submit(t, "write", "one"); err != nil {
+		t.Fatal(err)
+	}
+	q := receivePrompt(t, f.provider)
+	s := f.provider.session()
+	offer := pa.PermissionOffer{ID: "write", Fence: q.Turn.Fence, TurnID: q.Turn.ID, NativeRequestID: "write", ExpiresAt: time.Now().Add(time.Minute), Options: []pa.PermissionOption{{ID: "always", Kind: pa.AllowAlways, Allow: true}, {ID: "write-once", Kind: pa.AllowOnce, Allow: true}, {ID: "reject", Kind: pa.RejectOnce}}}
+	if err := s.sink(context.Background(), ProtocolEvent{ID: "write", Fence: q.Turn.Fence, TurnID: q.Turn.ID, Permission: &offer}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case option := <-s.answered:
+		if option != "write-once" {
+			t.Fatal(option)
+		}
+	default:
+		t.Fatal("approve policy did not answer")
+	}
+}
