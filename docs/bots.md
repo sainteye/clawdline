@@ -5,7 +5,7 @@ it in the console; it remembers what you save, works in the Project with
 Claude Code's own tools, and can hand larger changes to an isolated worker
 through Clawdline's Broker. The worker's result comes back to the same chat.
 
-Bots are off by default and not announced yet.
+Bots are off by default.
 
 ## What you need
 
@@ -22,6 +22,13 @@ it.
 
 ## Turn Bots on
 
+In the Clawdline app on this machine, open **Settings** and turn on
+**Persistent Bots** (on the tab with the dispatch settings). The Bots orb
+appears in the Session list. A paired browser or phone can read the setting
+but cannot change it, like this machine's other settings.
+
+From a terminal, the same switch is:
+
 ```sh
 clawdline project-assistants enable
 ```
@@ -33,7 +40,9 @@ first-use setup ahead of time and prints which Claude Code version it found.
 
 ## Use a Bot
 
-1. In the console's Session list, choose **All Bots**, then **+**.
+1. Click the Bots orb in the Session list, then **+**. You can drag the
+   orb anywhere over the list, or onto the quota bar at the bottom, where it
+   becomes a small icon that rings and counts new replies.
 2. Give it a name, choose the Project and write its standing instructions.
    Creating a Bot does not call a model.
 3. Send a message. The Bot answers in the chat. A message sent while it is

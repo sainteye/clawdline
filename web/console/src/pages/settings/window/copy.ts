@@ -12,6 +12,8 @@ import { catalogWord } from "../../../catalog.ts"
 const ownWords = {
   en: {
     settingsITermIntegration: "Enable iTerm2 integration",
+    settingsBots: "Persistent Bots",
+    settingsBotsHint: "Shows the Bots orb in the Session list: long-lived Claude assistants bound to a Project that can chat, remember and dispatch work. Needs Claude Code 2.1.323 or newer and Node 22 or newer on this machine; the first message sets up the rest. Turning it off keeps saved Bots and conversations.",
     settingsITermIntegrationHint: "Off by default. While off, Clawdline does not detect, read or control iTerm2 or request its Automation permission. Enabling permits listing tabs, reading screens, sending input, and opening, showing or closing tabs, and may request macOS Automation permission. Existing installations must also opt in.",
     settingsITermIntegrationUpgrade: "This daemon does not support the iTerm2 consent switch. Update Clawdline on this machine to control all iTerm2 access. Its current access cannot be inferred from this page.",
     settingsSessionTerminalConsentHint: "Automatic uses tmux while iTerm2 integration is off. With integration enabled, Automatic uses iTerm2 while it is open; with tmux installed, the Session runs in tmux and is shown in an iTerm2 tab. Explicit iTerm2 choices require enabled integration and a running iTerm2. iTerm2 (native tab) runs directly in its tab. tmux always uses tmux. The next Session follows this choice.",
@@ -145,6 +147,8 @@ const ownWords = {
   },
   "zh-Hant": {
     settingsITermIntegration: "啟用 iTerm2 整合",
+    settingsBots: "持續助理（Bots）",
+    settingsBotsHint: "在 Session 清單顯示 Bots 小圓球：綁定 Project、可以聊天、記憶和派工的長期 Claude 助理。需要這台機器裝有 Claude Code 2.1.323 以上與 Node 22 以上，其餘在第一次傳訊時自動設定。關閉後已儲存的 Bot 與對話都會保留。",
     settingsITermIntegrationHint: "預設關閉。關閉時不偵測、讀取或控制 iTerm2，也不要求其自動化權限。開啟後可列出分頁、讀取畫面、傳送輸入與開啟、顯示或關閉分頁，並可能要求 macOS 自動化授權。舊安裝也需要主動開啟。",
     settingsITermIntegrationUpgrade: "這台機器的 daemon 尚未支援 iTerm2 授權總開關。請更新這台機器的 Clawdline，才能關閉所有 iTerm2 存取；此頁目前無法判定其存取狀態。",
     settingsSessionTerminalConsentHint: "iTerm2 整合關閉時，「自動」使用 tmux。開啟整合後，「自動」會在 iTerm2 開著時使用它；有 tmux 時，Session 在 tmux 裡執行，並以 iTerm2 分頁顯示。明確選擇 iTerm2 時，必須先啟用整合並開啟 iTerm2。「iTerm2（原生分頁）」直接在分頁內執行；「tmux」一律使用 tmux。下一個 Session 開始套用。",
@@ -321,6 +325,8 @@ const baseW = {
   voiceSettingsMachine: ownWord("voiceSettingsMachine"),
   settingsITermIntegration: ownWord("settingsITermIntegration"),
   settingsITermIntegrationHint: ownWord("settingsITermIntegrationHint"),
+  settingsBots: ownWord("settingsBots"),
+  settingsBotsHint: ownWord("settingsBotsHint"),
   settingsITermIntegrationUpgrade: ownWord("settingsITermIntegrationUpgrade"),
   settingsSessionTerminalConsentHint: ownWord("settingsSessionTerminalConsentHint"),
 

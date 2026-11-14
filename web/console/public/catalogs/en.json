@@ -10027,6 +10027,8 @@
   "settings.settingsAutoNameSession": "Match session assistant",
   "settings.settingsBar": "Input bar",
   "settings.settingsBlur": "Background blur",
+  "settings.settingsBots": "Persistent Bots",
+  "settings.settingsBotsHint": "Shows the Bots orb in the Session list: long-lived Claude assistants bound to a Project that can chat, remember and dispatch work. Needs Claude Code 2.1.323 or newer and Node 22 or newer on this machine; the first message sets up the rest. Turning it off keeps saved Bots and conversations.",
   "settings.settingsClaudeDefaultModel": "Claude Code default model",
   "settings.settingsCloudflareRetired": "Clawdline no longer runs a Cloudflare tunnel, so the tunnel this machine used to open stays closed and its settings are no longer read. To reach this machine from your phone, use Tailscale Serve (the Tailscale address above) or Clawdline Cloud.",
   "settings.settingsCloudflareRetiredDone": "Got it",

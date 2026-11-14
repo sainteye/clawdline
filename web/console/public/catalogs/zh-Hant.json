@@ -10027,6 +10027,8 @@
   "settings.settingsAutoNameSession": "跟隨 Session 助理",
   "settings.settingsBar": "輸入條",
   "settings.settingsBlur": "背後模糊",
+  "settings.settingsBots": "持續助理（Bots）",
+  "settings.settingsBotsHint": "在 Session 清單顯示 Bots 小圓球：綁定 Project、可以聊天、記憶和派工的長期 Claude 助理。需要這台機器裝有 Claude Code 2.1.323 以上與 Node 22 以上，其餘在第一次傳訊時自動設定。關閉後已儲存的 Bot 與對話都會保留。",
   "settings.settingsClaudeDefaultModel": "Claude Code 預設模型",
   "settings.settingsCloudflareRetired": "Clawdline 不再內建 Cloudflare 通道，這台機器以前開的通道不會再開，它的設定也不再讀取。要從手機連回這台機器，請改用 Tailscale Serve（上面的 Tailscale 位址）或 Clawdline Cloud。",
   "settings.settingsCloudflareRetiredDone": "知道了",

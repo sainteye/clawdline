@@ -1183,6 +1183,9 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               onChange={flip("orchestrator_enabled")}
             />
           </Row>
+          <Row label={W.settingsBots} hint={W.settingsBotsHint}>
+            <Switch label={W.settingsBots} on={!!now("project_assistants_enabled")} onChange={flip("project_assistants_enabled")} />
+          </Row>
           {!embedded && <><Row label={catalogWord("literal", "bc9e50e8ee8c")} hint={catalogWord("literal", "7daab4ee36ab")}>
             <Switch label={catalogWord("literal", "bc9e50e8ee8c")} on={planning} onChange={flip("planning_gate")} />
           </Row>

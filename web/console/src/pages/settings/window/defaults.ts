@@ -57,6 +57,8 @@ export const DEFAULTS = {
   iterm_integration: false,
   session_auto_discovery: true,
   orchestrator_enabled: true,
+  /** Explicit opt-in; the daemon starts or stops Bots with this write. */
+  project_assistants_enabled: false,
   planning_gate: true,
   verify_gate: false,
   orchestrator_max_children: 5,

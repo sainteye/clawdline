@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11890,
+  "englishKeys": 11892,
   "counts": {
     "negation": 3248,
-    "state": 1989,
+    "state": 1990,
     "permission": 701,
     "deletion": 264,
     "uncertainty": 456
   },
-  "unionCount": 5189,
+  "unionCount": 5190,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5053,6 +5053,7 @@
       "settings.cloudAccountFailed",
       "settings.cloudAccountOpen",
       "settings.cloudDirectHint",
+      "settings.settingsBotsHint",
       "settings.settingsCloudflareRetired",
       "settings.settingsHooksHint",
       "settings.settingsHooksWithout",
@@ -11368,6 +11369,7 @@
     "settings.dictationNoModel",
     "settings.dictationNoWhisper",
     "settings.settingsAgentNotify",
+    "settings.settingsBotsHint",
     "settings.settingsCloudflareRetired",
     "settings.settingsCodexAutoNameHint",
     "settings.settingsCodexDefaultEffortHint",

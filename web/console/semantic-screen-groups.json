@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11890,
-  "riskKeys": 5189,
-  "nonRiskCount": 6701,
+  "englishContentKeys": 11892,
+  "riskKeys": 5190,
+  "nonRiskCount": 6702,
   "groups": [
     {
       "name": "acp / other",
@@ -6178,7 +6178,7 @@
     },
     {
       "name": "settings / other",
-      "count": 149,
+      "count": 150,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
@@ -6207,6 +6207,7 @@
         "settings.settingsAutoNameSession",
         "settings.settingsBar",
         "settings.settingsBlur",
+        "settings.settingsBots",
         "settings.settingsClaudeDefaultModel",
         "settings.settingsCloudflareRetiredDone",
         "settings.settingsCodexAutoName",
