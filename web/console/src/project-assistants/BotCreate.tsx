@@ -6,6 +6,8 @@ import { AppearancePicker, BotAvatar } from "./BotAvatar"
 import { canWrite } from "./view-state"
 import type { Words } from "./words"
 import { ApprovalSelect } from "./ApprovalSelect"
+import { PaSelect } from "./PaSelect"
+import { ProjectMark } from "./ProjectMark"
 import { withApproval } from "./approvals"
 
 interface CatalogPage {source:SourceClient;answer:W.ProjectAssistantProjectsResponse;cursors:string[]}
@@ -84,9 +86,9 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
     <header className="pa-toolbar"><button onClick={close}>{w.cancel}</button><h2>{w.create}</h2><button disabled={busy||(!ready&&!canRetryCreate)||!name.trim()||!project||!own?.agents.includes(agent)} onClick={()=>void submit()}>{pending.current?w.retry:w.createSubmit}</button></header>
     <div className="pa-form-body"><div className="pa-form-avatar"><BotAvatar appearance={appearance} size={70}/></div><fieldset disabled={busy||!!pending.current}>
       <AppearancePicker value={appearance} onChange={setAppearance} w={w}/><label>{w.name}<input required value={name} onChange={e=>setName(e.target.value)}/></label>
-      <label>{w.machine}<select value={machine} onChange={e=>{setProject("");setCatalog(null);setMachine(e.target.value)}}>{sources.map(s=><option key={s.machineID}>{s.machineID}</option>)}</select></label>
+      {sources.length>1&&<PaSelect label={w.machine} value={machine} onChange={value=>{setProject("");setCatalog(null);setMachine(value)}} options={sources.map(s=>({value:s.machineID,label:s.machineName||w.thisMachine}))}/>}
       <label>{w.agent}<select value={agent} onChange={e=>{setAgent(e.target.value as W.ProjectAssistantAgent);setMode(undefined)}}>{own?.agents.map(a=><option key={a} value={a}>{a==="claude"?"Claude Code":"Codex"}</option>)}</select></label>
-      <label>{w.project}<select required value={project} aria-busy={loading} disabled={loading||!!error||!own} onChange={e=>setProject(e.target.value)}><option value="">—</option>{own?.items.map(p=><option key={p.target.project_id} value={p.target.project_id}>{p.label}</option>)}</select></label>
+      <PaSelect label={w.project} value={project} busy={loading} disabled={loading||!!error||!own} placeholder={w.chooseProject} onChange={setProject} options={own?.items.map(p=>({value:p.target.project_id,label:p.label,icon:<ProjectMark icon={p.icon} size={16}/>}))??[]}/>
       {loading&&<p role="status">{w.projectsLoading}</p>}
       {own?.has_more&&!loading&&!error&&<button type="button" onClick={()=>void load(own.next_cursor,catalog)}>{w.more}</button>}
       {error&&!pending.current&&<button type="button" disabled={loading} onClick={()=>void load(retry.current,retry.current?catalog:null)}>{w.retry}</button>}

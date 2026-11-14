@@ -30,7 +30,7 @@ interface SourcePage {revision:string;query:string;items:W.ProjectAssistantBotSu
 export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,manageHistory=false,onSelectionChange}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
-  const [projectNames,setProjectNames]=useState(new Map<string,string>())
+  const [projectNames,setProjectNames]=useState(new Map<string,string>()),[projectIcons,setProjectIcons]=useState(new Map<string,W.Icon>())
   const host=useRef<HTMLDivElement>(null),sourceRef=useRef(sources),closeRef=useRef(onClose),selectRef=useRef(onSelectionChange)
   sourceRef.current=sources;closeRef.current=onClose;selectRef.current=onSelectionChange
   const current=useCallback(()=>sourceRef.current,[])
@@ -70,8 +70,8 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   useEffect(()=>{void load();return()=>controller.current?.abort()},[query])
   useEffect(()=>{
     const control=new AbortController()
-    setProjectNames(new Map())
-    for(const source of sources)void authorized(source,current,async s=>{const request={machine_id:source.machineID,cursor:"",page_size:100};return projectChoices(await source.projects(request,s),request)},control.signal).then(answer=>{if(!control.signal.aborted)setProjectNames(old=>{const next=new Map(old);for(const p of answer.items)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.label);return next})}).catch(()=>{})
+    setProjectNames(new Map());setProjectIcons(new Map())
+    for(const source of sources)void authorized(source,current,async s=>{const request={machine_id:source.machineID,cursor:"",page_size:100};return projectChoices(await source.projects(request,s),request)},control.signal).then(answer=>{if(!control.signal.aborted)setProjectNames(old=>{const next=new Map(old);for(const p of answer.items)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.label);return next});setProjectIcons(old=>{const next=new Map(old);for(const p of answer.items)if(p.icon)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.icon);return next})}).catch(()=>{})
     return()=>control.abort()
   },[authorization,current])
   const select=(item:W.ProjectAssistantBotSummary)=>{
@@ -113,8 +113,8 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[creating])
   useEffect(()=>{if(!selected&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>('[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected])
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
-    <BotRoster items={items} machines={sources.map(s=>s.machineID)} selected={selected} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={loading} errors={errors} status={<SourceStatusPanel health={health} w={w}/>} machineNames={machineNames} onMore={!loading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
-    <main className="pa-main">{selectedItem&&selectedSource?<Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} onBack={back} onOpenWork={onOpenWork} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
+    <BotRoster items={items} machines={sources.map(s=>s.machineID)} selected={selected} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={loading} errors={errors} status={<SourceStatusPanel health={health} w={w}/>} machineNames={machineNames} projectIcons={projectIcons} onMore={!loading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <main className="pa-main">{selectedItem&&selectedSource?<Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} onBack={back} onOpenWork={onOpenWork} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
   </div>
 }

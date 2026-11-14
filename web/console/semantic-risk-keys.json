@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12032,
+  "englishKeys": 12042,
   "counts": {
-    "negation": 3271,
+    "negation": 3272,
     "state": 2008,
     "permission": 711,
     "deletion": 267,
     "uncertainty": 454
   },
-  "unionCount": 5235,
+  "unionCount": 5236,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2951,6 +2951,7 @@
       "projectAssistants.sourceError",
       "projectAssistants.statusStale",
       "projectAssistants.statusWithoutBots",
+      "projectAssistants.traceNoReply",
       "projectAssistants.unknown",
       "projectAssistants.unpaired",
       "projectTree.sensitiveDetail",
@@ -11407,6 +11408,7 @@
     "projectAssistants.statusStale",
     "projectAssistants.statusWithoutBots",
     "projectAssistants.succeeded",
+    "projectAssistants.traceNoReply",
     "projectAssistants.unavailable",
     "projectAssistants.unknown",
     "projectAssistants.unpaired",

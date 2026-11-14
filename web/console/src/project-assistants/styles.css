@@ -216,3 +216,46 @@
 .project-assistants .pa-rules code { flex:1; min-width:0; overflow-wrap:anywhere; font-size:12px; }
 .project-assistants .pa-rule-kind { flex:none; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--pa-line); }
 .project-assistants .pa-rule-kind[data-behavior="deny"] { color:#e0a07a; }
+
+/* A heading that only receives focus when a Bot opens is not a control: no ring. */
+.project-assistants [tabindex="-1"]:focus { outline:none; }
+/* The search capsule itself shows focus, not a second box inside it. */
+.project-assistants .pa-search:focus-within { box-shadow:0 0 0 1.5px #e39567; }
+.project-assistants .pa-search input:focus-visible { outline:none; }
+/* A panel over the conversation dims what is behind it. */
+.project-assistants .pa-form-panel { box-shadow:0 0 0 100vmax #000a; }
+/* Any remaining native select still shows that it opens. */
+.project-assistants label select { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2399999f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px;padding-right:38px; }
+
+/* PaSelect: the field reads as a drop-down, and its list matches the panel. */
+.project-assistants .pa-select { position:relative;margin:14px 0; }
+.project-assistants .pa-field-label { display:block;font-size:12px;color:var(--pa-dim); }
+.project-assistants .pa-select-button { display:flex;align-items:center;gap:10px;width:100%;min-height:44px;margin-top:7px;padding:10px 14px;border-radius:13px;background:var(--pa-card);border:1px solid var(--pa-line);text-align:left;color:#fafafa; }
+.project-assistants .pa-select-button:hover:not(:disabled) { border-color:#4a4a4f; }
+.project-assistants .pa-select[data-open] .pa-select-button { border-color:#5a5a60; }
+.project-assistants .pa-select-value { flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.project-assistants .pa-select-placeholder { color:var(--pa-dim); }
+.project-assistants .pa-select-chevron { flex:none;color:var(--pa-dim);transition:transform .15s; }
+.project-assistants .pa-select[data-open] .pa-select-chevron { transform:rotate(180deg); }
+.project-assistants .pa-select-icon { flex:none;display:grid;place-items:center;width:18px; }
+.project-assistants .pa-select-icon:empty { display:none; }
+.project-assistants .pa-select-list { position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);margin:0;padding:6px;list-style:none;max-height:min(320px,50vh);overflow:auto;background:#1a1a1c;border:1px solid var(--pa-line);border-radius:14px;box-shadow:0 12px 32px #000c; }
+.project-assistants .pa-select-list:focus { outline:none; }
+.project-assistants .pa-select-list li { display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 10px;border-radius:9px;cursor:pointer;color:#fafafa;font-size:14px; }
+.project-assistants .pa-select-list li[data-active] { background:#2a2a2d; }
+.project-assistants .pa-select-text { flex:1;min-width:0;display:flex;flex-direction:column; }
+.project-assistants .pa-select-text>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-select-check { flex:none;color:#e39567; }
+.project-assistants .pa-select-compact { margin:0;max-width:60%; }
+.project-assistants .pa-select-compact .pa-select-button { min-height:28px;margin:0;padding:4px 8px;gap:6px;border:0;background:transparent;font-size:11px;color:var(--pa-dim); }
+.project-assistants .pa-select-compact .pa-select-button:hover:not(:disabled) { background:var(--pa-card); }
+.project-assistants .pa-select-compact .pa-select-list { left:auto;min-width:200px; }
+/* The ··· menu. */
+.project-assistants .pa-menu { position:relative;flex:none; }
+.project-assistants .pa-menu-list { position:absolute;z-index:20;right:0;top:calc(100% + 6px);min-width:190px;padding:6px;display:flex;flex-direction:column;background:#1a1a1c;border:1px solid var(--pa-line);border-radius:14px;box-shadow:0 12px 32px #000c; }
+.project-assistants .pa-menu-list button { border:0;background:transparent;border-radius:9px;padding:10px 12px;text-align:left;font-size:14px; }
+.project-assistants .pa-menu-list button:hover:not(:disabled),.project-assistants .pa-menu-list button:focus-visible { background:#2a2a2d;outline:none; }
+/* A Bot's Project, with its mark, under its name. */
+.project-assistants .pa-row-project { display:flex!important;align-items:center;gap:5px;min-width:0; }
+.project-assistants .pa-row-project>span { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-project-mark { flex:none;display:block; }

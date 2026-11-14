@@ -4992,6 +4992,9 @@ var ProjectAssistantProjectKindValues = []ProjectAssistantProjectKind{ProjectAss
 // proof that a directory or native provider is currently usable. Creation and
 // execution resolve the selected ID again.
 type ProjectAssistantProjectOption struct {
+	// The Project's mark as the new-Session sheet draws it; absent when the source has
+	// none.
+	Icon   *Icon                            `json:"icon,omitempty"`
 	Label  string                           `json:"label"`
 	Target ProjectAssistantProjectSelection `json:"target"`
 }
