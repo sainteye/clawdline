@@ -285,3 +285,8 @@
 .project-assistants .pa-create-bottom:disabled { opacity:.45; cursor:default; }
 .project-assistants .pa-form-error { margin:12px 0 0; padding:12px 14px; border-radius:12px; background:color-mix(in srgb, #d29a3a 16%, transparent); border:1px solid color-mix(in srgb, #d29a3a 45%, transparent); color:inherit; line-height:1.5; }
 .project-assistants .pa-form-error small { color:var(--pa-dim); }
+/* The ··· menu keeps its place at the header's end. */
+.project-assistants .pa-chat-header>.pa-menu { flex:none; }
+.project-assistants .pa-select-anchor { position:relative; }
+/* Every create field labels itself at the same size. */
+.project-assistants .pa-field>span { font-size:12px;color:var(--pa-dim); }

@@ -130,8 +130,8 @@ test("a Bot row names its Project with its mark and says nothing internal",async
   const s=fixtureSource(),page=await s.list({machine_id:s.bots[0].key.machine_id,query:"",cursor:"",page_size:100},new AbortController().signal),first=page.items[0]
   const item={...first,bot:{...first.bot,project:{...first.bot.project,project_id:"0f45f5f1db4a5785"}}}
   const icon={accent:"#e39567",cells:[["#e39567",null],[null,"#e39567"]]}
-  const html=render(BotRow,{item:{...item,unread_count:2},selected:false,onSelect:()=>{},w:words("zh-Hant"),language:"zh-Hant",projectName:"Team site",projectIcon:icon}).replace(/ data-bot-key="[^"]*"/,"")
-  assert.match(html,/Team site/);assert.match(html,/<svg class="pa-project-mark"/);assert.match(html,/未讀 2/)
+  const html=render(BotRow,{item:{...item,unread_count:2,latest_message:"- **改程式與檔案**：在[這裡](https://example.com)看"},selected:false,onSelect:()=>{},w:words("zh-Hant"),language:"zh-Hant",projectName:"Team site",projectIcon:icon}).replace(/ data-bot-key="[^"]*"/,"")
+  assert.match(html,/Team site/);assert.match(html,/<svg class="pa-project-mark"/);assert.match(html,/未讀 2/);assert.match(html,/改程式與檔案：在這裡看/);assert.doesNotMatch(html,/\*\*|example\.com/)
   assert.ok(!html.includes(item.bot.key.machine_id),"the machine ID stays out of a one-machine row")
   assert.ok(!html.includes(item.bot.project.project_id),"the Project ID stays out of the row and its label")
 })

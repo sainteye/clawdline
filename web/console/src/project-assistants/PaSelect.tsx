@@ -43,7 +43,7 @@ export function PaSelect({label,ariaLabel,value,options,onChange,placeholder="",
   },[open,options])
   return <div className={`pa-select${compact?" pa-select-compact":""}`} ref={root} data-open={open||undefined}>
     {label&&<span className="pa-field-label" id={`${id}-label`}>{label}</span>}
-    <button type="button" ref={button} className="pa-select-button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-busy={busy||undefined}
+    <div className="pa-select-anchor"><button type="button" ref={button} className="pa-select-button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-busy={busy||undefined}
       aria-labelledby={label?`${id}-label ${id}-value`:undefined} aria-label={label?undefined:ariaLabel}
       onClick={()=>open?close():show()} onKeyDown={e=>{if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();show()}}}>
       {current?.icon&&<span className="pa-select-icon">{current.icon}</span>}
@@ -57,7 +57,7 @@ export function PaSelect({label,ariaLabel,value,options,onChange,placeholder="",
         <span className="pa-select-text"><span>{o.label}</span>{o.hint&&<small>{o.hint}</small>}</span>
         {o.value===value&&<svg className="pa-select-check" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>}
       </li>)}
-    </ul>}
+    </ul>}</div>
     {children}
   </div>
 }
