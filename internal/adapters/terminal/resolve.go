@@ -92,6 +92,23 @@ func (c TmuxChoice) Command(ctx context.Context, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, c.Path, c.Args(args...)...)
 }
 
+// PrepareSocket makes the directory the server's socket is in, when this
+// choice names one, before a call that may start the server. tmux makes the
+// socket but not its directory, and on a machine where nothing has run yet
+// `<CLAWDLINE_NEXT_DIR>/tmux/` is not there: tmux 3.6a then exits 0 with
+// nothing on stdout and "error creating …" on stderr, and the first session
+// start of a new install failed with no pane id (measured 2026-11-14).
+func (c TmuxChoice) PrepareSocket() error {
+	if c.Socket == "" {
+		return nil
+	}
+	dir := filepath.Dir(c.Socket)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("the directory for tmux's socket, %s, could not be made: %w", dir, err)
+	}
+	return nil
+}
+
 // Words is the command line that runs this tmux, quoted for a shell: the
 // absolute path, and the socket when there is one. It is what a tab this
 // daemon opens types, so the tab's own PATH does not matter.

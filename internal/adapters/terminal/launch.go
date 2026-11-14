@@ -151,19 +151,22 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if cwd != "" {
 		args = append(args, "-c", cwd)
 	}
+	if err := bin.PrepareSocket(); err != nil {
+		return "", Failure{Message: err.Error()}
+	}
 	if err := clearTmuxAssistantIdentity(ctx, bin); err != nil {
 		return "", Failure{Message: err.Error()}
 	}
-	out, err := runTmux(ctx, bin, args...)
+	out, said, err := runTmuxSaid(ctx, bin, "", args...)
 	if err != nil {
 		if err.Error() == "" {
 			return "", Failure{Message: refused}
 		}
 		return "", Failure{Message: err.Error()}
 	}
-	id := strings.TrimSpace(out)
-	if !strings.HasPrefix(id, "%") {
-		return "", Failure{Message: "tmux returned no new pane id."}
+	id, err := newPaneID(out, said)
+	if err != nil {
+		return "", Failure{Message: err.Error()}
 	}
 	if _, err := runTmux(ctx, bin, "set-option", "-p", "-t", id, "@clawdline_managed", "1"); err != nil {
 		l.discard(ctx, bin, id)
@@ -314,8 +317,31 @@ func runTmux(ctx context.Context, bin TmuxChoice, args ...string) (string, error
 	return runTmuxInput(ctx, bin, "", args...)
 }
 
+// newPaneID is the pane id a `-P -F '#{pane_id}'` call printed: its first
+// line, since a hook the person set (after-new-session, after-new-window) can
+// print more after it. A call that exited 0 without one failed all the same,
+// and what tmux said on stderr is the reason.
+func newPaneID(out, said string) (string, error) {
+	id, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, "%") {
+		return id, nil
+	}
+	if said = strings.TrimSpace(said); said != "" {
+		return "", errors.New("tmux returned no new pane id: " + said)
+	}
+	return "", errors.New("tmux returned no new pane id.")
+}
+
 // runTmuxInput is runTmux with stdin.
 func runTmuxInput(ctx context.Context, bin TmuxChoice, stdin string, args ...string) (string, error) {
+	out, _, err := runTmuxSaid(ctx, bin, stdin, args...)
+	return out, err
+}
+
+// runTmuxSaid is runTmuxInput that also answers what tmux wrote on stderr
+// when it exited 0: tmux reports some failures that way.
+func runTmuxSaid(ctx context.Context, bin TmuxChoice, stdin string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cmd := bin.Command(ctx, args...)
@@ -329,11 +355,11 @@ func runTmuxInput(ctx context.Context, bin TmuxChoice, stdin string, args ...str
 	if err != nil {
 		said := strings.TrimSpace(stderr.String())
 		if said == "" {
-			return "", fmt.Errorf("tmux %s failed: %v", args[0], err)
+			return "", "", fmt.Errorf("tmux %s failed: %v", args[0], err)
 		}
-		return "", fmt.Errorf("%s", said)
+		return "", "", fmt.Errorf("%s", said)
 	}
-	return string(out), nil
+	return string(out), stderr.String(), nil
 }
 
 // outsideTmux drops what a daemon started inside a tmux pane inherited from

@@ -441,6 +441,9 @@ func (t *Tmux) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	if req.Command != "" {
 		args = append(args, req.Command)
 	}
+	if err := t.choice(ctx).PrepareSocket(); err != nil {
+		return session.Session{}, fmt.Errorf("tmux new-session refused: %w", err)
+	}
 	cmd := t.command(ctx, args...)
 	if cmd == nil {
 		return session.Session{}, fmt.Errorf("tmux new-session refused: %w", errNoTmux)
@@ -455,8 +458,12 @@ func (t *Tmux) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 		}
 		return session.Session{}, fmt.Errorf("tmux new-session refused: %s", said)
 	}
+	id, err := newPaneID(string(out), stderr.String())
+	if err != nil {
+		return session.Session{}, fmt.Errorf("tmux new-session refused: %w", err)
+	}
 	return session.Session{
-		ID:       strings.TrimSpace(string(out)),
+		ID:       id,
 		Backend:  session.BackendTmux,
 		CWD:      req.Cwd,
 		State:    session.StateUnknown,
