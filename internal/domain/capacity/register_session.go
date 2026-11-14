@@ -243,6 +243,40 @@ func sessionBounds() []Entry {
 			EvictedBy: Daemon,
 		},
 		{
+			// Session recaps (docs/session-recaps.md) are kept one per
+			// conversation; the recap written longest ago gives way.
+			Name: "session.recap_rows", Class: Cache, Unit: Rows,
+			Limit: 200, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxSessionRecapRows"},
+		},
+		{
+			// A forked recap longer than this is cut, never refused.
+			Name: "session.recap_characters", Class: Buffer, Unit: Characters,
+			Limit: 400, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxRecapRunes"},
+		},
+		{
+			// One fork, process start to answer; a slower one is abandoned and
+			// tried again after the retry wait.
+			Name: "session.recap_fork_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 120000, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxSessionRecapDuration"},
+		},
+		{
+			// Forks the voice copilot waits for at once; a fourth is refused
+			// as busy and the copilot asks again.
+			Name: "session.recap_on_demand_forks", Class: Buffer, Unit: Rows,
+			Limit: 3, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxSessionRecapOnDemand", "internal/transport/http.newRecapBook:chan(maxSessionRecapOnDemand)"},
+		},
+		{
+			// How long the copilot waits for one fork; the fork goes on and its
+			// recap is kept for the next question.
+			Name: "session.recap_wait_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 45000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxSessionRecapWait"},
+		},
+		{
 			// A terminal can outlive many conversations. A manual title not seen
 			// for ninety days gives way so it cannot name a later occupant.
 			Name: SessionTitleAge, Class: UserInput, Unit: Seconds,

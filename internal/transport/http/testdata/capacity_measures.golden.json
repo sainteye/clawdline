@@ -3020,6 +3020,29 @@
     "Note": true
   },
   {
+    "Name": "session.recap_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.recap_fork_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.recap_on_demand_forks",
+    "Known": true
+  },
+  {
+    "Name": "session.recap_rows",
+    "Known": true
+  },
+  {
+    "Name": "session.recap_wait_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "session.report_open_todo_characters",
     "Known": true,
     "Note": true

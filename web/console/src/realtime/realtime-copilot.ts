@@ -239,6 +239,8 @@ export class RealtimeCopilotClient {
   /** What this call's session.update says, kept so a later update can resend it whole. */
   private call: { memory: string; snapshot: string; options: CallOptions } = { memory: '', snapshot: '', options: {} }
   private briefing: Promise<string | null> = Promise.resolve(null)
+  /** When the deciding machine writes Session recaps (docs/session-recaps.md). */
+  private recapMode = 'off'
   /** The Session this call is talking about (`ToolDeps.focus`); a new call starts with none. */
   private focus: string | undefined
   /** Follows the Session the person opens on screen while a call is on (`followScreen`). */
@@ -269,6 +271,7 @@ export class RealtimeCopilotClient {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       briefing: () => this.briefing,
+      recapMode: () => this.recapMode,
       openSession: (id, machine) => openOnThisPage(id, machine),
       titleSaved: (id, machine, title) => titleSavedOnThisPage(id, machine, title),
       snippets: (id, request, machine) => openSnippetsOnThisPage(id, request, machine),
@@ -492,7 +495,7 @@ export class RealtimeCopilotClient {
       })
       check()
       const grant = (await opened.json().catch(() => null)) as {
-        client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean; work_enabled?: boolean
+        client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean; work_enabled?: boolean; session_recaps?: string
       } | null
       if (!opened.ok || !grant?.client_secret) {
         const { code, message } = copilotRefusal(grant, opened.status)
@@ -502,6 +505,7 @@ export class RealtimeCopilotClient {
           : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
           : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
       }
+      this.recapMode = grant.session_recaps === 'background' || grant.session_recaps === 'on_demand' ? grant.session_recaps : 'off'
       this.call = { memory: '', snapshot: '', options: { workEnabled: managed, messageActions, eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       // The briefing is the deciding machine's own Sessions; on a page showing

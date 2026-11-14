@@ -73,6 +73,11 @@ type copilotBriefingSession struct {
 	Requests   []string `json:"requests,omitempty"`
 	Deliveries []string `json:"deliveries,omitempty"`
 	LastReply  string   `json:"last_reply,omitempty"`
+	// Recap is the Session's own plain recap of its whole conversation
+	// (docs/session-recaps.md); RecapStale says the conversation moved on
+	// after it was written.
+	Recap      string `json:"recap,omitempty"`
+	RecapStale bool   `json:"recap_stale,omitempty"`
 	id         string
 	LastActive string `json:"last_active,omitempty"`
 	// Progress is the Session's Board steps when the briefing was prepared;
@@ -163,6 +168,12 @@ type copilotRow struct {
 		At    int64 `json:"at"`
 		Known bool  `json:"known"`
 	} `json:"activity"`
+	// Recap is the Session's forked recap (docs/session-recaps.md), when the
+	// machine writes them.
+	Recap *struct {
+		Text    string `json:"text"`
+		Current bool   `json:"current"`
+	} `json:"recap"`
 }
 
 func copilotUrgency(r copilotRow) int {
@@ -218,6 +229,9 @@ func copilotBriefingFrom(read func(target string, into any) bool) ([]copilotBrie
 		b := copilotBriefingSession{Name: r.Label, Assistant: r.Assistant, State: r.State, WorkState: r.WorkState, id: r.ID}
 		if b.Name == "" {
 			b.Name = r.ID
+		}
+		if r.Recap != nil && strings.TrimSpace(r.Recap.Text) != "" {
+			b.Recap, b.RecapStale = r.Recap.Text, !r.Recap.Current
 		}
 		if r.Menu != nil {
 			b.Waiting = clipRunes(r.Menu.Question, copilotBriefingTextRunes)

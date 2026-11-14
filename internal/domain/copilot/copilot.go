@@ -43,6 +43,16 @@ var Voices = []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo
 // at full speed was too fast to follow (2026-11-12).
 var Speeds = []string{"0.8", "0.9", "1.0", "1.1"}
 
+// Session recap modes, the first the default (docs/session-recaps.md).
+const (
+	RecapOff        = "off"
+	RecapBackground = "background"
+	RecapOnDemand   = "on_demand"
+)
+
+// RecapModes are the choices for SessionRecaps, the default first.
+var RecapModes = []string{RecapOff, RecapBackground, RecapOnDemand}
+
 // BriefingAssistants are the CLIs the machine can run to prepare a briefing.
 var BriefingAssistants = []string{"claude", "codex"}
 
@@ -62,6 +72,11 @@ type Settings struct {
 	BriefingOff bool `json:"briefing_off,omitempty"`
 	// LongAnswers lifts the three-sentence limit on ordinary answers; off unless set.
 	LongAnswers bool `json:"long_answers,omitempty"`
+	// SessionRecaps is when the machine forks a Session's conversation for a
+	// one-line recap of it (docs/session-recaps.md): never, ahead of time in
+	// the background, or only when the voice copilot asks. Off unless set:
+	// every recap is a model turn on the person's own Claude or Codex account.
+	SessionRecaps string `json:"session_recaps,omitempty"`
 }
 
 // Effective fills every unset choice with its default.
@@ -86,6 +101,9 @@ func (s Settings) Effective() Settings {
 	}
 	if !contains(BriefingAssistants, s.WorkAssistant) {
 		s.WorkAssistant = s.BriefingAssistant
+	}
+	if !contains(RecapModes, s.SessionRecaps) {
+		s.SessionRecaps = RecapModes[0]
 	}
 	return s
 }
@@ -113,6 +131,7 @@ type Change struct {
 	WorkAssistant     *string `json:"work_assistant"`
 	Briefing          *bool   `json:"briefing"`
 	Brief             *bool   `json:"brief"`
+	SessionRecaps     *string `json:"session_recaps"`
 }
 
 // Errors a change is refused with; each is the refusal's code.
@@ -125,6 +144,7 @@ var (
 	ErrBadSpeed        = errors.New("copilot_bad_speed")
 	ErrBadInstructions = errors.New("copilot_bad_instructions")
 	ErrBadAssistant    = errors.New("copilot_bad_assistant")
+	ErrBadRecapMode    = errors.New("copilot_bad_recap_mode")
 )
 
 // Apply returns the settings with the change made, or why it is refused.
@@ -202,6 +222,12 @@ func apply(s Settings, c Change) (Settings, error) {
 	}
 	if c.Brief != nil {
 		s.LongAnswers = !*c.Brief
+	}
+	if c.SessionRecaps != nil {
+		if !contains(RecapModes, *c.SessionRecaps) {
+			return s, ErrBadRecapMode
+		}
+		s.SessionRecaps = *c.SessionRecaps
 	}
 	return s, nil
 }

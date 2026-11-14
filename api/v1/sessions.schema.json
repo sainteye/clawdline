@@ -118,12 +118,25 @@
         "unknown_reason": { "$ref": "#/$defs/ActivityUnknownReason" }
       }
     },
+    "SessionRecap": {
+      "description": "One or two plain sentences the Session's own assistant wrote about its conversation from a throwaway fork of it: what it is working on, where it got to and whose move it is (docs/session-recaps.md). Written by the machine in the background when Session recaps are on; absent when they are off, before the first one, or for an assistant that cannot fork. It is content: it travels only where the Session's transcript may.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "at", "state"],
+      "properties": {
+        "text": { "type": "string", "description": "The recap, at most 400 characters." },
+        "at": { "type": "integer", "description": "Unix seconds when the fork answered." },
+        "state": { "$ref": "#/$defs/SessionState", "description": "The Session's state when the recap was written; a working Session's recap is a snapshot of work still moving." },
+        "current": { "type": "boolean", "description": "True when the conversation has not grown since the recap was written." }
+      }
+    },
     "SessionRow": {
       "description": "One assistant session. Fields that cannot be supported are absent rather than invented; a reader that handles absence handles this too.",
       "type": "object",
       "additionalProperties": false,
       "required": ["backend", "closeability", "evidence", "id", "isClaude", "state", "work_state"],
       "properties": {
+        "recap": { "$ref": "#/$defs/SessionRecap" },
         "persona": { "description": "The built-in persona (GET /v1/personas) this session was launched as, read back from its process command line; absent for none, and absent on a row with no process reading.", "type": "string" },
         "activity": { "$ref": "#/$defs/SessionActivity" },
         "provider_block": { "type": "string", "enum": ["model_capacity"], "description": "Current actionable provider refusal read from the native turn record. Independent of terminal activity; cleared by a later native turn boundary. Not a permission menu." },

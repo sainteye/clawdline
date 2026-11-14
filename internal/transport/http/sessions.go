@@ -99,6 +99,9 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			Acceptance        *contract.SessionAcceptance   `json:"acceptance,omitempty"`
 			Disposition       *contract.WorkDisposition     `json:"disposition,omitempty"`
 			Coordination      *contract.SessionCoordination `json:"coordination,omitempty"`
+			// Recap is content (docs/session-recaps.md), and this list is
+			// read only by this person's paired browsers, as the transcript is.
+			Recap *contract.SessionRecap `json:"recap,omitempty"`
 			// The signed ss/ rows carry these two; this list stands in for
 			// them while ss/ has a gap, and without them the machine's
 			// Clawdfather was drawn as an ordinary Session under its own title.
@@ -128,7 +131,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 					HeavyWork: row.HeavyWork, Source: row.Source, Activity: row.Activity,
 					Identity: row.Identity, AttentionCount: row.AttentionCount,
 					Owed: row.Owed, Acceptance: row.Acceptance,
-					Disposition: row.Disposition, Coordination: row.Coordination,
+					Disposition: row.Disposition, Coordination: row.Coordination, Recap: row.Recap,
 					MachineScope: row.MachineScope, CoordinatorBound: row.Coordinator != nil,
 					WaitingFor: row.WaitingFor, WaitingForOmitted: row.WaitingForOmitted}})
 		}
@@ -394,6 +397,7 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 	// One generation for the whole snapshot, taken before the rows are built,
 	// so every row's closeability names the same reading it arrived with.
 	gen := generation.Add(1)
+	recapsOn := s.recaps.On()
 	rows := make([]sessionRowWire, 0, len(items))
 	for i, item := range items {
 		row := s.sessionRow(rowInput{
@@ -421,6 +425,9 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 			latestDelivery:      deliveries[item.ID],
 			latestDeliveryErr:   deliveriesErr,
 		})
+		if recapsOn {
+			row.Recap = s.recaps.For(item)
+		}
 		// Every list reads what a Session waits for from the row, never from a
 		// task collection of its own: the Cloud lists do not have one.
 		if len(row.waiting) > 0 {

@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -312,6 +313,9 @@ func (s *Server) copilotRecapRoute(w http.ResponseWriter, r *http.Request) {
 		Conversation string `json:"conversation"`
 		// Language is the console language the recap is spoken in.
 		Language string `json:"language"`
+		// Fork asks for the Session's own forked recap
+		// (docs/session-recaps.md) instead of the whole-history recap.
+		Fork bool `json:"fork"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, copilotRecapBodyLimit+1))
 	if err != nil || len(raw) > copilotRecapBodyLimit || json.Unmarshal(raw, &body) != nil {
@@ -321,6 +325,10 @@ func (s *Server) copilotRecapRoute(w http.ResponseWriter, r *http.Request) {
 	session := strings.TrimSpace(body.Session)
 	if session == "" {
 		writeRefusal(w, http.StatusBadRequest, "session_missing", "Say which Session to recap.")
+		return
+	}
+	if body.Fork {
+		s.copilotForkRecap(w, r, session)
 		return
 	}
 	v, err := s.readCopilot()
@@ -367,4 +375,61 @@ func (s *Server) copilotRecapRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, copilotRecapAnswer{SessionID: session, Recap: text, Progress: progress, Lines: len(lines),
 		Complete: complete && !clipped, Model: copilotRecapModel, Millis: time.Since(started).Milliseconds()})
+}
+
+// copilotForkRecap answers {"session": id, "fork": true}: the Session's
+// forked recap, from the book when its conversation has not grown, otherwise
+// written now (session_recaps.go). It spends no OpenAI request.
+func (s *Server) copilotForkRecap(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.recaps.On() {
+		writeRefusal(w, http.StatusConflict, "session_recaps_off",
+			"Session recaps are off on this machine. Turn them on in Settings › Voice copilot.")
+		return
+	}
+	item, err := s.actions().Find(r.Context(), id)
+	if err != nil {
+		writeActionRefusal(w, err)
+		return
+	}
+	started := time.Now()
+	recap, wrote, err := s.recaps.Now(r.Context(), item)
+	switch {
+	case errors.Is(err, planner.ErrNoPlanner):
+		writeRefusal(w, http.StatusConflict, "session_recap_unavailable",
+			"This Session's assistant cannot be asked for a recap: only Claude Code and Codex conversations with a known id can.")
+		return
+	case errors.Is(err, ErrRecapBusy):
+		writeRefusal(w, http.StatusTooManyRequests, "session_recaps_busy",
+			"Three recaps are already being written. Ask again in a few seconds.")
+		return
+	case errors.Is(err, context.DeadlineExceeded):
+		writeRefusal(w, http.StatusGatewayTimeout, "session_recap_slow",
+			"The recap is taking longer than usual. It will be kept when it is done; ask again shortly.")
+		return
+	case errors.Is(err, planner.ErrOutOfQuota):
+		writeRefusal(w, http.StatusBadGateway, "session_recap_quota",
+			"This Session's assistant account has no usage left, so it could not write a recap.")
+		return
+	case err != nil:
+		writeRefusal(w, http.StatusBadGateway, "session_recap_failed",
+			"This Session's assistant did not write a recap.")
+		return
+	}
+	model := "kept"
+	if wrote {
+		model = string(item.Assistant) + "-fork"
+	}
+	writeJSON(w, copilotForkRecapAnswer{SessionID: id, Recap: recap.Text, At: recap.At, State: string(recap.State),
+		Current: recap.Current, Model: model, Millis: time.Since(started).Milliseconds()})
+}
+
+// copilotForkRecapAnswer is a forked recap as the copilot reads it.
+type copilotForkRecapAnswer struct {
+	SessionID string `json:"session_id"`
+	Recap     string `json:"recap"`
+	At        int64  `json:"at"`
+	State     string `json:"state"`
+	Current   bool   `json:"current"`
+	Model     string `json:"model"`
+	Millis    int64  `json:"ms"`
 }

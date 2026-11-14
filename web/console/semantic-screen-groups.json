@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12023,
-  "riskKeys": 5229,
-  "nonRiskCount": 6794,
+  "englishContentKeys": 12043,
+  "riskKeys": 5235,
+  "nonRiskCount": 6808,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 544,
+      "count": 552,
       "sources": [
         null
       ],
@@ -847,6 +847,14 @@
         "capacityRow.session.human_intervention_title_bytes.what",
         "capacityRow.session.patch_detail_lines.full",
         "capacityRow.session.patch_detail_lines.what",
+        "capacityRow.session.recap_characters.full",
+        "capacityRow.session.recap_characters.what",
+        "capacityRow.session.recap_fork_milliseconds.full",
+        "capacityRow.session.recap_on_demand_forks.full",
+        "capacityRow.session.recap_on_demand_forks.what",
+        "capacityRow.session.recap_rows.full",
+        "capacityRow.session.recap_rows.what",
+        "capacityRow.session.recap_wait_milliseconds.what",
         "capacityRow.session.report_open_todo_characters.full",
         "capacityRow.session.report_open_todo_characters.what",
         "capacityRow.session.rotation_bytes.what",
@@ -3902,7 +3910,7 @@
     },
     {
       "name": "next / other",
-      "count": 1077,
+      "count": 1081,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4194,6 +4202,10 @@
         "next.copilotProgressSounds",
         "next.copilotProposalHint",
         "next.copilotReady",
+        "next.copilotRecapsBackground",
+        "next.copilotRecapsLabel",
+        "next.copilotRecapsOff",
+        "next.copilotRecapsOnDemand",
         "next.copilotRemembered",
         "next.copilotReportContinue",
         "next.copilotReportPaused",
@@ -6952,7 +6964,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 168,
+      "count": 170,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7071,6 +7083,8 @@
         "transparency.card.role-skills.title",
         "transparency.card.runtime.condition",
         "transparency.card.runtime.effect",
+        "transparency.card.session-recap.condition",
+        "transparency.card.session-recap.title",
         "transparency.card.session-rotation.condition",
         "transparency.card.session-rotation.how",
         "transparency.card.session-rotation.title",

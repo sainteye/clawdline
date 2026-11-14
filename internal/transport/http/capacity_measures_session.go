@@ -11,6 +11,21 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) sessionCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"session.recap_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(s.recaps.Rows())}
+		},
+		"session.recap_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap cut of the fork's answer"}
+		},
+		"session.recap_fork_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-fork deadline; a slower fork is tried again later"}
+		},
+		"session.recap_on_demand_forks": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(s.recaps.Running())}
+		},
+		"session.recap_wait_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request wait; the fork goes on and is kept"}
+		},
 		"session.rotation_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-conversation reminder threshold; provider files are never changed"}
 		},

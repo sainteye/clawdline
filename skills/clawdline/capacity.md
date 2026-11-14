@@ -618,6 +618,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.inline_tool_bytes` | 1200 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.no_movement_seconds` | 1800 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `session.patch_detail_lines` | 18 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.recap_characters` | 400 | `characters` | `coalesce` | `diagnostics` | — |
+| `session.recap_fork_milliseconds` | 120000 | `milliseconds` | `refuse` | `diagnostics` | — |
+| `session.recap_on_demand_forks` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `session.recap_rows` | 200 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `session.recap_wait_milliseconds` | 45000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `session.report_open_todo_characters` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `session.report_open_todo_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.rotation_bytes` | 52428800 | `bytes` | `none` | `diagnostics, sender` | Reminder only; the person chooses a milestone handoff and provider files remain untouched. |
