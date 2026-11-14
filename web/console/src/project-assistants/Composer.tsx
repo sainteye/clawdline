@@ -14,7 +14,7 @@ export function Composer({text,onText,onSend,disabled,busy,quote,onClearQuote,w,
   return <div className="pa-composer-wrap">{quote&&<div className="pa-reply"><span>{quote}</span><button onClick={onClearQuote} aria-label={w.clearQuote}>×</button></div>}
     {images.length>0&&<div className="pa-pictures">{images.map((src,i)=><span className="pa-picture" key={i}><img src={src} alt={w.picture}/><button type="button" aria-label={w.removePicture} onClick={()=>onRemoveImage?.(i)}>×</button></span>)}</div>}
     <form className="pa-composer" onSubmit={e=>{e.preventDefault();if(ready&&!composing.current)onSend()}} onDragOver={e=>{if(onImages)e.preventDefault()}} onDrop={drop}>
-      {onImages&&<><button type="button" className="pa-attach" aria-label={w.attachPicture} title={w.attachPicture} disabled={disabled||images.length>=MAX_PICTURES} onClick={()=>picker.current?.click()}>＋</button>
+      {onImages&&<><button type="button" className="pa-attach" aria-label={w.attachPicture} title={w.attachPicture} disabled={disabled||images.length>=MAX_PICTURES} onClick={()=>picker.current?.click()}>+</button>
         <input ref={picker} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={e=>{take([...(e.target.files??[])]);e.target.value=""}}/></>}
       <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea rows={1} aria-label={w.compose} placeholder={w.compose+"…"} value={text} disabled={disabled}
         onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onPaste={onImages?paste:undefined}

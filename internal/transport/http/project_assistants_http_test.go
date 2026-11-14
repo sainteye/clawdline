@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -592,7 +593,7 @@ func TestProjectAssistantHTTPAllWritesRejectMalformedObjectsAndHeaders(t *testin
 				{"null", `null`, pa.Invalid, http.StatusBadRequest},
 				{"invalid-utf8", strings.Replace(valid, "untrusted-client-hash", string([]byte{0xff}), 1), pa.Invalid, http.StatusBadRequest},
 				{"array", `[]`, pa.Invalid, http.StatusBadRequest},
-				{"oversize", valid + strings.Repeat(" ", commandBodyLimit), pa.CapacityFull, http.StatusTooManyRequests},
+				{"oversize", valid + strings.Repeat(" ", paBodyLimit(operation.name)), pa.CapacityFull, http.StatusTooManyRequests},
 			}
 			for _, test := range bodies {
 				t.Run(test.name, func(t *testing.T) {
@@ -1068,4 +1069,12 @@ func TestProjectAssistantHTTPBotIDsRoundTripOrRefuseBeforeEffects(t *testing.T) 
 			}
 		})
 	}
+}
+
+// paBodyLimit is the body bound of one write: a send carries pictures.
+func paBodyLimit(operation string) int {
+	if operation == "send" {
+		return capacity.MaximumBotSendBodyBytes
+	}
+	return commandBodyLimit
 }
