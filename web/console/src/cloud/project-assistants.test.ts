@@ -397,3 +397,17 @@ test("bounded relay reads refuse malformed queries and bodies before transport",
   await assert.rejects(relay(path,{method:"GET",body:"{}"}),e=>errorCode(e)==="pa_invalid")
   assert.equal(calls,0)
 })
+
+test("a Bot draft is kept in this browser's storage",()=>{
+  const saved=new Map<string,string>()
+  const storage={getItem:(k:string)=>saved.get(k)??null,setItem:(k:string,v:string)=>{saved.set(k,v)},removeItem:(k:string)=>{saved.delete(k)}}
+  const g=globalThis as {window?:unknown}, before=g.window
+  g.window={localStorage:storage}
+  try{
+    const view=new ProjectAssistantRegistry("account","trusted-reader").viewState
+    view.stage("draft-key","unsent words")
+    assert.equal(view.flush("draft-key"),true)
+    assert.equal(saved.get("draft-key"),"unsent words")
+    assert.equal(new ProjectAssistantRegistry("account","trusted-reader").viewState.draft("draft-key"),"unsent words")
+  }finally{g.window=before}
+})

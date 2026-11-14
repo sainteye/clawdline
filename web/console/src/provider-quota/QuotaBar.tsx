@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import type { ProviderQuotaRow, ProviderQuotaSnapshot, ProviderQuotaWindow } from "@clawdline/contract"
 import { client } from "../client.js"
 import { nextWord } from "../next-strings.js"
@@ -8,6 +8,7 @@ import { onMachineChanged } from "../cloud/machine-switch.js"
 import * as L from "../legacy/bridge.js"
 import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow, quotaCreditBalance } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
+import { setDockAvailable } from "../project-assistants/BotOrb.js"
 import "./quota.css"
 
 function Icon({ id }: { id: string }) {
@@ -50,16 +51,16 @@ const mobileQuery = "(max-width: 899px)"
 function subscribeMobile(fn: () => void) { const query = window.matchMedia(mobileQuery); query.addEventListener("change", fn); return () => query.removeEventListener("change", fn) }
 const isMobile = () => window.matchMedia(mobileQuery).matches
 
-export function QuotaBar({ machineName, offline = false, mobileListShown = false }: { machineName?: string; offline?: boolean; mobileListShown?: boolean }) {
+export function QuotaBar({ machineName, offline = false, mobileListShown = false, accessory }: { machineName?: string; offline?: boolean; mobileListShown?: boolean; accessory?: ReactNode }) {
   const preference = useSyncExternalStore(subscribeQuotaVisible, quotaVisible)
   const mobile = useSyncExternalStore(subscribeMobile, isMobile)
   const version = useMachineVersion()
   const [revision, setRevision] = useState(0)
   useEffect(() => onMachineChanged(() => setRevision((n) => n + 1)), [])
   if (!(mobile ? preference.mobile : preference.desktop) || (mobile && !mobileListShown) || (version.apiLevel !== undefined && version.apiLevel < 28)) return null
-  return <QuotaReading key={revision} machineName={machineName} offline={offline} mobile={mobile} />
+  return <QuotaReading key={revision} machineName={machineName} offline={offline} mobile={mobile} accessory={accessory} />
 }
-function QuotaReading({ machineName, offline, mobile = false }: { machineName?: string; offline: boolean; mobile?: boolean }) {
+function QuotaReading({ machineName, offline, mobile = false, accessory }: { machineName?: string; offline: boolean; mobile?: boolean; accessory?: ReactNode }) {
   const offlineRef = useRef(offline); offlineRef.current = offline
   const read = useMemo(() => async () => {
     if (offlineRef.current) throw new Error("offline")
@@ -82,6 +83,8 @@ function QuotaReading({ machineName, offline, mobile = false }: { machineName?: 
     measure(); const observer = new ResizeObserver(measure); observer.observe(el)
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--quota-footer-height") }
   }, [rows.length > 0])
+  // The Bots orb may dock here only while this bar is on screen.
+  useLayoutEffect(() => { if (!rows.length || !accessory) return; setDockAvailable(true); return () => setDockAvailable(false) }, [rows.length > 0, !!accessory])
   useEffect(() => {
     if (expanded && dialog.current && !dialog.current.open) dialog.current.showModal()
     if (!expanded && dialog.current?.open) dialog.current.close()
@@ -91,6 +94,7 @@ function QuotaReading({ machineName, offline, mobile = false }: { machineName?: 
   const open = (button: HTMLButtonElement) => { opener.current = button; setExpanded(true) }
   return <>
     <footer ref={footer} className="provider-quota-bar" aria-label={nextWord("quotaTitle")}>
+      {accessory}
       {machineName && <span className="quota-machine" title={machineName}>{machineName}</span>}
       <div className="quota-providers">
         {shown.map((row) => {

@@ -9779,6 +9779,7 @@
   "projectAssistants.cancelled": "已取消",
   "projectAssistants.clearQuote": "取消引用",
   "projectAssistants.close": "關閉",
+  "projectAssistants.collapse": "收起 Bots",
   "projectAssistants.completed": "已完成",
   "projectAssistants.compose": "訊息",
   "projectAssistants.create": "新增 Bot",

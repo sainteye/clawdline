@@ -322,7 +322,7 @@ export function SessionsPage({
         hidden={!onScreen}
       >
         <section className="pane pane-list" style={assistantEntry ? {position:"relative"} : undefined}>
-          {assistantEntry && <div className="session-bots-entry" style={{position:"absolute",right:16,bottom:72,zIndex:4}}>{assistantEntry}</div>}
+          {assistantEntry}
           {/* One line: a newer release for this machine and the press that
               installs it, or the dev build running here and the ways on from
               it (machine/UpdateBanner.tsx). */}

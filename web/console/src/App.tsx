@@ -1340,7 +1340,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         </ModuleLoadBoundary>
       ))}
       {!surveyAccount ? <SurveyCoordinator /> : null}
-      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} />
+      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} accessory={assistants.opened ? null : assistants.dock} />
       <Overlays />
       {machine ? <MachineDashboard
         key={dashboardSource?.ownerScope ?? "local"}

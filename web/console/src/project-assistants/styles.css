@@ -129,3 +129,29 @@
 .project-assistants label.pa-memory-entry{display:flex;align-items:center;gap:10px;min-height:44px;margin:0;color:inherit;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
 .project-assistants .pa-memory-entry input[type="checkbox"]{flex:none;width:20px;height:20px;min-height:20px;padding:0;margin:0;border-radius:4px;accent-color:#e39567}
 .pa-memory .pa-toolbar h3{margin:0}
+/* The jump capsule keeps session/jump.css's look over this scope's button reset. */
+.project-assistants .tx-jump-go { padding:0 14px 0 12px;border:1px solid #33333c;border-radius:999px;background:var(--card,#1c1c21);color:var(--dim,#9a9aa3);font-size:12px; }
+.project-assistants .tx-jump-go:hover { background:var(--card-hi,#25252b);color:var(--ink,#ececf1); }
+/* The orb floats over the Session list at its saved offset and can be dragged. */
+.project-assistants.pa-orb-float { position:absolute;z-index:4;touch-action:none; }
+.project-assistants.pa-orb-float .pa-orb { touch-action:none;transition:transform 140ms ease,box-shadow 140ms ease; }
+.project-assistants.pa-orb-float[data-dragging] .pa-orb { transform:scale(1.08);box-shadow:0 10px 24px #000a;cursor:grabbing; }
+/* Docked in the quota bar, it is one small icon among the provider readings. */
+.project-assistants.pa-dock-entry { display:inline-flex;align-items:center;margin-right:6px; }
+.project-assistants .pa-dock { position:relative;width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center;background:#1d1d1f;border-color:#3a3936;touch-action:none; }
+.project-assistants .pa-dock[data-lifted] { width:32px;height:32px;box-shadow:0 8px 20px #000a;cursor:grabbing; }
+.project-assistants .pa-dock-badge { position:absolute;right:-7px;top:-6px;min-width:16px;height:16px;padding:0 3px;border-radius:9px;background:#e39567;color:#080808;font-size:10px;line-height:16px;text-align:center;border:1.5px solid #080808;animation:pa-badge-pop 360ms cubic-bezier(.2,1.4,.4,1); }
+.project-assistants .pa-orb-badge { animation:pa-badge-pop 360ms cubic-bezier(.2,1.4,.4,1); }
+.project-assistants .pa-dock[data-ringing],.project-assistants .pa-orb[data-ringing] { animation:pa-ring 1.1s ease; }
+@keyframes pa-badge-pop { from { transform:scale(.3);opacity:0; } to { transform:none;opacity:1; } }
+@keyframes pa-ring { 0%,100% { transform:none; } 15% { transform:translateY(-3px) rotate(-12deg); } 30% { transform:rotate(10deg); } 45% { transform:rotate(-8deg); } 60% { transform:rotate(5deg); } 75% { transform:rotate(-2deg); } }
+/* Bots opens out of the orb and folds back into it. */
+.pa-window { transform-origin:var(--pa-ox,100%) var(--pa-oy,100%);animation:pa-window-in 220ms cubic-bezier(.2,.8,.2,1); }
+.pa-window[data-closing] { animation:pa-window-out 200ms cubic-bezier(.4,0,.8,.4) forwards;pointer-events:none; }
+@keyframes pa-window-in { from { opacity:0;transform:scale(.06); border-radius:40px; } to { opacity:1;transform:none; } }
+@keyframes pa-window-out { from { opacity:1;transform:none; } to { opacity:0;transform:scale(.06); border-radius:40px; } }
+.project-assistants .pa-collapse svg { width:16px;height:16px;display:block; }
+@media (prefers-reduced-motion: reduce) {
+  .pa-window,.pa-window[data-closing] { animation:none; }
+  .project-assistants .pa-dock[data-ringing],.project-assistants .pa-orb[data-ringing],.project-assistants .pa-dock-badge,.project-assistants .pa-orb-badge { animation:none; }
+}

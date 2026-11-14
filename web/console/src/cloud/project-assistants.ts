@@ -237,11 +237,17 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
   }
 }
 
+function browserStorage(): Storage | undefined {
+  try { return typeof window === "undefined" ? undefined : window.localStorage } catch { return undefined }
+}
+
 /** Account-owned state survives App's active-machine key and token renewal. */
 export class ProjectAssistantRegistry {
   readonly accountKey: string
   readonly readerID: string
-  readonly viewState = createViewState()
+  // Drafts are keyed by account and Bot; without browser storage every chat
+  // showed "Draft could not be saved on this device".
+  readonly viewState = createViewState(browserStorage())
   private grants = new Map<string,AssistantGrant>()
   private revisions = new Map<string,string>()
   private clients = new Map<string,ProjectAssistantSourceClient>()

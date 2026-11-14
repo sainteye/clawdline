@@ -31,6 +31,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const ownedHistory = useRef("")
   const workHandler = useRef(onOpenWork)
   workHandler.current = onOpenWork
+  const windowOrigin = useRef("100% 100%")
   const origin = useRef<{hash:string;href:string;state:unknown;scrolls:[HTMLElement,number,number][];x:number;y:number} | null>(null)
   useEffect(() => {if (opened && typeof history.state?.paView === "string") ownedHistory.current=history.state.paView},[opened,entry])
   const [metadata,setMetadata] = useState<Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>>({})
@@ -72,7 +73,12 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const current = Object.entries(metadata).filter(([id,data]) => sources.some(source => source.machineID === id && source.authorizationRevision === data.revision))
   const admitted = current.some(([,data]) => data.readable)
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources)
-  const close = useCallback(() => {
+  // Bots folds back into the orb before it closes; a second close (the popstate
+  // that history.go below triggers) finishes at once.
+  const [closing,setClosing] = useState(false)
+  const animating = useRef(false), folded = useRef(false)
+  const motion = () => !matchMedia("(prefers-reduced-motion: reduce)").matches
+  const finish = useCallback(() => {
     // Bots owns both nested entries. The host never pushes a second history stack.
     const steps = assistantHistoryBackSteps(history.state,ownedHistory.current)
     if (steps) { history.go(-steps); return }
@@ -93,19 +99,31 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       }).catch(error => toast(`${words(language).sourceError} (${errorCode(error)})`))
     })
   },[registry,language])
+  const close = useCallback(() => {
+    if (animating.current) return
+    if (folded.current || !motion()) { finish(); return }
+    animating.current = true; setClosing(true)
+    window.setTimeout(() => { animating.current = false; folded.current = true; setClosing(false); finish() }, 200)
+  },[finish])
   const open = (element?: HTMLElement) => {
     opener.current = element ?? null
     // Capture the real opener and scroll before hidden blurs the origin.
     origin.current = {hash:location.hash,href:location.href,state:history.state,x:window.scrollX,y:window.scrollY,scrolls:
       [...document.querySelectorAll<HTMLElement>('#app .scroller, #app .cloud-fleet-scroll')].map(node => [node,node.scrollTop,node.scrollLeft])}
+    // The window grows out of the orb (or its docked icon).
+    const box = element?.getBoundingClientRect()
+    windowOrigin.current = box ? `${Math.round(box.left+box.width/2)}px ${Math.round(box.top+box.height/2)}px` : "100% 100%"
+    folded.current = false
     openedRef.current = true; setEntry(value => value+1); setOpened(true)
   }
   useEffect(() => { if (opened && !admitted) close() },[opened,admitted,close])
-  const content = opened ? <section data-page-view="project-assistants" aria-label="Bots"
-    style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh"}}>
+  const [ox,oy] = windowOrigin.current.split(" ")
+  const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}
+    style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
     <Bots key={entry} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
       viewState={registry.viewState} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={work => {if (assistantWorkTarget(work)?.kind !== "board") return;pendingWork.current=work;close()}}/>
   </section> : null
-  return {opened,openedRef,content,entry:admitted ? <BotOrb language={language} {...badge} onOpen={open}/> : null}
+  return {opened,openedRef,content,entry:admitted ? <BotOrb language={language} {...badge} onOpen={open}/> : null,
+    dock:admitted ? <BotOrb variant="dock" language={language} {...badge} onOpen={open}/> : null}
 }

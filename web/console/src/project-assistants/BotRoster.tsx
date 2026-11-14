@@ -9,7 +9,7 @@ export function BotRoster({items,machines,selected,query,onQuery,machine,onMachi
 }) {
   const shown=items.filter(i=>!machine||i.bot.key.machine_id===machine)
   return <aside className="pa-roster" aria-label={w.allBots}>
-    <header className="pa-toolbar"><button className="pa-circle" onClick={onClose} aria-label={w.sessions}>‹</button><h1>{w.allBots}</h1>{onCreate&&<button className="pa-circle" onClick={onCreate} aria-label={w.create}>+</button>}</header>
+    <header className="pa-toolbar"><button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button><h1>{w.allBots}</h1>{onCreate&&<button className="pa-circle" onClick={onCreate} aria-label={w.create}>+</button>}</header>
     <label className="pa-search"><span aria-hidden="true">⌕</span><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/></label>
     <div className="pa-roster-filter"><span>{w.total} {shown.length}</span><select aria-label={w.machine} value={machine} onChange={e=>onMachine(e.target.value)}><option value="">{w.allMachines}</option>{machines.map(m=><option key={m}>{m}</option>)}</select></div>
     <div className="pa-roster-scroll">{errors.map(([id,error])=><p role="status" className="pa-source-error" key={id}>{id} · {error}</p>)}{loading&&<p role="status">{w.loading}</p>}{!loading&&!items.length&&!errors.length&&<p className="pa-empty">{w.empty}</p>}
