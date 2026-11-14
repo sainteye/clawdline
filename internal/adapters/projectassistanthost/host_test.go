@@ -1078,3 +1078,31 @@ func TestHostSendNowJoinsTheRunningTurnOrWaits(t *testing.T) {
 		}
 	}
 }
+
+// As in Codync, a Bot's permission setting changes after creation, through
+// the real store.
+func TestHostBotPermissionSettingChangesAfterCreation(t *testing.T) {
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	s, e := f.h.Service()
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx := context.Background()
+	next, _, e := s.Edit(ctx, pa.Command{Key: b.Key, Operation: pa.EditOperation, IdempotencyKey: "approve"}, pa.EditBot{ExpectedVersion: b.Version, Name: b.Name, Appearance: b.Appearance, Instructions: b.Instructions.Text, PermissionPolicy: pa.Approve})
+	if e != nil {
+		t.Fatalf("changing the permission setting: %v", e)
+	}
+	stored, e := f.h.store.Bot(ctx, b.Key)
+	if e != nil || stored.PermissionPolicy != pa.Approve || next.PermissionPolicy != pa.Approve {
+		t.Fatalf("stored=%+v %v", stored, e)
+	}
+	if _, _, e = s.Edit(ctx, pa.Command{Key: b.Key, Operation: pa.EditOperation, IdempotencyKey: "read-only"}, pa.EditBot{ExpectedVersion: stored.Version, Name: b.Name, Appearance: b.Appearance, Instructions: b.Instructions.Text, PermissionPolicy: pa.Ask, Mode: "read-only"}); e != nil {
+		t.Fatalf("a Codex mode for a Codex Bot: %v", e)
+	}
+	if stored, _ = f.h.store.Bot(ctx, b.Key); stored.Mode != "read-only" || stored.PermissionPolicy != pa.Ask {
+		t.Fatalf("mode=%+v", stored)
+	}
+}

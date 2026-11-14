@@ -484,7 +484,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if settings.Target.MachineID != command.Key.MachineID {
 			return nil, paHTTPFailure(pa.ScopeDenied, "target_machine")
 		}
-		bot, receipt, err := s.Create(ctx, command, pa.CreateBot{Target: paDomainProjectSelection(settings.Target), Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Agent: pa.Agent(settings.Agent), PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Instructions: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef})
+		bot, receipt, err := s.Create(ctx, command, pa.CreateBot{Target: paDomainProjectSelection(settings.Target), Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Agent: pa.Agent(settings.Agent), PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Instructions: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef})
 		return paHTTPBot(bot, receipt, err)
 	case "edit":
 		request, err := paDecodeHTTP[contract.ProjectAssistantEditRequest](w, r)
@@ -496,7 +496,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		settings := request.Settings
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
 	case "send":
 		request, err := paDecodeHTTPLimit[contract.ProjectAssistantSendRequest](w, r, capacity.MaximumBotSendBodyBytes)

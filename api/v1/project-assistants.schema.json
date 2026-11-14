@@ -31,7 +31,8 @@
       "type": "string",
       "enum": [
         "ask",
-        "auto_read"
+        "auto_read",
+        "approve"
       ],
       "description": "Applies only inside the enforced read-only native sandbox. No native answer can authorize repository writes."
     },
@@ -360,6 +361,10 @@
         },
         "updated_at": {
           "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "description": "The agent mode the Bot works in: auto (or empty) for the agent's Auto mode, otherwise one the agent offers (API level 65)."
         }
       },
       "required": [
@@ -401,6 +406,10 @@
         },
         "role_snapshot_ref": {
           "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "description": "The agent mode the Bot works in: auto (or empty) for the agent's Auto mode, otherwise one the agent offers (API level 65)."
         }
       },
       "required": [
@@ -429,6 +438,14 @@
         },
         "instructions": {
           "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "description": "The agent mode the Bot works in: auto (or empty) for the agent's Auto mode, otherwise one the agent offers (API level 65)."
+        },
+        "permission_policy": {
+          "$ref": "#/$defs/ProjectAssistantPermissionPolicy",
+          "description": "Empty leaves the permission setting unchanged (API level 65)."
         }
       },
       "required": [

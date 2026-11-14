@@ -144,7 +144,7 @@ SELECT version,valid AND json_type(j)='object'
 		}
 	}
 	if q.Request.Mode == pa.ReadViewSnapshot {
-		if err = pa.ValidateCreate(pa.CreateBot{Target: pa.ProjectSelection{MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID}, Name: b.Name, Appearance: b.Appearance, Agent: b.Agent, PermissionPolicy: b.PermissionPolicy, Instructions: b.Instructions.Text}, pa.ProjectResolution{Scope: b.Project, Directory: "host-resolved", Available: true, Current: true}); err != nil {
+		if err = pa.ValidateCreate(pa.CreateBot{Target: pa.ProjectSelection{MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID}, Name: b.Name, Appearance: b.Appearance, Agent: b.Agent, PermissionPolicy: b.PermissionPolicy, Mode: b.Mode, Instructions: b.Instructions.Text}, pa.ProjectResolution{Scope: b.Project, Directory: "host-resolved", Available: true, Current: true}); err != nil {
 			return h, b, err
 		}
 		if b.Instructions.Revision < 1 {

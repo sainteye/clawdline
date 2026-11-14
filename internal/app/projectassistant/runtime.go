@@ -1023,9 +1023,11 @@ func (r *Engine) incoming(ctx context.Context, a *runtimeActor, e ProtocolEvent)
 	if err != nil {
 		return err
 	}
-	if e.Permission != nil && bot.PermissionPolicy == pa.AutoRead {
+	// As Codync's "Approve automatically", an Approve Bot allows each request
+	// with the agent's allow-once option; AutoRead allows only read-only ones.
+	if e.Permission != nil && (bot.PermissionPolicy == pa.AutoRead || bot.PermissionPolicy == pa.Approve) {
 		for _, option := range e.Permission.Options {
-			if option.Allow && option.ReadOnly && option.Kind == pa.AllowOnce {
+			if option.Allow && option.Kind == pa.AllowOnce && (option.ReadOnly || bot.PermissionPolicy == pa.Approve) {
 				answer := pa.PermissionAnswer{Fence: e.Fence, OfferID: e.Permission.ID, TurnID: e.TurnID, OptionID: option.ID}
 				command := r.command(a.key, pa.AnswerOperation, "runtime-auto-read-"+e.Permission.ID, answer)
 				a.mu.Unlock()

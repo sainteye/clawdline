@@ -5173,6 +5173,12 @@ export interface ProjectAssistantBot {
   created_at: string
   instructions: ProjectAssistantInstructions
   key: ProjectAssistantBotKey
+
+  /**
+   * The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+   * otherwise one the agent offers (API level 65).
+   */
+  mode?: string
   name: string
   permission_policy: ProjectAssistantPermissionPolicy
   project: ProjectAssistantProjectScope
@@ -5269,6 +5275,12 @@ export interface ProjectAssistantCreateSettings {
   agent: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
   instructions: string
+
+  /**
+   * The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+   * otherwise one the agent offers (API level 65).
+   */
+  mode?: string
   name: string
   permission_policy: ProjectAssistantPermissionPolicy
   role_snapshot_ref: string
@@ -5288,7 +5300,18 @@ export interface ProjectAssistantEditSettings {
   appearance: ProjectAssistantAppearance
   expected_version: number
   instructions: string
+
+  /**
+   * The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+   * otherwise one the agent offers (API level 65).
+   */
+  mode?: string
   name: string
+
+  /**
+   * Empty leaves the permission setting unchanged (API level 65).
+   */
+  permission_policy?: ProjectAssistantPermissionPolicy
 }
 
 /**
@@ -5702,8 +5725,9 @@ export const ProjectAssistantPermissionOptionKindValues: readonly ProjectAssista
 export type ProjectAssistantPermissionPolicy =
     "ask"
   | "auto_read"
+  | "approve"
 
-export const ProjectAssistantPermissionPolicyValues: readonly ProjectAssistantPermissionPolicy[] = ["ask", "auto_read"] as const
+export const ProjectAssistantPermissionPolicyValues: readonly ProjectAssistantPermissionPolicy[] = ["ask", "auto_read", "approve"] as const
 
 export type ProjectAssistantPermissionState =
     "pending"

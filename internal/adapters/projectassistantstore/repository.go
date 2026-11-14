@@ -304,7 +304,7 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		if b.Key != m.Command.Key {
 			return failure(pa.ScopeDenied, "bot")
 		}
-		if m.ExpectedVersion > 0 && (b.Project != a.Bot.Project || b.ConversationID != a.Bot.ConversationID || b.Agent != a.Bot.Agent || b.PermissionPolicy != a.Bot.PermissionPolicy) {
+		if m.ExpectedVersion > 0 && (b.Project != a.Bot.Project || b.ConversationID != a.Bot.ConversationID || b.Agent != a.Bot.Agent) {
 			return failure(pa.ScopeDenied, "immutable_bot")
 		}
 		if m.ExpectedVersion > 0 && (!b.CreatedAt.Equal(a.Bot.CreatedAt) || b.Instructions.Revision < a.Bot.Instructions.Revision || b.Instructions != a.Bot.Instructions && b.Instructions.Revision <= a.Bot.Instructions.Revision) {
@@ -407,7 +407,7 @@ func validateAggregate(a aggregate) error {
 	if b.Key.MachineID == "" || b.Key.BotID == "" || b.Project.MachineID != b.Key.MachineID || b.ConversationID == "" || b.Version < 1 {
 		return failure(pa.Invalid, "bot")
 	}
-	if err := pa.ValidateCreate(pa.CreateBot{Target: pa.ProjectSelection{MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID}, Name: b.Name, Appearance: b.Appearance, Agent: b.Agent, PermissionPolicy: b.PermissionPolicy, Instructions: b.Instructions.Text}, pa.ProjectResolution{Scope: b.Project, Directory: "host-resolved", Current: true, Available: true}); err != nil {
+	if err := pa.ValidateCreate(pa.CreateBot{Target: pa.ProjectSelection{MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID}, Name: b.Name, Appearance: b.Appearance, Agent: b.Agent, PermissionPolicy: b.PermissionPolicy, Mode: b.Mode, Instructions: b.Instructions.Text}, pa.ProjectResolution{Scope: b.Project, Directory: "host-resolved", Current: true, Available: true}); err != nil {
 		return err
 	}
 	if b.Instructions.Revision < 1 {

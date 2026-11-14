@@ -149,6 +149,16 @@ func TestACPTestPeer(t *testing.T) {
 			}
 			send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "partial"}}})})
 			send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+		case "session/set_mode":
+			var set struct {
+				SessionID string `json:"sessionId"`
+				ModeID    string `json:"modeId"`
+			}
+			if json.Unmarshal(f.Params, &set) != nil || set.SessionID != "scripted-session" || set.ModeID != "plan" {
+				send(frame{ID: f.ID, Error: &rpcError{Code: -32602, Message: "Invalid Mode"}})
+				continue
+			}
+			send(frame{ID: f.ID, Result: raw(map[string]any{})})
 		case "_session/steering":
 			var steer struct {
 				SessionID string `json:"sessionId"`
@@ -542,5 +552,38 @@ func TestSendNowSteersIntoTheRunningTurn(t *testing.T) {
 	}
 	if outcome, err = c.Steer(context.Background(), "after"); err != nil || outcome != app.SteerNext {
 		t.Fatalf("a steer after the turn: %q %v", outcome, err)
+	}
+}
+
+// As Codync, a session is put in the Bot's mode with session/set_mode; Claude's
+// own fallback from Auto to Accept edits is kept, and a mode the agent does
+// not offer refuses the turn rather than run it in another.
+func TestASessionIsPutInTheBotsMode(t *testing.T) {
+	c, _ := openTestClient(t, "partial", func(context.Context, app.ProtocolEvent) error { return nil })
+	offered := func(ids ...string) func(string) bool {
+		return func(id string) bool {
+			for _, x := range ids {
+				if x == id {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	claude := func(mode string) pa.Bot { return pa.Bot{Agent: pa.ClaudeCode, Mode: mode} }
+	if err := c.applyMode(context.Background(), claude("plan"), "scripted-session", "default", offered("default", "plan", "auto")); err != nil {
+		t.Fatalf("switch to plan: %v", err)
+	}
+	if err := c.applyMode(context.Background(), claude(""), "scripted-session", "auto", offered("auto")); err != nil {
+		t.Fatalf("already in Auto: %v", err)
+	}
+	if err := c.applyMode(context.Background(), claude(""), "scripted-session", "acceptEdits", offered("default", "acceptEdits", "plan")); err != nil {
+		t.Fatalf("Claude's Accept edits fallback for a model without Auto: %v", err)
+	}
+	if err := c.applyMode(context.Background(), claude("acceptEdits"), "scripted-session", "default", offered("default", "plan")); pa.Code(err) != pa.Unsupported {
+		t.Fatalf("a mode the agent does not offer: %v", err)
+	}
+	if err := c.applyMode(context.Background(), claude("default"), "scripted-session", "plan", offered("default", "plan")); pa.Code(err) != pa.Unsupported {
+		t.Fatalf("a refused switch: %v", err)
 	}
 }
