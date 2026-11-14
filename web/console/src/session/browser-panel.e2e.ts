@@ -48,6 +48,9 @@ let desktopFields: {x:number;y:number;width:number;height:number;kind:string}[] 
 let mobileFields: typeof desktopFields = []
 let noTab = false
 let opened: string[] = []
+let openLayouts: string[] = []
+let reloads = 0
+let hostVersion = "0.3.0"
 
 const row = {
   id: SESSION, label: "Browser Session", backend: "owned", state: "working", work_state: "working",
@@ -81,8 +84,9 @@ function fixture(): Server {
       return res.end(`<!doctype html><html><meta name=viewport content="width=device-width,initial-scale=1"><style>body{margin:0;font:18px system-ui;color:#1e293b;background:#f2f5f8}header{padding:22px 28px;background:#17344d;color:white}main{max-width:850px;margin:36px auto;padding:0 24px}article{background:white;border-radius:12px;padding:28px;border:1px solid #d7e0e9}h1{font-size:28px;margin-top:0}label{display:block;margin-top:20px}input{display:block;box-sizing:border-box;width:100%;padding:14px;border:1px solid #a7b5c5;border-radius:6px;font:inherit;margin:8px 0 20px}button{background:#167349;color:white;border:0;border-radius:6px;padding:14px 24px;font:inherit}@media(min-width:700px){main{display:grid;grid-template-columns:220px 1fr;gap:24px}}small{color:#596b7e}</style><header>Example · Browser trial</header><main><aside><h2>Welcome</h2><p>Use the form to try the page.</p><small>This is a local test page.</small></aside><article><h1>Try the browser</h1><p>Zoom in, move the picture, then tap a field.</p><label>Your name<input placeholder="Enter a name"></label><label>Other text<input placeholder="Another field"></label><button>Continue</button></article></main></html>`)
     }
     if (path === "/__fixture/no-tab") { noTab = true; opened = []; person = false; return json(res, 200, {}) }
-    if (req.method === "POST" && path === "/v1/browser/open") { const b = await body(req); if (b.conversation !== CONVERSATION) return json(res, 409, { error: "session_unresolved", detail: "A tab can be opened only for a live Session." }); opened.push(b.url); noTab = false; person = true; return json(res, 200, { ok: true, value: { tab: TAB } }) }
-    if (path === "/__fixture/reset") { noTab = false; opened = []; headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; fieldValue = ""; mangleNext = false; replaced = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
+    if (req.method === "POST" && path === "/v1/browser/open") { const b = await body(req); if (b.conversation !== CONVERSATION) return json(res, 409, { error: "session_unresolved", detail: "A tab can be opened only for a live Session." }); opened.push(b.url); openLayouts.push(b.layout ?? ""); if (b.layout === "mobile") layout = "mobile"; noTab = false; person = true; return json(res, 200, { ok: true, value: { tab: TAB } }) }
+    if (path === "/__fixture/host-version") { hostVersion = url.searchParams.get("v") || "0.3.0"; return json(res, 200, {}) }
+    if (path === "/__fixture/reset") { noTab = false; opened = []; openLayouts = []; reloads = 0; hostVersion = "0.3.0"; headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; fieldValue = ""; mangleNext = false; replaced = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
     if (path === "/__fixture/hold-control") { holdControl = true; return json(res, 200, {}) }
     if (path === "/__fixture/admit") { holdControl = false; heldControl?.(); heldControl = null; return json(res, 200, {}) }
@@ -92,7 +96,7 @@ function fixture(): Server {
     if (path === "/__fixture/hold-status") { holdNextStatus = true; return json(res, 200, {}) }
     if (path === "/__fixture/release-status") { heldStatus?.(); heldStatus = null; return json(res, 200, {}) }
     if (path === "/__fixture/mangle-next") { mangleNext = true; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { opened, person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
+    if (path === "/__fixture/log") return json(res, 200, { opened, openLayouts, reloads, person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
     if (path === "/v1/browser/activity") return json(res, 200, { ok: true, rows: [
       { at: activityAt, op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
       { at: activityAt - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
@@ -115,7 +119,7 @@ function fixture(): Server {
       // Without a tab the stand-in answers as a machine whose agents try
       // native tools first: the person may still open a tab in Chrome.
       const value = { ok: true, mode: noTab ? "native" : channelMode, enabled: !noTab, person_open: channelMode, notify_new_site: true,
-        status: { connected: !noTab, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 || noTab ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } }
+        status: { host: { version: hostVersion }, connected: !noTab, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 || noTab ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } }
       if (holdNextStatus) { holdNextStatus = false; await new Promise<void>(resolve => { heldStatus = resolve }) }
       return json(res, 200, value)
     }
@@ -127,6 +131,7 @@ function fixture(): Server {
       if (b.op === "screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
       if (!person) return json(res, 409, { error: "browser_take_over_first", detail: "Take over the tab before typing or clicking in it." })
       if (b.op === "click") clicks.push({ x: b.args.x, y: b.args.y })
+      if (b.op === "reload") reloads++
       if (b.op === "type") {
         typed.push(b.args.text)
         if (holdType) await new Promise<void>(resolve => { heldType = resolve })
@@ -582,7 +587,7 @@ for (const [width, ui] of [[320, "zh-Hant"], [390, "zh-Hant"], [390, "en"], [128
   })
 }
 
-for (const [width, ui] of [[390, "zh-Hant"], [1280, "en"]] as const) {
+for (const [width, ui] of [[390, "zh-Hant"], [360, "en"], [1280, "en"]] as const) {
   test(`open a tab ${width} ${ui}: a Session without a tab lets the person open one they control`, async () => {
     const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
     const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
@@ -627,8 +632,18 @@ for (const [width, ui] of [[390, "zh-Hant"], [1280, "en"]] as const) {
       await until(`!!document.querySelector('#browser-panel .browser-viewport')`)
       const log = await (await fetch(origin + "/__fixture/log")).json()
       assert.deepEqual(log.opened, ["https://github.com/login"])
+      assert.deepEqual(log.openLayouts, [width < 520 ? "mobile" : ""], "a phone opens in the phone layout")
       assert.equal(log.person, true)
       await until(`document.querySelector('.browser-who')?.dataset.person === 'true'`)
+      await until(`document.querySelector('.browser-mode select')?.value === ${JSON.stringify(width < 520 ? "mobile" : "desktop")}`)
+      // Reload is one button beside the layout, and it reaches the page.
+      await until(`!!document.querySelector('.browser-reload') && !document.querySelector('.browser-reload').disabled`)
+      await run(`document.querySelector('.browser-reload').click()`)
+      const deadline = Date.now() + 5000
+      while ((await (await fetch(origin + "/__fixture/log")).json()).reloads !== 1) { if (Date.now() > deadline) assert.fail("reload never reached the page"); await new Promise(r => setTimeout(r, 50)) }
+      assert.equal(await run(`document.querySelector('.browser-zoom').scrollWidth <= document.querySelector('.browser-zoom').clientWidth`), true, "the toolbar fits")
+      await fetch(origin + "/__fixture/host-version?v=0.2.0")
+      await until(`document.querySelector('.browser-reload')?.disabled === true`)
       if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, `browser-panel-opened-${ui}-${width}.png`), Buffer.from(data, "base64")) }
     } finally {
       await fetch(origin + "/__fixture/reset")

@@ -87,3 +87,6 @@
   .browser-bar { padding: 3px 6px; }
 }
 @media (max-height: 600px) and (pointer: coarse) { .browser-move-hint { display: none; } }
+.browser-zoom .browser-reload { display: inline-flex; align-items: center; justify-content: center; }
+.browser-zoom .browser-reload:disabled { opacity: .4; cursor: default; }
+.browser-reload svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }

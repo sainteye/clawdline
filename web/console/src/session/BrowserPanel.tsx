@@ -31,7 +31,7 @@ import "./browser-panel.css"
  */
 
 type TabInfo = { browser_mode?: string; tab: number; conversation: string; person: boolean; current: boolean }
-type Status = { mode?: string; enabled: boolean; person_open?: string; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[] } }
+type Status = { mode?: string; enabled: boolean; person_open?: string; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[]; host?: { version?: string } } }
 type Activity = { at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; thumb: string }
 
 const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
@@ -43,6 +43,17 @@ const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
 type Shot = { data: string; width: number; height: number; url: string; title: string; layout?: "mobile" | "desktop"; editables?: { x: number; y: number; width: number; height: number; kind: string }[] }
 
 const SHOT_MS = 1000
+
+/** A phone-sized console: the tabs the person opens there start in the phone layout. */
+function phoneScreen(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(max-width: 700px)").matches === true
+}
+
+/** Reloading from the panel needs Clawdline's extension 0.3.0 or later. */
+export function extensionCanReload(version: string | undefined): boolean {
+  const [major = 0, minor = 0] = (version ?? "").split(".").map((part) => Number.parseInt(part, 10) || 0)
+  return major > 0 || minor >= 3
+}
 const STATUS_MS = 3000
 
 /** A refusal in the console's own words, with its code kept (refusals/scan.ts). */
@@ -86,6 +97,9 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const [reminded, setReminded] = useState(false)
   const [activity, setActivity] = useState<Activity[]>([])
   const [statusTick, setStatusTick] = useState(0)
+  // A tab the person opened from a phone should show the phone layout; an
+  // older extension ignores the request at open, so it is switched here.
+  const wantPhone = useRef(false)
   const closeRef = useRef<HTMLButtonElement>(null)
   const nativeKeyboard = useRef<BrowserKeyboardHandle>(null)
   const controlRevision = useRef(0)
@@ -229,6 +243,16 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     nativeKeyboard.current?.close()
     if (await ensureControl()) await act("viewport", { mode })
   }
+  const canReload = extensionCanReload(status?.status.host?.version)
+  const reloadPage = async () => {
+    nativeKeyboard.current?.close()
+    if (await ensureControl()) await act("reload", {})
+  }
+  useEffect(() => {
+    if (!wantPhone.current || !shot || !person) return
+    wantPhone.current = false
+    if (shot.layout !== "mobile") void changeLayout("mobile")
+  })
 
   const activityList = () => (
         <details className="browser-activity">
@@ -257,7 +281,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     // Chrome is connected, even when the agent's own selection is native
     // tools or its switch is off (the daemon's person_open).
     if (!tab && status.person_open && !status.status.stopped) {
-      return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={() => setStatusTick((n) => n + 1)} />
+      return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
     }
     // Not connected, or browser use switched off: one card and one main
     // action. Setup happens only on the computer, so through Cloud the main
@@ -287,7 +311,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         </div>
       )
     }
-    if (!tab) return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={() => setStatusTick((n) => n + 1)} />
+    if (!tab) return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
     return (
       <div className="browser-stage">
         {status.status.state_error && <div className="screen-note err" role="alert">{nextWord("browserStateUnsaved")}</div>}
@@ -299,7 +323,12 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
             layoutControl={<label className="browser-mode"><span className="sr-only">{nextWord("browserPanelLayout")}</span>
               <select aria-label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy} onChange={e => void changeLayout(e.target.value)}>
                 <option value="mobile">{nextWord("browserPanelMobile")}</option><option value="desktop">{nextWord("browserPanelDesktop")}</option>
-              </select></label>} />
+              </select></label>}
+            reloadControl={<button type="button" className="chip browser-reload" disabled={busy || controlBusy || !canReload}
+              aria-label={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")} title={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")}
+              onClick={() => void reloadPage()}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.46-3.54" /><path d="M13 2.5v3h-3" /></svg>
+            </button>} />
         )}
 
       </div>
@@ -364,7 +393,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
  * agent waits until they hand it back (POST /v1/browser/open; through Cloud,
  * chrome-tab-open).
  */
-function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: string; assistant: string; onOpened: () => void }) {
+function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: string; assistant: string; onOpened: (phone: boolean) => void }) {
   const [text, setText] = useState("")
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState("")
@@ -375,8 +404,9 @@ function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: 
     if (!url) { setError(nextWord("browserOpenBadAddress")); return }
     setOpening(true); setError("")
     try {
-      await call("POST", "/v1/browser/open", { conversation, url })
-      onOpened()
+      const phone = phoneScreen()
+      await call("POST", "/v1/browser/open", phone ? { conversation, url, layout: "mobile" } : { conversation, url })
+      onOpened(phone)
     } catch (e) {
       setError(nextWord("browserOpenFailed", { reason: L.failureSentence(e, { fallback: (e as Error)?.message || "" }) }))
     } finally {
