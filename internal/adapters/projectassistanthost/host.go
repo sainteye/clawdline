@@ -308,8 +308,11 @@ func (h *Host) Enable(ctx context.Context) error {
 		}
 	}
 	if pending {
+		// A turn still active in the store now was cut off by the previous
+		// daemon process (a disable quiesces its own turns first), so it is
+		// recorded as one a restart cut off and may be resumed.
 		cleanup, cancel := context.WithTimeout(ctx, h.o.Limits.CleanupTimeout)
-		err := h.quiesce(cleanup)
+		err := h.quiesceFor(cleanup, app.RestartField)
 		cancel()
 		if err != nil {
 			return errors.Join(failure(pa.ExecutionEffectUnknown, "durable_cleanup"), err)
