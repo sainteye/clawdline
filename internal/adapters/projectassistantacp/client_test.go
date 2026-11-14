@@ -124,6 +124,20 @@ func TestACPTestPeer(t *testing.T) {
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "tool_call", "toolCallId": "call-1", "title": "Read notes.md", "kind": "read", "status": "pending", "content": []any{map[string]any{"type": "content", "content": map[string]string{"type": "text", "text": "notes"}}}}})})
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{}}})})
 			}
+			if mode == "segments" {
+				// Claude Code's adapter streamed a ToolSearch call's markup as
+				// chunks before the call itself, and two messages back to back.
+				chunk := func(id, text string) {
+					send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "messageId": id, "content": map[string]string{"type": "text", "text": text}}})})
+				}
+				chunk("m1", "<invoke name=\"ToolSearch\">\n<parameter name=\"query\">select:x</parameter>\n</invoke>")
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "tool_call", "toolCallId": "call-1", "title": "ToolSearch", "kind": "other", "status": "pending"}})})
+				chunk("m2", "Previous run didn't finish; rerunning.")
+				chunk("m3", "RESUME-CHECK-77")
+				chunk("m3", " done, see <invoke name=\"x\"></invoke> above")
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				continue
+			}
 			if mode == "explicit" {
 				send(frame{ID: raw("message-rpc"), Method: "clawdline/send_message", Params: raw(map[string]string{"sessionId": "scripted-session", "messageId": "one", "text": "explicit"})})
 			}
@@ -454,5 +468,17 @@ func TestAResumedPromptAfterAMemoryChangeCarriesTheWholeMemory(t *testing.T) {
 	}
 	if !strings.Contains(reply.FinalText, "<memory_update>\nYour memory changed.") || !strings.Contains(reply.FinalText, "Has two cats\nLikes tea\n</memory_update>\nnext question") || strings.Contains(reply.FinalText, "STANDING-INSTRUCTIONS") {
 		t.Fatalf("memory update missing: %q", reply.FinalText)
+	}
+}
+
+// As Codync keeps text segments apart, a tool call or a new message starts a
+// new paragraph of the reply, and a segment that is only tool-call markup is
+// not part of it.
+func TestReplySegmentsAreSeparatedAndToolMarkupIsDropped(t *testing.T) {
+	c, _ := openTestClient(t, "segments", func(context.Context, app.ProtocolEvent) error { return nil })
+	result, err := sendTestPrompt(t, c).Wait(context.Background())
+	want := "Previous run didn't finish; rerunning.\n\nRESUME-CHECK-77 done, see <invoke name=\"x\"></invoke> above"
+	if err != nil || result.FinalText != want {
+		t.Fatalf("reply=%q %v", result.FinalText, err)
 	}
 }

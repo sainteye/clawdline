@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,23 +45,28 @@ type nativePermission struct {
 }
 
 type Client struct {
-	p                 *Process
-	l                 Limits
-	fence             pa.Fence
-	sink              func(context.Context, app.ProtocolEvent) error
-	readOnly          func([]byte) bool
-	mu                sync.Mutex
-	next              uint64
-	pending           map[string]chan response
-	permissions       map[string]nativePermission
-	queue             chan incoming
-	done              chan struct{}
-	workerDone        chan struct{}
-	stop              sync.Once
-	failure           error
-	sessionID         string
-	turnID            string
-	partial           string
+	p           *Process
+	l           Limits
+	fence       pa.Fence
+	sink        func(context.Context, app.ProtocolEvent) error
+	readOnly    func([]byte) bool
+	mu          sync.Mutex
+	next        uint64
+	pending     map[string]chan response
+	permissions map[string]nativePermission
+	queue       chan incoming
+	done        chan struct{}
+	workerDone  chan struct{}
+	stop        sync.Once
+	failure     error
+	sessionID   string
+	turnID      string
+	partial     string
+	// reply segments, as Codync's text segments: a tool call or a new message
+	// closes one, and the next starts after a blank line.
+	segmentStart      int
+	segmentClosed     bool
+	messageID         string
 	sequence          uint64
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -337,7 +343,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 		return nil, refusal(pa.CapacityFull, "active_prompt")
 	}
 	c.turnID = q.Turn.ID
-	c.partial = ""
+	c.partial, c.segmentStart, c.segmentClosed, c.messageID = "", 0, false, ""
 	sid := c.sessionID
 	c.mu.Unlock()
 	// Only fresh filtered context is sent. Displayed history is never implicit
@@ -379,7 +385,8 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_result")
 	}
 	p.rpc.c.mu.Lock()
-	partial := p.rpc.c.partial
+	p.rpc.c.closeSegment()
+	partial := strings.TrimSpace(p.rpc.c.partial)
 	cancelled := p.rpc.c.cancelled
 	p.rpc.c.turnID = ""
 	p.rpc.c.mu.Unlock()
@@ -491,6 +498,7 @@ func (c *Client) handle(f frame) error {
 			SessionID string `json:"sessionId"`
 			Update    struct {
 				SessionUpdate string `json:"sessionUpdate"`
+				MessageID     string `json:"messageId"`
 				// A message chunk carries one content block; a tool call
 				// carries an array. Only a chunk's block is decoded below.
 				Content json.RawMessage `json:"content"`
@@ -508,6 +516,12 @@ func (c *Client) handle(f frame) error {
 		if !active {
 			return nil
 		}
+		if p.Update.SessionUpdate == "tool_call" {
+			c.mu.Lock()
+			c.segmentClosed = true
+			c.mu.Unlock()
+			return nil
+		}
 		if p.Update.SessionUpdate != "agent_message_chunk" {
 			return nil
 		}
@@ -523,6 +537,19 @@ func (c *Client) handle(f frame) error {
 			if len(c.partial)+len(content.Text) > c.l.CaptureBytes {
 				c.mu.Unlock()
 				return refusal(pa.CapacityFull, "partial_capture")
+			}
+			if p.Update.MessageID != "" && c.messageID != "" && p.Update.MessageID != c.messageID {
+				c.segmentClosed = true
+			}
+			if p.Update.MessageID != "" {
+				c.messageID = p.Update.MessageID
+			}
+			if c.segmentClosed {
+				c.closeSegment()
+				if strings.TrimSpace(c.partial) != "" {
+					c.partial += "\n\n"
+				}
+				c.segmentStart = len(c.partial)
 			}
 			c.partial += content.Text
 			c.mu.Unlock()
@@ -697,4 +724,19 @@ func memoryUpdate(memory string) string {
 		memory = "(empty)"
 	}
 	return "<memory_update>\nYour memory changed. This is all of it now and replaces any earlier memory in this conversation.\n" + memory + "\n</memory_update>"
+}
+
+// toolMarkup matches a segment that is nothing but a tool call written out as
+// text. Claude Code's adapter can stream a call's markup as message chunks
+// before the call itself (observed with ToolSearch on 2026-11-14); it is not
+// a reply. Markup inside a segment with other text is left alone.
+var toolMarkup = regexp.MustCompile(`^(?s)(<function_calls>\s*)?(<invoke name="[^"]+">.*?</invoke>\s*)+(</function_calls>)?$`)
+
+// closeSegment ends the current reply segment, dropping it when it is only
+// tool-call markup. The caller holds c.mu.
+func (c *Client) closeSegment() {
+	if c.segmentStart <= len(c.partial) && toolMarkup.MatchString(strings.TrimSpace(c.partial[c.segmentStart:])) {
+		c.partial = strings.TrimRight(c.partial[:c.segmentStart], "\n")
+	}
+	c.segmentClosed = false
 }
