@@ -393,6 +393,15 @@ Session rows subscribe again after the cache is cleared; a row that stays mounte
 an empty catalog from the previous reader. The viewer reports catalog read outcomes to the
 paired machine without sending role names.
 
+- **When the start sheet shows roles.** Decided on 2026-11-14 so a first Session is not a choice
+  between personas the person has not met. The start sheet draws no role row while the machine
+  has no Project, and on its own only after this browser has started five Sessions
+  (`session/first-run.ts`, localStorage `clawdline.sessions-started`). A browser seeing its first
+  complete Session list with Sessions already on the machine counts as an existing user and
+  starts at five, so an upgrade never takes the row away. Settings › Browser › Interface sets
+  Automatic, Always or Never. Hiding the row changes nothing for a Session that already has a
+  role, and the resume step and the Board keep their rows.
+
 - **The team switcher.** The start sheet, its resume step and the Board's new-Session assignment
   draw one role row (`session/RoleRow.tsx`). When the catalog has personas in more than one team,
   its "Role" label is a native select naming the teams that have at least one persona, in the

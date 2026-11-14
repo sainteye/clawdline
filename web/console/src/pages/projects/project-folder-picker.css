@@ -25,3 +25,12 @@
 .project-folder-picker .project-folder-create-hint { font-size: 12px; }
 .project-folder-picker .project-folder-confirm { background: var(--accent); border-color: var(--accent); color: #18120f; font-weight: 600; }
 .project-folder-picker .project-folder-created { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
+
+/* Search above browsing (session/first-run.ts): type a Project's name instead of walking to it. */
+.project-folder-search label { display: block; margin: 14px 0 6px; font-weight: 600; }
+.project-folder-search input { width: 100%; box-sizing: border-box; }
+.project-folder-search-hint { margin: 6px 0 10px; color: var(--faint); font-size: 12px; }
+.project-folder-list button:has(.project-folder-found-where) { display: flex; align-items: baseline; gap: 10px; }
+.project-folder-found-name { min-width: 0; overflow-wrap: anywhere; }
+.project-folder-found-where { margin-inline-start: auto; color: var(--faint); font-size: 12px; overflow-wrap: anywhere; text-align: end; }
+.project-folder-picker .project-folder-add:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #18120f; font-weight: 600; }

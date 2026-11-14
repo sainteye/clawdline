@@ -1,4 +1,5 @@
 import { QuotaSetting } from "../provider-quota/QuotaSetting.js"
+import { DisplayPrefsBlock } from "./settings/DisplayPrefsBlock.js"
 import { SurveySettingsLink } from "../onboarding/Survey.js"
 import { catalogWord } from "../catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
@@ -389,6 +390,8 @@ function SettingsPage({ shown }: { shown: boolean }) {
             {fontScale.storageAvailable ? "" : nextWord("fontScaleNotRemembered")}
           </p>
         </div>
+
+        <DisplayPrefsBlock />
 
             </div>
             <div className="settings-column">

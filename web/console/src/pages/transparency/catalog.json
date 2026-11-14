@@ -229,7 +229,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 96
+          "line": 98
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -273,7 +273,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 96
+          "line": 98
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -308,7 +308,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 96
+          "line": 98
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -3733,7 +3733,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "0cfdfbefefd42bdf3051e80325c6133ee15aceb4d7fdc239982674c6bfd146e1",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "6d69bcca6428f059f4bc90b8779f2e513114e4591f00018b82953ca2de5eacf0",
+    "web/console/src/next-strings.ts": "b0b686bcd49cb58247ba20adc5d6294b20a41b80f0855b838c0a771f700490e7",
     "web/console/src/overlays/info.ts": "afee5b67146a062576bef9a06e2531329d275899e5d4a23965ee2e419c9d8c30",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
@@ -3743,7 +3743,7 @@
     "web/console/src/realtime/realtime-copilot.ts": "211f53e00e489de9963710c7ae4cef8c9f4c9c486b6e872e1c176f5c547b1f0c",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
-    "web/console/src/session/Start.tsx": "1f1f0c58d2c3814e5f7d133b1ae154bdb31d1b9f49a8c10346d6fa2bc768115f",
+    "web/console/src/session/Start.tsx": "b9d9ff8fbdc78af0e53a9cf47f3246f47c813066a93ea4c12e44da5e5cfc5039",
     "web/console/src/session/pending.ts": "7cac7275dc7caf2b3a225818d2ac4c115e7c00594fe7b9a78c6ada40f511ee87",
     "web/console/src/session/persist.ts": "5f5a34d27c3c5639d30ae611200bd9dcd091d44ac341cf6dc3b6873227e0fb21",
     "web/console/src/session/rotation.ts": "c9e4972de9837446e6952b174adb4cd02388f1f0a8532330126bb50199523eec",

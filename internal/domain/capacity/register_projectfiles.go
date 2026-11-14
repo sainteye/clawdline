@@ -55,6 +55,21 @@ func projectFilesBounds() []Entry {
 			Sources: []string{"internal/transport/http.maxProjectFolderRows"},
 		},
 		{
+			Name: "projects.folder_search_rows", Class: Buffer, Unit: Rows,
+			Limit: 50, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxProjectFolderSearchRows"},
+		},
+		{
+			Name: "projects.folder_search_reads", Class: Buffer, Unit: Rows,
+			Limit: 200, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxProjectFolderSearchReads"},
+		},
+		{
+			Name: "projects.folder_query_runes", Class: Buffer, Unit: Characters,
+			Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxProjectFolderQueryRunes"},
+		},
+		{
 			Name: "projectfiles.list", Class: Buffer, Unit: Rows,
 			Limit: 128, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/projectfiles.MaxFiles"},

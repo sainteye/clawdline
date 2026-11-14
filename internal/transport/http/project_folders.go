@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 )
@@ -17,6 +19,26 @@ import (
 // maxProjectFolderRows bounds one browser directory page. The browser can enter
 // a path directly when a directory has more entries than this page can show.
 const maxProjectFolderRows = 128
+
+// maxProjectFolderSearchRows bounds one folder-name search answer, and
+// maxProjectFolderSearchReads the directories one search may read: home and
+// its children, two levels in all. A longer query narrows a truncated answer.
+const (
+	maxProjectFolderSearchRows  = 50
+	maxProjectFolderSearchReads = 200
+	maxProjectFolderQueryRunes  = 64
+)
+
+// macProtectedFolders are the home folders macOS guards with a permission
+// prompt, plus Library. A search does not enter them: the prompt would name
+// Clawdline for a read nobody asked for, and the Mac app's own folder panel
+// reaches them with the person's choice instead.
+var macProtectedFolders = map[string]bool{
+	"Applications": true, "Desktop": true, "Documents": true, "Downloads": true,
+	"Library": true, "Movies": true, "Music": true, "Pictures": true, "Public": true,
+}
+
+var projectFolderSearchSkipsProtected = runtime.GOOS == "darwin"
 
 type projectFolder struct {
 	Name string `json:"name"`
@@ -36,10 +58,18 @@ func (s *Server) projectFoldersRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for key := range r.URL.Query() {
-		if key != "path" {
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "Only path is accepted.")
+		if key != "path" && key != "q" {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "Only path or q is accepted.")
 			return
 		}
+	}
+	if r.URL.Query().Has("q") {
+		if r.URL.Query().Has("path") {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "Send path or q, not both.")
+			return
+		}
+		projectFolderSearch(w, r.URL.Query().Get("q"))
+		return
 	}
 	dir := r.URL.Query().Get("path")
 	if dir == "" {
@@ -87,6 +117,85 @@ func (s *Server) projectFoldersRoute(w http.ResponseWriter, r *http.Request) {
 		Folders   []projectFolder `json:"folders"`
 		Truncated bool            `json:"truncated"`
 	}{dir, parent, rows, truncated})
+}
+
+// projectFolderSearch finds folders whose names contain the query, up to two
+// levels under the home directory, so a person can type a Project's name
+// instead of walking to it. Names only, hidden entries and links skipped, as
+// in the listing above.
+func projectFolderSearch(w http.ResponseWriter, raw string) {
+	query := strings.TrimSpace(raw)
+	if query == "" || utf8.RuneCountInString(query) > maxProjectFolderQueryRunes || strings.IndexByte(query, 0) >= 0 {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "Type one to 64 characters of a folder name.")
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		writeRefusal(w, http.StatusServiceUnavailable, "home_unavailable", "The home directory is unavailable.")
+		return
+	}
+	top, err := os.ReadDir(home)
+	if err != nil {
+		writeRefusal(w, http.StatusForbidden, "project_folder_unreadable", "This directory cannot be read on the selected machine.")
+		return
+	}
+	needle := strings.ToLower(query)
+	rowLimit := int(CapacityLimit("projects.folder_search_rows"))
+	readLimit := int(CapacityLimit("projects.folder_search_reads"))
+	rows := make([]projectFolder, 0)
+	truncated, skipped := false, false
+	// take records a match and answers false once the answer is full.
+	take := func(dir string, entry os.DirEntry) bool {
+		if strings.HasPrefix(entry.Name(), ".") || !entry.IsDir() || !strings.Contains(strings.ToLower(entry.Name()), needle) {
+			return true
+		}
+		if len(rows) == rowLimit {
+			truncated = true
+			return false
+		}
+		rows = append(rows, projectFolder{Name: entry.Name(), Path: filepath.Join(dir, entry.Name())})
+		return true
+	}
+	children := make([]string, 0, len(top))
+	for _, entry := range top {
+		if !take(home, entry) {
+			break
+		}
+		if strings.HasPrefix(entry.Name(), ".") || !entry.IsDir() {
+			continue
+		}
+		if projectFolderSearchSkipsProtected && macProtectedFolders[entry.Name()] {
+			skipped = true
+			continue
+		}
+		children = append(children, filepath.Join(home, entry.Name()))
+	}
+	reads := 1
+	for _, dir := range children {
+		if truncated {
+			break
+		}
+		if reads == readLimit {
+			truncated = true
+			break
+		}
+		reads++
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !take(dir, entry) {
+				break
+			}
+		}
+	}
+	writeJSON(w, struct {
+		Query            string          `json:"query"`
+		Folders          []projectFolder `json:"folders"`
+		Truncated        bool            `json:"truncated"`
+		ProtectedSkipped bool            `json:"protected_skipped"`
+	}{query, rows, truncated, skipped})
 }
 
 func validProjectFolderPath(path string) bool {

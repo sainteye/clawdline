@@ -23,6 +23,8 @@ import { WorkModelChoice } from "../pages/work/WorkModelChoice.js"
 import { useMachineVersion } from "../machine/NeedsUpdate.js"
 import type { DefaultModelOption } from "../pages/settings/api.js"
 import "../pages/work/work.css"
+import { countSessionStarted, notePlaces, sessionRolesShown } from "./first-run.js"
+import { addProjectPlace } from "../pages/work/api.js"
 
 /**
  * Starting a session, and picking one back up, against the `div#start` sheet
@@ -411,7 +413,10 @@ function drawPersona(): void {
   // The shared renderer keeps the native team picker attached across refreshes;
   // keep the chips' sideways scroll as well.
   const scrolled = row.scrollLeft
-  row.hidden = !assistantRolesAdmit(with_, assistants.find((a) => a.id === with_)) || !catalog.length || (!at && resume && resumable())
+  // Roles wait until the person has started a few Sessions, and never stand
+  // in for the missing Project a first Session needs (./first-run.ts).
+  row.hidden = !assistantRolesAdmit(with_, assistants.find((a) => a.id === with_)) || !catalog.length || (!at && resume && resumable()) ||
+    !sessionRolesShown() || (!!places && places.length === 0)
   if (row.hidden) {
     row.innerHTML = ""
     return
@@ -537,7 +542,7 @@ function draw(): void {
   const box = el<HTMLInputElement>("start-filter")
   const machineAction = el<HTMLButtonElement>("start-machine-action")
   const projectActions = el("start-project-actions")
-  projectActions.hidden = machineOnly || mode !== "session" || !!at || !write || placesUnread
+  projectActions.hidden = machineOnly || mode !== "session" || !!at || !write || placesUnread || (!!places && places.length === 0)
   const agentHelp = el("start-agent-help")
   const retry = el<HTMLButtonElement>("start-retry-places")
   const setup = el<HTMLAnchorElement>("start-agent-setup")
@@ -634,8 +639,8 @@ function draw(): void {
           ? nextWord("firstSessionPlacesUnread")
           : places && !places.length
           ? mode !== "terminal" && assistants.length === 0
-            ? `${nextWord("firstSessionAgentMissing")} ${catalogWord("projects", "emptyAdd")}`
-            : catalogWord("projects", "emptyAdd")
+            ? `${nextWord("firstSessionAgentMissing")} ${nextWord("startNoProject")}`
+            : nextWord("startNoProject")
           // A terminal is a shell: it needs a folder, not an AI tool.
           : places?.length && assistants.length === 0 && mode !== "terminal"
             ? nextWord("firstSessionAgentMissing")
@@ -792,6 +797,7 @@ function load(background = false): void {
       said("")
       places = (d && d.places) || []
       assistants = (d && d.assistants) || []
+      if (!onMachine) notePlaces(places.length)
       if (resumeEntry) {
         const entry = resumeEntry
         with_ = entry.assistant
@@ -1007,6 +1013,7 @@ function began(answer: L.StartAnswer | undefined, place: Place | null): void {
     return
   }
   wait = { id, from: host.openId(), late: false, eager: false, place: place || { id: "" } }
+  countSessionStarted()
   band(detached ? detachedWords() : T().webStartWaiting, false)
   moveProgress(detached ? "detached" : "waiting", detached ? detachedWords() : "")
   renderList()
@@ -1125,8 +1132,53 @@ function arrived(id: string) {
   return L.byId(id)
 }
 
+/** The web picker's opener, bound by the mounted sheet. */
+let openFolderPicker: (() => void) | null = null
+
+type FolderChooser = { postMessage(body: object): Promise<unknown> }
+function nativeFolderChooser(): FolderChooser | null {
+  if (hostedConsole() || onMachine) return null
+  return (window as unknown as { webkit?: { messageHandlers?: { clawdlineChooseFolder?: FolderChooser } } })
+    .webkit?.messageHandlers?.clawdlineChooseFolder ?? null
+}
+
+/**
+ * Add a Project. In the Mac app, for this Mac, the system folder panel is the
+ * picker: it searches, takes Finder drops and needs no folder permission for
+ * what the person chose. Elsewhere, or if the panel cannot answer, the web
+ * picker browses the selected machine.
+ */
+async function addProject(): Promise<void> {
+  const chooser = nativeFolderChooser()
+  if (chooser) {
+    let reply: unknown
+    try { reply = await chooser.postMessage({}) } catch { reply = undefined }
+    if (reply === null) return
+    if (typeof reply === "string" && reply) {
+      try {
+        await addProjectPlace(reply)
+        load(true)
+        checkPlaces()
+        return
+      } catch (e) {
+        said(why(e as Failure), e as Failure)
+      }
+    }
+  }
+  openFolderPicker?.()
+}
+
+/** Read whether this machine has a Project without opening the sheet. */
+function checkPlaces(): void {
+  if (hostedConsole() || typeof api.places !== "function") return
+  if (!sheetHidden() && onMachine) return
+  void api.places(undefined).then((d) => notePlaces(((d && d.places) || []).length), () => notePlaces(null))
+}
+
 export const Start = {
   open,
+  addProject,
+  checkPlaces,
   openOn,
   openResume: (entry: ResumeEntry) => openMode(false, "session", entry.machine ?? null, entry),
   openTerminal: () => openMode(false, "terminal"),
@@ -1254,6 +1306,10 @@ export function StartSheet() {
   const T = L.strings
   const bound = useRef(false)
   const [folderOpen, setFolderOpen] = useState(false)
+  useEffect(() => {
+    openFolderPicker = () => setFolderOpen(true)
+    return () => { openFolderPicker = null }
+  }, [])
   const [removeTarget, setRemoveTarget] = useState<Place | null>(null)
   const [removeBusy, setRemoveBusy] = useState(false)
   const [removeError, setRemoveError] = useState("")
@@ -1289,7 +1345,7 @@ export function StartSheet() {
     const onMachine = () => press(MACHINE_PLACE)
     const onInput = () => Start.typed(filter.value)
     const onScroll = () => Start.scrolled()
-    const onAddProject = () => setFolderOpen(true)
+    const onAddProject = () => void addProject()
     const onRetryPlaces = () => { if (!loading) { placesUnread = false; agentSignInRequired = ""; places = null; load() } }
     const onAgentSetup = (ev: Event) => {
       const handler = (window as Window & { webkit?: { messageHandlers?: { shellAgentSetup?: { postMessage: (body: unknown) => void } } } })
@@ -1438,7 +1494,7 @@ export function StartSheet() {
             </div>
           </div>
           <ul className="places" id="start-list"></ul>
-          <button className="chip wide start-add-first" id="start-add-first" type="button" hidden>{nextWord("startAddFirstFolder")}</button>
+          <button className="chip wide start-add-first" id="start-add-first" type="button" hidden>{nextWord("startAddFirstProject")}</button>
           <button className="chip wide" id="start-retry-places" type="button" hidden>{nextWord("firstSessionRetry")}</button>
           <a className="chip wide" id="start-agent-setup" href="clawdline-next://setup" hidden>{nextWord("firstSessionOpenSetup")}</a>
           <p className="say" id="start-agent-help" hidden>{nextWord("firstSessionAgentOtherHint")}</p>

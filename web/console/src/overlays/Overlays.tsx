@@ -1,4 +1,5 @@
 import { CodeGraphViewer } from "../codegraph/CodeGraphViewer.js"
+import { useFirstRun, voiceStartShown } from "../session/first-run.js"
 import { macKeyboard, shortcutLabel } from "../shortcuts.js"
 import { catalogWord } from "../catalog.js"
 import { Fragment, useEffect } from "react"
@@ -36,6 +37,7 @@ export function Overlays() {
     ActionConfirm.paint()
   })
 
+  useFirstRun()
   const mod = macKeyboard() ? "⌘" : "Ctrl+"
   const groups: { title: string; rows: [string[], string][] }[] = [
     { title: nextWord("shortcutNavigation"), rows: [
@@ -48,7 +50,7 @@ export function Overlays() {
     { title: nextWord("shortcutActions"), rows: [
       [[shortcutLabel("start")], nextWord("shortcutStart")],
       [[shortcutLabel("task")], nextWord("shortcutTask")],
-      [[shortcutLabel("voice")], nextWord("shortcutVoice")],
+      ...(voiceStartShown() ? [[[shortcutLabel("voice")], nextWord("shortcutVoice")] as [string[], string]] : []),
     ] },
     { title: nextWord("shortcutSession"), rows: [
       [[shortcutLabel("compose")], nextWord("shortcutCompose")],

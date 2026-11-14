@@ -4,7 +4,10 @@ import { RefusalError, asMachineNeedsUpdate } from "@clawdline/core"
 import { catalogWord } from "../../catalog.js"
 import { showModalWithoutChoice } from "../../modal-focus.js"
 import { failureSentence } from "../../legacy/bridge.js"
-import { addProjectPlace, createProjectFolder, mintKey, readProjectFolders, type ProjectFolderPage } from "../work/api.js"
+import { addProjectPlace, createProjectFolder, mintKey, readProjectFolders, searchProjectFolders, type ProjectFolderPage, type ProjectFolderSearch } from "../work/api.js"
+import { hostedConsole } from "../terminal/api.js"
+import { nextWord } from "../../next-strings.js"
+import { notePlaces } from "../../session/first-run.js"
 import { projectFolderPath, validProjectFolderName } from "./project-folder-name.js"
 import "./project-folder-picker.css"
 
@@ -28,6 +31,33 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState("")
   const [created, setCreated] = useState(false)
+  // Searching: this machine's daemon looks two levels under home; another
+  // machine (or a daemon too old to search) filters the folder shown below.
+  const [find, setFind] = useState("")
+  const [found, setFound] = useState<ProjectFolderSearch | null>(null)
+  const [findFailed, setFindFailed] = useState(false)
+  const [deepFind, setDeepFind] = useState(true)
+  const findGeneration = useRef(0)
+  const deep = deepFind && !machine && !hostedConsole()
+  const findText = find.trim()
+  useEffect(() => {
+    const generation = ++findGeneration.current
+    setFound(null); setFindFailed(false)
+    if (!findText || !deep) return
+    const timer = window.setTimeout(() => {
+      searchProjectFolders(findText).then(answer => {
+        if (generation === findGeneration.current) setFound(answer)
+      }, cause => {
+        if (generation !== findGeneration.current) return
+        // A daemon from before search refuses `q`; filtering still helps.
+        if (cause instanceof RefusalError && cause.status === 400 && cause.code === "bad_request") setDeepFind(false)
+        else setFindFailed(true)
+      })
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [findText, deep])
+  const filtered = !deep && findText && page
+    ? page.folders.filter(folder => folder.name.toLowerCase().includes(findText.toLowerCase())) : null
 
   async function browse(path?: string) {
     const generation = ++browseGeneration.current
@@ -46,6 +76,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
     const node = dialog.current
     if (!node) return
     setCreating(false); setName(""); setCreated(false); attempt.current = null
+    setFind(""); setFound(null); setFindFailed(false); setDeepFind(true)
     if (open) {
       showModalWithoutChoice(node)
       setPage(null); setTyped(""); setError("")
@@ -94,6 +125,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
     setBusy(true); setError("")
     try {
       await addProjectPlace(page.path, machine)
+      if (!machine) notePlaces(1)
       onAdded()
       onClose()
     } catch (cause) {
@@ -132,9 +164,28 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
         </div>
       </form>
     </> : <>
-      <h2 id="project-folder-picker-title">{word("folderTitle")}</h2>
+      <h2 id="project-folder-picker-title">{nextWord("folderPickerTitle")}</h2>
       <p>{word("folderHint")}</p>
-      <form onSubmit={event => { event.preventDefault(); void browse(typed) }}>
+      <div className="project-folder-search">
+        <label htmlFor="project-folder-search">{nextWord("folderSearchLabel")}</label>
+        <input id="project-folder-search" type="search" value={find} onChange={event => setFind(event.target.value)}
+          disabled={busy} autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={64}
+          aria-describedby="project-folder-search-hint" />
+        <p id="project-folder-search-hint" className="project-folder-search-hint">
+          {!deep ? nextWord("folderFilterHint") : found?.protected_skipped ? nextWord("folderSearchHintMac") : nextWord("folderSearchHint")}
+        </p>
+      </div>
+      {deep && findText ? <div className="project-folder-list" role="group" aria-label={nextWord("folderSearchLabel")} aria-busy={!found && !findFailed}>
+        {found?.folders.map(folder => <button type="button" key={folder.path} disabled={busy}
+          onClick={() => { setFind(""); void browse(folder.path) }}>
+          <span className="project-folder-found-name">📁 {folder.name}</span>
+          <span className="project-folder-found-where">{folder.path.slice(0, Math.max(0, folder.path.length - folder.name.length - 1))}</span>
+        </button>)}
+        {found && !found.folders.length && <p>{nextWord("folderSearchEmpty", { q: findText })}</p>}
+        {findFailed && <p role="alert">{nextWord("folderSearchFailed")}</p>}
+        {found?.truncated && <p role="status">{nextWord("folderSearchTruncated")}</p>}
+      </div> : null}
+      <form hidden={deep && !!findText} onSubmit={event => { event.preventDefault(); void browse(typed) }}>
         <label htmlFor="project-folder-path">{word("folderPath")}</label>
         <div className="project-folder-path-row">
           <input id="project-folder-path" value={typed} onChange={event => setTyped(event.target.value)}
@@ -142,7 +193,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
           <button type="submit" disabled={busy || !typed}>{word("folderGo")}</button>
         </div>
       </form>
-      {page && <>
+      {page && !(deep && findText) && <>
         <div className="project-folder-toolbar">
           <p className="project-folder-current">{page.path}</p>
           <button type="button" disabled={busy} onClick={() => { setCreating(true); setName(""); setError(""); attempt.current = null }}>{word("folderCreate")}</button>
@@ -150,16 +201,19 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
         {created && <p className="project-folder-created" role="status">{word("folderCreated")}</p>}
         <div className="project-folder-list" role="group" aria-label={word("folderList")}>
           {page.parent && <button type="button" disabled={busy} onClick={() => void browse(page.parent)}>{word("folderParent")}</button>}
-          {page.folders.map(folder => <button type="button" key={folder.path} disabled={busy}
-            onClick={() => void browse(folder.path)}>📁 {folder.name}</button>)}
-          {!page.folders.length && <p>{word("folderEmpty")}</p>}
+          {(filtered ?? page.folders).map(folder => <button type="button" key={folder.path} disabled={busy}
+            onClick={() => { setFind(""); void browse(folder.path) }}>📁 {folder.name}</button>)}
+          {filtered && !filtered.length && <p>{nextWord("folderSearchEmpty", { q: findText })}</p>}
+          {!filtered && !page.folders.length && <p>{word("folderEmpty")}</p>}
         </div>
         {page.truncated && <p role="status">{word("folderTruncated")}</p>}
       </>}
       {error && <p role="alert">{error}</p>}
       <div className="project-folder-actions">
         <button type="button" disabled={busy} onClick={onClose}>{word("folderCancel")}</button>
-        <button type="button" disabled={busy || !page} onClick={() => void add()}>{word("folderAdd")}</button>
+        <button type="button" className="project-folder-add" disabled={busy || !page || (deep && !!findText)} onClick={() => void add()}>
+          {page ? nextWord("folderAddNamed", { name: page.path.split(/[\\/]/).filter(Boolean).pop() || page.path }) : word("folderAdd")}
+        </button>
       </div>
     </>}
   </dialog>

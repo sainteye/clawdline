@@ -48,6 +48,8 @@ struct ShellCopy {
     var pairLinkReturn: String { word("pairLinkReturn") }
     var pairLinkFailed: String { word("pairLinkFailed") }
     var pairLinkRetry: String { word("pairLinkRetry") }
+    var folderPanelMessage: String { word("folderPanelMessage") }
+    var folderPanelPrompt: String { word("folderPanelPrompt") }
     func cloudConnectAsks(_ machine: String) -> String { word("cloudConnectAsks", [machine]) }
     var cloudConnectBody: String { word("cloudConnectBody") }
     var cloudConnectStart: String { word("cloudConnectStart") }

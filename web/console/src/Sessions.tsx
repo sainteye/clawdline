@@ -11,6 +11,8 @@ import { visualBranches, visualDepths } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
 import type { FleetDetailProblem } from "./cloud/all-machine-sessions.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
+import { placePresence, seedSessionsStarted, useFirstRun } from "./session/first-run.js"
+import { FirstTour } from "./session/FirstTour.js"
 import type { StartAnswer, StartPlaceRow } from "./legacy/start-bridge.js"
 import { SessionToolbar } from "./session/SessionToolbar.js"
 import { Command, CommandSheet } from "./session/Command.js"
@@ -258,6 +260,13 @@ export function SessionsPage({
   // would otherwise still be "arriving": nothing is on its way from a machine that is off.
   const empty = offlineAt === "empty" || (!skeleton && drawn.length === 0 && !arriving && !listUnknown)
   const homeEmpty = empty && rows.length === 0 && !filter && statusFilter === "all"
+  useFirstRun()
+  const presence = placePresence()
+  // The first complete list decides where this browser's start count begins
+  // (./session/first-run.ts): Sessions already here mean an existing user.
+  const listSettled = live && !skeleton && (rows.length > 0 || emptyAuthoritative)
+  useEffect(() => { if (listSettled) seedSessionsStarted(rows.length > 0) }, [listSettled, rows.length > 0])
+  useEffect(() => { if (homeEmpty && live) Start.checkPlaces() }, [homeEmpty, live])
   const said = useRef<"skel" | [string, string] | null>(null)
   if (offlineAt === "empty") said.current = [nextWord("sessionsMachineOfflineTitle"),
     nextWord("sessionsMachineOfflineHint", { machine: machineOffline?.machine ?? "", seen: offlineSeen })]
@@ -272,7 +281,9 @@ export function SessionsPage({
       : !live
         ? [T.webEmptyWaitTitle, T.webEmptyWaitHint]
         : emptyAuthoritative
-          ? [T.noSession, nextWord("firstSessionEmptyHint")]
+          ? presence === "none"
+            ? [nextWord("firstRunListNoProjectTitle"), nextWord("firstRunListNoProjectHint")]
+            : [T.noSession, presence === "some" ? nextWord("firstRunListFirstHint") : nextWord("firstSessionEmptyHint")]
           : sourceFailure
             ? [nextWord("sessionsListIncompleteTitle"), sourceFailure]
             : [nextWord("sessionsListWaitTitle"), nextWord("sessionsListWaitHint")]
@@ -368,9 +379,13 @@ export function SessionsPage({
                   <b>{said.current[0]}</b>
                   <span className="empty-hint">{said.current[1]}</span>
                   {homeEmpty && emptyAuthoritative && live && (
-                    <button className="chip" type="button" onClick={() => Start.open()}>
-                      {nextWord("firstSessionStart")}
-                    </button>
+                    presence === "none"
+                      ? <button className="chip" type="button" onClick={() => void Start.addProject()}>
+                          {nextWord("firstRunAddProject")}
+                        </button>
+                      : <button className="chip" type="button" onClick={() => Start.open()}>
+                          {nextWord("firstSessionStart")}
+                        </button>
                   )}
                 </>
               ) : null}
@@ -391,7 +406,8 @@ export function SessionsPage({
           readerMachine={readerMachine}
           projectedCoordinatorBound={fleetCoordinatorBound}
           onSent={streamTasks !== null ? undefined : onDid}
-          listUnknown={listUnknown || fleetDetailPending} loadingDetail={fleetDetailPending} emptyProblem={fleetDetailProblem} />
+          listUnknown={listUnknown || fleetDetailPending} loadingDetail={fleetDetailPending} emptyProblem={fleetDetailProblem}
+          sessionCount={listUnknown ? undefined : rows.length} />
         {/* In terminal mode the second column is the terminal's, as it is the
             open session's otherwise; the session detail stays mounted, hidden. */}
         {terminalMode && (terminalPane
@@ -401,6 +417,7 @@ export function SessionsPage({
           </section>)}
       </main>
       <StartSheet />
+      <FirstTour sessionCount={listUnknown ? null : rows.length} shown={!!onScreen && !terminalMode} />
       <StartProgressDialog />
       <CommandSheet />
       {restoring && (

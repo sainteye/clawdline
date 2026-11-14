@@ -243,6 +243,14 @@ final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
 /// no dispatch path: the authenticated daemon must name the requested machine.
 @MainActor
 final class CloudPairLocal: NSObject, WKScriptMessageHandlerWithReply {
+    static func markedForMac(_ url: URL) -> URL {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = (parts.queryItems ?? []).filter { $0.name != "for" }
+        items.append(URLQueryItem(name: "for", value: "mac"))
+        parts.queryItems = items
+        return parts.url ?? url
+    }
+
     static let name = "clawdlinePairLocal"
     private let trustedOrigin: URL
 
@@ -315,7 +323,9 @@ final class CloudPairLocal: NSObject, WKScriptMessageHandlerWithReply {
                        let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
                         // This URL comes from the authenticated daemon, never from the page.
                         // If Launch Services cannot open it, the reply still offers the URL.
-                        _ = NSWorkspace.shared.open(url)
+                        // `for=mac` asks the sign-in page for its Mac wording and a way
+                        // back to this app; a page that does not know it ignores it.
+                        _ = NSWorkspace.shared.open(Self.markedForMac(url))
                     }
                     status = try await finishConnection(status, message: message)
                     replyHandler(statusReply(status), nil); return
@@ -413,6 +423,10 @@ final class CloudPairLocal: NSObject, WKScriptMessageHandlerWithReply {
         // Consume consent before the write: a failed reply cannot repeat it silently.
         connectionAllowed = false
         _ = try await request("POST", path: "v1/cloud/enabled", body: ["enabled": true])
+        // The person finished signing in in their browser; bring them back
+        // here, where the next step is, instead of leaving the browser on top.
+        NSApp.activate(ignoringOtherApps: true)
+        message.webView?.window?.makeKeyAndOrderFront(nil)
         return try await request("GET", path: "v1/cloud/status")
     }
 

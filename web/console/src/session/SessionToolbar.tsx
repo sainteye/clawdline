@@ -4,6 +4,8 @@ import { catalogWord } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
 import type { RefObject } from "react"
 import { CopilotCallButton } from "../realtime/CopilotCallButton.js"
+import { useFirstRun, voiceStartShown } from "./first-run.js"
+import "./first-run.css"
 
 /** The original Session toolbar, with the destination decision supplied by its page. */
 export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onTerminals, onVoice, onWork, onStart,
@@ -21,6 +23,9 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
   inputRef?: RefObject<HTMLInputElement | null>
 }) {
   const T = L.strings
+  useFirstRun()
+  // Hidden unless chosen in Settings: its V shortcut presses only a visible button.
+  const voice = voiceStartShown()
   return <div className="filter-row">
     <input ref={inputRef} id="filter" type="search" name="q7f3" placeholder={placeholder ?? T.webFilterPlaceholder}
       value={filter} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
@@ -37,7 +42,7 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
       </button>
     </div>
     <CopilotCallButton />
-    <button className="start" id="voice-go" type="button" title={T.webCommand + " · " + shortcutLabel("voice")} aria-label={T.webCommandLabel} aria-keyshortcuts={shortcutAria("voice")}
+    <button className="start" id="voice-go" type="button" hidden={!voice} title={T.webCommand + " · " + shortcutLabel("voice")} aria-label={T.webCommandLabel} aria-keyshortcuts={shortcutAria("voice")}
       aria-pressed="false" onClick={onVoice}>
       <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />

@@ -1,0 +1,68 @@
+/* First-run guidance (session/first-run.ts). The pinned legacy stylesheets
+   stay untouched; these rules only add to them. */
+
+/* The home screen's one way on. */
+.home-hero .copy { max-width: 440px; }
+.home-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.home-hero-actions .chip { min-height: 38px; padding: 0 16px; font-size: 13px; }
+.chip.home-hero-primary {
+  border-color: var(--accent); background: var(--accent); color: #17110e; font-weight: 600;
+}
+.chip.home-hero-primary:hover { filter: brightness(1.06); }
+
+/* Starting a Session is the list's primary action, so its square says so. */
+.filter-row #start-go.start {
+  border-color: var(--accent); background: var(--accent); color: #17110e;
+}
+.filter-row #start-go.start:hover { filter: brightness(1.06); color: #17110e; }
+/* Voice start is opt-in (Settings); the toolbar rule above would otherwise show it. */
+.filter-row #voice-go[hidden] { display: none; }
+
+/* The drawer's way back to the Sessions: it stays at the top while the pages
+   below it scroll, so it is never scrolled out of reach. */
+.sidebar-sessions-pin {
+  position: sticky; top: -10px; z-index: 2;
+  margin: -10px -10px 0; padding: 10px 10px 8px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sidebar-sessions-pin + .sidebar-group { margin-top: 10px; padding-top: 0; border-top: 0; }
+.sidebar-recent { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
+.sidebar-recent h2 { margin: 0 12px 2px; color: var(--faint); font-size: 11px; font-weight: 600; line-height: 20px; }
+.sidebar-recent .sidebar-item { min-width: 0; }
+.sidebar-recent-dot {
+  flex: 0 0 auto; width: 18px; display: inline-flex; align-items: center; justify-content: center;
+}
+.sidebar-recent-dot::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--faint));
+}
+.sidebar-recent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The one-time tour. */
+.first-tour { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
+.first-tour-ring {
+  position: fixed; border-radius: 11px; outline: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+}
+.first-tour-card {
+  position: fixed; width: min(300px, calc(100vw - 32px)); pointer-events: auto;
+  padding: 16px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card-hi, var(--card)); color: var(--ink);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+.first-tour-card .first-tour-step { color: var(--faint); font-size: 11px; }
+.first-tour-card h2 { margin: 6px 0; font-size: 15px; }
+.first-tour-card p { margin: 0; color: var(--dim); font-size: 12.5px; line-height: 1.6; }
+.first-tour-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; }
+.first-tour-dots { display: flex; gap: 5px; }
+.first-tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.first-tour-dots i[data-on] { background: var(--accent); }
+.first-tour-actions { display: flex; gap: 8px; }
+.first-tour-actions .chip { min-height: 32px; padding: 0 12px; }
+.first-tour-actions .chip.home-hero-primary { font-weight: 600; }
+
+/* Settings › this browser's display choices. */
+.display-roles-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.display-roles-row .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-in); }
+#settings-display .say + .settings-control-heading { margin-top: 16px; }

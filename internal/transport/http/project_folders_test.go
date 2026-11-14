@@ -227,3 +227,77 @@ func TestCloudProjectFolderCreationUsesCommandGateAndReceipt(t *testing.T) {
 		t.Fatalf("read created = %d %s", read.Status, read.Payload)
 	}
 }
+
+func TestProjectFolderSearchFindsNamesTwoLevelsUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, dir := range []string{"alpha-app", "code/alpha-api", "code/deep/alpha-too-deep", "Documents/alpha-doc", ".alpha-hidden"} {
+		if err := os.MkdirAll(filepath.Join(home, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(home, "alpha.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	search := func(skip bool, q string) (int, []string, bool) {
+		t.Helper()
+		was := projectFolderSearchSkipsProtected
+		projectFolderSearchSkipsProtected = skip
+		defer func() { projectFolderSearchSkipsProtected = was }()
+		out := httptest.NewRecorder()
+		(&Server{}).projectFoldersRoute(out, httptest.NewRequest(http.MethodGet, "/v1/project-folders?q="+url.QueryEscape(q), nil))
+		var answer struct {
+			Folders          []projectFolder `json:"folders"`
+			ProtectedSkipped bool            `json:"protected_skipped"`
+		}
+		if out.Code == 200 && json.Unmarshal(out.Body.Bytes(), &answer) != nil {
+			t.Fatalf("answer: %s", out.Body.String())
+		}
+		names := []string{}
+		for _, folder := range answer.Folders {
+			names = append(names, strings.TrimPrefix(folder.Path, home+string(filepath.Separator)))
+		}
+		return out.Code, names, answer.ProtectedSkipped
+	}
+
+	code, names, skipped := search(true, "ALPHA")
+	if code != 200 || strings.Join(names, ",") != "alpha-app,code/alpha-api" || !skipped {
+		t.Fatalf("macOS search = %d %v skipped=%v", code, names, skipped)
+	}
+	code, names, skipped = search(false, "alpha")
+	if code != 200 || strings.Join(names, ",") != "alpha-app,Documents/alpha-doc,code/alpha-api" || skipped {
+		t.Fatalf("search = %d %v skipped=%v", code, names, skipped)
+	}
+	for _, bad := range []string{"", "   ", strings.Repeat("a", maxProjectFolderQueryRunes+1)} {
+		if code, _, _ := search(false, bad); code != 400 {
+			t.Fatalf("query %q = %d", bad, code)
+		}
+	}
+	both := httptest.NewRecorder()
+	(&Server{}).projectFoldersRoute(both, httptest.NewRequest(http.MethodGet, "/v1/project-folders?q=a&path="+url.QueryEscape(home), nil))
+	if both.Code != 400 {
+		t.Fatalf("q with path = %d", both.Code)
+	}
+}
+
+func TestProjectFolderSearchStopsAtItsAnswerBound(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for i := 0; i < maxProjectFolderSearchRows+5; i++ {
+		if err := os.Mkdir(filepath.Join(home, "match-"+strings.Repeat("x", i%3)+string(rune('a'+i%26))+string(rune('a'+i/26))), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := httptest.NewRecorder()
+	(&Server{}).projectFoldersRoute(out, httptest.NewRequest(http.MethodGet, "/v1/project-folders?q=match", nil))
+	var answer struct {
+		Folders   []projectFolder `json:"folders"`
+		Truncated bool            `json:"truncated"`
+	}
+	if out.Code != 200 || json.Unmarshal(out.Body.Bytes(), &answer) != nil {
+		t.Fatalf("answer: %d %s", out.Code, out.Body.String())
+	}
+	if len(answer.Folders) != maxProjectFolderSearchRows || !answer.Truncated {
+		t.Fatalf("rows = %d truncated=%v", len(answer.Folders), answer.Truncated)
+	}
+}
