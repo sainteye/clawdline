@@ -13,7 +13,7 @@
 
 ## 與 Herdr、T3 Code 的差異
 
-- 🖥️ **Herdr：Agent 的終端工作區。** 在持續運行的終端窗格中執行 Agent，並在同一個 TUI 管理本機與 SSH 工作區。[Herdr 介紹](https://github.com/herdrdev/herdr#readme)・[多機器連線](https://herdr.dev/docs/connecting-machines/)
+- 🖥️ **Herdr：在持續運行的終端執行 Agent 的桌面與手機 App。** Agent 在本機與 SSH 機器的終端持續運行，先列出需要你處理的 Agent，Agent 也能派出幫手並收到回報。提供 macOS、Windows、Linux 原生 App，iPhone、iPad、Android 手機 App，以及原本的 TUI。[Herdr 官網](https://herdr.dev/)・[桌面 App](https://github.com/herdrdev/herdr-app#readme)・[herdr-core](https://github.com/herdrdev/herdr-core#readme)
 - 💬 **T3 Code：操作程式開發 Agent 的 App。** 透過桌機、網頁與手機 App 操作 Agent，支援本機與遠端環境。[T3 Code 介紹](https://github.com/pingdotgg/t3code#readme)・[遠端存取](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
 - 🔁 **Clawdline：協調 Session，追蹤工作交付。** 在瀏覽器集中管理已使用的 Claude Code 和 Codex Session；留下待辦、回答 Agent 便條並派工，選用看板追蹤驗證、合併與部署；清楚區分「Agent 回報完成」與「已驗證合併」。選用 Cloud 後，也能從手機同一份清單掌握多台機器。[Session](docs/user/sessions.md)・[派工](docs/user/clawdfather-and-dispatch.md)・[看板](docs/user/board.md)
 
