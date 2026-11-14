@@ -29,6 +29,10 @@ In the Clawdline app on this machine, open **Settings** and turn on
 appears in the Session list. A paired browser or phone can read the setting
 but cannot change it, like this machine's other settings.
 
+Bots is not in public releases yet: the switch is shown only on a dev build
+(`v<x.y.z>-dev.<commit>`), or where Bots is already on so it can be turned
+off. The terminal command below still works on any build.
+
 From a terminal, the same switch is:
 
 ```sh
