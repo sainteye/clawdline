@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11906,
+  "englishKeys": 11905,
   "counts": {
     "negation": 3249,
     "state": 1991,
-    "permission": 702,
+    "permission": 701,
     "deletion": 265,
     "uncertainty": 456
   },
-  "unionCount": 5193,
+  "unionCount": 5192,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5847,7 +5847,6 @@
       "projectAssistants.pending",
       "projectAssistants.permission",
       "projectAssistants.policy",
-      "projectAssistants.readOnly",
       "projectAssistants.revoked",
       "projectAssistants.setup_cli_not_installed",
       "projectAssistants.unpaired",
@@ -11310,7 +11309,6 @@
     "projectAssistants.permission",
     "projectAssistants.permissionDelete",
     "projectAssistants.policy",
-    "projectAssistants.readOnly",
     "projectAssistants.reject_always",
     "projectAssistants.revoked",
     "projectAssistants.savedMemory",
