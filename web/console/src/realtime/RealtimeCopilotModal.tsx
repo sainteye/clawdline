@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { nextWord } from '../next-strings.js'
 import { BRAND_MARK } from '../brand-mark.js'
-import { formatUSD } from './copilot-cost.js'
+import { formatDuration, formatUSD } from './copilot-cost.js'
 import { CopilotOrb } from './CopilotOrb.js'
 import {CopilotProgress} from './CopilotProgress.js'
 import { CopilotNotice } from './CopilotNotice.js'
@@ -187,7 +187,18 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
         )}
 
         <div className="realtime-secondary">
-          {copilotState.cost && copilotState.cost.responses > 0 && (
+          {copilotState.cost?.live && (
+            <details className="realtime-cost-row">
+              <summary>
+                <span className="realtime-cost-total">
+                  {nextWord('copilotLiveCost', { duration: formatDuration(copilotState.cost.live.seconds), cost: formatUSD(copilotState.cost.usd) })}
+                </span>
+                <span aria-hidden="true"> ⓘ</span>
+              </summary>
+              <span className="realtime-cost-note">{nextWord('copilotLiveCostNote', { backend: formatUSD(copilotState.cost.live.backendUSD) })}</span>
+            </details>
+          )}
+          {copilotState.cost && !copilotState.cost.live && copilotState.cost.responses > 0 && (
             <details className="realtime-cost-row">
               <summary>
                 <span className="realtime-cost-total">

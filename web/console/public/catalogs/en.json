@@ -9555,6 +9555,8 @@
   "next.browserPolicyMove": "Switch to self-updating ›",
   "next.browserPolicyApply": "New version on next Chrome restart · Apply now ›",
   "next.browserPolicyIsolatedPending": "Restarts by itself to update when idle",
+  "next.copilotLiveCost": "GPT-Live · {duration} · {cost}",
+  "next.copilotLiveCostNote": "GPT-Live is billed by the second at OpenAI's listed $0.05 a minute; lookups by its backend model so far: {backend}. Between OpenAI's usage updates the call's own clock is counted.",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",
