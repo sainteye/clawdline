@@ -60,7 +60,7 @@ function harness(options = {}) {
     createBufferSource() { return { connect() {}, start() {} } }
     startRendering() { return Promise.resolve({ getChannelData: () => new Float32Array(16000) }) }
   }
-  const document = { visibilityState: "visible", createElement: () => new Element(),
+  const document = { visibilityState: "visible", createElement: () => new Element(), createElementNS: () => new Element(),
     addEventListener: (key, callback) => listeners.set(key, callback), removeEventListener: key => listeners.delete(key) }
   const sandbox = { exports: {}, Blob, Uint8Array, Float32Array, DataView, ArrayBuffer, Date: { now: () => now },
     window: { isSecureContext: true, MediaRecorder: Recorder, AudioContext: Context, OfflineAudioContext: Offline,
@@ -96,7 +96,9 @@ function harness(options = {}) {
   return { voice, box, words, sent, toasts, states, job, recorders, tracks, diagnostics, options,
     get posts() { return posts }, get opens() { return opens }, get contextCloses() { return contextCloses },
     async start() { voice.press(job); await flush() },
-    click(kind) { const button = box.querySelector(`.${kind}`); assert.ok(button, `${kind} button absent in ${voice.voiceState()}`); button.listeners.click() },
+    // While recording, the control that keeps the words for the box is the
+    // microphone (Stop); the row's own right-hand button is Send.
+    click(kind) { if (kind === "go" && voice.voiceState() === "recording") return voice.press(job); const button = box.querySelector(`.${kind}`); assert.ok(button, `${kind} button absent in ${voice.voiceState()}`); button.listeners.click() },
     async advance(ms) { now += ms; for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.callback() }; for (const callback of intervals.values()) callback(); await flush() },
     hide() { document.visibilityState = "hidden"; listeners.get("visibilitychange")?.() }, flush,
     pagehide() { listeners.get("pagehide")?.() },
@@ -269,9 +271,25 @@ test("the send control delivers the transcription instead of writing it into the
   assert.equal(h.voice.voiceState(), "off"); assert.equal(h.tracks[0].readyState, "ended"); assert.equal(h.posts, 1)
 })
 
-test("Done still writes the words into the box and sends nothing", async () => {
-  const h = harness(); await h.start(); h.click("go"); await h.flush()
+test("Stop writes the words into the box and sends nothing", async () => {
+  const h = harness(); await h.start(); h.voice.press(h.job); await h.flush()
   assert.deepEqual(h.words, ["Recovered speech"]); assert.deepEqual(h.sent, [])
+})
+
+test("while recording, the row offers Cancel and Send, and Send delivers without the box", async () => {
+  let prepared = 0
+  const h = harness(); h.job.beforeSend = () => { prepared++ }; await h.start()
+  assert.ok(h.box.querySelector(".drop")); assert.equal(h.box.querySelector(".go"), null)
+  const send = h.box.querySelector(".go send-now")
+  assert.ok(send); assert.match(send.textContent, /^Send$/)
+  send.listeners.click(); await h.flush()
+  assert.equal(prepared, 1); assert.deepEqual(h.sent, ["Recovered speech"]); assert.deepEqual(h.words, [])
+})
+
+test("a microphone that cannot send keeps Done on the row", async () => {
+  const h = harness(); delete h.job.send; await h.start()
+  assert.equal(h.box.querySelector(".go send-now"), null)
+  assert.match(h.box.querySelector(".go").textContent, /Done/)
 })
 
 test("a sent recording keeps going after its composer leaves the page", async () => {

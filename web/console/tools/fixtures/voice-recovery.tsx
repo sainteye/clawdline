@@ -131,8 +131,8 @@ const remote = { key: row.id, machineID: "fixture", assistant: "codex", canSend:
     return { text }
   }, onSend: async () => { throw new Error("Sending is disabled in this fixture") } }
 const entries = [
-  { id: "fixture-user", role: "user", text: lang === "en" ? "Check that Done stops the microphone and keeps my recording if processing fails." : "確認按完成就停止收音，處理失敗時也能保住剛剛說的話。", at: Date.now() / 1000 - 60 },
-  { id: "fixture-assistant", role: "assistant", text: lang === "en" ? "Tap the microphone, then Done. Failure recovery keeps this recording for retry." : "點麥克風開始，再按完成。若後續處理失敗，可保留這段錄音並重試轉文字。", at: Date.now() / 1000 - 45 },
+  { id: "fixture-user", role: "user", text: lang === "en" ? "Check that Stop ends the microphone and keeps my recording if processing fails." : "確認按停止就停止收音，處理失敗時也能保住剛剛說的話。", at: Date.now() / 1000 - 60 },
+  { id: "fixture-assistant", role: "assistant", text: lang === "en" ? "Tap the microphone, then Stop. Failure recovery keeps this recording for retry." : "點麥克風開始，再按停止。若後續處理失敗，可保留這段錄音並重試轉文字。", at: Date.now() / 1000 - 45 },
 ]
 document.documentElement.classList.remove("booting")
 createRoot(document.getElementById("root")!).render(<main className="app" data-view="detail" style={{ width: "100%", height: "100dvh", display: "flex" }}>

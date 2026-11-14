@@ -3741,7 +3741,7 @@
     "web/console/src/realtime/copilot-speech.ts": "d01c8d749d64b633dd329acfb546b112ae394166d4fef850f637d7174e77ab0f",
     "web/console/src/realtime/copilot-tools.ts": "3bb9d43305053a49d97ee3491ad48ff281c55e7ed86bda30d55727034463ae83",
     "web/console/src/realtime/realtime-copilot.ts": "211f53e00e489de9963710c7ae4cef8c9f4c9c486b6e872e1c176f5c547b1f0c",
-    "web/console/src/session/Composer.tsx": "5fd68cc63873bdd1984443beb697ec3f17657e02dd95b8a5ed07b27f1329e3ab",
+    "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "1f1f0c58d2c3814e5f7d133b1ae154bdb31d1b9f49a8c10346d6fa2bc768115f",
     "web/console/src/session/pending.ts": "7cac7275dc7caf2b3a225818d2ac4c115e7c00594fe7b9a78c6ada40f511ee87",
