@@ -9941,7 +9941,7 @@
   "projectAssistants.statusConnected": "Connected",
   "projectAssistants.statusBotsOn": "Bots turned on",
   "projectAssistants.statusCloudOperation": "Operation from Clawdline Cloud",
-  "projectAssistants.statusNotUsed": "Not used yet; checked at the first chat",
+  "projectAssistants.statusNotUsed": "Checked when a message is sent",
   "projectAssistants.statusOneOk": "{name}: connected",
   "projectAssistants.statusAgent": "{name}: {agent} {why}",
   "projectAssistants.statusManyOk": "{n} machines ready",

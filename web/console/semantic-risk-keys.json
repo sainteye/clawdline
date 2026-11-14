@@ -2,8 +2,8 @@
   "version": 1,
   "englishKeys": 12022,
   "counts": {
-    "negation": 3268,
-    "state": 2006,
+    "negation": 3267,
+    "state": 2007,
     "permission": 707,
     "deletion": 267,
     "uncertainty": 454
@@ -2945,7 +2945,6 @@
       "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
       "projectAssistants.sourceError",
-      "projectAssistants.statusNotUsed",
       "projectAssistants.statusStale",
       "projectAssistants.statusWithoutBots",
       "projectAssistants.unknown",
@@ -5071,6 +5070,7 @@
       "projectAssistants.openWork",
       "projectAssistants.resumedNotice",
       "projectAssistants.savedMemory",
+      "projectAssistants.statusNotUsed",
       "projectAssistants.succeeded",
       "projectAssistants.waiting_for_person",
       "projectTree.sensitiveDetail",

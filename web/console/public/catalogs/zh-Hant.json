@@ -9941,7 +9941,7 @@
   "projectAssistants.statusConnected": "已連線",
   "projectAssistants.statusBotsOn": "Bots 已開啟",
   "projectAssistants.statusCloudOperation": "允許從 Clawdline Cloud 操作",
-  "projectAssistants.statusNotUsed": "還沒用過，第一次對話時確認",
+  "projectAssistants.statusNotUsed": "傳訊息時才會檢查",
   "projectAssistants.statusOneOk": "{name}：已連線",
   "projectAssistants.statusAgent": "{name}：{agent} {why}",
   "projectAssistants.statusManyOk": "{n} 台機器可用",

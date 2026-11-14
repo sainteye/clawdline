@@ -201,7 +201,7 @@
 .project-assistants .pa-source-machine { display:flex; flex-direction:column; gap:6px; font-size:13px; }
 .project-assistants .pa-source-machine ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; }
 .project-assistants .pa-source-machine li { display:flex; align-items:center; gap:10px; min-height:36px; border-top:1px solid var(--pa-line); }
-.project-assistants .pa-source-machine li span { flex:1; }
+.project-assistants .pa-source-machine li span { flex:1; white-space:nowrap; }
 .project-assistants .pa-source-machine li small { color:var(--pa-dim); text-align:right; }
 .project-assistants .pa-source-machine li[data-state="ok"] svg { color:#57c27c; }
 .project-assistants .pa-source-machine li[data-state="bad"] svg { color:#d29a3a; }
