@@ -5760,6 +5760,11 @@ export const ProjectAssistantProjectKindValues: readonly ProjectAssistantProject
  * execution resolve the selected ID again.
  */
 export interface ProjectAssistantProjectOption {
+  /**
+   * The Project's mark as the new-Session sheet draws it; absent when the source
+   * has none.
+   */
+  icon?: Icon
   label: string
   target: ProjectAssistantProjectSelection
 }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12068,
-  "riskKeys": 5246,
-  "nonRiskCount": 6822,
+  "englishContentKeys": 12078,
+  "riskKeys": 5247,
+  "nonRiskCount": 6831,
   "groups": [
     {
       "name": "acp / other",
@@ -5575,7 +5575,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 119,
+      "count": 128,
       "sources": [
         null
       ],
@@ -5592,6 +5592,7 @@
         "projectAssistants.back",
         "projectAssistants.bots",
         "projectAssistants.cancel",
+        "projectAssistants.chooseProject",
         "projectAssistants.close",
         "projectAssistants.collapse",
         "projectAssistants.compose",
@@ -5626,6 +5627,7 @@
         "projectAssistants.memory_isolated",
         "projectAssistants.memory_unknown",
         "projectAssistants.more",
+        "projectAssistants.moreActions",
         "projectAssistants.name",
         "projectAssistants.nextIdle",
         "projectAssistants.no",
@@ -5693,7 +5695,14 @@
         "projectAssistants.thisMachine",
         "projectAssistants.total",
         "projectAssistants.trace",
+        "projectAssistants.tracePlan",
+        "projectAssistants.traceReply",
+        "projectAssistants.traceStep",
+        "projectAssistants.traceThought",
+        "projectAssistants.traceTool",
+        "projectAssistants.unnamedProject",
         "projectAssistants.unread",
+        "projectAssistants.unreadCount",
         "projectAssistants.unsupported",
         "projectAssistants.version",
         "projectAssistants.work",
