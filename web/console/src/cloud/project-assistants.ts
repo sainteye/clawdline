@@ -307,7 +307,10 @@ export class ProjectAssistantRegistry {
 export function cloudAssistantGrants(account: string, machines: readonly CloudMachine[], apiLevel: (id: string) => number | undefined, revisions: (id: string) => string): AssistantGrant[] {
   return machines.map(machine => ({accountKey:account,readerID:account,machineID:machine.id,
     authorizationRevision:revisions(machine.id),apiLevel:apiLevel(machine.id),paired:machine.pairing === "paired",
-    online:machine.freshness === "current",writable:machine.operationAllowed === true}))
+    // Every paired device may act (the person, 2026-11-14). Only a machine
+    // that turned Cloud operation off is read-only here; an operation flag not
+    // yet received is not a refusal, and the daemon still checks each write.
+    online:machine.freshness === "current",writable:machine.operationAllowed !== false}))
 }
 
 export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], authorized: readonly SourceClient[]) {
