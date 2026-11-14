@@ -72,12 +72,12 @@ actions, or `acceptEdits` for a model without it. The person decided on
 2026-11-14 to keep that rather than force a card for every change. A card
 that does appear may be allowed once; standing allow or reject rules are
 refused. Bypass mode stays off. Its configuration, history and memory live in a
-feature-owned directory for each Bot, Project, conversation and revision.
-As in Codync's bot launch, the adapter's own setting sources stay: the
-Project's CLAUDE.md, `.claude` settings, hooks and MCP servers load as in the
-person's own Claude Code. The user source is that feature-owned directory, so
-the person's `~/.claude` settings, skills and memory are not read; whether
-they should be is an open decision. Native auto memory and dreaming stay off.
+feature-owned record of which native sessions belong to each Bot, Project,
+conversation and revision. As in Codync (the person decided on 2026-11-14),
+the native CLI uses the person's own Claude Code configuration and login:
+their settings, skills and permission rules, and the Project's CLAUDE.md,
+settings, hooks and MCP servers all load. Only native auto memory and
+dreaming are off.
 
 A permission card says what the tool would do before it is answered, as
 Codync's does: the adapter's title and ACP tool kind, the command, URL or
