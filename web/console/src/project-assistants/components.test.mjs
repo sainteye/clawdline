@@ -157,3 +157,17 @@ test("a Bot reply renders Markdown while the person's message stays literal",()=
   assert.match(html,/\*\*not bold\*\*/)
   assert.ok(!html.includes("<script>"),"a reply's markup was not escaped")
 })
+test("a message shows no Reply button until it is tapped",()=>{
+  const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
+  const messages=[{id:"u",kind:"user",text:"Hi",seq:1,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"}]
+  const html=render(ChatRows,{messages,w:words("en"),onQuote:()=>{}})
+  assert.ok(!html.includes(">Reply<"),"a Reply button was shown on an untouched message")
+  assert.match(html,/aria-haspopup="menu"/)
+})
+test("a Bot's reply keeps a visible Reply button",()=>{
+  const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
+  const messages=[{id:"a",kind:"assistant",text:"A long answer",seq:1,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"}]
+  const html=render(ChatRows,{messages,w:words("en"),onQuote:()=>{}})
+  assert.match(html,/class="pa-quote"[^>]*>.*Reply<\/button>/)
+  assert.ok(!html.includes("aria-haspopup"),"a Bot reply opened a menu instead")
+})
