@@ -30,3 +30,29 @@ func TestClaudeSetupWithoutClaudeCodeChangesNothing(t *testing.T) {
 		t.Fatal("refused setup changed private state")
 	}
 }
+
+func TestTheBotsSwitchReportsTheDaemonsState(t *testing.T) {
+	var out, errOut bytes.Buffer
+	var sent any
+	call := func(method string, body any) (int, []byte, error) {
+		sent = body
+		if method == "GET" {
+			return 200, []byte(`{"enabled":false}`), nil
+		}
+		return 200, []byte(`{"enabled":true}`), nil
+	}
+	if code := projectAssistantsSwitch("enable", &out, &errOut, call); code != 0 || !strings.Contains(out.String(), "Bots are on") {
+		t.Fatalf("enable: %d %q %q", code, out.String(), errOut.String())
+	}
+	if m, ok := sent.(map[string]bool); !ok || !m["enabled"] {
+		t.Fatalf("enable sent %v", sent)
+	}
+	out.Reset()
+	if code := projectAssistantsSwitch("status", &out, &errOut, call); code != 0 || !strings.Contains(out.String(), "Bots are off") || sent != nil {
+		t.Fatalf("status: %d %q %v", code, out.String(), sent)
+	}
+	refused := func(string, any) (int, []byte, error) { return 403, []byte(`{"error":"forbidden"}`), nil }
+	if code := projectAssistantsSwitch("disable", &out, &errOut, refused); code != 1 {
+		t.Fatalf("a refused switch reported success: %d", code)
+	}
+}

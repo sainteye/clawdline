@@ -3605,7 +3605,7 @@
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
     "cmd/clawdline/main.go": "1e670ab828c498f072751572fbc627836e95ec677c3dc52df503a818d51450e3",
-    "cmd/clawdline/project_assistants.go": "81e5597af60a1140f9674d261aa07c657ea0c0e3abf2e1a4b53fc4126ae9a223",
+    "cmd/clawdline/project_assistants.go": "abcfc66816991184c4a0b5e5d5b43236dd0644dda0729216cfb5647d07f48ade",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",

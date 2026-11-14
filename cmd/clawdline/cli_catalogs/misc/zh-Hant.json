@@ -286,5 +286,9 @@
   "todo.take_usage": "       clawdline todo take [--conversation id] [--key k] [--port n] <to-do id>",
   "todo.take_needs_id": "clawdline %s：請指定要接手的 to-do id\n",
   "project_assistants.setup_failed": "Claude 設定遭拒（%s）。尚未啟動接頭。\n",
-  "project_assistants.setup_usage": "用法：clawdline project-assistants setup-claude\n"
+  "project_assistants.switch_unreachable": "daemon 沒有回應：%v\n",
+  "project_assistants.switch_refused": "Bots 開關沒有變更（HTTP %d）。\n",
+  "project_assistants.switch_on": "Bots 已開啟。打開 console，在 Session 清單選「所有 Bots」。\n",
+  "project_assistants.switch_off": "Bots 已關閉。已儲存的 Bot 與對話都會保留。\n",
+  "project_assistants.setup_usage": "用法：clawdline project-assistants enable | disable | status | setup-claude\n"
 }

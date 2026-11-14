@@ -286,5 +286,9 @@
   "todo.take_usage": "       clawdline todo take [--conversation id] [--key k] [--port n] <to-do id>",
   "todo.take_needs_id": "clawdline %s: name the to-do id to take\n",
   "project_assistants.setup_failed": "Claude setup was refused (%s). No adapter was started.\n",
-  "project_assistants.setup_usage": "Usage: clawdline project-assistants setup-claude\n"
+  "project_assistants.switch_unreachable": "The daemon did not answer: %v\n",
+  "project_assistants.switch_refused": "The Bots switch was not changed (HTTP %d).\n",
+  "project_assistants.switch_on": "Bots are on. Open the console and choose All Bots in the Session list.\n",
+  "project_assistants.switch_off": "Bots are off. Saved Bots and conversations are kept.\n",
+  "project_assistants.setup_usage": "Usage: clawdline project-assistants enable | disable | status | setup-claude\n"
 }
