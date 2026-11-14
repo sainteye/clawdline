@@ -39,9 +39,9 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
       }
       const delayed = await open("delayed")
       await shot(delayed, "V-01", "錄音中")
-      await delayed.locator(".voice .go").click()
+      await delayed.locator(".mic").click()
       assert.deepEqual((await delayed.evaluate(() => window.voiceFixture.snapshot())).tracks, ["ended"])
-      await shot(delayed, "V-02", "完成即停止收音")
+      await shot(delayed, "V-02", "停止即停止收音")
       await until(delayed, () => window.voiceFixture.snapshot().state === "recoverable")
       await shot(delayed, "V-03", "瀏覽器尚未交出錄音")
       await delayed.evaluate(() => window.voiceFixture.finish())
@@ -54,7 +54,7 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
       await delayed.close()
 
       const partial = await open("partial", 320)
-      await partial.locator(".voice .go").click()
+      await partial.locator(".mic").click()
       await until(partial, () => window.voiceFixture.snapshot().state === "recoverable")
       await shot(partial, "V-06", "保留片段並標示可能不完整")
       await partial.locator(".voice .go").click()
@@ -62,7 +62,7 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
       await partial.close()
 
       const failed = await open("failed")
-      await failed.locator(".voice .go").click()
+      await failed.locator(".mic").click()
       await until(failed, () => window.voiceFixture.snapshot().state === "recoverable")
       await shot(failed, "V-07", "轉文字失敗，錄音仍保留")
       await failed.evaluate(() => window.voiceFixture.succeed())
@@ -72,7 +72,7 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
       await failed.close()
 
       const reading = await open("reading")
-      await reading.locator(".voice .go").click()
+      await reading.locator(".mic").click()
       await until(reading, () => window.voiceFixture.snapshot().state === "reading")
       await shot(reading, "V-08", "轉文字中，收音已停止")
       await reading.locator(".voice .drop").click()
@@ -85,7 +85,7 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
       await reading.close()
 
       const preparing = await open("preparing")
-      await preparing.locator(".voice .go").click()
+      await preparing.locator(".mic").click()
       await until(preparing, () => window.voiceFixture.snapshot().state === "preparing")
       await shot(preparing, "V-10", "音訊處理與轉文字分開顯示")
       await preparing.locator(".voice .drop").click()
@@ -93,13 +93,13 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
       await preparing.close()
 
       const desktop = await open("failed", 1100, "en")
-      await desktop.locator(".voice .go").click()
+      await desktop.locator(".mic").click()
       await until(desktop, () => window.voiceFixture.snapshot().state === "recoverable")
       await shot(desktop, "V-11", "英文桌機重試介面")
       await desktop.close()
 
       const empty = await open("empty")
-      await empty.locator(".voice .go").click()
+      await empty.locator(".mic").click()
       await until(empty, () => window.voiceFixture.snapshot().state === "recoverable")
       assert.equal(await empty.locator(".voice .go").count(), 0)
       await shot(empty, "V-12", "結束後沒有音訊，明確說明")
@@ -110,7 +110,7 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
       // encoded bytes, AudioContext decoding and resampling in both engines.
       const native = await open("native")
       await native.waitForTimeout(1200)
-      await native.locator(".voice .go").click()
+      await native.locator(".mic").click()
       assert.deepEqual((await native.evaluate(() => window.voiceFixture.snapshot())).tracks, ["ended"])
       await until(native, () => window.voiceFixture.snapshot().state === "off")
       const proof = await native.evaluate(() => window.voiceFixture.snapshot())
