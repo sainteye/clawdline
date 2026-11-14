@@ -13,7 +13,7 @@ const CHECK_ICON = <svg className="session-mode-check" viewBox="0 0 24 24" fill=
 
 /** The original Session toolbar, with the destination decision supplied by its page. */
 export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onTerminals, onVoice, onWork, onStart,
-  placeholder, label, inputRef }: {
+  placeholder, label, inputRef, firstRun = false }: {
   filter?: string
   onFilter: (value: string) => void
   terminalMode: boolean
@@ -25,6 +25,8 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
   placeholder?: string
   label?: string
   inputRef?: RefObject<HTMLInputElement | null>
+  /** No Session has been started or listed yet: the + keeps the accent until the first one. */
+  firstRun?: boolean
 }) {
   const T = L.strings
   useFirstRun()
@@ -95,7 +97,7 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
         <path d="M7.5 9h4M7.5 12.5h4M18.5 10.5v7M15 14h7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
       </svg>
     </button>
-    <button className="start" id="start-go" type="button" title={(terminalMode ? nextWord("terminalStartTitle") : T.webStart) + " · " + shortcutLabel("start")} aria-keyshortcuts={shortcutAria("start")}
+    <button className="start" id="start-go" type="button" data-first-run={firstRun ? "" : undefined} title={(terminalMode ? nextWord("terminalStartTitle") : T.webStart) + " · " + shortcutLabel("start")} aria-keyshortcuts={shortcutAria("start")}
       aria-label={terminalMode ? nextWord("terminalStartTitle") : T.webStart} onClick={onStart}>
       <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
         <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

@@ -340,6 +340,7 @@ export function SessionsPage({
           {fleetList ?? <><UpdateBanner />
           <SkillBanner />
           <SessionToolbar onFilter={onFilter} terminalMode={terminalMode}
+            firstRun={listSettled && rows.length === 0 && sessionsStarted() === 0}
             onSessions={() => chooseTerminalMode(false)} onTerminals={() => chooseTerminalMode(true)}
             onVoice={() => Command.openAndListen()} onWork={() => openNewWorkItem()}
             onStart={() => terminalMode ? Start.openTerminal() : Start.open()} />

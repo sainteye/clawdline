@@ -10,14 +10,13 @@
 }
 .chip.home-hero-primary:hover { filter: brightness(1.06); }
 
-/* Starting a Session is the list's primary action: an accent outline and mark
-   on a soft accent ground, so it stands out without a solid block beside the
-   quieter toolbar buttons (chosen over solid, labelled and floating styles). */
-.filter-row #start-go.start {
+/* The new-Session + is a grey toolbar button like its neighbours. Only before
+   the first Session has been started (none listed, none counted) does it keep
+   an accent outline, so a newcomer finds it; afterwards it never returns. */
+.filter-row #start-go.start[data-first-run] {
   border-color: rgba(217, 119, 87, 0.75); background: var(--accent-in, rgba(217, 119, 87, 0.14)); color: var(--accent);
 }
-.filter-row #start-go.start:hover { border-color: var(--accent); background: rgba(217, 119, 87, 0.22); color: var(--accent); }
-/* Voice start is opt-in (Settings); the toolbar rule above would otherwise show it. */
+.filter-row #start-go.start[data-first-run]:hover { border-color: var(--accent); background: rgba(217, 119, 87, 0.22); color: var(--accent); }
 .filter-row #voice-go[hidden] { display: none; }
 
 /* The drawer's way back to the Sessions: it stays at the top while the pages
