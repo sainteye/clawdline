@@ -1033,6 +1033,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.attachment_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 12582912,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxAttachmentBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.attachments_per_message",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxAttachmentsPerMessage"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.capture_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1472,6 +1512,26 @@
     "Sources": [
       "internal/domain/capacity.MaximumBotRPCPending",
       "internal/adapters/projectassistantacp.NewClient:chan(l.RPCPending)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.send_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 25165824,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotSendBodyBytes"
     ]
   },
   {

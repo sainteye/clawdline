@@ -3,6 +3,9 @@ package projectassistantacp
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -305,7 +308,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {
 		return nil, err
 	}
-	if err := pa.ValidateMessage(q.Text); err != nil {
+	if err := pa.ValidateSend(q.Text, promptAttachments(q.Images)); err != nil {
 		return nil, err
 	}
 	// Prepare the complete opening before claiming the pending prompt lane.
@@ -341,6 +344,10 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 			return nil, refusal(pa.Invalid, "quote_id")
 		}
 		blocks = append(blocks, map[string]string{"type": "text", "text": "Referenced message (" + q.Quote.MessageID + "):\n" + q.Quote.Text})
+	}
+	// Pictures go first as native ACP image blocks, as Codync sends them.
+	for _, image := range q.Images {
+		blocks = append(blocks, map[string]string{"type": "image", "mimeType": image.MediaType, "data": base64.StdEncoding.EncodeToString(image.Data)})
 	}
 	blocks = append(blocks, map[string]string{"type": "text", "text": text})
 	p, err := c.begin(ctx, "session/prompt", map[string]any{"sessionId": sid, "prompt": blocks})
@@ -664,3 +671,14 @@ func (c *Client) revokeMCP(ctx context.Context) error {
 }
 
 var _ app.ProviderSession = (*Client)(nil)
+
+// promptAttachments describes prompt pictures for the same validation a
+// stored message passes; the digest is recomputed from the bytes.
+func promptAttachments(images []app.PromptImage) []pa.Attachment {
+	out := make([]pa.Attachment, 0, len(images))
+	for _, image := range images {
+		sum := sha256.Sum256(image.Data)
+		out = append(out, pa.Attachment{ID: hex.EncodeToString(sum[:]), MediaType: image.MediaType, Bytes: int64(len(image.Data))})
+	}
+	return out
+}

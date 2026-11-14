@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"io"
 	"net/http"
 	"net/url"
@@ -24,6 +27,8 @@ type projectAssistantHTTPOptions struct {
 	Service   *app.Service
 	MachineID string
 	Status    func(context.Context) (pa.SourceStatus, error)
+	// Attachments keeps the pictures sent to Bots.
+	Attachments projectassistantstore.Attachments
 	// Private deterministic fixture barrier; production leaves it nil.
 	BeforeViewPublish func()
 }
@@ -84,6 +89,18 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		_, _ = w.Write(view.body)
 		return
 	}
+	if picture, ok := payload.(paAttachmentBytes); ok {
+		if _, err = h.status(r.Context(), true); err != nil {
+			paWriteHTTPFailure(w, err)
+			return
+		}
+		// A digest names exactly these bytes, so a reader may keep them.
+		w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
+		w.Header().Set("Content-Type", picture.mediaType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(picture.data)
+		return
+	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		paWriteHTTPFailure(w, err)
@@ -113,6 +130,12 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
 type paHTTPRoute struct{ bot, action, offer string }
+
+// paAttachmentBytes is a stored picture written as its own bytes, not JSON.
+type paAttachmentBytes struct {
+	mediaType string
+	data      []byte
+}
 
 func paHTTPSafeBotID(id string) bool {
 	// IDs occupy exactly one URL path segment. The display name is separate.
@@ -168,6 +191,9 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
+			}
+			if r.Method == http.MethodGet && len(parts) == 3 && parts[1] == "attachments" && parts[2] != "" {
+				return paHTTPRoute{bot: bot, action: "attachment", offer: parts[2]}, nil
 			}
 			if r.Method == http.MethodPost && len(parts) == 3 && parts[1] == "memory" && parts[2] == "forget" {
 				return paHTTPRoute{bot: bot, action: "forget"}, nil
@@ -308,6 +334,24 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, error) {
 	if route.action == "view" {
 		return h.readView(r, route)
+	}
+	if route.action == "attachment" {
+		q, err := paHTTPQuery(r, "machine_id")
+		if err != nil {
+			return nil, err
+		}
+		key, err := h.queryKey(q, route)
+		if err != nil {
+			return nil, err
+		}
+		if err = h.options.Service.AuthorizeRead(r.Context(), key); err != nil {
+			return nil, err
+		}
+		data, mediaType, err := h.options.Attachments.ReadByID(key, route.offer)
+		if err != nil {
+			return nil, err
+		}
+		return paAttachmentBytes{mediaType: mediaType, data: data}, nil
 	}
 	fields := []string{"machine_id"}
 	switch route.action {
@@ -455,7 +499,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions})
 		return paHTTPBot(bot, receipt, err)
 	case "send":
-		request, err := paDecodeHTTP[contract.ProjectAssistantSendRequest](w, r)
+		request, err := paDecodeHTTPLimit[contract.ProjectAssistantSendRequest](w, r, capacity.MaximumBotSendBodyBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -467,7 +511,11 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
-		return paHTTPReceipt(s.Send(ctx, command, pa.SendMessage{Fence: fence, Text: request.Text, QuoteMessageID: request.QuoteMessageID}))
+		attachments, err := h.storePictures(ctx, command.Key, request.Images)
+		if err != nil {
+			return nil, err
+		}
+		return paHTTPReceipt(s.Send(ctx, command, pa.SendMessage{Fence: fence, Text: request.Text, QuoteMessageID: request.QuoteMessageID, Attachments: attachments}))
 	case "stop":
 		request, err := paDecodeHTTP[contract.ProjectAssistantStopRequest](w, r)
 		if err != nil {
@@ -558,8 +606,41 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 }
 
 func paDecodeHTTP[T any](w http.ResponseWriter, r *http.Request) (T, error) {
+	return paDecodeHTTPLimit[T](w, r, commandBodyLimit)
+}
+
+// storePictures decodes and normalizes each data: URL picture as a Session
+// send does, then keeps it for this Bot. Any picture that cannot be read
+// refuses the whole message before it is accepted.
+func (h *projectAssistantHTTP) storePictures(ctx context.Context, key pa.BotKey, images []string) ([]pa.Attachment, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	if len(images) > pa.MaxAttachmentsPerMessage {
+		return nil, paHTTPFailure(pa.CapacityFull, "images")
+	}
+	out := make([]pa.Attachment, 0, len(images))
+	for _, url := range images {
+		raw, ok := artifacts.DecodeDataURL(url)
+		if !ok {
+			return nil, paHTTPFailure(pa.Invalid, "image")
+		}
+		picture, err := artifacts.Normalize(ctx, raw, artifacts.ProductionPolicy)
+		if err != nil {
+			return nil, paHTTPFailure(pa.Invalid, "image")
+		}
+		a, err := h.options.Attachments.Put(key, picture.MediaType, picture.Data)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+func paDecodeHTTPLimit[T any](w http.ResponseWriter, r *http.Request, limit int64) (T, error) {
 	var value T
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, commandBodyLimit))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {

@@ -634,6 +634,12 @@
         },
         "at": {
           "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantAttachment"
+          }
         }
       },
       "required": [
@@ -1225,6 +1231,13 @@
         },
         "quote_message_id": {
           "type": "string"
+        },
+        "images": {
+          "type": "array",
+          "description": "Pictures as base64 data: URLs, at most four; each is normalized and stored before the message is accepted. A daemon below API level 62 refuses this field.",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -2301,6 +2314,27 @@
         "detail",
         "diffs",
         "shortened"
+      ]
+    },
+    "ProjectAssistantAttachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A picture sent with a message, named by the SHA-256 of its stored bytes.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "media_type",
+        "bytes"
       ]
     }
   }

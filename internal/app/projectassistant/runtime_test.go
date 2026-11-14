@@ -987,3 +987,30 @@ func TestASessionThatCannotBeLoadedIsReplacedByAFilteredOne(t *testing.T) {
 	f.provider.session().reply <- PromptResult{FinalText: "again"}
 	awaitTurn(t, f, rec.ResourceID, pa.TurnSucceeded)
 }
+
+type runtimeAttachments map[string][]byte
+
+func (r runtimeAttachments) Read(_ pa.BotKey, a pa.Attachment) ([]byte, error) {
+	data, ok := r[a.ID]
+	if !ok {
+		return nil, runtimeFailure(pa.NotFound, "attachment")
+	}
+	return data, nil
+}
+
+func TestPicturesSentWithAMessageReachThePrompt(t *testing.T) {
+	f := newRuntimeFixture(t)
+	picture := []byte("picture bytes")
+	id := strings.Repeat("a", 64)
+	f.r.o.Attachments = runtimeAttachments{id: picture}
+	_, err := f.r.Submit(context.Background(), Submission{Command: pa.Command{Key: f.key, Operation: pa.SendOperation, IdempotencyKey: "pictures", ContentHash: strings.Repeat("c", 64)},
+		Message: pa.SendMessage{Fence: pa.Fence{Key: f.key, Project: f.scope, ConversationID: "chat"}, Text: "", Attachments: []pa.Attachment{{ID: id, MediaType: "image/png", Bytes: int64(len(picture))}}},
+		Feature: pa.FeatureState{Enabled: true}, Source: f.source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := receivePrompt(t, f.provider)
+	if len(q.Images) != 1 || q.Images[0].MediaType != "image/png" || string(q.Images[0].Data) != string(picture) {
+		t.Fatalf("prompt pictures: %+v", q.Images)
+	}
+}

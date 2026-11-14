@@ -48,7 +48,10 @@ first-use setup ahead of time and prints which Claude Code version it found;
    becomes a small icon that rings and counts new replies.
 2. Give it a name, choose the Project and write its standing instructions.
    Creating a Bot does not call a model.
-3. Send a message. The Bot answers in the chat. A message sent while it is
+3. Send a message. Up to four pictures can go with it: press **＋**, paste
+   them or drop them on the message box. The Bot sees them as images. (Pictures
+   work from this machine's own console; not yet through Clawdline Cloud.)
+   The Bot answers in the chat. A message sent while it is
    still working waits in line and is shown as pending.
 4. Ask it to dispatch work, for example "add a file and commit it". It
    starts an isolated worker in that Project's worktree, and a work card

@@ -164,3 +164,14 @@
 .project-assistants .pa-diff code { display:block;margin-top:8px;color:var(--pa-dim);overflow-wrap:anywhere; }
 .project-assistants .pa-diff-old { color:#e8a39b; }
 .project-assistants .pa-diff-new { color:#9fd3a4; }
+
+/* Pictures: chips before sending, thumbnails in the conversation. */
+.project-assistants .pa-pictures { display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px; }
+.project-assistants .pa-picture { position:relative; }
+.project-assistants .pa-picture img { width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--pa-line);display:block; }
+.project-assistants .pa-picture button { position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border-radius:50%;font-size:12px;line-height:18px; }
+.project-assistants .pa-attach { flex:0 0 auto;width:34px;height:34px;padding:0;border-radius:50%;align-self:flex-end;margin-right:6px; }
+.project-assistants .pa-message-pictures { display:flex;gap:8px;flex-wrap:wrap;margin:4px 0; }
+.project-assistants .pa-mine .pa-message-pictures { justify-content:flex-end; }
+.project-assistants .pa-message-pictures img { max-width:220px;max-height:220px;border-radius:12px;border:1px solid var(--pa-line);display:block; }
+.project-assistants .pa-picture-missing { font-size:12px;color:var(--pa-dim);border:1px dashed var(--pa-line);border-radius:8px;padding:6px 10px; }

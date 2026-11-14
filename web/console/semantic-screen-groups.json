@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11905,
-  "riskKeys": 5192,
-  "nonRiskCount": 6713,
+  "englishContentKeys": 11914,
+  "riskKeys": 5196,
+  "nonRiskCount": 6718,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 532,
+      "count": 535,
       "sources": [
         null
       ],
@@ -453,6 +453,8 @@
         "capacityRow.bots.actors.what",
         "capacityRow.bots.adapter_install_seconds.full",
         "capacityRow.bots.adapter_install_seconds.what",
+        "capacityRow.bots.attachment_bytes.what",
+        "capacityRow.bots.attachments_per_message.what",
         "capacityRow.bots.capture_bytes.what",
         "capacityRow.bots.chat_gap_ms.what",
         "capacityRow.bots.cleanup_ms.what",
@@ -470,6 +472,7 @@
         "capacityRow.bots.prompt_ms.what",
         "capacityRow.bots.refresh_ms.what",
         "capacityRow.bots.rpc_ms.what",
+        "capacityRow.bots.send_body_bytes.what",
         "capacityRow.bots.stderr_bytes.full",
         "capacityRow.bots.stderr_bytes.what",
         "capacityRow.bots.survey_ms.what",
@@ -5499,7 +5502,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 88,
+      "count": 90,
       "sources": [
         null
       ],
@@ -5510,6 +5513,7 @@
         "projectAssistants.answered",
         "projectAssistants.appearance",
         "projectAssistants.ask",
+        "projectAssistants.attachPicture",
         "projectAssistants.back",
         "projectAssistants.bots",
         "projectAssistants.cancel",
@@ -5554,6 +5558,7 @@
         "projectAssistants.permissionSearch",
         "projectAssistants.permissionShortened",
         "projectAssistants.permissionSwitchMode",
+        "projectAssistants.picture",
         "projectAssistants.project",
         "projectAssistants.projectsLoading",
         "projectAssistants.queued",

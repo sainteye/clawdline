@@ -21,6 +21,10 @@ export interface SourceClient {
   forget(request: W.ProjectAssistantForgetRequest, signal: AbortSignal): Promise<W.ProjectAssistantMemoryResponse>
   saveMemory(request: W.ProjectAssistantMemoryWriteRequest, signal: AbortSignal): Promise<W.ProjectAssistantMemoryResponse>
   export(request: W.ProjectAssistantBotKey, signal: AbortSignal): Promise<W.ProjectAssistantExport>
+  /** Whether this source accepts pictures with a message. */
+  pictures?(): boolean
+  /** Where the console reads a stored picture, or null when it cannot. */
+  attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null
 }
 
 export function failure(code: W.ProjectAssistantErrorCode): W.ProjectAssistantErrorResponse {

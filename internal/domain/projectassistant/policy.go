@@ -157,6 +157,36 @@ func ValidateMessage(text string) error {
 	}
 	return nil
 }
+
+// ValidateSend admits a message with text, pictures or both.
+func ValidateSend(text string, attachments []Attachment) error {
+	if len(attachments) == 0 {
+		return ValidateMessage(text)
+	}
+	if !utf8.ValidString(text) {
+		return fail(Invalid, "text")
+	}
+	if len(text) > MaxMessageBytes {
+		return fail(CapacityFull, "text")
+	}
+	if len(attachments) > MaxAttachmentsPerMessage {
+		return fail(CapacityFull, "attachments")
+	}
+	for _, a := range attachments {
+		if !attachmentID.MatchString(a.ID) || a.Bytes <= 0 || a.Bytes > MaxAttachmentBytes {
+			return fail(Invalid, "attachment")
+		}
+		switch a.MediaType {
+		case "image/png", "image/jpeg", "image/gif", "image/webp":
+		default:
+			return fail(Invalid, "attachment_type")
+		}
+	}
+	return nil
+}
+
+var attachmentID = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 func CheckAdmission(pending int) error {
 	if pending < 0 {
 		return fail(Invalid, "pending")

@@ -11,9 +11,12 @@ const (
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
-	MaxPendingTurns     = 16
-	MaxPageRows         = 100
-	MaxEventPageRows    = 256
+	// Pictures one message may carry, and each one's size after normalizing.
+	MaxAttachmentsPerMessage = 4
+	MaxAttachmentBytes       = 12 << 20
+	MaxPendingTurns          = 16
+	MaxPageRows              = 100
+	MaxEventPageRows         = 256
 )
 
 type BotKey struct {
@@ -199,11 +202,23 @@ type Message struct {
 	Text           string      `json:"text"`
 	QuoteMessageID string      `json:"quote_message_id"`
 	At             time.Time   `json:"at"`
+	// Attachments are pictures sent with the message, kept by content
+	// digest; the model receives them as native image blocks.
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 type SendMessage struct {
-	Fence          Fence  `json:"fence"`
-	Text           string `json:"text"`
-	QuoteMessageID string `json:"quote_message_id"`
+	Fence          Fence        `json:"fence"`
+	Text           string       `json:"text"`
+	QuoteMessageID string       `json:"quote_message_id"`
+	Attachments    []Attachment `json:"attachments,omitempty"`
+}
+
+// Attachment is one stored picture: its SHA-256 (also its file name), media
+// type and size. The bytes live beside the Store, never in the aggregate.
+type Attachment struct {
+	ID        string `json:"id"`
+	MediaType string `json:"media_type"`
+	Bytes     int64  `json:"bytes"`
 }
 
 type PermissionOption struct {

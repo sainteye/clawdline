@@ -747,6 +747,9 @@ const (
 	BotsToolProbeBytes        = "bots.tool_probe_bytes"
 	BotsFeatureProbeBytes     = "bots.feature_probe_bytes"
 	BotsPermissionActionBytes = "bots.permission_action_bytes"
+	BotsSendBodyBytes         = "bots.send_body_bytes"
+	BotsAttachmentsPerMessage = "bots.attachments_per_message"
+	BotsAttachmentBytes       = "bots.attachment_bytes"
 )
 
 const BotsOwnedDescendants = "bots.owned_children"

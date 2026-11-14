@@ -48,7 +48,7 @@ function work(w:W.ProjectAssistantWorkLink,scope:ReadScope) {
 }
 
 function message(m:W.ProjectAssistantMessage,scope:ReadScope) {
-  if(!m||!text(m.id)||!integer(m.seq,1)||typeof m.text!=="string"||typeof m.turn_id!=="string"||typeof m.quote_message_id!=="string"||!date(m.at)||!oneOf(m.kind,ProjectAssistantMessageKindValues))throw failure("pa_invalid")
+  if(!m||!text(m.id)||!integer(m.seq,1)||typeof m.text!=="string"||typeof m.turn_id!=="string"||typeof m.quote_message_id!=="string"||!date(m.at)||!oneOf(m.kind,ProjectAssistantMessageKindValues)||(m.attachments!==undefined&&(!Array.isArray(m.attachments)||m.attachments.some(a=>!a||!/^[0-9a-f]{64}$/.test(a.id)||typeof a.media_type!=="string"||!integer(a.bytes,1)))))throw failure("pa_invalid")
   own(m.fence,scope)
 }
 function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.ProjectAssistantFence) {

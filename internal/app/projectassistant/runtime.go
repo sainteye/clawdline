@@ -24,6 +24,13 @@ type RuntimeOptions struct {
 	// Authorize must read current source access, never a cached client claim.
 	Authorize func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error)
 	Limits    RuntimeLimits
+	// Attachments reads a message's stored pictures for its prompt.
+	Attachments AttachmentReader
+}
+
+// AttachmentReader returns the bytes stored for one attachment of a Bot.
+type AttachmentReader interface {
+	Read(key pa.BotKey, a pa.Attachment) ([]byte, error)
 }
 
 type Engine struct {
@@ -226,7 +233,7 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if s.Command.Key != s.Message.Fence.Key || s.Source.MachineID != s.Command.Key.MachineID {
 		return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "submission")
 	}
-	if err := pa.ValidateMessage(s.Message.Text); err != nil {
+	if err := pa.ValidateSend(s.Message.Text, s.Message.Attachments); err != nil {
 		return pa.Receipt{}, err
 	}
 	a, err := r.acquire(s.Command.Key)
@@ -332,7 +339,7 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	}
 	fence := currentFence(bot, c)
 	turn := pa.Turn{ID: r.o.ID(), Fence: fence, MessageID: r.o.ID(), State: pa.TurnQueued, IdempotencyKey: s.Command.IdempotencyKey}
-	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: pa.UserMessage, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock()}
+	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: pa.UserMessage, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments}
 	receipt, err := r.mutate(ctx, bot, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
 	if err != nil {
 		return pa.Receipt{}, err
@@ -681,7 +688,11 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 			return err
 		}
 		var e error
-		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff})
+		images, e := r.images(a.key, input.Attachments)
+		if e != nil {
+			return e
+		}
+		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff, Images: images})
 		return e
 	})
 	if err != nil {
@@ -1186,4 +1197,24 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (pa.Receipt, error) {
 
 func (r *Engine) Disable(ctx context.Context, project pa.ProjectSelection) error {
 	return r.shutdown(ctx, &project)
+}
+
+// images reads a message's pictures; a picture that cannot be read fails the
+// turn before anything is sent, rather than sending the text alone.
+func (r *Engine) images(key pa.BotKey, attachments []pa.Attachment) ([]PromptImage, error) {
+	if len(attachments) == 0 {
+		return nil, nil
+	}
+	if r.o.Attachments == nil {
+		return nil, runtimeFailure(pa.Unsupported, "attachments")
+	}
+	out := make([]PromptImage, 0, len(attachments))
+	for _, a := range attachments {
+		data, err := r.o.Attachments.Read(key, a)
+		if err != nil {
+			return nil, runtimeFailure(pa.NotFound, "attachment")
+		}
+		out = append(out, PromptImage{MediaType: a.MediaType, Data: data})
+	}
+	return out, nil
 }

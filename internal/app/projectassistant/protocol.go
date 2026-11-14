@@ -60,6 +60,13 @@ type PromptRequest struct {
 	Context pa.ContextSnapshot
 	Quote   *PromptQuote
 	Handoff *SessionHandoff
+	Images  []PromptImage
+}
+
+// PromptImage is one picture sent with the person's message.
+type PromptImage struct {
+	MediaType string
+	Data      []byte
 }
 type PromptQuote struct {
 	MessageID string

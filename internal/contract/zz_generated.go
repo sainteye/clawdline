@@ -4412,6 +4412,13 @@ type ProjectAssistantAppearance struct {
 	Shape ProjectAssistantShape `json:"shape"`
 }
 
+// A picture sent with a message, named by the SHA-256 of its stored bytes.
+type ProjectAssistantAttachment struct {
+	Bytes     int64  `json:"bytes"`
+	ID        string `json:"id"`
+	MediaType string `json:"media_type"`
+}
+
 type ProjectAssistantBot struct {
 	Agent            ProjectAssistantAgent            `json:"agent"`
 	Appearance       ProjectAssistantAppearance       `json:"appearance"`
@@ -4793,14 +4800,15 @@ type ProjectAssistantMemoryWriteRequest struct {
 }
 
 type ProjectAssistantMessage struct {
-	At             string                      `json:"at"`
-	Fence          ProjectAssistantFence       `json:"fence"`
-	ID             string                      `json:"id"`
-	Kind           ProjectAssistantMessageKind `json:"kind"`
-	QuoteMessageID string                      `json:"quote_message_id"`
-	Seq            int64                       `json:"seq"`
-	Text           string                      `json:"text"`
-	TurnID         string                      `json:"turn_id"`
+	At             string                       `json:"at"`
+	Attachments    []ProjectAssistantAttachment `json:"attachments,omitempty"`
+	Fence          ProjectAssistantFence        `json:"fence"`
+	ID             string                       `json:"id"`
+	Kind           ProjectAssistantMessageKind  `json:"kind"`
+	QuoteMessageID string                       `json:"quote_message_id"`
+	Seq            int64                        `json:"seq"`
+	Text           string                       `json:"text"`
+	TurnID         string                       `json:"turn_id"`
 }
 
 type ProjectAssistantMessageKind string
@@ -5204,10 +5212,14 @@ type ProjectAssistantReceiptResponse struct {
 }
 
 type ProjectAssistantSendRequest struct {
-	Command        ProjectAssistantCommand `json:"command"`
-	Fence          ProjectAssistantFence   `json:"fence"`
-	QuoteMessageID string                  `json:"quote_message_id"`
-	Text           string                  `json:"text"`
+	Command ProjectAssistantCommand `json:"command"`
+	Fence   ProjectAssistantFence   `json:"fence"`
+
+	// Pictures as base64 data: URLs, at most four; each is normalized and stored
+	// before the message is accepted. A daemon below API level 62 refuses this field.
+	Images         []string `json:"images,omitempty"`
+	QuoteMessageID string   `json:"quote_message_id"`
+	Text           string   `json:"text"`
 }
 
 // GET/POST /v1/settings/project-assistants. The response reports actual

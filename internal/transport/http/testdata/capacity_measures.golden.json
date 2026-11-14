@@ -246,6 +246,16 @@
     "Note": true
   },
   {
+    "Name": "bots.attachment_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.attachments_per_message",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.capture_bytes",
     "Known": true,
     "Note": true
@@ -352,6 +362,11 @@
   },
   {
     "Name": "bots.rpc_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.send_body_bytes",
     "Known": true,
     "Note": true
   },

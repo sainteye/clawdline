@@ -56,6 +56,8 @@
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `bots.actors` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.adapter_install_seconds` | 300 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.attachments_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.capture_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
@@ -78,6 +80,7 @@
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.rpc_ms` | 120000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.send_body_bytes` | 25165824 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.tool_probe_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |

@@ -345,7 +345,7 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 	if c.Key != message.Fence.Key {
 		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "message_key")
 	}
-	if err = pa.ValidateMessage(message.Text); err != nil {
+	if err = pa.ValidateSend(message.Text, message.Attachments); err != nil {
 		return pa.Receipt{}, err
 	}
 	c, err = canonicalCommand(c, pa.SendOperation, a.PrincipalID, message)
@@ -504,4 +504,11 @@ func (s *Service) SaveMemory(ctx context.Context, request MemoryWrite) (pa.Memor
 		return pa.MemoryRevision{}, err
 	}
 	return s.opts.Memory.Save(ctx, request)
+}
+
+// AuthorizeRead admits reading a Bot's stored pictures with the same current
+// access as reading its messages.
+func (s *Service) AuthorizeRead(ctx context.Context, key pa.BotKey) error {
+	_, err := s.authorize(ctx, key, false)
+	return err
 }

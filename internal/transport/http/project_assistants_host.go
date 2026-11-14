@@ -19,6 +19,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	"github.com/sainteye/clawdline/internal/adapters/projectassistanthost"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -114,7 +115,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit,
 		Projects:          projectAssistantProjects{s}, Broker: s.broker, Clock: time.Now,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
-		Source: s.projectAssistantSource, Provider: provider,
+		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(),
 		// The provider receives only execution-bound NativeTools from Host.
 		// Dispatch follows CodyNC: a Bot may hand isolated work on any file
 		// of its own repository Project to a Claude worker that accepts
@@ -381,7 +382,7 @@ func (s *Server) projectAssistantsRoute(w http.ResponseWriter, r *http.Request) 
 		paWriteHTTPFailure(w, err)
 		return
 	}
-	newProjectAssistantHTTP(projectAssistantHTTPOptions{Service: service, MachineID: i.MachineID, BeforeViewPublish: p.beforeViewPublish,
+	newProjectAssistantHTTP(projectAssistantHTTPOptions{Service: service, MachineID: i.MachineID, Attachments: s.projectAssistantAttachments(), BeforeViewPublish: p.beforeViewPublish,
 		Status: func(ctx context.Context) (pa.SourceStatus, error) {
 			a, err := s.projectAssistantAuthority(ctx, pa.BotKey{MachineID: i.MachineID}, false)
 			return a.Source, err
@@ -511,4 +512,9 @@ func (s *Server) setProjectAssistantSettings(ctx context.Context, f *nextconfig.
 func projectAssistantDispatchPolicy(context.Context, pa.BotKey) (projectassistanthost.DispatchPolicy, error) {
 	return projectassistanthost.DispatchPolicy{Allowed: true, AnyProjectFile: true, Assistant: "claude", PermissionMode: "edits",
 		TimeoutMinutes: capacity.MaximumBotDispatchSeconds / 60}, nil
+}
+
+// projectAssistantAttachments is where pictures sent to Bots are kept.
+func (s *Server) projectAssistantAttachments() projectassistantstore.Attachments {
+	return projectassistantstore.Attachments{Dir: filepath.Join(s.cfg.Dir, "project-assistants", "attachments")}
 }

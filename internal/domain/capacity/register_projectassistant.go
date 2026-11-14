@@ -31,6 +31,8 @@ const (
 	// The text a permission card shows of one native action: title, command
 	// or input and diffs together.
 	MaximumBotPermissionActionBytes = 32768
+	// One send with its pictures as data: URLs.
+	MaximumBotSendBodyBytes = 24 << 20
 )
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
@@ -121,5 +123,14 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsPermissionActionBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotPermissionActionBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotPermissionActionBytes"}},
+		{Name: BotsSendBodyBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotSendBodyBytes, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotSendBodyBytes"}},
+		{Name: BotsAttachmentsPerMessage, Class: Buffer, Unit: Rows, Limit: pa.MaxAttachmentsPerMessage, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/projectassistant.MaxAttachmentsPerMessage"}},
+		{Name: BotsAttachmentBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxAttachmentBytes, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/projectassistant.MaxAttachmentBytes"}},
 	}
 }

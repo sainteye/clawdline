@@ -47,6 +47,8 @@ type Options struct {
 	// NativeWork is composition-only. Unregister must remove its process-local
 	// entry synchronously without IO or background work; Host owns its lifetime.
 	NativeWork func(context.Context, app.OpenRequest, NativeWork) (func(), error)
+	// Attachments reads the pictures sent with messages for their prompts.
+	Attachments app.AttachmentReader
 }
 
 type Host struct {
@@ -419,7 +421,7 @@ func (h *Host) runtime() (*app.Engine, error) {
 		return h.engine, nil
 	}
 	p := &lazyProvider{factory: h.o.Provider}
-	r, err := app.NewRuntime(app.RuntimeOptions{Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	r, err := app.NewRuntime(app.RuntimeOptions{Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Attachments: h.o.Attachments, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		f, s, e := h.background(ctx, key, true)
 		if e != nil {
 			return f, s, e

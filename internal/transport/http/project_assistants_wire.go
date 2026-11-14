@@ -138,6 +138,9 @@ func paWireMessage(value pa.Message) (contract.ProjectAssistantMessage, error) {
 	out.Kind = contract.ProjectAssistantMessageKind(value.Kind)
 	out.Text = value.Text
 	out.QuoteMessageID = value.QuoteMessageID
+	for _, a := range value.Attachments {
+		out.Attachments = append(out.Attachments, contract.ProjectAssistantAttachment{ID: a.ID, MediaType: a.MediaType, Bytes: a.Bytes})
+	}
 	convertedAt, err := paWireTime(value.At)
 	if err != nil {
 		return out, err

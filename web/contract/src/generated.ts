@@ -5157,6 +5157,15 @@ export interface ProjectAssistantAppearance {
   shape: ProjectAssistantShape
 }
 
+/**
+ * A picture sent with a message, named by the SHA-256 of its stored bytes.
+ */
+export interface ProjectAssistantAttachment {
+  bytes: number
+  id: string
+  media_type: string
+}
+
 export interface ProjectAssistantBot {
   agent: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
@@ -5558,6 +5567,7 @@ export interface ProjectAssistantMemoryWriteRequest {
 
 export interface ProjectAssistantMessage {
   at: string
+  attachments?: ProjectAssistantAttachment[]
   fence: ProjectAssistantFence
   id: string
   kind: ProjectAssistantMessageKind
@@ -6015,6 +6025,12 @@ export interface ProjectAssistantReceiptResponse {
 export interface ProjectAssistantSendRequest {
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
+
+  /**
+   * Pictures as base64 data: URLs, at most four; each is normalized and stored
+   * before the message is accepted. A daemon below API level 62 refuses this field.
+   */
+  images?: string[]
   quote_message_id: string
   text: string
 }
