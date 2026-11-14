@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11994,
+  "englishKeys": 11996,
   "counts": {
-    "negation": 3262,
+    "negation": 3263,
     "state": 2004,
     "permission": 705,
     "deletion": 267,
     "uncertainty": 454
   },
-  "unionCount": 5219,
+  "unionCount": 5220,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2935,6 +2935,7 @@
       "playbook.sourceStartUnavailable",
       "playbook.sourceUnavailable",
       "playbook.zeroReviewBody",
+      "projectAssistants.cannotEdit",
       "projectAssistants.draftUnavailable",
       "projectAssistants.empty",
       "projectAssistants.emptyMemory",
@@ -11346,6 +11347,7 @@
     "projectAssistants.approvalMode",
     "projectAssistants.auto_read",
     "projectAssistants.cancelled",
+    "projectAssistants.cannotEdit",
     "projectAssistants.clearQuote",
     "projectAssistants.completed",
     "projectAssistants.delivered",

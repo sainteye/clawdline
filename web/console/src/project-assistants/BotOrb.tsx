@@ -21,7 +21,11 @@ export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,variant="f
   const [lifted,setLifted]=useState<{x:number;y:number}|null>(null)
   const ringing=useRinging(count)
   const docked=place.docked&&dock
-  if(variant==="float"&&docked)return null
+  // A docked orb waits a moment before floating while the quota bar is away:
+  // the bar returns after its readings load, and the orb should not flash
+  // over the Session list in between. Without the bar it still floats.
+  const waiting=useDockGrace(place.docked&&!dock)
+  if(variant==="float"&&(docked||waiting))return null
   if(variant==="dock"&&!docked)return null
   const label=`${w.allBots}${count?`, ${w.pending}: ${pendingPermissions}, ${w.unread}: ${unread}`:""}`
   const reset=()=>{drag.current=null;setOffset(null);setLifted(null)}
@@ -94,6 +98,19 @@ function useRinging(count:number){
     return()=>clearTimeout(timer)
   },[count])
   return ringing
+}
+
+/** True for DOCK_GRACE_MS after a docked orb loses its bar, then false. */
+export const DOCK_GRACE_MS = 1500
+function useDockGrace(away:boolean){
+  const [waiting,setWaiting]=useState(away)
+  useEffect(()=>{
+    if(!away){setWaiting(false);return}
+    setWaiting(true)
+    const timer=setTimeout(()=>setWaiting(false),DOCK_GRACE_MS)
+    return()=>clearTimeout(timer)
+  },[away])
+  return away&&waiting
 }
 
 // The quota bar says whether it is on screen, so a docked orb never vanishes

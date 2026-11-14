@@ -8,6 +8,7 @@ import { BotStatus } from "./BotStatus"
 import { Chat } from "./Chat"
 import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type ViewState } from "./view-state"
 import { words } from "./words"
+import { shownSourceError } from "./source-errors"
 import "./styles.css"
 
 export interface BotsProps {
@@ -43,7 +44,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const selectedItem=items.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
   const statuses=Object.entries(pages).flatMap(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
-  const errors=Object.entries(pages).filter(([id,p])=>p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id,p])=>[id,`${w.sourceError} (${p.error})`] as [string,string])
+  const errors=Object.entries(pages).filter(([id,p])=>shownSourceError(p.error)&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id,p])=>[id,`${w.sourceError} (${p.error})`] as [string,string])
   const load=useCallback(async(append=false)=>{
     if(!append){controller.current?.abort();controller.current=new AbortController()}
     const control=controller.current??new AbortController(),id=++request.current
