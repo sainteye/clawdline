@@ -99,7 +99,8 @@ func (s *Server) projectAssistantTargetCatalog(machine string) ([]contract.Proje
 		if !utf8.ValidString(label) || strings.TrimSpace(label) == "" || strings.ContainsFunc(label, unicode.IsControl) {
 			return nil, "", paHTTPFailure(pa.StaleVersion, "project_label")
 		}
-		items = append(items, contract.ProjectAssistantProjectOption{Label: label,
+		grid, _ := s.icons.Resolve(row.Path)
+		items = append(items, contract.ProjectAssistantProjectOption{Label: label, Icon: wireIcon(grid),
 			Target: contract.ProjectAssistantProjectSelection{MachineID: machine, ProjectID: id}})
 	}
 	// Include every registered metadata field, even one not displayed as a

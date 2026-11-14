@@ -67,6 +67,12 @@ export interface ToolDeps {
   now?: () => number
   /** The machine's prepared briefing for this call, when it has one (`copilot-briefing`). */
   briefing?: () => Promise<string | null>
+  /**
+   * When the machine writes Session recaps (docs/session-recaps.md): "off",
+   * "background" (written ahead, read from the rows) or "on_demand" (written
+   * when a tool asks). Absent is off.
+   */
+  recapMode?: () => string
   /** Opens one Session on the page the call runs in; true once it is on screen. */
   openSession?: (id: string, machine?: string) => Promise<boolean>
   /** Shows a saved title on this page at once (`titleSavedOnThisPage`). */
@@ -185,8 +191,8 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 【工具】
 - list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，未讀取逐字稿）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
 - get_sessions_summary：一群 Session 各自的摘要，依最近活動排序；通話每次只介紹回傳的最多3個，其他批次由程式接續，不把所有項目壓成一句話。每個先說清楚它的名稱，再用日常語言解釋目的、進展及真正待決事項；不要只重念程式術語。使用者要繼續被打斷的介紹時設 continue_report=true，不要重新查清單。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
-- get_session_summary：某個 Session 現在的摘要（最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」用這個。
-- get_session_recap：某個 Session 從開始到現在的完整經過。問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」用這個。
+- get_session_summary：某個 Session 現在的摘要（它自己寫的 recap 與詳細版 recap_detail、最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」「目前為止完成了哪些事情、有哪些事情需要我決定」「報告這個 Session 的 summary」都先用這個。
+- get_session_recap：某個 Session 從開始到現在的完整經過。get_session_summary 沒有 recap_detail，而使用者問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」時用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
 - explain_session_reply：某個 Session 最後一則回覆的全文，加上使用者最後交代它的事。使用者說「解釋給我聽」「它在說什麼」「我看不懂」「它要我決定什麼」「講詳細一點」時用這個。
 - get_session_screen：某個 Session 的終端畫面，只在需要看畫面細節時用。
@@ -250,10 +256,12 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 【讀懂 Session 的資料】
 - goal 是使用者最近交代那個 Session 的原話，裡面的「你」指的是那個 Session 的 AI，不是使用者。轉述時改成第三人稱，例如原話「把你的配音改成 ash」要說成「你請它把配音改成 ash」，絕對不要說成「把你改成 ash」。
 - recent 是那個 Session 自己回報做完的事，latest 是它最近說的一句話，delivered 是它的交付摘要；講的時候只用這些欄位裡有的內容，不要把不同 Session 的內容混在一起，不要補沒寫的事。
+- recap_detail 是同一份摘要的詳細版：目標、從對話開始到現在完成的主要事情、正在做或卡住的地方、每一件需要使用者決定或處理的事（附它提供的選項）。使用者問「這個 Session 目前為止完成了哪些事情、有哪些事情需要我決定」或「報告這個 Session 的 summary」時，先呼叫 get_session_summary，有 recap_detail 就以它為主回答：先講完成了哪些事，再逐一講需要他決定的事和選項；recap_detail 說不需要他處理，就明確說「目前沒有要你決定的事」。這時不受三句限制，但不要逐字念，照意思講成口語。
+- recap 是那個 Session 自己的 AI 讀完整段對話後，用白話寫的「它在做什麼、做到哪、現在輪到誰」。有 recap 時，講這個 Session 的狀況就以 recap 為主，照它的意思講，不要改講 latest 裡的檔名、測試數字或程式步驟；recent、latest 只用來補 recap 沒說到的最新一步。有 recap_written 表示這份摘要是那麼久以前寫的，之後又有新進展：照 recap 講完，再用一句說「這是某某時候的狀況，之後它又動過」，需要時補 latest。
 
 【回報清單】
 - 第一句一定先照 summary 講總數與分類，例如「五個 Session：一個在等你、兩個在工作、兩個閒置。」數量是 0 的分類不要講。
-- 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用兩到三句講：它的目標（goal）、最近完成了什麼（recent）、現在正在做什麼（latest）。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
+- 接著依序：等你的，說名稱與它在問什麼；工作中的，每個都說名稱，再用兩到三句講：有 recap 就照 recap 講它在做什麼、做到哪、輪到誰；沒有 recap 才講它的目標（goal）、最近完成了什麼（recent）、現在正在做什麼（latest）。名稱太長可以縮短，但不要用「第一個」「第二個」代替。已完成與閒置的只說數量，使用者問才展開。
 - 使用者要「工作中的 Session 的狀況」時，這一段可以長，寧可講清楚也不要一句帶過；一個 Session 講完換個氣，直接接著講下一個。
 - 總數之後接著說每個相關 Session 的重點，絕對不可以講完總數就結束。每換一個主題就自然停頓，先講它對使用者的影響，再補原因；使用者插話時停下原本的匯報，先回應他。最後一個重點講完就停，不要加「這是目前的狀態」「以上」「大概是這樣」。
 
@@ -327,7 +335,7 @@ export const COPILOT_TOOLS = [
     type: 'function',
     name: 'get_session_summary',
     description:
-      '讀取特定 Session 的摘要：它最後一次交付時自己寫的回報摘要（delivered_summary）、AI 最後一則回覆（last_reply）、目前狀態，在等使用者時附上它在問什麼。回答「它做完了什麼、結果如何、現在怎樣」時優先用這個，比讀完整工作紀錄快。',
+      '讀取特定 Session 的摘要：它自己的 AI 讀完整段對話寫的白話摘要（recap）與詳細版（recap_detail：目標、到目前為止完成的事、正在做或卡住的地方、需要使用者決定的事與選項），它最後一次交付時自己寫的回報摘要（delivered_summary）、AI 最後一則回覆（last_reply）、目前狀態，在等使用者時附上它在問什麼。回答「它目前為止完成了哪些事、有哪些事要我決定」「報告這個 Session 的 summary」「它做完了什麼、結果如何、現在怎樣」時優先用這個，比讀完整工作紀錄快。結果沒有 recap_detail 而使用者要的是從頭到尾的經過時，再改用 get_session_recap。',
     parameters: {
       type: 'object',
       properties: {
@@ -795,6 +803,11 @@ export interface CopilotSessionRow {
   last_activity_at?: number
   question?: string
   options?: string[]
+  /**
+   * The Session's own assistant's plain recap of its conversation, from a fork
+   * of it (`recap`, docs/session-recaps.md); `current` when nothing was said since.
+   */
+  recap?: { text: string; detail?: string; at: number; current: boolean }
   /** The Session's own words for its last delivery (`clawdline session report --summary`). */
   delivered?: string
   delivered_at?: number
@@ -871,6 +884,11 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
       if (disposition && str(disposition.title).trim()) {
         row.delivered = plainScreenText(str(disposition.title)).trim()
         if (typeof disposition.receiptAt === 'number') row.delivered_at = disposition.receiptAt
+      }
+      const recap = s.recap as { text?: unknown; detail?: unknown; at?: unknown; current?: unknown } | undefined
+      if (recap && typeof recap === 'object' && str(recap.text).trim()) {
+        row.recap = { text: str(recap.text).trim(), at: typeof recap.at === 'number' ? recap.at : 0, current: recap.current === true,
+          ...(str(recap.detail).trim() ? { detail: str(recap.detail).trim() } : {}) }
       }
       if (typeof s.attention_count === 'number' && s.attention_count > 0) row.notes = s.attention_count
       const close = s.closeability as { state?: unknown; version?: unknown; reasons?: unknown } | undefined
@@ -1252,8 +1270,10 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   const shown = group.slice(0, deps.summaryLimit?Math.min(deps.summaryLimit,projectBatchSize(group.slice(0,SESSION_REPORT_SESSIONS))):LIST_LATEST_READS)
   const ref=(r:CopilotSessionRow):SessionReference=>({id:r.id,label:r.label,machine:r.machine,conversation:r.conversation,...(r.project?{project:r.project}:{})})
   const remaining=deps.summaryLimit?group.slice(shown.length,SESSION_REPORT_SESSIONS).map(ref):[]
+  const recaps = new Map<string, SpokenRecap | undefined>()
   const progress = await Promise.all(shown.map(async (r) => {
-    const words=await latestWords(deps,r)
+    const [words, recap]=await Promise.all([latestWords(deps,r), forkedRecap(deps,logs,r)])
+    recaps.set(r.id, recap)
     if(deps.progress) await deps.progress(JSON.stringify({label:r.label,...progressFields(words)}))
     return words
   }))
@@ -1271,6 +1291,7 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
       label: r.label,
       state: waits(r) ? 'needs_you' : r.state,
       ...(whenPhrase(lastMoved(r) || undefined, now) ? { last_active: whenPhrase(lastMoved(r) || undefined, now) } : {}),
+      ...recapFields(recaps.get(r.id), now, true),
       ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
       ...(r.question ? { question: r.question } : {}),
       ...progressFields(progress[i]),
@@ -1293,6 +1314,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const idle = rows.filter((r) => !needs.includes(r) && !working.includes(r) && !done.includes(r))
   const brief = (r: CopilotSessionRow) => ({
     id: r.id, label: r.label, assistant: r.assistant,
+    ...recapFields(r.recap, now),
     ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
     ...(r.notes ? { notes: r.notes } : {}),
   })
@@ -1322,7 +1344,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
 }
 
 /** Every directory row is metadata; content requires an explicit read. */
-export const CONTENT_NOT_READ = '清單只有狀態、名稱、時間和既有交付摘要，未讀取逐字稿內容。被問到它們在做什麼、做到哪、結果如何，一定先呼叫 get_session_summary，不可以從名稱猜'
+export const CONTENT_NOT_READ = '清單只有狀態、名稱、時間、既有交付摘要，以及有 recap 的 Session 自己寫的白話摘要，未讀取逐字稿內容。有 recap 的可以直接照 recap 講它在做什麼、做到哪、輪到誰；沒有 recap 的被問到在做什麼、做到哪、結果如何，一定先呼叫 get_sessions_summary 或 get_session_summary，不可以從名稱猜'
 
 /** A screen's text once its capture has arrived, or why it could not be had. */
 async function readScreen(deps: ToolDeps, row: CopilotSessionRow): Promise<{ text: string; attempt: number } | { error: string }> {
@@ -1676,6 +1698,60 @@ function say(en: string, zh: string): string {
   return /^(?:zh|zh-hant|zh-tw|zh-hk)(?:-|$)/i.test(pageLanguage()) && !/^zh-hans/i.test(pageLanguage()) ? zh : en
 }
 
+/** A Session recap as a tool hands it on: its words and when they were written. */
+export interface SpokenRecap { text: string; detail?: string; at: number; current: boolean }
+
+/** How long the copilot waits for a recap the machine writes now (`maxSessionRecapWait`). */
+export const FORKED_RECAP_MS = 50_000
+
+/**
+ * A Session's recap for a tool (docs/session-recaps.md). A current one on the
+ * row is used as it is. Otherwise, when the machine writes recaps, it is asked
+ * for one: it forks the Session's conversation now, or answers with the one it
+ * kept when nothing was said since. A stale recap on the row is better than
+ * none when the machine cannot write a new one in time.
+ */
+export async function forkedRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<SpokenRecap | undefined> {
+  if (row.recap?.current) return row.recap
+  const mode = deps.recapMode?.() ?? 'off'
+  if (mode !== 'on_demand' && mode !== 'background') return row.recap
+  let res: Response
+  try {
+    res = await rowFetch(deps, row)('/v1/voice/copilot-recap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
+      body: JSON.stringify({ session: sid(row), fork: true }),
+      signal: AbortSignal.timeout(FORKED_RECAP_MS),
+    })
+  } catch {
+    // refusal-ok: without a new recap the tool still answers from the row and the record.
+    logs.push({ level: 'info', text: say(`"${row.label}" did not write a recap in time`, `「${row.label}」沒有及時寫好摘要`) })
+    return row.recap
+  }
+  if (!res.ok) {
+    const why = await refusalText(res)
+    logs.push({ level: 'info', text: say(`"${row.label}" did not write a recap (HTTP ${res.status}${why ? `: ${why}` : ''})`, `「${row.label}」沒有寫摘要（HTTP ${res.status}${why ? `：${why}` : ''}）`) })
+    return row.recap
+  }
+  const body = (await res.json().catch(() => null)) as { recap?: unknown; detail?: unknown; at?: unknown; current?: unknown } | null
+  const text = str(body?.recap).trim()
+  if (!text) return row.recap
+  logs.push({ level: 'info', text: say(`Read the recap "${row.label}" wrote of itself`, `讀了「${row.label}」自己寫的摘要`) })
+  return { text, at: typeof body?.at === 'number' ? body.at : 0, current: body?.current === true, ...(str(body?.detail).trim() ? { detail: str(body?.detail).trim() } : {}) }
+}
+
+/**
+ * A recap's fields in a tool result: its words, how long ago they were written
+ * when that is not now, and — for a tool about one Session or a report — the
+ * fuller account (`recap_detail`) that answers "what has it finished, what do
+ * I need to decide".
+ */
+export function recapFields(recap: SpokenRecap | undefined, now: number, detail = false): Record<string, unknown> {
+  if (!recap) return {}
+  const written = recap.at > 0 && recap.at <= now ? whenPhrase(recap.at, now) : ''
+  return { recap: recap.text, ...(detail && recap.detail ? { recap_detail: recap.detail } : {}), ...(!recap.current && written ? { recap_written: written } : {}) }
+}
+
 async function machineRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
   let res: Response
   try {
@@ -1847,13 +1923,14 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
   } catch {
     // refusal-ok: the summary still carries the Session's own delivery words and state without its transcript.
   }
-  const progress = await boardProgress(deps, row)
+  const [progress, recap] = await Promise.all([boardProgress(deps, row), forkedRecap(deps, logs, row)])
   const out = {
     session_id: row.id,
     label: row.label,
     assistant: row.assistant,
     state: row.state,
     work_state: row.work_state,
+    ...recapFields(recap, now, true),
     ...(progress ? { progress } : {}),
     ...(row.delivered ? { delivered_summary: row.delivered } : {}),
     ...(whenPhrase(row.delivered_at, now) ? { delivered_when: whenPhrase(row.delivered_at, now) } : {}),
@@ -1862,7 +1939,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
     ...(row.question ? { question: row.question } : {}),
     ...(row.choices?.length ? { options: row.choices.map((c) => `${c.n}. ${c.label}`) } : row.options?.length ? { options: row.options } : {}),
     ...(row.notes ? { notes: row.notes } : {}),
-    ...(!row.delivered && !lastReply ? { note: '這個 Session 沒有交付摘要也讀不到回覆，可改用 get_session_screen 看畫面' } : {}),
+    ...(!row.delivered && !lastReply && !recap ? { note: '這個 Session 沒有交付摘要也讀不到回覆，可改用 get_session_screen 看畫面' } : {}),
   }
   logs.push({ level: 'info', text: say(`Read the summary of "${row.label}"${row.delivered ? ' (with its delivery summary)' : ''}`, `成功讀取「${row.label}」摘要${row.delivered ? '（含交付摘要）' : ''}`) })
   return out

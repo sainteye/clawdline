@@ -55,6 +55,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/connectionhealth"
+	"github.com/sainteye/clawdline/internal/domain/copilot"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/projectsync"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -62,6 +63,8 @@ import (
 )
 
 type Server struct {
+	// recaps keeps each Session's forked recap (session_recaps.go).
+	recaps             *recapBook
 	projectAssistants  projectAssistantServer
 	voiceWorkMu        sync.Mutex
 	voiceWorkWake      uint64
@@ -354,6 +357,17 @@ func New(cfg config.Config) (*Server, error) {
 	// One producer in front of it, so three loops are one scan.
 	srv.readings = app.NewInventoryReading(func(ctx context.Context) session.Inventory { return srv.inventory.Read(ctx) }, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
+	recapPlanner := planner.New()
+	recapPlanner.Timeout = maxSessionRecapDuration
+	srv.recaps = newRecapBook(cfg.Dir, recapPlanner.Recap, func() string {
+		v, err := srv.readCopilot()
+		if err != nil {
+			return copilot.RecapOff
+		}
+		return v.Effective().SessionRecaps
+	}, srv.recordPath)
+	srv.recaps.language = srv.productLanguage
+	srv.readings.Observe(srv.recaps.Observe)
 	srv.readings.SetAnswerAge(CapacityLimit(capacity.CacheSourceAnswer))
 	inventoryBackoffMax := time.Duration(CapacityLimit(capacity.CacheSessionInventory)) * time.Second
 	inventoryBackoffFirst := min(app.ScreenBackoffFirst, inventoryBackoffMax)

@@ -34,6 +34,24 @@ use the page; drag the bubble aside, press it to open the call again, or press i
 - How to use Clawdline: it answers from this guide, and says so when the guide does not cover it.
 - To speak slower or faster, or to answer shorter or longer.
 
+## Session recaps
+
+With **Session recaps** on (**Settings** → **Voice copilot**), each Session's own assistant reads its
+whole conversation from a throwaway copy and writes, in the console's language, one or two plain
+sentences — what it is working on, where it got to, and whose move it is — and a fuller account for
+the copilot: what it has finished so far and every decision it needs from you. Ask "what has this
+Session finished, and what do I need to decide?" or "report this Session's summary" and the copilot
+answers from it. **Session info** shows the short recap under **Status**. The conversation itself is
+never changed, and the copy is not kept.
+
+- **Written ahead**: about three minutes after a Session stops, and every ten minutes while it
+  works. The copilot answers at once.
+- **When the copilot asks**: nothing is spent until you ask; then each Session takes about eight
+  seconds, three at a time. A Session that has said nothing since its last recap reuses it.
+
+Each recap uses that Session's own Claude Code or Codex account: Claude answers with Haiku, about
+one US cent each. Other assistants are not recapped.
+
 ## What it shows
 
 Each thing the machine confirmed — a message sent, a question answered, a Session closed — shows a
