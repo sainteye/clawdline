@@ -96,3 +96,19 @@ Remove the setup command, installed provider and production factory wiring to
 remove this route. Keep persisted Bot data, ordinary Sessions and the user's
 existing CLI/login. Never remove another execution's runtime directory as
 part of cleanup.
+
+## Codex
+
+Since 2026-11-14 a Codex Bot runs the same way (`installation_codex.go`):
+the person's codex 0.166.0 or newer, found like Claude Code, and the supplied
+`@agentclientprotocol/codex-acp` 2.6.0, installed from its bundled lockfile
+and sealed by `codexAdapterTreeSHA`. codex-acp bundles its code in
+`dist/index.js` and starts codex through `CODEX_PATH`; its `@openai/codex`
+dependency is installed without the optional platform binaries.
+
+Codex keeps its ChatGPT login in `$CODEX_HOME/auth.json`, so the Bot uses the
+person's own Codex home instead of a feature-owned one. Native memory is
+admitted only while `codex features list` reports `memories` false; a person
+who turns it on gets `memory_isolation_unverified` (`codex_memories_enabled`).
+Codex native resume is not qualified: each execution starts a new native
+session from the Host's filtered history and memory.

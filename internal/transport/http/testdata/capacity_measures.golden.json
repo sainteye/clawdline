@@ -271,6 +271,11 @@
     "Note": true
   },
   {
+    "Name": "bots.feature_probe_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.frame_bytes",
     "Known": true,
     "Note": true

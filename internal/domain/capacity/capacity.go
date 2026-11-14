@@ -745,6 +745,7 @@ const (
 	BotsAdapterInstallSeconds = "bots.adapter_install_seconds"
 	BotsToolProbe             = "bots.tool_probe_ms"
 	BotsToolProbeBytes        = "bots.tool_probe_bytes"
+	BotsFeatureProbeBytes     = "bots.feature_probe_bytes"
 )
 
 const BotsOwnedDescendants = "bots.owned_children"

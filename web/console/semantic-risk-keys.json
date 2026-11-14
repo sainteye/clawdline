@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11892,
+  "englishKeys": 11894,
   "counts": {
-    "negation": 3248,
-    "state": 1990,
+    "negation": 3249,
+    "state": 1991,
     "permission": 701,
     "deletion": 264,
     "uncertainty": 456
   },
-  "unionCount": 5190,
+  "unionCount": 5191,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -159,6 +159,7 @@
       "capacityRow.bots.chat_gap_ms.full",
       "capacityRow.bots.cleanup_ms.full",
       "capacityRow.bots.dispatch_seconds.full",
+      "capacityRow.bots.feature_probe_bytes.full",
       "capacityRow.bots.message_bytes.full",
       "capacityRow.bots.owned_children.full",
       "capacityRow.bots.page_rows.what",
@@ -3359,6 +3360,7 @@
       "capacityRow.bots.cleanup_ms.full",
       "capacityRow.bots.dispatch_seconds.full",
       "capacityRow.bots.event_rows.full",
+      "capacityRow.bots.feature_probe_bytes.full",
       "capacityRow.bots.instruction_bytes.full",
       "capacityRow.bots.message_bytes.full",
       "capacityRow.bots.message_bytes.what",
@@ -6948,6 +6950,7 @@
     "capacityRow.bots.cleanup_ms.full",
     "capacityRow.bots.dispatch_seconds.full",
     "capacityRow.bots.event_rows.full",
+    "capacityRow.bots.feature_probe_bytes.full",
     "capacityRow.bots.instruction_bytes.full",
     "capacityRow.bots.message_bytes.full",
     "capacityRow.bots.message_bytes.what",

@@ -107,7 +107,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 	}
 	provider := p.provider
 	if provider == nil {
-		provider = func() (app.Provider, error) { return projectassistantacp.InstalledClaudeProvider(s.cfg.Dir), nil }
+		provider = func() (app.Provider, error) { return projectassistantacp.InstalledProvider(s.cfg.Dir), nil }
 	}
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
 		Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,

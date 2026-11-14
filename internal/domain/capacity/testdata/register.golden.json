@@ -1133,6 +1133,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.feature_probe_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotFeatureProbeBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.frame_bytes",
     "Class": "buffer",
     "Unit": "bytes",

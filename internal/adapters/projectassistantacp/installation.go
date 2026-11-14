@@ -40,13 +40,23 @@ type ClaudeInstallation struct {
 	Adapter string            `json:"adapter"`
 	Files   map[string]string `json:"files"`
 	tools   nativeTools
+	spec    *adapterSpec
+}
+
+func (i ClaudeInstallation) adapter() adapterSpec {
+	if i.spec != nil {
+		return *i.spec
+	}
+	return claudeSpec
 }
 
 // CLIVersion is the person's Claude Code version found for this setup.
 func (i ClaudeInstallation) CLIVersion() string { return i.tools.CLIVersion }
 
-func installationPath(state string) string {
-	return filepath.Join(state, "project-assistants", "claude-installation.json")
+func installationPath(state string) string { return manifestPath(state, claudeSpec) }
+
+func manifestPath(state string, spec adapterSpec) string {
+	return filepath.Join(state, "project-assistants", spec.Manifest)
 }
 
 func fileDigest(path string) (string, error) {
@@ -71,7 +81,7 @@ func fileDigest(path string) (string, error) {
 }
 
 func (i ClaudeInstallation) moduleRoot() (string, error) {
-	suffix := filepath.Join("node_modules", "@agentclientprotocol", "claude-agent-acp", "dist", "index.js")
+	suffix := filepath.Join("node_modules", "@agentclientprotocol", i.adapter().Name, "dist", "index.js")
 	if !filepath.IsAbs(i.Adapter) || !strings.HasSuffix(i.Adapter, string(filepath.Separator)+suffix) {
 		return "", refusal(pa.Invalid, "native_adapter_path")
 	}
@@ -89,7 +99,9 @@ func (i ClaudeInstallation) artifacts(ctx context.Context) (map[string]string, e
 	if e != nil {
 		return nil, e
 	}
-	for path, want := range map[string]string{i.Adapter: claudeEntrySHA, filepath.Join(filepath.Dir(i.Adapter), "v1", "acp-agent.js"): claudeAgentSHA} {
+	pkg := filepath.Dir(filepath.Dir(i.Adapter))
+	for rel, want := range i.adapter().EntrySHAs {
+		path := filepath.Join(pkg, filepath.FromSlash(rel))
 		actual, e := fileDigest(path)
 		if e != nil {
 			return nil, e
@@ -103,7 +115,7 @@ func (i ClaudeInstallation) artifacts(ctx context.Context) (map[string]string, e
 	if e != nil {
 		return nil, e
 	}
-	if digest != claudeAdapterTreeSHA {
+	if digest != i.adapter().TreeSHA {
 		return nil, refusal(pa.ProviderVersionUnsupported, "native_dependencies_changed")
 	}
 	return files, nil
@@ -127,7 +139,16 @@ func nativeAccount() (string, string, error) {
 // prompt. Installing the adapter is the only network use: npm fetches the
 // lockfile's packages, each checked against the lockfile's integrity.
 func SetupClaude(ctx context.Context, state string) (ClaudeInstallation, error) {
-	var i ClaudeInstallation
+	return setupAdapter(ctx, state, claudeSpec)
+}
+
+// SetupCodex is SetupClaude for the person's codex and the Codex adapter.
+func SetupCodex(ctx context.Context, state string) (ClaudeInstallation, error) {
+	return setupAdapter(ctx, state, codexSpec)
+}
+
+func setupAdapter(ctx context.Context, state string, spec adapterSpec) (ClaudeInstallation, error) {
+	i := ClaudeInstallation{spec: &spec}
 	if runtime.GOOS != "darwin" {
 		return i, refusal(pa.Unsupported, "native_platform")
 	}
@@ -139,15 +160,15 @@ func SetupClaude(ctx context.Context, state string) (ClaudeInstallation, error) 
 	if e != nil {
 		return i, e
 	}
-	tools, e := findTools(ctx, home, account, SearchDirectories(home))
+	tools, e := findToolsFor(ctx, home, account, SearchDirectories(home), spec)
 	if e != nil {
 		return i, e
 	}
-	dir, e := installAdapter(ctx, resolved, tools, home, account)
+	dir, e := installAdapterFor(ctx, resolved, tools, home, account, spec)
 	if e != nil {
 		return i, e
 	}
-	i = ClaudeInstallation{Format: installationFormat, Adapter: adapterEntry(dir), tools: tools}
+	i = ClaudeInstallation{Format: installationFormat, Adapter: spec.entry(dir), tools: tools, spec: &spec}
 	files, e := i.artifacts(ctx)
 	if e != nil {
 		return i, e
@@ -157,7 +178,7 @@ func SetupClaude(ctx context.Context, state string) (ClaudeInstallation, error) 
 	if e != nil {
 		return i, e
 	}
-	path := installationPath(resolved)
+	path := manifestPath(resolved, spec)
 	f, e := os.CreateTemp(filepath.Dir(path), ".claude-installation-")
 	if e != nil {
 		return i, refusal(pa.Invalid, "native_state")
@@ -183,8 +204,12 @@ func SetupClaude(ctx context.Context, state string) (ClaudeInstallation, error) 
 // readInstallation verifies the recorded adapter seal and finds the person's
 // tools for this execution. It never installs anything.
 func readInstallation(ctx context.Context, state string) (ClaudeInstallation, error) {
-	var i ClaudeInstallation
-	f, e := os.Open(installationPath(state))
+	return readAdapter(ctx, state, claudeSpec)
+}
+
+func readAdapter(ctx context.Context, state string, spec adapterSpec) (ClaudeInstallation, error) {
+	i := ClaudeInstallation{spec: &spec}
+	f, e := os.Open(manifestPath(state, spec))
 	if e != nil {
 		return i, refusal(pa.AdapterNotFound, "native_setup")
 	}
@@ -210,7 +235,7 @@ func readInstallation(ctx context.Context, state string) (ClaudeInstallation, er
 	if e != nil {
 		return i, e
 	}
-	if i.tools, e = findTools(ctx, home, account, SearchDirectories(home)); e != nil {
+	if i.tools, e = findToolsFor(ctx, home, account, SearchDirectories(home), spec); e != nil {
 		return i, e
 	}
 	return i, nil
@@ -220,7 +245,11 @@ func readInstallation(ctx context.Context, state string) (ClaudeInstallation, er
 // hand. A missing or changed adapter is rebuilt; a missing or too old Claude
 // Code or Node is reported, never installed.
 func ensureInstallation(ctx context.Context, state string) (ClaudeInstallation, error) {
-	i, e := readInstallation(ctx, state)
+	return ensureAdapter(ctx, state, claudeSpec)
+}
+
+func ensureAdapter(ctx context.Context, state string, spec adapterSpec) (ClaudeInstallation, error) {
+	i, e := readAdapter(ctx, state, spec)
 	if e == nil {
 		return i, nil
 	}
@@ -233,10 +262,10 @@ func ensureInstallation(ctx context.Context, state string) (ClaudeInstallation, 
 	default:
 		return i, e
 	}
-	if _, e = SetupClaude(ctx, state); e != nil {
+	if _, e = setupAdapter(ctx, state, spec); e != nil {
 		return i, e
 	}
-	return readInstallation(ctx, state)
+	return readAdapter(ctx, state, spec)
 }
 
 // claudeResumeQualified admits native session/load for the pinned artifact

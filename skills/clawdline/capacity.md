@@ -61,6 +61,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.frame_bytes` | 1048576 | `bytes` | `disconnect` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |

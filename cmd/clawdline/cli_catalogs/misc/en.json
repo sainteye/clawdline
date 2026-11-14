@@ -290,5 +290,5 @@
   "project_assistants.switch_refused": "The Bots switch was not changed (HTTP %d).\n",
   "project_assistants.switch_on": "Bots are on. Open the console and choose All Bots in the Session list.\n",
   "project_assistants.switch_off": "Bots are off. Saved Bots and conversations are kept.\n",
-  "project_assistants.setup_usage": "Usage: clawdline project-assistants enable | disable | status | setup-claude\n"
+  "project_assistants.setup_usage": "Usage: clawdline project-assistants enable | disable | status | setup-claude | setup-codex\n"
 }

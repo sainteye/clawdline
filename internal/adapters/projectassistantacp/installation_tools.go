@@ -34,10 +34,47 @@ const (
 	// lockfile. The optional platform package would carry a second Claude
 	// binary; the person's own CLI is used instead.
 	claudeAdapterTreeSHA = "fcb005f36bd2c73bc6ed58a8b8657191ae10cc36e371c55718d253bfae209d86"
+
+	// The Codex adapter, driving the person's codex 0.166.0 or newer.
+	CodexAdapterVersion    = "2.6.0"
+	MinimumCodexCLIVersion = "0.166.0"
+	codexAdapterTreeSHA    = "83b8f5b711ed681c8194a07a2ba6d4bb606cec44acee02f712073cd466046200"
+	codexEntrySHA          = "733b7521c2a437a34ed016d45a6f46bebff2bac123a172467574ee827db98b99"
 )
 
-//go:embed assets/claude-agent-acp/package.json assets/claude-agent-acp/package-lock.json
+//go:embed assets/claude-agent-acp/package.json assets/claude-agent-acp/package-lock.json assets/codex-acp/package.json assets/codex-acp/package-lock.json
 var claudeAdapterAssets embed.FS
+
+// adapterSpec is one ACP adapter Clawdline supplies and the person's CLI it
+// drives. Both adapters are installed and sealed the same way.
+type adapterSpec struct {
+	Name      string            // package directory under @agentclientprotocol
+	Version   string            // the supplied adapter version
+	TreeSHA   string            // adapterTreeDigest of `npm ci --omit=optional`
+	EntrySHAs map[string]string // files below the package directory with their own digest
+	CLI       string            // the person's CLI executable name
+	CLIFloor  string            // the oldest CLI version the adapter supports
+	Manifest  string            // state file recording the seal
+}
+
+var claudeSpec = adapterSpec{Name: "claude-agent-acp", Version: ClaudeAdapterVersion, TreeSHA: claudeAdapterTreeSHA,
+	EntrySHAs: map[string]string{"dist/index.js": claudeEntrySHA, "dist/v1/acp-agent.js": claudeAgentSHA},
+	CLI:       "claude", CLIFloor: MinimumClaudeCLIVersion, Manifest: "claude-installation.json"}
+
+// codexSpec: codex-acp bundles its code in dist/index.js and starts the
+// person's codex through CODEX_PATH. Its @openai/codex dependency stays
+// without the optional platform binaries.
+var codexSpec = adapterSpec{Name: "codex-acp", Version: CodexAdapterVersion, TreeSHA: codexAdapterTreeSHA,
+	EntrySHAs: map[string]string{"dist/index.js": codexEntrySHA},
+	CLI:       "codex", CLIFloor: MinimumCodexCLIVersion, Manifest: "codex-installation.json"}
+
+func (a adapterSpec) dir(state string) string {
+	return filepath.Join(state, "project-assistants", "adapters", a.Name+"-"+a.Version)
+}
+
+func (a adapterSpec) entry(dir string) string {
+	return filepath.Join(dir, "node_modules", "@agentclientprotocol", a.Name, "dist", "index.js")
+}
 
 // nativeTools are the person's executables found for one execution. Paths
 // are resolved through links, so a launcher that Claude Code repoints after an
@@ -181,6 +218,10 @@ func toolDirectories(home string) []string {
 // that meet the supported floors. A program below its floor is reported as
 // unsupported rather than silently skipped when nothing better exists.
 func findTools(ctx context.Context, home, user string, dirs []string) (nativeTools, error) {
+	return findToolsFor(ctx, home, user, dirs, claudeSpec)
+}
+
+func findToolsFor(ctx context.Context, home, user string, dirs []string, spec adapterSpec) (nativeTools, error) {
 	var t nativeTools
 	env := func(dir string) []string {
 		return []string{"HOME=" + home, "USER=" + user, "PATH=" + dir + string(os.PathListSeparator) + nativePath, "LANG=C", "LC_ALL=C"}
@@ -211,15 +252,21 @@ func findTools(ctx context.Context, home, user string, dirs []string) (nativeToo
 		if t.CLI != "" {
 			break
 		}
-		cli, ok := executable(filepath.Join(d, "claude"))
+		cli, ok := executable(filepath.Join(d, spec.CLI))
 		if !ok {
 			continue
 		}
-		v, e := probeVersion(ctx, cli, env(filepath.Dir(cli)))
+		// A CLI may be a Node script (codex from npm): its launcher's directory
+		// and the chosen Node's directory both stay on PATH.
+		dir := d
+		if t.Node != "" {
+			dir += string(os.PathListSeparator) + filepath.Dir(t.Node)
+		}
+		v, e := probeVersion(ctx, cli, env(dir))
 		if e != nil {
 			continue
 		}
-		if !versionAtLeast(v, MinimumClaudeCLIVersion) {
+		if !versionAtLeast(v, spec.CLIFloor) {
 			cliOld = true
 			continue
 		}
@@ -289,13 +336,9 @@ func adapterTreeDigest(ctx context.Context, root string) (string, map[string]str
 	return hex.EncodeToString(sum[:]), files, nil
 }
 
-func adapterDirectory(state string) string {
-	return filepath.Join(state, "project-assistants", "adapters", "claude-agent-acp-"+ClaudeAdapterVersion)
-}
+func adapterDirectory(state string) string { return claudeSpec.dir(state) }
 
-func adapterEntry(dir string) string {
-	return filepath.Join(dir, "node_modules", "@agentclientprotocol", "claude-agent-acp", "dist", "index.js")
-}
+func adapterEntry(dir string) string { return claudeSpec.entry(dir) }
 
 var provisionLock sync.Mutex
 
@@ -304,10 +347,14 @@ var provisionLock sync.Mutex
 // optional packages are not installed; the npm cache is private to the build
 // and removed with it. A build that does not reproduce the digest is removed.
 func installAdapter(ctx context.Context, state string, t nativeTools, home, user string) (string, error) {
+	return installAdapterFor(ctx, state, t, home, user, claudeSpec)
+}
+
+func installAdapterFor(ctx context.Context, state string, t nativeTools, home, user string, spec adapterSpec) (string, error) {
 	provisionLock.Lock()
 	defer provisionLock.Unlock()
-	dir := adapterDirectory(state)
-	if digest, _, e := adapterTreeDigest(ctx, filepath.Join(dir, "node_modules")); e == nil && digest == claudeAdapterTreeSHA {
+	dir := spec.dir(state)
+	if digest, _, e := adapterTreeDigest(ctx, filepath.Join(dir, "node_modules")); e == nil && digest == spec.TreeSHA {
 		return dir, nil
 	}
 	if e := ctx.Err(); e != nil {
@@ -323,7 +370,7 @@ func installAdapter(ctx context.Context, state string, t nativeTools, home, user
 	}
 	defer os.RemoveAll(build)
 	for _, name := range []string{"package.json", "package-lock.json"} {
-		data, e := claudeAdapterAssets.ReadFile("assets/claude-agent-acp/" + name)
+		data, e := claudeAdapterAssets.ReadFile("assets/" + spec.Name + "/" + name)
 		if e != nil || os.WriteFile(filepath.Join(build, name), data, 0600) != nil {
 			return "", refusal(pa.Invalid, "native_state")
 		}
@@ -349,7 +396,7 @@ func installAdapter(ctx context.Context, state string, t nativeTools, home, user
 	if e != nil {
 		return "", e
 	}
-	if digest != claudeAdapterTreeSHA {
+	if digest != spec.TreeSHA {
 		return "", refusal(pa.ProviderVersionUnsupported, "native_adapter_digest")
 	}
 	_ = os.RemoveAll(dir)

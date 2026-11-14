@@ -19,12 +19,18 @@ func projectAssistantsCommand(ctx context.Context, args []string, state string, 
 	if len(args) == 1 && (args[0] == "enable" || args[0] == "disable" || args[0] == "status") {
 		return projectAssistantsSwitch(args[0], stdout, stderr, daemonProjectAssistants)
 	}
-	if len(args) != 1 || args[0] != "setup-claude" {
-		fmt.Fprint(stderr, cliCopy("misc", "project_assistants.setup_usage", "Usage: clawdline project-assistants enable | disable | status | setup-claude\n"))
+	if len(args) != 1 || args[0] != "setup-claude" && args[0] != "setup-codex" {
+		fmt.Fprint(stderr, cliCopy("misc", "project_assistants.setup_usage", "Usage: clawdline project-assistants enable | disable | status | setup-claude | setup-codex\n"))
 		return 2
 	}
-	i, e := projectassistantacp.SetupClaude(ctx, state)
-	if e == nil {
+	codex := args[0] == "setup-codex"
+	var i projectassistantacp.ClaudeInstallation
+	var e error
+	if codex {
+		if i, e = projectassistantacp.SetupCodex(ctx, state); e == nil {
+			e = projectassistantacp.CheckCodexInstallation(ctx, state)
+		}
+	} else if i, e = projectassistantacp.SetupClaude(ctx, state); e == nil {
 		e = projectassistantacp.CheckClaudeInstallation(ctx, state)
 	}
 	if e != nil {
@@ -34,7 +40,7 @@ func projectAssistantsCommand(ctx context.Context, args []string, state string, 
 	// Fixed machine-readable receipt; paths, credentials and artifact contents
 	// are not echoed. Native authentication remains a later runtime observation.
 	returnCode := 0
-	if json.NewEncoder(stdout).Encode(map[string]any{"configured": true, "native_tools": "claude_default_mode", "authentication_verified": false, "agent": "claude_code", "adapter_version": projectassistantacp.ClaudeAdapterVersion, "cli_version": i.CLIVersion(), "minimum_cli_version": projectassistantacp.MinimumClaudeCLIVersion, "adapter_started": false, "model_requests": 0}) != nil {
+	if json.NewEncoder(stdout).Encode(setupReceipt(codex, i.CLIVersion())) != nil {
 		returnCode = 1
 	}
 	return returnCode
@@ -82,4 +88,12 @@ func projectAssistantsSwitch(verb string, stdout, stderr io.Writer, call setting
 		fmt.Fprint(stdout, cliCopy("misc", "project_assistants.switch_off", "Bots are off. Saved Bots and conversations are kept.\n"))
 	}
 	return 0
+}
+
+// setupReceipt is the fixed machine-readable result; it echoes no paths.
+func setupReceipt(codex bool, cli string) map[string]any {
+	if codex {
+		return map[string]any{"configured": true, "agent": "codex", "authentication_verified": false, "adapter_version": projectassistantacp.CodexAdapterVersion, "cli_version": cli, "minimum_cli_version": projectassistantacp.MinimumCodexCLIVersion, "adapter_started": false, "model_requests": 0}
+	}
+	return map[string]any{"configured": true, "native_tools": "claude_default_mode", "authentication_verified": false, "agent": "claude_code", "adapter_version": projectassistantacp.ClaudeAdapterVersion, "cli_version": cli, "minimum_cli_version": projectassistantacp.MinimumClaudeCLIVersion, "adapter_started": false, "model_requests": 0}
 }

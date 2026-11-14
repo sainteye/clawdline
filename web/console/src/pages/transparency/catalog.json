@@ -3605,7 +3605,7 @@
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
     "cmd/clawdline/main.go": "1e670ab828c498f072751572fbc627836e95ec677c3dc52df503a818d51450e3",
-    "cmd/clawdline/project_assistants.go": "abcfc66816991184c4a0b5e5d5b43236dd0644dda0729216cfb5647d07f48ade",
+    "cmd/clawdline/project_assistants.go": "d4ded77207df9fa557b0095cfddd4447065a8678749777cbbb2e8163d7be13f0",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -3641,7 +3641,7 @@
     "internal/adapters/planner/voice_work.go": "479cc577226c6bb28ec84d56246d206618369a76c3613461013bc9efb1d906a6",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
     "internal/adapters/projectassistantacp/client.go": "bf738a1963d603be0a56ea242e85053a207f5badc033bc5871d314bcb9e2c5e4",
-    "internal/adapters/projectassistantacp/installation.go": "06b14be634cf5c89bb6ebba1636d8a61fcff986e6650593ad4c91d6331fe6240",
+    "internal/adapters/projectassistantacp/installation.go": "80396919ff154030b603999d0bc785f07077e92c16f5f95824fee3b1873d51e9",
     "internal/adapters/projectassistantacp/installation_isolation.go": "315c6ede6797f8622eca045ce08d88ba184bc55333922f9c761b3be478c1442b",
     "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",
     "internal/adapters/projectassistantacp/session_configuration.go": "2dc8ce6e5d5ee85de7f571a15fcc23f9126b6e4fea1d9cc09df3a58f24e06eda",
@@ -3708,7 +3708,7 @@
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
     "internal/transport/http/integration_settings.go": "bd8e1338d9d1383e6a4096f7cac005e0a5109ea926aa0d574d1c9cffa7b11962",
-    "internal/transport/http/project_assistants_host.go": "dc50017d8bcd03bbc70230aea43589f563ec03a124266955117e557e9d30346f",
+    "internal/transport/http/project_assistants_host.go": "bb4c389d37815d36a349fb233826592c443eaa205689d515563da84777e30949",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "dfc0782eb60a8572f8e44734d3b15024ea059d0e3465722a13774cbdcce1f3c7",
     "internal/transport/http/session_handoff_title.go": "b7e73b436265c3ed427bc950e40d29b2cd494ee2590acb71b6722fcd59c641af",
@@ -3756,7 +3756,7 @@
     "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704"
   },
   "copyChecks": {
-    "en": "13eb5d0d59204b01252458fc86a22671a59cc484ff6548b14442863c7c487f1e",
-    "zh-Hant": "b53472d87bc807807c8549a2a3ea68ba721b3575e2086c4ffddff7f8e9cda45b"
+    "en": "2d099d4392e2a9e22ccf055b69fa49131647f535fa880bee5fe0dcfa9e399f2d",
+    "zh-Hant": "93355fba51a1ff9c5a9de6ddbc7fb7e6e52c10613fe3b620cafa86c6af4efbea"
   }
 }

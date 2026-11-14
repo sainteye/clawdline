@@ -10,13 +10,15 @@ Bots are off by default.
 ## What you need
 
 - macOS.
-- Claude Code 2.1.323 or newer, signed in as you normally use it.
+- For a Claude Code Bot: Claude Code 2.1.323 or newer, signed in as you
+  normally use it. For a Codex Bot: Codex 0.166.0 or newer, signed in, with
+  its memories feature off (the default; `codex features list`).
 - Node 22 or newer with npm.
 
 Clawdline finds both programs itself, including installs from nvm, mise,
 asdf, fnm, Volta or Homebrew. You do not place any files. On the first
 message, Clawdline installs the ACP adapter it supplies
-(`@agentclientprotocol/claude-agent-acp`) with your npm and checks it
+(`@agentclientprotocol/claude-agent-acp` or `@agentclientprotocol/codex-acp`) with your npm and checks it
 against a fixed digest. This takes a few seconds, and later messages reuse
 it.
 
@@ -36,7 +38,8 @@ clawdline project-assistants enable
 `clawdline project-assistants status` shows the current state.
 `clawdline project-assistants disable` turns Bots off and keeps saved Bots
 and conversations. `clawdline project-assistants setup-claude` runs the
-first-use setup ahead of time and prints which Claude Code version it found.
+first-use setup ahead of time and prints which Claude Code version it found;
+`setup-codex` does the same for Codex.
 
 ## Use a Bot
 

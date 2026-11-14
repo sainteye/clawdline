@@ -290,5 +290,5 @@
   "project_assistants.switch_refused": "Bots 開關沒有變更（HTTP %d）。\n",
   "project_assistants.switch_on": "Bots 已開啟。打開 console，在 Session 清單選「所有 Bots」。\n",
   "project_assistants.switch_off": "Bots 已關閉。已儲存的 Bot 與對話都會保留。\n",
-  "project_assistants.setup_usage": "用法：clawdline project-assistants enable | disable | status | setup-claude\n"
+  "project_assistants.setup_usage": "用法：clawdline project-assistants enable | disable | status | setup-claude | setup-codex\n"
 }
