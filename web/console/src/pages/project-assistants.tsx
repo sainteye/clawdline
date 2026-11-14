@@ -12,6 +12,8 @@ import { toast } from "../overlays/toast.js"
 import { words } from "../project-assistants/words.js"
 import { errorCode } from "../project-assistants/client.js"
 
+const BADGE_REFRESH_MS = 15_000
+
 // Entry belongs to Sessions. A typed URL must not enable a default-off feature.
 export const page: PageModule = {id:"project-assistants",drawer:false,Component:() => null}
 
@@ -34,6 +36,13 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const windowOrigin = useRef("100% 100%")
   const origin = useRef<{hash:string;href:string;state:unknown;scrolls:[HTMLElement,number,number][];x:number;y:number} | null>(null)
   useEffect(() => {if (opened && typeof history.state?.paView === "string") ownedHistory.current=history.state.paView},[opened,entry])
+  // The orb's count follows new replies while Bots is closed, so it can ring.
+  const [badgeTick,setBadgeTick] = useState(0)
+  useEffect(() => {
+    if (opened) return
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") setBadgeTick(n => n+1) }, BADGE_REFRESH_MS)
+    return () => clearInterval(timer)
+  },[opened])
   const [metadata,setMetadata] = useState<Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>>({})
   useEffect(() => {
     if (cloud || supplied || apiLevel === undefined || apiLevel < PROJECT_ASSISTANTS_API_LEVEL) return
@@ -69,7 +78,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       } catch { /* Keep the last observed badge on an offline source; revocation is filtered below. */ }
     })()
     return () => control.abort()
-  },[sources,opened])
+  },[sources,opened,badgeTick])
   const current = Object.entries(metadata).filter(([id,data]) => sources.some(source => source.machineID === id && source.authorizationRevision === data.revision))
   const admitted = current.some(([,data]) => data.readable)
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources)
