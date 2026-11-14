@@ -3,7 +3,7 @@ export const MACHINE_PANES = ["general", "voice", "remote", "orchestrator", "dis
 export type SettingsPane = typeof MACHINE_PANES[number]
 
 export function settingsPanes(cloud: boolean): readonly string[] {
-  return cloud ? ["chrome", "browser", "work", "status", "workflow", "remote", "voice"] : ["chrome", "browser", "work", "status", "workflow", ...MACHINE_PANES]
+  return cloud ? ["browser", "work", "status", "workflow", "chrome", "remote", "voice"] : ["browser", "work", "status", "workflow", "chrome", ...MACHINE_PANES]
 }
 
 /** A tablist's automatic activation, including wraparound and direct endpoint keys. */

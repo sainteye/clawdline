@@ -9,6 +9,7 @@ import { BrowserViewport } from "./BrowserViewport.js"
 import { BrowserComposer, type BrowserKeyboardHandle, type PageField } from "./BrowserComposer.js"
 import type { InputReceipt } from "./browser-keyboard.js"
 import { webAddress } from "./browser-address.js"
+import { extensionCurrent } from "./browser-extension.js"
 import "./browser-panel.css"
 
 /**
@@ -49,11 +50,6 @@ function phoneScreen(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(max-width: 700px)").matches === true
 }
 
-/** Reloading from the panel needs Clawdline's extension 0.3.0 or later. */
-export function extensionCanReload(version: string | undefined): boolean {
-  const [major = 0, minor = 0] = (version ?? "").split(".").map((part) => Number.parseInt(part, 10) || 0)
-  return major > 0 || minor >= 3
-}
 const STATUS_MS = 3000
 
 /** A refusal in the console's own words, with its code kept (refusals/scan.ts). */
@@ -243,7 +239,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     nativeKeyboard.current?.close()
     if (await ensureControl()) await act("viewport", { mode })
   }
-  const canReload = extensionCanReload(status?.status.host?.version)
+  const canReload = extensionCurrent(status?.status.host?.version)
   const reloadPage = async () => {
     nativeKeyboard.current?.close()
     if (await ensureControl()) await act("reload", {})
@@ -324,9 +320,9 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
               <select aria-label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy} onChange={e => void changeLayout(e.target.value)}>
                 <option value="mobile">{nextWord("browserPanelMobile")}</option><option value="desktop">{nextWord("browserPanelDesktop")}</option>
               </select></label>}
-            reloadControl={<button type="button" className="chip browser-reload" disabled={busy || controlBusy || !canReload}
+            reloadControl={<button type="button" className="chip browser-reload" data-outdated={canReload ? undefined : "true"} disabled={busy || controlBusy}
               aria-label={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")} title={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")}
-              onClick={() => void reloadPage()}>
+              onClick={() => canReload ? void reloadPage() : openBrowserSetup(browserMode === "user_chrome" ? "user_chrome" : "isolated")}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.46-3.54" /><path d="M13 2.5v3h-3" /></svg>
             </button>} />
         )}

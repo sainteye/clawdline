@@ -868,7 +868,7 @@ test("the work-gate block stays visible on Cloud and asks only its narrow route"
   const block = readFileSync(resolve(console_, "src/pages/settings/GateSettingsBlock.tsx"), "utf8")
   const page = readFileSync(resolve(console_, "src/pages/settings.tsx"), "utf8")
   const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
-  assert.match(page, /<GateSettingsBlock shown=\{shown && tab === 2\} \/>/)
+  assert.match(page, /<GateSettingsBlock shown=\{shown && tab === 1\} \/>/)
   assert.equal(writeRoute("GET", "/v1/settings/work-gates")?.word, "work-gate-settings")
   assert.equal(writeRoute("GET", "/v1/settings/workflow")?.word, "workflow-settings")
   assert.equal(writeRoute("POST", "/v1/settings/work-gates")?.word, "work-gate-settings-update")

@@ -1,6 +1,7 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
 import { nextWord, type NextWord } from "../../next-strings.js"
 import { openBrowserSetup } from "../../session/BrowserSetup.js"
+import { extensionCurrent } from "../../session/browser-extension.js"
 import type { BrowserMode, BrowserPolicy, BrowserProfileReadiness } from "./api.js"
 import { Switch } from "./Switch.js"
 
@@ -35,35 +36,57 @@ export function BrowserPolicyRows({ policy, profiles, busy, supported, onChange 
   supported: boolean
   onChange: (value: BrowserPolicy) => void
 }) {
-  const [drag, setDrag] = useState<{ browser: BrowserMode; order: BrowserMode[]; pointer: number } | null>(null)
+  // While dragging, the DOM order stays put: the picked row follows the
+  // pointer and the rows it passes slide out of its way. Release commits the
+  // new order once; until the saved policy shows it, that order is kept so
+  // the rows do not jump back.
+  type Drag = { browser: BrowserMode; pointer: number; from: number; startY: number; dy: number; target: number; tops: number[]; heights: number[] }
+  const [drag, setDrag] = useState<Drag | null>(null)
+  const [settled, setSettled] = useState<BrowserMode[] | null>(null)
   const list = useRef<HTMLOListElement>(null)
-  const order = drag?.order ?? policy.order
+  const order = settled ?? policy.order
+  useEffect(() => {
+    // The saved order arrived, or the save finished without it (a refusal
+    // keeps the old order): follow the policy again.
+    if (settled && (settled.join() === policy.order.join() || !busy)) setSettled(null)
+  }, [policy.order, busy])
   const locked = busy || !supported
 
   const start = (event: PointerEvent<HTMLButtonElement>, browser: BrowserMode) => {
-    if (locked || (event.pointerType === "mouse" && event.button !== 0)) return
+    if (locked || !list.current || (event.pointerType === "mouse" && event.button !== 0)) return
     event.preventDefault()
     event.currentTarget.setPointerCapture?.(event.pointerId)
-    setDrag({ browser, order: [...policy.order], pointer: event.pointerId })
+    const rows = [...list.current.children] as HTMLElement[]
+    const boxes = rows.map((row) => row.getBoundingClientRect())
+    setDrag({ browser, pointer: event.pointerId, from: order.indexOf(browser), startY: event.clientY, dy: 0, target: order.indexOf(browser),
+      tops: boxes.map((b) => b.top), heights: boxes.map((b) => b.height) })
   }
   const move = (event: PointerEvent<HTMLButtonElement>) => {
-    if (!drag || event.pointerId !== drag.pointer || !list.current) return
-    const rows = [...list.current.children] as HTMLElement[]
-    // Where the row goes: after every other row whose middle is above the pointer.
-    let index = 0
-    rows.forEach((row, i) => {
-      if (drag.order[i] === drag.browser) return
-      const box = row.getBoundingClientRect()
-      if (box.top + box.height / 2 < event.clientY) index++
-    })
-    const next = placeBrowser(drag.order, drag.browser, index)
-    if (next.join() !== drag.order.join()) setDrag({ ...drag, order: next })
+    if (!drag || event.pointerId !== drag.pointer) return
+    const last = drag.tops.length - 1
+    // Keep the row within the list, and place it where its middle now is.
+    const dy = Math.max(drag.tops[0] - drag.tops[drag.from], Math.min(drag.tops[last] - drag.tops[drag.from], event.clientY - drag.startY))
+    const middle = drag.tops[drag.from] + dy + drag.heights[drag.from] / 2
+    let target = 0
+    drag.tops.forEach((top, i) => { if (i !== drag.from && top + drag.heights[i] / 2 < middle) target++ })
+    setDrag({ ...drag, dy, target })
   }
   const end = (event: PointerEvent<HTMLButtonElement>, keep: boolean) => {
     if (!drag || event.pointerId !== drag.pointer) return
-    const next = drag.order
     setDrag(null)
-    if (keep && next.join() !== policy.order.join()) onChange({ ...policy, order: next })
+    if (!keep || drag.target === drag.from) return
+    const next = placeBrowser(order, drag.browser, drag.target)
+    setSettled(next)
+    onChange({ ...policy, order: next })
+  }
+  // How far each row sits from its place while another is dragged over it.
+  const shift = (index: number): number => {
+    if (!drag) return 0
+    if (index === drag.from) return drag.dy
+    const h = drag.heights[drag.from]
+    if (drag.from < drag.target && index > drag.from && index <= drag.target) return -h
+    if (drag.from > drag.target && index >= drag.target && index < drag.from) return h
+    return 0
   }
   const key = (event: KeyboardEvent<HTMLButtonElement>, browser: BrowserMode) => {
     if (locked || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
@@ -79,8 +102,13 @@ export function BrowserPolicyRows({ policy, profiles, busy, supported, onChange 
         const title = nextWord(TITLES[browser])
         const automatic = policy.automatic[browser]
         const ready = browser === "native" || profiles?.[browser]?.ready === true
+        // A connected extension older than the console needs is updated
+        // from its setup guide; it does not update itself.
+        const outdated = browser !== "native" && ready && !extensionCurrent(profiles?.[browser]?.host?.version)
         const id = "browser-policy-" + browser
-        return <li key={browser} data-browser={browser} data-dragging={drag?.browser === browser ? "true" : undefined}>
+        const offset = shift(index)
+        return <li key={browser} data-browser={browser} data-dragging={drag?.browser === browser ? "true" : undefined}
+          data-moving={drag ? "true" : undefined} style={offset ? { transform: `translateY(${offset}px)` } : undefined}>
           <button type="button" className="browser-policy-handle" disabled={locked}
             aria-label={nextWord("browserPolicyDrag", { browser: title, position: String(index + 1), count: String(order.length) })}
             onPointerDown={(e) => start(e, browser)} onPointerMove={move}
@@ -90,7 +118,9 @@ export function BrowserPolicyRows({ policy, profiles, busy, supported, onChange 
           </button>
           <div className="browser-policy-copy">
             <strong id={id + "-title"}>{title}</strong>
-            {ready
+            {outdated
+              ? <button type="button" className="browser-policy-setup-link" onClick={() => openBrowserSetup(browser as "isolated" | "user_chrome")}>{nextWord("browserPolicyUpdate")}</button>
+              : ready
               ? <span className={browser === "native" ? "browser-policy-state" : "browser-policy-ready"} role="status">{nextWord(browser === "native" ? "browserPolicyNativeReady" : "browserPolicyReady")}</span>
               : <button type="button" className="browser-policy-setup-link" onClick={() => openBrowserSetup(browser as "isolated" | "user_chrome")}>{nextWord("browserPolicyGoSetup")}</button>}
           </div>

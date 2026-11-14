@@ -34,6 +34,7 @@ function allRows() {
   ]
 }
 
+let isolatedVersion = "0.3.0"
 const initialSettings = () => ({ browser_mode:"native", browser_enabled: false, browser_notify_new_site: false, browser_policy: { order:["native","isolated","user_chrome"], automatic:{native:true,isolated:false,user_chrome:false} } })
 let settings = initialSettings()
 let usualReady = false
@@ -82,7 +83,7 @@ function fixture(): Server {
     }
     if (path === "/v1/settings/integrations") return json(res,200,{codegraph_enabled:false,workflow_skills_enabled:false,workflow_profile:"clawdline",space_saving_images:false})
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: settings.browser_enabled, notify_new_site: settings.browser_notify_new_site,
-      profiles: { isolated:{ready:true},user_chrome:{ready:usualReady} }, status: { connected: true, stopped, state_error: stateError, host: { version: "0.1.0", browser: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36", last_poll: now() }, person_tabs: [], pending: 0, tabs: [], muted: [] } })
+      profiles: { isolated:{ready:true,connected:true,host:{version:isolatedVersion}},user_chrome:{ready:usualReady} }, status: { connected: true, stopped, state_error: stateError, host: { version: "0.1.0", browser: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36", last_poll: now() }, person_tabs: [], pending: 0, tabs: [], muted: [] } })
     if (path === "/v1/browser/prepare") return json(res,200,{ok:true,directory:"/test/Clawdline's data/chrome-extension-revision",platform:"darwin",revision:"revision",open_command:"open '/test/Clawdline'\\''s data/chrome-extension-revision'",connect_command:"clawdline browser install-host --mode user_chrome --extension-id " + "a".repeat(32)})
     if (path === "/v1/browser/setup") return json(res,200,{mode:url.searchParams.get("browser_mode") || settings.browser_mode,chromium_found:true,connected:true})
     if (path === "/v1/browser/launch" && req.method==="POST") {launches++;return json(res,200,{ok:true})}
@@ -215,9 +216,9 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
       await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: width < 900 }, id)
       const mark = browser.loadCount; await browser.send("Page.navigate", { url: `${origin}/?ui=${ui}#page=settings` }, id); await browser.loaded(id, mark)
-      await until(`!!document.getElementById("settings-tab-0")`)
-      await run(`document.getElementById("settings-tab-0").click()`)
-      await until(`!!document.querySelector("#settings-pane-0:not([hidden]) #settings-browser")`)
+      await until(`!!document.getElementById("settings-tab-4")`)
+      await run(`document.getElementById("settings-tab-4").click()`)
+      await until(`!!document.querySelector("#settings-pane-4:not([hidden]) #settings-browser")`)
       await until(`document.querySelectorAll('.browser-policy-list > li').length === 3 && !document.getElementById('browser-policy-isolated').disabled`)
       await new Promise(resolve => setTimeout(resolve, 200))
       assert.equal((await (await fetch(origin + "/__fixture/log")).json()).queries.length,0,"Settings never reads activity before opening it")
@@ -227,6 +228,15 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       assert.equal(await run(`document.getElementById('browser-policy-user_chrome').disabled`),true,"unconfigured Chrome cannot be automatically enabled")
       assert.equal(await run(`document.querySelectorAll('.browser-policy-list button.chip, .browser-policy-setup').length`),0,"no arrow buttons or setup disclosures")
       assert.equal(await run(`!!document.querySelector('[data-browser="isolated"] .browser-policy-setup-link')`),false,"a connected browser offers no setup")
+      // An extension older than the console needs says so and opens its guide.
+      isolatedVersion = "0.2.0"
+      await until(`!!document.querySelector('[data-browser="isolated"] .browser-policy-setup-link')`)
+      await run(`document.querySelector('[data-browser="isolated"] .browser-policy-setup-link').click()`)
+      await until(`!!document.querySelector('.browser-setup')`)
+      await run(`document.querySelector('.browser-setup .setup-x').click()`)
+      await until(`!document.querySelector('.browser-setup')`)
+      isolatedVersion = "0.3.0"
+      await until(`!document.querySelector('[data-browser="isolated"] .browser-policy-setup-link')`)
       await run(`document.querySelector('[data-browser="user_chrome"] .browser-policy-setup-link').click()`)
       await until(`document.querySelector('.browser-setup')?.innerText.includes('chrome://extensions')`)
       assert.ok(await run(`document.querySelector('.browser-setup input[readonly]').value.includes('prepare --mode user_chrome')`))
@@ -246,7 +256,14 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       const above = JSON.parse(await run(`JSON.stringify((r => ({ y: r.top + 4 }))(document.querySelector('[data-browser="native"]').getBoundingClientRect()))`))
       await browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: handle.x, y: handle.y, button: "left", buttons: 1, clickCount: 1 }, id)
       for (const step of [0.5, 1]) await browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: handle.x, y: handle.y + (above.y - handle.y) * step, button: "left", buttons: 1 }, id)
-      assert.deepEqual(await order(),["isolated","native","user_chrome"],"rows reorder while dragging")
+      // The picked row follows the pointer above native, which slides down;
+      // the order itself changes only on release.
+      assert.deepEqual(await order(),["native","isolated","user_chrome"],"the order waits for release")
+      assert.equal(await run(`document.querySelector('[data-browser="isolated"]').dataset.dragging`),"true")
+      await new Promise(resolve => setTimeout(resolve, 250))
+      const rects = await run(`JSON.stringify(["isolated","native"].map(b=>{const e=document.querySelector('[data-browser="'+b+'"]');return {top:e.getBoundingClientRect().top,style:e.getAttribute('style')}}))`)
+      assert.ok(JSON.parse(rects)[0].top < JSON.parse(rects)[1].top, "the dragged row is drawn above the row it passed: " + rects + " handle " + JSON.stringify(handle) + " above " + JSON.stringify(above))
+      await shot("dragging", ".browser-policy-list")
       assert.equal((await (await fetch(origin + "/__fixture/log")).json()).settings.browser_policy.order[0],"native","nothing is saved before release")
       await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: handle.x, y: above.y, button: "left", buttons: 0, clickCount: 1 }, id)
       await until(`document.querySelector('.browser-policy-list > li').dataset.browser === 'isolated' && !document.getElementById('browser-policy-isolated').disabled`)
@@ -341,8 +358,8 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       // An audit with nothing in it.
       await fetch(origin + "/__fixture/empty")
       const again = browser.loadCount; await browser.send("Page.reload", {}, id); await browser.loaded(id, again)
-      await until(`!!document.getElementById("settings-tab-0")`)
-      await run(`document.getElementById("settings-tab-0").click()`)
+      await until(`!!document.getElementById("settings-tab-4")`)
+      await run(`document.getElementById("settings-tab-4").click()`)
       await until(`!!document.getElementById("browser-audit-open")`)
       assert.equal(await run(`!!document.querySelector('.browser-audit-empty')`),false)
       await run(`document.getElementById("browser-audit-open").click()`)

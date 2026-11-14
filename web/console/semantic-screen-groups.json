@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "englishContentKeys": 11998,
-  "riskKeys": 5220,
+  "englishContentKeys": 11999,
+  "riskKeys": 5221,
   "nonRiskCount": 6778,
   "groups": [
     {
@@ -4029,7 +4029,6 @@
         "next.browserPanelPersonActs",
         "next.browserPanelPullField",
         "next.browserPanelReload",
-        "next.browserPanelReloadNeedsUpdate",
         "next.browserPanelReplaceCancel",
         "next.browserPanelReplaceField",
         "next.browserPanelReplaceMode",
@@ -4061,6 +4060,7 @@
         "next.browserPolicySetUp",
         "next.browserPolicySetup",
         "next.browserPolicyUp",
+        "next.browserPolicyUpdate",
         "next.browserRemind",
         "next.browserSettingsConnected",
         "next.browserSettingsConnectedHost",

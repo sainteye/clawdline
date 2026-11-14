@@ -102,14 +102,14 @@ function notifySay(T: Record<string, string>, state: string): string {
 function SettingsPage({ shown }: { shown: boolean }) {
   const T = L.strings
   const cloud = followsRelay()
-  const [tab, setTab] = useState(() => asksForUpdatePanel(location.hash) ? 3 : 0)
+  const [tab, setTab] = useState(() => asksForUpdatePanel(location.hash) ? 2 : 0)
   const paneNames = settingsPanes(cloud)
   const tabs = [
-    nextWord("settingsChromeTab"),
     nextWord("settingsGeneralTab"),
     catalogWord("settings", "workTab"),
     catalogWord("settings", "statusTab"),
     catalogWord("workflowSettings", "tab"),
+    nextWord("settingsChromeTab"),
     ...(!cloud ? [catalogWord("settings", "machineTab"), W.settingsVoice, W.settingsRemote,
       W.settingsOrchestrator, catalogWord("dispatchPolicy", "navTitle")] : [W.settingsRemote, W.settingsVoice]),
   ]
@@ -149,7 +149,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
   useEffect(() => {
     if (!shown) return
     const openUpdate = () => {
-      if (asksForUpdatePanel(location.hash)) setTab(3)
+      if (asksForUpdatePanel(location.hash)) setTab(2)
     }
     openUpdate()
     window.addEventListener("hashchange", openUpdate)
@@ -293,12 +293,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
           ))}
         </div>
 
-        {/* Chrome has its own tab (2026-11-14): the order agents try browsers
-            in, new-site notifications, the record and the emergency stop. */}
         <div className="settings-pane" id="settings-pane-0" role="tabpanel" aria-labelledby="settings-tab-0" hidden={tab !== 0}>
-          <BrowserSettingsBlock shown={shown && tab === 0} />
-        </div>
-        <div className="settings-pane" id="settings-pane-1" role="tabpanel" aria-labelledby="settings-tab-1" hidden={tab !== 1}>
           <div className="settings-grid">
             <div className="settings-column">
 
@@ -465,24 +460,24 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </div>
         </div>
 
-        <div className="settings-pane" id="settings-pane-2" role="tabpanel" aria-labelledby="settings-tab-2" hidden={tab !== 2}>
+        <div className="settings-pane" id="settings-pane-1" role="tabpanel" aria-labelledby="settings-tab-1" hidden={tab !== 1}>
           <div className="settings-grid">
             <div className="settings-column">
-              <DefaultModelsBlock shown={shown && tab === 2} />
+              <DefaultModelsBlock shown={shown && tab === 1} />
 
         <BoardBlock shown={shown} goToPage={goToPage} />
             </div>
             <div className="settings-column">
-        <GateSettingsBlock shown={shown && tab === 2} />
+        <GateSettingsBlock shown={shown && tab === 1} />
             </div>
           </div>
         </div>
 
-        <div className="settings-pane" id="settings-pane-3" role="tabpanel" aria-labelledby="settings-tab-3" hidden={tab !== 3}>
+        <div className="settings-pane" id="settings-pane-2" role="tabpanel" aria-labelledby="settings-tab-2" hidden={tab !== 2}>
           <div className="settings-grid">
             <div className="settings-column">
-        <UpdatePanel shown={shown && tab === 3} />
-        {shown && tab === 3 && <DoctorBlock />}
+        <UpdatePanel shown={shown && tab === 2} />
+        {shown && tab === 2 && <DoctorBlock />}
             </div>
             <div className="settings-column">
         <CapacityBlock shown={shown} />
@@ -490,10 +485,15 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </div>
         </div>
 
+        <div className="settings-pane" id="settings-pane-3" role="tabpanel" aria-labelledby="settings-tab-3" hidden={tab !== 3}>
+          <WorkflowSettingsBlock shown={shown && tab === 3} />
+          <IntegrationSettingsBlock shown={shown && tab === 3} />
+          <IssueTrackersBlock shown={shown && tab === 3} />
+        </div>
+        {/* Chrome has its own tab after Session and access (2026-11-14): the order agents try browsers
+            in, new-site notifications, the record and the emergency stop. */}
         <div className="settings-pane" id="settings-pane-4" role="tabpanel" aria-labelledby="settings-tab-4" hidden={tab !== 4}>
-          <WorkflowSettingsBlock shown={shown && tab === 4} />
-          <IntegrationSettingsBlock shown={shown && tab === 4} />
-          <IssueTrackersBlock shown={shown && tab === 4} />
+          <BrowserSettingsBlock shown={shown && tab === 4} />
         </div>
         {cloud && <div className="settings-pane" id="settings-pane-5" role="tabpanel" aria-labelledby="settings-tab-5" hidden={tab !== 5}>
           {shown && tab === 5 && <RemotePairingBlock />}

@@ -3733,7 +3733,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "7b52b236e435c324dca8448f013040f5ac3578dd3d672e205dde444c2a4d6fe4",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "f4a5245d42b8f40827113ee7b233e90f7eaae8ef677f38fa403b64e797526a87",
+    "web/console/src/next-strings.ts": "307ec4c185fb6be59da9f4c7516aaec636ea459371e6cca790ce1bfcb7a39669",
     "web/console/src/overlays/info.ts": "afee5b67146a062576bef9a06e2531329d275899e5d4a23965ee2e419c9d8c30",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",

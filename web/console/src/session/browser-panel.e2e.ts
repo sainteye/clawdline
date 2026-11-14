@@ -642,8 +642,13 @@ for (const [width, ui] of [[390, "zh-Hant"], [360, "en"], [1280, "en"]] as const
       const deadline = Date.now() + 5000
       while ((await (await fetch(origin + "/__fixture/log")).json()).reloads !== 1) { if (Date.now() > deadline) assert.fail("reload never reached the page"); await new Promise(r => setTimeout(r, 50)) }
       assert.equal(await run(`document.querySelector('.browser-zoom').scrollWidth <= document.querySelector('.browser-zoom').clientWidth`), true, "the toolbar fits")
+      // With an older extension the button opens the update steps instead.
       await fetch(origin + "/__fixture/host-version?v=0.2.0")
-      await until(`document.querySelector('.browser-reload')?.disabled === true`)
+      await until(`document.querySelector('.browser-reload')?.dataset.outdated === 'true'`)
+      await run(`document.querySelector('.browser-reload').click()`)
+      await until(`!!document.querySelector('.browser-setup')`)
+      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).reloads, 1, "an outdated extension is not asked to reload")
+      await run(`document.querySelector('.browser-setup .setup-x').click()`)
       if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, `browser-panel-opened-${ui}-${width}.png`), Buffer.from(data, "base64")) }
     } finally {
       await fetch(origin + "/__fixture/reset")

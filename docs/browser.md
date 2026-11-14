@@ -134,8 +134,8 @@ and send access to take over and act:
 
 ## The Settings block
 
-Settings has its own **Chrome** tab, first in the list (2026-11-14; until then the block sat at
-the top of the tab now called **General**)
+Settings has its own **Chrome** tab after **Session and access** (2026-11-14; until then the block
+sat at the top of the tab now called **General**, which is first again)
 (`web/console/src/pages/settings/BrowserSettingsBlock.tsx`): whether the extension is connected
 and which browser it is in, three ordered browsers with independent automatic-selection switches, and `browser_notify_new_site`
 (off on a new machine), the emergency stop with its banner and Resume, and a View activity button. The audit is read only while its modal is open,
@@ -152,9 +152,13 @@ besides `limit`. Through Clawdline Cloud the block uses four more words:
 | `chrome-audit` | read | `GET /v1/browser/audit` (always with `limit`) |
 
 Each browser is one row: a drag handle, its name, one line of state and its automatic switch.
-Dragging the handle reorders the rows live and saves once on release; on the focused handle the
-up and down arrow keys move a row one place, so no arrow buttons are drawn. Only a browser that is
-not connected offers **Set up**, which opens its setup guide.
+Dragging the handle lifts the row so it follows the pointer while the rows it passes slide out of
+its way; the order changes and saves once on release (reduced motion turns the sliding off). On the
+focused handle the up and down arrow keys move a row one place, so no arrow buttons are drawn. Only
+a browser that is not connected offers **Set up**, which opens its setup guide; a connected one whose
+extension is older than the console needs (0.3.0) shows **Extension needs an update** and opens
+the same guide, whose steps load the current files. The panel's reload button does the same with
+an older extension instead of failing.
 
 `web/console/src/pages/settings/browser-settings.e2e.ts` exercises the block against a stand-in
 daemon at desktop and phone widths, in English and Chinese.

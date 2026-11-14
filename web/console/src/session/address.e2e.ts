@@ -1529,7 +1529,7 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const open = () => {
-        const button = document.getElementById("settings-tab-2")
+        const button = document.getElementById("settings-tab-1")
         if (button) { button.click(); return resolve(true) }
         if (Date.now() > deadline) return reject(new Error("the Work settings tab did not appear"))
         setTimeout(open, 25)
@@ -1632,7 +1632,7 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const open = () => {
-        const button = document.getElementById("settings-tab-2")
+        const button = document.getElementById("settings-tab-1")
         if (button) { button.click(); return resolve(true) }
         if (Date.now() > deadline) return reject(new Error("the Work settings tab did not appear"))
         setTimeout(open, 25)
@@ -3339,8 +3339,8 @@ test("workflow settings explain both switches and persist independent changes on
             await new Promise(resolve => setTimeout(resolve, 30))
           }
         }
-        await waitFor(`!!document.getElementById("settings-tab-4")`)
-        await tab.run(`document.getElementById("settings-tab-4").click()`)
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
         const switches = `[role="switch"][aria-labelledby="workflow-dispatch_full_permission-title"], [role="switch"][aria-labelledby="workflow-session_auto_discovery-title"]`
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute("aria-checked"))`), ["true", "true"])
@@ -3360,8 +3360,8 @@ test("workflow settings explain both switches and persist independent changes on
         assert.ok(bounds.page <= bounds.width + 1, `${tag} ${sizeName} workflow overflow: ${JSON.stringify(bounds)}`)
         if (shots) { mkdirSync(shots, { recursive: true }); await tab.shot(`${tag}-${sizeName}-workflow-settings`) }
         await tab.reload()
-        await waitFor(`!!document.getElementById("settings-tab-4")`)
-        await tab.run(`document.getElementById("settings-tab-4").click()`)
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
         refuseWorkflowWrite = true
@@ -3511,8 +3511,8 @@ test("integration switches persist machine opt-ins and recover failures in both 
         await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
         await tab.run(`location.hash = "page=settings"`)
         await tab.reload()
-        await waitFor(`!!document.getElementById("settings-tab-4")`)
-        await tab.run(`document.getElementById("settings-tab-4").click()`)
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
         await waitFor(`!!document.querySelector('.settings-integrations .chip')`)
         assert.equal(await tab.run(`document.querySelector('.settings-integrations [role="switch"]').disabled`), true)
         await tab.run(`document.querySelector('.settings-integrations .chip').click()`)
@@ -3532,8 +3532,8 @@ test("integration switches persist machine opt-ins and recover failures in both 
         await tab.run(`document.querySelector('.settings-integrations .workflow-info').click(); document.querySelectorAll('.settings-integrations .workflow-info')[1].click(); document.querySelector('.settings-integrations').scrollIntoView({block:'start'})`)
         if (shots) { mkdirSync(shots, { recursive: true }); await tab.shot(`${tag}-${sizeName}-integration-settings`) }
         await tab.reload()
-        await waitFor(`!!document.getElementById("settings-tab-4")`)
-        await tab.run(`document.getElementById("settings-tab-4").click()`)
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
         await waitFor(`!document.querySelector('${switches}')?.disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["true", "true", "false"])
         refuseIntegrationWrite = true
@@ -3562,8 +3562,8 @@ test("space-saving image switch explains the trade-off and persists new-executio
     await tab.go("/")
     await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)}); location.hash="page=settings"`)
     await tab.reload()
-    await waitFor(`!!document.getElementById("settings-tab-4")`)
-    await tab.run(`document.getElementById("settings-tab-4").click()`)
+    await waitFor(`!!document.getElementById("settings-tab-3")`)
+    await tab.run(`document.getElementById("settings-tab-3").click()`)
     const button = `[aria-labelledby="integration-space_saving_images-title"][role="switch"]`
     await waitFor(`!!document.querySelector('${button}') && !document.querySelector('${button}').disabled`)
     assert.equal(await tab.run(`document.querySelector('${button}').getAttribute("aria-checked")`),"false")
@@ -3576,8 +3576,8 @@ test("space-saving image switch explains the trade-off and persists new-executio
     assert.deepEqual(integrationWrites,[{space_saving_images:true}])
     if(shots)await tab.shot(`${tag}-${sizeName}-space-images-on`)
     await tab.reload()
-    await waitFor(`!!document.getElementById("settings-tab-4")`)
-    await tab.run(`document.getElementById("settings-tab-4").click()`)
+    await waitFor(`!!document.getElementById("settings-tab-3")`)
+    await tab.run(`document.getElementById("settings-tab-3").click()`)
     await waitFor(`document.querySelector('${button}')?.getAttribute('aria-checked')==='true' && !document.querySelector('${button}').disabled`)
     await tab.run(`document.querySelector('${button}').click()`)
     await waitFor(`document.querySelector('${button}').getAttribute('aria-checked')==='false' && !document.querySelector('${button}').disabled`)
@@ -3606,8 +3606,8 @@ test("workflow profile picker saves only the selected profile and preserves Code
         await tab.go("/")
         await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)}); location.hash = "page=settings"`)
         await tab.reload()
-        await waitFor(`!!document.getElementById("settings-tab-4")`)
-        await tab.run(`document.getElementById("settings-tab-4").click()`)
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
         await waitFor(`!!document.getElementById("workflow-profile-select")`)
         const select = `document.getElementById("workflow-profile-select")`
         assert.deepEqual(await tab.run(`[...${select}.options].map(x=>[x.value,x.disabled])`), [["clawdline",false],["superpowers",false],["poteto",false]])
@@ -3633,8 +3633,8 @@ test("workflow profile picker saves only the selected profile and preserves Code
         assert.ok(bounds.page <= bounds.width + 1, `settings overflow ${tag}/${sizeName}`)
         await tab.shot(`workflow-${tag}-${sizeName}-settings`)
         await tab.reload()
-        await waitFor(`!!document.getElementById("settings-tab-4")`)
-        await tab.run(`document.getElementById("settings-tab-4").click()`)
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
         await waitFor(`!!${select}`)
         assert.equal(await tab.run(`${select}.value`), "poteto")
         await choose("clawdline")

@@ -9526,6 +9526,7 @@
   "next.browserOpenFailed": "分頁沒有打開：{reason}",
   "next.browserPanelReload": "重新整理頁面",
   "next.browserPanelReloadNeedsUpdate": "更新 Clawdline Chrome 擴充功能後，才能從這裡重新整理",
+  "next.browserPolicyUpdate": "擴充功能需要更新・去更新 ›",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",
