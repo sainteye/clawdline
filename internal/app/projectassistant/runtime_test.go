@@ -416,8 +416,12 @@ func TestRuntimePermissionAndExplicitReplyWhilePromptPending(t *testing.T) {
 		t.Fatalf("persistent allow=%v", err)
 	}
 	answer.Answer.OptionID = "once"
-	if _, err = f.r.Answer(context.Background(), answer); err != nil {
+	answered, err := f.r.Answer(context.Background(), answer)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if answered.State != pa.EffectDelivered {
+		t.Fatalf("a delivered answer reported %s", answered.State)
 	}
 	select {
 	case option := <-s.answered:

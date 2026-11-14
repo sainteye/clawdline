@@ -1100,8 +1100,13 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	}
 	t.State = pa.TurnRunning
 	cmd := r.command(a.key, pa.AnswerOperation, "runtime-answer-"+p.ID, p)
-	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Permissions: []pa.PermissionOffer{p}, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: p.ID}, Events: []pa.Event{{Fence: p.Fence, Kind: pa.PermissionAnswered, Permission: &p}}})
-	return receipt, err
+	delivered, err := r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Permissions: []pa.PermissionOffer{p}, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: p.ID}, Events: []pa.Event{{Fence: p.Fence, Kind: pa.PermissionAnswered, Permission: &p}}})
+	if err != nil {
+		return receipt, err
+	}
+	// The person's answer reached Claude Code: report that, not the unknown
+	// receipt written before the native write, which locked the chat.
+	return delivered, nil
 }
 
 func (r *Engine) Stop(ctx context.Context, q StopRequest) (pa.Receipt, error) {
