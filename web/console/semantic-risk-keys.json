@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12052,
+  "englishKeys": 12056,
   "counts": {
     "negation": 3274,
-    "state": 2011,
+    "state": 2012,
     "permission": 714,
     "deletion": 267,
     "uncertainty": 454
   },
-  "unionCount": 5241,
+  "unionCount": 5242,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3810,6 +3810,7 @@
       "capacityRow.session.inline_tool_bytes.what",
       "capacityRow.session.no_movement_seconds.full",
       "capacityRow.session.no_movement_seconds.what",
+      "capacityRow.session.recap_detail_characters.what",
       "capacityRow.session.recap_wait_milliseconds.full",
       "capacityRow.session.report_open_todo_rows.what",
       "capacityRow.session.secret_handoff_bytes.full",
@@ -7735,6 +7736,7 @@
     "capacityRow.session.inline_tool_bytes.what",
     "capacityRow.session.no_movement_seconds.full",
     "capacityRow.session.no_movement_seconds.what",
+    "capacityRow.session.recap_detail_characters.what",
     "capacityRow.session.recap_fork_milliseconds.what",
     "capacityRow.session.recap_wait_milliseconds.full",
     "capacityRow.session.report_open_todo_rows.full",

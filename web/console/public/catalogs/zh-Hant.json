@@ -12050,7 +12050,11 @@
   "next.copilotRecapsOnDemand": "語音助理問到時",
   "transparency.card.session-recap.title": "Session 摘要",
   "transparency.card.session-recap.condition": "只有在「設定 → 語音助理 → Session 摘要」設為「事先寫好」或「語音助理問到時」時才會執行，預設關閉。只會替對話 ID 已知的 Claude Code 和 Codex Session 寫摘要。",
-  "transparency.card.session-recap.summary": "請每個 Session 自己的助理用那個 Session 的帳號額度，讀完整段對話，寫一兩句白話摘要。對話內容會再送一次給那個助理的供應商，和 Session 平常每一輪一樣。",
+  "transparency.card.session-recap.summary": "請每個 Session 自己的助理用那個 Session 的帳號額度，讀完整段對話，用介面語言寫一份短摘要和一份詳細版。對話內容會再送一次給那個助理的供應商，和 Session 平常每一輪一樣。",
   "transparency.card.session-recap.how": "每次執行一輪有上限的回合：從 Session 的對話分身出一份，問它這裡顯示的問題。Claude Code 用 --fork-session 和 --no-session-persistence，模型是 Haiku；Codex 用 codex exec fork --ephemeral，在唯讀沙盒裡執行並關閉 shell。工具、MCP 伺服器和斜線指令都關閉，所以分身不能做任何動作。原本的對話和它的檔案不會被改動，分身也不會被保留。",
-  "transparency.card.session-recap.effect": "把回答存在這台機器的 session-recaps.json。語音助理會依它回報，Session 列表也會顯示在 Session 狀態下方。不會送任何東西給 Session 本身。失敗或被拒的分身會在十分鐘後再試一次。"
+  "transparency.card.session-recap.effect": "把回答存在這台機器的 session-recaps.json。Session info 會顯示短摘要；語音助理兩份都會用，並用詳細版回答 Session 完成了什麼、你要決定什麼。不會送任何東西給 Session 本身。失敗、被拒或口吻不對的回答不會被保留，十分鐘後再試一次。",
+  "capacityRow.session.recap_detail_characters.what": "Session 摘要裡給語音助理看的詳細版最長多少字。只有語音助理會讀，用來回答 Session 完成了什麼、你要決定什麼。",
+  "capacityRow.session.recap_detail_characters.full": "超過的部分會被截掉，結尾加上刪節號。",
+  "next.infoRecap": "摘要",
+  "next.infoRecapMovedOn": "寫完這份摘要後它又有新進展；下次停下來時會再寫一份新的。"
 }

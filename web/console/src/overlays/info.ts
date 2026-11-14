@@ -614,6 +614,15 @@ function html(d: Facts): string {
   out += workflowInfoHTML(d.workflow)
   let i = 0
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
+  // The Session's own recap of its conversation (docs/session-recaps.md):
+  // what it is working on, where it got to and whose move it is. It lives here,
+  // not in the list, so the list stays one glance long (2026-11-14).
+  const recap = session()?.recap
+  if (recap?.text?.trim()) {
+    const when = recap.at ? esc(fill(T.webInfoAsOf, { when: L.clock(recap.at) })) : ""
+    out += sec(++i, nextWord("infoRecap"), when, '<p class="info-recap">' + esc(recap.text) + "</p>" +
+      (recap.current ? "" : note(nextWord("infoRecapMovedOn"))))
+  }
   // A refusal the person must act on stays beside the status; the protocol
   // receipt itself is diagnostic and goes last.
   if (s.assistant === "grok" && d.protocol?.operation === "prompt" && d.protocol.phase === "request_failed" && d.protocol.rpc_error === -32003) {

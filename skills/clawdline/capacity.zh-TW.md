@@ -620,6 +620,7 @@
 | `session.no_movement_seconds` | 1800 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `session.patch_detail_lines` | 18 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.recap_characters` | 400 | `characters` | `coalesce` | `diagnostics` | — |
+| `session.recap_detail_characters` | 1200 | `characters` | `coalesce` | `diagnostics` | — |
 | `session.recap_fork_milliseconds` | 120000 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `session.recap_on_demand_forks` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `session.recap_rows` | 200 | `rows` | `evict_oldest` | `diagnostics` | — |

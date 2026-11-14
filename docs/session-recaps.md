@@ -2,8 +2,8 @@
 
 A Session recap is one or two plain sentences about a Session — what it is working on, where it got
 to, whose move it is — written by **the Session's own assistant from a throwaway fork of its
-conversation**. The voice copilot reports from recaps first, and the Session list shows each under
-the Session's state. The person-facing description is in
+conversation**, together with a fuller account for the voice copilot. The voice copilot reports from
+recaps first, and Session info shows the short recap under Status. The person-facing description is in
 [the voice copilot guide](user/voice-copilot.md#session-recaps).
 
 ## Why
@@ -19,6 +19,25 @@ copilot. The copilot's call log showed three failures:
 
 The idea comes from the Recap mod for Herdr (github.com/mrolafsson/herdr-recap), which forks
 the conversation so the assistant that did the work answers from all of it.
+
+## Two parts, in the console's language
+
+The fork answers in two parts separated by `---`. Part one (at most 400 characters) is what a screen
+shows. Part two (`detail`, at most 1200 characters) is shaped by the two questions the person said
+they ask the copilot most: "what has this Session finished so far, and what do I need to decide?"
+and "report this Session's summary". It names the goal, what was finished since the conversation
+began, what is in progress or stuck, and every decision owed with its choices. `get_session_summary`
+and `get_sessions_summary` hand it to the copilot as `recap_detail`; `list_sessions` does not, so a
+list stays short.
+
+The prompt names the console's language (`RecapLanguage`). Left to "the language of the
+conversation", Haiku answered a Taiwan Chinese conversation in English, and in that Session's own
+voice: "I can't give you that status summary in the requested format right now. Two things block
+it…". The prompt now says the fork describes the Session from the outside and always answers, and an
+answer that still opens with a refusal is not kept.
+
+The recap first appeared as a second line in the Session list; the person found the list too dense
+and asked for it in Session info instead (2026-11-14).
 
 ## How a recap is written
 

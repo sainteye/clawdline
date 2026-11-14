@@ -125,6 +125,7 @@
       "required": ["text", "at", "state"],
       "properties": {
         "text": { "type": "string", "description": "The recap, at most 400 characters." },
+        "detail": { "type": "string", "description": "A fuller account for the voice copilot, at most 1200 characters: the goal, what was finished since the conversation began, what is in progress or stuck, and every decision the person owes with its choices. Screens show text." },
         "at": { "type": "integer", "description": "Unix seconds when the fork answered." },
         "state": { "$ref": "#/$defs/SessionState", "description": "The Session's state when the recap was written; a working Session's recap is a snapshot of work still moving." },
         "current": { "type": "boolean", "description": "True when the conversation has not grown since the recap was written." }

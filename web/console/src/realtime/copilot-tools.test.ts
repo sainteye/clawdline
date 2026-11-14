@@ -1681,7 +1681,8 @@ function recapMachine(rows: unknown[], mode: string, forked?: (body: Record<stri
 
 const RECAP_ROWS = [
   { id: "%3", label: "Keyboard jump fix", assistant: "codex", state: "idle", work_state: "unknown", cwd: "/h",
-    recap: { text: "It fixed the page jumping when the keyboard closes; it is waiting for you to check on your iPhone.", at: 1_999_400, state: "idle", current: true } },
+    recap: { text: "It fixed the page jumping when the keyboard closes; it is waiting for you to check on your iPhone.", at: 1_999_400, state: "idle", current: true,
+      detail: "The goal was a chat page that stays put. It finished the fix and restarted the site. You need to check on your iPhone; nothing else needs you." } },
   { id: "%4", label: "Bots tower design", assistant: "claude", state: "working", work_state: "working", cwd: "/c",
     recap: { text: "It is designing the Bots tower; the mockups are done.", at: 1_996_400, state: "working", current: false } },
 ]
@@ -1691,6 +1692,7 @@ test("list_sessions carries each Session's recap and says when a stale one was w
   const out = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
   assert.equal(out.idle[0].recap, RECAP_ROWS[0].recap.text)
   assert.equal(out.idle[0].recap_written, undefined, "a current recap needs no age")
+  assert.equal(out.idle[0].recap_detail, undefined, "the list stays short; the fuller account is for one Session")
   assert.equal(out.working[0].recap, RECAP_ROWS[1].recap.text)
   assert.equal(out.working[0].recap_written, "1 小時前")
   assert.equal(calls.filter((c) => c.path === "/v1/voice/copilot-recap").length, 0, "listing never forks")
@@ -1701,11 +1703,12 @@ test("on demand, a summary asks the machine to fork a stale recap and speaks the
   const bodies: Record<string, unknown>[] = []
   const { deps } = recapMachine(RECAP_ROWS, "on_demand", (body) => {
     bodies.push(body)
-    return Response.json({ session_id: body.session, recap: "The tower mockups are done and it is now wiring the floors to real Bots; nothing needs you yet.", at: 2_000_000, state: "working", current: true, model: "claude-fork", ms: 7000 })
+    return Response.json({ session_id: body.session, recap: "The tower mockups are done and it is now wiring the floors to real Bots; nothing needs you yet.", detail: "It finished the mockups and the demo. It is wiring the floors. Nothing needs you.", at: 2_000_000, state: "working", current: true, model: "claude-fork", ms: 7000 })
   })
   const out = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Bots tower design" }), deps)).output)
   assert.deepEqual(bodies, [{ session: "%4", fork: true }])
   assert.equal(out.recap, "The tower mockups are done and it is now wiring the floors to real Bots; nothing needs you yet.")
+  assert.equal(out.recap_detail, "It finished the mockups and the demo. It is wiring the floors. Nothing needs you.")
   assert.equal(out.recap_written, undefined)
 })
 
@@ -1713,6 +1716,7 @@ test("a current recap is spoken as it is, without asking the machine again", asy
   const { deps, calls } = recapMachine(RECAP_ROWS, "on_demand", () => { throw new Error("must not fork") })
   const out = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Keyboard jump fix" }), deps)).output)
   assert.equal(out.recap, RECAP_ROWS[0].recap.text)
+  assert.equal(out.recap_detail, RECAP_ROWS[0].recap.detail, "what it finished and what you decide comes with a summary")
   assert.equal(calls.filter((c) => c.path === "/v1/voice/copilot-recap").length, 0)
 })
 
@@ -1729,4 +1733,6 @@ test("with recaps off, nothing is forked and a refused fork keeps the stale reca
 test("the instructions tell the copilot to report from a recap first", () => {
   assert.match(COPILOT_INSTRUCTIONS, /recap 是那個 Session 自己的 AI/)
   assert.match(COPILOT_INSTRUCTIONS, /有 recap 就照 recap 講/)
+  assert.match(COPILOT_INSTRUCTIONS, /目前為止完成了哪些事情、有哪些事情需要我決定/)
+  assert.match(COPILOT_INSTRUCTIONS, /有 recap_detail 就以它為主回答/)
 })

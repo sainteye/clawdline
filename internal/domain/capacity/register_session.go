@@ -256,6 +256,12 @@ func sessionBounds() []Entry {
 			Sources: []string{"internal/adapters/planner.MaxRecapRunes"},
 		},
 		{
+			// The fuller account the voice copilot reads is cut, never refused.
+			Name: "session.recap_detail_characters", Class: Buffer, Unit: Characters,
+			Limit: 1200, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/planner.MaxRecapDetailRunes"},
+		},
+		{
 			// One fork, process start to answer; a slower one is abandoned and
 			// tried again after the retry wait.
 			Name: "session.recap_fork_milliseconds", Class: Buffer, Unit: Milliseconds,

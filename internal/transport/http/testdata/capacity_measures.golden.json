@@ -3030,6 +3030,11 @@
     "Note": true
   },
   {
+    "Name": "session.recap_detail_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "session.recap_fork_milliseconds",
     "Known": true,
     "Note": true

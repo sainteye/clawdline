@@ -37,10 +37,12 @@ use the page; drag the bubble aside, press it to open the call again, or press i
 ## Session recaps
 
 With **Session recaps** on (**Settings** → **Voice copilot**), each Session's own assistant reads its
-whole conversation from a throwaway copy and writes one or two plain sentences: what it is working
-on, where it got to, and whose move it is. The copilot reports from these first, and the Session
-list shows each one under the Session's state. The conversation itself is never changed, and the
-copy is not kept.
+whole conversation from a throwaway copy and writes, in the console's language, one or two plain
+sentences — what it is working on, where it got to, and whose move it is — and a fuller account for
+the copilot: what it has finished so far and every decision it needs from you. Ask "what has this
+Session finished, and what do I need to decide?" or "report this Session's summary" and the copilot
+answers from it. **Session info** shows the short recap under **Status**. The conversation itself is
+never changed, and the copy is not kept.
 
 - **Written ahead**: about three minutes after a Session stops, and every ten minutes while it
   works. The copilot answers at once.

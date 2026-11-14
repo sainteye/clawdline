@@ -23,6 +23,7 @@ type recapRig struct {
 	mode   string
 	mu     sync.Mutex
 	forked []string
+	lang   string
 	answer func(planner.RecapTarget) (string, error)
 	ended  chan string
 }
@@ -35,12 +36,15 @@ func newRecapRig(t *testing.T) *recapRig {
 }
 
 func (r *recapRig) open() *recapBook {
-	b := newRecapBook(r.dir, func(_ context.Context, target planner.RecapTarget) (string, error) {
+	b := newRecapBook(r.dir, func(_ context.Context, target planner.RecapTarget) (planner.RecapAnswer, error) {
 		r.mu.Lock()
 		r.forked = append(r.forked, target.Conversation)
+		r.lang = target.Language
 		r.mu.Unlock()
-		return r.answer(target)
+		text, err := r.answer(target)
+		return planner.RecapAnswer{Text: text, Detail: "detail of " + target.Conversation}, err
 	}, func() string { return r.mode }, func(s session.Session) string { return filepath.Join(r.dir, s.ConversationID+".jsonl") })
+	b.language = func() string { return "zh-Hant" }
 	b.now = func() time.Time { return r.now }
 	b.done = func(conv string, _ error) { r.ended <- conv }
 	return b
@@ -98,8 +102,14 @@ func TestARecapIsWrittenOnceAStoppedSessionHasStoodStill(t *testing.T) {
 		t.Fatalf("forked %s", got)
 	}
 	rec := r.book.For(idle)
-	if rec == nil || rec.Text != "recap of aaaa1111" || !rec.Current || rec.State != "idle" {
+	if rec == nil || rec.Text != "recap of aaaa1111" || rec.Detail != "detail of aaaa1111" || !rec.Current || rec.State != "idle" {
 		t.Fatalf("recap = %+v", rec)
+	}
+	r.mu.Lock()
+	lang := r.lang
+	r.mu.Unlock()
+	if lang != "zh-Hant" {
+		t.Fatalf("the fork was asked in %q, not the console's language", lang)
 	}
 	// Nothing new was said, so nothing is forked again.
 	r.now = r.now.Add(time.Hour)

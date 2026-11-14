@@ -14,6 +14,9 @@ func (s *Server) sessionCapacityMeasures() map[string]func() capacity.Reading {
 		"session.recap_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(s.recaps.Rows())}
 		},
+		"session.recap_detail_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-recap cut of the copilot's fuller account"}
+		},
 		"session.recap_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-recap cut of the fork's answer"}
 		},

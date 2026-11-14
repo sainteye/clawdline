@@ -19,12 +19,15 @@ func TestRecapForksClaudeWithoutKeepingOrTools(t *testing.T) {
 		gotArgs, gotDir, gotStdin = args, dir, stdin
 		return []byte(`{"result":"它在修手機鍵盤的問題，修好了，**等你**用 iPhone 確認。","is_error":false,"num_turns":1}`), nil
 	}}
-	text, err := p.Recap(context.Background(), RecapTarget{Assistant: "claude", Conversation: "c1a00001-0000-4000-8000-000000000001", Dir: "/work/repo"})
+	got, err := p.Recap(context.Background(), RecapTarget{Assistant: "claude", Conversation: "c1a00001-0000-4000-8000-000000000001", Dir: "/work/repo", Language: "zh-Hant"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text != "它在修手機鍵盤的問題，修好了，等你用 iPhone 確認。" {
-		t.Fatalf("recap = %q", text)
+	if got.Text != "它在修手機鍵盤的問題，修好了，等你用 iPhone 確認。" || got.Detail != "" {
+		t.Fatalf("recap = %+v", got)
+	}
+	if !strings.Contains(gotStdin, "Traditional Chinese as used in Taiwan") {
+		t.Fatalf("the language is not named: %q", gotStdin)
 	}
 	for _, want := range [][]string{
 		{"--resume", "c1a00001-0000-4000-8000-000000000001"}, {"--fork-session"}, {"--no-session-persistence"},
@@ -52,12 +55,12 @@ func TestRecapForksCodexEphemerallyInAScratchDirectory(t *testing.T) {
 	}}
 	t.Setenv("CODEX_HOME", "")
 	os.Unsetenv("CODEX_HOME")
-	text, err := p.Recap(context.Background(), RecapTarget{Assistant: "codex", Conversation: "c0de0001-0000-4000-8000-000000000001", Dir: "/work/repo"})
+	got, err := p.Recap(context.Background(), RecapTarget{Assistant: "codex", Conversation: "c0de0001-0000-4000-8000-000000000001", Dir: "/work/repo"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text != "It fixed the keyboard jump. Waiting for you to check on the phone." {
-		t.Fatalf("recap = %q", text)
+	if got.Text != "It fixed the keyboard jump. Waiting for you to check on the phone." {
+		t.Fatalf("recap = %+v", got)
 	}
 	if gotArgs[0] != "exec" || gotArgs[1] != "fork" || !slices.Contains(gotArgs, "--ephemeral") ||
 		!slices.Contains(gotArgs, `sandbox_mode="read-only"`) || !slices.Contains(gotArgs, "shell_tool") {
@@ -121,11 +124,33 @@ func TestRecapOnlyForksAConversationIDAndAKnownAssistant(t *testing.T) {
 }
 
 func TestCleanRecapCutsALongAnswer(t *testing.T) {
-	got, err := cleanRecap(strings.Repeat("字", MaxRecapRunes+50))
+	got, err := cleanRecap(strings.Repeat("字", MaxRecapRunes+50), MaxRecapRunes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n := len([]rune(got)); n != MaxRecapRunes || !strings.HasSuffix(got, "…") {
 		t.Fatalf("len %d, %q", n, got[len(got)-6:])
+	}
+}
+
+func TestARecapHasAShortLineAndTheCopilotsFullerAccount(t *testing.T) {
+	got, err := splitRecap("It fixed the keyboard jump; your move: check on the phone.\n---\nThe goal was a page that stays put. It finished the fix and the tests. It needs you to check on the iPhone.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "It fixed the keyboard jump; your move: check on the phone." || !strings.HasPrefix(got.Detail, "The goal was a page that stays put.") {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestAForkThatAnsweredAsTheSessionIsNotKept(t *testing.T) {
+	for _, s := range []string{
+		"I can't give you that status summary in the requested format right now. Two things block it.",
+		"Sorry, I cannot do that.",
+		"我無法提供這個摘要。",
+	} {
+		if _, err := splitRecap(s); !errors.Is(err, ErrNotARecap) {
+			t.Errorf("%q: err = %v", s, err)
+		}
 	}
 }

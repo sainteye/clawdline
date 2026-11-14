@@ -419,7 +419,7 @@ func (s *Server) copilotForkRecap(w http.ResponseWriter, r *http.Request, id str
 	if wrote {
 		model = string(item.Assistant) + "-fork"
 	}
-	writeJSON(w, copilotForkRecapAnswer{SessionID: id, Recap: recap.Text, At: recap.At, State: string(recap.State),
+	writeJSON(w, copilotForkRecapAnswer{SessionID: id, Recap: recap.Text, Detail: recap.Detail, At: recap.At, State: string(recap.State),
 		Current: recap.Current, Model: model, Millis: time.Since(started).Milliseconds()})
 }
 
@@ -427,6 +427,7 @@ func (s *Server) copilotForkRecap(w http.ResponseWriter, r *http.Request, id str
 type copilotForkRecapAnswer struct {
 	SessionID string `json:"session_id"`
 	Recap     string `json:"recap"`
+	Detail    string `json:"detail,omitempty"`
 	At        int64  `json:"at"`
 	State     string `json:"state"`
 	Current   bool   `json:"current"`

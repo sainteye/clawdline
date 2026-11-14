@@ -8820,6 +8820,13 @@ export interface SessionRecap {
   current?: boolean
 
   /**
+   * A fuller account for the voice copilot, at most 1200 characters: the goal, what
+   * was finished since the conversation began, what is in progress or stuck, and
+   * every decision the person owes with its choices. Screens show text.
+   */
+  detail?: string
+
+  /**
    * The Session's state when the recap was written; a working Session's recap is a
    * snapshot of work still moving.
    */

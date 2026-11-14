@@ -366,6 +366,7 @@ func New(cfg config.Config) (*Server, error) {
 		}
 		return v.Effective().SessionRecaps
 	}, srv.recordPath)
+	srv.recaps.language = srv.productLanguage
 	srv.readings.Observe(srv.recaps.Observe)
 	srv.readings.SetAnswerAge(CapacityLimit(capacity.CacheSourceAnswer))
 	inventoryBackoffMax := time.Duration(CapacityLimit(capacity.CacheSessionInventory)) * time.Second

@@ -69,8 +69,10 @@ type recapRow struct {
 	Conversation string `json:"conversation"`
 	Assistant    string `json:"assistant"`
 	Text         string `json:"text"`
-	At           int64  `json:"at"`
-	State        string `json:"state"`
+	// Detail is the fuller account the voice copilot reads; screens show Text.
+	Detail string `json:"detail,omitempty"`
+	At     int64  `json:"at"`
+	State  string `json:"state"`
 	// Signature is the conversation record's size and modification time when
 	// the fork was asked (transcript.signature's shape): a recap whose record
 	// has not changed since is current.
@@ -85,7 +87,7 @@ type recapMark struct {
 }
 
 // Recapper forks one conversation and answers with its recap.
-type Recapper func(context.Context, planner.RecapTarget) (string, error)
+type Recapper func(context.Context, planner.RecapTarget) (planner.RecapAnswer, error)
 
 // recapBook decides which Session is due, runs one fork at a time and keeps
 // the answers.
@@ -105,6 +107,8 @@ type recapBook struct {
 	// onDemand admits forks the voice copilot is waiting for.
 	onDemand chan struct{}
 	record   func(session.Session) string
+	// language is the console's language tag; recaps are written in it.
+	language func() string
 	now      func() time.Time
 	// done is told when a fork ends; tests wait on it.
 	done func(conversation string, err error)
@@ -292,11 +296,11 @@ func (b *recapBook) start(c recapCandidate) {
 	b.running = true
 	conv := c.s.ConversationID
 	b.tried[conv] = b.now()
-	target := planner.RecapTarget{Assistant: string(c.s.Assistant), Conversation: conv, Dir: c.s.CWD}
+	target := b.target(c.s)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), maxSessionRecapDuration)
 		started := time.Now()
-		text, err := b.recap(ctx, target)
+		answer, err := b.recap(ctx, target)
 		cancel()
 		b.mu.Lock()
 		b.running = false
@@ -307,7 +311,7 @@ func (b *recapBook) start(c recapCandidate) {
 			why = recapFailure(err)
 		} else {
 			delete(b.failed, conv)
-			b.keep(recapRow{Conversation: conv, Assistant: target.Assistant, Text: text,
+			b.keep(recapRow{Conversation: conv, Assistant: target.Assistant, Text: answer.Text, Detail: answer.Detail,
 				At: b.now().Unix(), State: string(c.s.State), Signature: c.signature})
 			ok = 1
 		}
@@ -363,7 +367,7 @@ func (b *recapBook) For(s session.Session) *contract.SessionRecap {
 		return nil
 	}
 	sig := recordSignature(b.record(s))
-	return &contract.SessionRecap{Text: row.Text, At: row.At, State: contract.SessionState(row.State),
+	return &contract.SessionRecap{Text: row.Text, Detail: row.Detail, At: row.At, State: contract.SessionState(row.State),
 		Current: sig != "" && sig == row.Signature}
 }
 
@@ -393,22 +397,22 @@ func (b *recapBook) Now(ctx context.Context, s session.Session) (*contract.Sessi
 		return nil, false, ErrRecapBusy
 	}
 	type result struct {
-		text string
-		err  error
+		answer planner.RecapAnswer
+		err    error
 	}
 	out := make(chan result, 1)
-	target := planner.RecapTarget{Assistant: string(s.Assistant), Conversation: s.ConversationID, Dir: s.CWD}
+	target := b.target(s)
 	go func() {
 		defer func() { <-b.onDemand }()
 		fork, cancel := context.WithTimeout(context.Background(), maxSessionRecapDuration)
 		started := time.Now()
-		text, err := b.recap(fork, target)
+		answer, err := b.recap(fork, target)
 		cancel()
 		ok, why := 0, ""
 		b.mu.Lock()
 		b.load()
 		if err == nil {
-			b.keep(recapRow{Conversation: s.ConversationID, Assistant: target.Assistant, Text: text,
+			b.keep(recapRow{Conversation: s.ConversationID, Assistant: target.Assistant, Text: answer.Text, Detail: answer.Detail,
 				At: b.now().Unix(), State: string(s.State), Signature: sig})
 			ok = 1
 		} else {
@@ -417,7 +421,7 @@ func (b *recapBook) Now(ctx context.Context, s session.Session) (*contract.Sessi
 		b.mu.Unlock()
 		log.Printf("audit session.recap assistant=%s state=%s ms=%d ok=%d why=%s on_demand=1",
 			target.Assistant, s.State, time.Since(started).Milliseconds(), ok, why)
-		out <- result{text, err}
+		out <- result{answer, err}
 	}()
 	wait, cancel := context.WithTimeout(ctx, maxSessionRecapWait)
 	defer cancel()
@@ -426,7 +430,7 @@ func (b *recapBook) Now(ctx context.Context, s session.Session) (*contract.Sessi
 		if r.err != nil {
 			return nil, false, r.err
 		}
-		return &contract.SessionRecap{Text: r.text, At: b.now().Unix(), State: contract.SessionState(s.State),
+		return &contract.SessionRecap{Text: r.answer.Text, Detail: r.answer.Detail, At: b.now().Unix(), State: contract.SessionState(s.State),
 			Current: sig != "" && sig == recordSignature(b.record(s))}, true, nil
 	case <-wait.Done():
 		return nil, false, context.DeadlineExceeded
@@ -453,4 +457,13 @@ func (b *recapBook) Running() int {
 		return 0
 	}
 	return len(b.onDemand)
+}
+
+// target names what a fork of s reads, in the console's language.
+func (b *recapBook) target(s session.Session) planner.RecapTarget {
+	lang := ""
+	if b.language != nil {
+		lang = b.language()
+	}
+	return planner.RecapTarget{Assistant: string(s.Assistant), Conversation: s.ConversationID, Dir: s.CWD, Language: lang}
 }

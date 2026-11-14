@@ -11918,6 +11918,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "session.recap_detail_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 1200,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxRecapDetailRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "session.recap_fork_milliseconds",
     "Class": "buffer",
     "Unit": "milliseconds",

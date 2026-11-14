@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12052,
-  "riskKeys": 5241,
-  "nonRiskCount": 6811,
+  "englishContentKeys": 12056,
+  "riskKeys": 5242,
+  "nonRiskCount": 6814,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 553,
+      "count": 554,
       "sources": [
         null
       ],
@@ -850,6 +850,7 @@
         "capacityRow.session.patch_detail_lines.what",
         "capacityRow.session.recap_characters.full",
         "capacityRow.session.recap_characters.what",
+        "capacityRow.session.recap_detail_characters.full",
         "capacityRow.session.recap_fork_milliseconds.full",
         "capacityRow.session.recap_on_demand_forks.full",
         "capacityRow.session.recap_on_demand_forks.what",
@@ -3911,7 +3912,7 @@
     },
     {
       "name": "next / other",
-      "count": 1082,
+      "count": 1084,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4329,6 +4330,8 @@
         "next.infoEffortXhigh",
         "next.infoGrokAccountQuota",
         "next.infoReasoningEffort",
+        "next.infoRecap",
+        "next.infoRecapMovedOn",
         "next.infoResetsInMinutes",
         "next.interventionReplyContext",
         "next.invAdmitted",

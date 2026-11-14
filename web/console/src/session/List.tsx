@@ -101,22 +101,10 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
       : <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
         <span>{stateLabel}</span><RunningAgents count={runningAgents} />{freshness && <span className="session-activity">{freshness}</span>}
         {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>}
-    <RowRecap recap={status?.recap} />
     {identity.pending ? <p className="machine-registration" role="status">{nextWord("machineSessionPendingShort")}</p> : null}
     {onArchive && <SwipeAction kind="archive" title={shownTitle} hidden={!swiped} onClick={onArchive} />}
     {onClose && <SwipeAction kind="close" title={shownTitle} hidden={!swiped} onClick={onClose} />}
   </SessionRowLayout>
-}
-
-/**
- * The Session's own recap of its conversation (docs/session-recaps.md), one
- * line under its state: what it is working on, where it got to, whose move it
- * is. A recap written before the conversation moved on is shown dimmer.
- */
-export function RowRecap({ recap }: { recap?: SessionRow["recap"] }) {
-  const text = recap?.text?.trim()
-  if (!text) return null
-  return <p className="session-recap" data-current={recap?.current ? "1" : "0"}>{text}</p>
 }
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
@@ -517,7 +505,6 @@ export function Row({
         </span>
       </div>
       <StateLine row={row} role={role} />
-      <RowRecap recap={row.recap} />
       {row.machine_scope && !bound ? (
         <p className="machine-registration" role="status">{nextWord("machineSessionPendingRow")}</p>
       ) : null}
