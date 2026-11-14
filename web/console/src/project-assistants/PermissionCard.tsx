@@ -17,7 +17,7 @@ export function PermissionCard({summary,offer,enabled,onDetail,onAnswer,w}: {sum
       {action.diffs.map((d,i)=><div className="pa-diff" key={i}><code>{d.path}</code>{d.old_text&&<pre className="pa-diff-old">{d.old_text}</pre>}<pre className="pa-diff-new">{d.new_text}</pre></div>)}
       {action.shortened&&<small>{w.permissionShortened}</small>}
     </details>}
-    <small>{value.fence.key.machine_id} · {value.fence.project.project_id} · {value.turn_id}</small><div className="pa-actions">{offer?sortedOptions(offer.options).map(option=><button key={option.id} type="button" disabled={!enabled||busy||state!=="pending"||!(option.kind==="reject_once"||option.kind==="allow_once")} onClick={async()=>{setBusy(true);try{await onAnswer(offer,option)}finally{setBusy(false)}}}>{w[option.kind]}</button>):<button type="button" onClick={onDetail}>{w.details}</button>}</div></section>
+    <small>{value.fence.key.machine_id} · {value.fence.project.project_id} · {value.turn_id}</small><div className="pa-actions">{offer?sortedOptions(offer.options).map(option=><button key={option.id} type="button" disabled={!enabled||busy||state!=="pending"} onClick={async()=>{setBusy(true);try{await onAnswer(offer,option)}finally{setBusy(false)}}}>{w[option.kind]}</button>):<button type="button" onClick={onDetail}>{w.details}</button>}</div></section>
 }
 
 // Codync titles a card by what the tool would do; an unknown kind still says

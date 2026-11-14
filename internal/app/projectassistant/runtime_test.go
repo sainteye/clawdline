@@ -418,11 +418,9 @@ func TestRuntimePermissionAndExplicitReplyWhilePromptPending(t *testing.T) {
 	if err = s.sink(context.Background(), ProtocolEvent{ID: "offer", Fence: q.Turn.Fence, TurnID: q.Turn.ID, Permission: &offer}); err != nil {
 		t.Fatal(err)
 	}
-	answer := AnswerRequest{Command: pa.Command{Key: f.key, Operation: pa.AnswerOperation, IdempotencyKey: "answer", ContentHash: strings.Repeat("b", 64)}, Answer: pa.PermissionAnswer{Fence: q.Turn.Fence, TurnID: q.Turn.ID, OfferID: "offer", OptionID: "always"}}
-	if _, err = f.r.Answer(context.Background(), answer); pa.Code(err) != pa.ScopeExpansionDenied {
-		t.Fatalf("persistent allow=%v", err)
-	}
-	answer.Answer.OptionID = "once"
+	// Always allow is a valid answer since 2026-11-14 (Codync); this test
+	// answers once.
+	answer := AnswerRequest{Command: pa.Command{Key: f.key, Operation: pa.AnswerOperation, IdempotencyKey: "answer", ContentHash: strings.Repeat("b", 64)}, Answer: pa.PermissionAnswer{Fence: q.Turn.Fence, TurnID: q.Turn.ID, OfferID: "offer", OptionID: "once"}}
 	answered, err := f.r.Answer(context.Background(), answer)
 	if err != nil {
 		t.Fatal(err)

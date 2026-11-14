@@ -295,12 +295,12 @@ func CheckPermission(offer PermissionOffer, answer PermissionAnswer, context Per
 	}
 	for _, option := range offer.Options {
 		if option.ID == answer.OptionID {
-			// The person answers one action at a time; a standing rule would
-			// outlive this card, so it is refused.
-			if option.Kind == AllowAlways || option.Kind == RejectAlways {
-				return fail(ScopeExpansionDenied, "persistent_permission")
-			}
-			if (option.Kind != AllowOnce && option.Kind != RejectOnce) || option.Allow != (option.Kind == AllowOnce) {
+			// As in Codync, the person may also allow or refuse requests like
+			// this one for good; the agent defines and keeps that rule, and the
+			// Bot's settings show the Project's rules so one can be revoked.
+			allow := option.Kind == AllowOnce || option.Kind == AllowAlways
+			known := option.Kind == AllowOnce || option.Kind == RejectOnce || option.Kind == AllowAlways || option.Kind == RejectAlways
+			if !known || option.Allow != allow {
 				return fail(Invalid, "permission_kind")
 			}
 			return nil

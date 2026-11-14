@@ -2,11 +2,11 @@
   "version": 1,
   "englishKeys": 11994,
   "counts": {
-    "negation": 3261,
+    "negation": 3262,
     "state": 2004,
     "permission": 705,
     "deletion": 267,
-    "uncertainty": 456
+    "uncertainty": 454
   },
   "unionCount": 5219,
   "categories": {
@@ -2939,6 +2939,7 @@
       "projectAssistants.empty",
       "projectAssistants.emptyMemory",
       "projectAssistants.noCapabilities",
+      "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
       "projectAssistants.sourceError",
       "projectAssistants.unknown",
@@ -6672,9 +6673,7 @@
       "playbook.saveUnknown",
       "playbook.startUnknown",
       "playbook.zeroReviewBody",
-      "projectAssistants.allow_always",
       "projectAssistants.memory_unsafe",
-      "projectAssistants.reject_always",
       "projectAssistants.unavailable",
       "projectAssistants.unknown",
       "projects.setupUnifyUnreadable",
