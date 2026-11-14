@@ -339,7 +339,9 @@ func (p projectAssistantProjects) Resolve(ctx context.Context, target pa.Project
 		return pa.ProjectResolution{}, paHTTPFailure(pa.NotFound, "project_directory")
 	}
 	scope, ok := projects.ResolveScope(selected.Path)
-	if !ok || selected.ProjectKey == "" || scope.Key != selected.ProjectKey {
+	// A key recorded at registration must still match. A Project registered
+	// before keys were recorded has none; its current scope is the identity.
+	if !ok || (selected.ProjectKey != "" && scope.Key != selected.ProjectKey) {
 		return pa.ProjectResolution{}, paHTTPFailure(pa.StaleVersion, "canonical_project")
 	}
 	directory, err := filepath.EvalSymlinks(selected.Path)

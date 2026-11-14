@@ -775,3 +775,29 @@ func TestProjectAssistantServerExistingHostInspectionFailureRetainsUnknownUntilF
 		}
 	}
 }
+
+// A Project added before the registry recorded project keys has none. It is
+// still the person's Project: creating a Bot there resolves its current scope
+// instead of calling the selection stale. On 2026-11-15 a phone could not
+// create a Bot in 13 of this machine's 19 Projects for this reason.
+func TestProjectAssistantServerResolvesAProjectRegisteredWithoutAKey(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	legacy := filepath.Join(t.TempDir(), "registered-before-keys")
+	if err := os.Mkdir(legacy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy, _ = filepath.EvalSymlinks(legacy)
+	doc := map[string]any{"version": 1, "places": []map[string]any{{"path": legacy, "added_at": 1}}}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.s.cfg.Dir, projects.PlaceRegistryFile), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := pa.ProjectSelection{MachineID: f.identity.MachineID, ProjectID: projects.PlaceID(legacy)}
+	got, err := projectAssistantProjects{f.s}.Resolve(context.Background(), target)
+	if err != nil || got.Directory != legacy || got.Scope.CanonicalID == "" {
+		t.Fatalf("keyless registered Project %+v %v", got, err)
+	}
+}
