@@ -34,6 +34,7 @@ var copiedConstants = map[string]int64{
 	"ViewerEventsBatchBytesLimit":                  ViewerEventsBatchBytesLimit,
 	"SessionRowIDBytesLimit":                       SessionRowIDBytesLimit,
 	"defaultModelsCloudBodyLimit":                  defaultModelsCloudBodyLimit,
+	"copilotLiveCloudBodyLimit":                    copilotLiveCloudBodyLimit,
 	"nextconfig.MaxVoiceVocabularyTerms":           nextconfig.MaxVoiceVocabularyTerms,
 	"intentTextLimit":                              intentTextLimit,
 	"projectSyncCloudBodyLimit":                    projectSyncCloudBodyLimit,

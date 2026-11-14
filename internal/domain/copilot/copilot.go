@@ -25,6 +25,26 @@ const (
 	MaxExtraInstructionsRunes = 2000
 	// ClientSecretSeconds is how long a minted client secret can open a call.
 	ClientSecretSeconds = 600
+	// MaxLiveSDPBytes bounds the browser's WebRTC offer a GPT-Live call start
+	// carries to the machine; a real offer is a few kilobytes.
+	MaxLiveSDPBytes = 32 << 10
+	// MaxLiveInstructionsBytes bounds the live model's instructions a call
+	// start carries; OpenAI accepts up to 16,384 tokens. The tools and the
+	// backend's long instructions are sent over the call's own data channel.
+	MaxLiveInstructionsBytes = 24 << 10
+)
+
+// Engines are the voice systems a call can use; the first is the default.
+// "realtime" is the Realtime API (turn by turn, the Model below); "live" is
+// GPT-Live (full duplex, LiveModel), whose tool work a Responses backend
+// (LiveBackendModel) delegates to the browser's own tools.
+var Engines = []string{"realtime", "live"}
+
+// LiveModel is the GPT-Live voice model; LiveBackendModel is the Responses
+// model GPT-Live hands reasoning and tool calls to (OpenAI's suggested start).
+const (
+	LiveModel        = "gpt-live-1"
+	LiveBackendModel = "gpt-6-luna"
 )
 
 // Models a call may use, cheapest first; the first is the default.
@@ -77,6 +97,8 @@ type Settings struct {
 	// the background, or only when the voice copilot asks. Off unless set:
 	// every recap is a model turn on the person's own Claude or Codex account.
 	SessionRecaps string `json:"session_recaps,omitempty"`
+	// Engine is which voice system a call uses (Engines); realtime unless set.
+	Engine string `json:"engine,omitempty"`
 }
 
 // Effective fills every unset choice with its default.
@@ -105,6 +127,9 @@ func (s Settings) Effective() Settings {
 	if !contains(RecapModes, s.SessionRecaps) {
 		s.SessionRecaps = RecapModes[0]
 	}
+	if !contains(Engines, s.Engine) {
+		s.Engine = Engines[0]
+	}
 	return s
 }
 
@@ -132,6 +157,7 @@ type Change struct {
 	Briefing          *bool   `json:"briefing"`
 	Brief             *bool   `json:"brief"`
 	SessionRecaps     *string `json:"session_recaps"`
+	Engine            *string `json:"engine"`
 }
 
 // Errors a change is refused with; each is the refusal's code.
@@ -145,6 +171,7 @@ var (
 	ErrBadInstructions = errors.New("copilot_bad_instructions")
 	ErrBadAssistant    = errors.New("copilot_bad_assistant")
 	ErrBadRecapMode    = errors.New("copilot_bad_recap_mode")
+	ErrBadEngine       = errors.New("copilot_bad_engine")
 )
 
 // Apply returns the settings with the change made, or why it is refused.
@@ -228,6 +255,12 @@ func apply(s Settings, c Change) (Settings, error) {
 			return s, ErrBadRecapMode
 		}
 		s.SessionRecaps = *c.SessionRecaps
+	}
+	if c.Engine != nil {
+		if !contains(Engines, *c.Engine) {
+			return s, ErrBadEngine
+		}
+		s.Engine = *c.Engine
 	}
 	return s, nil
 }

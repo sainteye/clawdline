@@ -580,9 +580,9 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change the voice copilot settings."
 		}
-	case p == "/v1/voice/copilot-session" || p == "/v1/voice/copilot-briefing" || p == "/v1/voice/copilot-decide" || p == "/v1/voice/copilot-recap" || p == "/v1/voice/copilot-journal" || p == "/v1/voice/copilot-work":
+	case p == "/v1/voice/copilot-session" || p == "/v1/voice/copilot-live" || p == "/v1/voice/copilot-briefing" || p == "/v1/voice/copilot-decide" || p == "/v1/voice/copilot-recap" || p == "/v1/voice/copilot-journal" || p == "/v1/voice/copilot-work":
 		// Each starts work billed to the person: a client secret opens a
-		// Realtime call on the machine's key, a briefing runs an assistant turn,
+		// Realtime call on the machine's key, a GPT-Live start opens a Live session on it, a briefing runs an assistant turn,
 		// a decision or a recap asks a text model on that key.
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may not start a voice copilot call."

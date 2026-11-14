@@ -171,6 +171,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/voice/copilot-briefing` | 45 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-decide` | 46 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-journal` | 47 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/voice/copilot-live` | 67 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-recap` | 59 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-session` | 45 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/voice/copilot-work` | 56 | `clawdline guide connect` | `docs/user/first-session.md` |

@@ -703,6 +703,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/voice/copilot-live",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/voice/copilot-recap",
       "guide": "connect"
     },

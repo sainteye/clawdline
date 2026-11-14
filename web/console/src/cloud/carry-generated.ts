@@ -98,6 +98,11 @@ export const CARRIED = {
   // call heard, said and did, appended a turn at a time to the machine that
   // gave it its pass.
   "copilot-journal": "POST /v1/voice/copilot-journal",
+  // The voice copilot's GPT-Live call start (`realtime/copilot-live.ts`): the
+  // browser's WebRTC offer and the live model's instructions, which the machine
+  // posts to OpenAI with its key; it answers OpenAI's offer answer and the
+  // session id.
+  "copilot-live": "POST /v1/voice/copilot-live",
   // The voice copilot's Session recap (`realtime/copilot-tools.ts`,
   // `get_session_recap`): the machine holding the Session reads its whole
   // record and Board steps, and a text model on its key writes one spoken

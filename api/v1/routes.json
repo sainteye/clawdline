@@ -839,6 +839,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/voice/copilot-live",
+      "since": 67
+    },
+    {
+      "method": "*",
       "pattern": "/v1/voice/copilot-recap",
       "since": 59
     },

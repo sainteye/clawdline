@@ -332,6 +332,7 @@ export type WriteRoute =
   | { op: "copilot-settings"; word: Carried<"copilot-settings"> }
   | { op: "copilot-settings-update"; word: Carried<"copilot-settings-update"> }
   | { op: "copilot-session"; word: Carried<"copilot-session"> }
+  | { op: "copilot-live"; word: Carried<"copilot-live"> }
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
   | { op: "copilot-recap"; word: Carried<"copilot-recap"> }
@@ -818,6 +819,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-session" && segments.length === 2) {
     return { op: "copilot-session", word: "copilot-session" }
   }
+  if (head === "voice" && a === "copilot-live" && segments.length === 2) {
+    return { op: "copilot-live", word: "copilot-live" }
+  }
   if (head === "voice" && a === "copilot-briefing" && segments.length === 2) {
     return { op: "copilot-briefing", word: "copilot-briefing" }
   }
@@ -1113,6 +1117,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-settings":
     case "copilot-settings-update":
     case "copilot-session":
+    case "copilot-live":
     case "copilot-briefing":
     case "copilot-decide":
     case "copilot-recap":
@@ -2136,6 +2141,15 @@ export class RelayWriter {
         }
         return this.copilotSession(client, headerOf(init, "idempotency-key"))
       }
+      case "copilot-live": {
+        // A GPT-Live call start: the browser's offer and the live model's
+        // instructions, posted to OpenAI by a machine with a key.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        }
+        const sent = await bodyOf(init)
+        return this.copilotSession(client, headerOf(init, "idempotency-key"), "copilot-live", { live: { sdp: String(sent.sdp ?? ""), instructions: String(sent.instructions ?? "") } })
+      }
       case "copilot-decide": {
         // The person's transcribed sentence, judged by the machine that gave
         // the call its pass against that machine's own Sessions.
@@ -2451,12 +2465,12 @@ export class RelayWriter {
    * passes the call to the next; the first other refusal is the answer. The
    * machine that answers also prepares the call's briefing.
    */
-  private async copilotSession(client: CloudWriteClient, request: string): Promise<unknown> {
+  private async copilotSession(client: CloudWriteClient, request: string, word: "copilot-session" | "copilot-live" = "copilot-session", body: Record<string, unknown> = {}): Promise<unknown> {
     const machines = copilotMachines(client, this.host.machine)
     let refused: unknown = null
     for (const [index, machine] of machines.entries()) {
       try {
-        const answer = await this.machineWorkV2(client, "copilot-session", {}, index === 0 ? request : this.requestID(), machine)
+        const answer = await this.machineWorkV2(client, word, body, index === 0 ? request : this.requestID(), machine)
         this.copilotMachine = machine
         return answer
       } catch (error) {
