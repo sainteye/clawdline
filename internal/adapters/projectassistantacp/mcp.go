@@ -44,8 +44,11 @@ type ownedMCPServer struct {
 	ready       bool
 	protocol    string
 	effects     sync.WaitGroup
-	stopOnce    sync.Once
-	stopDone    chan struct{}
+	// conns counts accepted connections until each returns its RPC slot, so
+	// a verified close also means every slot it held is free again.
+	conns    sync.WaitGroup
+	stopOnce sync.Once
+	stopDone chan struct{}
 }
 
 type mcpConnContext struct{}
@@ -92,7 +95,7 @@ func (s *ownedMCPServer) close(ctx context.Context) error {
 		s.cancel()
 		s.mu.Unlock()
 		_ = s.server.Close()
-		go func() { <-s.done; s.effects.Wait(); close(s.stopDone) }()
+		go func() { <-s.done; s.effects.Wait(); s.conns.Wait(); close(s.stopDone) }()
 	})
 	if !waitOwnedDone(ctx, s.stopDone) {
 		return refusal(pa.ExecutionEffectUnknown, "mcp_cleanup")
@@ -113,7 +116,16 @@ func (l *mcpListener) Accept() (net.Conn, error) {
 		}
 		select {
 		case l.owner.slots <- struct{}{}:
-			return &mcpConn{Conn: conn, slots: l.owner.slots}, nil
+			l.owner.mu.Lock()
+			if l.owner.closing {
+				l.owner.mu.Unlock()
+				<-l.owner.slots
+				_ = conn.Close()
+				continue
+			}
+			l.owner.conns.Add(1)
+			l.owner.mu.Unlock()
+			return &mcpConn{Conn: conn, slots: l.owner.slots, done: l.owner.conns.Done}, nil
 		default:
 			// Read a bounded HTTP header before sending a response. An early
 			// unsolicited 503 can race the client's first request write.
@@ -132,6 +144,7 @@ func (l *mcpListener) Accept() (net.Conn, error) {
 type mcpConn struct {
 	net.Conn
 	slots                    chan struct{}
+	done                     func()
 	mu                       sync.Mutex
 	closed, active, released bool
 }
@@ -155,6 +168,7 @@ func (c *mcpConn) release() {
 	if c.closed && !c.active && !c.released {
 		c.released = true
 		<-c.slots
+		c.done()
 	}
 }
 func (c *mcpConn) Close() error {
