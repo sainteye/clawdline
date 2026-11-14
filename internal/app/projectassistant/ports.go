@@ -157,6 +157,12 @@ type EventFeed interface {
 	Read(context.Context, pa.EventQuery) (pa.EventPage, error)
 }
 
+// BotDeleter removes every stored record of one Bot: its aggregate, events
+// and receipts.
+type BotDeleter interface {
+	DeleteBot(context.Context, pa.BotKey) error
+}
+
 // RuleStore lists and revokes the standing rules an agent keeps for a Project
 // directory after Always allow or Never.
 type RuleStore interface {

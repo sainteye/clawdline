@@ -1170,3 +1170,45 @@ func (ruleStoreForTest) List(dir string) ([]pa.PermissionRule, error) {
 func (ruleStoreForTest) Remove(dir string, rule pa.PermissionRule) error {
 	return os.WriteFile(filepath.Join(dir, ".claude", "settings.local.json"), []byte(`{"permissions":{"allow":[]}}`), 0o644)
 }
+
+// As Codync, a Bot can be hidden from the list and brought back with its chat
+// kept, and deleted with its conversation; a Bot still working is not deleted.
+func TestHostHidesAndDeletesABot(t *testing.T) {
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	s, e := f.h.Service()
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx := context.Background()
+	hidden, _, e := s.SetHidden(ctx, pa.Command{Key: b.Key, Operation: pa.VisibilityOperation, IdempotencyKey: "hide"}, true)
+	if e != nil || !hidden.Hidden {
+		t.Fatalf("hide: %+v %v", hidden, e)
+	}
+	shown, _, e := s.SetHidden(ctx, pa.Command{Key: b.Key, Operation: pa.VisibilityOperation, IdempotencyKey: "show"}, false)
+	if e != nil || shown.Hidden {
+		t.Fatalf("unhide: %+v %v", shown, e)
+	}
+	if _, e = f.send(t, b, "one"); e != nil {
+		t.Fatal(e)
+	}
+	fixtureReceive(t, f.p.sent)
+	running := fixtureReceive(t, f.p.sessions)
+	if e = s.Delete(ctx, pa.Command{Key: b.Key, Operation: pa.DeleteOperation, IdempotencyKey: "delete-busy"}); pa.Code(e) != pa.StaleVersion {
+		t.Fatalf("deleting a working Bot: %v", e)
+	}
+	running.reply <- app.PromptResult{FinalText: "Done"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+	if e = s.Delete(ctx, pa.Command{Key: b.Key, Operation: pa.DeleteOperation, IdempotencyKey: "delete"}); e != nil {
+		t.Fatalf("delete: %v", e)
+	}
+	if _, e = f.h.store.Bot(ctx, b.Key); pa.Code(e) != pa.NotFound {
+		t.Fatalf("the deleted Bot is still stored: %v", e)
+	}
+	var events int
+	if e = f.o.Database.QueryRow(`SELECT count(*) FROM project_assistant_events WHERE machine=? AND bot=?`, b.Key.MachineID, b.Key.BotID).Scan(&events); e != nil || events != 0 {
+		t.Fatalf("events left: %d %v", events, e)
+	}
+}

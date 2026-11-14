@@ -129,7 +129,7 @@ func (h *Host) makeService() error {
 			return err
 		}
 	}
-	s, err := app.NewService(app.ServiceOptions{Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	s, err := app.NewService(app.ServiceOptions{Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}

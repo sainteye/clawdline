@@ -35,6 +35,10 @@ export interface SourceClient {
   rules?(key: W.ProjectAssistantBotKey, signal: AbortSignal): Promise<W.ProjectAssistantRulesResponse>
   removeRule?(request: W.ProjectAssistantRuleRemoveRequest, signal: AbortSignal): Promise<W.ProjectAssistantRulesResponse>
   canRules?(): boolean
+  /** Hide a Bot from the list or bring it back, and delete one (Codync's Hide from list and Delete). */
+  setHidden?(request: W.ProjectAssistantVisibilityRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
+  deleteBot?(request: W.ProjectAssistantDeleteRequest, signal: AbortSignal): Promise<unknown>
+  canManage?(): boolean
   /** Where the console reads a stored picture, or null when it cannot. */
   attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null
 }

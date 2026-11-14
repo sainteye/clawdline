@@ -5171,6 +5171,11 @@ export interface ProjectAssistantBot {
   appearance: ProjectAssistantAppearance
   conversation_id: string
   created_at: string
+
+  /**
+   * Kept out of the Bot list and its badge (API level 67).
+   */
+  hidden?: boolean
   instructions: ProjectAssistantInstructions
   key: ProjectAssistantBotKey
 
@@ -5285,6 +5290,14 @@ export interface ProjectAssistantCreateSettings {
   permission_policy: ProjectAssistantPermissionPolicy
   role_snapshot_ref: string
   target: ProjectAssistantProjectSelection
+}
+
+/**
+ * Deletes the Bot and its conversation, as Codync's Delete; files it changed stay
+ * (API level 67).
+ */
+export interface ProjectAssistantDeleteRequest {
+  command: ProjectAssistantCommand
 }
 
 export interface ProjectAssistantEditRequest {
@@ -5633,6 +5646,8 @@ export type ProjectAssistantOperation =
   | "stop"
   | "send_now"
   | "rule_remove"
+  | "delete"
+  | "visibility"
   | "answer"
   | "read"
   | "observe"
@@ -5640,7 +5655,7 @@ export type ProjectAssistantOperation =
   | "memory_save"
   | "dispatch"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
 
 /**
  * What the native tool asks to do, for the person to read before answering. Display
@@ -6212,6 +6227,15 @@ export type ProjectAssistantTurnState =
   | "unknown"
 
 export const ProjectAssistantTurnStateValues: readonly ProjectAssistantTurnState[] = ["accepted", "queued", "running", "waiting_permission", "succeeded", "failed", "cancelled", "unknown"] as const
+
+/**
+ * Hides the Bot from the list or brings it back, as Codync's Hide from list (API
+ * level 67).
+ */
+export interface ProjectAssistantVisibilityRequest {
+  command: ProjectAssistantCommand
+  hidden: boolean
+}
 
 export interface ProjectAssistantWorkLink {
   board_item_id: string

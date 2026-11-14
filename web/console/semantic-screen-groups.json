@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12099,
-  "riskKeys": 5252,
-  "nonRiskCount": 6847,
+  "englishContentKeys": 12109,
+  "riskKeys": 5258,
+  "nonRiskCount": 6851,
   "groups": [
     {
       "name": "acp / other",
@@ -5591,7 +5591,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 128,
+      "count": 132,
       "sources": [
         null
       ],
@@ -5615,6 +5615,7 @@
         "projectAssistants.create",
         "projectAssistants.createHint",
         "projectAssistants.createSubmit",
+        "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.earlier",
         "projectAssistants.executing",
@@ -5630,6 +5631,8 @@
         "projectAssistants.forgetScope",
         "projectAssistants.forgotten",
         "projectAssistants.hidden",
+        "projectAssistants.hiddenBots",
+        "projectAssistants.hideBot",
         "projectAssistants.instructions",
         "projectAssistants.interactive",
         "projectAssistants.jump",
@@ -5716,6 +5719,7 @@
         "projectAssistants.traceStep",
         "projectAssistants.traceThought",
         "projectAssistants.traceTool",
+        "projectAssistants.unhideBot",
         "projectAssistants.unnamedProject",
         "projectAssistants.unread",
         "projectAssistants.unreadCount",
