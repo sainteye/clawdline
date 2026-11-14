@@ -45,3 +45,27 @@ func TestBrowserViewerModeAndMobileLayoutReachTheLocalRequest(t *testing.T) {
 		t.Fatal("invalid profile mode admitted")
 	}
 }
+
+func TestBrowserAddressNavigationReachesTheSamePersonRoute(t *testing.T) {
+	b, err := goldenBody(json.RawMessage(`{"type":"chrome-tab-input","session":"__clawdline_machine__","request":"navigate-1","tab":9,"op":"navigate","args":{"url":"https://example.com/next"},"browser_mode":"isolated"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, request, ok := served(catalog["chrome-tab-input"])(b)
+	if !ok {
+		t.Fatal("person address navigation was refused by the Cloud decoder")
+	}
+	var body struct {
+		Op   string `json:"op"`
+		Tab  int    `json:"tab"`
+		Args struct {
+			URL string `json:"url"`
+		} `json:"args"`
+	}
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Op != "navigate" || body.Tab != 9 || body.Args.URL != "https://example.com/next" {
+		t.Fatalf("navigation changed across the encrypted command: %s", request.Body)
+	}
+}

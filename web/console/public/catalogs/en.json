@@ -12097,5 +12097,7 @@
   "capacityRow.session.recap_detail_characters.what": "How long the fuller account of a Session recap may be. Only the voice copilot reads it, to answer what a Session has finished and what you need to decide.",
   "capacityRow.session.recap_detail_characters.full": "A longer account is cut at this length and ends with an ellipsis.",
   "next.infoRecap": "Recap",
-  "next.infoRecapMovedOn": "It has moved on since this was written; a new recap follows when it next stops."
+  "next.infoRecapMovedOn": "It has moved on since this was written; a new recap follows when it next stops.",
+  "next.browserPanelLayoutReload": "Changing layout reloads this page.",
+  "next.browserPanelGo": "Go to address"
 }
