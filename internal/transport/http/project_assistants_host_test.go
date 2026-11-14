@@ -708,7 +708,7 @@ func TestProjectAssistantServerMissingProviderRefusesWithoutInventingReadiness(t
 	f.s.projectAssistants.provider = nil
 	f.enable(t)
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
-	paAssertHTTPFailure(t, f.send(t, f.local, "unconfigured-provider"), 503, pa.AdapterNotFound)
+	paAssertHTTPFailure(t, f.send(t, f.local, "unconfigured-provider"), 503, pa.CLINotInstalled)
 	x, err := featurestore.New(f.s.store.ProjectAssistantDatabase()).Export(context.Background(), f.key)
 	if err != nil || len(x.Turns) != 0 || len(x.Messages) != 0 {
 		t.Fatal("missing provider accepted work", err)
