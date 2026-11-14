@@ -1513,6 +1513,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_kept_recap_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_list_transcript_reads",
     "Known": true,
     "Note": true

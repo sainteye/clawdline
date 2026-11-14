@@ -12062,6 +12062,8 @@
   "next.browserUserChromeTerminal": "Or prepare from Terminal",
   "next.browserUserChromeUpdates": "App updates include the current extension files. Chrome does not switch to them automatically. After handing control back, prepare again; if the folder changed, remove the old Clawdline extension, load the new folder and run its connection command. Preparing files does not confirm that Chrome loaded them.",
   "next.browserUserChromePrepareFailed": "Extension files could not be prepared: {reason}",
+  "capacityRow.console.copilot_kept_recap_seconds.what": "How old a Session summary already written in the background may be for the voice copilot to read it at once.",
+  "capacityRow.console.copilot_kept_recap_seconds.full": "An older summary, or a Session without one, is written fresh, which takes several seconds.",
   "capacityRow.console.copilot_recent_idle_seconds.what": "Default recent idle Session window, estimated from the last confirmed activity.",
   "capacityRow.console.copilot_recent_idle_seconds.full": "Only currently idle Sessions with a known activity time are included. When this window is empty, the report expands to one hour and says so. Older transcripts are not fetched.",
   "capacityRow.console.copilot_idle_fallback_seconds.what": "Fallback idle Session window when the default window has no matches.",

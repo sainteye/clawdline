@@ -1705,6 +1705,16 @@ export interface SpokenRecap { text: string; detail?: string; at: number; curren
 export const FORKED_RECAP_MS = 50_000
 
 /**
+ * How old a recap the machine already wrote in the background may be and
+ * still be read as it is. On 2026-11-15 a call's report of four working
+ * Sessions took 20-22 s, every one waiting for a fresh fork that the
+ * machine wrote one after another, while the Session list already carried
+ * recaps a few minutes old (the background refreshes working ones every 10
+ * minutes). An older or missing one is still written now.
+ */
+export const KEPT_RECAP_SECONDS = 1800
+
+/**
  * A Session's recap for a tool (docs/session-recaps.md). A current one on the
  * row is used as it is. Otherwise, when the machine writes recaps, it is asked
  * for one: it forks the Session's conversation now, or answers with the one it
@@ -1715,6 +1725,9 @@ export async function forkedRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotS
   if (row.recap?.current) return row.recap
   const mode = deps.recapMode?.() ?? 'off'
   if (mode !== 'on_demand' && mode !== 'background') return row.recap
+  // A recent background recap is read at once; its age goes with it (`recapFields`).
+  const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
+  if (mode === 'background' && row.recap && row.recap.at > 0 && now - row.recap.at <= KEPT_RECAP_SECONDS) return row.recap
   let res: Response
   try {
     res = await rowFetch(deps, row)('/v1/voice/copilot-recap', {

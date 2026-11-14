@@ -289,6 +289,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.copilot_reply_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-explanation clip of a last reply; daemon cannot measure another device's reads"}
 		},
+		"console.copilot_kept_recap_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read age limit on a background recap; enforced in the console"}
+		},
 		"console.copilot_recent_idle_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "default recent-idle report window; elapsed idle time is estimated from confirmed activity"}
 		},

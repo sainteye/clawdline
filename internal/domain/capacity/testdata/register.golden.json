@@ -6110,6 +6110,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_kept_recap_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 1800,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_list_transcript_reads",
     "Class": "buffer",
     "Unit": "rows",
