@@ -188,3 +188,24 @@
 .project-assistants .pa-picture-missing { font-size:12px;color:var(--pa-dim);border:1px dashed var(--pa-line);border-radius:8px;padding:6px 10px; }
 
 .project-assistants .pa-notice p { color:var(--pa-dim);font-size:12px;font-style:italic; }
+.project-assistants .pa-source-status { margin:4px 0 10px; border-radius:16px; border:1px solid var(--pa-line); overflow:hidden; }
+.project-assistants .pa-source-status:not([data-ok]) { background:color-mix(in srgb, #d29a3a 14%, transparent); border-color:color-mix(in srgb, #d29a3a 40%, transparent); }
+.project-assistants .pa-source-summary { display:flex; align-items:center; gap:10px; width:100%; min-height:44px; padding:10px 14px; border:0; background:transparent; color:inherit; text-align:left; font-size:13px; cursor:pointer; }
+.project-assistants .pa-source-dot { flex:none; width:8px; height:8px; border-radius:50%; background:#57c27c; }
+.project-assistants .pa-source-status:not([data-ok]) .pa-source-dot { background:#d29a3a; }
+.project-assistants .pa-source-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.project-assistants .pa-source-text small { color:var(--pa-dim); line-height:1.45; }
+.project-assistants .pa-source-chevron { flex:none; opacity:.6; transition:transform .15s; }
+.project-assistants .pa-source-summary[aria-expanded="true"] .pa-source-chevron { transform:rotate(180deg); }
+.project-assistants .pa-source-checks { display:flex; flex-direction:column; gap:12px; padding:0 14px 14px; }
+.project-assistants .pa-source-machine { display:flex; flex-direction:column; gap:6px; font-size:13px; }
+.project-assistants .pa-source-machine ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; }
+.project-assistants .pa-source-machine li { display:flex; align-items:center; gap:10px; min-height:36px; border-top:1px solid var(--pa-line); }
+.project-assistants .pa-source-machine li span { flex:1; white-space:nowrap; }
+.project-assistants .pa-source-machine li small { color:var(--pa-dim); text-align:right; }
+.project-assistants .pa-source-machine li[data-state="ok"] svg { color:#57c27c; }
+.project-assistants .pa-source-machine li[data-state="bad"] svg { color:#d29a3a; }
+.project-assistants .pa-source-machine li[data-state="unknown"] svg { color:var(--pa-dim); }
+.project-assistants .pa-source-fix { margin:0; color:var(--pa-dim); line-height:1.45; }
+.project-assistants .pa-source-id { color:var(--pa-dim); font-size:11px; word-break:break-all; }
+.project-assistants .pa-source-quiet { opacity:.8; }
