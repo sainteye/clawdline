@@ -200,13 +200,15 @@ canvas.scene.dragging { cursor: grabbing; }
 .fallback { position: absolute; inset: 120px 20px 60px; z-index: 2; display: none; color: var(--text-2); }
 .fallback.show { display: block; }
 /* Mock host dock: belongs to the demo host, not to the plugin */
-.host-dock { position: fixed; z-index: 30; right: 12px; bottom: 40px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 12px; }
+.host-dock { position: fixed; z-index: 30; left: 12px; bottom: 40px; display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 6px; font-size: 12px; }
 .host-dock > button, .host-dock .dock-body button { min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px dashed #c9a8ff; background: #1a1430; color: #eadfff; cursor: pointer; white-space: nowrap; }
 .host-dock .dock-body { display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 12px; background: rgba(16,12,32,.94); border: 1px dashed #c9a8ff; color: #d9ccf5; max-width: 260px; }
 .host-dock.expanded .dock-body { display: flex; }
 .host-dock .dock-body p { margin: 0 0 4px; line-height: 1.5; }
 @media (max-width: 720px) {
-  .host-dock { right: 8px; bottom: auto; top: 50px; }
+  .host-dock { left: auto; right: 8px; bottom: 108px; align-items: flex-end; }
+  .host-dock > button { min-height: 44px; }
+  body:has(.galaxy.open-panel) .host-dock { display: none; }
   .banner { top: 70px; }
 }
 </style>
@@ -707,7 +709,8 @@ const GalaxyPlugin = (() => {
       resize(); applySnapshot(initial); setRunning(); if (canDraw) draw(tNow);
       setTimeout(() => { const first = nodesEl.querySelector(".node.s-waiting_you") || q("#btnClose"); first.focus({ preventScroll: true }); }, reduced() ? 50 : 500);
     }
-    function stop() { if (view) view.dispose(); view = null; context = { ...context, visible: false }; setRunning(); writeDiag(); }
+    /* Closing disposes the adapter and drops the scene DOM; reopening starts from a new snapshot. */
+    function stop() { if (view) view.dispose(); view = null; context = { ...context, visible: false }; setRunning(); snap = null; model = { projects: [], bodies: [] }; nodesEl.replaceChildren(); nodeEls.clear(); deselect(); writeDiag(); }
     return { start, stop };
   }
   return { mount };
