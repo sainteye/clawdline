@@ -9,9 +9,10 @@ test("a new Bot starts in the agent's Auto mode, with Approve automatically last
   assert.equal(approvalChoices("codex", "ask", undefined, "A", "R").choices[0].label, "Auto review")
 })
 test("a choice maps to the daemon's policy and mode, and back",()=>{
-  assert.deepEqual(withApproval("mode:auto"), { permission_policy: "ask", mode: "" })
+  assert.deepEqual(withApproval("mode:auto"), { permission_policy: "ask" })
   assert.deepEqual(withApproval("mode:plan"), { permission_policy: "ask", mode: "plan" })
-  assert.deepEqual(withApproval("approve"), { permission_policy: "approve", mode: "" })
+  assert.deepEqual(withApproval("approve"), { permission_policy: "approve" })
+  assert.ok(!("mode" in withApproval("approve")), "an empty mode would not match the daemon's request shape")
   assert.equal(approvalChoices("claude", "approve", "", "A", "R").selected, "approve")
   assert.equal(approvalChoices("claude", "ask", "plan", "A", "R").selected, "mode:plan")
 })

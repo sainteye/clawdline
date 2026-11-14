@@ -13,7 +13,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
   const [machine,setMachine]=useState(sources[0]?.machineID??""), [name,setName]=useState("")
   const [appearance,setAppearance]=useState<W.ProjectAssistantAppearance>({shape:"blob",color:"#e39567"})
   const [agent,setAgent]=useState<W.ProjectAssistantAgent>("claude"),[project,setProject]=useState(""),[instructions,setInstructions]=useState("")
-  const [policy,setPolicy]=useState<W.ProjectAssistantPermissionPolicy>("ask"),[mode,setMode]=useState(""),[catalog,setCatalog]=useState<CatalogPage|null>(null)
+  const [policy,setPolicy]=useState<W.ProjectAssistantPermissionPolicy>("ask"),[mode,setMode]=useState<string|undefined>(undefined),[catalog,setCatalog]=useState<CatalogPage|null>(null)
   const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState("")
   const pending=useRef<{source:SourceClient;request:W.ProjectAssistantCreateRequest;unknown:boolean}|null>(null)
   const source=sources.find(s=>s.machineID===machine),selected=useRef(source);selected.current=source
@@ -58,7 +58,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
     const control=lifetime.current
     if(!control||control.signal.aborted)return
     setBusy(true);setError("")
-    const settings:W.ProjectAssistantCreateSettings={name:name.trim(),appearance,agent,instructions,permission_policy:policy,mode,role_snapshot_ref:"",target:{machine_id:machine,project_id:project}}
+    const settings:W.ProjectAssistantCreateSettings={name:name.trim(),appearance,agent,instructions,permission_policy:policy,...(mode?{mode}:{}),role_snapshot_ref:"",target:{machine_id:machine,project_id:project}}
     // Unknown outcomes retain this exact source, command and settings for manual retry.
     if(!pending.current)pending.current={source,unknown:false,request:{command:command({machine_id:machine,bot_id:crypto.randomUUID()},"create"),settings}}
     const held=pending.current
@@ -85,7 +85,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
     <div className="pa-form-body"><div className="pa-form-avatar"><BotAvatar appearance={appearance} size={70}/></div><fieldset disabled={busy||!!pending.current}>
       <AppearancePicker value={appearance} onChange={setAppearance} w={w}/><label>{w.name}<input required value={name} onChange={e=>setName(e.target.value)}/></label>
       <label>{w.machine}<select value={machine} onChange={e=>{setProject("");setCatalog(null);setMachine(e.target.value)}}>{sources.map(s=><option key={s.machineID}>{s.machineID}</option>)}</select></label>
-      <label>{w.agent}<select value={agent} onChange={e=>{setAgent(e.target.value as W.ProjectAssistantAgent);setMode("")}}>{own?.agents.map(a=><option key={a} value={a}>{a==="claude"?"Claude Code":"Codex"}</option>)}</select></label>
+      <label>{w.agent}<select value={agent} onChange={e=>{setAgent(e.target.value as W.ProjectAssistantAgent);setMode(undefined)}}>{own?.agents.map(a=><option key={a} value={a}>{a==="claude"?"Claude Code":"Codex"}</option>)}</select></label>
       <label>{w.project}<select required value={project} aria-busy={loading} disabled={loading||!!error||!own} onChange={e=>setProject(e.target.value)}><option value="">—</option>{own?.items.map(p=><option key={p.target.project_id} value={p.target.project_id}>{p.label}</option>)}</select></label>
       {loading&&<p role="status">{w.projectsLoading}</p>}
       {own?.has_more&&!loading&&!error&&<button type="button" onClick={()=>void load(own.next_cursor,catalog)}>{w.more}</button>}

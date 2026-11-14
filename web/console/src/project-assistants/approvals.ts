@@ -25,10 +25,12 @@ export function approvalChoices(agent: W.ProjectAssistantAgent, policy: W.Projec
   return { choices, selected }
 }
 
-/** The settings an Approvals choice stands for. */
-export function withApproval(id: string): { permission_policy: W.ProjectAssistantPermissionPolicy; mode: string } {
-  if (id === "approve") return { permission_policy: "approve", mode: "" }
-  if (id === "auto_read") return { permission_policy: "auto_read", mode: "" }
+/** The settings an Approvals choice stands for. Auto has no mode field at
+ *  all: the daemon compares a request's keys with its shape, and an empty
+ *  optional mode is not part of it. */
+export function withApproval(id: string): { permission_policy: W.ProjectAssistantPermissionPolicy; mode?: string } {
+  if (id === "approve") return { permission_policy: "approve" }
+  if (id === "auto_read") return { permission_policy: "auto_read" }
   const mode = id.slice("mode:".length)
-  return { permission_policy: "ask", mode: mode === AUTO_MODE ? "" : mode }
+  return mode === AUTO_MODE ? { permission_policy: "ask" } : { permission_policy: "ask", mode }
 }
