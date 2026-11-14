@@ -11,12 +11,11 @@ import { SurveyCoordinator } from "./onboarding/Survey.js"
 import { useCloudAccount } from "./cloud/account-context.js"
 import { catalogWord, catalogWordLanguage } from "./catalog.js"
 import { transparencyURL } from "./pages/transparency/public-url.js"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client, followsRelay } from "./client.js"
-import { NAVIGATION_MARK, detailSessionName } from "./brand-mark.js"
-import { movedAt } from "./session/order.js"
+import { NAVIGATION_MARK } from "./brand-mark.js"
 import "./session/first-run.css"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { SetupGuide } from "./setup/SetupGuide.js"
@@ -1114,10 +1113,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     </button>
   )
   const sidebarPages = drawerEntries(PAGES, PAGE_MODULES)
-  // The drawer's pinned way back: the Session list, and the three Sessions
-  // that moved last, so a person deep in another page is one press from them.
-  const recentRows = rows.filter((r) => movedAt(r) !== null)
-    .sort((a, b) => (movedAt(b) ?? 0) - (movedAt(a) ?? 0)).slice(0, 3)
+  // The drawer's pinned way back: the Session list, so a person deep in
+  // another page is one press from it.
 
   return (
     <>
@@ -1194,18 +1191,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         <div className="sidebar-panel" id="sidebar-panel">
           <div className="sidebar-sessions-pin">
             {sidebarPages.filter((p) => p.id === "sessions").map(sidebarPage)}
-            {recentRows.length > 0 && <section className="sidebar-recent" aria-label={nextWord("sidebarRecentSessions")}>
-              <h2>{nextWord("sidebarRecentSessions")}</h2>
-              {recentRows.map((r) => (
-                <button key={r.id} className="sidebar-item" type="button"
-                  aria-current={page === "sessions" && openId === r.id ? "true" : undefined}
-                  onClick={() => { closeMenu(); openSession(r.id) }}>
-                  <span className="sidebar-recent-dot" aria-hidden="true"
-                    style={{ "--dot": r.state === "working" ? "var(--accent)" : r.state === "waiting" ? "var(--warn, var(--accent))" : undefined } as CSSProperties} />
-                  <span className="sidebar-recent-name">{detailSessionName(r)}</span>
-                </button>
-              ))}
-            </section>}
           </div>
           <section className="sidebar-group" aria-label={nextWord("sidebarMain")}>
             <h2>{nextWord("sidebarMain")}</h2>

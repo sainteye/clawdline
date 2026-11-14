@@ -2,10 +2,14 @@ import { shortcutAria, shortcutLabel } from "../shortcuts.js"
 import * as L from "../legacy/bridge.js"
 import { catalogWord } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
-import type { RefObject } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react"
 import { CopilotCallButton } from "../realtime/CopilotCallButton.js"
 import { useFirstRun, voiceStartShown } from "./first-run.js"
 import "./first-run.css"
+
+const SESSIONS_ICON = <svg className="session-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 9h8M8 12h8M8 15h6"/></svg>
+const TERMINAL_ICON = <svg className="session-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/></svg>
+const CHECK_ICON = <svg className="session-mode-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
 
 /** The original Session toolbar, with the destination decision supplied by its page. */
 export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onTerminals, onVoice, onWork, onStart,
@@ -26,20 +30,51 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
   useFirstRun()
   // Hidden unless chosen in Settings: its V shortcut presses only a visible button.
   const voice = voiceStartShown()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const pickRef = useRef<HTMLButtonElement>(null)
+  const current = terminalMode ? nextWord("terminalListMode") : nextWord("sessionListMode")
+  useEffect(() => {
+    if (!menuOpen) return
+    searchRef.current?.querySelector<HTMLButtonElement>('.session-mode-choice[aria-checked="true"]')?.focus()
+    const away = (event: PointerEvent) => { if (!searchRef.current?.contains(event.target as Node)) setMenuOpen(false) }
+    document.addEventListener("pointerdown", away)
+    return () => document.removeEventListener("pointerdown", away)
+  }, [menuOpen])
+  const choose = (pick: () => void) => { setMenuOpen(false); pickRef.current?.focus(); pick() }
+  const onMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(".session-mode-choice")]
+    const at = items.indexOf(document.activeElement as HTMLButtonElement)
+    if (event.key === "Escape") { event.preventDefault(); setMenuOpen(false); pickRef.current?.focus() }
+    else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      items[(at + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus()
+    } else if (event.key === "Tab") setMenuOpen(false)
+  }
   return <div className="filter-row">
-    <input ref={inputRef} id="filter" type="search" name="q7f3" placeholder={placeholder ?? T.webFilterPlaceholder}
-      value={filter} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-      data-1p-ignore="" data-lpignore="true" data-bwignore="" data-form-type="other"
-      aria-label={label ?? T.webFilterLabel} onChange={(event) => onFilter(event.target.value)} />
-    <div className="session-mode-tabs">
-      <button className="start session-mode-choice" type="button" title={T.webListLabel} aria-label={T.webListLabel}
-        aria-pressed={!terminalMode} onClick={onSessions}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 9h8M8 12h8M8 15h6"/></svg>
+    <div className="session-search" ref={searchRef}>
+      <button ref={pickRef} id="session-mode-pick" className="session-mode-pick" type="button" aria-haspopup="menu"
+        aria-expanded={menuOpen} aria-controls={menuOpen ? "session-mode-menu" : undefined}
+        aria-label={nextWord("listModeChoose", { mode: current })} title={nextWord("listModeChoose", { mode: current })}
+        onClick={() => setMenuOpen((open) => !open)}>
+        {terminalMode ? TERMINAL_ICON : SESSIONS_ICON}
+        <svg className="session-mode-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
       </button>
-      <button className="start session-mode-choice" type="button" title={nextWord("terminalListMode")}
-        aria-label={nextWord("terminalListMode")} aria-pressed={terminalMode} onClick={onTerminals}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/></svg>
-      </button>
+      <input ref={inputRef} id="filter" type="search" name="q7f3" placeholder={placeholder ?? T.webFilterPlaceholder}
+        value={filter} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+        data-1p-ignore="" data-lpignore="true" data-bwignore="" data-form-type="other"
+        aria-label={label ?? T.webFilterLabel} onChange={(event) => onFilter(event.target.value)} />
+      {menuOpen && <div id="session-mode-menu" className="session-mode-menu" role="menu" aria-label={nextWord("listModeChoose", { mode: current })}
+        onKeyDown={onMenuKey}>
+        <button className="session-mode-choice" data-mode="sessions" type="button" role="menuitemradio" aria-checked={!terminalMode}
+          onClick={() => choose(onSessions)}>
+          {SESSIONS_ICON}<span>{nextWord("sessionListMode")}</span>{CHECK_ICON}
+        </button>
+        <button className="session-mode-choice" data-mode="terminals" type="button" role="menuitemradio" aria-checked={terminalMode}
+          onClick={() => choose(onTerminals)}>
+          {TERMINAL_ICON}<span>{nextWord("terminalListMode")}</span>{CHECK_ICON}
+        </button>
+      </div>}
     </div>
     <CopilotCallButton />
     <button className="start" id="voice-go" type="button" hidden={!voice} title={T.webCommand + " · " + shortcutLabel("voice")} aria-label={T.webCommandLabel} aria-keyshortcuts={shortcutAria("voice")}
