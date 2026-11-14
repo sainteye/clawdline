@@ -419,3 +419,22 @@ func TestACPToolCallUpdatesDoNotEndTheTurn(t *testing.T) {
 		t.Fatalf("a tool call update ended the turn: %+v %v", result, err)
 	}
 }
+
+// As in Codync, a native session hears its instructions (system prompt) and
+// memory (the fresh session's handoff) once; an ordinary later prompt carries
+// only the person's text.
+func TestALaterPromptCarriesOnlyThePersonsText(t *testing.T) {
+	c, _ := openTestClient(t, "quote", func(context.Context, app.ProtocolEvent) error { return nil })
+	turn := pa.Turn{ID: "later-turn", Fence: testFence(), Instructions: pa.InstructionSnapshot{Revision: 1, Text: "STANDING-INSTRUCTIONS"}}
+	pending, err := c.Send(context.Background(), app.PromptRequest{Turn: turn, Text: "next question", Context: pa.ContextSnapshot{Text: "SAVED-MEMORY"}, Quote: &app.PromptQuote{MessageID: "q", Text: "quoted"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := pending.Wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(reply.FinalText, "STANDING-INSTRUCTIONS") || strings.Contains(reply.FinalText, "SAVED-MEMORY") || !strings.HasSuffix(reply.FinalText, "next question") {
+		t.Fatalf("prompt repeated the snapshot: %q", reply.FinalText)
+	}
+}

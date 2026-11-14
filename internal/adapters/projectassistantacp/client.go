@@ -311,8 +311,12 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err := pa.ValidateSend(q.Text, promptAttachments(q.Images)); err != nil {
 		return nil, err
 	}
-	// Prepare the complete opening before claiming the pending prompt lane.
-	text := q.Turn.Instructions.Text + "\n" + q.Context.Text + "\n" + q.Text
+	// As in Codync, a native session hears its instructions and memory once:
+	// the instructions are in its system prompt, and a fresh session's first
+	// prompt carries the handoff with the filtered memory. A resumed session
+	// already holds both, and any memory or instruction change starts a fresh
+	// session, so later prompts carry only the person's text.
+	text := q.Text
 	if q.Handoff != nil {
 		opening, err := q.Handoff.Opening(q.Turn, q.Context)
 		if err != nil {

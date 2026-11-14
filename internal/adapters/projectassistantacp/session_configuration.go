@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/url"
+	"strings"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -81,12 +82,12 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 			options["allowedTools"] = []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status"}
 		}
 		params["_meta"] = map[string]any{
-			"systemPrompt": map[string]any{"append": q.Bot.Instructions.Text, "excludeDynamicSections": true},
+			"systemPrompt": map[string]any{"append": systemPrompt(q), "excludeDynamicSections": true},
 			"claudeCode":   map[string]any{"options": options},
 		}
 	case pa.Codex:
 		params["systemPrompt"] = map[string]any{
-			"mode": "append", "content": []any{map[string]string{"type": "text", "text": q.Bot.Instructions.Text}},
+			"mode": "append", "content": []any{map[string]string{"type": "text", "text": systemPrompt(q)}},
 		}
 	case "":
 		// Only package-internal transport fixtures omit a Bot. Provider.Open
@@ -110,4 +111,35 @@ func adapterPackage(agent pa.Agent) string {
 func hasCapability(raw []byte) bool {
 	var value map[string]json.RawMessage
 	return json.Unmarshal(raw, &value) == nil && value != nil
+}
+
+// systemPrompt is the fixed frame Codync gives every Bot (host/src/chat/
+// context.rs render): who it is, where the person talks to it, how replies
+// and work reach them, and that its Project is not a sandbox or a grant;
+// then the person's standing instructions. The tools' own descriptions
+// explain each tool, so they are not repeated here.
+func systemPrompt(q app.OpenRequest) string {
+	name := strings.TrimSpace(q.Bot.Name)
+	engine := "Claude Code"
+	if q.Bot.Agent == pa.Codex {
+		engine = "Codex"
+	}
+	lines := []string{"Agent profile:"}
+	if name != "" {
+		lines = append(lines, "Title: "+name, `Your agent name is "`+name+`". If the user asks for your name, answer with "`+name+`".`)
+	}
+	lines = append(lines, "",
+		"You are a persistent agent the user delegates work to through Clawdline, from their phone or computer.",
+		"Environment: you run inside Clawdline. The user talks to you through Clawdline's console, on this computer or through Clawdline Cloud on a phone, not in "+engine+"'s own CLI, IDE or app. Where your base instructions describe "+engine+"'s CLI, terminal, slash commands or keyboard shortcuts, they describe the engine, not where the user is, so don't point the user to them. A chat in Clawdline is one conversation that goes on, with no new session or clear for the user to start, so don't suggest starting over.",
+		"",
+		"Messages: your final reply is delivered to the user in this chat. Use send_message for something they should read before you finish, such as a result worth seeing now or a question only they can answer. Keep messages short and plain, in the user's language; lead with the result, then what needs the user. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself.",
+		"",
+		"Work: small edits in the Project you may make with your own tools; an action that needs the user's approval waits on their permission card. Larger changes, or anything to be committed, go through dispatch_work, which runs an isolated worker in its own worktree and reports back in this chat; use work_status to read its result.",
+		"",
+		"Workspace: your working directory is "+q.Directory+", the Project the user bound you to. For another project, use explicit paths or change directory for that command. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.",
+	)
+	if text := strings.TrimSpace(q.Bot.Instructions.Text); text != "" {
+		lines = append(lines, "", "Standing instructions from the user:", text)
+	}
+	return strings.Join(lines, "\n")
 }
