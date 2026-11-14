@@ -5632,6 +5632,7 @@ export type ProjectAssistantOperation =
   | "send"
   | "stop"
   | "send_now"
+  | "rule_remove"
   | "answer"
   | "read"
   | "observe"
@@ -5639,7 +5640,7 @@ export type ProjectAssistantOperation =
   | "memory_save"
   | "dispatch"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
 
 /**
  * What the native tool asks to do, for the person to read before answering. Display
@@ -5728,6 +5729,15 @@ export type ProjectAssistantPermissionPolicy =
   | "approve"
 
 export const ProjectAssistantPermissionPolicyValues: readonly ProjectAssistantPermissionPolicy[] = ["ask", "auto_read", "approve"] as const
+
+/**
+ * One standing rule the agent keeps for the Bot's Project after Always allow or
+ * Never, as the agent spells it (API level 66).
+ */
+export interface ProjectAssistantPermissionRule {
+  behavior: string
+  rule: string
+}
 
 export type ProjectAssistantPermissionState =
     "pending"
@@ -6050,6 +6060,22 @@ export interface ProjectAssistantReceipt {
 export interface ProjectAssistantReceiptResponse {
   contract_version: string
   receipt: ProjectAssistantReceipt
+}
+
+/**
+ * Revokes one standing rule for the Bot's Project (API level 66).
+ */
+export interface ProjectAssistantRuleRemoveRequest {
+  command: ProjectAssistantCommand
+  rule: ProjectAssistantPermissionRule
+}
+
+/**
+ * The Bot's Project standing rules; only Claude Code Bots have them (API level 66).
+ */
+export interface ProjectAssistantRulesResponse {
+  contract_version: string
+  rules: ProjectAssistantPermissionRule[]
 }
 
 /**

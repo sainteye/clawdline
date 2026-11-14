@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12043,
-  "riskKeys": 5235,
-  "nonRiskCount": 6808,
+  "englishContentKeys": 12052,
+  "riskKeys": 5241,
+  "nonRiskCount": 6811,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 552,
+      "count": 553,
       "sources": [
         null
       ],
@@ -475,6 +475,7 @@
         "capacityRow.bots.prompt_ms.what",
         "capacityRow.bots.refresh_ms.what",
         "capacityRow.bots.rpc_ms.what",
+        "capacityRow.bots.rules_file_bytes.what",
         "capacityRow.bots.send_body_bytes.what",
         "capacityRow.bots.stderr_bytes.full",
         "capacityRow.bots.stderr_bytes.what",
@@ -3910,7 +3911,7 @@
     },
     {
       "name": "next / other",
-      "count": 1081,
+      "count": 1082,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4024,6 +4025,7 @@
         "next.browserPanelInputFull",
         "next.browserPanelKeepPage",
         "next.browserPanelKeyboard",
+        "next.browserPanelKeys",
         "next.browserPanelLayout",
         "next.browserPanelLayoutTakeover",
         "next.browserPanelMenu",
@@ -5570,7 +5572,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 110,
+      "count": 111,
       "sources": [
         null
       ],
@@ -5642,6 +5644,7 @@
         "projectAssistants.reject_once",
         "projectAssistants.remember",
         "projectAssistants.retry",
+        "projectAssistants.rulesTitle",
         "projectAssistants.running",
         "projectAssistants.save",
         "projectAssistants.savingMemory",

@@ -36,6 +36,9 @@ const (
 	// How long the agent may take to say whether a Send now joined its turn
 	// (Codync's STEER_ANSWER).
 	MaximumBotSteerAnswerMilliseconds = 15000
+	// The Project's Claude Code local settings, read to list and revoke the
+	// standing rules Always allow and Never leave there.
+	MaximumBotRulesFileBytes = 1 << 20
 )
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
@@ -129,6 +132,9 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsSendBodyBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotSendBodyBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotSendBodyBytes"}},
+		{Name: BotsRulesFileBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotRulesFileBytes, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotRulesFileBytes"}},
 		{Name: BotsSteerAnswer, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotSteerAnswerMilliseconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotSteerAnswerMilliseconds"}},

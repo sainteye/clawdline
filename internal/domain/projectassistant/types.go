@@ -494,6 +494,7 @@ const (
 	SendOperation       Operation = "send"
 	StopOperation       Operation = "stop"
 	SendNowOperation    Operation = "send_now"
+	RuleRemoveOperation Operation = "rule_remove"
 	AnswerOperation     Operation = "answer"
 	ReadOperation       Operation = "read"
 	ObserveOperation    Operation = "observe"

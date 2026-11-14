@@ -338,7 +338,7 @@ func DecideReplay(command Command, receipt *Receipt) (ReplayDecision, error) {
 		return "", fail(Invalid, "content_hash")
 	}
 	switch command.Operation {
-	case CreateOperation, EditOperation, SendOperation, StopOperation, SendNowOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
+	case CreateOperation, EditOperation, SendOperation, StopOperation, SendNowOperation, RuleRemoveOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
 	default:
 		return "", fail(Invalid, "operation")
 	}

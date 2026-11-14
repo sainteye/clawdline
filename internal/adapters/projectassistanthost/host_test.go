@@ -2,6 +2,7 @@ package projectassistanthost
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1105,4 +1106,67 @@ func TestHostBotPermissionSettingChangesAfterCreation(t *testing.T) {
 	if stored, _ = f.h.store.Bot(ctx, b.Key); stored.Mode != "read-only" || stored.PermissionPolicy != pa.Ask {
 		t.Fatalf("mode=%+v", stored)
 	}
+}
+
+// A Claude Code Bot's standing rules are read from and revoked in its own
+// Project's local settings; a Codex Bot has none Clawdline can read.
+func TestHostListsAndRevokesAClaudeBotsProjectRules(t *testing.T) {
+	f := newHostFixture(t)
+	f.o.Rules = ruleStoreForTest{}
+	f.start(t)
+	f.enable(t)
+	s, e := f.h.Service()
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx := context.Background()
+	claude, _, e := s.Create(ctx, pa.Command{Key: pa.BotKey{MachineID: "source", BotID: "claude"}, Operation: pa.CreateOperation, IdempotencyKey: "create-claude"}, pa.CreateBot{Target: pa.ProjectSelection{MachineID: "source", ProjectID: "project"}, Name: "Claude", Agent: pa.ClaudeCode, Appearance: pa.Appearance{Shape: pa.Blob, Color: "#e39567"}, PermissionPolicy: pa.Ask})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.MkdirAll(filepath.Join(f.repo, ".claude"), 0o755); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(f.repo, ".claude", "settings.local.json"), []byte(`{"permissions":{"allow":["Bash(ls:*)"]}}`), 0o644); e != nil {
+		t.Fatal(e)
+	}
+	rules, e := s.Rules(ctx, claude.Key)
+	if e != nil || len(rules) != 1 || rules[0].Rule != "Bash(ls:*)" {
+		t.Fatalf("rules=%+v %v", rules, e)
+	}
+	if e = s.RemoveRule(ctx, pa.Command{Key: claude.Key, Operation: pa.RuleRemoveOperation, IdempotencyKey: "revoke"}, rules[0]); e != nil {
+		t.Fatal(e)
+	}
+	if rules, e = s.Rules(ctx, claude.Key); e != nil || len(rules) != 0 {
+		t.Fatalf("after revoking: %+v %v", rules, e)
+	}
+	codex := f.create(t, "codex")
+	if _, e = s.Rules(ctx, codex.Key); pa.Code(e) != pa.Unsupported {
+		t.Fatalf("a Codex Bot's rules: %v", e)
+	}
+}
+
+// ruleStoreForTest is the production rule store, reached without importing
+// the ACP adapter into this package's tests.
+type ruleStoreForTest struct{}
+
+func (ruleStoreForTest) List(dir string) ([]pa.PermissionRule, error) {
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+	if os.IsNotExist(err) {
+		return []pa.PermissionRule{}, nil
+	}
+	var top struct {
+		Permissions struct{ Allow, Deny []string } `json:"permissions"`
+	}
+	if err != nil || json.Unmarshal(data, &top) != nil {
+		return nil, failure(pa.Invalid, "rules_file")
+	}
+	out := []pa.PermissionRule{}
+	for _, r := range top.Permissions.Allow {
+		out = append(out, pa.PermissionRule{Behavior: "allow", Rule: r})
+	}
+	return out, nil
+}
+func (ruleStoreForTest) Remove(dir string, rule pa.PermissionRule) error {
+	return os.WriteFile(filepath.Join(dir, ".claude", "settings.local.json"), []byte(`{"permissions":{"allow":[]}}`), 0o644)
 }

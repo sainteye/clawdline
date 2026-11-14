@@ -20,6 +20,8 @@ export const PROJECT_ASSISTANTS_PICTURES_API_LEVEL = 62
 export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
 // Send now (Codync's steer) arrived at 64; this machine's own console only, until the Cloud relay carries it.
 export const PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL = 64
+// Listing and revoking a Claude Bot's standing rules arrived at 66; this machine's own console only.
+export const PROJECT_ASSISTANTS_RULES_API_LEVEL = 66
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -174,6 +176,9 @@ export class ProjectAssistantSourceClient implements SourceClient {
   unqueue(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST",true,PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL) }
   canUnqueue() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL }
   sendNow(r: W.ProjectAssistantSendNowRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/send-now"),s,r,"POST",true,PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL) }
+  rules(key: W.ProjectAssistantBotKey,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(key,"/rules")+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_RULES_API_LEVEL) }
+  removeRule(r: W.ProjectAssistantRuleRemoveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(r.command.key,"/rules/remove"),s,r,"POST",true,PROJECT_ASSISTANTS_RULES_API_LEVEL) }
+  canRules() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_RULES_API_LEVEL }
   canSendNow() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }

@@ -179,7 +179,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view":
+					case "events", "export", "view", "rules":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -194,6 +194,9 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 			}
 			if r.Method == http.MethodGet && len(parts) == 3 && parts[1] == "attachments" && parts[2] != "" {
 				return paHTTPRoute{bot: bot, action: "attachment", offer: parts[2]}, nil
+			}
+			if r.Method == http.MethodPost && len(parts) == 3 && parts[1] == "rules" && parts[2] == "remove" {
+				return paHTTPRoute{bot: bot, action: "rule-remove"}, nil
 			}
 			if r.Method == http.MethodPost && len(parts) == 3 && parts[1] == "memory" && parts[2] == "forget" {
 				return paHTTPRoute{bot: bot, action: "forget"}, nil
@@ -458,6 +461,16 @@ func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, er
 			}
 		}
 		return response, nil
+	case "rules":
+		rules, err := s.Rules(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		response := contract.ProjectAssistantRulesResponse{ContractVersion: pa.ContractVersion, Rules: make([]contract.ProjectAssistantPermissionRule, len(rules))}
+		for i, rule := range rules {
+			response.Rules[i] = contract.ProjectAssistantPermissionRule{Behavior: rule.Behavior, Rule: rule.Rule}
+		}
+		return response, nil
 	case "export":
 		snapshot, err := s.Export(ctx, key)
 		if err != nil {
@@ -589,6 +602,19 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, paHTTPFailure(pa.Invalid, "observation")
 		}
 		return paHTTPReceipt(s.Observe(ctx, command, request.ReceiptID, request.EventSeq))
+	case "rule-remove":
+		request, err := paDecodeHTTP[contract.ProjectAssistantRuleRemoveRequest](w, r)
+		if err != nil {
+			return nil, err
+		}
+		command, err := h.command(r, route, request.Command, pa.RuleRemoveOperation)
+		if err != nil {
+			return nil, err
+		}
+		if err = s.RemoveRule(ctx, command, pa.PermissionRule{Behavior: request.Rule.Behavior, Rule: request.Rule.Rule}); err != nil {
+			return nil, err
+		}
+		return contract.ProjectAssistantRulesResponse{ContractVersion: pa.ContractVersion, Rules: []contract.ProjectAssistantPermissionRule{}}, nil
 	case "forget":
 		request, err := paDecodeHTTP[contract.ProjectAssistantForgetRequest](w, r)
 		if err != nil {

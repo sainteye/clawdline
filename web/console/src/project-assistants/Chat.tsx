@@ -17,6 +17,7 @@ import { WorkResultCard } from "./WorkResultCard"
 import { activityOf } from "./working"
 import { WorkingIndicator } from "./WorkingIndicator"
 import { readOnlyReason } from "./source-errors"
+import { RuleList } from "./RuleList"
 import type { Words } from "./words"
 
 export const EventRefreshMs = 3000
@@ -295,6 +296,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     finally{if(valid())setBusy(false)}
   }
 
+  const loadRules=useCallback((signal:AbortSignal)=>source.rules!(key,signal).then(r=>r.rules),[source,key])
+
   const detail=async(kind:"permission"|"trace",id:string,reference:string)=>{
     const captured=headRef.current,capturedEpoch=epoch.current
     if(!captured||!valid()||recovery.current||collectionBusy.current.has(reference))return
@@ -321,8 +324,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         if(!valid()||s.aborted||recovery.current||capturedEpoch!==epoch.current||view.heldOutcomes.has(draftKey)||detailRows.current[offer.id]!==offer)throw failure("pa_read_only")
         if(!canWrite(page.source)||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence)||!sameFence(page.head.current_fence,fence(d)))throw failure("pa_stale_generation")
         if(!live||live.id!==offer.id||live.turn_id!==offer.turn_id||live.state!=="pending"||Date.parse(live.expires_at)<=Date.now()||!sameFence(live.fence,fence(d)))throw failure("pa_stale_generation")
-        // One action at a time, as in CodyNC; a standing rule is never answered from here.
-        if(!live.options.some(o=>o.id===option.id&&(o.kind==="reject_once"||o.kind==="allow_once")))throw failure("pa_scope_denied")
+        // Any option the agent offered, Always allow and Never included (Codync; decided 2026-11-14).
+        if(!live.options.some(o=>o.id===option.id&&o.kind===option.kind))throw failure("pa_scope_denied")
         const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option.id}
         attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
         return source.answer(intent,s)
@@ -423,6 +426,6 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>{memoryShown.current=true;void loadExport().catch(fail)}}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button>}</div>
       <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))}/>
     </div>
-    {settings&&<BotSettings bot={bot} enabled={enabled} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
+    {settings&&<BotSettings bot={bot} enabled={enabled} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>
 }

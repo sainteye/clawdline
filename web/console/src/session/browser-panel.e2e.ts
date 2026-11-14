@@ -443,8 +443,8 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await shot("mobile-site-redesign")
       assert.ok(await run(`document.documentElement.scrollWidth<=innerWidth`),"zoom stays inside the picture")
       if (name==="phone" && width===390 && ui==="zh-Hant") {
-        await run(`document.querySelector('.browser-tools-toggle').click()`)
-        await run(`[...document.querySelectorAll('#browser-tools button')].find(b=>b.textContent==='鍵盤').click()`)
+        assert.equal(await run(`document.getElementById('browser-tools').hidden`),true,"the keys need no menu")
+        await run(`document.querySelector('.browser-keys .browser-keyboard-open').click()`)
         assert.equal(await run(`document.activeElement?.id`),"browser-native-keyboard")
         await fetch(origin+"/__fixture/channel-mode",{method:"POST",body:JSON.stringify({mode:"user_chrome"})})
         await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.shotModes.includes('user_chrome'))`)
@@ -636,6 +636,18 @@ for (const [width, ui] of [[390, "zh-Hant"], [360, "en"], [1280, "en"]] as const
       assert.equal(log.person, true)
       await until(`document.querySelector('.browser-who')?.dataset.person === 'true'`)
       await until(`document.querySelector('.browser-mode select')?.value === ${JSON.stringify(width < 520 ? "mobile" : "desktop")}`)
+      // Enter sends the draft; Shift+Enter only starts a new line.
+      await run(`document.getElementById('browser-native-keyboard').focus()`)
+      await browser.send("Input.insertText", { text: "hi" }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, modifiers: 8 }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, modifiers: 8 }, id)
+      assert.deepEqual((await (await fetch(origin + "/__fixture/log")).json()).typed, [], "Shift+Enter does not send")
+      await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, id)
+      { const until2 = Date.now() + 5000; while (!(await (await fetch(origin + "/__fixture/log")).json()).typed.length) { if (Date.now() > until2) assert.fail("Enter did not send"); await new Promise(r => setTimeout(r, 50)) } }
+      // The everyday keys are in the panel itself, not behind More.
+      await run(`[...document.querySelectorAll('.browser-keys button')].find(b=>b.getAttribute('aria-label')==='Tab').click()`)
+      { const until3 = Date.now() + 5000; while (!(await (await fetch(origin + "/__fixture/log")).json()).keys.includes("Tab")) { if (Date.now() > until3) assert.fail("Tab did not reach the page"); await new Promise(r => setTimeout(r, 50)) } }
       // Reload is one button beside the layout, and it reaches the page.
       await until(`!!document.querySelector('.browser-reload') && !document.querySelector('.browser-reload').disabled`)
       await run(`document.querySelector('.browser-reload').click()`)

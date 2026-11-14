@@ -156,6 +156,14 @@ type EventFeed interface {
 	// pa_cursor_expired so clients refresh a snapshot instead of losing facts.
 	Read(context.Context, pa.EventQuery) (pa.EventPage, error)
 }
+
+// RuleStore lists and revokes the standing rules an agent keeps for a Project
+// directory after Always allow or Never.
+type RuleStore interface {
+	List(dir string) ([]pa.PermissionRule, error)
+	Remove(dir string, rule pa.PermissionRule) error
+}
+
 type ProjectResolver interface {
 	Resolve(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error)
 }

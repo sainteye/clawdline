@@ -1556,6 +1556,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.rules_file_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotRulesFileBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.send_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",

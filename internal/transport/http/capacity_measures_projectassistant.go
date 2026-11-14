@@ -82,5 +82,6 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsMemoryEntries:         pure,
 		capacity.BotsMemorySearchResults:   pure,
 		capacity.BotsSteerAnswer:           pure,
+		capacity.BotsRulesFileBytes:        pure,
 	}
 }

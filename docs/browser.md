@@ -84,6 +84,12 @@ the agent's commands to that tab; only then does a tap on the picture become a c
 point of the page, and the text box, Tab, Enter, Delete and scroll reach it. What the person types
 is not recorded. **Hand back** returns the tab to the agent.
 
+The everyday keys sit in the panel's bottom row (2026-11-14): keyboard, Tab, Enter, scroll up and
+scroll down, each taking the tab over first like a tap. **More** holds the new-site notification
+switch and recent actions. In the text box Enter sends and Shift+Enter starts a new line; an input
+method's confirming Enter never sends. A short screen hides the one-line control status, which the
+Take over or Hand back button and the frame already show.
+
 When the extension is not connected, or browser use is off, the panel shows one card with one main
 action. Setup happens only on the computer, so through Cloud the main action is **Remind me when
 I'm back at the computer** (`POST /v1/browser/reminder`) and the setup steps are secondary; on the
