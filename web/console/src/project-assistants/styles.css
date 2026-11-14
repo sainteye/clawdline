@@ -240,3 +240,5 @@
 .project-assistants .pa-agent-choice:disabled { opacity:.45; cursor:default; }
 .project-assistants .pa-create-bottom { width:100%; min-height:48px; margin-top:12px; border:0; border-radius:14px; background:#e39567; color:#1a1208; font-size:16px; font-weight:600; cursor:pointer; }
 .project-assistants .pa-create-bottom:disabled { opacity:.45; cursor:default; }
+.project-assistants .pa-form-error { margin:12px 0 0; padding:12px 14px; border-radius:12px; background:color-mix(in srgb, #d29a3a 16%, transparent); border:1px solid color-mix(in srgb, #d29a3a 45%, transparent); color:inherit; line-height:1.5; }
+.project-assistants .pa-form-error small { color:var(--pa-dim); }
