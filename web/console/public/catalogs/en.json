@@ -818,8 +818,6 @@
   "capacityRow.bots.adapter_install_seconds.what": "Longest time the first setup may spend installing the adapter Clawdline supplies.",
   "capacityRow.bots.tool_probe_ms.full": "A program that does not answer in time is treated as not installed.",
   "capacityRow.bots.tool_probe_ms.what": "Longest wait for the installed Claude Code or Node to report its version.",
-  "capacityRow.bots.version_retries.full": "After that, the change is refused as a conflict and the turn reports it.",
-  "capacityRow.bots.version_retries.what": "How many times a Bot's own change is committed again after only a reader's read marker moved the Bot version.",
   "capacityRow.bots.tool_probe_bytes.full": "A longer report is refused and that program is treated as not installed.",
   "capacityRow.bots.tool_probe_bytes.what": "Largest version report read from the installed Claude Code or Node.",
   "capacityRow.bots.refresh_ms.full": "Abort on hiding, source revocation or selection changes. A failed refresh stops until a manual refresh.",

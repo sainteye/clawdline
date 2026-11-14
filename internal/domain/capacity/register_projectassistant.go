@@ -26,8 +26,6 @@ const (
 	// One `--version` observation of the person's Node or Claude Code.
 	MaximumBotToolProbeMilliseconds = 10000
 	MaximumBotToolProbeBytes        = 4096
-	// Commits retried after only a reader's read cursor moved the Bot version.
-	MaximumBotVersionRetries = 3
 )
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
@@ -112,8 +110,5 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsToolProbeBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotToolProbeBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotToolProbeBytes"}},
-		{Name: BotsVersionRetries, Class: Buffer, Unit: Rows, Limit: MaximumBotVersionRetries, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/capacity.MaximumBotVersionRetries"}},
 	}
 }

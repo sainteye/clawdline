@@ -745,7 +745,6 @@ const (
 	BotsAdapterInstallSeconds = "bots.adapter_install_seconds"
 	BotsToolProbe             = "bots.tool_probe_ms"
 	BotsToolProbeBytes        = "bots.tool_probe_bytes"
-	BotsVersionRetries        = "bots.version_retries"
 )
 
 const BotsOwnedDescendants = "bots.owned_children"

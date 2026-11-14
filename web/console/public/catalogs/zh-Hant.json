@@ -818,8 +818,6 @@
   "capacityRow.bots.adapter_install_seconds.what": "首次設定安裝 Clawdline 隨附接頭時最長可用的時間。",
   "capacityRow.bots.tool_probe_ms.full": "沒有及時回應的程式會被視為未安裝。",
   "capacityRow.bots.tool_probe_ms.what": "等待已安裝的 Claude Code 或 Node 回報版本的最長時間。",
-  "capacityRow.bots.version_retries.full": "超過後該變更視為衝突而拒絕，回合會回報這個狀況。",
-  "capacityRow.bots.version_retries.what": "Bot 自己的變更在只有讀取標記移動 Bot 版本時，最多重新寫入幾次。",
   "capacityRow.bots.tool_probe_bytes.full": "更長的回報會被拒絕，該程式視為未安裝。",
   "capacityRow.bots.tool_probe_bytes.what": "從已安裝的 Claude Code 或 Node 讀取版本回報的大小上限。",
   "capacityRow.bots.refresh_ms.full": "隱藏、來源撤銷或切換時中止；失敗後停止，等待手動更新。",

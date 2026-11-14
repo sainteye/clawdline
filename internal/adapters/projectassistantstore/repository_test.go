@@ -306,3 +306,36 @@ func TestPendingTurnsRetainUnknownAsQueueBarrier(t *testing.T) {
 		}
 	}
 }
+
+// Answering a native permission records unknown before the native write and
+// resolved after it. On 2026-11-14 every real "Allow once" failed the second
+// commit (pa_stale_version, permission) because only pending could change.
+func TestAnAnsweredPermissionMovesFromUnknownToResolvedOnly(t *testing.T) {
+	_, s, _ := testDB(t)
+	b := seed(t, s, "answer")
+	populate(t, s, b, pa.EffectDelivered)
+	step := func(id string, version int64, state pa.PermissionState) error {
+		x, err := s.Export(testContext, b.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p pa.PermissionOffer
+		for _, offer := range x.Permissions {
+			if offer.ID == "permission" {
+				p = offer
+			}
+		}
+		p.State, p.SelectedOptionID = state, "reject"
+		next := x.Bot
+		next.Version = version + 1
+		_, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.AnswerOperation, id), ExpectedVersion: version, Bot: &next, Permissions: []pa.PermissionOffer{p}, Receipt: pa.Receipt{ID: id, State: pa.EffectDelivered, ResourceID: p.ID}})
+		return err
+	}
+	if err := step("unknown", 2, pa.PermissionUnknown); err != nil {
+		t.Fatal(err)
+	}
+	if err := step("resolved", 3, pa.PermissionResolved); err != nil {
+		t.Fatalf("a delivered answer could not be recorded: %v", err)
+	}
+	requireCode(t, step("reopened", 4, pa.PermissionPending), pa.StaleVersion)
+}

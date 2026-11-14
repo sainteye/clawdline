@@ -1515,26 +1515,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "bots.version_retries",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 3,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/capacity.MaximumBotVersionRetries"
-    ]
-  },
-  {
-    "Register": "daemon",
     "Name": "bots.write_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

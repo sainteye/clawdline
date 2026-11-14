@@ -74,6 +74,5 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsAdapterInstallSeconds: pure,
 		capacity.BotsToolProbe:             pure,
 		capacity.BotsToolProbeBytes:        pure,
-		capacity.BotsVersionRetries:        pure,
 	}
 }

@@ -17,10 +17,7 @@ import (
 // shape. PA-03 integration must repeat these cases against its SQLite adapter.
 type runtimeStore struct {
 	Repository
-	mu sync.Mutex
-	// raceRead, when set, simulates a reader's MarkRead landing just before
-	// the matching commit: it advances only the Bot version, once.
-	raceRead    func(Mutation) bool
+	mu          sync.Mutex
 	bot         pa.Bot
 	c           pa.Conversation
 	turns       map[string]pa.Turn
@@ -100,10 +97,6 @@ func (s *runtimeStore) Commit(_ context.Context, m Mutation) (pa.Receipt, error)
 	defer s.mu.Unlock()
 	if s.failCommit {
 		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "injected_store_failure")
-	}
-	if s.raceRead != nil && s.raceRead(m) {
-		s.raceRead = nil
-		s.bot.Version++
 	}
 	if x, ok := s.receipts[receiptKey(m.Command)]; ok {
 		if x.Command != m.Command {
@@ -948,38 +941,4 @@ func TestRuntimeKnownCompletionCancelsOnlyStillPendingPermissions(t *testing.T) 
 		t.Fatal("completion sent extra native permission answer")
 	default:
 	}
-}
-
-// A reader marking the chat read advances the Bot version outside the actor's
-// lock. Observed on 2026-11-14: that landed while "Allow once" was answered,
-// the native side acted, and the answer failed with pa_stale_version, leaving
-// the permission unknown and the turn ending as unknown.
-func TestAnAllowedActionSurvivesAReadDuringTheAnswer(t *testing.T) {
-	f := newRuntimeFixture(t)
-	rec, err := f.submit(t, "one", "one")
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := receivePrompt(t, f.provider)
-	s := f.provider.session()
-	offer := pa.PermissionOffer{ID: "offer", Fence: q.Turn.Fence, TurnID: q.Turn.ID, NativeRequestID: "0", ExpiresAt: time.Now().Add(time.Minute), Options: []pa.PermissionOption{{ID: "once", Kind: pa.AllowOnce, Allow: true}, {ID: "no", Kind: pa.RejectOnce}}}
-	if err = s.sink(context.Background(), ProtocolEvent{ID: "offer", Fence: q.Turn.Fence, TurnID: q.Turn.ID, Permission: &offer}); err != nil {
-		t.Fatal(err)
-	}
-	f.store.mu.Lock()
-	f.store.raceRead = func(m Mutation) bool { return strings.HasPrefix(m.Command.IdempotencyKey, "runtime-answer-") }
-	f.store.mu.Unlock()
-	answer := AnswerRequest{Command: pa.Command{Key: f.key, Operation: pa.AnswerOperation, IdempotencyKey: "answer", ContentHash: strings.Repeat("b", 64)}, Answer: pa.PermissionAnswer{Fence: q.Turn.Fence, TurnID: q.Turn.ID, OfferID: "offer", OptionID: "once"}}
-	if _, err = f.r.Answer(context.Background(), answer); err != nil {
-		t.Fatalf("a read during the answer failed it: %v", err)
-	}
-	<-s.answered
-	f.store.mu.Lock()
-	state, turn := f.store.permissions["offer"].State, f.store.turns[q.Turn.ID].State
-	f.store.mu.Unlock()
-	if state != pa.PermissionResolved || turn != pa.TurnRunning {
-		t.Fatalf("permission=%s turn=%s", state, turn)
-	}
-	s.reply <- PromptResult{FinalText: "done"}
-	awaitTurn(t, f, rec.ResourceID, pa.TurnSucceeded)
 }

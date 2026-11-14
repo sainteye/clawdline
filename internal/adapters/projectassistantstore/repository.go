@@ -368,7 +368,12 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	}
 	a.Conversation.LastMessageSeq = int64(len(a.Messages))
 	for _, p := range m.Permissions {
-		if old, ok := a.Permissions[p.ID]; ok && (old.Fence != p.Fence || old.TurnID != p.TurnID || old.NativeRequestID != p.NativeRequestID || !reflect.DeepEqual(old.Options, p.Options) || old.State != pa.PermissionPending && old.State != p.State) {
+		// Only a pending offer changes state, except that an answer recorded as
+		// unknown before its native write becomes resolved once delivered.
+		delivered := func(old pa.PermissionOffer) bool {
+			return old.State == pa.PermissionUnknown && p.State == pa.PermissionResolved && old.SelectedOptionID == p.SelectedOptionID
+		}
+		if old, ok := a.Permissions[p.ID]; ok && (old.Fence != p.Fence || old.TurnID != p.TurnID || old.NativeRequestID != p.NativeRequestID || !reflect.DeepEqual(old.Options, p.Options) || old.State != pa.PermissionPending && old.State != p.State && !delivered(old)) {
 			return failure(pa.StaleVersion, "permission")
 		}
 		a.Permissions[p.ID] = p
