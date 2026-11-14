@@ -16,6 +16,9 @@
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { COPILOT_TOOLS, briefingSection, extraSection, instructionsFor, languageRule, originSection, type CallOptions } from './copilot-tools.ts'
 
+/** The backend model the machine opens a session with (copilot.LiveBackendModel). */
+export const LIVE_BACKEND_MODEL = 'gpt-6-luna'
+
 /** GPT-Live's price per second of a session, as OpenAI lists it ($0.05 a minute). */
 export const LIVE_USD_PER_SECOND = 0.05 / 60
 /** The backend model's price per 1M tokens (gpt-6-luna, standard short context). */
@@ -46,13 +49,15 @@ export const LIVE_BACKEND_PREAMBLE = `# 你的角色
 - 沒查到就說沒查到，不要編。`
 
 /** session.update carrying the backend's instructions and tools, sent once the session has started and again when its context changes. */
-export function liveBackendUpdate(memory = '', snapshot = '', options: CallOptions = {}): Record<string, unknown> {
+export function liveBackendUpdate(memory = '', snapshot = '', options: CallOptions = {}, backendModel = LIVE_BACKEND_MODEL): Record<string, unknown> {
   const instructions = [LIVE_BACKEND_PREAMBLE, instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
     .filter(Boolean).join('\n\n')
   return {
     type: 'session.update',
     event_id: `backend_${crypto.randomUUID()}`,
-    session: { delegation: { responses: { instructions, tools: COPILOT_TOOLS, tool_choice: 'auto', parallel_tool_calls: false } } },
+    // OpenAI refuses a delegation update without its type (missing_required_parameter,
+    // 'session.delegation.type', seen on the first real call on 2026-11-15).
+    session: { delegation: { type: 'responses', responses: { model: backendModel, instructions, tools: COPILOT_TOOLS, tool_choice: 'auto', parallel_tool_calls: false } } },
   }
 }
 

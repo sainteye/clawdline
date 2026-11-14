@@ -19,10 +19,13 @@ test("the live model gets a short persona that hands every Session question to t
 
 test("the backend receives the call's tool rules, snapshot and every tool, one call at a time", () => {
   const event = liveBackendUpdate("earlier turns", "【通話開始時的 Session 快照】 two Sessions", { origin: { id: "%2", label: "Fix the build" } }) as {
-    type: string; session: { delegation: { responses: { instructions: string; tools: unknown[]; tool_choice: string; parallel_tool_calls: boolean } } }
+    type: string; session: { delegation: { type: string; responses: { model: string; instructions: string; tools: unknown[]; tool_choice: string; parallel_tool_calls: boolean } } }
   }
   const backend = event.session.delegation.responses
   assert.equal(event.type, "session.update")
+  // OpenAI refused the update without these on the first real call (2026-11-15).
+  assert.equal(event.session.delegation.type, "responses")
+  assert.equal(backend.model, "gpt-6-luna")
   assert.equal(backend.tools.length, COPILOT_TOOLS.length)
   assert.equal(backend.parallel_tool_calls, false)
   assert.match(backend.instructions, /另一個語音模型會把你寫的結果用口語轉述給他/)
