@@ -274,6 +274,9 @@ function renderSchedules(
   const groups = choosesMachine(fleet) ? groupSchedules(list, unanswered, fleet) : null
   const drawn = groups ? groups.reduce((n, group) => n + group.rows.length, 0) : list.length
   section.hidden = false
+  // First-run guidance hides an empty section (session/first-run.css); a machine
+  // with schedules always shows them.
+  section.dataset.scheduleCount = String(drawn || groups?.length || 0)
   if (!drawn && !groups?.length) {
     rows.innerHTML = ""
     count.textContent = ""
@@ -2764,7 +2767,9 @@ function bindSection(): () => void {
  * in the original's markup and nothing paints them; `#schedule-new`'s title
  * and label are `static.js`'s.
  */
-export function ScheduleSection({ arrived, waitForFleet = false, onOpen, canOpen }: { arrived: boolean; waitForFleet?: boolean;
+export function ScheduleSection({ arrived, waitForFleet = false, onOpen, canOpen, firstRun = false }: { arrived: boolean; waitForFleet?: boolean;
+  /** No Project yet, or no Session ever started: an empty schedule list is not shown. */
+  firstRun?: boolean;
   onOpen?: (id: string, machineID?: string) => void;
   canOpen?: (id: string, machineID?: string) => boolean }) {
   arrivedFlag = arrived
@@ -2795,7 +2800,7 @@ export function ScheduleSection({ arrived, waitForFleet = false, onOpen, canOpen
   }, [arrived, waitForFleet])
 
   return (
-    <details className="schedules" id="schedules" open hidden={!arrived}>
+    <details className="schedules" id="schedules" open hidden={!arrived} data-first-run={firstRun ? "" : undefined}>
       <summary>
         <span>{nextWord("schedulesHeading")}</span>
         <span className="count" id="schedules-count"></span>

@@ -11,7 +11,7 @@ import { visualBranches, visualDepths } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
 import type { FleetDetailProblem } from "./cloud/all-machine-sessions.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
-import { placePresence, seedSessionsStarted, useFirstRun } from "./session/first-run.js"
+import { placePresence, seedSessionsStarted, sessionsStarted, useFirstRun } from "./session/first-run.js"
 import { FirstTour } from "./session/FirstTour.js"
 import type { StartAnswer, StartPlaceRow } from "./legacy/start-bridge.js"
 import { SessionToolbar } from "./session/SessionToolbar.js"
@@ -390,7 +390,8 @@ export function SessionsPage({
                 </>
               ) : null}
             </div>
-            <ScheduleSection arrived={arrived} onOpen={onOpen} />
+            <ScheduleSection arrived={arrived} onOpen={onOpen}
+              firstRun={presence === "none" || (rows.length === 0 && (sessionsStarted() ?? 0) === 0)} />
           </div>
           <div className="scroller list-scroll" ref={terminalScrollRef} hidden={!terminalMode}>
             <div className="ptr" ref={terminalPtrRef}>
