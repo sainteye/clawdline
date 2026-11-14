@@ -31,24 +31,30 @@ export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,variant="f
     dragged.current=false
     drag.current={x:event.clientX,y:event.clientY,right:place.right,bottom:place.bottom,moved:false}
   }
-  const move=(event:ReactPointerEvent<HTMLButtonElement>)=>{
-    const d=drag.current;if(!d)return
+  // The newest offset lives in the drag record: a release can arrive before
+  // React renders the last move, and a quick drag may report no move at all.
+  const track=(event:ReactPointerEvent<HTMLButtonElement>)=>{
+    const d=drag.current;if(!d)return null
     const dx=event.clientX-d.x,dy=event.clientY-d.y
-    if(!d.moved&&Math.hypot(dx,dy)<DRAG_START)return
+    if(!d.moved&&Math.hypot(dx,dy)<DRAG_START)return null
     d.moved=true
-    if(variant==="float"){
-      const pane=event.currentTarget.closest(".pane-list")?.getBoundingClientRect()
-      setOffset({right:clamp(d.right-dx,0,(pane?.width??innerWidth)-ORB),bottom:clamp(d.bottom-dy,0,(pane?.height??innerHeight)-ORB)})
-    }else setLifted({x:event.clientX,y:event.clientY})
+    if(variant!=="float")return null
+    const pane=event.currentTarget.closest(".pane-list")?.getBoundingClientRect()
+    return {right:clamp(d.right-dx,0,(pane?.width??innerWidth)-ORB),bottom:clamp(d.bottom-dy,0,(pane?.height??innerHeight)-ORB)}
+  }
+  const move=(event:ReactPointerEvent<HTMLButtonElement>)=>{
+    const next=track(event)
+    if(next)setOffset(next)
+    else if(drag.current?.moved&&variant==="dock")setLifted({x:event.clientX,y:event.clientY})
   }
   const up=(event:ReactPointerEvent<HTMLButtonElement>)=>{
-    const d=drag.current
+    const next=track(event),d=drag.current
     if(!d?.moved){drag.current=null;return}
     dragged.current=true
     const top=quotaBarTop()
     if(variant==="float"){
       if(top!==null&&event.clientY>=top-8)setOrbPlace({...place,docked:true})
-      else if(offset)setOrbPlace({docked:false,...offset})
+      else if(next)setOrbPlace({docked:false,...next})
     }else if(top===null||event.clientY<top-24){
       const pane=document.querySelector(".pane-list")?.getBoundingClientRect()
       setOrbPlace({docked:false,
