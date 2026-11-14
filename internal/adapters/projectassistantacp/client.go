@@ -314,8 +314,9 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	// As in Codync, a native session hears its instructions and memory once:
 	// the instructions are in its system prompt, and a fresh session's first
 	// prompt carries the handoff with the filtered memory. A resumed session
-	// already holds both, and any memory or instruction change starts a fresh
-	// session, so later prompts carry only the person's text.
+	// already holds both; when memory changed since, its next prompt carries
+	// all of memory as it is now. Forgetting or new instructions start a fresh
+	// session, so otherwise later prompts carry only the person's text.
 	text := q.Text
 	if q.Handoff != nil {
 		opening, err := q.Handoff.Opening(q.Turn, q.Context)
@@ -323,6 +324,8 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 			return nil, err
 		}
 		text = opening + "\n" + q.Text
+	} else if q.MemoryChanged {
+		text = memoryUpdate(q.Context.Text) + "\n" + q.Text
 	}
 	c.mu.Lock()
 	if c.permissionsSealed {
@@ -685,4 +688,13 @@ func promptAttachments(images []app.PromptImage) []pa.Attachment {
 		out = append(out, pa.Attachment{ID: hex.EncodeToString(sum[:]), MediaType: image.MediaType, Bytes: int64(len(image.Data))})
 	}
 	return out
+}
+
+// memoryUpdate is Codync's change notice (host/src/chat/memory/mod.rs
+// change_notice): the whole memory replaces what the session heard before.
+func memoryUpdate(memory string) string {
+	if strings.TrimSpace(memory) == "" {
+		memory = "(empty)"
+	}
+	return "<memory_update>\nYour memory changed. This is all of it now and replaces any earlier memory in this conversation.\n" + memory + "\n</memory_update>"
 }

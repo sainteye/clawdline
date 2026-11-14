@@ -672,6 +672,8 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	if !resume {
 		binding.NativeSessionID = ""
 	}
+	// A resumed session last heard memory at its binding's revision.
+	memoryChanged := binding.MemoryRevision != current.Revision
 	binding.MemoryRevision = current.Revision
 	binding.ForgottenThrough = current.ForgottenThrough
 	binding.InstructionRevision = bot.Instructions.Revision
@@ -764,7 +766,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		if e != nil {
 			return e
 		}
-		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff, Images: images})
+		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff, Images: images, MemoryChanged: resume && memoryChanged})
 		return e
 	})
 	if err != nil {

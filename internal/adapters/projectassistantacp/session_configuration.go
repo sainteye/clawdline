@@ -79,7 +79,7 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 		// execution's own MCP endpoint never prompt; each still checks its
 		// fence and source policy in the Host.
 		if owned != nil {
-			options["allowedTools"] = []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status"}
+			options["allowedTools"] = []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status", "mcp__clawdline__read_memory", "mcp__clawdline__search_memory", "mcp__clawdline__edit_memory"}
 		}
 		params["_meta"] = map[string]any{
 			"systemPrompt": map[string]any{"append": systemPrompt(q), "excludeDynamicSections": true},
@@ -135,6 +135,8 @@ func systemPrompt(q app.OpenRequest) string {
 		"Messages: your final reply is delivered to the user in this chat. Use send_message for something they should read before you finish, such as a result worth seeing now or a question only they can answer. Keep messages short and plain, in the user's language; lead with the result, then what needs the user. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself.",
 		"",
 		"Work: small edits in the Project you may make with your own tools; an action that needs the user's approval waits on their permission card. Larger changes, or anything to be committed, go through dispatch_work, which runs an isolated worker in its own worktree and reports back in this chat; use work_status to read its result.",
+		"",
+		"Memory: your memory holds what you know about the user, and a new session opens with it. When the user tells you something lasting about themselves, or asks you to remember, change or forget something, change it with edit_memory: one short fact per entry. The user can read and forget entries in the app. Project and code knowledge worth keeping belongs in the Project's own files when the user wants it there, not in your memory; don't make the Project's CLAUDE.md or AGENTS.md your memory unless the user asks. search_memory finds entries; read_memory lists them all. When the user asks you to forget something, delete it, and don't bring it back from the conversation either.",
 		"",
 		"Workspace: your working directory is "+q.Directory+", the Project the user bound you to. For another project, use explicit paths or change directory for that command. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.",
 	)

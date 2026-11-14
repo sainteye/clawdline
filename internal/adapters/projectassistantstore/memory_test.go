@@ -3,6 +3,7 @@ package projectassistantstore
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 
@@ -183,5 +184,38 @@ func TestMemoryLateFailureRollsBackTombstones(t *testing.T) {
 	snap, err := s.Snapshot(testContext, b.Key)
 	if err != nil || snap.Memory.Revision != 2 || snap.Text != "remember" || len(snap.Memory.ForgottenSourceIDs) != 0 {
 		t.Fatalf("forget leaked %+v %v", snap, err)
+	}
+}
+
+// A Bot keeps at most pa.MaxMemoryEntries live entries: one more is refused,
+// changing an existing one is not, and forgetting one makes room.
+func TestMemoryEntriesStopAtTheirBound(t *testing.T) {
+	_, s, _ := testDB(t)
+	b := seed(t, s, "one")
+	revision := int64(1)
+	for i := 0; i < pa.MaxMemoryEntries; i++ {
+		id := fmt.Sprintf("fact-%d", i)
+		r, err := s.Save(testContext, memoryWrite(b, revision, id, "source-"+id, "Fact "+id))
+		if err != nil {
+			t.Fatal(i, err)
+		}
+		revision = r.Revision
+	}
+	_, err := s.Save(testContext, memoryWrite(b, revision, "one-more", "source-one-more", "One more"))
+	requireCode(t, err, pa.CapacityFull)
+	changed := memoryWrite(b, revision, "fact-0", "source-fact-0", "Fact changed")
+	changed.Command = command(b.Key, pa.MemorySaveOperation, "change-0")
+	r, err := s.Save(testContext, changed)
+	if err != nil {
+		t.Fatal("changing an entry at the bound was refused", err)
+	}
+	r, err = s.Forget(testContext, app.ForgetRequest{Command: command(b.Key, pa.ForgetOperation, "forget-1"), Project: b.Project, ExpectedRevision: r.Revision, SourceIDs: []string{"fact-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	more := memoryWrite(b, r.Revision, "one-more", "source-one-more", "One more")
+	more.Command = command(b.Key, pa.MemorySaveOperation, "one-more-after")
+	if _, err = s.Save(testContext, more); err != nil {
+		t.Fatal("forgetting did not make room", err)
 	}
 }

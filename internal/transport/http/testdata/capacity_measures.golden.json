@@ -296,6 +296,16 @@
     "Note": true
   },
   {
+    "Name": "bots.memory_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.memory_search_results",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.message_bytes",
     "Known": true,
     "Note": true

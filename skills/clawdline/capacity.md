@@ -66,6 +66,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.frame_bytes` | 1048576 | `bytes` | `disconnect` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.memory_entries` | 256 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.memory_search_results` | 30 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.notice_rows` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |

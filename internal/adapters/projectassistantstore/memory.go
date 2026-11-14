@@ -96,8 +96,20 @@ func (s *Store) Save(ctx context.Context, in app.MemoryWrite) (pa.MemoryRevision
 		if err := pa.ValidateMemoryWrite(in.Entry, a.Memory, in.ExpectedRevision); err != nil {
 			return err
 		}
-		if old, ok := a.Entries[in.Entry.ID]; ok && old.Forgotten {
+		old, exists := a.Entries[in.Entry.ID]
+		if exists && old.Forgotten {
 			return failure(pa.ContextStale, "forgotten_entry")
+		}
+		if !exists {
+			live := 0
+			for _, e := range a.Entries {
+				if !e.Forgotten {
+					live++
+				}
+			}
+			if live >= pa.MaxMemoryEntries {
+				return failure(pa.CapacityFull, "memory_entries")
+			}
 		}
 		a.Memory.Revision++
 		entry := in.Entry

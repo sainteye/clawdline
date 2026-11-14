@@ -19,6 +19,8 @@ type mcpTestTools struct {
 	message  func(context.Context, string, string) error
 	dispatch func(context.Context, string, string, []string) (pa.WorkLink, error)
 	status   func(context.Context, string) (pa.WorkLink, error)
+	memory   []pa.MemoryEntry
+	edits    *[]app.MemoryEdit
 }
 
 func (t mcpTestTools) SendMessage(ctx context.Context, id, text string) error {
@@ -29,6 +31,14 @@ func (t mcpTestTools) Dispatch(ctx context.Context, id, brief string, claims []s
 }
 func (t mcpTestTools) Status(ctx context.Context, id string) (pa.WorkLink, error) {
 	return t.status(ctx, id)
+}
+func (t mcpTestTools) Memory(context.Context) ([]pa.MemoryEntry, error) { return t.memory, nil }
+func (t mcpTestTools) EditMemory(_ context.Context, _ string, e app.MemoryEdit) error {
+	if t.edits == nil {
+		return refusal(pa.Disabled, "native_memory")
+	}
+	*t.edits = append(*t.edits, e)
+	return nil
 }
 
 type mcpFixture struct {
@@ -275,5 +285,34 @@ func TestOwnedMCPAcceptsOnlyLoopbackDescriptor(t *testing.T) {
 	bad.BearerToken = "owned\r\nX-Other: value"
 	if err := bad.validate(testFence()); err == nil {
 		t.Fatal("header injection")
+	}
+}
+
+// As in Codync's memory server, a Bot reads, searches and edits its memory
+// through its own tools; an edit reaches the host with its idempotency key.
+func TestOwnedMCPMemoryToolsReadSearchAndEdit(t *testing.T) {
+	var edits []app.MemoryEdit
+	f := newMCPFixture(t, mcpTestTools{memory: []pa.MemoryEntry{{ID: "e1", Text: "Has two cats"}, {ID: "e2", Text: "Likes green tea"}}, edits: &edits})
+	f.initialize(t)
+	_, b := f.post(t, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, nil)
+	for _, name := range []string{"read_memory", "search_memory", "edit_memory"} {
+		if !bytes.Contains(b, []byte(`"name":"`+name+`"`)) {
+			t.Fatalf("%s not listed: %s", name, b)
+		}
+	}
+	if _, b = f.post(t, mcpCall("read_memory", nil), nil); !bytes.Contains(b, []byte("Has two cats")) || !bytes.Contains(b, []byte("Likes green tea")) || bytes.Contains(b, []byte(`"isError":true`)) {
+		t.Fatalf("read_memory: %s", b)
+	}
+	if _, b = f.post(t, mcpCall("search_memory", map[string]any{"query": "TEA green"}), nil); !bytes.Contains(b, []byte("Likes green tea")) || bytes.Contains(b, []byte("Has two cats")) {
+		t.Fatalf("search_memory: %s", b)
+	}
+	if _, b = f.post(t, mcpCall("edit_memory", map[string]any{"idempotency_key": "k1", "old": "two cats", "new": "three cats"}), nil); bytes.Contains(b, []byte(`"isError":true`)) {
+		t.Fatalf("edit_memory: %s", b)
+	}
+	if _, b = f.post(t, mcpCall("edit_memory", map[string]any{"idempotency_key": "k2"}), nil); !bytes.Contains(b, []byte(`"isError":true`)) {
+		t.Fatalf("an edit with nothing to change was accepted: %s", b)
+	}
+	if len(edits) != 1 || edits[0].Old != "two cats" || edits[0].New != "three cats" {
+		t.Fatalf("edits=%+v", edits)
 	}
 }

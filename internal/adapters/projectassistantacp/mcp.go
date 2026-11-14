@@ -412,6 +412,43 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			return nil, refusal(pa.Invalid, "mcp_work")
 		}
 		return s.tools.Status(ctx, q.TaskID)
+	case "read_memory":
+		if mcpDecode(mcpEmpty(arguments), &struct{}{}) != nil {
+			return nil, refusal(pa.Invalid, "mcp_memory")
+		}
+		entries, err := s.tools.Memory(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"entries": mcpMemoryLines(entries)}, nil
+	case "search_memory":
+		var q struct {
+			Query string `json:"query"`
+		}
+		if mcpDecode(arguments, &q) != nil || strings.TrimSpace(q.Query) == "" {
+			return nil, refusal(pa.Invalid, "mcp_memory")
+		}
+		entries, err := s.tools.Memory(ctx)
+		if err != nil {
+			return nil, err
+		}
+		found, more := app.SearchMemory(entries, q.Query)
+		return map[string]any{"entries": mcpMemoryLines(found), "more": more}, nil
+	case "edit_memory":
+		var q struct {
+			ID     string `json:"idempotency_key"`
+			Append string `json:"append"`
+			Old    string `json:"old"`
+			New    string `json:"new"`
+			Delete bool   `json:"delete"`
+		}
+		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Append == "" && q.Old == "" {
+			return nil, refusal(pa.Invalid, "mcp_memory")
+		}
+		if err := s.tools.EditMemory(ctx, q.ID, app.MemoryEdit{Append: q.Append, Old: q.Old, New: q.New, Delete: q.Delete}); err != nil {
+			return nil, err
+		}
+		return map[string]string{"state": "saved", "idempotency_key": q.ID}, nil
 	default:
 		return nil, refusal(pa.Unsupported, "mcp_tool")
 	}
@@ -419,6 +456,9 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 
 func mcpTools() []any {
 	tool := func(name, description string, properties map[string]any, required ...string) any {
+		if required == nil {
+			required = []string{}
+		}
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	text := func() any { return map[string]any{"type": "string", "minLength": 1} }
@@ -426,7 +466,27 @@ func mcpTools() []any {
 		tool("send_message", "Publish an explicit message to this Bot conversation. Reuse its idempotency key after an uncertain response; do not invent a replacement key.", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
 		tool("dispatch_work", "Dispatch isolated work under the current Project policy. Unknown effects require receipt inspection, never automatic replay with a new key.", map[string]any{"idempotency_key": text(), "brief": text(), "claims": map[string]any{"type": "array", "items": text()}}, "idempotency_key", "brief", "claims"),
 		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval.", map[string]any{"task_id": text()}, "task_id"),
+		tool("read_memory", "Read your memory: every entry, one short fact per entry, oldest first.", map[string]any{}),
+		tool("search_memory", "Search your memory for entries containing every word of the query (case-insensitive).", map[string]any{"query": text()}, "query"),
+		tool("edit_memory", "Change your memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in your memory; or old with delete to forget the entry holding it. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response.",
+			map[string]any{"idempotency_key": text(), "append": text(), "old": text(), "new": map[string]any{"type": "string"}, "delete": map[string]any{"type": "boolean"}}, "idempotency_key"),
 	}
+}
+
+// mcpEmpty lets a tool without arguments be called with none at all.
+func mcpEmpty(arguments json.RawMessage) json.RawMessage {
+	if len(strings.TrimSpace(string(arguments))) == 0 || string(arguments) == "null" {
+		return json.RawMessage("{}")
+	}
+	return arguments
+}
+
+func mcpMemoryLines(entries []pa.MemoryEntry) []map[string]string {
+	out := make([]map[string]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, map[string]string{"id": e.ID, "text": e.Text})
+	}
+	return out
 }
 
 var _ http.Handler = (*ownedMCPServer)(nil)

@@ -1,7 +1,7 @@
 # Persistent Bots: getting started
 
 A Bot is a long-lived Claude assistant bound to one Project. You chat with
-it in the console; it remembers what you save, works in the Project with
+it in the console; it remembers what you tell it, works in the Project with
 Claude Code's own tools, and can hand larger changes to an isolated worker
 through Clawdline's Broker. The worker's result comes back to the same chat.
 
@@ -63,6 +63,15 @@ first-use setup ahead of time and prints which Claude Code version it found;
    arrives in the chat.
 5. **Stop** ends the current reply and any pending ones. Your ordinary
    Sessions are not touched.
+
+A Bot keeps its own memory, as in Codync: when you tell it something lasting
+or ask it to remember, change or forget something, it does so with its
+memory tools, one short fact per entry. **Memory** in the chat lists every
+entry, yours and the Bot's, and forgets the ones you choose. Adding or
+changing an entry keeps the Bot's conversation going, and its next reply
+starts from the whole memory as it is now; forgetting starts a fresh
+conversation that carries only what is still remembered. A Bot keeps at most
+256 entries.
 
 Claude Code's default mode decides which actions it asks about. When it
 asks, a permission card appears in the chat and you can allow that action

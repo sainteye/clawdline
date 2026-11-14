@@ -426,7 +426,10 @@ func CheckOpaqueResume(binding ExecutionBinding, current MemoryRevision) error {
 	if binding.ForgottenThrough != current.ForgottenThrough {
 		return fail(ResumeForbiddenAfterForget, "native_history")
 	}
-	if binding.MemoryRevision != current.Revision {
+	// As in Codync, a memory that only gained or changed entries keeps the
+	// native session; the next prompt carries those entries as an update.
+	// Forgetting is checked above and always starts a filtered session.
+	if binding.MemoryRevision > current.Revision {
 		return fail(ContextStale, "native_history")
 	}
 	return nil

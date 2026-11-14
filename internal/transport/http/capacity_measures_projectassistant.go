@@ -79,5 +79,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsSendBodyBytes:         pure,
 		capacity.BotsAttachmentsPerMessage: pure,
 		capacity.BotsAttachmentBytes:       pure,
+		capacity.BotsMemoryEntries:         pure,
+		capacity.BotsMemorySearchResults:   pure,
 	}
 }

@@ -38,6 +38,10 @@ type NativeTools interface {
 	SendMessage(context.Context, string, string) error
 	Dispatch(context.Context, string, string, []string) (pa.WorkLink, error)
 	Status(context.Context, string) (pa.WorkLink, error)
+	// Memory returns the Bot's live entries; EditMemory changes them for the
+	// current turn, the call ID making a repeated call the same change.
+	Memory(context.Context) ([]pa.MemoryEntry, error)
+	EditMemory(context.Context, string, MemoryEdit) error
 }
 
 // Send performs one bounded write only. Waiting for the model must happen in
@@ -60,7 +64,10 @@ type PromptRequest struct {
 	Context pa.ContextSnapshot
 	Quote   *PromptQuote
 	Handoff *SessionHandoff
-	Images  []PromptImage
+	// MemoryChanged tells a resumed session that memory changed since it last
+	// heard it; as in Codync, the prompt then carries all of Context's memory.
+	MemoryChanged bool
+	Images        []PromptImage
 }
 
 // PromptImage is one picture sent with the person's message.

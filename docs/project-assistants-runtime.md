@@ -71,9 +71,15 @@ its original provenance fence; new assistant events use the running fence.
 All incoming messages, permissions and work are checked against authoritative
 current source, Project, binding, generation and active turn. Stale events fail.
 
-Opaque resume requires advertised load support and unchanged memory/forget and
-instruction revisions. Forgetting, changed instructions or unsupported resume
-starts a new binding with the current provenance-complete filtered context.
+Opaque resume requires advertised load support and unchanged forget and
+instruction revisions. Since 2026-11-14, as in Codync (host/src/chat/memory
+change_notice), memory that only gained or changed entries keeps the native
+session: the next prompt starts with a `<memory_update>` carrying all of the
+filtered memory as it is now. A Bot changes its own memory through the
+read_memory, search_memory and edit_memory tools of its owned MCP endpoint,
+only during its current turn; a delete forgets the entry. Forgetting, changed
+instructions or unsupported resume starts a new binding with the current
+provenance-complete filtered context.
 Displayed chat history is never automatically sent back to the model. The
 runtime's `Memory.WithCurrent` callback contains context validation and one
 bounded Send write, not the model wait or session setup. A stale context aborts

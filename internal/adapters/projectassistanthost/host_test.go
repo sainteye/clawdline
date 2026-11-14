@@ -866,3 +866,58 @@ func TestHostRestartResumesTheTurnItCutOff(t *testing.T) {
 		}
 	}
 }
+
+// As in Codync, a Bot keeps its own memory through its tools. Adding and
+// changing entries keeps the native session, whose next prompt hears the
+// whole memory; forgetting starts a new filtered session.
+func TestHostBotMemoryToolsKeepTheSessionUntilForgetting(t *testing.T) {
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	ctx := context.Background()
+	if _, e := f.send(t, b, "one"); e != nil {
+		t.Fatal(e)
+	}
+	fixtureReceive(t, f.p.sent)
+	first := fixtureReceive(t, f.p.sessions)
+	tools := first.q.Tools
+	if e := tools.EditMemory(ctx, "c1", app.MemoryEdit{Append: "Has two cats"}); e != nil {
+		t.Fatal(e)
+	}
+	if e := tools.EditMemory(ctx, "c2", app.MemoryEdit{Old: "two cats", New: "three cats"}); e != nil {
+		t.Fatal(e)
+	}
+	if e := tools.EditMemory(ctx, "c3", app.MemoryEdit{Old: "dogs", New: "x"}); pa.Code(e) != pa.NotFound {
+		t.Fatalf("an edit of absent text: %v", e)
+	}
+	entries, e := tools.Memory(ctx)
+	if e != nil || len(entries) != 1 || entries[0].Text != "Has three cats" {
+		t.Fatalf("memory=%+v %v", entries, e)
+	}
+	first.reply <- app.PromptResult{FinalText: "Noted"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+
+	if _, e = f.send(t, b, "two"); e != nil {
+		t.Fatal(e)
+	}
+	prompt := fixtureReceive(t, f.p.sent)
+	second := fixtureReceive(t, f.p.sessions)
+	if !second.q.Resume || prompt.Handoff != nil || !prompt.MemoryChanged || !strings.Contains(prompt.Context.Text, "Has three cats") {
+		t.Fatalf("after adding memory: resume=%v handoff=%v changed=%v memory=%q", second.q.Resume, prompt.Handoff != nil, prompt.MemoryChanged, prompt.Context.Text)
+	}
+	if e = second.q.Tools.EditMemory(ctx, "c4", app.MemoryEdit{Old: "three cats", Delete: true}); e != nil {
+		t.Fatal(e)
+	}
+	second.reply <- app.PromptResult{FinalText: "Forgotten"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+
+	if _, e = f.send(t, b, "three"); e != nil {
+		t.Fatal(e)
+	}
+	prompt = fixtureReceive(t, f.p.sent)
+	third := fixtureReceive(t, f.p.sessions)
+	if third.q.Resume || prompt.Handoff == nil || strings.Contains(prompt.Context.Text, "cats") {
+		t.Fatalf("after forgetting: resume=%v handoff=%v memory=%q", third.q.Resume, prompt.Handoff != nil, prompt.Context.Text)
+	}
+}

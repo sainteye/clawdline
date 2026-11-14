@@ -438,3 +438,21 @@ func TestALaterPromptCarriesOnlyThePersonsText(t *testing.T) {
 		t.Fatalf("prompt repeated the snapshot: %q", reply.FinalText)
 	}
 }
+
+// As in Codync, when memory changed since a resumed session last heard it,
+// its next prompt carries all of memory as it is now before the text.
+func TestAResumedPromptAfterAMemoryChangeCarriesTheWholeMemory(t *testing.T) {
+	c, _ := openTestClient(t, "quote", func(context.Context, app.ProtocolEvent) error { return nil })
+	turn := pa.Turn{ID: "changed-turn", Fence: testFence(), Instructions: pa.InstructionSnapshot{Revision: 1, Text: "STANDING-INSTRUCTIONS"}}
+	pending, err := c.Send(context.Background(), app.PromptRequest{Turn: turn, Text: "next question", Context: pa.ContextSnapshot{Text: "Has two cats\nLikes tea"}, Quote: &app.PromptQuote{MessageID: "q", Text: "quoted"}, MemoryChanged: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := pending.Wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply.FinalText, "<memory_update>\nYour memory changed.") || !strings.Contains(reply.FinalText, "Has two cats\nLikes tea\n</memory_update>\nnext question") || strings.Contains(reply.FinalText, "STANDING-INSTRUCTIONS") {
+		t.Fatalf("memory update missing: %q", reply.FinalText)
+	}
+}

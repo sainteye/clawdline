@@ -1233,6 +1233,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.memory_entries",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxMemoryEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.memory_search_results",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxMemorySearchResults"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.message_bytes",
     "Class": "buffer",
     "Unit": "bytes",

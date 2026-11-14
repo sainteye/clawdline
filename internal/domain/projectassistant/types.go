@@ -14,9 +14,13 @@ const (
 	// Pictures one message may carry, and each one's size after normalizing.
 	MaxAttachmentsPerMessage = 4
 	MaxAttachmentBytes       = 12 << 20
-	MaxPendingTurns          = 16
-	MaxPageRows              = 100
-	MaxEventPageRows         = 256
+	// Live memory entries one Bot keeps (the person's and its own), and the
+	// matches one memory search returns.
+	MaxMemoryEntries       = 256
+	MaxMemorySearchResults = 30
+	MaxPendingTurns        = 16
+	MaxPageRows            = 100
+	MaxEventPageRows       = 256
 )
 
 type BotKey struct {

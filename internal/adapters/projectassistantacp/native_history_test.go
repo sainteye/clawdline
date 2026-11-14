@@ -49,9 +49,15 @@ func TestNativeHistoryKeepsOneDirectoryAcrossGenerationsOnly(t *testing.T) {
 	if h, e := historyForRequest(state, next); e != nil || h.Config != first.Config {
 		t.Fatalf("a new process generation moved history: %v %v", h.Config, e)
 	}
+	// As in Codync, memory that only gained or changed entries keeps the
+	// session's history; the next prompt carries the memory as it is now.
+	grown := base
+	grown.Binding.MemoryRevision++
+	if h, e := historyForRequest(state, grown); e != nil || h.Config != first.Config {
+		t.Fatalf("a memory addition moved history: %v %v", h.Config, e)
+	}
 	changes := map[string]func(*app.OpenRequest){
 		"forget":       func(q *app.OpenRequest) { q.Binding.ForgottenThrough++ },
-		"memory":       func(q *app.OpenRequest) { q.Binding.MemoryRevision++ },
 		"instructions": func(q *app.OpenRequest) { q.Binding.InstructionRevision++; q.Bot.Instructions.Revision++ },
 		"conversation": func(q *app.OpenRequest) {
 			q.Binding.Fence.ConversationID = "other"

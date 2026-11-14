@@ -35,10 +35,12 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 		Project pa.ProjectScope
 	}{f.Key, f.Project})
 	scopeSum := sha256.Sum256(scope)
+	// Memory that only gained or changed entries keeps the same history, as
+	// in Codync; forgetting or new instructions give it another directory.
 	epoch, _ := json.Marshal(struct {
-		Policy, Conversation            string
-		Memory, Forgotten, Instructions int64
-	}{nativeHistoryPolicy, f.ConversationID, q.Binding.MemoryRevision, q.Binding.ForgottenThrough, q.Binding.InstructionRevision})
+		Policy, Conversation    string
+		Forgotten, Instructions int64
+	}{nativeHistoryPolicy, f.ConversationID, q.Binding.ForgottenThrough, q.Binding.InstructionRevision})
 	sum := sha256.Sum256(epoch)
 	identity := hex.EncodeToString(scopeSum[:]) + "/" + hex.EncodeToString(sum[:])
 	root := filepath.Join(state, "project-assistants", "native", filepath.FromSlash(identity))

@@ -57,6 +57,8 @@ type NativeWork struct {
 	send     func(context.Context, string, string) error
 	dispatch func(context.Context, string, string, []string) (pa.WorkLink, error)
 	status   func(context.Context, string) (pa.WorkLink, error)
+	memory   func(context.Context) ([]pa.MemoryEntry, error)
+	edit     func(context.Context, string, app.MemoryEdit) error
 }
 
 func (w NativeWork) SendMessage(ctx context.Context, id, text string) error {
@@ -76,6 +78,18 @@ func (w NativeWork) Status(ctx context.Context, taskID string) (pa.WorkLink, err
 		return pa.WorkLink{}, failure(pa.Disabled, "native_work")
 	}
 	return w.status(ctx, taskID)
+}
+func (w NativeWork) Memory(ctx context.Context) ([]pa.MemoryEntry, error) {
+	if w.memory == nil {
+		return nil, failure(pa.Disabled, "native_memory")
+	}
+	return w.memory(ctx)
+}
+func (w NativeWork) EditMemory(ctx context.Context, id string, edit app.MemoryEdit) error {
+	if w.edit == nil {
+		return failure(pa.Disabled, "native_memory")
+	}
+	return w.edit(ctx, id, edit)
 }
 
 type workLifetime struct {
@@ -258,6 +272,23 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return ctx, finish, nil
 	}
 	tools := NativeWork{}
+	tools.memory = func(ctx context.Context) ([]pa.MemoryEntry, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return nil, e
+		}
+		defer cancel()
+		return r.MemoryEntries(ctx, q.Bot.Key)
+	}
+	tools.edit = func(ctx context.Context, id string, edit app.MemoryEdit) error {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return e
+		}
+		defer cancel()
+		_, e = r.EditMemory(ctx, q.Bot.Key, turnID, id, edit)
+		return e
+	}
 	tools.send = func(ctx context.Context, id, text string) error {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {

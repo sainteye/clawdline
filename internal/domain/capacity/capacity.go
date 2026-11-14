@@ -750,6 +750,8 @@ const (
 	BotsSendBodyBytes         = "bots.send_body_bytes"
 	BotsAttachmentsPerMessage = "bots.attachments_per_message"
 	BotsAttachmentBytes       = "bots.attachment_bytes"
+	BotsMemoryEntries         = "bots.memory_entries"
+	BotsMemorySearchResults   = "bots.memory_search_results"
 )
 
 const BotsOwnedDescendants = "bots.owned_children"
