@@ -226,6 +226,9 @@ type runtimeProvider struct {
 	memory   *runtimeMemory
 	sendErr  error
 	capsErr  error
+	// refuseResume answers a resuming open as a native side that cannot load
+	// the session (its transcript moved).
+	refuseResume bool
 }
 
 func (p *runtimeProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
@@ -234,6 +237,10 @@ func (p *runtimeProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabili
 func (p *runtimeProvider) Open(_ context.Context, q OpenRequest, sink func(context.Context, ProtocolEvent) error) (ProviderSession, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if q.Resume && p.refuseResume {
+		p.opens = append(p.opens, q)
+		return nil, runtimeFailure(pa.ResumeUnsupported, "native_session_missing")
+	}
 	s := &runtimeSession{p: p, sink: sink, q: q, reply: make(chan PromptResult, 1), cancel: make(chan struct{}), answered: make(chan string, 1)}
 	p.opens = append(p.opens, q)
 	p.sessions = append(p.sessions, s)
@@ -945,4 +952,38 @@ func TestRuntimeKnownCompletionCancelsOnlyStillPendingPermissions(t *testing.T) 
 		t.Fatal("completion sent extra native permission answer")
 	default:
 	}
+}
+
+// On 2026-11-14 a Bot whose native transcript had moved (its configuration
+// changed to the person's own) failed every send with pa_unsupported. As in
+// Codync, a session that cannot be loaded is replaced by a new one that gets
+// the filtered history and memory.
+func TestASessionThatCannotBeLoadedIsReplacedByAFilteredOne(t *testing.T) {
+	f := newRuntimeFixture(t)
+	rec, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, rec.ResourceID, pa.TurnSucceeded)
+	f.provider.mu.Lock()
+	f.provider.refuseResume = true
+	f.provider.mu.Unlock()
+	rec, err = f.submit(t, "two", "two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := receivePrompt(t, f.provider)
+	f.provider.mu.Lock()
+	opens := append([]OpenRequest(nil), f.provider.opens...)
+	f.provider.mu.Unlock()
+	if len(opens) != 3 || !opens[1].Resume || opens[2].Resume || opens[2].Binding.NativeSessionID != "" {
+		t.Fatalf("opens=%+v", opens)
+	}
+	if second.Handoff == nil {
+		t.Fatal("the replacement session did not receive the filtered history")
+	}
+	f.provider.session().reply <- PromptResult{FinalText: "again"}
+	awaitTurn(t, f, rec.ResourceID, pa.TurnSucceeded)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -146,6 +147,12 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	}
 	b, err = c.call(ctx, method, params)
 	if err != nil {
+		var f *pa.Failure
+		if q.Resume && errors.As(err, &f) && strings.HasPrefix(f.Field, "rpc_") {
+			// The native side answered that it cannot load this session, for
+			// example after its transcript moved. The caller starts anew.
+			return refusal(pa.ResumeUnsupported, "native_session_missing")
+		}
 		return err
 	}
 	var session struct {
