@@ -20,3 +20,10 @@ export function elapsed(startedAt: string | undefined, now: number): string {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = String(s % 60).padStart(2, "0")
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`
 }
+
+/** The roster's activity is the running turn's state word; it is shown in
+ *  the person's language, and anything else as it came. */
+export function rowActivity(activity: string, w: Record<string, string>): string {
+  if (activity === "running" || activity === "waiting_permission" || activity === "queued" || activity === "accepted") return w[activity] ?? activity
+  return activity
+}
