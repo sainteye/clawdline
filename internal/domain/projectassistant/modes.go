@@ -1,5 +1,7 @@
 package projectassistant
 
+import "strings"
+
 // AutoMode is Codync's id for an agent's Auto mode, whatever the agent calls
 // it (apps/desktop/src/shared/approvals.ts AUTO_MODE); new Bots start there.
 const AutoMode = "auto"
@@ -57,4 +59,19 @@ func ValidateMode(agent Agent, mode string) error {
 		}
 	}
 	return fail(Invalid, "mode")
+}
+
+// PermissionRule is one standing rule an agent keeps after Always allow or
+// Never, as the agent itself spells it (Claude Code: "Bash(git status:*)").
+type PermissionRule struct {
+	Behavior string `json:"behavior"`
+	Rule     string `json:"rule"`
+}
+
+// ValidateRule accepts an allow or deny rule with non-empty text.
+func ValidateRule(r PermissionRule) error {
+	if (r.Behavior != "allow" && r.Behavior != "deny") || strings.TrimSpace(r.Rule) == "" || len(r.Rule) > MaxMessageBytes {
+		return fail(Invalid, "rule")
+	}
+	return nil
 }

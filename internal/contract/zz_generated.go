@@ -4866,6 +4866,7 @@ const (
 	ProjectAssistantOperationSend       ProjectAssistantOperation = "send"
 	ProjectAssistantOperationStop       ProjectAssistantOperation = "stop"
 	ProjectAssistantOperationSendNow    ProjectAssistantOperation = "send_now"
+	ProjectAssistantOperationRuleRemove ProjectAssistantOperation = "rule_remove"
 	ProjectAssistantOperationAnswer     ProjectAssistantOperation = "answer"
 	ProjectAssistantOperationRead       ProjectAssistantOperation = "read"
 	ProjectAssistantOperationObserve    ProjectAssistantOperation = "observe"
@@ -4875,7 +4876,7 @@ const (
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
 
 // What the native tool asks to do, for the person to read before answering.
 // Display only: it never authorizes anything.
@@ -4956,6 +4957,13 @@ const (
 
 // ProjectAssistantPermissionPolicyValues is every value the contract allows, in contract order.
 var ProjectAssistantPermissionPolicyValues = []ProjectAssistantPermissionPolicy{ProjectAssistantPermissionPolicyAsk, ProjectAssistantPermissionPolicyAutoRead, ProjectAssistantPermissionPolicyApprove}
+
+// One standing rule the agent keeps for the Bot's Project after Always allow or
+// Never, as the agent spells it (API level 66).
+type ProjectAssistantPermissionRule struct {
+	Behavior string `json:"behavior"`
+	Rule     string `json:"rule"`
+}
 
 type ProjectAssistantPermissionState string
 
@@ -5229,6 +5237,19 @@ type ProjectAssistantReceipt struct {
 type ProjectAssistantReceiptResponse struct {
 	ContractVersion string                  `json:"contract_version"`
 	Receipt         ProjectAssistantReceipt `json:"receipt"`
+}
+
+// Revokes one standing rule for the Bot's Project (API level 66).
+type ProjectAssistantRuleRemoveRequest struct {
+	Command ProjectAssistantCommand        `json:"command"`
+	Rule    ProjectAssistantPermissionRule `json:"rule"`
+}
+
+// The Bot's Project standing rules; only Claude Code Bots have them (API level
+// 66).
+type ProjectAssistantRulesResponse struct {
+	ContractVersion string                           `json:"contract_version"`
+	Rules           []ProjectAssistantPermissionRule `json:"rules"`
 }
 
 // Sends one queued message into the running turn, as Codync's steer (API level

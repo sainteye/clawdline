@@ -209,3 +209,10 @@
 .project-assistants .pa-source-fix { margin:0; color:var(--pa-dim); line-height:1.45; }
 .project-assistants .pa-source-id { color:var(--pa-dim); font-size:11px; word-break:break-all; }
 .project-assistants .pa-source-quiet { opacity:.8; }
+.project-assistants .pa-rules { margin-top:16px; display:flex; flex-direction:column; gap:6px; }
+.project-assistants .pa-rules h3 { margin:0; font-size:14px; }
+.project-assistants .pa-rules ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; }
+.project-assistants .pa-rules li { display:flex; align-items:center; gap:10px; min-height:44px; border-top:1px solid var(--pa-line); }
+.project-assistants .pa-rules code { flex:1; min-width:0; overflow-wrap:anywhere; font-size:12px; }
+.project-assistants .pa-rule-kind { flex:none; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--pa-line); }
+.project-assistants .pa-rule-kind[data-behavior="deny"] { color:#e0a07a; }

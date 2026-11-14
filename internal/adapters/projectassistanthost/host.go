@@ -30,7 +30,9 @@ type Options struct {
 	// Reader borrows Store's existing query-only pool. Host never closes it.
 	Reader *sql.DB
 	// ReadViews is an optional composition override for controlled port fixtures.
-	ReadViews         app.ReadViews
+	ReadViews app.ReadViews
+	// Rules lists and revokes the standing rules Claude Code keeps per Project.
+	Rules             app.RuleStore
 	ReadViewByteLimit int
 	MachineID         string
 	Projects          app.ProjectResolver
@@ -127,7 +129,7 @@ func (h *Host) makeService() error {
 			return err
 		}
 	}
-	s, err := app.NewService(app.ServiceOptions{Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	s, err := app.NewService(app.ServiceOptions{Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}

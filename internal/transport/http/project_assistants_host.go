@@ -115,7 +115,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit,
 		Projects:          projectAssistantProjects{s}, Broker: s.broker, Clock: time.Now,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
-		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(),
+		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(), Rules: projectassistantacp.ClaudeLocalRules{},
 		// The provider receives only execution-bound NativeTools from Host.
 		// Dispatch follows CodyNC: a Bot may hand isolated work on any file
 		// of its own repository Project to a Claude worker that accepts

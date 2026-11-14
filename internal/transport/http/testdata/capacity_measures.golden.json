@@ -376,6 +376,11 @@
     "Note": true
   },
   {
+    "Name": "bots.rules_file_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.send_body_bytes",
     "Known": true,
     "Note": true

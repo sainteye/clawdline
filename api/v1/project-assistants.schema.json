@@ -1774,6 +1774,7 @@
         "send",
         "stop",
         "send_now",
+        "rule_remove",
         "answer",
         "read",
         "observe",
@@ -2387,6 +2388,64 @@
         "command",
         "fence",
         "turn_id"
+      ]
+    },
+    "ProjectAssistantPermissionRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One standing rule the agent keeps for the Bot's Project after Always allow or Never, as the agent spells it (API level 66).",
+      "properties": {
+        "behavior": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "behavior",
+        "rule"
+      ]
+    },
+    "ProjectAssistantRulesResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The Bot's Project standing rules; only Claude Code Bots have them (API level 66).",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantPermissionRule"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "rules"
+      ]
+    },
+    "ProjectAssistantRuleRemoveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Revokes one standing rule for the Bot's Project (API level 66).",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "rule": {
+          "$ref": "#/$defs/ProjectAssistantPermissionRule"
+        }
+      },
+      "required": [
+        "command",
+        "rule"
       ]
     }
   }

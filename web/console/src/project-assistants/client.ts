@@ -31,6 +31,10 @@ export interface SourceClient {
   /** Sends one queued message into the running turn (Codync's steer). */
   sendNow?(request: W.ProjectAssistantSendNowRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   canSendNow?(): boolean
+  /** A Claude Bot's standing rules for its Project (Always allow / Never), and revoking one. */
+  rules?(key: W.ProjectAssistantBotKey, signal: AbortSignal): Promise<W.ProjectAssistantRulesResponse>
+  removeRule?(request: W.ProjectAssistantRuleRemoveRequest, signal: AbortSignal): Promise<W.ProjectAssistantRulesResponse>
+  canRules?(): boolean
   /** Where the console reads a stored picture, or null when it cannot. */
   attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null
 }

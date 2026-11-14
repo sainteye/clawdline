@@ -38,9 +38,11 @@ type ServiceOptions struct {
 	Events            EventFeed
 	Runtime           Runtime
 	Projects          ProjectResolver
-	Authorize         func(context.Context, pa.BotKey, bool) (Authority, error)
-	Clock             func() time.Time
-	ID                func() string
+	// Rules is optional; without it the rules routes answer unsupported.
+	Rules     RuleStore
+	Authorize func(context.Context, pa.BotKey, bool) (Authority, error)
+	Clock     func() time.Time
+	ID        func() string
 }
 
 // Service has no startup side effects. Configuration, history, memory and
@@ -532,4 +534,62 @@ func (s *Service) SaveMemory(ctx context.Context, request MemoryWrite) (pa.Memor
 func (s *Service) AuthorizeRead(ctx context.Context, key pa.BotKey) error {
 	_, err := s.authorize(ctx, key, false)
 	return err
+}
+
+// Rules lists the standing rules the Bot's agent keeps for its Project, as
+// Codync lets the person see what Always allow and Never left behind. Only
+// Claude Code keeps them in a file Clawdline can read.
+func (s *Service) Rules(ctx context.Context, key pa.BotKey) ([]pa.PermissionRule, error) {
+	if _, err := s.authorize(ctx, key, false); err != nil {
+		return nil, err
+	}
+	dir, err := s.ruleDirectory(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return s.opts.Rules.List(dir)
+}
+
+// RemoveRule revokes one standing rule for the Bot's Project.
+func (s *Service) RemoveRule(ctx context.Context, c pa.Command, rule pa.PermissionRule) error {
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return err
+	}
+	if err = pa.ValidateRule(rule); err != nil {
+		return err
+	}
+	if c, err = canonicalCommand(c, pa.RuleRemoveOperation, a.PrincipalID, rule); err != nil {
+		return err
+	}
+	if _, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return err
+	}
+	dir, err := s.ruleDirectory(ctx, c.Key)
+	if err != nil {
+		return err
+	}
+	return s.opts.Rules.Remove(dir, rule)
+}
+
+func (s *Service) ruleDirectory(ctx context.Context, key pa.BotKey) (string, error) {
+	if s.opts.Rules == nil {
+		return "", serviceFailure(pa.Unsupported, "rules")
+	}
+	bot, err := s.opts.Repository.Bot(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	if bot.Agent != pa.ClaudeCode {
+		return "", serviceFailure(pa.Unsupported, "rules_agent")
+	}
+	selection := pa.ProjectSelection{MachineID: bot.Project.MachineID, ProjectID: bot.Project.ProjectID}
+	resolved, err := s.opts.Projects.Resolve(ctx, selection)
+	if err == nil {
+		err = pa.ValidateTarget(selection, resolved)
+	}
+	if err == nil && (resolved.Scope != bot.Project || resolved.Directory == "") {
+		err = serviceFailure(pa.ScopeDenied, "rules_project")
+	}
+	return resolved.Directory, err
 }

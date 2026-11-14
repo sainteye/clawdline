@@ -92,8 +92,13 @@ agent's modes, its Auto mode first, then **Approve automatically**:
 With any setting your agent's own settings still apply. On a model without
 Claude Code's Auto mode, Claude Code works in Accept edits instead. A mode
 the agent does not offer stops the turn with a reason rather than run it in
-another. When the agent asks, a permission card appears in the chat and you
-can allow that action once. If a worker's terminal shows a question, such as whether to trust a
+another. When the agent asks, a permission card appears in the chat: **Allow
+once**, **Always allow**, **Reject** or **Never**, as in Codync. "Always" is
+as the agent defines it. Claude Code keeps the rule in the Project's
+`.claude/settings.local.json`; **Standing rules** in the Bot's settings lists
+those rules and revokes one, after which Claude Code asks again. (Standing
+rules are shown in this machine's own console; Codex keeps its own and
+Clawdline does not list them yet.) If a worker's terminal shows a question, such as whether to trust a
 folder, the work card tells you to answer it in that Session.
 
 ## If something is missing

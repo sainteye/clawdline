@@ -82,6 +82,7 @@
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.rpc_ms` | 120000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.rules_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.send_body_bytes` | 25165824 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.steer_answer_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
