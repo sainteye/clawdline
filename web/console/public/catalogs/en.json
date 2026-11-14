@@ -9858,6 +9858,7 @@
   "projectAssistants.reject_once": "Reject once",
   "projectAssistants.remember": "Save memory",
   "projectAssistants.removePicture": "Remove picture",
+  "projectAssistants.resumedNotice": "Clawdline restarted and asked the Bot to carry on where it left off, without repeating finished steps.",
   "projectAssistants.retry": "Try again",
   "projectAssistants.revoked": "Access revoked",
   "projectAssistants.running": "Working",

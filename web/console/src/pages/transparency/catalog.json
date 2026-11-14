@@ -3674,7 +3674,7 @@
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
-    "internal/app/projectassistant/runtime.go": "4e342b2ff7ed9c26611fb5ab16e7a89cf19f8405ddaaebe5afcc3c933f7a536a",
+    "internal/app/projectassistant/runtime.go": "95dd1a075b380f7890ff835290aa2ef611ce806f91f475434734e23e431010cc",
     "internal/app/projectassistant/session_handoff.go": "64e4968581fcbb4774f00c650dec25f5b361f2c6d8ddaf86a847e03961cff2c7",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",

@@ -175,3 +175,5 @@
 .project-assistants .pa-mine .pa-message-pictures { justify-content:flex-end; }
 .project-assistants .pa-message-pictures img { max-width:220px;max-height:220px;border-radius:12px;border:1px solid var(--pa-line);display:block; }
 .project-assistants .pa-picture-missing { font-size:12px;color:var(--pa-dim);border:1px dashed var(--pa-line);border-radius:8px;padding:6px 10px; }
+
+.project-assistants .pa-notice p { color:var(--pa-dim);font-size:12px;font-style:italic; }

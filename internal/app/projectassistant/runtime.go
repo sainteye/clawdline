@@ -339,7 +339,11 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	}
 	fence := currentFence(bot, c)
 	turn := pa.Turn{ID: r.o.ID(), Fence: fence, MessageID: r.o.ID(), State: pa.TurnQueued, IdempotencyKey: s.Command.IdempotencyKey}
-	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: pa.UserMessage, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments}
+	kind := pa.UserMessage
+	if s.Notice {
+		kind = pa.NoticeMessage
+	}
+	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments}
 	receipt, err := r.mutate(ctx, bot, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
 	if err != nil {
 		return pa.Receipt{}, err
@@ -357,39 +361,105 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 
 // Recover is explicit host startup work. A possibly sent turn becomes unknown;
 // only proven unsent queued turns can execute. It never repeats a prompt.
+// resumePrompt is Codync's (host/src/agent/bot/mod.rs RESUME_PROMPT) for a
+// turn a restart cut off.
+const resumePrompt = "[Clawdline restarted on this computer and interrupted you mid-task. You've been resumed with your conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]"
+
+// staleResume is Codync's STALE_RESUME_MS: an older interrupted task is more
+// likely unwanted than awaited, so it stays unknown for the person.
+const staleResume = time.Hour
+
+// Recover marks turns a restart cut off as unknown, as before. As in Codync,
+// one started within the last hour is then resumed: Clawdline sends the
+// resume prompt as a notice, which acknowledges the unknown turn (its receipt
+// stays unknown) and runs in the same native session when it can be loaded.
+// If anything else is still queued, nothing is resumed and the person's next
+// message decides, as before.
 func (r *Engine) Recover(ctx context.Context, key pa.BotKey) error {
-	a, err := r.acquire(key)
+	resumable, err := r.recover(ctx, key)
 	if err != nil {
 		return err
 	}
-	defer r.release(a)
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.working {
-		return nil
+	for _, t := range resumable {
+		_ = r.resumeInterrupted(ctx, key, t)
 	}
-	pending, err := r.o.Repository.PendingTurns(ctx, key)
+	return nil
+}
+
+func (r *Engine) resumeInterrupted(ctx context.Context, key pa.BotKey, t pa.Turn) error {
+	feature, source, err := r.o.Authorize(ctx, key)
 	if err != nil {
 		return err
-	}
-	for _, t := range pending {
-		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
-			if err = r.finishLocked(ctx, a, t, pa.TurnUnknown, "", runtimeFailure(pa.ExecutionEffectUnknown, "restart")); err != nil {
-				return err
-			}
-		}
 	}
 	bot, err := r.o.Repository.Bot(ctx, key)
 	if err != nil {
 		return err
 	}
+	c, err := r.o.Repository.Conversation(ctx, key, bot.ConversationID)
+	if err != nil {
+		return err
+	}
+	_, err = r.Submit(ctx, Submission{Command: r.command(key, pa.SendOperation, "runtime-resume-"+t.ID, t.ID),
+		Message: pa.SendMessage{Fence: currentFence(bot, c), Text: resumePrompt}, Feature: feature, Source: source, Notice: true})
+	return err
+}
+
+func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) {
+	var resumable []pa.Turn
+	a, err := r.acquire(key)
+	if err != nil {
+		return nil, err
+	}
+	defer r.release(a)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.working {
+		return nil, nil
+	}
+	pending, err := r.o.Repository.PendingTurns(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	var export Export
+	interrupted := 0
+	for _, t := range pending {
+		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
+			interrupted++
+		}
+	}
+	if interrupted > 0 {
+		if export, err = r.o.Repository.Export(ctx, key); err != nil {
+			return nil, err
+		}
+	}
+	for _, t := range pending {
+		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
+			if err = r.finishLocked(ctx, a, t, pa.TurnUnknown, "", runtimeFailure(pa.ExecutionEffectUnknown, "restart")); err != nil {
+				return nil, err
+			}
+			for _, m := range export.Messages {
+				if m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
+					resumable = append(resumable, t)
+				}
+			}
+		}
+	}
+	bot, err := r.o.Repository.Bot(ctx, key)
+	if err != nil {
+		return nil, err
+	}
 	r.setProject(a, bot.Project)
+	if len(resumable) > 0 {
+		// The resume notice's own submission starts the worker; one started
+		// now would see the unknown turn, stop, and could miss the notice.
+		return resumable, nil
+	}
 	a.working = true
 	r.mu.Lock()
 	a.users++
 	r.mu.Unlock()
 	go r.work(a)
-	return nil
+	return resumable, nil
 }
 
 func (r *Engine) work(a *runtimeActor) {
@@ -564,7 +634,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		a.mu.Unlock()
 		return runtimeFailure(pa.NotFound, "queued_message")
 	}
-	if input.Fence.Key != a.key || input.Fence.Project != bot.Project || input.Fence.ConversationID != c.ID || input.Kind != pa.UserMessage {
+	if input.Fence.Key != a.key || input.Fence.Project != bot.Project || input.Fence.ConversationID != c.ID || input.Kind != pa.UserMessage && input.Kind != pa.NoticeMessage {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "queued_message")
 	}

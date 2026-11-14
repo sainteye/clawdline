@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11914,
+  "englishKeys": 11915,
   "counts": {
-    "negation": 3250,
-    "state": 1994,
+    "negation": 3251,
+    "state": 1995,
     "permission": 701,
     "deletion": 266,
     "uncertainty": 456
   },
-  "unionCount": 5196,
+  "unionCount": 5197,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2929,6 +2929,7 @@
       "projectAssistants.empty",
       "projectAssistants.emptyMemory",
       "projectAssistants.noCapabilities",
+      "projectAssistants.resumedNotice",
       "projectAssistants.sourceError",
       "projectAssistants.unknown",
       "projectAssistants.unpaired",
@@ -5040,6 +5041,7 @@
       "projectAssistants.failed",
       "projectAssistants.observed",
       "projectAssistants.openWork",
+      "projectAssistants.resumedNotice",
       "projectAssistants.savedMemory",
       "projectAssistants.succeeded",
       "projectAssistants.waiting_for_person",
@@ -11319,6 +11321,7 @@
     "projectAssistants.policy",
     "projectAssistants.reject_always",
     "projectAssistants.removePicture",
+    "projectAssistants.resumedNotice",
     "projectAssistants.revoked",
     "projectAssistants.savedMemory",
     "projectAssistants.setup_cli_not_installed",
