@@ -573,11 +573,42 @@ func (h *Profiles) PersonDo(ctx context.Context, mode, op string, tab int, args 
 	return b.PersonDoWithAdmission(ctx, op, tab, args, b.Mode(), h.mu.Unlock)
 }
 
-// PersonOpen opens a Session's tab at the person's request, in the browser
-// the Session already uses or, before it has used one, the first that
-// automatic selection would choose. Agent native tools have no tab to open.
-// Choosing a browser here is remembered for the Session like an agent's
-// first command, so the agent continues in the same profile.
+// personOpenModeLocked is the Chrome profile a person's own open uses: the
+// Chrome the Session already chose, else the first profile in priority order
+// whose extension is connected. Opening a tab is the person's explicit
+// choice, so the automatic switches, which govern only the agent's own
+// selection, do not apply; agent native tools have no tab to open.
+func (h *Profiles) personOpenModeLocked(conversation string, policy browserpolicy.Policy) string {
+	usable := func(mode string) bool {
+		b := h.channels[mode]
+		return b != nil && b.SetupConnected() && !b.Status().StateError
+	}
+	if choice, ok := h.selected[conversation]; ok && choice.Mode != browserpolicy.Native && usable(choice.Mode) {
+		return choice.Mode
+	}
+	for _, mode := range policy.Order {
+		if mode != browserpolicy.Native && usable(mode) {
+			return mode
+		}
+	}
+	return ""
+}
+
+// PersonOpenMode reports where a person's open would go for this Session,
+// or "" when no Chrome is connected, so the panel can offer the address field.
+func (h *Profiles) PersonOpenMode(conversation string, policy browserpolicy.Policy) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.err != nil || h.stopped || !policy.Valid() {
+		return ""
+	}
+	return h.personOpenModeLocked(conversation, policy)
+}
+
+// PersonOpen opens a Session's tab at the person's request in the profile
+// personOpenModeLocked names. The choice is saved for the Session as an
+// explicit one, so the agent continues in the same profile after hand back
+// even when automatic selection would have chosen native tools.
 func (h *Profiles) PersonOpen(ctx context.Context, conversation, address string, policy browserpolicy.Policy) (json.RawMessage, error) {
 	if !webURL(address) {
 		return nil, BadRequest
@@ -595,21 +626,23 @@ func (h *Profiles) PersonOpen(ctx context.Context, conversation, address string,
 		h.mu.Unlock()
 		return nil, BadRequest
 	}
-	choice := h.selection(conversation, policy)
-	if !browserpolicy.ValidMode(choice.Mode) || choice.Mode == browserpolicy.Native {
+	mode := h.personOpenModeLocked(conversation, policy)
+	if mode == "" {
 		h.mu.Unlock()
 		return nil, SetupRequired
 	}
-	b := h.channels[choice.Mode]
-	if b == nil || !b.SetupConnected() {
-		h.mu.Unlock()
-		return nil, SetupRequired
-	}
-	if b.Status().StateError {
-		h.mu.Unlock()
-		return nil, StateWriteFailed
-	}
+	b := h.channels[mode]
+	choice := SessionBrowser{Mode: mode, Explicit: true}
 	previous, exists := h.selected[conversation]
+	if exists && previous.Mode != mode {
+		// Never change a Session's browser under an admitted operation.
+		for _, channel := range h.channels {
+			if err := channel.SessionBusy(conversation); err != nil {
+				h.mu.Unlock()
+				return nil, err
+			}
+		}
+	}
 	if !exists && len(h.selected) >= MaxSessionBrowsers {
 		h.mu.Unlock()
 		return nil, SessionChoicesFull

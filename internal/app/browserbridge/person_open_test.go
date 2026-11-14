@@ -87,15 +87,37 @@ func TestThePersonCannotOpenWhileStoppedOrWithoutAWebAddress(t *testing.T) {
 	}
 }
 
-func TestThePersonCannotOpenInAgentNativeTools(t *testing.T) {
+// Native tools first in priority, and every automatic switch off for
+// Chrome: the person's open still uses the connected Chrome, explicitly, and
+// the agent then continues in it. With no Chrome connected it is refused.
+func TestThePersonOpensInChromeEvenWhenNativeToolsComeFirst(t *testing.T) {
 	h, err := OpenProfiles("", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	profilesHost(t, h, "isolated", nil)
-	native := browserpolicy.Policy{Order: []string{"native", "isolated", "user_chrome"}, Automatic: map[string]bool{"native": true, "isolated": true, "user_chrome": false}}
+	native := browserpolicy.Policy{Order: []string{"native", "user_chrome", "isolated"}, Automatic: map[string]bool{"native": true, "isolated": false, "user_chrome": false}}
+	if got := h.PersonOpenMode("s1", native); got != "" {
+		t.Fatalf("with no Chrome connected PersonOpenMode = %q, want none", got)
+	}
 	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", native); err != SetupRequired {
-		t.Fatalf("native first: %v, want %s", err, SetupRequired)
+		t.Fatalf("no Chrome connected: %v, want %s", err, SetupRequired)
+	}
+	profilesHost(t, h, "isolated", nil)
+	if got := h.PersonOpenMode("s1", native); got != "isolated" {
+		t.Fatalf("PersonOpenMode = %q, want isolated", got)
+	}
+	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", native); err != nil {
+		t.Fatal(err)
+	}
+	mode, st, _ := h.SelectedStatus("s1", native)
+	if mode != "isolated" || len(st.Tabs) != 1 || !st.Tabs[0].Person {
+		t.Fatalf("mode %q tabs %+v, want the person's isolated tab", mode, st.Tabs)
+	}
+	if err := h.SetPersonControl("isolated", st.Tabs[0].Tab, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.DoSession(context.Background(), "s1", "screenshot", nil, native, "", false); err != nil {
+		t.Fatalf("the agent after hand back: %v", err)
 	}
 }
 

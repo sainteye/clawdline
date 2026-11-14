@@ -31,7 +31,7 @@ import "./browser-panel.css"
  */
 
 type TabInfo = { browser_mode?: string; tab: number; conversation: string; person: boolean; current: boolean }
-type Status = { mode?: string; enabled: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[] } }
+type Status = { mode?: string; enabled: boolean; person_open?: string; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[] } }
 type Activity = { at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; thumb: string }
 
 const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
@@ -253,6 +253,12 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const body = () => {
     if (statusError) return <div className="screen-note err" role="alert">{said(statusError, "browserPanelReadFailed")}</div>
     if (!status) return <div className="screen-note" role="status">…</div>
+    // A Session without a tab can be given one by the person whenever some
+    // Chrome is connected, even when the agent's own selection is native
+    // tools or its switch is off (the daemon's person_open).
+    if (!tab && status.person_open && !status.status.stopped) {
+      return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={() => setStatusTick((n) => n + 1)} />
+    }
     // Not connected, or browser use switched off: one card and one main
     // action. Setup happens only on the computer, so through Cloud the main
     // action is the reminder and the setup steps are secondary.
