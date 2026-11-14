@@ -122,7 +122,9 @@
     "pairWrongAccount": "The browser and this machine must use the same Cloud account. Sign in with that account in the browser, generate a new code, then try again.",
     "pairUnavailable": "Clawdline could not reach this machine’s running service. Keep your browser’s pairing page open, reopen Clawdline, and try again before the code expires.",
     "pairLinkFailed": "Browser pairing did not finish",
-    "pairLinkRetry": "Keep the browser’s pairing page open and try again. The browser must show this machine, use the same Cloud account, and have a code that has not expired."
+    "pairLinkRetry": "Keep the browser’s pairing page open and try again. The browser must show this machine, use the same Cloud account, and have a code that has not expired.",
+    "folderPanelMessage": "Choose a folder to use as a Project. Sessions will work inside it.",
+    "folderPanelPrompt": "Add as Project"
   },
   "zh-Hant": {
     "statusWaitingOne": "{arg0} 在等你回答",
@@ -247,7 +249,9 @@
     "pairWrongAccount": "瀏覽器與這台機器必須使用同一個 Cloud 帳號。請在瀏覽器登入該帳號，產生新的配對碼後再試一次。",
     "pairUnavailable": "Clawdline 無法連到這台機器的常駐服務。請保持瀏覽器的配對頁開啟，重新開啟 Clawdline，並在配對碼到期前再試一次。",
     "pairLinkFailed": "瀏覽器配對未完成",
-    "pairLinkRetry": "請保持瀏覽器的配對頁開啟後再試一次。頁面必須選擇這台機器、使用相同的 Cloud 帳號，且配對碼尚未到期。"
+    "pairLinkRetry": "請保持瀏覽器的配對頁開啟後再試一次。頁面必須選擇這台機器、使用相同的 Cloud 帳號，且配對碼尚未到期。",
+    "folderPanelMessage": "選一個資料夾當作 Project，Session 會在裡面工作。",
+    "folderPanelPrompt": "新增為 Project"
   },
   "ja": {
     "statusWaitingOne": "{arg0} があなたの回答を待っています",

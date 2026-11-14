@@ -2644,7 +2644,22 @@
     "Note": true
   },
   {
+    "Name": "projects.folder_query_runes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projects.folder_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.folder_search_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.folder_search_rows",
     "Known": true,
     "Note": true
   },

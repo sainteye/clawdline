@@ -542,7 +542,10 @@
 | `projects.codegraph_text` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `projects.codegraph_view_poll_ms` | 5000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `projects.codegraph_zoom` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.folder_query_runes` | 64 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `projects.folder_rows` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.folder_search_reads` | 200 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.folder_search_rows` | 50 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.ops_collection_name_bytes` | 100 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.ops_collections` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.ops_entries` | 500 | `rows` | `refuse` | `diagnostics, sender` | — |

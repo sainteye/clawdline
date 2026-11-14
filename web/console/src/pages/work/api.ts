@@ -101,6 +101,15 @@ export interface ProjectFolderPage {
 }
 export const readProjectFolders = (path?: string, machine?: string) =>
   call<ProjectFolderPage>("/v1/project-folders" + query({ path, machine }))
+/** Folder names containing `q`, up to two levels under home on this machine. */
+export interface ProjectFolderSearch {
+  query: string
+  folders: { name: string; path: string }[]
+  truncated: boolean
+  protected_skipped?: boolean
+}
+export const searchProjectFolders = (q: string) =>
+  call<ProjectFolderSearch>("/v1/project-folders" + query({ q }))
 export const createProjectFolder = (parent: string, name: string, key: string, machine?: string) =>
   call<{ path: string; name: string }>("/v1/project-folders" + query({ machine }), {
     method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key },

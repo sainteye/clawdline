@@ -52,6 +52,9 @@ import { conversationNotStarted } from "./readiness.js"
 import { agentName, agentStateWord } from "./WorkTree.js"
 import { agentModelName } from "./work-tree.js"
 import { nextWord } from "../next-strings.js"
+import { placePresence, useFirstRun } from "./first-run.js"
+import { Start } from "./Start.js"
+import "./first-run.css"
 import { readProjectPlaces } from "../pages/work/api.js"
 import { hostedConsole, openTerminal, TerminalRequestError } from "../pages/terminal/api.js"
 import { firstSize } from "../pages/terminal/TerminalProjectList.js"
@@ -120,6 +123,7 @@ export function Detail({
   projectedCoordinatorBound = false,
   emptyProblem,
   scanSources,
+  sessionCount,
 }: {
   row: SessionRow | null
   readerMachine?: string | null
@@ -138,6 +142,8 @@ export function Detail({
   projectedCoordinatorBound?: boolean
   emptyProblem?: FleetDetailProblem | null
   scanSources?: readonly ScanSource[]
+  /** Rows the list holds, for the home screen's first-run words; unknown when left out. */
+  sessionCount?: number
 }) {
   const T = L.strings
   // An owned conversation reads the machine's inventory too, only for its
@@ -514,7 +520,7 @@ export function Detail({
                   <div className="detail-loading-message"><i /><span /><span /><span /></div>
                 </div>
               </div>
-              : home ? <HomeHero /> : null}
+              : home ? <HomeHero sessionCount={sessionCount} /> : null}
         </div>
       </div>
 
@@ -522,7 +528,9 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
+      {/* With no Session open there is nobody to write to: the home screen's
+          own button is the way on, not a field that cannot send. */}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent || home ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       </div>
       <OutputFiles row={row} machine={readerMachine} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />
@@ -570,15 +578,41 @@ function AgentHead({
   )
 }
 
-/** The home screen `renderTranscript` writes into `#tx` when no session is open. */
-export function HomeHero() {
-  const T = L.strings
+/**
+ * The home screen `renderTranscript` writes into `#tx` when no session is open.
+ * It says the one next step: add a Project when the machine has none, start
+ * the first Session when it has Projects but no Session, otherwise pick or
+ * start one. While the Project list is unread it offers starting, which the
+ * start sheet itself explains.
+ */
+export function HomeHero({ sessionCount }: { sessionCount?: number }) {
+  useFirstRun()
+  useEffect(() => { Start.checkPlaces() }, [])
+  const presence = placePresence()
+  const noProject = presence === "none"
+  const first = presence === "some" && sessionCount === 0
+  const title = noProject ? nextWord("firstRunNoProjectTitle") : first ? nextWord("firstRunFirstSessionTitle") : nextWord("firstRunStartSession")
+  const body = noProject ? nextWord("firstRunNoProjectBody") : first ? nextWord("firstRunFirstSessionBody") : nextWord("firstRunNoneOpenBody")
   return (
     <section className="home-hero" aria-labelledby="home-hero-title">
       <div className="copy">
         <span className="rule" aria-hidden="true"></span>
-        <h1 id="home-hero-title">{T.webNoSessionOpen}</h1>
-        <p>{T.webPickSession}</p>
+        <h1 id="home-hero-title">{title}</h1>
+        <p>{body}</p>
+        <div className="home-hero-actions">
+          {noProject
+            ? <button className="chip home-hero-primary" type="button" onClick={() => void Start.addProject()}>
+                + {nextWord("firstRunAddProject")}
+              </button>
+            : <>
+                <button className="chip home-hero-primary" type="button" onClick={() => Start.open()}>
+                  + {nextWord("firstRunStartSession")}
+                </button>
+                {presence === "some" && <button className="chip" type="button" onClick={() => void Start.addProject()}>
+                  {nextWord("firstRunAddProject")}
+                </button>}
+              </>}
+        </div>
       </div>
     </section>
   )

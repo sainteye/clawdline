@@ -120,6 +120,15 @@ func (s *Server) projectFilesCapacityMeasures() map[string]func() capacity.Readi
 		"projects.folder_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-directory folder listing guard"}
 		},
+		"projects.folder_search_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-search folder answer guard"}
+		},
+		"projects.folder_search_reads": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-search directory read guard"}
+		},
+		"projects.folder_query_runes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-search query guard"}
+		},
 		"projectfiles.list":            func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-inventory file count guard"} },
 		"projectfiles.scan_entries":    func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-skill-directory scan guard"} },
 		"projectfiles.tree_path_bytes": func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-Project-tree request guard"} },

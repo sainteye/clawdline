@@ -38,6 +38,8 @@ final class FileDropWebView: WKWebView {
         fileDrops = FileDropPaths(trustedOrigin: trustedOrigin)
         configuration.userContentController.addScriptMessageHandler(
             fileDrops, contentWorld: .page, name: FileDropPaths.name)
+        configuration.userContentController.addScriptMessageHandler(
+            ProjectFolderChooser(trustedOrigin: trustedOrigin), contentWorld: .page, name: ProjectFolderChooser.name)
         super.init(frame: frame, configuration: configuration)
     }
 

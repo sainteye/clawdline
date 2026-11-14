@@ -10383,6 +10383,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "projects.folder_query_runes",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxProjectFolderQueryRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "projects.folder_rows",
     "Class": "buffer",
     "Unit": "rows",
@@ -10399,6 +10419,46 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/transport/http.maxProjectFolderRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.folder_search_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxProjectFolderSearchReads"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.folder_search_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 50,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxProjectFolderSearchRows"
     ]
   },
   {
