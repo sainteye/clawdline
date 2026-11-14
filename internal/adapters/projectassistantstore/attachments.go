@@ -124,3 +124,8 @@ func validDigest(id string) bool {
 	}
 	return true
 }
+
+// RemoveBot deletes every picture kept for key, when the Bot is deleted.
+func (s Attachments) RemoveBot(key pa.BotKey) error {
+	return os.RemoveAll(s.botDir(key))
+}

@@ -22,6 +22,8 @@ export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
 export const PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL = 64
 // Listing and revoking a Claude Bot's standing rules arrived at 66; this machine's own console only.
 export const PROJECT_ASSISTANTS_RULES_API_LEVEL = 66
+// Hiding and deleting a Bot arrived at 67; this machine's own console only, until the Cloud relay carries them.
+export const PROJECT_ASSISTANTS_MANAGE_API_LEVEL = 67
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -178,6 +180,9 @@ export class ProjectAssistantSourceClient implements SourceClient {
   sendNow(r: W.ProjectAssistantSendNowRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/send-now"),s,r,"POST",true,PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL) }
   rules(key: W.ProjectAssistantBotKey,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(key,"/rules")+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_RULES_API_LEVEL) }
   removeRule(r: W.ProjectAssistantRuleRemoveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(r.command.key,"/rules/remove"),s,r,"POST",true,PROJECT_ASSISTANTS_RULES_API_LEVEL) }
+  setHidden(r: W.ProjectAssistantVisibilityRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,"/visibility"),s,r,"POST",true,PROJECT_ASSISTANTS_MANAGE_API_LEVEL) }
+  deleteBot(r: W.ProjectAssistantDeleteRequest,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(r.command.key,"/delete"),s,r,"POST",true,PROJECT_ASSISTANTS_MANAGE_API_LEVEL) }
+  canManage() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_MANAGE_API_LEVEL }
   canRules() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_RULES_API_LEVEL }
   canSendNow() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
@@ -322,6 +327,6 @@ export function cloudAssistantGrants(account: string, machines: readonly CloudMa
 }
 
 export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], authorized: readonly SourceClient[]) {
-  return items.reduce((count,item) => authorized.some(source => source.machineID === item.bot.key.machine_id) && canRead(item.source)
+  return items.reduce((count,item) => !item.bot.hidden && authorized.some(source => source.machineID === item.bot.key.machine_id) && canRead(item.source)
     ? {unread:count.unread+item.unread_count,pendingPermissions:count.pendingPermissions+item.pending_permissions} : count,{unread:0,pendingPermissions:0})
 }

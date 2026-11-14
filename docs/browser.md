@@ -401,6 +401,39 @@ limits, failure boundaries and regression fixtures are described in
 [browser setup and close result recovery](browser-reliability.md).
 
 
+### Updating the extension (2026-11-14)
+
+Chrome reads an unpacked extension's files when it starts. An extension cannot reload itself into
+new files: on Chrome for Testing 158, headless and headed, `chrome.runtime.reload()` removed the
+Clawdline extension both when loaded with `--load-extension` and when installed with CDP
+`Extensions.loadUnpacked`, even with unchanged files. Automatic updates therefore rely only on
+Chrome's own start:
+
+- **One stable folder.** Both Chromes load `<state>/chrome-extension`
+  (`browserlaunch.StableExtensionDir`). Its path never changes, so neither does the unpacked
+  extension's ID or the native host it was registered with. `WriteStableExtension` writes a
+  complete new payload beside it and swaps it in with renames, keeping the previous release once
+  at `.chrome-extension-previous`; a folder already holding this build is left alone. The daemon
+  does this at start (`StartBrowserUpkeep`), and the guide's prepare does it on demand.
+- **The marker.** Only the stable folder carries `clawdline-folder.json`. Extension 0.4.0 reads it
+  and reports `folder: "stable"` (or `"revision"` for an older one-off folder) in its hello; the
+  status route also reports the build's `extension_version`.
+- **The usual Chrome** runs a new release at its next start. Settings → Chrome says so, with an
+  "Apply now" link to a guide whose one step is the reload arrow on Clawdline in
+  `chrome://extensions`. A Chrome still on an older one-off folder shows **Switch to
+  self-updating** instead: the same guide, with removing the old extension, loading the stable
+  folder and running the connection command once (the ID changes once, with the path).
+- **The test Chrome** is relaunched by the daemon when it runs another release, once per release,
+  and only when its channel is quiet: nothing queued or in flight, no tab taken over by the person,
+  no close awaiting a receipt, and no recorded action for two minutes. Closing it closes only its
+  own tabs, which the bridge then forgets. The settings row says it restarts by itself when idle.
+- **The guide** lists the real steps (open `chrome://extensions`, Developer mode, Load unpacked with
+  Command-Shift-G on a Mac and the stable path, the connection command once) and follows the
+  status every two seconds until Chrome runs the current release.
+
+Files that change while Chrome runs may be read by a restarted service worker before Chrome
+restarts; the manifest, and so the reported version, changes only at Chrome's start.
+
 ### Extension update boundary and proposed automatic flow
 
 The application carries its current extension, but an already loaded unpacked

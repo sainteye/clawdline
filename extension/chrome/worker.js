@@ -24,6 +24,16 @@ function setState(next) {
   chrome.storage.session.set({ state }).catch(() => {})
 }
 
+async function loadedFolder() {
+  try {
+    const answer = await fetch(chrome.runtime.getURL("clawdline-folder.json"), { cache: "no-store" })
+    if (!answer.ok) return "revision"
+    return (await answer.json()).stable === true ? "stable" : "revision"
+  } catch {
+    return "revision"
+  }
+}
+
 function connect() {
   try {
     port = chrome.runtime.connectNative(HOST)
@@ -32,7 +42,13 @@ function connect() {
     return
   }
   setState({ host: "connected", error: "" })
-  port.postMessage({ hello: { version: chrome.runtime.getManifest().version, browser: navigator.userAgent } })
+  const hello = { version: chrome.runtime.getManifest().version, browser: navigator.userAgent }
+  port.postMessage({ hello })
+  // Whether Chrome loaded the stable folder (its marker file) or an older
+  // one-off folder: the stable one picks up new releases at Chrome's next
+  // start, the other needs a one-time move.
+  const sent = port
+  loadedFolder().then((folder) => { if (port === sent) sent.postMessage({ hello: { ...hello, folder } }) })
   port.onMessage.addListener(onHostMessage)
   port.onDisconnect.addListener(() => {
     const error = chrome.runtime.lastError ? chrome.runtime.lastError.message : ""

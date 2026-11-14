@@ -4420,12 +4420,15 @@ type ProjectAssistantAttachment struct {
 }
 
 type ProjectAssistantBot struct {
-	Agent          ProjectAssistantAgent        `json:"agent"`
-	Appearance     ProjectAssistantAppearance   `json:"appearance"`
-	ConversationID string                       `json:"conversation_id"`
-	CreatedAt      string                       `json:"created_at"`
-	Instructions   ProjectAssistantInstructions `json:"instructions"`
-	Key            ProjectAssistantBotKey       `json:"key"`
+	Agent          ProjectAssistantAgent      `json:"agent"`
+	Appearance     ProjectAssistantAppearance `json:"appearance"`
+	ConversationID string                     `json:"conversation_id"`
+	CreatedAt      string                     `json:"created_at"`
+
+	// Kept out of the Bot list and its badge (API level 67).
+	Hidden       bool                         `json:"hidden,omitempty"`
+	Instructions ProjectAssistantInstructions `json:"instructions"`
+	Key          ProjectAssistantBotKey       `json:"key"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -4526,6 +4529,12 @@ type ProjectAssistantCreateSettings struct {
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
 	RoleSnapshotRef  string                           `json:"role_snapshot_ref"`
 	Target           ProjectAssistantProjectSelection `json:"target"`
+}
+
+// Deletes the Bot and its conversation, as Codync's Delete; files it changed
+// stay (API level 67).
+type ProjectAssistantDeleteRequest struct {
+	Command ProjectAssistantCommand `json:"command"`
 }
 
 type ProjectAssistantEditRequest struct {
@@ -4867,6 +4876,8 @@ const (
 	ProjectAssistantOperationStop       ProjectAssistantOperation = "stop"
 	ProjectAssistantOperationSendNow    ProjectAssistantOperation = "send_now"
 	ProjectAssistantOperationRuleRemove ProjectAssistantOperation = "rule_remove"
+	ProjectAssistantOperationDelete     ProjectAssistantOperation = "delete"
+	ProjectAssistantOperationVisibility ProjectAssistantOperation = "visibility"
 	ProjectAssistantOperationAnswer     ProjectAssistantOperation = "answer"
 	ProjectAssistantOperationRead       ProjectAssistantOperation = "read"
 	ProjectAssistantOperationObserve    ProjectAssistantOperation = "observe"
@@ -4876,7 +4887,7 @@ const (
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
 
 // What the native tool asks to do, for the person to read before answering.
 // Display only: it never authorizes anything.
@@ -5379,6 +5390,13 @@ const (
 
 // ProjectAssistantTurnStateValues is every value the contract allows, in contract order.
 var ProjectAssistantTurnStateValues = []ProjectAssistantTurnState{ProjectAssistantTurnStateAccepted, ProjectAssistantTurnStateQueued, ProjectAssistantTurnStateRunning, ProjectAssistantTurnStateWaitingPermission, ProjectAssistantTurnStateSucceeded, ProjectAssistantTurnStateFailed, ProjectAssistantTurnStateCancelled, ProjectAssistantTurnStateUnknown}
+
+// Hides the Bot from the list or brings it back, as Codync's Hide from list
+// (API level 67).
+type ProjectAssistantVisibilityRequest struct {
+	Command ProjectAssistantCommand `json:"command"`
+	Hidden  bool                    `json:"hidden"`
+}
 
 type ProjectAssistantWorkLink struct {
 	BoardItemID     string                    `json:"board_item_id"`

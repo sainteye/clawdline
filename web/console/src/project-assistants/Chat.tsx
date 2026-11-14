@@ -18,6 +18,8 @@ import { activityOf } from "./working"
 import { WorkingIndicator } from "./WorkingIndicator"
 import { readOnlyReason } from "./source-errors"
 import { RuleList } from "./RuleList"
+import { BotManage } from "./BotManage"
+import { seenThrough } from "./read-position"
 import { ProjectMark } from "./ProjectMark"
 import { PaMenu } from "./PaSelect"
 import type { Words } from "./words"
@@ -35,9 +37,9 @@ export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>b
 export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
-  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink)=>void
+  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink)=>void;onDeleted?:()=>void;onRead?:()=>void
 }
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenWork,projectName,projectIcon,machineName}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenWork,onDeleted,onRead,projectName,projectIcon,machineName}:ChatProps) {
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
   const grant=useRef(source.authorizationRevision).current
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
@@ -189,11 +191,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const el=scroll.current,d=currentData.current
     if(!el||!d||!readerID||!valid()||!canRead(d.source)||d.source.state!=="online"||document.visibilityState==="hidden"||!document.hasFocus())return
     const rect=el.getBoundingClientRect()
-    const visible=[...el.querySelectorAll<HTMLElement>("[data-message-seq]")].filter(row=>{const r=row.getBoundingClientRect();return r.top>=rect.top&&r.bottom<=rect.bottom})
-    const seq=Math.max(lastRead.current,...visible.map(row=>Number(row.dataset.messageSeq)))
+    const rows=[...el.querySelectorAll<HTMLElement>("[data-message-seq]")].map(row=>{const r=row.getBoundingClientRect();return{top:r.top,bottom:r.bottom,seq:Number(row.dataset.messageSeq)}})
+    const seq=Math.max(lastRead.current,seenThrough(rows,rect.top,rect.bottom))
     if(seq<=lastRead.current)return
     lastRead.current=seq
-    void authorized(source,current,s=>source.markRead({command:command(key,"read"),cursor:{key,conversation_id:d.conversation.id,message_seq:seq,reader_id:readerID}},s),new AbortController().signal).catch(fail)
+    void authorized(source,current,s=>source.markRead({command:command(key,"read"),cursor:{key,conversation_id:d.conversation.id,message_seq:seq,reader_id:readerID}},s),new AbortController().signal).then(()=>{if(valid())onRead?.()}).catch(fail)
   }
   useEffect(()=>{markVisible()},[messages,data])
   useEffect(()=>{scroll.current?.parentElement?.querySelector<HTMLElement>(".pa-chat-header h2")?.focus({preventScroll:true})},[identity])
@@ -433,6 +435,6 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
       <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))}/>
     </div>
-    {settings&&<BotSettings bot={bot} enabled={enabled} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
+    {settings&&<BotSettings bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>
 }

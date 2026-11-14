@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
-import { authorized, errorCode, projectChoices } from "./client"
+import { authorized, command, errorCode, projectChoices } from "./client"
 import { BotRoster } from "./BotRoster"
 import { BotCreate } from "./BotCreate"
 import { SourceStatusPanel } from "./SourceStatusPanel"
 import { sourceHealth } from "./source-status"
+import { HiddenBots } from "./HiddenBots"
 import { Chat } from "./Chat"
 import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type ViewState } from "./view-state"
 import { words } from "./words"
@@ -41,7 +42,9 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const lastSelected=useRef<string|null>(null)
   const controller=useRef<AbortController|null>(null),request=useRef(0)
   const pagesRef=useRef(pages);pagesRef.current=pages
-  const items=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
+  const allItems=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
+  const items=allItems.filter(i=>!i.bot.hidden),hiddenItems=allItems.filter(i=>i.bot.hidden)
+  const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
   const selectedItem=items.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
   const statuses=Object.entries(pages).flatMap(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
@@ -113,8 +116,8 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[creating])
   useEffect(()=>{if(!selected&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>('[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected])
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
-    <BotRoster items={items} machines={sources.map(s=>s.machineID)} selected={selected} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={loading} errors={errors} status={<SourceStatusPanel health={health} w={w}/>} machineNames={machineNames} projectIcons={projectIcons} onMore={!loading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
-    <main className="pa-main">{selectedItem&&selectedSource?<Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} onBack={back} onOpenWork={onOpenWork} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
+    <BotRoster items={items} machines={sources.map(s=>s.machineID)} selected={selected} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={loading} errors={errors} status={<SourceStatusPanel health={health} w={w}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!loading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <main className="pa-main">{selectedItem&&selectedSource?<Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} onBack={back} onOpenWork={onOpenWork} onRead={()=>{const read=selected;setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===read?{...i,unread_count:0}:i)}])))}} onDeleted={()=>{const gone=selected;back();setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.filter(i=>botIdentity(i.bot.key)!==gone)}])))}} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
   </div>
 }

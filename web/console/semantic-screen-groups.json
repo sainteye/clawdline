@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12090,
-  "riskKeys": 5252,
-  "nonRiskCount": 6838,
+  "englishContentKeys": 12119,
+  "riskKeys": 5263,
+  "nonRiskCount": 6856,
   "groups": [
     {
       "name": "acp / other",
@@ -3915,7 +3915,7 @@
     },
     {
       "name": "next / other",
-      "count": 1088,
+      "count": 1102,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3994,6 +3994,17 @@
         "next.browserCardNotConnectedTitle",
         "next.browserCardSetupSteps",
         "next.browserChip",
+        "next.browserGuideApplyIntro",
+        "next.browserGuideApplyTitle",
+        "next.browserGuideConnectOnce",
+        "next.browserGuideCurrent",
+        "next.browserGuideCurrentTitle",
+        "next.browserGuideDeveloperMode",
+        "next.browserGuideLoad",
+        "next.browserGuideLoadMac",
+        "next.browserGuideMoveIntro",
+        "next.browserGuideMoveTitle",
+        "next.browserGuideReloadArrow",
         "next.browserModeIsolated",
         "next.browserModeIsolatedHelp",
         "next.browserModeNative",
@@ -4064,9 +4075,12 @@
         "next.browserPanelZoom",
         "next.browserPanelZoomIn",
         "next.browserPanelZoomOut",
+        "next.browserPolicyApply",
         "next.browserPolicyAuto",
         "next.browserPolicyDown",
         "next.browserPolicyDrag",
+        "next.browserPolicyIsolatedPending",
+        "next.browserPolicyMove",
         "next.browserPolicyNativeReady",
         "next.browserPolicyNeedSetup",
         "next.browserPolicyNeedsUpdate",
@@ -5582,7 +5596,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 128,
+      "count": 132,
       "sources": [
         null
       ],
@@ -5606,6 +5620,7 @@
         "projectAssistants.create",
         "projectAssistants.createHint",
         "projectAssistants.createSubmit",
+        "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.earlier",
         "projectAssistants.executing",
@@ -5621,6 +5636,8 @@
         "projectAssistants.forgetScope",
         "projectAssistants.forgotten",
         "projectAssistants.hidden",
+        "projectAssistants.hiddenBots",
+        "projectAssistants.hideBot",
         "projectAssistants.instructions",
         "projectAssistants.interactive",
         "projectAssistants.jump",
@@ -5707,6 +5724,7 @@
         "projectAssistants.traceStep",
         "projectAssistants.traceThought",
         "projectAssistants.traceTool",
+        "projectAssistants.unhideBot",
         "projectAssistants.unnamedProject",
         "projectAssistants.unread",
         "projectAssistants.unreadCount",
