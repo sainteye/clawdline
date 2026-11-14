@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11881,
-  "riskKeys": 5186,
-  "nonRiskCount": 6695,
+  "englishContentKeys": 11889,
+  "riskKeys": 5189,
+  "nonRiskCount": 6700,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 526,
+      "count": 530,
       "sources": [
         null
       ],
@@ -451,6 +451,8 @@
         "capacityRow.artifacts.report_total_image_pixels.full",
         "capacityRow.artifacts.video_chunk_bytes.what",
         "capacityRow.bots.actors.what",
+        "capacityRow.bots.adapter_install_seconds.full",
+        "capacityRow.bots.adapter_install_seconds.what",
         "capacityRow.bots.capture_bytes.what",
         "capacityRow.bots.chat_gap_ms.what",
         "capacityRow.bots.cleanup_ms.what",
@@ -469,6 +471,8 @@
         "capacityRow.bots.stderr_bytes.full",
         "capacityRow.bots.stderr_bytes.what",
         "capacityRow.bots.survey_ms.what",
+        "capacityRow.bots.tool_probe_bytes.what",
+        "capacityRow.bots.tool_probe_ms.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
@@ -5493,7 +5497,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 77,
+      "count": 78,
       "sources": [
         null
       ],
@@ -5556,6 +5560,7 @@
         "projectAssistants.send",
         "projectAssistants.sessions",
         "projectAssistants.settings",
+        "projectAssistants.setup_version_unsupported",
         "projectAssistants.shape_blob",
         "projectAssistants.shape_cloud",
         "projectAssistants.shape_hex",

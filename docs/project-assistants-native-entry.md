@@ -1,77 +1,92 @@
 # The first installed Claude route
 
-The daemon now supplies an installed native provider to the existing lazy Bot
-Host. This replaces the previously absent production factory; it does not
-replace the Host's authority, Store, source identity or execution-bound tools.
-Metadata and feature startup do not load the installation or start an adapter.
-The feature remains explicitly off by default.
+The daemon supplies an installed native provider to the existing lazy Bot
+Host. It does not replace the Host's authority, Store, source identity or
+execution-bound tools. Metadata and feature startup do not load the
+installation or start an adapter. The feature remains explicitly off by
+default.
 
-## Configure existing files
+## What a person needs
 
-The first qualified artifact set is macOS on arm64, Node 24.1.0, Claude Code
-2.1.323 and `@agentclientprotocol/claude-agent-acp` 0.106.0. Other artifacts are
-refused rather than substituted. Setup installs nothing and changes no CLI.
-The native executables and adapter entry/agent files have pinned SHA-256
-identities. Setup seals the complete existing dependency directory; later
-changes, additions or links escaping it require new explicit setup.
+Since 2026-11-14 setup follows CodyNC: a Bot uses the programs the person
+already has. Supported: macOS, Claude Code 2.1.323 or newer, and Node 22 or
+newer with its npm. Claude Code updates itself, so only that floor is
+checked; a newer version is accepted without new setup. The person signs in
+to Claude Code as they normally do. Nothing asks them to place files.
 
-With those versions already installed in a dedicated dependency directory:
+The ACP adapter is the one part Clawdline supplies:
+`@agentclientprotocol/claude-agent-acp` 0.106.0. Its `package.json` and
+`package-lock.json` ship inside the binary
+(`internal/adapters/projectassistantacp/assets/claude-agent-acp`). The
+adapter's code is not committed to this repository: it depends on Anthropic's
+Agent SDK, whose terms are not this repository's licence, so npm fetches it
+as a pinned dependency instead.
 
-```sh
-clawdline project-assistants setup-claude \
-  --node /absolute/path/to/node \
-  --adapter /absolute/path/to/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js \
-  --cli /absolute/path/to/claude
-```
+## First use
 
-This CLI entry writes only the selected Clawdline state directory's
-`project-assistants/claude-installation.json`. Its output confirms local file
-and OS controls, never authentication or model access. `CLAWDLINE_NEXT_DIR`
-selects an isolated state directory for development. It does not turn Bots on,
-create an ACP session, send a prompt, log in or log out. The native program
-uses its normal existing login when a separately authorized first send opens
-an execution. No credential, account identity, transcript or inherited API key
-is copied into the manifest or native environment.
+The first send to a Claude Bot, or `clawdline project-assistants
+setup-claude`, sets up:
+
+1. Find Node, its npm and Claude Code. The person's `PATH` comes first, then
+   the usual per-user places (`~/.local/bin`, `~/.claude/local`, Homebrew,
+   `/usr/local/bin`, Volta, and the newest nvm, mise, asdf or fnm version),
+   because launchd starts the daemon with a minimal `PATH`. Each candidate
+   answers `--version` within `capacity.MaximumBotToolProbeMilliseconds` and
+   `MaximumBotToolProbeBytes`. Missing programs are `cli_not_installed`;
+   programs below the floor are `provider_version_unsupported`
+   (`native_node_version`, `native_cli_version`). Clawdline never installs or
+   updates Claude Code or Node.
+2. Install the adapter with that npm: `npm ci --ignore-scripts --omit=dev
+   --omit=optional` from the bundled lockfile, into a build directory under
+   `<state>/project-assistants/adapters/`, with a private npm cache, within
+   `capacity.MaximumBotAdapterInstallSeconds`. npm checks each package
+   against the lockfile's integrity. Optional packages are left out: one
+   would carry a second Claude binary, and the person's own CLI is used.
+3. Seal it. One SHA-256 over every file's relative path and content (npm's
+   regenerated `.package-lock.json` excluded) must equal
+   `claudeAdapterTreeSHA`. The entry and agent files also keep their own
+   digests. A build that differs is removed. Two clean installs with
+   different caches produced the same digest on 2026-11-14.
+4. Record `project-assistants/claude-installation.json` (format 2): the
+   adapter path and its per-file seal. The person's tools are not recorded;
+   they are found again for every execution, so an updated launcher is
+   followed. Format 1 manifests, which pinned Node and CLI digests, are
+   replaced by a fresh setup.
+
+Every capability check and open verifies the seal again. A missing, changed
+or added adapter file causes one reinstall; a missing or too-old program is
+reported and not worked around. The only network use is npm fetching the
+lockfile's packages during an install. Setup does not start the adapter,
+inspect authentication, turn Bots on or send a prompt.
+
+The CLI prints a fixed receipt with the adapter version, the found and
+minimum CLI versions, `authentication_verified: false` and
+`model_requests: 0`. It echoes no paths or credentials.
 
 ## Execution boundary
 
-Each capability check and native open revalidates the sealed artifacts and
-runs a fixed local Node control. The control imports no adapter and makes no
-network or credential request. It rejects an unprotected process and proves
-that writes outside its owned directory, arbitrary executable launches, and
-native `.claude` memory reads/writes are refused. The actual launch uses that
-same generated OS profile. Runtime directories are separate for each Bot,
-Project and execution; they are removed only after native cleanup succeeds.
-An unresolved cleanup retains ownership and directory contents.
-
-The profile permits the native login service and narrow credential paths,
-without granting general reads of the person's home. It permits only the
-pinned Node/native CLI plus the native credential helper executable. Only the
-execution directory is writable, and native `.claude` memory paths remain
-blocked there as well. This is a filesystem/process boundary, not a claim
-that the native program or a human login has been independently audited.
-
-Session settings additionally disable native tools, inherited settings and
-hooks, automatic memory, dream tasks, prompt suggestions, progress summaries
-and native session persistence. A fresh process reconstructs context from the
-app's durable filtered history/memory; it does not resume a personal native
-transcript. Native permission payloads remain denied by the existing
-classifier. The HTTP MCP listener still receives only Host-bound functions.
-Source-owned dispatch claims remain a separate required integration step.
+The native CLI runs as the person, in the Bot's Project, with its own tools.
+It asks before acting; the person may allow one action, and standing allow
+or reject rules are refused. Its configuration, history and memory live in a
+feature-owned directory for each Bot, Project, conversation and revision;
+personal Claude settings, hooks and memory are not read. The environment
+carries `HOME`, `USER` (the CLI names its keychain account from it), a fixed
+`PATH`, a new scratch `TMPDIR` and the adapter and telemetry switches. No API
+key, token, cloud credential or `NODE_OPTIONS` is inherited. The HTTP MCP
+listener receives only Host-bound functions.
 
 The lifecycle and context separation follow the retained Codync design at
-`234219cef2d3f991f0f7225ba89e3c99cdd34177`, with Clawdline's narrower native
-write and memory policy. The installed route does not import upstream
-automatic approvals or a terminal identity for a Bot.
+`234219cef2d3f991f0f7225ba89e3c99cdd34177`. The installed route does not
+import upstream automatic approvals or a terminal identity for a Bot.
 
 ## Acceptance boundary
 
-A successful setup and OS control are local configuration evidence. They do
-not establish authentication, a model reply, a Broker dispatch, a usable
-published version or complete Board acceptance. Those real flows and any
-paid requests require their own evidence and authorization. No native model
-or service is called by the local tests. The provider refuses missing setup,
-changed artifacts, unsupported platforms and failed kernel controls.
+A successful setup is local configuration evidence. It does not establish
+authentication, a model reply, a Broker dispatch, a usable published version
+or complete Board acceptance. Those real flows and any paid requests require
+their own evidence and authorization. Tests never search the developer's
+real programs: every hermetic test binary replaces `SearchDirectories`
+before it runs, and no local test calls a model, a service or npm.
 
 Remove the setup command, installed provider and production factory wiring to
 remove this route. Keep persisted Bot data, ordinary Sessions and the user's
