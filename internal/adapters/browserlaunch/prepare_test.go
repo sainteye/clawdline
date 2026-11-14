@@ -1,6 +1,7 @@
 package browserlaunch
 
 import (
+	"github.com/sainteye/clawdline/extension"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,5 +92,42 @@ func TestTheStableFolderCarriesItsMarkerAndVersion(t *testing.T) {
 	}
 	if changed, err := WriteStableExtension(dir); err != nil || changed {
 		t.Fatalf("a current folder was rewritten: changed=%v err=%v", changed, err)
+	}
+}
+
+// A new release clears the test profile's cached service workers once, so
+// Chrome runs the new worker.js instead of the one it registered before.
+func TestANewReleaseForgetsTheTestProfilesCachedWorkers(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(ProfileDir(dir), "Default", "Service Worker", "ScriptCache")
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := forgetStaleServiceWorkers(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatal("the cached worker survived a new release")
+	}
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := forgetStaleServiceWorkers(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cache); err != nil {
+		t.Fatal("the same release cleared the cache again")
+	}
+}
+
+// The worker reports its own code's version; it must be the manifest's.
+func TestTheWorkerVersionIsTheManifestVersion(t *testing.T) {
+	data, err := extension.Chrome.ReadFile("chrome/worker.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `const WORKER_VERSION = "` + EmbeddedVersion() + `"`
+	if !strings.Contains(string(data), want) {
+		t.Fatalf("worker.js lacks %s", want)
 	}
 }

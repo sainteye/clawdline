@@ -24,6 +24,12 @@ function setState(next) {
   chrome.storage.session.set({ state }).catch(() => {})
 }
 
+// The version of this worker's own code. Chrome can keep running an older
+// registered worker after the folder's manifest changes (2026-11-15), so the
+// hello reports the code's version, not the manifest's. A test keeps it equal
+// to manifest.json.
+const WORKER_VERSION = "0.4.2"
+
 let loadedFolderKind = "revision"
 
 async function loadedFolder() {
@@ -48,7 +54,7 @@ function connect() {
   // releases at Chrome's next start, an older one-off folder needs a one-time
   // move. The folder is read once, before the first connection (a second,
   // later hello never reached the daemon on 2026-11-15).
-  port.postMessage({ hello: { version: chrome.runtime.getManifest().version, browser: navigator.userAgent, folder: loadedFolderKind } })
+  port.postMessage({ hello: { version: WORKER_VERSION, browser: navigator.userAgent, folder: loadedFolderKind } })
   port.onMessage.addListener(onHostMessage)
   port.onDisconnect.addListener(() => {
     const error = chrome.runtime.lastError ? chrome.runtime.lastError.message : ""
