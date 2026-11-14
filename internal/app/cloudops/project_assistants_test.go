@@ -45,6 +45,8 @@ func projectAssistantOperationCases() []operationCase {
 		{"observed", "POST", "/bot/observed", map[string]any{"receipt_id": "receipt", "event_seq": 2}, nil},
 		{"forget", "POST", "/bot/memory/forget", map[string]any{"project": project, "expected_revision": 1, "source_ids": []any{"source"}}, nil},
 		{"memory", "POST", "/bot/memory", map[string]any{"expected_revision": 1, "entry": map[string]any{"id": "memory", "key": key, "project": project, "text": "remember", "sources": []any{}, "revision": 1, "forgotten": false}}, nil},
+		{"visibility", "POST", "/bot/visibility", map[string]any{"hidden": true}, nil},
+		{"delete", "POST", "/bot/delete", map[string]any{}, nil},
 	}
 	out := []operationCase{}
 	for _, r := range rows {
@@ -94,7 +96,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 17 {
+	if len(out) != 19 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

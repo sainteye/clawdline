@@ -251,7 +251,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["answer","create","edit","events","export","forget","get","history","list","memory","observed","read","send","status","stop","projects","view"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["answer","create","delete","edit","events","export","forget","get","history","list","memory","observed","read","send","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
