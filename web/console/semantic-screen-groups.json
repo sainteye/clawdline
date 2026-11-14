@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11894,
-  "riskKeys": 5191,
-  "nonRiskCount": 6703,
+  "englishContentKeys": 11906,
+  "riskKeys": 5193,
+  "nonRiskCount": 6713,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 531,
+      "count": 532,
       "sources": [
         null
       ],
@@ -465,6 +465,7 @@
         "capacityRow.bots.name_runes.what",
         "capacityRow.bots.notice_rows.what",
         "capacityRow.bots.owned_children.what",
+        "capacityRow.bots.permission_action_bytes.full",
         "capacityRow.bots.processes.what",
         "capacityRow.bots.prompt_ms.what",
         "capacityRow.bots.refresh_ms.what",
@@ -5498,7 +5499,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 79,
+      "count": 88,
       "sources": [
         null
       ],
@@ -5544,6 +5545,15 @@
         "projectAssistants.no",
         "projectAssistants.offline",
         "projectAssistants.online",
+        "projectAssistants.permissionContent",
+        "projectAssistants.permissionEdit",
+        "projectAssistants.permissionExecute",
+        "projectAssistants.permissionFetch",
+        "projectAssistants.permissionMove",
+        "projectAssistants.permissionRead",
+        "projectAssistants.permissionSearch",
+        "projectAssistants.permissionShortened",
+        "projectAssistants.permissionSwitchMode",
         "projectAssistants.project",
         "projectAssistants.projectsLoading",
         "projectAssistants.queued",

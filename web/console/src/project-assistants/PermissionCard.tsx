@@ -10,5 +10,19 @@ export function PermissionCard({summary,offer,enabled,onDetail,onAnswer,w}: {sum
   const [busy,setBusy]=useState(false),value=offer??summary
   if(!value)return null
   const expired=Date.parse(value.expires_at)<=Date.now(),state=value.state==="pending"&&expired?"expired":value.state
-  return <section className="pa-card pa-permission" data-permission-id={value.id} aria-label={w.permission}><h3>{w.permission}</h3><p>{w[state]}</p><small>{value.fence.key.machine_id} · {value.fence.project.project_id} · {value.turn_id}</small><div className="pa-actions">{offer?sortedOptions(offer.options).map(option=><button key={option.id} type="button" disabled={!enabled||busy||state!=="pending"||!(option.kind==="reject_once"||option.kind==="allow_once")} onClick={async()=>{setBusy(true);try{await onAnswer(offer,option)}finally{setBusy(false)}}}>{w[option.kind]}</button>):<button type="button" onClick={onDetail}>{w.details}</button>}</div></section>
+  const action=offer?.action,kind=action?.tool_kind??summary?.tool_kind??"",title=action?.title??summary?.title??""
+  return <section className="pa-card pa-permission" data-permission-id={value.id} aria-label={w.permission}><h3>{actionHeading(kind,w)}</h3>{title&&<p className="pa-permission-title">{title}</p>}<p>{w[state]}</p>
+    {action&&(action.detail||action.diffs.length>0)&&<details className="pa-permission-detail" open={action.diffs.length===0&&action.detail.length<240}><summary>{w.permissionContent}</summary>
+      {action.detail&&<pre>{action.detail}</pre>}
+      {action.diffs.map((d,i)=><div className="pa-diff" key={i}><code>{d.path}</code>{d.old_text&&<pre className="pa-diff-old">{d.old_text}</pre>}<pre className="pa-diff-new">{d.new_text}</pre></div>)}
+      {action.shortened&&<small>{w.permissionShortened}</small>}
+    </details>}
+    <small>{value.fence.key.machine_id} · {value.fence.project.project_id} · {value.turn_id}</small><div className="pa-actions">{offer?sortedOptions(offer.options).map(option=><button key={option.id} type="button" disabled={!enabled||busy||state!=="pending"||!(option.kind==="reject_once"||option.kind==="allow_once")} onClick={async()=>{setBusy(true);try{await onAnswer(offer,option)}finally{setBusy(false)}}}>{w[option.kind]}</button>):<button type="button" onClick={onDetail}>{w.details}</button>}</div></section>
+}
+
+// Codync titles a card by what the tool would do; an unknown kind still says
+// it asks for permission.
+function actionHeading(kind:string,w:Words){
+  const heading:Record<string,string>={execute:w.permissionExecute,edit:w.permissionEdit,delete:w.permissionDelete,move:w.permissionMove,read:w.permissionRead,search:w.permissionSearch,fetch:w.permissionFetch,switch_mode:w.permissionSwitchMode}
+  return heading[kind]??w.permission
 }

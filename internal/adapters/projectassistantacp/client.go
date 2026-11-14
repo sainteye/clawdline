@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -146,6 +147,12 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	}
 	b, err = c.call(ctx, method, params)
 	if err != nil {
+		var f *pa.Failure
+		if q.Resume && errors.As(err, &f) && strings.HasPrefix(f.Field, "rpc_") {
+			// The native side answered that it cannot load this session, for
+			// example after its transcript moved. The caller starts anew.
+			return refusal(pa.ResumeUnsupported, "native_session_missing")
+		}
 		return err
 	}
 	var session struct {
@@ -534,7 +541,7 @@ func (c *Client) handle(f frame) error {
 			return refusal(pa.StaleGeneration, "permission_turn")
 		}
 		readOnly := c.readOnly != nil && c.readOnly(f.Params)
-		offer := pa.PermissionOffer{ID: "native-" + e.TurnID + "-" + id, Fence: c.fence, TurnID: e.TurnID, NativeRequestID: id, ExpiresAt: time.Now().Add(c.l.RPCTimeout), State: pa.PermissionPending}
+		offer := pa.PermissionOffer{ID: "native-" + e.TurnID + "-" + id, Fence: c.fence, TurnID: e.TurnID, NativeRequestID: id, ExpiresAt: time.Now().Add(c.l.RPCTimeout), State: pa.PermissionPending, Action: permissionAction(f.Params)}
 		options := make(map[string]pa.PermissionOption)
 		for _, option := range p.Options {
 			o := pa.PermissionOption{ID: option.OptionID, Label: option.Name, Kind: option.Kind, Allow: option.Kind == pa.AllowOnce || option.Kind == pa.AllowAlways, ReadOnly: readOnly}

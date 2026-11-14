@@ -611,6 +611,14 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	a.opening = true
 	a.mu.Unlock()
 	session, err := r.o.Provider.Open(ctx, OpenRequest{Bot: bot, Binding: binding, Directory: resolution.Directory, Resume: resume}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
+	if session == nil && resume && pa.Code(err) == pa.ResumeUnsupported {
+		// As in Codync, a native session that cannot be loaded is replaced by
+		// a new one that receives the filtered history and memory; nothing
+		// was sent to the old one, so nothing is repeated.
+		resume = false
+		binding.NativeSessionID = ""
+		session, err = r.o.Provider.Open(ctx, OpenRequest{Bot: bot, Binding: binding, Directory: resolution.Directory, Resume: false}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
+	}
 	a.mu.Lock()
 	a.opening = false
 	a.session = session

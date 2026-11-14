@@ -28,6 +28,9 @@ const (
 	MaximumBotToolProbeBytes        = 4096
 	// One `codex features list` read, to see whether its memories are on.
 	MaximumBotFeatureProbeBytes = 65536
+	// The text a permission card shows of one native action: title, command
+	// or input and diffs together.
+	MaximumBotPermissionActionBytes = 32768
 )
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
@@ -115,5 +118,8 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsFeatureProbeBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotFeatureProbeBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotFeatureProbeBytes"}},
+		{Name: BotsPermissionActionBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotPermissionActionBytes, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotPermissionActionBytes"}},
 	}
 }

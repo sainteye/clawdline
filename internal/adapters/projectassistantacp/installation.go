@@ -392,9 +392,9 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 		return config, caps, cleanup, e
 	}
 	caps.CLIVersion, caps.AdapterVersion = i.tools.CLIVersion, ClaudeAdapterVersion
-	caps.Evidence = "installed Claude Code at or above the supported floor; supplied adapter sealed by digest; native tools act in the Project after per-action approval; native config, history and memory isolated per Bot and Project"
+	caps.Evidence = "installed Claude Code at or above the supported floor; supplied adapter sealed by digest; the person's own Claude Code settings and login, as in Codync; native auto memory and dreaming off"
 	caps.ReadOnlyEnforced, caps.NativeMemoryVerified = false, true
-	caps.NativeMemory = pa.NativeMemoryIsolated
+	caps.NativeMemory = pa.NativeMemoryDisabled
 	caps.Resume = claudeResumeQualified
 	caps.SendMessage = true
 	return config, caps, cleanup, nil

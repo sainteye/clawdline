@@ -71,6 +71,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.pending_turns` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.perm_rows` | 8 | `rows` | `disconnect` | `diagnostics, sender` | — |
+| `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.prompt_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |

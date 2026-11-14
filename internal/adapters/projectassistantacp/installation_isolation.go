@@ -27,15 +27,11 @@ func (i ClaudeInstallation) isolated(ctx context.Context, state string, b pa.Bot
 	return i.isolatedWithHistory(ctx, resolved, b, "")
 }
 
-// isolatedWithHistory prepares one execution, following CodyNC: the native
-// CLI runs as the person, with its own tools, in the Bot's Project, and asks
-// before acting. What stays owned here is its configuration: history, when
-// given, is a resolved config directory below state that persists across
-// executions, so personal Claude history, settings, hooks and memory are not
-// read and another Bot's transcripts are elsewhere. The scratch directory is
-// new and removed by the returned cleanup. Both config variables reach the ACP
-// parent, because ACP and the SDK resolve history from process.env; the empty
-// secure-storage entry keeps the login lookup on its normal keychain service.
+// isolatedWithHistory prepares one execution, following Codync: the native
+// CLI runs as the person, with their own Claude Code configuration, tools and
+// login, in the Bot's Project. history, when given, is the feature-owned
+// directory holding this Bot's native-ID owner records. The scratch directory
+// is new and removed by the returned cleanup.
 func (i ClaudeInstallation) isolatedWithHistory(ctx context.Context, state string, b pa.Bot, history string) (Configuration, func(), error) {
 	none := func() {}
 	if e := ctx.Err(); e != nil {
@@ -84,9 +80,11 @@ func (i ClaudeInstallation) isolatedWithHistory(ctx context.Context, state strin
 		"CLAUDE_CODE_EXECUTABLE=" + i.tools.CLI, "CLAUDE_AGENT_ACP_PROTOCOL=v1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
 		"DISABLE_TELEMETRY=1", "DISABLE_ERROR_REPORTING=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 	}
-	if history != "" {
-		environment = append(environment, "CLAUDE_CONFIG_DIR="+history, "CLAUDE_SECURESTORAGE_CONFIG_DIR=")
-	}
+	// As in Codync, the native CLI uses the person's own Claude Code
+	// configuration and login (decided 2026-11-14): their settings, skills,
+	// permission rules and the Project's CLAUDE.md load; only native auto
+	// memory is off (CLAUDE_CODE_DISABLE_AUTO_MEMORY and the session
+	// settings). history only holds this feature's native-ID owner records.
 	return Configuration{Executable: i.tools.Node, Arguments: []string{i.Adapter}, Environment: environment}, cleanup, nil
 }
 

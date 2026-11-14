@@ -173,6 +173,13 @@ func paWirePermissionOffer(value pa.PermissionOffer) (contract.ProjectAssistantP
 	out.ExpiresAt = convertedExpiresAt
 	out.State = contract.ProjectAssistantPermissionState(value.State)
 	out.SelectedOptionID = value.SelectedOptionID
+	if a := value.Action; a != nil {
+		action := contract.ProjectAssistantPermissionAction{Title: a.Title, ToolKind: a.ToolKind, Detail: a.Detail, Shortened: a.Shortened, Diffs: make([]contract.ProjectAssistantPermissionDiff, len(a.Diffs))}
+		for i, d := range a.Diffs {
+			action.Diffs[i] = contract.ProjectAssistantPermissionDiff{Path: d.Path, OldText: d.OldText, NewText: d.NewText}
+		}
+		out.Action = &action
+	}
 	return out, nil
 }
 

@@ -72,8 +72,17 @@ actions, or `acceptEdits` for a model without it. The person decided on
 2026-11-14 to keep that rather than force a card for every change. A card
 that does appear may be allowed once; standing allow or reject rules are
 refused. Bypass mode stays off. Its configuration, history and memory live in a
-feature-owned directory for each Bot, Project, conversation and revision;
-personal Claude settings, hooks and memory are not read. The environment
+feature-owned record of which native sessions belong to each Bot, Project,
+conversation and revision. As in Codync (the person decided on 2026-11-14),
+the native CLI uses the person's own Claude Code configuration and login:
+their settings, skills and permission rules, and the Project's CLAUDE.md,
+settings, hooks and MCP servers all load. Only native auto memory and
+dreaming are off.
+
+A permission card says what the tool would do before it is answered, as
+Codync's does: the adapter's title and ACP tool kind, the command, URL or
+input, and file diffs, read from the request's `toolCall` and shortened to
+`capacity.MaximumBotPermissionActionBytes`. It is display text only. The environment
 carries `HOME`, `USER` (the CLI names its keychain account from it), a fixed
 `PATH`, a new scratch `TMPDIR` and the adapter and telemetry switches. No API
 key, token, cloud credential or `NODE_OPTIONS` is inherited. The HTTP MCP
