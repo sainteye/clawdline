@@ -69,9 +69,10 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 			"persistSession":                  q.PersistNativeSession, "promptSuggestions": false, "agentProgressSummaries": false,
 			"settings": map[string]any{"autoMemoryEnabled": false, "autoDreamEnabled": false, "disableAllHooks": true},
 		}
-		// Native tools stay available and ask before acting. Only the three
-		// Host-owned tools of this execution's own MCP endpoint run without a
-		// prompt; each still checks its fence and source policy in the Host.
+		// Native tools stay available under Claude Code's default mode, which
+		// decides what to ask about. The three Host-owned tools of this
+		// execution's own MCP endpoint never prompt; each still checks its
+		// fence and source policy in the Host.
 		if owned != nil {
 			options["allowedTools"] = []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status"}
 		}

@@ -91,24 +91,6 @@ func TestACPTestPeer(t *testing.T) {
 				}
 			}
 			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": peerSessionID("CLAWDLINE_ACP_LOAD_ID")})})
-		case "session/set_mode":
-			var q struct {
-				SessionID string `json:"sessionId"`
-				ModeID    string `json:"modeId"`
-			}
-			_ = json.Unmarshal(f.Params, &q)
-			if path := os.Getenv("CLAWDLINE_ACP_MODE_FILE"); path != "" {
-				_ = os.WriteFile(path, []byte(q.ModeID), 0600)
-			}
-			// The adapter announces a mode only when it substitutes another.
-			if other := os.Getenv("CLAWDLINE_ACP_MODE_SUBSTITUTE"); other != "" {
-				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": q.SessionID, "update": map[string]string{"sessionUpdate": "current_mode_update", "currentModeId": other}})})
-			}
-			send(frame{ID: f.ID, Result: raw(map[string]any{})})
-			if later := os.Getenv("CLAWDLINE_ACP_MODE_LATER"); later != "" {
-				time.Sleep(300 * time.Millisecond)
-				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": q.SessionID, "update": map[string]string{"sessionUpdate": "current_mode_update", "currentModeId": later}})})
-			}
 		case "session/prompt":
 			promptID = f.ID
 			if mode == "quote" || mode == "handoff" {

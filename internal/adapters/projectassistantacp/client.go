@@ -65,14 +65,10 @@ type Client struct {
 	mcpMu             sync.Mutex
 	mcpRevoked        bool
 	permissionsSealed bool
-	// askConfirmed is set once Claude's ask-before-acting mode is confirmed;
-	// reportedMode is the last mode the adapter announced.
-	askConfirmed bool
-	reportedMode string
-	cancelled    bool
-	promptID     string
-	answerMu     sync.Mutex
-	rpcSlots     chan struct{}
+	cancelled         bool
+	promptID          string
+	answerMu          sync.Mutex
+	rpcSlots          chan struct{}
 }
 
 func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, app.ProtocolEvent) error, readOnly func([]byte) bool) (*Client, error) {
@@ -154,9 +150,6 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	}
 	var session struct {
 		SessionID string `json:"sessionId"`
-		Modes     *struct {
-			CurrentModeID string `json:"currentModeId"`
-		} `json:"modes"`
 	}
 	if err = json.Unmarshal(b, &session); err != nil {
 		return refusal(pa.Invalid, "session_response")
@@ -176,45 +169,8 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	c.mu.Lock()
 	c.sessionID = session.SessionID
 	c.mu.Unlock()
-	if q.Bot.Agent == pa.ClaudeCode {
-		return c.askBeforeActing(ctx, session.Modes != nil && session.Modes.CurrentModeID == askMode)
-	}
 	return nil
 }
-
-// askMode is Claude Code's mode in which every action that changes something
-// asks first. Without a configured default the adapter starts in "auto" (a
-// classifier approves actions) or, for a model without it, "acceptEdits": a
-// real Bot wrote a Project file with no permission card on 2026-11-14. The
-// mode is therefore set explicitly after every new or loaded session, which
-// also overrides a Project's own settings file, and confirmed.
-const askMode = "default"
-
-// permittedModes are the modes a session may report afterwards. Plan mode
-// changes nothing; any other mode ends the execution.
-var permittedModes = map[string]bool{askMode: true, "plan": true}
-
-func (c *Client) askBeforeActing(ctx context.Context, already bool) error {
-	if !already {
-		c.mu.Lock()
-		c.reportedMode = ""
-		c.mu.Unlock()
-		if _, err := c.call(ctx, "session/set_mode", map[string]any{"sessionId": c.SessionID(), "modeId": askMode}); err != nil {
-			return refusal(pa.Unsupported, "native_permission_mode")
-		}
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	// The adapter announces a mode only when it substitutes another one.
-	if c.reportedMode != "" && c.reportedMode != askMode {
-		return refusal(pa.Unsupported, "native_permission_mode")
-	}
-	c.askConfirmed = true
-	return nil
-}
-
-func (c *Client) askRequired() bool { c.mu.Lock(); defer c.mu.Unlock(); return c.askConfirmed }
-
 func (c *Client) SessionID() string { c.mu.Lock(); defer c.mu.Unlock(); return c.sessionID }
 
 func (c *Client) Usage() app.SessionUsage {
@@ -516,8 +472,7 @@ func (c *Client) handle(f frame) error {
 				SessionUpdate string `json:"sessionUpdate"`
 				// A message chunk carries one content block; a tool call
 				// carries an array. Only a chunk's block is decoded below.
-				Content       json.RawMessage `json:"content"`
-				CurrentModeID string          `json:"currentModeId"`
+				Content json.RawMessage `json:"content"`
 			} `json:"update"`
 		}
 		if err := json.Unmarshal(f.Params, &p); err != nil {
@@ -525,16 +480,6 @@ func (c *Client) handle(f frame) error {
 		}
 		if p.SessionID != c.SessionID() {
 			return refusal(pa.StaleGeneration, "native_session")
-		}
-		// A switch away from asking ends the execution, whether a turn is
-		// active or not: no later action may run without a permission card.
-		if p.Update.SessionUpdate == "current_mode_update" {
-			c.mu.Lock()
-			c.reportedMode = p.Update.CurrentModeID
-			c.mu.Unlock()
-			if c.askRequired() && !permittedModes[p.Update.CurrentModeID] {
-				return refusal(pa.ScopeDenied, "native_permission_mode")
-			}
 		}
 		c.mu.Lock()
 		active := c.turnID != ""

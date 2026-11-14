@@ -29,7 +29,7 @@ func projectAssistantsCommand(ctx context.Context, args []string, state string, 
 	// Fixed machine-readable receipt; paths, credentials and artifact contents
 	// are not echoed. Native authentication remains a later runtime observation.
 	returnCode := 0
-	if json.NewEncoder(stdout).Encode(map[string]any{"configured": true, "native_tools": "ask_before_acting", "authentication_verified": false, "agent": "claude_code", "adapter_version": projectassistantacp.ClaudeAdapterVersion, "cli_version": i.CLIVersion(), "minimum_cli_version": projectassistantacp.MinimumClaudeCLIVersion, "adapter_started": false, "model_requests": 0}) != nil {
+	if json.NewEncoder(stdout).Encode(map[string]any{"configured": true, "native_tools": "claude_default_mode", "authentication_verified": false, "agent": "claude_code", "adapter_version": projectassistantacp.ClaudeAdapterVersion, "cli_version": i.CLIVersion(), "minimum_cli_version": projectassistantacp.MinimumClaudeCLIVersion, "adapter_started": false, "model_requests": 0}) != nil {
 		returnCode = 1
 	}
 	return returnCode
