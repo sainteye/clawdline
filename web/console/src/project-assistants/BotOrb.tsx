@@ -120,3 +120,5 @@ const dockListeners=new Set<()=>void>()
 export function setDockAvailable(value:boolean){if(available===value)return;available=value;for(const l of dockListeners)l()}
 function dockAvailable(){return available}
 function subscribeDock(listener:()=>void){dockListeners.add(listener);return()=>{dockListeners.delete(listener)}}
+
+export function useStatusDockAvailable(){return useSyncExternalStore(subscribeDock,dockAvailable,dockAvailable)}

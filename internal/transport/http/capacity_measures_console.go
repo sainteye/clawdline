@@ -1,8 +1,9 @@
 package http
 
 import (
-	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // consoleCapacityMeasures measures every row of the register's "console" area
@@ -369,6 +370,13 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	for name, measure := range performanceCapacityMeasures() {
 		if strings.HasPrefix(name, "console.") {
 			out[name] = measure
+		}
+	}
+	for _, row := range capacity.Register() {
+		if strings.HasPrefix(row.Name, "console.view_plugin_") {
+			out[row.Name] = func() capacity.Reading {
+				return capacity.Unmeasured("browser-local plugin package or message bound; the daemon does not observe browser storage or frames")
+			}
 		}
 	}
 	return out

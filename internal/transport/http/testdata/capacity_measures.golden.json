@@ -2015,6 +2015,50 @@
     "Note": true
   },
   {
+    "Name": "console.view_plugin_archive_bytes",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_expanded_bytes",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_files",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_manifest_bytes",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_message_bytes",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_packages",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_pending",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_request_milliseconds",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_requests_per_second",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_sessions",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_text_characters",
+    "Err": true
+  },
+  {
     "Name": "console.viewer_health_attempts",
     "Known": true,
     "Note": true

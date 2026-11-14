@@ -5,6 +5,10 @@ self-contained page (no external scripts, fonts or images). It was verified from
 local HTTP server; `file://` was not tested. It is not an installed plugin, not a View Plugin v1 host, and nothing in it
 talks to a daemon. All Sessions are synthetic demo data and nothing can be changed through it.
 
+The separate runtime package now lives in `plugins/session-galaxy`. It uses the
+real SDK and scoped data contract described in [View Plugin v1](../plugins/view-plugin-v1.md).
+The HTML in this design-study directory intentionally remains a mock-data study.
+
 ## What it is for
 
 Clawdline runs many AI coding Sessions at once. The galaxy answers one question at a glance:

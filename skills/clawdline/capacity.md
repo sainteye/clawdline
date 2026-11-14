@@ -413,6 +413,17 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.video_preview_milliseconds` | 30000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `console.video_preview_reads` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.video_preview_side` | 640 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_archive_bytes` | 262144 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_expanded_bytes` | 524288 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_files` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_manifest_bytes` | 8192 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_message_bytes` | 1048576 | `bytes` | `disconnect` | `sender, diagnostics` | — |
+| `console.view_plugin_packages` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_pending` | 16 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_request_milliseconds` | 10000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_requests_per_second` | 32 | `rows` | `disconnect` | `sender, diagnostics` | — |
+| `console.view_plugin_sessions` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_text_characters` | 256 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `console.viewer_health_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `console.viewer_health_backoff_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.viewer_health_batch_rows` | 50 | `rows` | `refuse` | `diagnostics` | — |

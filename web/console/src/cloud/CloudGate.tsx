@@ -1,3 +1,4 @@
+import { cloudPluginSources } from "../view-plugins/sources.js"
 import { supportWord } from "../support/words.js"
 import { ProjectAssistantRegistry, capturedAssistantRelayFetch, cloudAssistantGrants, type AssistantWorkIntent } from "./project-assistants.js"
 import { words as assistantWords } from "../project-assistants/words.js"
@@ -2139,6 +2140,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       ? reading.rows.find((row) => destinationKey(row.destination) === destinationKey(fleetTarget) &&
         row.freshness === "current") ?? null : null
   }, [fleetScope, fleetTarget && destinationKey(fleetTarget), fleetProjectionRevision])
+  const pluginOwner = JSON.stringify([who?.account, who?.device, clientEpoch])
+  const pluginKeys = new Set(quickMachines.filter(m => m.pairing === "paired" && m.selectable && m.operationAllowed === true)
+    .map(m => JSON.stringify([pluginOwner, m.id, m.pairing, m.operationAllowed])))
+  const pluginKeysRef = useRef(pluginKeys); pluginKeysRef.current = pluginKeys
+  const viewSources = cloudPluginSources({ owner: pluginOwner, machines: quickMachines, source: liveSessionSource,
+    current: key => pluginKeysRef.current.has(key), open: openFleetSession })
   return (
     <>
       <IdentityHandoverDialog relay={screen.at === "pairing" ? "pairing_required" : "connected"} />
@@ -2160,7 +2167,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       {chosen && who && transport.kind === "cloud" && screen.at === "console" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
           <App cloudOperationsAccess={operationsAccess} cloudOperationsAttention={operationsAttention} key={fleetScope ? "fleet" : reading ?? chosen.id} aside={aside} hideSessionCounts={fleetScope}
-            projectAssistants={assistantRegistry}
+            projectAssistants={assistantRegistry} viewPluginSources={viewSources}
             onOpenAssistantWork={openAssistantWork} assistantWorkIntent={assistantWorkIntent} onAssistantWorkOpened={assistantWorkOpened}
             onChooseDashboardMachine={() => {
               if (!fleetScope) { setDashboardMachine(chosen); return }

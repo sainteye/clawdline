@@ -382,8 +382,13 @@ Cloud browsers expose browser, work, status and workflow settings. The standalon
 browser console embeds the machine-authorized controls in its Settings tabs.
 Update deep links continue to open the status pane.
 
-### Proposed community view plugins
+### Experimental community view plugins
 
-[View Plugin v1](plugins/view-plugin-v1.md) specifies runtime packages, a bottom-status-bar
-entry, an isolated full-app surface and a scoped Session message contract. It is an implementation
-specification, not a shipped capability. The current compiled page registry is not a runtime loader.
+[View Plugin v1](plugins/view-plugin-v1.md) defines the browser-local runtime in
+`web/console/src/view-plugins`: an IndexedDB archive registry, explicit per-opening
+machine/Project grants, an opaque srcdoc iframe and a dedicated MessagePort SDK.
+Galaxy and List are independent static ZIP packages, not compiled page modules.
+Local uses the existing fleet snapshot; Cloud uses the authorized pinned Session
+projection source. Neither grants generic API calls or changes the classifier or
+broker. The bottom status bar and fallback entry open a host-owned full-app surface.
+Machine-owned installation and cross-device package distribution are deferred.

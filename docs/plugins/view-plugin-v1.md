@@ -1,136 +1,223 @@
 # View Plugin v1
 
-This contract is for community authors building interactive Session visualizations inside Clawdline. Status: **implementation specification, revision 1; not an available product capability**. A host and its conformance evidence must ship before third-party installation is advertised. The galaxy prototype is the first consumer, not a special host feature.
+Revision 2 describes the **experimental browser-local runtime** implemented in
+`web/console/src/view-plugins`. The first two packages are Session Galaxy and
+Session List. Public Release acceptance is separate from source and Cloud delivery.
+The earlier revision proposed machine-owned installation; that transport is deferred.
 
-## Product guarantee and boundary
+## What the host owns
 
-The host requires a one-time Clawdline update. After that, a compatible plugin is installed or replaced as a package at runtime: no application reinstall, daemon restart, core source edit, frontend rebuild or App Store release for that plugin. Opening a package must never run an installer or execute native code.
+A bottom status-bar orbit button opens the plugin manager. When the status bar is
+absent, the button sits in the Session-list pane. A granted view fills the app.
+The host owns installation, consent, current machine identity, history, focus,
+close and Session navigation. The plugin owns its own HTML, CSS, canvas and motion.
+The Session page, classifier and dispatch broker are not plugin extension points.
 
-Version 1 contributes one full-app view and a host-rendered bottom-status-bar entry. It does not replace Sessions, register arbitrary routes, inject React components, add global CSS, execute commands, dispatch tasks or expose arbitrary REST calls. The host owns navigation, focus, browser history, authorization and Cloud transport. The plugin owns art, layout, rendering and local presentation state.
+After the host update, importing, replacing, disabling, removing and rolling back
+compatible packages needs no core edit, frontend rebuild, daemon restart or app
+reinstall. Each browser/interface stores its own packages in IndexedDB. They are
+not copied between phones, machines, accounts or browsers. Packages do not start
+automatically. No grant or Session data is persisted by this registry. Installing
+on Cloud does not install into a local daemon console or another browser profile.
 
-## Package and installation
+The person reviews the package ID, version and capabilities before activation.
+Same ID with different bytes requires explicit replacement. IDs and SHA-256
+hashes are identities, not verified publisher signatures. The registry atomically
+checks the expected active digest and retains one previous archive for rollback.
+A failed import leaves the active package intact. Registry changes, including
+cross-tab hints, revoke running grants before rereading the saved archives.
 
-A ZIP contains `manifest.json`, an HTML entry and optional bundled JavaScript, CSS, fonts and images. It needs no build tools on the person's machine. The manifest schema is [view-plugin-v1.schema.json](view-plugin-v1.schema.json).
+## Make a package
+
+The first profile contains exactly **two files in a ZIP STORE archive**:
+`manifest.json` and the declared HTML entry. All JavaScript, CSS, fonts and artwork
+must be inline in that HTML (data/blob media are permitted). Deflate, encryption,
+data descriptors, ZIP64, duplicate names, traversal, hidden segments, symlinks,
+invalid UTF-8 and corrupt CRCs are refused. Separate resource files and remote
+CDNs are not supported by this profile. The schema is
+[view-plugin-v1.schema.json](view-plugin-v1.schema.json).
 
 ```json
 {
   "manifestVersion": 1,
-  "id": "org.example.session-galaxy",
+  "id": "org.example.session-map",
   "version": "1.0.0",
   "hostApi": 1,
-  "name": { "en": "Session Galaxy", "zh-Hant": "Session 星系" },
+  "name": { "en": "Session Map", "zh-Hant": "Session 地圖" },
   "entry": "index.html",
   "capabilities": ["sessions.read", "sessions.open"]
 }
 ```
 
-Package IDs identify an installation, not a verified publisher. Entry and asset paths are normalized relative package paths: no absolute paths, parent traversal, hidden segments, backslashes, symlinks or network URLs. The installer rejects duplicate normalized names, invalid UTF-8, an absent entry and an unsupported manifest/API version before any package script executes. Hashing proves package byte identity, not publisher trust.
+Vendor `plugins/sdk/view-plugin-v1.js` inline, or put `<!-- CLAWDLINE_SDK -->` in
+the HTML and let the repository packer insert that SDK:
 
-The person chooses Install, selects the ZIP, reviews its identity/version/capabilities and chooses the machine/Project scope. The host validates into staging, then atomically activates an immutable content-addressed revision. The registry is data, separate from the compiled page registry. A failed validation or activation leaves the previous revision active. Same ID with different bytes is replacement, not a second hidden installation; require explicit replacement confirmation. Never silently downgrade or change scopes. There are no automatic remote updates in v1.
-
-Replacement closes the old frame/port and creates a new instance. Existing grants may be reused only with unchanged capabilities and scope. Added capabilities require new consent. Disabling or uninstalling removes the entry, stops its frame and closes ports; unrelated work and Session data remain intact. The host retains the previous approved revision for explicit rollback. Plugin persistent storage is outside v1.
-
-## Host lifecycle
-
-The host owns the status-bar entry, plugin selector and its badges; plugins cannot invent global attention counts. Activating the entry creates or reveals a full-app view. Close, desktop Escape and phone Back restore the originating surface, scroll and focus. Session navigation is mediated by the host.
-
-The plugin receives visibility, theme, language and reduced-motion context. It must stop animation loops and rendering when invisible and support reduced motion. The host may destroy a hidden frame; reopening must work from a new snapshot. No animation may be required to learn a work title or state. WebGL/canvas effects must have a readable fallback when unsupported or context is lost.
-
-## Isolated execution and resources
-
-Untrusted package HTML is never rendered directly on the application's authenticated origin, including when its resource URL is opened as a top-level document. The host must use a dedicated non-privileged resource delivery boundary plus an iframe with only `sandbox="allow-scripts"`; it must not grant same-origin, forms, popups, top navigation, downloads, camera, microphone or geolocation. A sandbox is not a CPU, GPU, browser-process or complete exfiltration boundary; hostile-code isolation requires browser acceptance beyond this document.
-
-All dependencies and creative assets are bundled. The host supplies a package-scoped asset base usable by both native/local and Cloud clients. Relative package resources must work in the supported host without plugin-specific rewriting by authors. The resource layer must not disclose a daemon token or serve other packages/private filesystem paths. Remote CDN scripts, analytics, fetch, WebSocket, workers and native bridges are not v1 capabilities. CSP restricts scripts, styles, fonts, images and media to package resources (plus explicitly needed inline/data/blob resources), with `connect-src 'none'`, `object-src 'none'`, `frame-src 'none'`, `base-uri 'none'` and `form-action 'none'`; no eval permission. CSP is an additional restriction, not proof that all network exfiltration is impossible. Third-party hostile code must not be advertised as safe until its isolation tests pass.
-
-Cloud must transfer installed package resources over its authorized machine transport, identify the selected machine and cache by package digest. A Cloud view must not request localhost on the phone or silently fall back to a different machine. Installation is scoped to the selected machine: installing on one does not install on all. Capability/reachability failures are visible and do not produce a fake live scene. v1 promises no offline Session data.
-
-## Connection protocol
-
-The window message channel is bootstrap only. The plugin sends `{type:"clawdline.plugin.hello", protocolVersion:1}` to its parent after registering its message listener. The host accepts a hello only from the expected active `iframe.contentWindow`; an origin of `null` alone is never trusted. Exactly one dedicated MessagePort is transferred to that frame with:
-
-```js
-{ type: "clawdline.plugin.connect", protocolVersion: 1,
-  instanceId: "host-generated-opaque-instance", context: {
-    language: "zh-Hant", theme: "dark", reducedMotion: false,
-    visible: true, scopeLabel: "Selected project", connection: "connected"
-  } }
+```sh
+python3 tools/pack-view-plugin.py plugins/session-galaxy /tmp/session-galaxy.zip
+python3 tools/pack-view-plugin.py plugins/session-list /tmp/session-list.zip
 ```
 
-The plugin accepts this only from its parent, once, with exactly one port. Bootstrap uses `targetOrigin: "*"` only because the sandbox has an opaque origin; it carries no bearer credentials or Session snapshot. Both peers call `port.start()`. All subsequent data/requests use this port, never broadcast window messages. A new frame or authorization/scope change gets a new instance and port. Close old ports, reject pending requests and destroy the old frame before exposing another scope. `instanceId` is correlation, not authorization.
+The packer uses Python's standard library and deterministic ZIP timestamps. It
+installs nothing and makes no network requests. The browser performs authoritative
+validation before installation. The example ZIPs under
+`web/console/public/view-plugins/` are static downloads, never compiled React views.
+Import a replacement ZIP through the manager to test it without rebuilding the host.
 
-Requests, replies and events are structured-clone-compatible plain JSON, without executable functions, DOM objects or binary payloads. The host checks the current grant, active instance, scope and payload on every request. Request IDs are unique strings per instance. Only these methods exist:
+## Consent and data ownership
 
-| Method | Required grant | Parameters | Result |
-| --- | --- | --- | --- |
-| `sessions.subscribe` | `sessions.read` | `{}` | Initial complete snapshot; at most one logical subscription per instance |
-| `sessions.open` | `sessions.open` | `{ref: string}` | `{opened:true}` only after host navigation succeeds |
-| `view.close` | none | `{}` | `{closed:true}` accepted; host then closes the frame |
+Every opening requires a machine and either all Projects or a specific Project.
+The host obtains a fresh authorized reading before creating the frame. Cloud
+uses its existing `SessionProjectionSource` and exact execution destinations;
+local uses the existing fleet list. A Cloud read never falls back to phone
+localhost. Account, device, client generation, pairing or access changes invalidate
+the source. A source without confirmed operation permission is not offered.
 
-`sessions.open` is navigation, not message sending or process execution. A ref from an old instance, different scope or absent current Session is refused. The host resolves refs to current machine/Session identity; a plugin cannot supply raw terminal IDs or override ownership. The host may close the plugin view to show the Session. A successful close reply confirms acceptance, not proof a person observed the resulting surface.
-
-```js
-// Plugin -> host
-{ v:1, instanceId:"i1", id:"r1", method:"sessions.subscribe", params:{} }
-// Host -> plugin, exactly one of result/error
-{ v:1, instanceId:"i1", id:"r1", result:{streamId:"s1", revision:1, sessions:[]} }
-{ v:1, instanceId:"i1", id:"r2", error:{code:"permission_denied", message:"..."} }
-// Host -> plugin notifications
-{ v:1, instanceId:"i1", event:"sessions.snapshot", data:{streamId:"s1", revision:2, sessions:[]} }
-{ v:1, instanceId:"i1", event:"host.context", data:{language:"zh-Hant", theme:"dark", reducedMotion:false, visible:false, scopeLabel:"Selected project", connection:"disconnected"} }
-```
-
-The subscribe reply is the initial snapshot. Notifications for that subscription are delivered after that reply on the same port. Repeating subscribe returns the current snapshot of the same logical subscription. Each snapshot is a complete replacement, not a patch. Revision is a monotonically increasing JSON-safe integer within `streamId`; ignore equal/older revisions. The host coalesces pending snapshots to the newest complete one. A new stream is initialized through a new instance; never merge streams. After a disconnect, render retained rows as stale immediately, even if their last row freshness was fresh. Connection restoration requires a new authoritative snapshot before displaying live status. There is no replay/history promise.
-
-## Session projection
+`sessions.read` grants only this projection:
 
 ```json
 {
-  "ref": "opaque-instance-scoped-reference",
+  "ref": "opaque-instance-reference",
   "title": "Review changes",
-  "project": { "ref": "opaque-project-reference", "label": "Example project" },
+  "project": { "ref": "opaque-project-reference", "label": "Example" },
   "workState": "working",
   "freshness": "fresh"
 }
 ```
 
-`project` may be null. `workState` is one of `ready`, `working`, `holding`, `waiting_you`, `waiting_session`, `unknown`, `milestone_complete`, `work_complete`. `freshness` is `fresh`, `stale` or `unknown`. Empty snapshots mean no visible Sessions, not an error. Refs are opaque and meaningful only in the current instance; they are not persistent storage keys. This projection excludes transcripts, prompts, filesystem paths, process IDs, credentials and raw provider logs. Titles and labels are untrusted text and must not become HTML.
+`project` may be null. States are `ready`, `working`, `holding`, `waiting_you`,
+`waiting_session`, `unknown`, `milestone_complete`, `work_complete`. Freshness is
+`fresh`, `stale`, `unknown`. The host generates new opaque references per opening;
+it does not expose raw Session IDs, machine IDs, filesystem project keys,
+transcripts, prompts, tokens, native bridges or a generic API client. Titles may
+contain personal information and are explicitly part of the person's grant.
+Treat every title and label as text, never HTML. Do not infer progress percentages,
+dependency edges or accepted completion from these states.
 
-Plugins may group and animate these facts; they may not infer precise progress, task dependency edges or completed acceptance from `working`/`work_complete`. Unknown state and stale data remain explicit. Opening a Session revalidates host identity; it is not authorized solely by a stale visual.
+`sessions.open` is optional and permits navigation only. It cannot send messages,
+run commands, create Sessions or dispatch work. The host revalidates the exact
+Session execution before accepting navigation, closes its modal/history step and
+then calls the existing navigation owner. A removed Session or old ref is refused.
+There are no automatic retries. A timeout has an uncertain outcome.
 
-Errors use codes `invalid_request`, `method_not_supported`, `permission_denied`, `scope_changed`, `session_unavailable`, `host_unavailable`, `busy`, `protocol_mismatch`. A refusal is not execution. Error messages are explanatory text, not parsable routing instructions. No automatic retry of navigation. Port closure fails all pending calls locally as `host_unavailable`; explicit reopen establishes a new instance. Request timeout is an uncertain outcome, not proof navigation did not happen.
-
-## Author-facing SDK contract
-
-An SDK may hide the port, but must preserve these wire semantics. The author's only required concepts are:
+## SDK and wire protocol
 
 ```js
 const view = await connectViewPlugin();
+view.onContext(context => updatePresentation(context));
 const initial = await view.sessions.subscribe(snapshot => render(snapshot));
 render(initial);
-view.onContext(context => updatePresentation(context));
-await view.sessions.open(selected.ref); // a real, explicit click
+// In an explicit click handler:
+await view.sessions.open(selected.ref);
+// Or close without navigation:
 await view.close();
 ```
 
-The snapshot callback receives subsequent snapshots, never the initial reply; this avoids a hidden double-initial-render contract. `onContext(handler)` synchronously calls the handler with the latest bootstrap/context value when registered, then delivers subsequent context updates, and returns an unsubscribe function. `dispose()` closes listeners/port and fails pending requests. A demo/mock adapter has the same methods, data shape and disposal behavior, is clearly labelled, and is supplied outside the scene. Scene code must not reach into the host React store or use a homemade authenticated fetch fallback. This specification does not claim an SDK implementation is already shipped.
+`subscribe` returns the initial complete snapshot. Its callback receives only
+later complete snapshots. There is one logical subscription per instance;
+repeating subscribe returns the current snapshot. A snapshot is
+`{streamId, revision, sessions}`. Revision increases within a stream; discard equal
+or older snapshots and replace the complete list. Pending updates coalesce to
+the newest list. Reopening creates a new stream and grants no history/replay.
 
-## Compatibility, bounds and readiness gates
+`onContext(fn)` synchronously calls `fn` with the latest context and returns an
+unsubscribe function. Context is `{language, theme, reducedMotion, visible,
+scopeLabel, connection}`, with theme `dark|light` and connection
+`connected|disconnected`. Stop motion when invisible or reduced motion is on.
+Retained disconnected data is stale immediately; reconnect needs a new snapshot.
+Empty lists are valid. Every visual needs a readable list/fallback and text states.
+The supplied Galaxy intentionally retains its dark astronomical palette; List
+honors both host themes. Both honor language and reduced motion.
 
-`manifestVersion:1` and `hostApi:1` are exact major versions; package `version` is independent SemVer. Missing required capabilities or unsupported major versions refuse activation with the previous version intact. Additive negotiated features can be introduced without making old packages depend on them; changed field meaning requires a new major. Display a compatibility reason before activation.
+The SDK registers its window listener before sending this bootstrap hello:
 
-Installation bytes, expanded bytes, file counts, message size, projected Session count, in-flight requests and update frequency all need named limits in `internal/domain/capacity` before host implementation ships. No value is invented or enforced by this design document. A host cannot pass conformance without published concrete limits and tests for their refusals; authors cannot be promised unlimited scenes or messages. Capacity changes require documented compatible degradation, never silent partial snapshots. If a scope cannot fit the supported snapshot bound, refuse with an explicit scope-narrowing action rather than omit rows invisibly.
+```js
+{type:"clawdline.plugin.hello", protocolVersion:1}
+```
 
-Public release acceptance requires evidence for all of the following:
+The host checks `event.source === activeIframe.contentWindow`, once, then transfers
+one MessagePort with `{type:"clawdline.plugin.connect", protocolVersion:1,
+instanceId, context, limits:{pending,requestMilliseconds}}`. Opaque frames require
+bootstrap target origin `*`; no Session snapshot or bearer credential is in that
+message. The SDK accepts only its parent and calls `port.start()`. All later
+requests, replies and notifications use that port:
 
-1. Install two independently built packages, switch between them, replace one and roll it back while core source, built console, daemon version and unrelated Sessions remain unchanged. No app reinstall, build or daemon restart occurs during these operations.
-2. Reject malformed manifests, unsupported versions, missing entry, traversal, symlinks, duplicate files, oversized packages/messages and capability escalation; previous package/grants remain unchanged.
-3. Test actual opaque-frame bootstrap, forged messages, stale ports/refs, revocation/scope switches, hostile label text and forbidden resource access, including a direct top-level resource visit. No generic daemon authority or private origin leaks. Record remaining isolation limitations.
-4. Test initial/event ordering, coalescing, disconnect/stale, new streams, empty scopes, refusal and navigation with current identity. No duplicate operation on timeout/retry.
-5. Check status entry/full view/close/back/focus on desktop and phone, hidden-render suspension, reduced motion, WebGL loss and plugin failure recovery without breaking the host. The host's close button works independently of plugin code; this alone does not establish process isolation.
-6. Run the same unchanged plugin digest on local/native and production Cloud, with actual resource loading and authorization tests on both. A local demo does not prove Cloud compatibility.
+```js
+{v:1, instanceId:"i", id:"r1", method:"sessions.subscribe", params:{}}
+{v:1, instanceId:"i", id:"r1", result:{streamId:"s", revision:1, sessions:[]}}
+{v:1, instanceId:"i", id:"r2", method:"sessions.open", params:{ref:"opaque"}}
+{v:1, instanceId:"i", id:"r2", result:{opened:true}}
+{v:1, instanceId:"i", id:"r3", method:"view.close", params:{}}
+{v:1, instanceId:"i", id:"r3", result:{closed:true}}
+{v:1, instanceId:"i", id:"r4", error:{code:"permission_denied", message:"..."}}
+{v:1, instanceId:"i", event:"sessions.snapshot", data:{streamId:"s",revision:2,sessions:[]}}
+{v:1, instanceId:"i", event:"host.context", data:{/* context */}}
+```
 
-Until these pass, describe the package as a prototype against this contract, not an installable community plugin system.
+`opened:true` acknowledges a validated navigation accepted by the host, before
+closing the frame; it does not prove content loaded or the person observed it.
+`closed:true` similarly acknowledges closing. The subscribe reply precedes its
+subsequent snapshot events on the same port. Unknown methods/extra request fields
+are refused. A different instance is ignored; old ports are closed on disposal.
+`dispose()` closes SDK listeners/port and rejects pending calls. Package code
+should handle Escape (close its own detail panel first, then call `view.close()`).
+The independent host Close button works even if package logic fails.
 
-## Browser references
+Errors include `invalid_request`, `method_not_supported`, `permission_denied`,
+`scope_changed`, `session_unavailable`, `host_unavailable`, `busy`,
+`protocol_mismatch`, `too_many_sessions`, `message_too_large`; SDK deadlines add
+`request_timeout`. Compare codes, not message prose.
 
-The [HTML iframe standard](https://html.spec.whatwg.org/multipage/iframe-embed-object.html) defines sandbox flags and opaque origin behavior. The [HTML messaging standard](https://html.spec.whatwg.org/multipage/web-messaging.html) defines window messaging and transferred ports. These primitives inform the proposed boundary; they do not verify Clawdline's unimplemented host.
+## Isolation and limits
+
+Package HTML runs only in an opaque `srcdoc` iframe with `sandbox="allow-scripts"`.
+The host never serves extracted author HTML on its authenticated origin. Public
+ZIP URLs are archive downloads. It grants no same-origin, forms, popups, top-level
+navigation, downloads, camera, microphone or geolocation. Host-inserted CSP blocks
+fetch/WebSocket, workers, external scripts/assets, eval, nested frames and objects;
+inline scripts/styles and data/blob media remain available. No API credentials
+cross the bridge.
+
+**Install trusted authors.** A browser sandbox is not complete hostile-process,
+CPU/GPU or exfiltration isolation. In particular, a frame may navigate itself to
+another origin and disclose text it was explicitly allowed to read. This MVP is
+an experimental scoped extension surface, not a claim that arbitrary malicious
+third-party code is safe. Package code can also consume resources; Close is not
+a guarantee against a hung shared renderer process.
+
+Concrete bounds are registered in `internal/domain/capacity/register_view_plugins.go`
+and matched against the browser and SDK by the parity guard:
+
+| Resource | Limit | At limit |
+| --- | ---: | --- |
+| ZIP bytes | 262144 | Refuse import |
+| Expanded bytes | 524288 | Refuse import |
+| Manifest bytes | 8192 | Refuse import |
+| Files | Exactly two | Refuse import |
+| Installed packages | 8, each active + one previous | Remove one first |
+| Snapshot bytes | 1048576 | Stop view, narrow scope |
+| Sessions per snapshot | 256 | Narrow scope, no silently omitted rows |
+| Pending requests | 16 | SDK refuses; host stops flooding frame |
+| Handshake/request/read deadline | 10000 ms | Refuse/unavailable/uncertain timeout |
+| Requests per frame per second | 32 | Stop flooding frame |
+| Manifest/request/display string | 256 Unicode characters | Refuse, no silent truncation |
+
+The daemon reports these browser-local capacities as unmeasured, not zero.
+No global UI badges, remote update feed, publisher signing, cross-device package
+sync, plugin database or native capabilities are included.
+
+## Verification and release boundary
+
+`runtime.test.mjs` exercises actual ZIP parsing, scoped references, capability
+refusal, event ordering/coalescing, disconnection, flood isolation and Cloud
+revocation during a delayed read. `tools/view-plugins.e2e.mjs` bundles the production
+manager/frame/registry and supplied packages with synthetic Session sources. It
+exercises import, two distinct views, Project filtering, Back/focus, hostile label
+text, revocation, persisted packages without persisted grants, replacement,
+rollback, failed import, disable and remove. It accepts an existing Playwright
+module path; it installs no browser dependencies.
+
+These tests establish the isolated fixture behavior. Local daemon-console startup,
+production Cloud startup/current authorization, unchanged package digests, and any
+native wrapper must be verified at their actual destination before claiming that
+destination is ready. A successful source check or bundle is not deployment proof.
+No public Release acceptance is implied by an experimental Cloud/dev delivery.
