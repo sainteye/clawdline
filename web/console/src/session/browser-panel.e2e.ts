@@ -50,7 +50,10 @@ let noTab = false
 let opened: string[] = []
 let openLayouts: string[] = []
 let reloads = 0
-let hostVersion = "0.3.0"
+let hostVersion = "0.5.0"
+let navigated: string[] = []
+let navigationAvailable = true
+let pageURL = "https://www.console.example.com/sign-in"
 
 const row = {
   id: SESSION, label: "Browser Session", backend: "owned", state: "working", work_state: "working",
@@ -86,7 +89,7 @@ function fixture(): Server {
     if (path === "/__fixture/no-tab") { noTab = true; opened = []; person = false; return json(res, 200, {}) }
     if (req.method === "POST" && path === "/v1/browser/open") { const b = await body(req); if (b.conversation !== CONVERSATION) return json(res, 409, { error: "session_unresolved", detail: "A tab can be opened only for a live Session." }); opened.push(b.url); openLayouts.push(b.layout ?? ""); if (b.layout === "mobile") layout = "mobile"; noTab = false; person = true; return json(res, 200, { ok: true, value: { tab: TAB } }) }
     if (path === "/__fixture/host-version") { hostVersion = url.searchParams.get("v") || "0.3.0"; return json(res, 200, {}) }
-    if (path === "/__fixture/reset") { noTab = false; opened = []; openLayouts = []; reloads = 0; hostVersion = "0.3.0"; headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; fieldValue = ""; mangleNext = false; replaced = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { noTab = false; opened = []; navigated = []; navigationAvailable = true; pageURL = "https://www.console.example.com/sign-in"; openLayouts = []; reloads = 0; hostVersion = "0.5.0"; headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; fieldValue = ""; mangleNext = false; replaced = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
     if (path === "/__fixture/hold-control") { holdControl = true; return json(res, 200, {}) }
     if (path === "/__fixture/admit") { holdControl = false; heldControl?.(); heldControl = null; return json(res, 200, {}) }
@@ -96,7 +99,7 @@ function fixture(): Server {
     if (path === "/__fixture/hold-status") { holdNextStatus = true; return json(res, 200, {}) }
     if (path === "/__fixture/release-status") { heldStatus?.(); heldStatus = null; return json(res, 200, {}) }
     if (path === "/__fixture/mangle-next") { mangleNext = true; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { opened, openLayouts, reloads, person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
+    if (path === "/__fixture/log") return json(res, 200, { opened, navigated, openLayouts, reloads, person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
     if (path === "/v1/browser/activity") return json(res, 200, { ok: true, rows: [
       { at: activityAt, op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
       { at: activityAt - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
@@ -115,20 +118,21 @@ function fixture(): Server {
       return
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "transcript", id: SESSION, signature: "fixture" })
+    if (path === "/__fixture/navigation") { navigationAvailable = url.searchParams.get("on") !== "false"; return json(res, 200, {}) }
     if (path === "/v1/browser/status") {
       // Without a tab the stand-in answers as a machine whose agents try
       // native tools first: the person may still open a tab in Chrome.
-      const value = { ok: true, mode: noTab ? "native" : channelMode, enabled: !noTab, person_open: channelMode, notify_new_site: true,
+      const value = { ok: true, ...(navigationAvailable ? {person_navigate:true} : {}), mode: noTab ? "native" : channelMode, enabled: !noTab, person_open: channelMode, notify_new_site: true,
         status: { host: { version: hostVersion }, connected: !noTab, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 || noTab ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } }
       if (holdNextStatus) { holdNextStatus = false; await new Promise<void>(resolve => { heldStatus = resolve }) }
       return json(res, 200, value)
     }
     if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); if (b.browser_mode!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); if (holdControl && b.person) await new Promise<void>(resolve => { heldControl = resolve }); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
-    if (path === "/v1/browser/screenshot") { if (url.searchParams.get("browser_mode")!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); shotModes.push(channelMode);frames++; return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: layout === "mobile" ? 390 : 1280, height: 720, layout, editables: layout === "mobile" ? mobileFields : desktopFields, data: (layout === "mobile" ? mobilePage : page).toString("base64") } }) }
+    if (path === "/v1/browser/screenshot") { if (url.searchParams.get("browser_mode")!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); shotModes.push(channelMode);frames++; return json(res, 200, { ok: true, value: { tab: TAB, url: pageURL, title: "Sign in", width: layout === "mobile" ? 390 : 1280, height: 720, layout, editables: layout === "mobile" ? mobileFields : desktopFields, data: (layout === "mobile" ? mobilePage : page).toString("base64") } }) }
     if (req.method === "POST" && path === "/v1/browser/person") {
       const b = await body(req)
       if (b.browser_mode!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"})
-      if (b.op === "screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: "https://www.console.example.com/sign-in", title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
+      if (b.op === "screenshot") return json(res, 200, { ok: true, value: { tab: TAB, url: pageURL, title: "Sign in", width: 1280, height: 720, data: page.toString("base64") } })
       if (!person) return json(res, 409, { error: "browser_take_over_first", detail: "Take over the tab before typing or clicking in it." })
       if (b.op === "click") clicks.push({ x: b.args.x, y: b.args.y })
       if (b.op === "reload") reloads++
@@ -141,6 +145,7 @@ function fixture(): Server {
       }
       if (b.op === "field") return json(res, 200, { ok: true, value: { tab: TAB, kind: "text", value: fieldValue, start: fieldValue.length, end: fieldValue.length } })
       if (b.op === "key") keys.push(b.args.key)
+      if (b.op === "navigate") { navigated.push(b.args.url); pageURL = b.args.url }
       if (b.op === "viewport") layout = b.args.mode
       const field = b.op === "click" ? (layout === "mobile" ? mobileFields : desktopFields).find(f=>b.args.x>=f.x && b.args.x<=f.x+f.width && b.args.y>=f.y && b.args.y<=f.y+f.height) : null
       return json(res, 200, { ok: true, value: b.op === "click" ? {editable:field?.kind ?? null} : b.op === "key" ? {editable:"text"} : {} })
@@ -437,10 +442,44 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       }
       const afterGestures=await(await fetch(origin+"/__fixture/log")).json()
       assert.equal(afterGestures.clicks.length,beforeClicks);assert.equal(afterGestures.person,false,"gestures never take over or click")
-      await run(`(()=>{const s=document.querySelector('.browser-mode select');s.value='mobile';s.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+      await run(`document.querySelector('.browser-mode [aria-haspopup="listbox"]').click()`)
+      await until(`!!document.querySelector('.browser-mode [role="listbox"]')`)
+      await shot("layout-menu")
+      await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape"},id)
+      await until(`!document.querySelector('.browser-mode [role="listbox"]')`)
+      assert.equal(await run(`document.activeElement===document.querySelector('.browser-mode [aria-haspopup="listbox"]')`),true)
+      await run(`document.querySelector('.browser-mode [aria-haspopup="listbox"]').click()`)
+      await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"ArrowDown",code:"ArrowDown"},id)
+      await until(`document.activeElement?.getAttribute('role')==='option'`)
+      await browser.send("Input.dispatchKeyEvent",{type:"keyDown",key:"Enter",code:"Enter",windowsVirtualKeyCode:13,nativeVirtualKeyCode:13,text:"\r"},id)
+      await browser.send("Input.dispatchKeyEvent",{type:"keyUp",key:"Enter",code:"Enter",windowsVirtualKeyCode:13,nativeVirtualKeyCode:13},id)
       await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.layout==='mobile'&&log.person)`)
-      await until(`document.querySelector('.browser-mode select')?.value==='mobile'`)
+      await until(`document.querySelector('.browser-mode [aria-haspopup="listbox"]')?.textContent.includes(${JSON.stringify(ui==="en"?"Mobile site":"手機版")})`)
       await shot("mobile-site-redesign")
+      await until(`!!document.querySelector('.browser-address-input')`)
+      await run(`(()=>{const i=document.querySelector('.browser-address-input');i.focus();const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(i,'javascript:alert(1)');i.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+      await run(`document.querySelector('.browser-address-input').form.requestSubmit()`)
+      await until(`document.querySelector('.browser-address-input')?.getAttribute('aria-invalid')==='true'`)
+      assert.equal((await (await fetch(origin+'/__fixture/log')).json()).navigated.length,0,"invalid schemes never leave the address bar")
+      await run(`(()=>{const i=document.querySelector('.browser-address-input');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(i,'example.com/next');i.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+      await new Promise(resolve=>setTimeout(resolve,1200))
+      assert.equal(await run(`document.querySelector('.browser-address-input').value`),'example.com/next',"screenshot polling preserves the address draft")
+      await run(`document.querySelector('.browser-address-input').form.requestSubmit()`)
+      await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.navigated[0]==='https://example.com/next'&&log.person)`)
+      await until(`document.querySelector('.browser-address-input')?.value==='https://example.com/next'`)
+      await shot("address-navigation")
+      if (name==="desktop" && ui==="zh-Hant") {
+        await fetch(origin+'/__fixture/navigation?on=false')
+        await until(`!document.querySelector('.browser-address-input')`)
+        assert.equal(await run(`document.querySelector('.browser-host').textContent`),'example.com',"older machines keep their working read-only address")
+        await fetch(origin+'/__fixture/navigation?on=true')
+        await until(`!!document.querySelector('.browser-address-input')`)
+        await fetch(origin+'/__fixture/host-version?v=0.3.0')
+        await until(`!document.querySelector('.browser-address-input')`)
+        assert.equal(await run(`document.querySelector('.browser-host').textContent`),'example.com',"an older loaded extension also keeps the address read-only")
+        await fetch(origin+'/__fixture/host-version?v=0.5.0')
+        await until(`!!document.querySelector('.browser-address-input')`)
+      }
       assert.ok(await run(`document.documentElement.scrollWidth<=innerWidth`),"zoom stays inside the picture")
       if (name==="phone" && width===390 && ui==="zh-Hant") {
         assert.equal(await run(`document.getElementById('browser-tools').hidden`),true,"the keys need no menu")
@@ -635,7 +674,7 @@ for (const [width, ui] of [[390, "zh-Hant"], [360, "en"], [1280, "en"]] as const
       assert.deepEqual(log.openLayouts, [width < 520 ? "mobile" : ""], "a phone opens in the phone layout")
       assert.equal(log.person, true)
       await until(`document.querySelector('.browser-who')?.dataset.person === 'true'`)
-      await until(`document.querySelector('.browser-mode select')?.value === ${JSON.stringify(width < 520 ? "mobile" : "desktop")}`)
+      await until(`document.querySelector('.browser-mode [aria-haspopup="listbox"]')?.textContent.includes(${JSON.stringify(width < 520 ? (ui === "en" ? "Mobile site" : "手機版") : (ui === "en" ? "Desktop site" : "桌機版"))})`)
       // Enter sends the draft; Shift+Enter only starts a new line.
       await run(`document.getElementById('browser-native-keyboard').focus()`)
       await browser.send("Input.insertText", { text: "hi" }, id)

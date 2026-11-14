@@ -3,6 +3,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { followsRelay } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { ChoiceMenu } from "../ui-language/ChoiceMenu.js"
 import { browserCall as call } from "./browser-call.js"
 import { openBrowserSetup } from "./BrowserSetup.js"
 import { BrowserViewport } from "./BrowserViewport.js"
@@ -32,7 +33,7 @@ import "./browser-panel.css"
  */
 
 type TabInfo = { browser_mode?: string; tab: number; conversation: string; person: boolean; current: boolean }
-type Status = { mode?: string; enabled: boolean; person_open?: string; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[]; host?: { version?: string } } }
+type Status = { mode?: string; enabled: boolean; person_open?: string; person_navigate?: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[]; host?: { version?: string } } }
 type Activity = { at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; thumb: string }
 
 const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
@@ -96,6 +97,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   // A tab the person opened from a phone should show the phone layout; an
   // older extension ignores the request at open, so it is switched here.
   const wantPhone = useRef(false)
+  const [shotTick, setShotTick] = useState(0)
   const closeRef = useRef<HTMLButtonElement>(null)
   const nativeKeyboard = useRef<BrowserKeyboardHandle>(null)
   const controlRevision = useRef(0)
@@ -130,7 +132,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
 
   useEffect(() => {
     setReminded(false)
-    setShotRecord(null)
+    setShotRecord((record) => record?.scope === scopeKey ? record : null)
     setShotError(null)
     if (!open || !tabID) return
     let alive = true
@@ -148,7 +150,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     read()
     const timer = window.setInterval(read, SHOT_MS)
     return () => { alive = false; window.clearInterval(timer) }
-  }, [open, relay, tabID, browserMode, scopeKey])
+  }, [open, relay, tabID, browserMode, scopeKey, shotTick])
 
   // What the agent did, with the picture of the page after each action.
   useEffect(() => {
@@ -180,6 +182,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     setActError(null)
     try {
       const result = await call<{ value?: { editable?: string | null } }>("POST", "/v1/browser/person", { op, tab: tabID, args, ...(browserMode ? {browser_mode:browserMode} : {}) })
+      if (scope.current === scopeKey && (op === "navigate" || op === "viewport" || op === "reload")) setShotTick((n) => n + 1)
       return scope.current === scopeKey ? { ok: true, editable: result.value?.editable } : { ok: false }
     } catch (e) {
       if (scope.current === scopeKey && op !== "type") setActError(e)
@@ -236,6 +239,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const ensureControl = () => person ? Promise.resolve(true) : control(true)
   const tap = async (x: number, y: number): Promise<InputReceipt> => await ensureControl() ? act("click", { x, y }) : { ok: false }
   const changeLayout = async (mode: string) => {
+    if (mode === shot?.layout) return
     nativeKeyboard.current?.close()
     if (await ensureControl()) await act("viewport", { mode })
   }
@@ -318,15 +322,16 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         {shot && !otherDebugger && (
           <BrowserViewport key={scopeKey + ":" + (shot.layout || "desktop")} shot={shot} canClick={!busy && !controlBusy} person={person} onTap={tap}
             onKeyboard={(kind, ready) => nativeKeyboard.current?.open(kind, ready)} onFocusKeyboard={() => nativeKeyboard.current?.open()} onCloseKeyboard={() => nativeKeyboard.current?.close()}
-            layoutControl={<label className="browser-mode"><span className="sr-only">{nextWord("browserPanelLayout")}</span>
-              <select aria-label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy} onChange={e => void changeLayout(e.target.value)}>
-                <option value="mobile">{nextWord("browserPanelMobile")}</option><option value="desktop">{nextWord("browserPanelDesktop")}</option>
-              </select></label>}
+            layoutControl={<div className="browser-mode" title={nextWord("browserPanelLayoutReload")}>
+              <ChoiceMenu label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy}
+                options={[{value:"mobile", label:nextWord("browserPanelMobile")}, {value:"desktop", label:nextWord("browserPanelDesktop")}]} onPick={(value) => void changeLayout(value)} />
+            </div>}
             reloadControl={<button type="button" className="chip browser-reload" data-outdated={canReload ? undefined : "true"} disabled={busy || controlBusy}
               aria-label={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")} title={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")}
               onClick={() => canReload ? void reloadPage() : openBrowserSetup(browserMode === "user_chrome" ? "user_chrome" : "isolated")}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.46-3.54" /><path d="M13 2.5v3h-3" /></svg>
             </button>} />
+
         )}
 
       </div>
@@ -340,13 +345,14 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
           shown (a picture about once a second), and the way out. */}
       <div className="browser-bar">
         <h2 id="browser-title" className="sr-only">{nextWord("browserPanelTitle")}</h2>
-        <div className="browser-url" title={shot?.url || ""}>
+        {person && status?.person_navigate && extensionCurrent(status.status.host?.version, "0.5.0") ? <BrowserAddress key={scopeKey} url={shot?.url || ""} person={person} busy={busy || controlBusy}
+          onNavigate={(url) => act("navigate", {url})} /> : <div className="browser-url" title={shot?.url || ""}>
           {address(shot?.url).secure
             ? <svg className="browser-lock" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" /><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" /></svg>
             : <svg className="browser-lock" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.7 1.6 2.5 3.4 2.5 5.5S9.7 11.9 8 13.5M8 2.5C6.3 4.1 5.5 5.9 5.5 8s.8 3.9 2.5 5.5" /></svg>}
           <span className="browser-host">{address(shot?.url).host || nextWord("browserPanelTitle")}</span>
           <span className="browser-path">{address(shot?.url).rest}</span>
-        </div>
+        </div>}
         {ready && <span className="browser-live" title={nextWord("browserPanelSampled")}><i aria-hidden="true" />{nextWord("browserPanelSampled")}</span>}
         <button className="browser-close" type="button" ref={closeRef} aria-label={L.strings.webClose} title={L.strings.webClose} onClick={() => onClose(true)}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
@@ -441,6 +447,45 @@ function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: 
       <p className="browser-card-hint">{nextWord("browserOpenNote", { assistant })}</p>
     </div>
   )
+}
+
+function BrowserAddress({ url, person, busy, onNavigate }: {
+  url: string; person: boolean; busy: boolean; onNavigate: (url: string) => Promise<InputReceipt>
+}) {
+  const [draft, setDraft] = useState(url)
+  const [error, setError] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  const currentDraft = useRef(draft)
+  currentDraft.current = draft
+  useEffect(() => {
+    if (!person || document.activeElement !== input.current) { setDraft(url); setError(false) }
+  }, [url, person])
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!person || busy) return
+    const target = webAddress(draft)
+    if (!target) { setError(true); input.current?.focus(); return }
+    const sent = draft
+    setError(false)
+    const result = await onNavigate(target)
+    if (result.ok && currentDraft.current === sent) { setDraft(target); input.current?.blur() }
+  }
+  return <div className="browser-address-wrap">
+    <form className="browser-url browser-url-form" onSubmit={(event) => void submit(event)} aria-busy={busy}>
+      <input ref={input} className="browser-address-input" type="text" inputMode="url" enterKeyHint="go"
+        aria-label={nextWord("browserOpenLabel")} aria-invalid={error || undefined} aria-describedby={error ? "browser-address-error" : undefined}
+        autoCapitalize="off" autoCorrect="off" spellCheck={false} value={draft}
+        onFocus={(event) => event.currentTarget.select()} onChange={(event) => { setDraft(event.target.value); setError(false) }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault()
+          if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDraft(url); setError(false); input.current?.blur() }
+        }} />
+      <button type="submit" className="browser-address-go" aria-label={nextWord("browserPanelGo")} disabled={busy || !draft.trim()}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+      </button>
+    </form>
+    {error && <span id="browser-address-error" className="browser-address-error" role="alert">{nextWord("browserOpenBadAddress")}</span>}
+  </div>
 }
 
 /**

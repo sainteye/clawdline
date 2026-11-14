@@ -229,9 +229,15 @@ type runtimeProvider struct {
 	// refuseResume answers a resuming open as a native side that cannot load
 	// the session (its transcript moved).
 	refuseResume bool
+	// onCapabilities runs inside every capability read, the slow step
+	// before a turn starts.
+	onCapabilities func()
 }
 
 func (p *runtimeProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
+	if p.onCapabilities != nil {
+		p.onCapabilities()
+	}
 	return pa.Capabilities{Key: b.Key, Project: b.Project, Agent: b.Agent, CLIVersion: "scripted", AdapterVersion: "scripted", Evidence: "scripted-only", ReadOnlyEnforced: true, NativeMemory: pa.NativeMemoryDisabled, NativeMemoryVerified: true, Resume: true}, p.capsErr
 }
 func (p *runtimeProvider) Open(_ context.Context, q OpenRequest, sink func(context.Context, ProtocolEvent) error) (ProviderSession, error) {
@@ -1116,5 +1122,55 @@ func TestRuntimeApproveAnswersEachRequestOnce(t *testing.T) {
 		}
 	default:
 		t.Fatal("approve policy did not answer")
+	}
+}
+
+// On 2026-11-15 a phone's message failed with pa_stale_version before it
+// ran: the phone recorded its read position while the turn was preparing,
+// which moved the Bot's version under the start. A write that changes nothing
+// the turn depends on no longer fails the start.
+func TestRuntimeStartSurvivesAnUnrelatedBotWrite(t *testing.T) {
+	f := newRuntimeFixture(t)
+	var calls atomic.Int64
+	f.provider.onCapabilities = func() {
+		// The first read is admission; the second is the start's preparation.
+		if calls.Add(1) != 2 {
+			return
+		}
+		f.store.mu.Lock()
+		f.store.bot.Version++
+		f.store.mu.Unlock()
+	}
+	a, err := f.submit(t, "read while preparing", "read-while-preparing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := receivePrompt(t, f.provider); q.Turn.ID != a.ResourceID {
+		t.Fatal("a different turn started")
+	}
+	awaitTurn(t, f, a.ResourceID, pa.TurnRunning)
+}
+
+// A write that changes what the turn depends on still refuses the start.
+func TestRuntimeStartRefusesChangedInstructions(t *testing.T) {
+	f := newRuntimeFixture(t)
+	var calls atomic.Int64
+	f.provider.onCapabilities = func() {
+		// The first read is admission; the second is the start's preparation.
+		if calls.Add(1) != 2 {
+			return
+		}
+		f.store.mu.Lock()
+		f.store.bot.Instructions = pa.InstructionSnapshot{Revision: 2, Text: "changed"}
+		f.store.bot.Version++
+		f.store.mu.Unlock()
+	}
+	a, err := f.submit(t, "instructions changed while preparing", "instructions-changed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitTurn(t, f, a.ResourceID, pa.TurnFailed)
+	if got, _ := f.store.Turn(context.Background(), f.key, a.ResourceID); got.Failure == nil || got.Failure.Code != pa.StaleVersion {
+		t.Fatalf("changed instructions started a turn: %+v", got.Failure)
 	}
 }

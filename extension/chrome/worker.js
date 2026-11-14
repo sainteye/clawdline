@@ -28,7 +28,7 @@ function setState(next) {
 // registered worker after the folder's manifest changes (2026-11-15), so the
 // hello reports the code's version, not the manifest's. A test keeps it equal
 // to manifest.json.
-const WORKER_VERSION = "0.4.2"
+const WORKER_VERSION = "0.5.0"
 
 let loadedFolderKind = "revision"
 
@@ -145,7 +145,10 @@ async function applyLayout(tab, mode) {
   const mobile = mode === "mobile"
   if (mobile) {
     const userAgent = await evaluate(tab, () => navigator.userAgent)
-    await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android" })
+    await cdp(tab, "Emulation.setUserAgentOverride", {
+      userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android",
+      userAgentMetadata: { platform: "Android", platformVersion: "13.0.0", architecture: "", model: "", mobile: true },
+    })
     await cdp(tab, "Emulation.setDeviceMetricsOverride", { width: 390, height: 720, deviceScaleFactor: 1, mobile: true })
   } else {
     await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: "" })
@@ -326,6 +329,17 @@ async function run(c) {
   }
   await ensureAttached(tab)
   switch (c.op) {
+    case "navigate": {
+      if (!c.person) throw new Error("navigation needs person control")
+      let url
+      try { url = new URL(a.url) } catch { throw new Error("use an http or https address") }
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("use an http or https address")
+      const loaded = waitForNavigation(tab)
+      await chrome.tabs.update(tab, { url: url.href })
+      await loaded
+      const current = await chrome.tabs.get(tab)
+      return { tab, url: current.url || url.href, value: { tab, url: current.url || url.href, title: current.title || "" } }
+    }
     case "viewport": {
       if (a.mode !== "mobile" && a.mode !== "desktop") throw new Error("use mobile or desktop")
       const changed = (layouts.get(tab) || "desktop") !== a.mode

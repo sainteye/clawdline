@@ -49,8 +49,6 @@
 .project-assistants .pa-message.pa-mine { background:#252527;border-radius:23px;padding:14px 18px;margin-left:auto;max-width:75%; }
 .project-assistants .pa-message p { font-size:16px;line-height:1.8; }
 .project-assistants .pa-message blockquote { margin:0 0 8px;padding:8px;border:1px solid #555;border-radius:8px;color:var(--pa-dim);font-size:12px; }
-.project-assistants .pa-quote { font-size:10px;padding:1px 7px;opacity:0;margin-top:5px; }
-.project-assistants .pa-message:hover .pa-quote,.project-assistants .pa-quote:focus-visible { opacity:1; }
 .project-assistants .pa-card { padding:15px 18px;border:1px solid var(--pa-line);border-radius:15px;background:var(--pa-card);margin:20px 0;overflow-wrap:anywhere; }
 .project-assistants .pa-card h3 { font-size:15px;margin:8px 0; }
 .project-assistants .pa-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:14px; }
@@ -128,7 +126,6 @@
   .project-assistants .pa-chat-scroll { padding:12px 20px 24px; }
   .project-assistants .pa-message p { font-size:15px;line-height:1.8; }
   .project-assistants .pa-message.pa-mine { max-width:85%;padding:12px 16px; }
-  .project-assistants .pa-quote { opacity:1; }
   .project-assistants .pa-chat-footer { padding:8px 16px max(16px,env(safe-area-inset-bottom)); }
   .project-assistants .pa-tabs { left:50%;transform:translateX(-50%);white-space:nowrap; }
   .project-assistants .pa-status-mobile { display:flex;flex-direction:column;position:absolute;inset:0;background:var(--pa-bg);padding-bottom:90px; }
@@ -275,8 +272,11 @@
 .project-assistants .pa-markdown th, .project-assistants .pa-markdown td { border:1px solid var(--pa-line); padding:4px 8px; text-align:left; }
 .project-assistants .pa-markdown blockquote { margin:0 0 .6em; padding-left:10px; border-left:3px solid var(--pa-line); color:var(--pa-dim); }
 .project-assistants .pa-markdown a { color:#e39567; }
-.project-assistants .pa-sending { opacity:.6; }
-.project-assistants .pa-sending small { display:block; margin-top:4px; font-size:11px; color:var(--pa-dim); text-align:right; }
+.project-assistants .pa-sending { opacity:.75; }
+.project-assistants .pa-sending small { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:6px; font-size:12px; color:var(--pa-dim); }
+.project-assistants .pa-send-spinner { width:12px; height:12px; border-radius:50%; border:2px solid color-mix(in srgb, currentColor 30%, transparent); border-top-color:currentColor; animation:pa-send-spin .8s linear infinite; }
+@keyframes pa-send-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .project-assistants .pa-send-spinner { animation:none; border-top-color:color-mix(in srgb, currentColor 30%, transparent); border-right-color:currentColor; } }
 .project-assistants .pa-form-body select { appearance:none; -webkit-appearance:none; min-height:44px; padding:0 40px 0 14px; border:1px solid var(--pa-line); border-radius:12px; background:color-mix(in srgb, var(--pa-line) 35%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a8' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center; color:inherit; font-size:15px; cursor:pointer; }
 .project-assistants .pa-field { display:flex; flex-direction:column; gap:8px; }
 .project-assistants .pa-agent-choices { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
@@ -316,3 +316,22 @@
 .project-assistants .pa-project-heading { display:flex; align-items:center; gap:6px; margin:0; padding:10px 4px 4px; font-size:13px; font-weight:600; color:var(--pa-dim); }
 .project-assistants .pa-project-heading span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .project-assistants .pa-project-heading small { margin-left:auto; font-weight:400; font-size:11px; }
+
+/* A tapped message offers its actions in a small menu beneath it. */
+.project-assistants .pa-message { cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.project-assistants .pa-message:focus-visible { outline:2px solid #e39567; outline-offset:4px; border-radius:14px; }
+.project-assistants .pa-message.pa-mine.pa-message-open { background:#303033; }
+.project-assistants .pa-message-actions { display:flex; gap:6px; margin-top:10px; white-space:normal; }
+.project-assistants .pa-mine .pa-message-actions { justify-content:flex-end; }
+.project-assistants .pa-message-actions button { min-height:40px; padding:0 16px; border-radius:20px; border:1px solid var(--pa-line); background:#1b1b1d; color:#fafafa; font-size:14px; cursor:pointer; }
+
+/* The create and settings forms read at phone size: labels 14px, notes 14px. */
+.project-assistants .pa-form-panel label,.project-assistants .pa-form-panel .pa-field>span,.project-assistants .pa-form-panel .pa-field-label { font-size:14px; }
+.project-assistants .pa-form-panel .pa-approval-detail { font-size:13px; line-height:1.5; }
+.project-assistants .pa-form-body>p,.project-assistants .pa-form-panel fieldset+p { font-size:14px; line-height:1.5; color:var(--pa-dim); }
+.project-assistants .pa-form-error { font-size:14px; }
+
+/* A Bot's reply is long, so its Reply stays visible, set a little apart from the text. */
+.project-assistants .pa-quote { display:inline-flex; align-items:center; gap:6px; min-height:36px; margin-top:16px; padding:0 12px; border-radius:18px; border:1px solid var(--pa-line); background:transparent; color:var(--pa-dim); font-size:13px; cursor:pointer; }
+.project-assistants .pa-quote:hover { color:#fafafa; }
+.project-assistants .pa-message:not(.pa-mine) { cursor:auto; }

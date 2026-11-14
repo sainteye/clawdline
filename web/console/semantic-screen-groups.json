@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12119,
+  "englishContentKeys": 12124,
   "riskKeys": 5263,
-  "nonRiskCount": 6856,
+  "nonRiskCount": 6861,
   "groups": [
     {
       "name": "acp / other",
@@ -3915,7 +3915,7 @@
     },
     {
       "name": "next / other",
-      "count": 1102,
+      "count": 1104,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4034,6 +4034,7 @@
         "next.browserPanelDraftHint",
         "next.browserPanelFieldNow",
         "next.browserPanelFit",
+        "next.browserPanelGo",
         "next.browserPanelHandBack",
         "next.browserPanelHandBackShort",
         "next.browserPanelImageAlt",
@@ -4042,6 +4043,7 @@
         "next.browserPanelKeyboard",
         "next.browserPanelKeys",
         "next.browserPanelLayout",
+        "next.browserPanelLayoutReload",
         "next.browserPanelLayoutTakeover",
         "next.browserPanelMenu",
         "next.browserPanelMismatchNow",
@@ -5596,7 +5598,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 132,
+      "count": 135,
       "sources": [
         null
       ],
@@ -5617,6 +5619,8 @@
         "projectAssistants.close",
         "projectAssistants.collapse",
         "projectAssistants.compose",
+        "projectAssistants.copiedMessage",
+        "projectAssistants.copyMessage",
         "projectAssistants.create",
         "projectAssistants.createHint",
         "projectAssistants.createSubmit",
@@ -5650,6 +5654,7 @@
         "projectAssistants.memory_disabled",
         "projectAssistants.memory_isolated",
         "projectAssistants.memory_unknown",
+        "projectAssistants.messageActions",
         "projectAssistants.more",
         "projectAssistants.moreActions",
         "projectAssistants.name",
