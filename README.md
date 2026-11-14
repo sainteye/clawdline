@@ -104,6 +104,8 @@ The short URL points to a reviewed verifier script and installs the latest stabl
 
 [User guide](docs/user/README.md) · [Agent guide](docs/agent-contract.md) · [Build from source](docs/user/install.md) · [Troubleshooting](docs/user/troubleshooting.md) · [Developer docs](docs/README.md) · [Local CodeGraph](docs/codegraph-integration.md) · [UI motion catalog](docs/ui-motion-catalog.md) · [Static HTML reports](docs/html-artifacts.md) · [API performance priorities](docs/performance/local-api-review-2026-11-08.md) · [Three API optimizations](docs/performance/api-round-two-2026-11-08.md)
 
+[View Plugin v1 specification](docs/plugins/view-plugin-v1.md) describes a proposed runtime extension contract; plugin installation is not implemented yet.
+
 ## License
 
 [MIT](LICENSE)

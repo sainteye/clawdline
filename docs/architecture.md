@@ -381,3 +381,9 @@ Cloud browsers expose browser, work, status and workflow settings. The standalon
 `settings.html` document and macOS settings window have been removed; the local
 browser console embeds the machine-authorized controls in its Settings tabs.
 Update deep links continue to open the status pane.
+
+### Proposed community view plugins
+
+[View Plugin v1](plugins/view-plugin-v1.md) specifies runtime packages, a bottom-status-bar
+entry, an isolated full-app surface and a scoped Session message contract. It is an implementation
+specification, not a shipped capability. The current compiled page registry is not a runtime loader.

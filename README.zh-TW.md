@@ -104,6 +104,8 @@ curl -fsSL https://clawdline.com/install.sh | sh
 
 使用指南目前只有英文版。
 
+[View Plugin v1 規格](docs/plugins/view-plugin-v1.md)說明規劃中的動態擴充契約；plugin 安裝功能尚未實作。
+
 ## 授權
 
 [MIT](LICENSE)

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Clawdline View Plugin v1 manifest",
+  "description": "Implementation specification, revision 1; a schema-valid manifest is not installation or runtime acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifestVersion", "id", "version", "hostApi", "name", "entry", "capabilities"],
+  "properties": {
+    "manifestVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$" },
+    "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$" },
+    "hostApi": { "const": 1 },
+    "name": {
+      "type": "object",
+      "required": ["en", "zh-Hant"],
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "properties": {
+        "en": { "type": "string", "minLength": 1 },
+        "zh-Hant": { "type": "string", "minLength": 1 }
+      }
+    },
+    "entry": { "type": "string", "pattern": "^(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.html$" },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["sessions.read", "sessions.open"] },
+      "contains": { "const": "sessions.read" }
+    }
+  }
+}
