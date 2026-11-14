@@ -13,7 +13,7 @@
   "controlTitle": { "message": "You stay in control" },
   "control1": { "message": "Every action is recorded in Clawdline, with text typed into password fields left out." },
   "control2": { "message": "Take over any tab from the Clawdline console or your phone; the agent cannot see or act on it until you hand it back." },
-  "control3": { "message": "Stop all browser use at once in Clawdline, Settings, Browser." },
+  "control3": { "message": "Stop all browser use at once in Clawdline, Settings, Chrome." },
   "privacyTitle": { "message": "Where data goes" },
   "privacy1": { "message": "Only to the Clawdline app on this computer, through Chrome's native messaging. The extension itself connects to no server." },
   "removeTitle": { "message": "To remove it" },

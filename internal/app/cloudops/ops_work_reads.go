@@ -180,6 +180,7 @@ func init() {
 		op{name: "chrome-tab-input"},
 		op{name: "chrome-tab-control"},
 		op{name: "chrome-tab-mute"},
+		op{name: "chrome-tab-open"},
 		// The browser setup guide: whether a Chromium is there, and starting
 		// Clawdline's own, so a phone can set up browser use without a terminal.
 		op{name: "chrome-setup", read: true},

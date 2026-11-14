@@ -1497,11 +1497,11 @@ The reason is required. Use `--from <live-session-conversation>` only when the e
 
 ## 9b. Use the browser
 
-Settings → Browser lists three browsers in priority order, each with its own **Select automatically** switch: agents' native tools, isolated test Chrome, and the person's usual Chrome. Read `clawdline browser status` before selecting. Native availability is determined by your actual tools, not by the daemon. Before any action executes, skip a clearly unavailable automatic choice and try the next enabled one. Never replay a click, input or destructive action in another browser after execution or an uncertain result.
+Settings → Chrome lists three browsers in priority order, each with its own **Select automatically** switch: agents' native tools, isolated test Chrome, and the person's usual Chrome. Read `clawdline browser status` before selecting. Native availability is determined by your actual tools, not by the daemon. Before any action executes, skip a clearly unavailable automatic choice and try the next enabled one. Never replay a click, input or destructive action in another browser after execution or an uncertain result.
 
 A switch controls automatic selection only. A person's explicit browser request authorizes that browser for **this Session**, without changing global switches. Use `--browser isolated|user_chrome --explicit` only for that actual request. Normal named selection without `--explicit` obeys the switch. Both Chrome profiles must have a loaded extension and connected native host first; prepared files alone do not count. Explicit selection never bypasses emergency stop, takeover, pending operations, or usual-Chrome installation consent.
 
-Each profile retains its own tabs and audit. Equal tab numbers in two profiles are different tabs. Viewer frames include the Session and mode. A chosen Session does not silently switch browsers after an action. New Sessions receive these rules when browser policy is configured; resumed launches retain their sealed instructions. Every Clawdline browser action is recorded, and the person may watch and take over from this machine or their phone.
+Each profile retains its own tabs and audit. Equal tab numbers in two profiles are different tabs. Viewer frames include the Session and mode. A chosen Session does not silently switch browsers after an action. New Sessions receive these rules when browser policy is configured; resumed launches retain their sealed instructions. Every Clawdline browser action is recorded, and the person may watch and take over from this machine or their phone. The person may also open a tab for your Session from the panel; it starts taken over by them, so `browser_person_controlling` means wait for handback.
 
 ```sh
 clawdline browser status
@@ -1525,7 +1525,7 @@ clawdline browser --help
   see the layout.
 - `browser_person_controlling`: the person has taken the tab over. Wait; do not retry in a loop.
 - `browser_stopped`: the person stopped the Clawdline browser channel. Do not retry.
-- `browser_setup_required` or `browser_extension_missing`: the selected Chrome is not ready. Expand its setup instructions in Settings → Browser. Do not invent installation success or silently substitute another browser for an explicit request.
+- `browser_setup_required` or `browser_extension_missing`: the selected Chrome is not ready. Ask the person to set it up from Settings → Chrome. Do not invent installation success or silently substitute another browser for an explicit request.
 - `browser_disabled`: this browser's automatic switch is off. Only the person's explicit request permits `--explicit` for this Session.
 - `browser_native_tools`: use your available native tools; this refusal did not execute a browser action.
 - `browser_session_busy` or `browser_tab_closing`: wait for the admitted operation; do not switch to replay it.

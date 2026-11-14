@@ -315,6 +315,7 @@ export type WriteRoute =
   | { op: "chrome-tab-input"; word: Carried<"chrome-tab-input"> }
   | { op: "chrome-tab-control"; word: Carried<"chrome-tab-control"> }
   | { op: "chrome-tab-mute"; word: Carried<"chrome-tab-mute"> }
+  | { op: "chrome-tab-open"; word: Carried<"chrome-tab-open"> }
   | { op: "chrome-settings"; word: Carried<"chrome-settings"> }
   | { op: "chrome-settings-update"; word: Carried<"chrome-settings-update"> }
   | { op: "chrome-stop"; word: Carried<"chrome-stop"> }
@@ -846,6 +847,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "browser" && a === "person" && segments.length === 2) return { op: "chrome-tab-input", word: "chrome-tab-input" }
   if (head === "browser" && a === "control" && segments.length === 2) return { op: "chrome-tab-control", word: "chrome-tab-control" }
   if (head === "browser" && a === "mute" && segments.length === 2) return { op: "chrome-tab-mute", word: "chrome-tab-mute" }
+  if (head === "browser" && a === "open" && segments.length === 2) return { op: "chrome-tab-open", word: "chrome-tab-open" }
   if (head === "browser" && a === "settings" && segments.length === 2) return { op: "chrome-settings-update", word: "chrome-settings-update" }
   if (head === "browser" && a === "stop" && segments.length === 2) return { op: "chrome-stop", word: "chrome-stop" }
   if (head === "browser" && a === "reminder" && segments.length === 2) return { op: "chrome-remind", word: "chrome-remind" }
@@ -1066,6 +1068,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "chrome-tab-input":
     case "chrome-tab-control":
     case "chrome-tab-mute":
+    case "chrome-tab-open":
     case "chrome-settings":
     case "chrome-settings-update":
     case "chrome-remind":
@@ -2185,6 +2188,7 @@ export class RelayWriter {
       case "chrome-tab-input":
       case "chrome-tab-control":
       case "chrome-tab-mute":
+      case "chrome-tab-open":
       case "chrome-remind":
     case "chrome-stop": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)

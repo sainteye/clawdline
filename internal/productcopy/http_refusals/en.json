@@ -1365,5 +1365,7 @@
   "http.291a0753f47a5a58": "The browser policy must list each browser once and give each one an automatic-selection switch.",
   "http.6fdaaffd00fdddc0": "Choose a valid browser policy without mixing ordered selection and legacy mode settings.",
   "http.41accd9f619d48df": "Name one Session or Chrome profile for this reading.",
-  "http.51774ccca1152d03": "Choose isolated or user_chrome for setup."
+  "http.51774ccca1152d03": "Choose isolated or user_chrome for setup.",
+  "http.8eeeba0800c89b1a": "This browser's extension setup is not confirmed. Set it up from Settings, Chrome.",
+  "http.0f180d14e5f39524": "Automatic selection is off for this browser. Use Settings, Chrome, or honor the person's explicit request for this Session after setup is complete."
 }

@@ -828,6 +828,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/browser/open",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/browser/screenshot",
       "guide": "connect"
     },

@@ -137,6 +137,9 @@ type AuditRow struct {
 	Password bool   `json:"password,omitempty"`
 	OK       bool   `json:"ok"`
 	Error    string `json:"error,omitempty"`
+	// Person marks a row the person caused from their own view (an open),
+	// not an agent's command.
+	Person bool `json:"person,omitempty"`
 }
 
 // NewSite is announced when a Session operates a site it has not operated
@@ -682,7 +685,7 @@ func (b *Bridge) RecentActivity(conversation string, limit int) []Activity {
 
 // Do runs one agent command and waits for the extension's answer.
 func (b *Bridge) Do(ctx context.Context, conversation, op string, args json.RawMessage) (json.RawMessage, error) {
-	return b.do(ctx, conversation, op, args, nil)
+	return b.do(ctx, conversation, op, args, nil, false)
 }
 
 // DoWithAdmission releases the selector fence after command admission, before
@@ -692,11 +695,27 @@ func (b *Bridge) DoWithAdmission(ctx context.Context, conversation, op string, a
 	var once sync.Once
 	unlock := func() { once.Do(release) }
 	defer unlock()
-	return b.do(ctx, conversation, op, args, unlock)
+	return b.do(ctx, conversation, op, args, unlock, false)
 }
 
-func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawMessage, admitted func()) (value json.RawMessage, err error) {
-	if !agentOps[op] || conversation == "" || len(args) > MaxArgBytes {
+// PersonOpenWithAdmission opens a new tab for a Session at the person's own
+// request. The tab belongs to the Session like one its agent opened, but it
+// starts taken over by the person, so the agent's commands to it wait until
+// the person hands it back. The stop, the machine switch and the audit apply
+// exactly as to an agent's open; the row is marked as the person's.
+func (b *Bridge) PersonOpenWithAdmission(ctx context.Context, conversation, address string, release func()) (json.RawMessage, error) {
+	var once sync.Once
+	unlock := func() { once.Do(release) }
+	defer unlock()
+	args, err := json.Marshal(map[string]string{"url": address})
+	if err != nil {
+		return nil, BadRequest
+	}
+	return b.do(ctx, conversation, "open", args, unlock, true)
+}
+
+func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawMessage, admitted func(), person bool) (value json.RawMessage, err error) {
+	if !agentOps[op] || conversation == "" || len(args) > MaxArgBytes || (person && op != "open") {
 		return nil, BadRequest
 	}
 	var a struct {
@@ -725,7 +744,7 @@ func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawM
 			recorded.Password = true
 			recorded.Thumb = ""
 		}
-		b.record(conversation, op, tab, a.Text, recorded)
+		b.recordAs(conversation, op, tab, a.Text, recorded, person)
 	}()
 	if op == "open" && !webURL(a.URL) {
 		return nil, BadRequest
@@ -835,6 +854,10 @@ func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawM
 	if res.OK && res.Tab != 0 {
 		if op == "open" {
 			b.owner[res.Tab] = conversation
+			if person {
+				b.person[res.Tab] = true
+				b.controlEpoch[res.Tab]++
+			}
 		}
 		if op == "release" || op == "close" {
 			delete(b.owner, res.Tab)
@@ -996,8 +1019,12 @@ func (b *Bridge) deliver(r Result) error {
 }
 
 func (b *Bridge) record(conversation, op string, tab int, text string, r Result) {
+	b.recordAs(conversation, op, tab, text, r, false)
+}
+
+func (b *Bridge) recordAs(conversation, op string, tab int, text string, r Result, person bool) {
 	row := AuditRow{ID: newID(), At: b.now().Unix(), Conversation: conversation, Op: op, Tab: tab, URL: r.URL,
-		Site: Site(r.URL), Target: r.Target, OK: r.OK, Error: r.Error, Password: r.Password}
+		Site: Site(r.URL), Target: r.Target, OK: r.OK, Error: r.Error, Password: r.Password, Person: person}
 	// Retain the admitted command identity so legacy result retries still
 	// resolve to this profile after its waiting caller has returned.
 	if r.ID != "" {
@@ -1043,7 +1070,9 @@ func (b *Bridge) record(conversation, op string, tab int, text string, r Result)
 		}
 		if !seen[row.Site] {
 			seen[row.Site] = true
-			if !b.muted[conversation] {
+			// The person needs no notification of a site they opened
+			// themselves; it still counts as seen for this Session.
+			if !b.muted[conversation] && !person {
 				announce = &NewSite{Conversation: conversation, Site: row.Site}
 			}
 		}

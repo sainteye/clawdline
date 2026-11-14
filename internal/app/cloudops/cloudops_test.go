@@ -1095,6 +1095,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-chrome-mute", method: "POST", path: "/v1/browser/mute",
 		body2: `{"conversation":"c1","muted":true}`,
 	}, {
+		word:    "chrome-tab-open",
+		body:    map[string]any{"type": "chrome-tab-open", "session": machine, "request": "req-chrome-open", "conversation": "c1", "url": "https://example.com/"},
+		session: machine, name: "action:req-chrome-open", method: "POST", path: "/v1/browser/open",
+		body2: `{"conversation":"c1","url":"https://example.com/"}`,
+	}, {
 		word:    "chrome-settings",
 		body:    map[string]any{"type": "chrome-settings", "session": machine, "request": "req-chrome-settings"},
 		session: machine, name: "read:req-chrome-settings", method: "GET", path: "/v1/browser/settings",

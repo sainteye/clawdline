@@ -1365,5 +1365,7 @@
   "http.291a0753f47a5a58": "瀏覽器排序必須包含每種瀏覽器各一次，並分別設定自動選用開關。",
   "http.6fdaaffd00fdddc0": "請設定有效的瀏覽器排序與開關，不要混用排序政策與舊版模式設定。",
   "http.41accd9f619d48df": "這次讀取請指定一個 Session 或 Chrome 設定檔。",
-  "http.51774ccca1152d03": "請指定 isolated 或 user_chrome 來查看設定。"
+  "http.51774ccca1152d03": "請指定 isolated 或 user_chrome 來查看設定。",
+  "http.8eeeba0800c89b1a": "尚未確認這個瀏覽器的擴充功能設定。請到「設定 → Chrome」完成設定。",
+  "http.0f180d14e5f39524": "這個瀏覽器的自動選用已關閉。請到「設定 → Chrome」調整，或在完成設定後，依使用者明確指定於本次 Session 使用。"
 }
