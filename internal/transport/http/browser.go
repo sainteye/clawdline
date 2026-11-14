@@ -327,7 +327,14 @@ func (s *Server) browserStatusRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	mode, st, profiles := s.browsers().SelectedStatus(conversation, policy)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"ok": true, "mode": mode, "enabled": mode != "native" && profiles[mode].Ready, "browser_policy": policy, "profiles": profiles, "notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
+	// person_open names the Chrome a person's own open would use (POST
+	// /v1/browser/open), or "" when none is connected; it is independent of
+	// the agent's automatic selection, which may be native tools.
+	personOpen := ""
+	if conversation != "" {
+		personOpen = s.browsers().PersonOpenMode(conversation, policy)
+	}
+	writeJSON(w, map[string]any{"ok": true, "mode": mode, "enabled": mode != "native" && profiles[mode].Ready, "person_open": personOpen, "browser_policy": policy, "profiles": profiles, "notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
 }
 
 func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {

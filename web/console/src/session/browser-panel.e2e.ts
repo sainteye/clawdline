@@ -112,8 +112,10 @@ function fixture(): Server {
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "transcript", id: SESSION, signature: "fixture" })
     if (path === "/v1/browser/status") {
-      const value = { ok: true, mode:channelMode, enabled: true, notify_new_site: true,
-        status: { connected: true, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 || noTab ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } }
+      // Without a tab the stand-in answers as a machine whose agents try
+      // native tools first: the person may still open a tab in Chrome.
+      const value = { ok: true, mode: noTab ? "native" : channelMode, enabled: !noTab, person_open: channelMode, notify_new_site: true,
+        status: { connected: !noTab, stopped: false, person_tabs: person ? [TAB] : [], pending: 0, muted: muted ? [CONVERSATION] : [], tabs: headerCount === 0 || noTab ? [] : [{ tab: TAB, conversation: CONVERSATION, person, current: true }] } }
       if (holdNextStatus) { holdNextStatus = false; await new Promise<void>(resolve => { heldStatus = resolve }) }
       return json(res, 200, value)
     }

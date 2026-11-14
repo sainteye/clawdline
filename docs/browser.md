@@ -93,11 +93,16 @@ computer the main action opens the setup guide.
 the console accepts only http and https, adds `https://` to a bare host and refuses other schemes
 before sending. `POST /v1/browser/open {conversation, url}` (a device that may send; an agent's
 machine token is refused; the Session must be live) runs the same open as an agent's command in the
-browser the Session already uses or, before it has used one, the first that automatic selection
-would choose; agent native tools have no tab to open. The tab belongs to the Session and starts
-taken over by the person, so the agent's commands to it answer `browser_person_controlling` until
-**Hand back**. The emergency stop, the machine switch and the Session's saved browser choice apply
-as to an agent's open. The audit row is the person's (`person: true`); its site counts as seen for
+Chrome the Session already chose or, otherwise, the first Chrome in priority order whose extension
+is connected. Opening a tab is the person's explicit choice, so the automatic switches (which govern
+only the agent's own selection) do not apply, and the choice is saved for the Session as explicit:
+on a machine whose agents try native tools first, the agent continues in that Chrome after hand
+back. Agent native tools have no tab to open. `GET /v1/browser/status?conversation=` reports that
+Chrome as `person_open` ("" when none is connected), and the panel offers the address field
+whenever it is set, even while the Session's own selection is native tools. The tab belongs to the
+Session and starts taken over by the person, so the agent's commands to it answer
+`browser_person_controlling` until **Hand back**. The emergency stop applies as to an agent's
+open. The audit row is the person's (`person: true`); its site counts as seen for
 the Session but sends no new-site notification, since the person chose it.
 
 Through Clawdline Cloud the panel uses the same routes as four words of

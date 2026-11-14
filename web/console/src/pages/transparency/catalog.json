@@ -3656,7 +3656,7 @@
     "internal/adapters/taskdir/broker.go": "c69b1984763af3106a7482e71984321f6e75351d4371a2567ea5060b9c879328",
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "d1a5d11509885fa01e5e97e0f2c3bed0b573e34179fb152a8b1e820caba5a5a9",
-    "internal/app/browserbridge/profiles.go": "8987a2e6207dbefcde67b9b69bad35289a8508633ba0798d1fd6b19d38596167",
+    "internal/app/browserbridge/profiles.go": "8340b015764e4bd57908f6bc4474f24dbff207b8afe289d1771657d28b5cb38b",
     "internal/app/orchestrator/brief.go": "fe7b695fe0617cfaaa91e98978630972648e257b8dfd1acb3026cfb01fedd4e7",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
