@@ -241,6 +241,19 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(busy||unknown||view.heldOutcomes.has(draftKey)||(!text.trim()&&images.length===0)||!currentData.current)return
     const submitted=text,pictures=images,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
     let attempted=false;setBusy(true);setSending(submitted)
+    // The message leaves the box at once and shows above as sending, as in a
+    // messaging app. A send that failed outright gives it back to the box.
+    const quoted=quote
+    // Anything but an accepted send puts the message back, as before this
+    // change: an unknown one is shown there, disabled, and never resent. The
+    // durable copy is only cleared once the send is accepted.
+    const restore=()=>{
+      if(view.draft(draftKey)==="")view.stage(draftKey,submitted)
+      if(quoted&&!view.quotes.get(draftKey))view.quotes.set(draftKey,quoted)
+      if(!valid())return
+      setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"");setImages(old=>old.length?old:pictures)
+    }
+    changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)
     try{
       const result=await mutate((_,s)=>{
         // An earlier unknown turn stays visible and is never resent; a new
@@ -252,17 +265,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       })
       if(result.receipt.state==="unknown")view.heldOutcomes.set(draftKey,{intent,receipt:result.receipt})
       else view.heldOutcomes.delete(draftKey)
+      if(result.receipt.state==="unknown"||result.receipt.state==="failed")restore()
       if(!valid()||recovery.current)return
       setReceipt(result.receipt);setUnknown(result.receipt.state==="unknown")
-      if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed"){
-        if(view.draft(draftKey)===submitted)changeText("")
-        setImages(old=>old===pictures?[]:old)
-        setQuote("");view.quotes.delete(draftKey);flush()
-      }
+      if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed")flush()
       await refresh()
     }catch(e){
       const code=errorCode(e),unresolved=attempted&&(code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
       if(attempted&&!unresolved)view.heldOutcomes.delete(draftKey)
+      restore()
       if(valid()){fail(e);if(unresolved)setUnknown(true)}
     }finally{if(valid()){setBusy(false);setSending(null)}}
   }
@@ -417,7 +428,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{!data&&!error&&<p role="status">{w.loading}</p>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
-      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows attachmentURL={id=>source.attachmentURL?.(key,id)??null} messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small>{w.sending}</small></article>}
+      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows attachmentURL={id=>source.attachmentURL?.(key,id)??null} messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
       {works.map(work=><WorkResultCard key={work.id} work={work} w={w} onOpen={onOpenWork}/>)}<Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
       {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=>t.state==="running"||t.state==="waiting_permission"?<WorkingIndicator key={t.id} turn={t} activity={activity[t.id]??""} w={w}/>:<p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
