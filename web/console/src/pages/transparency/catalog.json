@@ -3640,7 +3640,7 @@
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/voice_work.go": "479cc577226c6bb28ec84d56246d206618369a76c3613461013bc9efb1d906a6",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
-    "internal/adapters/projectassistantacp/client.go": "bf738a1963d603be0a56ea242e85053a207f5badc033bc5871d314bcb9e2c5e4",
+    "internal/adapters/projectassistantacp/client.go": "1147179ccf624ec1db9456c7af6c4b9cd716532d95e8b05c498a4a5d7f251b39",
     "internal/adapters/projectassistantacp/installation.go": "06b14be634cf5c89bb6ebba1636d8a61fcff986e6650593ad4c91d6331fe6240",
     "internal/adapters/projectassistantacp/installation_isolation.go": "315c6ede6797f8622eca045ce08d88ba184bc55333922f9c761b3be478c1442b",
     "internal/adapters/projectassistantacp/mcp.go": "54f3de66dccd2fcdca4c9b5e09395bc9e92fc9235915a14a781633bf38344826",

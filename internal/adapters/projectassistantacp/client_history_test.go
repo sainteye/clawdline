@@ -15,7 +15,13 @@ import (
 
 // initializePersisted opens a scripted peer and runs initialize with q. The
 // peer answers session/new and session/load with the IDs given here.
-func initializePersisted(t *testing.T, q app.OpenRequest, newID, loadID string) (error, map[string]any) {
+func initializePersisted(t *testing.T, q app.OpenRequest, newID, loadID string, env ...string) (error, map[string]any) {
+	t.Helper()
+	err, sent, _ := initializeWith(t, q, newID, loadID, env...)
+	return err, sent
+}
+
+func initializeWith(t *testing.T, q app.OpenRequest, newID, loadID string, env ...string) (error, map[string]any, *Client) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows native supervisor is explicitly unavailable")
@@ -26,6 +32,7 @@ func initializePersisted(t *testing.T, q app.OpenRequest, newID, loadID string) 
 	params := filepath.Join(t.TempDir(), "params.json")
 	config := peerConfiguration(t, "configure-claude")
 	config.Environment = append(config.Environment, "CLAWDLINE_ACP_NEW_ID="+newID, "CLAWDLINE_ACP_LOAD_ID="+loadID, "CLAWDLINE_ACP_PARAMS_FILE="+params)
+	config.Environment = append(config.Environment, env...)
 	l := testLimits()
 	p, err := StartProcess(context.Background(), ProcessOptions{Configuration: config, Directory: t.TempDir(), Limits: l})
 	if err != nil {
@@ -50,7 +57,7 @@ func initializePersisted(t *testing.T, q app.OpenRequest, newID, loadID string) 
 		_ = json.Unmarshal(data, &f)
 		sent = f.Params
 	}
-	return err, sent
+	return err, sent, c
 }
 
 func persisted(f pa.Fence, resume bool, id string) app.OpenRequest {

@@ -67,7 +67,14 @@ minimum CLI versions, `authentication_verified: false` and
 
 The native CLI runs as the person, in the Bot's Project, with its own tools.
 It asks before acting; the person may allow one action, and standing allow
-or reject rules are refused. Its configuration, history and memory live in a
+or reject rules are refused. Asking is a Claude Code mode, not a default: with
+no configured default the adapter starts in `auto` (a classifier approves
+actions) or `acceptEdits`, and on 2026-11-14 a real Bot wrote a Project file
+with no permission card. Every new or loaded session is therefore set to
+`default` with `session/set_mode` and confirmed, which also overrides a
+Project's own settings; a session the adapter will not put in that mode is not
+opened, and a later switch to any mode other than `default` or `plan` ends the
+execution. Its configuration, history and memory live in a
 feature-owned directory for each Bot, Project, conversation and revision;
 personal Claude settings, hooks and memory are not read. The environment
 carries `HOME`, `USER` (the CLI names its keychain account from it), a fixed
