@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12031,
+  "englishContentKeys": 12032,
   "riskKeys": 5235,
-  "nonRiskCount": 6796,
+  "nonRiskCount": 6797,
   "groups": [
     {
       "name": "acp / other",
@@ -5559,7 +5559,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 111,
+      "count": 112,
       "sources": [
         null
       ],
@@ -5639,6 +5639,7 @@
         "projectAssistants.selectBot",
         "projectAssistants.send",
         "projectAssistants.sendNow",
+        "projectAssistants.sending",
         "projectAssistants.sessions",
         "projectAssistants.settings",
         "projectAssistants.setup_version_unsupported",
