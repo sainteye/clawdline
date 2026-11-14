@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12031,
+  "englishContentKeys": 12032,
   "riskKeys": 5235,
-  "nonRiskCount": 6796,
+  "nonRiskCount": 6797,
   "groups": [
     {
       "name": "acp / other",
@@ -3903,7 +3903,7 @@
     },
     {
       "name": "next / other",
-      "count": 1077,
+      "count": 1078,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4017,6 +4017,7 @@
         "next.browserPanelInputFull",
         "next.browserPanelKeepPage",
         "next.browserPanelKeyboard",
+        "next.browserPanelKeys",
         "next.browserPanelLayout",
         "next.browserPanelLayoutTakeover",
         "next.browserPanelMenu",
