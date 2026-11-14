@@ -172,6 +172,16 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
           onPick={(picked) => { void change({ briefing_assistant: picked }).catch(() => undefined) }} />
       </Row>
 
+      {snapshot.session_recaps !== undefined ? <Row label={nextWord("copilotRecapsLabel")} hint={nextWord("copilotRecapsHint")}>
+        <PopUp label={nextWord("copilotRecapsLabel")} value={snapshot.session_recaps}
+          options={[
+            { value: "off", label: nextWord("copilotRecapsOff") },
+            { value: "background", label: nextWord("copilotRecapsBackground") },
+            { value: "on_demand", label: nextWord("copilotRecapsOnDemand") },
+          ]}
+          onPick={(picked) => { void change({ session_recaps: picked }).catch(() => undefined) }} />
+      </Row> : null}
+
       <label className="sw-copilot-extra-label" htmlFor="sw-copilot-extra">{nextWord("copilotExtraLabel")}</label>
       <p className="sw-hint">{nextWord("copilotExtraHint")}</p>
       <textarea id="sw-copilot-extra" className="sw-copilot-extra" rows={4} maxLength={max} value={extra}

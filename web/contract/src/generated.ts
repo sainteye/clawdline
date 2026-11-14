@@ -8805,6 +8805,44 @@ export interface SessionProtocol {
   unrecognized: number
 }
 
+/**
+ * One or two plain sentences the Session's own assistant wrote about its
+ * conversation from a throwaway fork of it: what it is working on, where it got to
+ * and whose move it is (docs/session-recaps.md). Written by the machine in the
+ * background when Session recaps are on; absent when they are off, before the first
+ * one, or for an assistant that cannot fork. It is content: it travels only where
+ * the Session's transcript may.
+ */
+export interface SessionRecap {
+  /**
+   * Unix seconds when the fork answered.
+   */
+  at: number
+
+  /**
+   * True when the conversation has not grown since the recap was written.
+   */
+  current?: boolean
+
+  /**
+   * A fuller account for the voice copilot, at most 1200 characters: the goal, what
+   * was finished since the conversation began, what is in progress or stuck, and
+   * every decision the person owes with its choices. Screens show text.
+   */
+  detail?: string
+
+  /**
+   * The Session's state when the recap was written; a working Session's recap is a
+   * snapshot of work still moving.
+   */
+  state: SessionState
+
+  /**
+   * The recap, at most 400 characters.
+   */
+  text: string
+}
+
 export interface SessionRecord {
   /**
    * Observed byte size of the entire Codex rollout or Claude Code transcript,
@@ -8941,6 +8979,7 @@ export interface SessionRow {
    * a permission menu.
    */
   provider_block?: string
+  recap?: SessionRecap
   root_assignment?: RootAssignmentRecord
 
   /**

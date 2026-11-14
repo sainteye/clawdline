@@ -7515,6 +7515,32 @@ type SessionProtocol struct {
 	Unrecognized       int64 `json:"unrecognized"`
 }
 
+// One or two plain sentences the Session's own assistant wrote about its
+// conversation from a throwaway fork of it: what it is working on, where it got
+// to and whose move it is (docs/session-recaps.md). Written by the machine in
+// the background when Session recaps are on; absent when they are off, before
+// the first one, or for an assistant that cannot fork. It is content: it
+// travels only where the Session's transcript may.
+type SessionRecap struct {
+	// Unix seconds when the fork answered.
+	At int64 `json:"at"`
+
+	// True when the conversation has not grown since the recap was written.
+	Current bool `json:"current,omitempty"`
+
+	// A fuller account for the voice copilot, at most 1200 characters: the goal, what
+	// was finished since the conversation began, what is in progress or stuck, and
+	// every decision the person owes with its choices. Screens show text.
+	Detail string `json:"detail,omitempty"`
+
+	// The Session's state when the recap was written; a working Session's recap is a
+	// snapshot of work still moving.
+	State SessionState `json:"state"`
+
+	// The recap, at most 400 characters.
+	Text string `json:"text"`
+}
+
 type SessionRecord struct {
 	// Observed byte size of the entire Codex rollout or Claude Code transcript,
 	// including compacted snapshots. No provider file is modified.
@@ -7619,6 +7645,7 @@ type SessionRow struct {
 	// Independent of terminal activity; cleared by a later native turn boundary. Not a
 	// permission menu.
 	ProviderBlock  string                `json:"provider_block,omitempty"`
+	Recap          *SessionRecap         `json:"recap,omitempty"`
 	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
 
 	// Exact provider subagent count from the current Cloud status projection,

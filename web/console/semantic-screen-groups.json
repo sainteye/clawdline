@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12054,
-  "riskKeys": 5240,
-  "nonRiskCount": 6814,
+  "englishContentKeys": 12078,
+  "riskKeys": 5247,
+  "nonRiskCount": 6831,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 545,
+      "count": 554,
       "sources": [
         null
       ],
@@ -848,6 +848,15 @@
         "capacityRow.session.human_intervention_title_bytes.what",
         "capacityRow.session.patch_detail_lines.full",
         "capacityRow.session.patch_detail_lines.what",
+        "capacityRow.session.recap_characters.full",
+        "capacityRow.session.recap_characters.what",
+        "capacityRow.session.recap_detail_characters.full",
+        "capacityRow.session.recap_fork_milliseconds.full",
+        "capacityRow.session.recap_on_demand_forks.full",
+        "capacityRow.session.recap_on_demand_forks.what",
+        "capacityRow.session.recap_rows.full",
+        "capacityRow.session.recap_rows.what",
+        "capacityRow.session.recap_wait_milliseconds.what",
         "capacityRow.session.report_open_todo_characters.full",
         "capacityRow.session.report_open_todo_characters.what",
         "capacityRow.session.rotation_bytes.what",
@@ -3903,7 +3912,7 @@
     },
     {
       "name": "next / other",
-      "count": 1078,
+      "count": 1084,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4196,6 +4205,10 @@
         "next.copilotProgressSounds",
         "next.copilotProposalHint",
         "next.copilotReady",
+        "next.copilotRecapsBackground",
+        "next.copilotRecapsLabel",
+        "next.copilotRecapsOff",
+        "next.copilotRecapsOnDemand",
         "next.copilotRemembered",
         "next.copilotReportContinue",
         "next.copilotReportPaused",
@@ -4317,6 +4330,8 @@
         "next.infoEffortXhigh",
         "next.infoGrokAccountQuota",
         "next.infoReasoningEffort",
+        "next.infoRecap",
+        "next.infoRecapMovedOn",
         "next.infoResetsInMinutes",
         "next.interventionReplyContext",
         "next.invAdmitted",
@@ -6972,7 +6987,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 168,
+      "count": 170,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7091,6 +7106,8 @@
         "transparency.card.role-skills.title",
         "transparency.card.runtime.condition",
         "transparency.card.runtime.effect",
+        "transparency.card.session-recap.condition",
+        "transparency.card.session-recap.title",
         "transparency.card.session-rotation.condition",
         "transparency.card.session-rotation.how",
         "transparency.card.session-rotation.title",

@@ -237,6 +237,8 @@ export interface CopilotSettingsSnapshot {
   briefing: boolean
   brief: boolean
   briefing_assistant: string
+  /** When the machine writes Session recaps: off, background or on_demand (docs/session-recaps.md). */
+  session_recaps?: string
   models: string[]
   eagernesses: string[]
   voices: string[]
@@ -258,6 +260,7 @@ export interface CopilotSettingsChange {
   briefing_assistant?: string
   briefing?: boolean
   brief?: boolean
+  session_recaps?: string
 }
 
 async function callCopilotSettings(init: RequestInit): Promise<CopilotSettingsSnapshot> {
