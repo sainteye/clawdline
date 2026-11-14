@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	"github.com/sainteye/clawdline/internal/config"
 )
 
@@ -18,6 +19,8 @@ import (
 // daemon answering on 7727. A test that wants any of these sets it with
 // t.Setenv, which restores this baseline afterwards.
 func TestMain(m *testing.M) {
+	// No test finds, probes or installs from the developer's real Claude Code and Node.
+	projectassistantacp.SearchDirectories = func(string) []string { return nil }
 	// A test that re-runs this binary as a helper hands it an environment
 	// already isolated here, plus the CLAWDLINE_* switches the helper reads.
 	if os.Getenv(cliTestIsolated) == "1" {

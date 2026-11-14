@@ -192,7 +192,7 @@ presented as equivalent evidence.
 
 The supplied provider capability research found no installed native ACP adapter.
 This paragraph records the state before 2026-11-14. Claude native resume has
-since passed a real cross-process proof on the pinned artifacts; read-only
+since passed a real cross-process proof on the supplied adapter with Claude Code 2.1.323; read-only
 enforcement is no longer pursued for the first version, which follows CodyNC.
 OAuth graceful exit and real model cancellation remain unproved. Those modes
 must stay unavailable. Scripted replies and subscription login observations are

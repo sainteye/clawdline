@@ -21,6 +21,11 @@ const (
 	MaximumBotRefreshMilliseconds = 3000
 	// The longest isolated work one Bot dispatch may start.
 	MaximumBotDispatchSeconds = 3600
+	// Installing the supplied ACP adapter with the person's npm on first use.
+	MaximumBotAdapterInstallSeconds = 300
+	// One `--version` observation of the person's Node or Claude Code.
+	MaximumBotToolProbeMilliseconds = 10000
+	MaximumBotToolProbeBytes        = 4096
 )
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
@@ -96,5 +101,14 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsDispatchSeconds, Class: Buffer, Unit: Seconds, Limit: MaximumBotDispatchSeconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotDispatchSeconds"}},
+		{Name: BotsAdapterInstallSeconds, Class: Buffer, Unit: Seconds, Limit: MaximumBotAdapterInstallSeconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotAdapterInstallSeconds"}},
+		{Name: BotsToolProbe, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotToolProbeMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotToolProbeMilliseconds"}},
+		{Name: BotsToolProbeBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotToolProbeBytes, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotToolProbeBytes"}},
 	}
 }

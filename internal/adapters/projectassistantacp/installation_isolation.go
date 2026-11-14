@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -42,14 +41,13 @@ func (i ClaudeInstallation) isolatedWithHistory(ctx context.Context, state strin
 	if e := ctx.Err(); e != nil {
 		return Configuration{}, none, e
 	}
-	home, e := os.UserHomeDir()
-	if e != nil || !filepath.IsAbs(home) {
-		return Configuration{}, none, refusal(pa.Invalid, "native_home")
-	}
 	// The native CLI names its keychain account from USER.
-	current, e := user.Current()
-	if e != nil || current.Username == "" || strings.ContainsAny(current.Username, "=\x00\n") {
-		return Configuration{}, none, refusal(pa.Invalid, "native_account")
+	home, account, e := nativeAccount()
+	if e != nil {
+		return Configuration{}, none, e
+	}
+	if i.tools.Node == "" || i.tools.CLI == "" {
+		return Configuration{}, none, refusal(pa.CLINotInstalled, "native_cli")
 	}
 	if history != "" {
 		native := filepath.Join(state, "project-assistants", "native")
@@ -82,14 +80,14 @@ func (i ClaudeInstallation) isolatedWithHistory(ctx context.Context, state strin
 		return Configuration{}, none, refusal(pa.Invalid, "native_state")
 	}
 	environment := []string{
-		"HOME=" + home, "USER=" + current.Username, "PATH=" + nativePath, "LANG=C", "LC_ALL=C", "TMPDIR=" + tmp,
-		"CLAUDE_CODE_EXECUTABLE=" + i.CLI, "CLAUDE_AGENT_ACP_PROTOCOL=v1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
+		"HOME=" + home, "USER=" + account, "PATH=" + nativePath, "LANG=C", "LC_ALL=C", "TMPDIR=" + tmp,
+		"CLAUDE_CODE_EXECUTABLE=" + i.tools.CLI, "CLAUDE_AGENT_ACP_PROTOCOL=v1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
 		"DISABLE_TELEMETRY=1", "DISABLE_ERROR_REPORTING=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 	}
 	if history != "" {
 		environment = append(environment, "CLAUDE_CONFIG_DIR="+history, "CLAUDE_SECURESTORAGE_CONFIG_DIR=")
 	}
-	return Configuration{Executable: i.Node, Arguments: []string{i.Adapter}, Environment: environment}, cleanup, nil
+	return Configuration{Executable: i.tools.Node, Arguments: []string{i.Adapter}, Environment: environment}, cleanup, nil
 }
 
 type isolatedNativeSession struct {

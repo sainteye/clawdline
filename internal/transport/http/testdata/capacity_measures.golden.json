@@ -241,6 +241,11 @@
     "Note": true
   },
   {
+    "Name": "bots.adapter_install_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.capture_bytes",
     "Known": true,
     "Note": true
@@ -347,6 +352,16 @@
   },
   {
     "Name": "bots.survey_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.tool_probe_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.tool_probe_ms",
     "Known": true,
     "Note": true
   },

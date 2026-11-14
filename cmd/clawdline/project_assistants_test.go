@@ -4,20 +4,18 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestClaudeSetupDoesNotEnableOrStartAnUnqualifiedInstallation(t *testing.T) {
+func TestClaudeSetupWithoutClaudeCodeChangesNothing(t *testing.T) {
 	state := t.TempDir()
-	outside := t.TempDir()
-	path := filepath.Join(outside, "not-a-provider")
-	if e := os.WriteFile(path, []byte("not executable or a qualified artifact"), 0600); e != nil {
-		t.Fatal(e)
-	}
 	var out, err bytes.Buffer
-	if code := projectAssistantsCommand(context.Background(), []string{"setup-claude", "--node", path, "--adapter", path, "--cli", path}, state, &out, &err); code != 1 || out.Len() != 0 {
-		t.Fatalf("unqualified setup: code=%d output=%q", code, out.String())
+	if code := projectAssistantsCommand(context.Background(), []string{"setup-claude", "--cli", "/elsewhere"}, state, &out, &err); code != 2 {
+		t.Fatalf("paths are no longer accepted: code=%d", code)
+	}
+	if code := projectAssistantsCommand(context.Background(), []string{"setup-claude"}, state, &out, &err); code != 1 || out.Len() != 0 || !strings.Contains(err.String(), "cli_not_installed") {
+		t.Fatalf("setup without tools: code=%d output=%q error=%q", code, out.String(), err.String())
 	}
 	entries, e := os.ReadDir(state)
 	if e != nil {

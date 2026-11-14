@@ -286,5 +286,5 @@
   "todo.take_usage": "       clawdline todo take [--conversation id] [--key k] [--port n] <to-do id>",
   "todo.take_needs_id": "clawdline %s：請指定要接手的 to-do id\n",
   "project_assistants.setup_failed": "Claude 設定遭拒（%s）。尚未啟動接頭。\n",
-  "project_assistants.setup_usage": "用法：clawdline project-assistants setup-claude --node 路徑 --adapter 路徑 --cli 路徑\n"
+  "project_assistants.setup_usage": "用法：clawdline project-assistants setup-claude\n"
 }

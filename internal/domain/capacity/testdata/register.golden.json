@@ -1013,6 +1013,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.adapter_install_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotAdapterInstallSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.capture_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1452,6 +1472,45 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotSurveyMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.tool_probe_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotToolProbeBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.tool_probe_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 10000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotToolProbeMilliseconds"
     ]
   },
   {

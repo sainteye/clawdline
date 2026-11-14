@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 )
 
 // Constructors can read legacy project marks before a fixture replaces their
 // registry. Keep that first read in an empty home too, so tests never depend on
 // the invoking account's marks or its directory permissions.
 func TestMain(m *testing.M) {
+	// No test finds, probes or installs from the developer's real Claude Code and Node.
+	projectassistantacp.SearchDirectories = func(string) []string { return nil }
 	// Helper copies inherit this home; only its owning process removes it.
 	if os.Getenv("CLAWDLINE_HTTP_TEST_ISOLATED") == "1" {
 		os.Exit(m.Run())

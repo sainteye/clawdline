@@ -55,6 +55,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `audit.security` | 8388608 | `bytes` | `rotate` | `diagnostics, notice, health` | — |
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `bots.actors` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.adapter_install_seconds` | 300 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.capture_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
@@ -77,6 +78,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.tool_probe_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
+| `bots.tool_probe_ms` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.write_ms` | 2000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |

@@ -30,12 +30,16 @@ func TestInstalledClaudeRejectsStateInsideARepositoryBeforeStarting(t *testing.T
 	}
 }
 
-func TestInstalledClaudeRequiresExplicitSetupWithoutStartingAnything(t *testing.T) {
+func TestInstalledClaudeWithoutClaudeCodeStartsNothing(t *testing.T) {
 	state := t.TempDir()
 	provider := InstalledClaudeProvider(state)
 	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex} {
 		caps, e := provider.Capabilities(context.Background(), pa.Bot{Agent: agent})
-		if pa.Code(e) != pa.AdapterNotFound || caps.ReadOnlyEnforced || caps.NativeMemoryVerified {
+		want := pa.CLINotInstalled
+		if agent == pa.Codex {
+			want = pa.AdapterNotFound
+		}
+		if pa.Code(e) != want || caps.ReadOnlyEnforced || caps.NativeMemoryVerified {
 			t.Fatalf("invented capability for %s: %+v %v", agent, caps, e)
 		}
 	}

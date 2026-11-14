@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -20,24 +20,30 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-// This first native route deliberately supports one qualified artifact set.
-// Configuration records existing files; it never installs or updates a CLI.
+// The adapter version is the one Clawdline supplies (installation_tools.go);
+// Claude Code and Node are the person's own, checked against supported floors.
 const ClaudeAdapterVersion = "0.106.0"
-const ClaudeCLIVersion = "2.1.323"
-const claudeNodeSHA = "59450bb6448c8a40b3f3b86da45c3babb2e0503e04c47e5a715e8e137389878b"
-const claudeCLISHA = "5432918d904a9b6afef7bb79d20df24d76052eabc1f41bceb84091d21f8889a7"
 const claudeEntrySHA = "f766071bfb432f79036ca90c67efc5306373be6b5129a240820d03146d2f4cb9"
 const claudeAgentSHA = "811bb2fa230fa43531a2df20996ef710668a2e0723dc0ca9d782d221c221eb97"
 
-// ClaudeInstallation is local owner configuration, not a model-supplied launch.
-// Digests seal all dependency files, including additions, after explicit setup.
-// No credential, account identity, conversation or user environment is saved.
+// installationFormat 2 seals only the supplied adapter. Format 1 manifests
+// pinned the person's Node and CLI digests, which every Claude Code update
+// broke; they are replaced by a fresh setup.
+const installationFormat = 2
+
+// ClaudeInstallation is local state, not a model-supplied launch. Files seal
+// the supplied adapter tree, including additions. The person's tools are
+// found again for each execution and never saved. No credential, account
+// identity, conversation or user environment is saved.
 type ClaudeInstallation struct {
-	Node    string            `json:"node"`
-	CLI     string            `json:"cli"`
+	Format  int               `json:"format"`
 	Adapter string            `json:"adapter"`
 	Files   map[string]string `json:"files"`
+	tools   nativeTools
 }
+
+// CLIVersion is the person's Claude Code version found for this setup.
+func (i ClaudeInstallation) CLIVersion() string { return i.tools.CLIVersion }
 
 func installationPath(state string) string {
 	return filepath.Join(state, "project-assistants", "claude-installation.json")
@@ -73,7 +79,7 @@ func (i ClaudeInstallation) moduleRoot() (string, error) {
 }
 
 func (i ClaudeInstallation) artifacts(ctx context.Context) (map[string]string, error) {
-	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+	if runtime.GOOS != "darwin" {
 		return nil, refusal(pa.Unsupported, "native_platform")
 	}
 	if e := ctx.Err(); e != nil {
@@ -83,17 +89,7 @@ func (i ClaudeInstallation) artifacts(ctx context.Context) (map[string]string, e
 	if e != nil {
 		return nil, e
 	}
-	for _, executable := range []string{i.Node, i.CLI} {
-		info, e := os.Stat(executable)
-		if e != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
-			return nil, refusal(pa.AdapterNotFound, "native_executable")
-		}
-	}
-	out := map[string]string{}
-	for path, want := range map[string]string{i.Node: claudeNodeSHA, i.CLI: claudeCLISHA, i.Adapter: claudeEntrySHA, filepath.Join(filepath.Dir(i.Adapter), "v1", "acp-agent.js"): claudeAgentSHA} {
-		if !filepath.IsAbs(path) {
-			return nil, refusal(pa.Invalid, "native_artifact")
-		}
+	for path, want := range map[string]string{i.Adapter: claudeEntrySHA, filepath.Join(filepath.Dir(i.Adapter), "v1", "acp-agent.js"): claudeAgentSHA} {
 		actual, e := fileDigest(path)
 		if e != nil {
 			return nil, e
@@ -101,58 +97,57 @@ func (i ClaudeInstallation) artifacts(ctx context.Context) (map[string]string, e
 		if actual != want {
 			return nil, refusal(pa.ProviderVersionUnsupported, "native_artifact_digest")
 		}
-		out[path] = actual
 	}
-	// A local owner chooses the installation. Subsequent additions or edits are
-	// refused; hashing just index.js would leave imported dependencies unsealed.
-	e = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if e := ctx.Err(); e != nil {
-			return e
-		}
-		if walkErr != nil {
-			return refusal(pa.AdapterNotFound, "native_dependencies")
-		}
-		if d.IsDir() {
-			return nil
-		}
-		resolved, e := filepath.EvalSymlinks(path)
-		if e != nil {
-			return refusal(pa.Invalid, "native_dependency_link")
-		}
-		rel, e := filepath.Rel(root, resolved)
-		if e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return refusal(pa.ScopeDenied, "native_dependency_link")
-		}
-		digest, e := fileDigest(path)
-		if e != nil {
-			return e
-		}
-		out[path] = digest
-		return nil
-	})
+	// Hashing just index.js would leave imported dependencies unsealed.
+	digest, files, e := adapterTreeDigest(ctx, root)
 	if e != nil {
 		return nil, e
 	}
-	return out, nil
+	if digest != claudeAdapterTreeSHA {
+		return nil, refusal(pa.ProviderVersionUnsupported, "native_dependencies_changed")
+	}
+	return files, nil
 }
 
-// ConfigureClaude pins an already installed, qualified adapter. It does not
-// start Node/Claude, inspect auth, change feature opt-in, or contact a service.
-func ConfigureClaude(ctx context.Context, state, node, adapter, cli string) (ClaudeInstallation, error) {
-	var err error
-	node, err = filepath.EvalSymlinks(node)
-	if err != nil {
-		return ClaudeInstallation{}, refusal(pa.AdapterNotFound, "native_artifact")
+func nativeAccount() (string, string, error) {
+	home, e := os.UserHomeDir()
+	if e != nil || !filepath.IsAbs(home) {
+		return "", "", refusal(pa.Invalid, "native_home")
 	}
-	adapter, err = filepath.EvalSymlinks(adapter)
-	if err != nil {
-		return ClaudeInstallation{}, refusal(pa.AdapterNotFound, "native_artifact")
+	current, e := user.Current()
+	if e != nil || current.Username == "" || strings.ContainsAny(current.Username, "=\x00\n") {
+		return "", "", refusal(pa.Invalid, "native_account")
 	}
-	cli, err = filepath.EvalSymlinks(cli)
-	if err != nil {
-		return ClaudeInstallation{}, refusal(pa.AdapterNotFound, "native_artifact")
+	return home, current.Username, nil
+}
+
+// SetupClaude finds the person's Claude Code and Node, installs the supplied
+// adapter into state when it is absent or changed, and records its seal. It
+// does not start the adapter, inspect auth, change feature opt-in or send a
+// prompt. Installing the adapter is the only network use: npm fetches the
+// lockfile's packages, each checked against the lockfile's integrity.
+func SetupClaude(ctx context.Context, state string) (ClaudeInstallation, error) {
+	var i ClaudeInstallation
+	if runtime.GOOS != "darwin" {
+		return i, refusal(pa.Unsupported, "native_platform")
 	}
-	i := ClaudeInstallation{Node: node, Adapter: adapter, CLI: cli}
+	resolved, e := filepath.EvalSymlinks(state)
+	if e != nil {
+		return i, refusal(pa.Invalid, "native_state")
+	}
+	home, account, e := nativeAccount()
+	if e != nil {
+		return i, e
+	}
+	tools, e := findTools(ctx, home, account, SearchDirectories(home))
+	if e != nil {
+		return i, e
+	}
+	dir, e := installAdapter(ctx, resolved, tools, home, account)
+	if e != nil {
+		return i, e
+	}
+	i = ClaudeInstallation{Format: installationFormat, Adapter: adapterEntry(dir), tools: tools}
 	files, e := i.artifacts(ctx)
 	if e != nil {
 		return i, e
@@ -162,11 +157,8 @@ func ConfigureClaude(ctx context.Context, state, node, adapter, cli string) (Cla
 	if e != nil {
 		return i, e
 	}
-	dir := filepath.Dir(installationPath(state))
-	if e = os.MkdirAll(dir, 0700); e != nil {
-		return i, refusal(pa.Invalid, "native_state")
-	}
-	f, e := os.CreateTemp(dir, ".claude-installation-")
+	path := installationPath(resolved)
+	f, e := os.CreateTemp(filepath.Dir(path), ".claude-installation-")
 	if e != nil {
 		return i, refusal(pa.Invalid, "native_state")
 	}
@@ -180,7 +172,7 @@ func ConfigureClaude(ctx context.Context, state, node, adapter, cli string) (Cla
 		e = closeErr
 	}
 	if e == nil {
-		e = os.Rename(name, installationPath(state))
+		e = os.Rename(name, path)
 	}
 	if e != nil {
 		return i, refusal(pa.Invalid, "native_state")
@@ -188,6 +180,8 @@ func ConfigureClaude(ctx context.Context, state, node, adapter, cli string) (Cla
 	return i, nil
 }
 
+// readInstallation verifies the recorded adapter seal and finds the person's
+// tools for this execution. It never installs anything.
 func readInstallation(ctx context.Context, state string) (ClaudeInstallation, error) {
 	var i ClaudeInstallation
 	f, e := os.Open(installationPath(state))
@@ -195,12 +189,15 @@ func readInstallation(ctx context.Context, state string) (ClaudeInstallation, er
 		return i, refusal(pa.AdapterNotFound, "native_setup")
 	}
 	defer f.Close()
-	data, e := io.ReadAll(f)
+	data, e := io.ReadAll(io.LimitReader(f, int64(capacity.MaximumBotFrameBytes)*8))
 	if e != nil {
 		return i, refusal(pa.Invalid, "native_manifest")
 	}
 	if json.Unmarshal(data, &i) != nil || len(i.Files) == 0 {
 		return i, refusal(pa.Invalid, "native_manifest")
+	}
+	if i.Format != installationFormat {
+		return i, refusal(pa.AdapterNotFound, "native_setup")
 	}
 	files, e := i.artifacts(ctx)
 	if e != nil {
@@ -209,15 +206,45 @@ func readInstallation(ctx context.Context, state string) (ClaudeInstallation, er
 	if !reflect.DeepEqual(files, i.Files) {
 		return i, refusal(pa.ProviderVersionUnsupported, "native_dependencies_changed")
 	}
+	home, account, e := nativeAccount()
+	if e != nil {
+		return i, e
+	}
+	if i.tools, e = findTools(ctx, home, account, SearchDirectories(home)); e != nil {
+		return i, e
+	}
 	return i, nil
+}
+
+// ensureInstallation sets up on first use, so a person never places files by
+// hand. A missing or changed adapter is rebuilt; a missing or too old Claude
+// Code or Node is reported, never installed.
+func ensureInstallation(ctx context.Context, state string) (ClaudeInstallation, error) {
+	i, e := readInstallation(ctx, state)
+	if e == nil {
+		return i, nil
+	}
+	var f *pa.Failure
+	if !errors.As(e, &f) {
+		return i, e
+	}
+	switch f.Field {
+	case "native_setup", "native_manifest", "native_dependencies_changed", "native_artifact_digest", "native_artifact", "native_dependencies":
+	default:
+		return i, e
+	}
+	if _, e = SetupClaude(ctx, state); e != nil {
+		return i, e
+	}
+	return readInstallation(ctx, state)
 }
 
 // claudeResumeQualified admits native session/load for the pinned artifact
 // set under nativeHistoryPolicy. A real cross-process round trip on exactly
-// these pinned files passed on 2026-11-14: a new process loaded the same
+// the pinned adapter and Claude Code 2.1.323 passed on 2026-11-14: a new process loaded the same
 // native session and answered a code word that only the earlier turn held,
 // with no credential-shaped file written and forgotten or foreign bindings
-// refused before any native start. Changing a pinned digest or the history
+// refused before any native start. Changing the adapter or the history
 // policy needs that proof again; scripted peers are not that evidence.
 var claudeResumeQualified = true
 
@@ -226,8 +253,8 @@ func nativeLimits() Limits {
 }
 
 // InstalledClaudeProvider is the production factory. Its construction and all
-// metadata operations are inert. Only runtime admission reads pinned files and
-// verifies the local OS boundary; only Open starts the native adapter.
+// metadata operations are inert. Runtime admission sets up the supplied adapter
+// on first use and finds the person's tools; only Open starts the adapter.
 func InstalledClaudeProvider(state string) app.Provider { return &installedClaude{state: state} }
 
 type installedClaude struct{ state string }
@@ -306,7 +333,7 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 	if b.Agent != pa.ClaudeCode {
 		return Configuration{}, caps, func() {}, refusal(pa.AdapterNotFound, "native_provider")
 	}
-	i, e := readInstallation(ctx, p.state)
+	i, e := ensureInstallation(ctx, p.state)
 	if e != nil {
 		return Configuration{}, caps, func() {}, e
 	}
@@ -335,8 +362,8 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 	if e != nil {
 		return config, caps, cleanup, e
 	}
-	caps.CLIVersion, caps.AdapterVersion = ClaudeCLIVersion, ClaudeAdapterVersion
-	caps.Evidence = "pinned artifacts; native tools act in the Project after per-action approval; native config, history and memory isolated per Bot and Project"
+	caps.CLIVersion, caps.AdapterVersion = i.tools.CLIVersion, ClaudeAdapterVersion
+	caps.Evidence = "installed Claude Code at or above the supported floor; supplied adapter sealed by digest; native tools act in the Project after per-action approval; native config, history and memory isolated per Bot and Project"
 	caps.ReadOnlyEnforced, caps.NativeMemoryVerified = false, true
 	caps.NativeMemory = pa.NativeMemoryIsolated
 	caps.Resume = claudeResumeQualified
@@ -344,7 +371,7 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 	return config, caps, cleanup, nil
 }
 
-// CheckClaudeInstallation verifies only the pinned local artifacts.
+// CheckClaudeInstallation verifies the supplied adapter and the person's tools.
 // Success is deliberately not an auth, session/new, prompt or model receipt.
 func CheckClaudeInstallation(ctx context.Context, state string) error {
 	i, e := readInstallation(ctx, state)
