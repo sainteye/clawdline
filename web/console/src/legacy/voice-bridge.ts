@@ -114,6 +114,12 @@ export interface VoiceJob {
    * on anything that went with it.
    */
   send?: (said: string) => void
+  /**
+   * Run in the same gesture as the send control, before the recording stops:
+   * whatever the page has to capture while it still can (the machine the
+   * words go to, an audio unlock for the chime).
+   */
+  beforeSend?: () => void
   /** A Cloud composer can use the account's existing voice host. Dictation never sends to a Session. */
   transcribe?: (audio: string, rate: number) => Promise<VoiceAnswer>
   /** The machine whose Whisper will receive this recording. Display-only. */
@@ -347,6 +353,7 @@ export function press(job?: VoiceJob): void {
  */
 export function pressSend(job?: VoiceJob): void {
   if (state === "recording" && recording && activeJob?.send && (!job || job === activeJob)) {
+    activeJob.beforeSend?.()
     recording.send = true
     stop()
     return
@@ -1203,7 +1210,13 @@ function show(): void {
     acts.className = "acts"
     if (state === "recording") {
       acts.appendChild(way(S.webCancel, "drop", cancel))
-      acts.appendChild(way(S.webVoiceDone, "go", stop))
+      // A job that can send puts Send here, with the paper plane, and the
+      // microphone beside the box becomes Stop, which writes the words into
+      // the box. The row is where the eye already is, so it carries the
+      // action that finishes the message; the smaller control keeps it.
+      const job = activeJob
+      if (job?.send) acts.appendChild(sendWay(() => pressSend(job)))
+      else acts.appendChild(way(S.webVoiceDone, "go", stop))
     } else if (state === "recoverable") {
       acts.appendChild(way(nextWord("voiceDiscard"), "drop", cancel))
       if (recording?.bytes || !recording?.finished) acts.appendChild(way(recording?.complete ? nextWord("voiceRetry")
@@ -1244,6 +1257,28 @@ function way(words: string, kind: string, go: () => void): HTMLButtonElement {
   b.textContent = words
   b.addEventListener("mousedown", (ev) => ev.preventDefault())
   b.addEventListener("click", go)
+  return b
+}
+
+/// Send, with the paper plane Send carries elsewhere beside the word.
+function sendWay(go: () => void): HTMLButtonElement {
+  const b = way(S.webSend, "go send-now", go)
+  b.textContent = ""
+  const ns = "http://www.w3.org/2000/svg"
+  const icon = document.createElementNS(ns, "svg")
+  icon.setAttribute("class", "ico")
+  icon.setAttribute("viewBox", "0 0 24 24")
+  icon.setAttribute("aria-hidden", "true")
+  icon.setAttribute("focusable", "false")
+  const plane = document.createElementNS(ns, "path")
+  plane.setAttribute("d", "M3.5 20.5 21 12 3.5 3.5l.02 6.6L15 12 3.52 13.9z")
+  plane.setAttribute("fill", "currentColor")
+  icon.appendChild(plane)
+  b.appendChild(icon)
+  const word = document.createElement("span")
+  word.textContent = S.webSend
+  b.appendChild(word)
+  b.title = nextWord("voiceSendNow")
   return b
 }
 

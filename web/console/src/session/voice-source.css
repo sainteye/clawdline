@@ -13,6 +13,21 @@
   display: none;
 }
 
+/* Send while recording: the word with the paper plane Send means elsewhere,
+   so the button that delivers the message unread says so before it is
+   pressed. Lives here because `legacy/composer.css` is a pinned copy. */
+.voice .send-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.voice .send-now .ico {
+  display: block;
+  width: 13px;
+  height: 13px;
+}
+
 .voice-install-dialog {
   box-sizing: border-box;
   width: min(430px, calc(100vw - 32px));

@@ -656,6 +656,12 @@ export function Composer({
         setDictated(dictatedFrom(said, polish))
       },
       send: (said) => dictationSender.current(said),
+      // The row's Send runs this in its own tap, before the recording stops.
+      beforeSend: () => {
+        voiceTarget.current = remote ? null : captureMachineFetch()
+        voiceChime.current?.drop()
+        voiceChime.current = primeChime()
+      },
       transcribe: remote?.transcribe,
       source: voiceSource,
       missingWhisper: (failure) => setVoiceInstall({ reason: failure.reason, help: false }),
@@ -894,8 +900,9 @@ export function Composer({
           +
         </button>
         {/* Two icons and never a label — the words are the `aria-label`, which
-            is swapped for "send" while it records so that a screen reader is
-            told what the second press will do.
+            is swapped for "stop" while it records so that a screen reader is
+            told what the second press will do: stop and put the words in the
+            box. Sending without reading lives on the row's Send.
 
             **Except while it is recording, it goes dead for the two waits.**
             The microphone takes the same permission as the attachment beside
@@ -908,20 +915,16 @@ export function Composer({
           className="mic"
           id="mic"
           type="button"
-          aria-label={voiceLive ? nextWord("voiceSendNow") : T.webVoiceStart}
-          title={voiceLive ? nextWord("voiceSendNow") : T.webVoiceStart}
+          aria-label={voiceLive ? T.webVoiceStop : T.webVoiceStart}
+          title={voiceLive ? T.webVoiceStop : T.webVoiceStart}
           aria-pressed={voiceLive ? "true" : "false"}
           disabled={voiceLive ? false : !on || sending || voiceBusy}
           onClick={() => {
             const job = voiceJob.current
             if (!job) return
-            // While it records this is the send control; the row's Done
-            // still writes the words into the box for reading first.
-            if (!voiceLive) return V.press(job)
-            voiceTarget.current = remote ? null : captureMachineFetch()
-            voiceChime.current?.drop()
-            voiceChime.current = primeChime()
-            V.pressSend(job)
+            // While it records this is Stop: the words go into the box for
+            // reading first. The row's Send delivers them unread.
+            V.press(job)
           }}
           // Pressing it must not take the focus off the box somebody is typing
           // in; the click still lands.
@@ -937,10 +940,9 @@ export function Composer({
               strokeLinecap="round"
             ></path>
           </svg>
-          {/* `ico-stop` is the class `composer.css` shows while recording;
-              what it draws there is now the paper plane of sending. */}
-          <svg className="ico ico-stop ico-voice-send" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M3.5 20.5 21 12 3.5 3.5l.02 6.6L15 12 3.52 13.9z" fill="currentColor"></path>
+          {/* `ico-stop` is the class `composer.css` shows while recording. */}
+          <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
           </svg>
         </button>
         {/* Uncontrolled: React renders no children here, so it never rewrites
