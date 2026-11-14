@@ -25,6 +25,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
+import { LIVE_GREETING, LIVE_USD_PER_SECOND, LiveTranscript, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -214,7 +215,7 @@ export class RealtimeCopilotClient {
   private personSpoke = false
   private releaseWork?: () => void
   private narrator = new WorkNarrator(event => {
-    if(this.dc?.readyState==='open')this.dc.send(JSON.stringify(event))
+    if(this.dc?.readyState==='open'&&!this.live)this.dc.send(JSON.stringify(event))
   },()=>consoleLanguage()||'zh-Hant',()=>`${this.spokenSessions.context()}\n${this.call.options.workEnabled?`${ACTION_STATUS_GUIDANCE}\n${JSON.stringify(this.currentWorkEvidence())}`:''}`)
   private workUnsubscribe?: () => void
   /** The user guide's sections, read the first time a call asks how something is used. */
@@ -226,6 +227,14 @@ export class RealtimeCopilotClient {
   /** Which start this is; `disconnect` moves it on so a ringing start stops. */
   private attempt = 0
   private listeners: Set<RealtimeListener> = new Set()
+  /** This call runs on GPT-Live (`copilot-live.ts`) rather than the Realtime API. */
+  private live = false
+  private liveHeard = new LiveTranscript()
+  private liveSaid = new LiveTranscript()
+  /** The backend's function calls still running in this browser. */
+  private livePending = new Set<string>()
+  private liveSeconds = 0
+  private liveBackendUsd = 0
 
   private state: RealtimeCopilotState = {
     status: 'disconnected',
@@ -262,7 +271,8 @@ export class RealtimeCopilotClient {
     this.cancelOpening()
     this.focus = row.id
     if (this.dc && this.dc.readyState === 'open') {
-      this.dc.send(JSON.stringify(screenFocusEvent(row)))
+      if (this.live) { this.sendLiveContext(); this.dc.send(JSON.stringify(liveNote('thinking', `The person now has the Session "${row.label || row.id}" open on screen; "it" and "this" now mean that one.`))) }
+      else this.dc.send(JSON.stringify(screenFocusEvent(row)))
       this.addLog('info', nextWord('copilotLogFocus', { name: row.label || row.id }))
     }
   }
@@ -294,7 +304,8 @@ export class RealtimeCopilotClient {
   /** Changes this call's speed or answer length now, and saves it on the machine for the next calls. */
   private async adjust(change: { speed?: string; brief?: boolean }): Promise<{ saved: boolean }> {
     this.call.options = { ...this.call.options, ...change }
-    if (this.dc && this.dc.readyState === 'open') {
+    if (this.live) this.sendLiveContext()
+    else if (this.dc && this.dc.readyState === 'open') {
       this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
     }
     try {
@@ -344,7 +355,8 @@ export class RealtimeCopilotClient {
     if (!this.dc || this.dc.readyState !== 'open') return
     this.call.options = { ...this.call.options, briefing: text }
     // Only the instructions and speed: the call has spoken by now, and its voice is fixed.
-    this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    if (this.live) this.sendLiveContext()
+    else this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
     this.addLog('info', nextWord('copilotLogBriefingSent'))
   }
   private model = 'gpt-realtime-mini'
@@ -458,6 +470,7 @@ export class RealtimeCopilotClient {
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
+    this.live = false;this.liveHeard.take();this.liveSaid.take();this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
     // Which build and tools this call has: on 2026-11-13 a call could not be
@@ -478,7 +491,11 @@ export class RealtimeCopilotClient {
       const configured = await workspaceSettings
       check()
       if (!configured) throw new Error(nextWord('voiceWorkModeUnknown'))
-      const managed = configured.work_enabled === true
+      // GPT-Live calls use the direct tools only: the background work list is built on Realtime's turns.
+      const live = configured.engine === 'live'
+      this.live = live
+      const managed = !live && configured.work_enabled === true
+      if (live && configured.work_enabled === true) this.addLog('info', nextWord('copilotLogLiveNoWork'))
       let messageActions=false
       check()
       if (managed) {
@@ -488,22 +505,31 @@ export class RealtimeCopilotClient {
         if (!ready.ok || body?.protocol !== 3) throw new Error(nextWord('copilotWorkUpdateRequired'))
         messageActions=body.message_confirmation===true
       }
-      // 0. The machine mints a short-lived client secret with its own key; the
-      // key itself never reaches this browser (internal/transport/http/copilot.go).
-      const opened = await fetch('/v1/voice/copilot-session', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
-      })
-      check()
-      const grant = (await opened.json().catch(() => null)) as {
-        client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean; work_enabled?: boolean; session_recaps?: string
-      } | null
-      if (!opened.ok || !grant?.client_secret) {
-        const { code, message } = copilotRefusal(grant, opened.status)
-        // refusal-ok: a missing key points to Settings, an older machine to its update; every other refusal is shown with its own code and the machine's sentence.
-        throw new Error(code === 'copilot_key_missing'
-          ? nextWord('copilotErrorKeyMissing')
-          : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
-          : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
+      type CallGrant = { client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean; work_enabled?: boolean; session_recaps?: string }
+      let grant: CallGrant
+      if (live) {
+        // A GPT-Live call has no client secret: the machine opens the session
+        // itself once the offer is ready (step 6), so the settings are the grant.
+        grant = { model: 'gpt-live-1', voice: configured.voice, brief: configured.brief, extra_instructions: configured.extra_instructions, briefing: configured.briefing, session_recaps: configured.session_recaps }
+      } else {
+        // 0. The machine mints a short-lived client secret with its own key; the
+        // key itself never reaches this browser (internal/transport/http/copilot.go).
+        const opened = await fetch('/v1/voice/copilot-session', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
+        })
+        check()
+        const answered = (await opened.json().catch(() => null)) as {
+          client_secret?: string; model?: string; eagerness?: string; voice?: string; speed?: string; brief?: boolean; extra_instructions?: string; briefing?: boolean; work_enabled?: boolean; session_recaps?: string
+        } | null
+        if (!opened.ok || !answered?.client_secret) {
+          const { code, message } = copilotRefusal(answered, opened.status)
+          // refusal-ok: a missing key points to Settings, an older machine to its update; every other refusal is shown with its own code and the machine's sentence.
+          throw new Error(code === 'copilot_key_missing'
+            ? nextWord('copilotErrorKeyMissing')
+            : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
+            : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
+        }
+        grant = answered
       }
       this.recapMode = grant.session_recaps === 'background' || grant.session_recaps === 'on_demand' ? grant.session_recaps : 'off'
       this.call = { memory: '', snapshot: '', options: { workEnabled: managed, messageActions, eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
@@ -569,25 +595,47 @@ export class RealtimeCopilotClient {
       await own.pc.setLocalDescription(offer)
       check()
 
-      // 6. Connect with OpenAI Realtime API endpoint (GA)
-      const baseUrl = 'https://api.openai.com/v1/realtime/calls'
-      this.model = grant.model || 'gpt-realtime-mini'
-      const response = await fetch(`${baseUrl}?model=${encodeURIComponent(this.model)}`, {
-        method: 'POST',
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${grant.client_secret}`,
-          'Content-Type': 'application/sdp',
-        },
-      })
+      let answerSdp: string
+      if (live) {
+        // 6. The machine posts the whole offer to /v1/live/sessions with its key (copilot_live.go).
+        await iceGathered(own.pc)
+        check()
+        this.model = 'gpt-live-1'
+        this.call.options = { ...this.call.options, language: consoleLanguage() }
+        const opened = await fetch('/v1/voice/copilot-live', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+          body: JSON.stringify({ sdp: own.pc.localDescription?.sdp ?? offer.sdp, instructions: liveInstructions(this.call.options) }),
+        })
+        check()
+        const body = (await opened.json().catch(() => null)) as { sdp?: string; session_id?: string } | null
+        if (!opened.ok || !body?.sdp) {
+          const { code, message } = copilotRefusal(body, opened.status)
+          // refusal-ok: a missing key points to Settings, an older machine to its update; every other refusal is shown with its own code and the machine's sentence.
+          throw new Error(code === 'copilot_key_missing' ? nextWord('copilotErrorKeyMissing')
+            : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
+            : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
+        }
+        answerSdp = body.sdp
+      } else {
+        // 6. Connect with OpenAI Realtime API endpoint (GA)
+        const baseUrl = 'https://api.openai.com/v1/realtime/calls'
+        this.model = grant.model || 'gpt-realtime-mini'
+        const response = await fetch(`${baseUrl}?model=${encodeURIComponent(this.model)}`, {
+          method: 'POST',
+          body: offer.sdp,
+          headers: {
+            Authorization: `Bearer ${grant.client_secret}`,
+            'Content-Type': 'application/sdp',
+          },
+        })
 
-      check()
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(nextWord('copilotErrorRealtime', { status: response.status, detail: errorText }))
+        check()
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(nextWord('copilotErrorRealtime', { status: response.status, detail: errorText }))
+        }
+        answerSdp = await response.text()
       }
-
-      const answerSdp = await response.text()
       check()
       await own.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
       check()
@@ -619,14 +667,16 @@ export class RealtimeCopilotClient {
     const current=()=>this.dc===dc&&this.attempt===attempt
     dc.onopen = () => {
       if(!current())return
-      void this.sendSessionConfiguration()
+      // GPT-Live was configured when the machine opened it; its backend follows `session.started`.
+      if (!this.live) void this.sendSessionConfiguration()
     }
 
     dc.onmessage = (event) => {
       if(!current())return
       try {
         const msg = JSON.parse(event.data)
-        this.handleRealtimeEvent(msg)
+        if (this.live) this.handleLiveEvent(msg)
+        else this.handleRealtimeEvent(msg)
       } catch {
         // refusal-ok: unparseable server data channel payloads are ignored.
       }
@@ -685,6 +735,12 @@ export class RealtimeCopilotClient {
     this.call.options = { ...this.call.options, origin }
     this.focus = origin.id
     if (!this.dc || this.dc.readyState !== 'open') return
+    if (this.live) {
+      // GPT-Live keeps talking; it is told which Session is meant now and asked about it on the next turn.
+      this.sendLiveContext()
+      this.dc.send(JSON.stringify(liveNote('thinking', `The person turned the call to the Session "${origin.label || origin.id}"; "it" and "this" now mean that one.`)))
+      return
+    }
     this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
     if (this.state.speakingState === 'speaking' || this.state.speakingState === 'thinking') this.dc.send(JSON.stringify({ type: 'response.cancel' }))
     void this.prepareHandover(origin)
@@ -1097,6 +1153,110 @@ export class RealtimeCopilotClient {
     } finally {this.pendingTools.delete(event.call_id);this.narrator.toolFinished(event.call_id);this.updateState({})}
   }
 
+  /** The backend's instructions with this call's snapshot, memory, briefing and focus, sent again whenever one of them changes. */
+  private sendLiveContext() {
+    if (!this.live || !this.dc || this.dc.readyState !== 'open') return
+    this.dc.send(JSON.stringify(liveBackendUpdate(this.call.memory, this.call.snapshot, this.call.options)))
+  }
+
+  /** After `session.started`: the backend gets its instructions and tools, then the call greets once. */
+  private async configureLive() {
+    const dc = this.dc, attempt = this.attempt
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const snapshot = await Promise.race([this.snapshot, new Promise<string>((resolve) => { timer = setTimeout(() => resolve(''), SNAPSHOT_WAIT_MS) })])
+    clearTimeout(timer)
+    if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
+    this.addLog(snapshot ? 'info' : 'error', nextWord(snapshot ? 'copilotLogSnapshot' : 'copilotLogNoSnapshot'))
+    const section = memorySection(this.memory, nowSeconds())
+    this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
+    this.sendLiveContext()
+    this.updateState({ connectionReady: true })
+    if (!this.personSpoke) dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING)))
+    if (!this.call.options.origin) void this.followScreen()
+  }
+
+  /** What a GPT-Live session says on its data channel (`copilot-live.ts`). */
+  private handleLiveEvent(event: { type?: string; delta?: unknown; usage?: { seconds?: number }; error?: { code?: string; message?: string } }) {
+    switch (event.type) {
+      case 'session.started':
+        this.addLog('info', nextWord('copilotLogConnected'))
+        void this.configureLive()
+        return
+      case 'session.input_transcript.delta': {
+        this.personSpoke = true
+        this.cancelOpening()
+        const said = this.liveSaid.take()
+        if (said) { this.journal('said', said); this.flushJournal() }
+        this.liveHeard.add(event.delta)
+        this.heardNow = this.liveHeard.peek()
+        this.updateState({ speakingState: 'listening', lastTranscript: this.heardNow })
+        return
+      }
+      case 'session.output_transcript.delta': {
+        const heard = this.liveHeard.take()
+        if (heard) { this.journal('heard', heard); this.doneSinceHeard.clear(); this.updateState({ tools: [] }) }
+        this.liveSaid.add(event.delta)
+        this.updateState({ speakingState: 'speaking', lastAssistantSpeech: this.liveSaid.peek() })
+        return
+      }
+      case 'session.delegation.created':
+        this.updateState({ speakingState: 'thinking' })
+        return
+      case 'session.usage.updated':
+        this.liveSeconds = Math.max(this.liveSeconds, Number(event.usage?.seconds) || 0)
+        this.updateLiveCost()
+        return
+      case 'response.event': {
+        const usd = liveBackendUSD(event)
+        if (usd) { this.liveBackendUsd += usd; this.updateLiveCost() }
+        const call = liveFunctionCall(event)
+        if (call) void this.runLiveTool(call.callID, call.name, call.arguments)
+        return
+      }
+      case 'error':
+        this.addLog('error', nextWord('copilotLogLiveError', { code: event.error?.code ?? '?', message: event.error?.message ?? '' }))
+        return
+      case 'session.closed':
+        if (this.state.status === 'connected') this.disconnect()
+        return
+    }
+  }
+
+  private updateLiveCost() {
+    const usd = this.liveSeconds * LIVE_USD_PER_SECOND + this.liveBackendUsd
+    this.updateState({ cost: { ...emptyCost(this.model), usd, priced: true } })
+  }
+
+  /** Runs one backend function call with the same tools a Realtime call has, and lets the backend continue after the last one. */
+  private async runLiveTool(callID: string, name: string, args: string) {
+    const dc = this.dc, attempt = this.attempt
+    this.livePending.add(callID)
+    this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: name }), speakingState: 'thinking' })
+    const started = performance.now()
+    let output: string
+    let logs: { level: 'info' | 'tool' | 'error'; text: string }[] = []
+    try {
+      const result = await runCopilotTool(name, args, this.toolDeps())
+      output = result.output; logs = result.logs
+    } catch (error) {
+      output = JSON.stringify({ error: String(error) })
+    }
+    this.livePending.delete(callID)
+    if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
+    const trace = toolTrace(name, output, performance.now() - started)
+    this.updateState({ tools: [...(this.state.tools ?? []), trace], toolCallLog: undefined })
+    this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500) })
+    for (const log of logs) this.addLog(log.level, log.text)
+    const done = actionNotice(name, output)
+    if (done) {
+      this.doneSinceHeard.add(NOTICE_KIND[done.key])
+      this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
+      this.journal('notice', nextWord(done.key, done.params))
+      this.meter.chime()
+    }
+    for (const reply of liveToolReply(callID, output, this.livePending.size === 0)) dc.send(JSON.stringify(reply))
+  }
+
   /**
    * Called inside a user activation that follows a call started from a timer
    * (the lift of a hold): iOS may have kept the call's audio suspended, or
@@ -1140,6 +1300,8 @@ export class RealtimeCopilotClient {
     this.journalCall = ''
     this.attempt += 1
     if (this.dc) {
+      // GPT-Live finalizes on session.close; the connection closing right after still ends billing.
+      if (this.live && this.dc.readyState === 'open') { try { this.dc.send(JSON.stringify({ type: 'session.close', event_id: `close_${crypto.randomUUID()}` })) } catch { /* refusal-ok: the channel is closing anyway. */ } }
       try {
         this.dc.close()
       } catch {
@@ -1187,6 +1349,17 @@ export class RealtimeCopilotClient {
 }
 
 export const realtimeCopilot = new RealtimeCopilotClient()
+
+/** Resolves once the offer holds its ICE candidates (GPT-Live takes one complete offer), or after 10 s as OpenAI's example does. */
+function iceGathered(pc: RTCPeerConnection): Promise<void> {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve()
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(timer); pc.removeEventListener('icegatheringstatechange', check); resolve() }
+    const check = () => { if (pc.iceGatheringState === 'complete') done() }
+    const timer = setTimeout(done, 10000)
+    pc.addEventListener('icegatheringstatechange', check)
+  })
+}
 onMachineChanged(()=>realtimeCopilot.disconnect())
 
 /** The longest a voice preview stays connected. */

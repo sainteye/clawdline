@@ -87,6 +87,14 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
         </p>
       ) : null}
 
+      {snapshot.engines?.length ? (
+        <Row label={nextWord("copilotEngineLabel")} hint={nextWord("copilotEngineHint")}>
+          <PopUp label={nextWord("copilotEngineLabel")} value={snapshot.engine ?? "realtime"}
+            options={snapshot.engines.map((e) => ({ value: e, label: nextWord(e === "live" ? "copilotEngineLive" : "copilotEngineRealtime") }))}
+            onPick={(picked) => { void change({ engine: picked }).catch(() => undefined) }} />
+        </Row>
+      ) : null}
+
       <Row label={nextWord("copilotModelLabel")} hint={nextWord("copilotModelHint")}>
         <PopUp label={nextWord("copilotModelLabel")} value={snapshot.model}
           options={snapshot.models.map((m) => ({ value: m, label: m }))}

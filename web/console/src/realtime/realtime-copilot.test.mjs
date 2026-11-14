@@ -633,3 +633,54 @@ test('a cleared Session introduction exposes resume and reuses prepared content 
   f.c.resetSessionReports()
  })
 })
+
+test('a GPT-Live call configures its backend after start, greets once, and answers the backend with the same tools', async () => {
+  globalThis.document = { documentElement: { lang: 'zh-Hant' } }
+  globalThis.location = { hash: '' }
+  const sent = [], reads = []
+  const c = new RealtimeCopilotClient()
+  c.live = true
+  c.attempt = 1
+  c.state = { ...c.state, status: 'connected' }
+  c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
+  c.call = { memory: '', snapshot: '', options: {} }
+  c.snapshot = Promise.resolve('【通話開始時的 Session 快照】 one Session')
+  c.memory = []
+  c.addLog = () => {}
+  c.toolDeps = () => ({
+    sleep: async () => {},
+    fetch: async (path, init) => {
+      reads.push(path)
+      assert.ok(!init?.method || init.method === 'GET')
+      if (path === '/v1/sessions') return Response.json({ sessions: [row] })
+      return Response.json({})
+    },
+  })
+
+  c.handleLiveEvent({ type: 'session.started' })
+  await tick(); await tick()
+  const update = sent.find(e => e.type === 'session.update')
+  assert.ok(update, 'the backend is configured once the session has started')
+  assert.match(update.session.delegation.responses.instructions, /one Session/)
+  assert.equal(sent.filter(e => e.type === 'session.commentary.append').length, 1, 'one greeting')
+  assert.equal(c.state.connectionReady, true)
+  assert.equal(sent.filter(e => e.type === 'response.create' && e.response).length, 0, 'no Realtime response is ever sent to GPT-Live')
+
+  sent.length = 0
+  c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: '現在有' })
+  c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: '哪些 Session？' })
+  assert.equal(c.state.lastTranscript, '現在有哪些 Session？')
+  c.handleLiveEvent({ type: 'session.delegation.created', delegation: { id: 'item_1', target: 'responses' } })
+  c.handleLiveEvent({ type: 'response.event', delegation_id: 'item_1', event: { type: 'response.output_item.done', response_id: 'resp_1', item: { type: 'function_call', call_id: 'call_1', name: 'list_sessions', arguments: '{}' } } })
+  for (let i = 0; i < 20 && !sent.some(e => e.type === 'response.create'); i++) await tick()
+  assert.ok(reads.includes('/v1/sessions'), 'the tool ran in this browser')
+  const result = sent.find(e => e.type === 'response.item.create')
+  assert.equal(result?.item.call_id, 'call_1')
+  assert.match(result.item.output, /Prepare screenshots/)
+  assert.deepEqual(sent.map(e => e.type), ['response.item.create', 'response.create'])
+
+  c.handleLiveEvent({ type: 'session.usage.updated', usage: { seconds: 60 } })
+  c.handleLiveEvent({ type: 'response.event', event: { type: 'response.completed', response: { usage: { input_tokens: 10000, output_tokens: 0 } } } })
+  assert.ok(Math.abs(c.state.cost.usd - (0.05 + 0.001)) < 1e-9, String(c.state.cost.usd))
+  assert.equal(c.state.cost.priced, true)
+})

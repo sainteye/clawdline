@@ -14244,6 +14244,67 @@
   },
   {
     "Register": "daemon",
+    "Name": "voice.copilot_live_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 61440,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.copilotLiveBodyLimit",
+      "internal/app/cloudops.copilotLiveCloudBodyLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_live_instructions_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 24576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/copilot.MaxLiveInstructionsBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.copilot_live_offer_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32768,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/copilot.MaxLiveSDPBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "voice.copilot_recap_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",

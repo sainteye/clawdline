@@ -199,6 +199,15 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 		"voice.copilot_extra_instructions_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-settings-write guard on the person's instructions"}
 		},
+		"voice.copilot_live_offer_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call guard on the GPT-Live WebRTC offer"}
+		},
+		"voice.copilot_live_instructions_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call guard on the GPT-Live instructions"}
+		},
+		"voice.copilot_live_body_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call guard on the GPT-Live start body"}
+		},
 		capacity.ArtifactsImages: func() capacity.Reading {
 			if s.pictures.store == nil {
 				return capacity.Unmeasured("this server keeps no picture store")

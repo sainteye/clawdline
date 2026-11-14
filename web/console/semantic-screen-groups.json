@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12078,
-  "riskKeys": 5247,
-  "nonRiskCount": 6831,
+  "englishContentKeys": 12090,
+  "riskKeys": 5252,
+  "nonRiskCount": 6838,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 554,
+      "count": 557,
       "sources": [
         null
       ],
@@ -923,6 +923,9 @@
         "capacityRow.voice.copilot_journal_text_characters.full",
         "capacityRow.voice.copilot_journal_text_characters.what",
         "capacityRow.voice.copilot_key_bytes.what",
+        "capacityRow.voice.copilot_live_body_bytes.what",
+        "capacityRow.voice.copilot_live_instructions_bytes.what",
+        "capacityRow.voice.copilot_live_offer_bytes.what",
         "capacityRow.voice.copilot_recap_body_bytes.what",
         "capacityRow.voice.copilot_recap_characters.what",
         "capacityRow.voice.copilot_recap_input_characters.full",
@@ -3912,7 +3915,7 @@
     },
     {
       "name": "next / other",
-      "count": 1084,
+      "count": 1088,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4160,6 +4163,9 @@
         "next.copilotEagernessAuto",
         "next.copilotEagernessHigh",
         "next.copilotEagernessLow",
+        "next.copilotEngineLabel",
+        "next.copilotEngineLive",
+        "next.copilotEngineRealtime",
         "next.copilotExtraLabel",
         "next.copilotExtraSave",
         "next.copilotForget",
@@ -4182,6 +4188,7 @@
         "next.copilotLogGreeting",
         "next.copilotLogHeard",
         "next.copilotLogInfo",
+        "next.copilotLogLiveError",
         "next.copilotLogMemory",
         "next.copilotLogMicRetry",
         "next.copilotLogOpenAIError",

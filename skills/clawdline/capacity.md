@@ -738,6 +738,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `voice.copilot_journal_seconds` | 1209600 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `voice.copilot_journal_text_characters` | 4000 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_key_bytes` | 400 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_live_body_bytes` | 61440 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_live_instructions_bytes` | 24576 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `voice.copilot_live_offer_bytes` | 32768 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_recap_body_bytes` | 4096 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_recap_characters` | 2500 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.copilot_recap_input_characters` | 60000 | `characters` | `coalesce` | `sender, diagnostics` | — |

@@ -546,6 +546,10 @@ const snippetMaximumBytes = 64 << 10
 // changes, and one Board command.
 const defaultModelsCloudBodyLimit = 64 << 10
 
+// copilotLiveCloudBodyLimit is a GPT-Live call start's body over Cloud: the
+// machine route's own bound (internal/transport/http.copilotLiveBodyLimit).
+const copilotLiveCloudBodyLimit = (32 << 10) + (24 << 10) + 4096
+
 // pushBodyMaximumBytes is what one subscription weighs on the wire, matching
 // the local route's own reader (`authBodyLimit`, the bound `/v1/push/` is
 // registered under in internal/transport/http). This bridge does not know what

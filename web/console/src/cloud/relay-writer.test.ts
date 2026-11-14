@@ -3244,6 +3244,29 @@ test("the copilot closes another Session while one Session is open, at that Sess
   assert.equal((sent?.[3] as { execution_generation?: string })?.execution_generation, other)
 })
 
+test("a GPT-Live call start carries the offer and instructions to a machine with a key", async () => {
+  class Fleet extends FakeClient {
+    _machinesFor() { return { capable: [{ id: "mac-a", freshness: "current" }, { id: "mac-b", freshness: "current" }] } }
+    _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action") {
+      this.calls.push(["_machineRequestAs", request, machine, word, body, kind])
+      if (machine === "mac-a") return Promise.reject(refusal("copilot_key_missing", { status: 412, layer: "mac_route", message: "no key" }))
+      return Promise.resolve({ session_id: "sess_1", sdp: "v=0 answer", model: "gpt-live-1" })
+    }
+  }
+  const client = new Fleet()
+  const { reader } = seam(client)
+  const opened = await reader.fetch("/v1/voice/copilot-live", post({ sdp: "v=0 offer", instructions: "Speak briefly." }, { "Idempotency-Key": "live-1" }))
+  assert.equal(opened.status, 200)
+  assert.equal((await json<{ sdp: string }>(opened)).sdp, "v=0 answer")
+  assert.deepEqual(client.calls.map((call) => call[2]), ["mac-a", "mac-b"])
+  assert.equal(client.calls[1][3], "copilot-live")
+  assert.deepEqual(client.calls[1][4], { live: { sdp: "v=0 offer", instructions: "Speak briefly." } })
+  // Later reads of this call go to the machine that opened it.
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-briefing", post({}, { "Idempotency-Key": "brief-live" }))
+  assert.equal(client.calls[0][2], "mac-b")
+})
+
 test("a call pass is asked only of machines that offer the voice copilot, passing on one without a key", async () => {
   class Fleet extends FakeClient {
     _machinesFor(type: string) {
