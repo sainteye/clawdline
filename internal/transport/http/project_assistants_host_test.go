@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -708,7 +709,12 @@ func TestProjectAssistantServerMissingProviderRefusesWithoutInventingReadiness(t
 	f.s.projectAssistants.provider = nil
 	f.enable(t)
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
-	paAssertHTTPFailure(t, f.send(t, f.local, "unconfigured-provider"), 503, pa.CLINotInstalled)
+	// A Codex Bot stops at its CLI on macOS; elsewhere its platform is refused first.
+	if runtime.GOOS == "darwin" {
+		paAssertHTTPFailure(t, f.send(t, f.local, "unconfigured-provider"), 503, pa.CLINotInstalled)
+	} else {
+		paAssertHTTPFailure(t, f.send(t, f.local, "unconfigured-provider"), 501, pa.Unsupported)
+	}
 	x, err := featurestore.New(f.s.store.ProjectAssistantDatabase()).Export(context.Background(), f.key)
 	if err != nil || len(x.Turns) != 0 || len(x.Messages) != 0 {
 		t.Fatal("missing provider accepted work", err)
