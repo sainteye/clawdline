@@ -4850,6 +4850,7 @@ const (
 	ProjectAssistantOperationEdit       ProjectAssistantOperation = "edit"
 	ProjectAssistantOperationSend       ProjectAssistantOperation = "send"
 	ProjectAssistantOperationStop       ProjectAssistantOperation = "stop"
+	ProjectAssistantOperationSendNow    ProjectAssistantOperation = "send_now"
 	ProjectAssistantOperationAnswer     ProjectAssistantOperation = "answer"
 	ProjectAssistantOperationRead       ProjectAssistantOperation = "read"
 	ProjectAssistantOperationObserve    ProjectAssistantOperation = "observe"
@@ -4859,7 +4860,7 @@ const (
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
 
 // What the native tool asks to do, for the person to read before answering.
 // Display only: it never authorizes anything.
@@ -5214,6 +5215,14 @@ type ProjectAssistantReceiptResponse struct {
 	Receipt         ProjectAssistantReceipt `json:"receipt"`
 }
 
+// Sends one queued message into the running turn, as Codync's steer (API level
+// 64).
+type ProjectAssistantSendNowRequest struct {
+	Command ProjectAssistantCommand `json:"command"`
+	Fence   ProjectAssistantFence   `json:"fence"`
+	TurnID  string                  `json:"turn_id"`
+}
+
 type ProjectAssistantSendRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 	Fence   ProjectAssistantFence   `json:"fence"`
@@ -5280,7 +5289,8 @@ type ProjectAssistantSourcesResponse struct {
 	Sources         []ProjectAssistantSourceStatus `json:"sources"`
 }
 
-// Cancels active and queued turns; a collapsed UI never sends this.
+// Cancels active and queued turns; a collapsed UI never sends this. Naming a
+// turn that is still queued removes only that message (API level 63).
 type ProjectAssistantStopRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 	Fence   ProjectAssistantFence   `json:"fence"`
@@ -5302,8 +5312,12 @@ type ProjectAssistantTurn struct {
 	ID             string                       `json:"id"`
 	IdempotencyKey string                       `json:"idempotency_key"`
 	Instructions   ProjectAssistantInstructions `json:"instructions"`
-	MemoryRevision int64                        `json:"memory_revision"`
-	MessageID      string                       `json:"message_id"`
+
+	// The running turn this queued message was sent into with Send now; absent
+	// otherwise.
+	JoinedTurnID   string `json:"joined_turn_id,omitempty"`
+	MemoryRevision int64  `json:"memory_revision"`
+	MessageID      string `json:"message_id"`
 
 	// When the turn began running, RFC 3339; absent while it waits.
 	StartedAt string                    `json:"started_at,omitempty"`

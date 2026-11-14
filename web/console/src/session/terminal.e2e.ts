@@ -354,7 +354,8 @@ test("the start sheet only offers the current Session or Terminal list's action"
   await tab.press("#start-go")
   assert.equal(await tab.run(`document.querySelector("#start-title")?.textContent === document.querySelector("#start-go")?.getAttribute("aria-label")`), true, "reopening in Session mode still offers Session")
   await tab.press("#start-close")
-  await tab.press(".session-mode-choice:last-child")
+  await tab.press("#session-mode-pick")
+  await tab.press('.session-mode-choice[data-mode="terminals"]')
   await tab.run(`localStorage.setItem("clawdline.start.mode", "session")`)
   await tab.press("#start-go")
   assert.equal(await tab.run(`document.querySelector("#start-title")?.textContent === document.querySelector("#start-go")?.getAttribute("aria-label")`), true, "Terminal mode has the Terminal action's title")
@@ -363,7 +364,8 @@ test("the start sheet only offers the current Session or Terminal list's action"
   await tab.press("#start-go")
   assert.equal(await tab.run(`document.querySelector("#start-title")?.textContent === document.querySelector("#start-go")?.getAttribute("aria-label")`), true, "reopening in Terminal mode still offers Terminal")
   await tab.press("#start-close")
-  await tab.press(".session-mode-choice:first-child")
+  await tab.press("#session-mode-pick")
+  await tab.press('.session-mode-choice[data-mode="sessions"]')
   await tab.press("#start-go")
   assert.equal(await tab.run(`document.querySelector("#start-title")?.textContent === document.querySelector("#start-go")?.getAttribute("aria-label")`), true, "returning to Session mode restores the Session action")
 })
@@ -379,7 +381,8 @@ test("Session list opens terminals beside it, remembers its mode, and filters", 
   await tab.press("#start-go")
   assert.equal(await tab.run(`document.querySelector("#start-title")?.textContent === document.querySelector("#start-go")?.getAttribute("aria-label")`), true)
   await tab.press("#start-close")
-  await tab.press(".session-mode-choice:last-child")
+  await tab.press("#session-mode-pick")
+  await tab.press('.session-mode-choice[data-mode="terminals"]')
   await tab.press("#start-go")
   assert.equal(await tab.run(`document.querySelector("#start-title")?.textContent === document.querySelector("#start-go")?.getAttribute("aria-label")`), true)
   await tab.run(`new Promise((ok, fail) => {
@@ -412,15 +415,21 @@ test("Session list opens terminals beside it, remembers its mode, and filters", 
   assert.ok(list.cards.every((card: string) => card.includes("f3-fixture") && card.includes("已開啟") && !card.includes("沒有人")))
   assert.notEqual(list.cards[0], list.cards[1], "two terminals in one project show distinct IDs")
   assert.ok(list.width <= list.viewport && list.rowWidth <= list.viewport, JSON.stringify(list))
-  assert.deepEqual(await tab.run(`(() => [...document.querySelectorAll(".session-mode-choice")].map((button) => ({ label: button.getAttribute("aria-label"), pressed: button.getAttribute("aria-pressed"), icon: !!button.querySelector("svg") })))()`), [
-    { label: "Claude Code session 清單", pressed: "false", icon: true },
-    { label: "終端", pressed: "true", icon: true },
-  ], "both views have persistent icon choices with the current view selected")
-  assert.equal(await tab.run(`(() => { const group = document.querySelector(".session-mode-tabs"); if (!group) return false; const [sessions, terminals] = group.children; return group.children.length === 2 && parseFloat(getComputedStyle(group).borderTopWidth) > 0 && Math.abs(sessions.getBoundingClientRect().right - terminals.getBoundingClientRect().left) < 1 })()`), true, "the two choices share one bordered tab group")
-  await tab.press(".session-mode-choice:first-child")
+  assert.equal(await tab.run(`document.querySelector("#session-mode-pick")?.getAttribute("aria-label")`), "切換清單內容：終端", "the search box prefix names the list it filters")
+  assert.equal(await tab.run(`document.querySelector("#session-mode-menu")`), null, "the list choice stays folded until asked for")
+  await tab.press("#session-mode-pick")
+  assert.deepEqual(await tab.run(`(() => [...document.querySelectorAll("#session-mode-menu .session-mode-choice")].map((item) => ({ text: item.textContent, checked: item.getAttribute("aria-checked"), role: item.getAttribute("role") })))()`), [
+    { text: "Session", checked: "false", role: "menuitemradio" },
+    { text: "終端", checked: "true", role: "menuitemradio" },
+  ], "the menu names both lists with the current one checked")
+  await tab.run(`document.querySelector("#session-mode-menu")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`)
+  assert.equal(await tab.run(`!document.querySelector("#session-mode-menu") && document.activeElement?.id === "session-mode-pick"`), true, "Escape folds the menu back onto its button")
+  await tab.press("#session-mode-pick")
+  await tab.press('.session-mode-choice[data-mode="sessions"]')
   assert.equal(await tab.run(`location.hash`), "#page=sessions")
-  assert.equal(await tab.run(`document.querySelector(".session-mode-choice:first-child")?.getAttribute("aria-pressed")`), "true")
-  await tab.press(".session-mode-choice:last-child")
+  assert.equal(await tab.run(`document.querySelector("#session-mode-pick")?.getAttribute("aria-label")`), "切換清單內容：Session")
+  await tab.press("#session-mode-pick")
+  await tab.press('.session-mode-choice[data-mode="terminals"]')
   assert.equal(await tab.run(`location.hash`), "#page=sessions&mode=terminal")
   assert.equal(await tab.run(`document.querySelector("#start-go")?.getAttribute("aria-label")`), "開一個終端")
   await tab.press("#start-go")
@@ -454,7 +463,7 @@ test("Session list opens terminals beside it, remembers its mode, and filters", 
   await tab.key("slash")
   await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("search did not focus")), 3000); const look = () => document.activeElement?.id === "filter" ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
   assert.equal(await tab.run(`document.activeElement?.id`), "filter")
-  const expanded = await tab.run(`(() => ({ input: document.querySelector("#filter").getBoundingClientRect().width, terminal: document.querySelector(".session-mode-choice:last-child").getBoundingClientRect().width, terminalVisible: [...document.querySelectorAll(".session-mode-choice")].every((button) => !!button.offsetParent), rowWidth: document.querySelector(".filter-row").scrollWidth, viewport: innerWidth }))()`)
+  const expanded = await tab.run(`(() => ({ input: document.querySelector("#filter").getBoundingClientRect().width, terminal: document.querySelector("#session-mode-pick").getBoundingClientRect().width, terminalVisible: !!document.querySelector("#session-mode-pick").offsetParent, rowWidth: document.querySelector(".filter-row").scrollWidth, viewport: innerWidth }))()`)
   assert.ok(expanded.input > 40 && expanded.terminalVisible && expanded.terminal > 0 && expanded.rowWidth <= expanded.viewport, JSON.stringify(expanded))
   await tab.shot("session-terminal-search-expanded-375")
   await tab.text("not-here")
@@ -464,7 +473,7 @@ test("Session list opens terminals beside it, remembers its mode, and filters", 
   assert.ok(await tab.run(`document.querySelector("#filter")?.getBoundingClientRect().width > 40`), "Escape clears without hiding the input")
   await tab.run(`location.reload()`)
   await pause(600)
-  assert.equal(await tab.run(`document.querySelector(".session-mode-choice:last-child")?.getAttribute("aria-pressed")`), "true")
+  assert.equal(await tab.run(`document.querySelector("#session-mode-pick")?.getAttribute("aria-label")`), "切換清單內容：終端")
   assert.deepEqual(await tab.run(`(() => ({
     rowButtons: [...document.querySelectorAll(".session-terminal-rows li")].map((li) => li.querySelectorAll("button").length),
     headButtons: document.querySelectorAll(".session-terminal-list .session-terminal-head button").length,
@@ -505,7 +514,8 @@ test("Session terminal entry explains unavailable tmux without project buttons",
   })
   await tab.go("#page=sessions")
   await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Session toolbar did not render")), 5000); const look = () => document.querySelector("#start-go") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
-  await tab.press(".session-mode-choice:last-child")
+  await tab.press("#session-mode-pick")
+  await tab.press('.session-mode-choice[data-mode="terminals"]')
   await tab.press("#start-go")
   await tab.run(`new Promise((ok, fail) => {
     const end = setTimeout(() => fail(new Error("tmux explanation did not appear")), 6000)
@@ -580,7 +590,7 @@ test("the retired terminal page's address opens the Session terminal list", { sk
     look()
   })`)
   assert.equal(await tab.run(`document.querySelector(".terminal-list-title")`), null, "the per-project list is gone")
-  assert.equal(await tab.run(`document.querySelector(".session-mode-choice:last-child")?.getAttribute("aria-pressed")`), "true")
+  assert.equal(await tab.run(`document.querySelector("#session-mode-pick")?.getAttribute("aria-label")`), "切換清單內容：終端")
   await tab.shot("02-retired-terminal-address")
   await tab.close()
 })

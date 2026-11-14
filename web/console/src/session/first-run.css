@@ -30,16 +30,6 @@
   display: flex; flex-direction: column; gap: 2px;
 }
 .sidebar-sessions-pin + .sidebar-group { margin-top: 10px; padding-top: 0; border-top: 0; }
-.sidebar-recent { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
-.sidebar-recent h2 { margin: 0 12px 2px; color: var(--faint); font-size: 11px; font-weight: 600; line-height: 20px; }
-.sidebar-recent .sidebar-item { min-width: 0; }
-.sidebar-recent-dot {
-  flex: 0 0 auto; width: 18px; display: inline-flex; align-items: center; justify-content: center;
-}
-.sidebar-recent-dot::before {
-  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--faint));
-}
-.sidebar-recent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The one-time tour. */
 .first-tour { position: fixed; inset: 0; z-index: 70; pointer-events: none; }

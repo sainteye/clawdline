@@ -67,6 +67,7 @@ type Client struct {
 	segmentStart      int
 	segmentClosed     bool
 	messageID         string
+	steering          bool
 	sequence          uint64
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -113,6 +114,12 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 			Name    string `json:"name"`
 			Version string `json:"version"`
 		} `json:"agentInfo"`
+		// Both supplied adapters advertise _session/steering here.
+		Meta struct {
+			Steering struct {
+				Supported bool `json:"supported"`
+			} `json:"steering"`
+		} `json:"_meta"`
 	}
 	b, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}})
 	if err != nil {
@@ -121,6 +128,9 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	if err = json.Unmarshal(b, &initialized); err != nil {
 		return refusal(pa.Unsupported, "initialize_response")
 	}
+	c.mu.Lock()
+	c.steering = initialized.Meta.Steering.Supported
+	c.mu.Unlock()
 	if initialized.ProtocolVersion != 1 {
 		return refusal(pa.ProviderVersionUnsupported, "acp_protocol_version")
 	}
@@ -748,4 +758,41 @@ func (c *Client) closeSegment() {
 		c.partial = strings.TrimRight(c.partial[:c.segmentStart], "\n")
 	}
 	c.segmentClosed = false
+}
+
+// Steer is Codync's hand_to_agent: the message goes into the running turn
+// through ACP _session/steering; a turn that just ended answers
+// promptRequired instead of starting one. What the agent writes next starts a
+// new paragraph of the reply.
+func (c *Client) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+	if err := pa.ValidateMessage(text); err != nil {
+		return "", err
+	}
+	c.mu.Lock()
+	steering, sid, active := c.steering, c.sessionID, c.turnID != ""
+	if active {
+		c.segmentClosed = true
+	}
+	c.mu.Unlock()
+	if !steering {
+		return "", refusal(pa.Unsupported, "steering")
+	}
+	if !active {
+		return app.SteerNext, nil
+	}
+	b, err := c.call(ctx, "_session/steering", map[string]any{"sessionId": sid, "prompt": []any{map[string]string{"type": "text", "text": text}}, "_meta": map[string]any{"steering": map[string]string{"idleBehavior": "promptRequired"}}})
+	if err != nil {
+		return "", err
+	}
+	var answer struct {
+		Outcome string `json:"outcome"`
+	}
+	if json.Unmarshal(b, &answer) != nil {
+		return "", refusal(pa.OutcomeUnknown, "steering_answer")
+	}
+	switch app.SteerOutcome(answer.Outcome) {
+	case app.SteerJoined, app.SteerNext:
+		return app.SteerOutcome(answer.Outcome), nil
+	}
+	return "", refusal(pa.OutcomeUnknown, "steering_answer")
 }

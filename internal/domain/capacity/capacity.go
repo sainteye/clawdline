@@ -752,6 +752,7 @@ const (
 	BotsAttachmentBytes       = "bots.attachment_bytes"
 	BotsMemoryEntries         = "bots.memory_entries"
 	BotsMemorySearchResults   = "bots.memory_search_results"
+	BotsSteerAnswer           = "bots.steer_answer_ms"
 )
 
 const BotsOwnedDescendants = "bots.owned_children"

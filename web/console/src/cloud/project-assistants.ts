@@ -18,6 +18,8 @@ export const PROJECT_ASSISTANTS_VIEW_API_LEVEL = 61
 export const PROJECT_ASSISTANTS_PICTURES_API_LEVEL = 62
 // Stopping a queued turn removes that one message, and turns carry started_at, from 63.
 export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
+// Send now (Codync's steer) arrived at 64; this machine's own console only, until the Cloud relay carries it.
+export const PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL = 64
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -168,6 +170,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   stop(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST") }
   unqueue(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST",true,PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL) }
   canUnqueue() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL }
+  sendNow(r: W.ProjectAssistantSendNowRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/send-now"),s,r,"POST",true,PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL) }
+  canSendNow() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }

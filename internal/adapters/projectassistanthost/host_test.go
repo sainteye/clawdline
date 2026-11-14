@@ -55,6 +55,8 @@ type fixtureProvider struct {
 	openStarted, openRelease chan struct{}
 	sent                     chan app.PromptRequest
 	sessions                 chan *fixtureSession
+	steerOutcome             app.SteerOutcome
+	steered                  chan string
 }
 
 func (p *fixtureProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
@@ -96,7 +98,14 @@ func (s *fixtureSession) Wait(ctx context.Context) (app.PromptResult, error) {
 	}
 }
 func (s *fixtureSession) Answer(context.Context, string, string) error { return nil }
-func (s *fixtureSession) Cancel(context.Context) error                 { return nil }
+func (s *fixtureSession) Steer(_ context.Context, text string) (app.SteerOutcome, error) {
+	if s.p.steered == nil {
+		return "", failure(pa.Unsupported, "steering")
+	}
+	s.p.steered <- text
+	return s.p.steerOutcome, nil
+}
+func (s *fixtureSession) Cancel(context.Context) error { return nil }
 func (s *fixtureSession) Close(context.Context) error {
 	s.p.closes.Add(1)
 	if s.p.unknown.Load() {
@@ -1000,5 +1009,72 @@ func TestHostStoppingAQueuedTurnRemovesOnlyThatMessage(t *testing.T) {
 	next := fixtureReceive(t, f.p.sent)
 	if !strings.Contains(next.Text, "three") {
 		t.Fatalf("after the running turn, the next prompt was %q", next.Text)
+	}
+}
+
+// As Codync's steer, Send now hands a queued message to the running turn.
+// Joined, it ends succeeded with no prompt of its own; when that turn had
+// just ended, it stays queued and runs in its turn.
+func TestHostSendNowJoinsTheRunningTurnOrWaits(t *testing.T) {
+	for _, outcome := range []app.SteerOutcome{app.SteerJoined, app.SteerNext} {
+		f := newHostFixture(t)
+		f.p.steerOutcome, f.p.steered = outcome, make(chan string, 1)
+		f.o.Reader = f.st.ProjectAssistantReader()
+		f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
+		f.start(t)
+		f.enable(t)
+		b := f.create(t, "bot")
+		ctx := context.Background()
+		first, e := f.send(t, b, "one")
+		if e != nil {
+			t.Fatal(e)
+		}
+		fixtureReceive(t, f.p.sent)
+		running := fixtureReceive(t, f.p.sessions)
+		second, e := f.send(t, b, "two")
+		if e != nil {
+			t.Fatal(e)
+		}
+		s, e := f.h.Service()
+		if e != nil {
+			t.Fatal(e)
+		}
+		_, c, _, e := s.Get(ctx, b.Key)
+		if e != nil {
+			t.Fatal(e)
+		}
+		fence := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
+		if _, e = s.SendNow(ctx, app.SendNowRequest{Command: pa.Command{Key: b.Key, Operation: pa.SendNowOperation, IdempotencyKey: "now-" + string(outcome)}, Fence: fence, TurnID: second.ResourceID}); e != nil {
+			t.Fatalf("%s: send now: %v", outcome, e)
+		}
+		if text := fixtureReceive(t, f.p.steered); text != "Hello two" {
+			t.Fatalf("steered %q", text)
+		}
+		got, e := f.h.store.Turn(ctx, b.Key, second.ResourceID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		running.reply <- app.PromptResult{FinalText: "Both answered"}
+		if outcome == app.SteerJoined {
+			if got.State != pa.TurnSucceeded || got.JoinedTurnID != first.ResourceID {
+				t.Fatalf("joined turn: %+v", got)
+			}
+			fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+			if _, e = s.View(ctx, pa.ReadViewRequest{Key: b.Key, ConversationID: c.ID, Mode: pa.ReadViewSnapshot, PageSize: 100}); e != nil {
+				t.Fatalf("the chat did not read after a joined message: %v", e)
+			}
+			select {
+			case q := <-f.p.sent:
+				t.Fatalf("a joined message was sent again: %q", q.Text)
+			default:
+			}
+			continue
+		}
+		if got.State != pa.TurnQueued {
+			t.Fatalf("a message the agent left for later: %+v", got)
+		}
+		if next := fixtureReceive(t, f.p.sent); !strings.Contains(next.Text, "two") {
+			t.Fatalf("next prompt %q", next.Text)
+		}
 	}
 }

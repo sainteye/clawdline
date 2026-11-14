@@ -5608,6 +5608,7 @@ export type ProjectAssistantOperation =
   | "edit"
   | "send"
   | "stop"
+  | "send_now"
   | "answer"
   | "read"
   | "observe"
@@ -5615,7 +5616,7 @@ export type ProjectAssistantOperation =
   | "memory_save"
   | "dispatch"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
 
 /**
  * What the native tool asks to do, for the person to read before answering. Display
@@ -6027,6 +6028,15 @@ export interface ProjectAssistantReceiptResponse {
   receipt: ProjectAssistantReceipt
 }
 
+/**
+ * Sends one queued message into the running turn, as Codync's steer (API level 64).
+ */
+export interface ProjectAssistantSendNowRequest {
+  command: ProjectAssistantCommand
+  fence: ProjectAssistantFence
+  turn_id: string
+}
+
 export interface ProjectAssistantSendRequest {
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
@@ -6094,7 +6104,8 @@ export interface ProjectAssistantSourcesResponse {
 }
 
 /**
- * Cancels active and queued turns; a collapsed UI never sends this.
+ * Cancels active and queued turns; a collapsed UI never sends this. Naming a turn
+ * that is still queued removes only that message (API level 63).
  */
 export interface ProjectAssistantStopRequest {
   command: ProjectAssistantCommand
@@ -6119,6 +6130,12 @@ export interface ProjectAssistantTurn {
   id: string
   idempotency_key: string
   instructions: ProjectAssistantInstructions
+
+  /**
+   * The running turn this queued message was sent into with Send now; absent
+   * otherwise.
+   */
+  joined_turn_id?: string
   memory_revision: number
   message_id: string
 

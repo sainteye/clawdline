@@ -348,6 +348,13 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 			if old.State != t.State && !pa.CanTransition(old.State, t.State) {
 				return failure(pa.StaleVersion, "turn_state")
 			}
+			// The running turn may end while the agent answers a steer, so a
+			// joined turn names any turn of this conversation that started.
+			joined := old.State == pa.TurnQueued && t.State == pa.TurnSucceeded
+			target, found := a.Turns[t.JoinedTurnID]
+			if joined && (t.JoinedTurnID == t.ID || !found || target.StartedAt == nil || target.Fence.ConversationID != t.Fence.ConversationID) || !joined && t.JoinedTurnID != old.JoinedTurnID {
+				return failure(pa.ScopeDenied, "turn_joined")
+			}
 		}
 		a.Turns[t.ID] = t
 	}
@@ -449,7 +456,8 @@ func validateAggregate(a aggregate) error {
 	}
 	pending := 0
 	for id, t := range a.Turns {
-		queued := t.State == pa.TurnQueued || t.State == pa.TurnAccepted || t.State == pa.TurnCancelled || t.State == pa.TurnFailed
+		// A turn joined by Send now never ran on its own, so it has no captured snapshot.
+		queued := t.State == pa.TurnQueued || t.State == pa.TurnAccepted || t.State == pa.TurnCancelled || t.State == pa.TurnFailed || t.JoinedTurnID != ""
 		if id == "" || id != t.ID || t.MessageID == "" || t.IdempotencyKey == "" || t.MemoryRevision < 0 || t.MemoryRevision > a.Memory.Revision || !queued && (t.MemoryRevision < 1 || t.Instructions.Revision < 1) {
 			return failure(pa.Invalid, "turn")
 		}

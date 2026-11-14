@@ -113,6 +113,7 @@ func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 	if value.StartedAt != nil {
 		out.StartedAt = value.StartedAt.UTC().Format(time.RFC3339)
 	}
+	out.JoinedTurnID = value.JoinedTurnID
 	if value.Failure != nil {
 		converted := paWireFailure(*value.Failure)
 		out.Failure = &converted

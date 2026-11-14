@@ -59,7 +59,10 @@ first-use setup ahead of time and prints which Claude Code version it found;
    doing (the tool it is using, or that it is writing) and how long the turn
    has run. A message sent while it is still working waits in line and is
    shown as pending; **×** on a pending message takes it back before it is
-   sent, leaving the current reply and the other pending messages alone.
+   sent, leaving the current reply and the other pending messages alone, and
+   **↳** sends it now, into the reply in progress, as in Codync. If that reply
+   had just ended, the message keeps its place and goes next. (Send now works
+   from this machine's own console; not yet through Clawdline Cloud.)
 4. Ask it to dispatch work, for example "add a file and commit it". It
    starts an isolated worker in that Project's worktree, and a work card
    follows the work from accepted to running to done. The worker's summary

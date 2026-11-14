@@ -1596,6 +1596,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.steer_answer_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotSteerAnswerMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.survey_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
