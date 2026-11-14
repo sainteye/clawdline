@@ -348,6 +348,14 @@ func Launch(o Options) (Started, error) {
 	if _, err := WriteStableExtension(o.Dir); err != nil {
 		return Started{}, err
 	}
+	// Chrome keeps an extension's registered service worker across restarts,
+	// even when the folder's files and version change: on 2026-11-15 the test
+	// Chrome reported manifest 0.4.1 while running a months-old worker.js from
+	// the same path. The profile is Clawdline's own, so a new release clears
+	// its cached service workers before Chrome starts.
+	if err := forgetStaleServiceWorkers(o.Dir); err != nil {
+		return Started{}, err
+	}
 	real, err := filepath.EvalSymlinks(extDir)
 	if err != nil {
 		return Started{}, err

@@ -667,6 +667,14 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		a.mu.Unlock()
 		return err
 	}
+	// Preparation can take seconds, and the Bot's version also moves for
+	// writes that do not concern this start, such as a reader's position.
+	// Start from the current Bot and conversation when nothing this turn
+	// depends on has changed; anything that has stays a stale refusal.
+	if bot, c, err = r.currentForStart(ctx, a.key, bot, c); err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	c.Generation++
 	c.BindingID = r.o.ID()
 	t.Fence = currentFence(bot, c)
@@ -1354,4 +1362,26 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		}
 	}
 	return nil
+}
+
+// currentForStart re-reads the Bot and its conversation just before a turn
+// starts. Only the versions may differ from what the start was prepared
+// against: the project, agent, permission policy, instructions, conversation
+// identity, generation, binding and active turn must all be unchanged.
+func (r *Engine) currentForStart(ctx context.Context, key pa.BotKey, prepared pa.Bot, preparedConversation pa.Conversation) (pa.Bot, pa.Conversation, error) {
+	bot, err := r.o.Repository.Bot(ctx, key)
+	if err != nil {
+		return pa.Bot{}, pa.Conversation{}, err
+	}
+	c, err := r.o.Repository.Conversation(ctx, key, bot.ConversationID)
+	if err != nil {
+		return pa.Bot{}, pa.Conversation{}, err
+	}
+	if bot.Project != prepared.Project || bot.Agent != prepared.Agent || bot.PermissionPolicy != prepared.PermissionPolicy || bot.Mode != prepared.Mode ||
+		bot.Instructions.Revision != prepared.Instructions.Revision || bot.ConversationID != prepared.ConversationID ||
+		c.ID != preparedConversation.ID || c.Generation != preparedConversation.Generation ||
+		c.BindingID != preparedConversation.BindingID || c.ActiveTurnID != preparedConversation.ActiveTurnID {
+		return pa.Bot{}, pa.Conversation{}, runtimeFailure(pa.StaleVersion, "start_changed")
+	}
+	return bot, c, nil
 }

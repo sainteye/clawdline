@@ -91,6 +91,16 @@ export function liveBackendUSD(event: unknown): number {
   return (fresh * LIVE_BACKEND_RATES.input + cached * LIVE_BACKEND_RATES.cached + n(u.output_tokens) * LIVE_BACKEND_RATES.output) / 1_000_000
 }
 
+/**
+ * A GPT-Live call's running cost. OpenAI bills the seconds `session.usage.updated`
+ * reports; between those updates the call's own elapsed time stands in, so the
+ * line keeps moving and never shows less than has already been billed.
+ */
+export function liveCost(elapsedSeconds: number, billedSeconds: number, backendUSD: number): { seconds: number; usd: number } {
+  const seconds = Math.max(elapsedSeconds, billedSeconds)
+  return { seconds, usd: seconds * LIVE_USD_PER_SECOND + backendUSD }
+}
+
 /** A plain note to the live model, said or kept: commentary is spoken, thinking only informs later replies. */
 export function liveNote(kind: 'commentary' | 'thinking', content: string): Record<string, unknown> {
   return { type: `session.${kind}.append`, event_id: `${kind}_${crypto.randomUUID()}`, delegation_id: null, content }

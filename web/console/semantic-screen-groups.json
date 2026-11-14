@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12121,
+  "englishContentKeys": 12126,
   "riskKeys": 5263,
-  "nonRiskCount": 6858,
+  "nonRiskCount": 6863,
   "groups": [
     {
       "name": "acp / other",
@@ -3915,7 +3915,7 @@
     },
     {
       "name": "next / other",
-      "count": 1104,
+      "count": 1106,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4194,6 +4194,8 @@
         "next.copilotKeySave",
         "next.copilotKeySet",
         "next.copilotListening",
+        "next.copilotLiveCost",
+        "next.copilotLiveCostNote",
         "next.copilotLogBriefingSent",
         "next.copilotLogConfigured",
         "next.copilotLogConfiguring",
@@ -5598,7 +5600,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 132,
+      "count": 135,
       "sources": [
         null
       ],
@@ -5619,6 +5621,8 @@
         "projectAssistants.close",
         "projectAssistants.collapse",
         "projectAssistants.compose",
+        "projectAssistants.copiedMessage",
+        "projectAssistants.copyMessage",
         "projectAssistants.create",
         "projectAssistants.createHint",
         "projectAssistants.createSubmit",
@@ -5652,6 +5656,7 @@
         "projectAssistants.memory_disabled",
         "projectAssistants.memory_isolated",
         "projectAssistants.memory_unknown",
+        "projectAssistants.messageActions",
         "projectAssistants.more",
         "projectAssistants.moreActions",
         "projectAssistants.name",

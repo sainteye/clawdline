@@ -33,6 +33,8 @@ export interface CallCost {
   usd: number
   /** False when a response's model has no rate here: the dollars are then a floor. */
   priced: boolean
+  /** A GPT-Live call, billed by the second rather than per response (`copilot-live.ts`). */
+  live?: { seconds: number; billedSeconds: number; backendUSD: number }
 }
 
 export function emptyCost(model: string): CallCost {
@@ -78,6 +80,14 @@ export function addUsage(total: CallCost, usage: unknown): CallCost {
 }
 
 /** US dollars as a person reads them: a call is usually cents. */
+/** A call's length as a person reads it: 0:42, 3:05, 1:02:10. */
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h ? `${h}:${pad(m)}:${pad(r)}` : `${m}:${pad(r)}`
+}
+
 export function formatUSD(usd: number): string {
   if (usd < 0.01) return `US$${usd.toFixed(4)}`
   return `US$${usd.toFixed(3)}`

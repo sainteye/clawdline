@@ -25,7 +25,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LIVE_USD_PER_SECOND, LiveTranscript, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -235,6 +235,9 @@ export class RealtimeCopilotClient {
   private livePending = new Set<string>()
   private liveSeconds = 0
   private liveBackendUsd = 0
+  /** When this GPT-Live call connected, for the call's running length and cost. */
+  private liveStarted = 0
+  private liveTicker?: ReturnType<typeof setInterval>
 
   private state: RealtimeCopilotState = {
     status: 'disconnected',
@@ -470,6 +473,7 @@ export class RealtimeCopilotClient {
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
+    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0
     this.live = false;this.liveHeard.take();this.liveSaid.take();this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
@@ -1090,6 +1094,7 @@ export class RealtimeCopilotClient {
     const startedAt = performance.now()
     const reported:(()=>void)[]=[]
     let output:string,logs:{level:'info'|'tool'|'error';text:string}[]=[],reportResumed=false
+    const steps:string[]=[]
     if(event.name==='get_sessions_summary'&&args.continue_report===true&&this.sessionReports.hasPending()){
       reportResumed=this.sessionReports.resume();output=JSON.stringify({resuming_session_report:reportResumed,meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
     } else if(managed && ['get_voice_work','queue_voice_work','retry_voice_work'].includes(event.name)) {
@@ -1114,7 +1119,7 @@ export class RealtimeCopilotClient {
     } else if(managed && !immediateVoiceRead(event.name,args) && !immediateVoiceAction(event.name)) {
       output=JSON.stringify({error:'voice_work_confirmation_required',meaning:'Direct mutations are unavailable. Submit the saved input with queue_voice_work; confirmation remains in the work list.'})
     } else {
-      const deps=this.toolDeps()
+      const deps=timedDeps(this.toolDeps(),steps)
       const reading:ToolDeps={...deps,heard:()=>utterance,spokenReference:()=>spokenReference,onRead:ref=>{if(attempt===this.attempt&&this.dc===dc)this.spokenSessions.observe(ref)},...(event.name==='get_sessions_summary'?{summaryLimit:SESSION_REPORT_BATCH,summaryExclude:remainingReport(this.heardNow)?this.spokenSessions.heardIDs():undefined}:{}),marks:deps.marks?{get:(key:string)=>deps.marks!.get(key),set:(key:string,mark:Parameters<NonNullable<ToolDeps['marks']>['set']>[1])=>{reported.push(()=>deps.marks!.set(key,mark))}}:undefined}
       const result=await runCopilotTool(event.name,event.arguments,reading);output=result.output;logs=result.logs
       if(event.name==='get_sessions_summary'&&attempt===this.attempt&&this.dc===dc){
@@ -1128,7 +1133,7 @@ export class RealtimeCopilotClient {
     const trace = toolTrace(event.name, output, performance.now() - startedAt)
     if(trace.ok&&immediateVoiceRead(event.name,args))this.answeredReads.add(input)
     this.updateState({ tools: [...(this.state.tools ?? []), trace] })
-    this.journal('tool', event.name, { args: event.arguments.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500) })
+    this.journal('tool', event.name, { args: event.arguments.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
     // Only what the machine confirmed is shown and chimed, never what the
@@ -1180,6 +1185,11 @@ export class RealtimeCopilotClient {
     switch (event.type) {
       case 'session.started':
         this.addLog('info', nextWord('copilotLogConnected'))
+        // The call's length and cost are shown from the start and move every second.
+        this.liveStarted = Date.now()
+        clearInterval(this.liveTicker)
+        this.liveTicker = setInterval(() => this.updateLiveCost(), 1000)
+        this.updateLiveCost()
         void this.configureLive()
         return
       case 'session.input_transcript.delta': {
@@ -1223,20 +1233,22 @@ export class RealtimeCopilotClient {
   }
 
   private updateLiveCost() {
-    const usd = this.liveSeconds * LIVE_USD_PER_SECOND + this.liveBackendUsd
-    this.updateState({ cost: { ...emptyCost(this.model), usd, priced: true } })
+    const elapsed = this.liveStarted ? (Date.now() - this.liveStarted) / 1000 : 0
+    const { seconds, usd } = liveCost(elapsed, this.liveSeconds, this.liveBackendUsd)
+    this.updateState({ cost: { ...emptyCost(this.model), usd, priced: true, live: { seconds, billedSeconds: this.liveSeconds, backendUSD: this.liveBackendUsd } } })
   }
 
   /** Runs one backend function call with the same tools a Realtime call has, and lets the backend continue after the last one. */
   private async runLiveTool(callID: string, name: string, args: string) {
     const dc = this.dc, attempt = this.attempt
+    const steps: string[] = []
     this.livePending.add(callID)
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: name }), speakingState: 'thinking' })
     const started = performance.now()
     let output: string
     let logs: { level: 'info' | 'tool' | 'error'; text: string }[] = []
     try {
-      const result = await runCopilotTool(name, args, this.toolDeps())
+      const result = await runCopilotTool(name, args, timedDeps(this.toolDeps(), steps))
       output = result.output; logs = result.logs
     } catch (error) {
       output = JSON.stringify({ error: String(error) })
@@ -1245,7 +1257,7 @@ export class RealtimeCopilotClient {
     if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
     const trace = toolTrace(name, output, performance.now() - started)
     this.updateState({ tools: [...(this.state.tools ?? []), trace], toolCallLog: undefined })
-    this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500) })
+    this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
     for (const log of logs) this.addLog(log.level, log.text)
     const done = actionNotice(name, output)
     if (done) {
@@ -1299,6 +1311,8 @@ export class RealtimeCopilotClient {
     this.flushJournal()
     this.journalCall = ''
     this.attempt += 1
+    // The last length and cost stay on the sheet; only the clock stops.
+    clearInterval(this.liveTicker);this.liveTicker=undefined
     if (this.dc) {
       // GPT-Live finalizes on session.close; the connection closing right after still ends billing.
       if (this.live && this.dc.readyState === 'open') { try { this.dc.send(JSON.stringify({ type: 'session.close', event_id: `close_${crypto.randomUUID()}` })) } catch { /* refusal-ok: the channel is closing anyway. */ } }
@@ -1349,6 +1363,24 @@ export class RealtimeCopilotClient {
 }
 
 export const realtimeCopilot = new RealtimeCopilotClient()
+
+/**
+ * The tool's dependencies with each machine request and Session decision
+ * timed, for the call journal: on 2026-11-15 a GPT-Live call's
+ * get_session_summary took 7-62 s against a 2.5 s Realtime median, and the
+ * journal could not say which step held it.
+ */
+export function timedDeps(base: ToolDeps, steps: string[]): ToolDeps {
+  const time = async <T,>(label: string, run: () => Promise<T>): Promise<T> => {
+    const started = performance.now()
+    try { return await run() } finally { steps.push(`${label} ${Math.round(performance.now() - started)}ms`) }
+  }
+  return {
+    ...base,
+    fetch: (input, init) => time(String(input).split('?')[0], () => base.fetch(input, init)),
+    ...(base.decide ? { decide: (...args: Parameters<NonNullable<ToolDeps['decide']>>) => time('decide', () => base.decide!(...args)) } : {}),
+  }
+}
 
 /** Resolves once the offer holds its ICE candidates (GPT-Live takes one complete offer), or after 10 s as OpenAI's example does. */
 function iceGathered(pc: RTCPeerConnection): Promise<void> {

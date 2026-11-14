@@ -1,7 +1,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { LiveTranscript, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from "./copilot-live.ts"
+import { LiveTranscript, liveBackendUSD, liveCost, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from "./copilot-live.ts"
+// @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
+import { formatDuration } from "./copilot-cost.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { COPILOT_TOOLS } from "./copilot-tools.ts"
 
@@ -67,4 +69,20 @@ test("notes to the live model are session-wide and fragments are joined exactly"
   assert.equal(t.peek(), "What is going on")
   assert.equal(t.take(), "What is going on")
   assert.equal(t.take(), "")
+})
+
+test("a GPT-Live call's cost counts its own clock between OpenAI's usage updates, never less than billed", () => {
+  // 42 s on the call's clock, OpenAI has billed 30: the 42 is shown.
+  const running = liveCost(42, 30, 0.002)
+  assert.equal(running.seconds, 42)
+  assert.ok(Math.abs(running.usd - (42 * 0.05 / 60 + 0.002)) < 1e-12)
+  // OpenAI's count ahead of the clock (a slow tab) wins.
+  assert.equal(liveCost(10, 15, 0).seconds, 15)
+})
+
+test("a call's length reads as minutes and seconds", () => {
+  assert.equal(formatDuration(0), "0:00")
+  assert.equal(formatDuration(42.9), "0:42")
+  assert.equal(formatDuration(185), "3:05")
+  assert.equal(formatDuration(3730), "1:02:10")
 })
