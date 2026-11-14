@@ -223,7 +223,24 @@ const (
 	RejectAlways PermissionOptionKind = "reject_always"
 )
 
+// PermissionAction is what a native tool asks to do, as the adapter reported
+// it: shown to the person before they answer, never an authorization.
+type PermissionAction struct {
+	Title     string           `json:"title"`
+	ToolKind  string           `json:"tool_kind"`
+	Detail    string           `json:"detail"`
+	Diffs     []PermissionDiff `json:"diffs"`
+	Shortened bool             `json:"shortened"`
+}
+
+type PermissionDiff struct {
+	Path    string `json:"path"`
+	OldText string `json:"old_text"`
+	NewText string `json:"new_text"`
+}
+
 type PermissionOffer struct {
+	Action           *PermissionAction  `json:"action,omitempty"`
 	ID               string             `json:"id"`
 	Fence            Fence              `json:"fence"`
 	TurnID           string             `json:"turn_id"`

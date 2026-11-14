@@ -746,6 +746,7 @@ const (
 	BotsToolProbe             = "bots.tool_probe_ms"
 	BotsToolProbeBytes        = "bots.tool_probe_bytes"
 	BotsFeatureProbeBytes     = "bots.feature_probe_bytes"
+	BotsPermissionActionBytes = "bots.permission_action_bytes"
 )
 
 const BotsOwnedDescendants = "bots.owned_children"

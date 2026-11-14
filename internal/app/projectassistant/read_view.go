@@ -65,6 +65,8 @@ type ReadPermissionSummary struct {
 	State        pa.PermissionState
 	ExpiresAt    time.Time
 	DetailCursor string
+	Title        string
+	ToolKind     string
 }
 
 type ReadTraceSummary struct {

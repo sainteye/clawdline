@@ -155,3 +155,12 @@
   .pa-window,.pa-window[data-closing] { animation:none; }
   .project-assistants .pa-dock[data-ringing],.project-assistants .pa-orb[data-ringing],.project-assistants .pa-dock-badge,.project-assistants .pa-orb-badge { animation:none; }
 }
+
+/* A permission card says what the tool will do, as Codync's does. */
+.project-assistants .pa-permission-title { font-weight:600;margin:4px 0;overflow-wrap:anywhere; }
+.project-assistants .pa-permission-detail { margin:8px 0;font-size:12px; }
+.project-assistants .pa-permission-detail summary { cursor:pointer;color:var(--pa-dim); }
+.project-assistants .pa-permission-detail pre { white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#0d0d0f;border:1px solid var(--pa-line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12px; }
+.project-assistants .pa-diff code { display:block;margin-top:8px;color:var(--pa-dim);overflow-wrap:anywhere; }
+.project-assistants .pa-diff-old { color:#e8a39b; }
+.project-assistants .pa-diff-new { color:#9fd3a4; }

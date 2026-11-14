@@ -93,6 +93,8 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 						t.Fatal("Codex system prompt", string(request))
 					}
 				}
+				// As Codync: the adapter's setting sources, MCP servers and hooks
+				// stay; native memory and dreaming are off; the Host tools allowed.
 				if agent == pa.ClaudeCode {
 					var meta struct {
 						SystemPrompt struct {
@@ -117,7 +119,7 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 							t.Fatal("native persistence or background models enabled")
 						}
 					}
-					if meta.SystemPrompt.Append != q.Bot.Instructions.Text || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || len(o.AllowedTools) != 3 || o.AllowedTools[0] != "mcp__clawdline__send_message" || o.AllowedTools[1] != "mcp__clawdline__dispatch_work" || o.AllowedTools[2] != "mcp__clawdline__work_status" || o.SettingSources == nil || len(o.SettingSources) != 0 || !o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || !o.Settings.DisableAllHooks {
+					if meta.SystemPrompt.Append != q.Bot.Instructions.Text || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || len(o.AllowedTools) != 3 || o.AllowedTools[0] != "mcp__clawdline__send_message" || o.AllowedTools[1] != "mcp__clawdline__dispatch_work" || o.AllowedTools[2] != "mcp__clawdline__work_status" || o.SettingSources != nil || o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || o.Settings.DisableAllHooks {
 						t.Fatal("Claude owned preset", string(request))
 					}
 				}

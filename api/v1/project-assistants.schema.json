@@ -707,6 +707,9 @@
         },
         "selected_option_id": {
           "type": "string"
+        },
+        "action": {
+          "$ref": "#/$defs/ProjectAssistantPermissionAction"
         }
       },
       "required": [
@@ -2080,6 +2083,14 @@
         "detail_cursor": {
           "type": "string",
           "description": "Read reference for the complete stored offer. Summary alone never enables an answer."
+        },
+        "title": {
+          "type": "string",
+          "description": "The proposed action's one-line description; empty from a daemon without it."
+        },
+        "tool_kind": {
+          "type": "string",
+          "description": "The proposed action's ACP tool kind; empty from a daemon without it."
         }
       },
       "required": [
@@ -2234,6 +2245,63 @@
         "has_more"
       ],
       "additionalProperties": false
+    },
+    "ProjectAssistantPermissionDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One file change the native tool proposes, as the adapter reported it.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "old_text": {
+          "type": "string"
+        },
+        "new_text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "old_text",
+        "new_text"
+      ]
+    },
+    "ProjectAssistantPermissionAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the native tool asks to do, for the person to read before answering. Display only: it never authorizes anything.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The adapter's one-line description of the call."
+        },
+        "tool_kind": {
+          "type": "string",
+          "description": "ACP tool kind: read, edit, delete, move, search, execute, think, fetch, switch_mode or other."
+        },
+        "detail": {
+          "type": "string",
+          "description": "The command, URL or other input, shortened to the registered bound."
+        },
+        "diffs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantPermissionDiff"
+          }
+        },
+        "shortened": {
+          "type": "boolean",
+          "description": "True when detail or diffs were shortened to the bound."
+        }
+      },
+      "required": [
+        "title",
+        "tool_kind",
+        "detail",
+        "diffs",
+        "shortened"
+      ]
     }
   }
 }

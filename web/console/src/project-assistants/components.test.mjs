@@ -107,3 +107,15 @@ test("an enabled permission card can allow one action that changes something",()
   const buttons=[...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map(m=>[m[1],/disabled=""/.test(m[0])])
   assert.deepEqual(buttons,[["Allow once",false],["Always allow (unavailable)",true],["Reject once",false]])
 })
+test("a permission card says what the tool will do before it is answered",()=>{
+  const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
+  const offer={id:"offer",fence,turn_id:"t",native_request_id:"1",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",options:[{id:"once",kind:"allow_once",allow:true,read_only:false,label:"Yes"}],
+    action:{title:"rm -rf /tmp/x",tool_kind:"execute",detail:"rm -rf /tmp/x",diffs:[],shortened:false}}
+  const run=render(PermissionCard,{offer,enabled:true,onAnswer:async()=>{},w:words("zh-Hant")})
+  assert.match(run,/想執行指令/);assert.match(run,/rm -rf \/tmp\/x/)
+  const edit={...offer,action:{title:"Write notes.md",tool_kind:"edit",detail:"/repo/notes.md",diffs:[{path:"/repo/notes.md",old_text:"old line",new_text:"new line"}],shortened:true}}
+  const changed=render(PermissionCard,{offer:edit,enabled:true,onAnswer:async()=>{},w:words("en")})
+  assert.match(changed,/Wants to change a file/);assert.match(changed,/old line/);assert.match(changed,/new line/);assert.match(changed,/Shortened/)
+  const summaryOnly=render(PermissionCard,{summary:{id:"offer",fence,turn_id:"t",state:"pending",expires_at:"2099-01-01T00:00:00Z",detail_cursor:"d",title:"curl example.com",tool_kind:"fetch"},enabled:true,onAnswer:async()=>{},w:words("en")})
+  assert.match(summaryOnly,/Wants to use the network/);assert.match(summaryOnly,/curl example.com/)
+})

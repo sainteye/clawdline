@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11894,
+  "englishKeys": 11906,
   "counts": {
     "negation": 3249,
     "state": 1991,
-    "permission": 701,
-    "deletion": 264,
+    "permission": 702,
+    "deletion": 265,
     "uncertainty": 456
   },
-  "unionCount": 5191,
+  "unionCount": 5193,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5317,6 +5317,7 @@
       "capacityRow.artifacts.output_index_bytes.full",
       "capacityRow.bots.perm_rows.full",
       "capacityRow.bots.perm_rows.what",
+      "capacityRow.bots.permission_action_bytes.what",
       "capacityRow.bots.write_ms.full",
       "capacityRow.bots.write_ms.what",
       "capacityRow.browser.profile_state_bytes.full",
@@ -6194,6 +6195,7 @@
       "playbook.sourceStartUnavailable",
       "playbook.unlinkSource",
       "projectAssistants.clearQuote",
+      "projectAssistants.permissionDelete",
       "settings.settingsHooksLegacy",
       "settings.settingsHooksRemove",
       "settings.settingsScopeHint",
@@ -6963,6 +6965,7 @@
     "capacityRow.bots.pending_turns.what",
     "capacityRow.bots.perm_rows.full",
     "capacityRow.bots.perm_rows.what",
+    "capacityRow.bots.permission_action_bytes.what",
     "capacityRow.bots.processes.full",
     "capacityRow.bots.prompt_ms.full",
     "capacityRow.bots.read_view_cursor_bytes.full",
@@ -11305,6 +11308,7 @@
     "projectAssistants.openWork",
     "projectAssistants.pending",
     "projectAssistants.permission",
+    "projectAssistants.permissionDelete",
     "projectAssistants.policy",
     "projectAssistants.readOnly",
     "projectAssistants.reject_always",

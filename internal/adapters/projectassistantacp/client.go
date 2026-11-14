@@ -534,7 +534,7 @@ func (c *Client) handle(f frame) error {
 			return refusal(pa.StaleGeneration, "permission_turn")
 		}
 		readOnly := c.readOnly != nil && c.readOnly(f.Params)
-		offer := pa.PermissionOffer{ID: "native-" + e.TurnID + "-" + id, Fence: c.fence, TurnID: e.TurnID, NativeRequestID: id, ExpiresAt: time.Now().Add(c.l.RPCTimeout), State: pa.PermissionPending}
+		offer := pa.PermissionOffer{ID: "native-" + e.TurnID + "-" + id, Fence: c.fence, TurnID: e.TurnID, NativeRequestID: id, ExpiresAt: time.Now().Add(c.l.RPCTimeout), State: pa.PermissionPending, Action: permissionAction(f.Params)}
 		options := make(map[string]pa.PermissionOption)
 		for _, option := range p.Options {
 			o := pa.PermissionOption{ID: option.OptionID, Label: option.Name, Kind: option.Kind, Allow: option.Kind == pa.AllowOnce || option.Kind == pa.AllowAlways, ReadOnly: readOnly}

@@ -5607,6 +5607,34 @@ export type ProjectAssistantOperation =
 
 export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
 
+/**
+ * What the native tool asks to do, for the person to read before answering. Display
+ * only: it never authorizes anything.
+ */
+export interface ProjectAssistantPermissionAction {
+  /**
+   * The command, URL or other input, shortened to the registered bound.
+   */
+  detail: string
+  diffs: ProjectAssistantPermissionDiff[]
+
+  /**
+   * True when detail or diffs were shortened to the bound.
+   */
+  shortened: boolean
+
+  /**
+   * The adapter's one-line description of the call.
+   */
+  title: string
+
+  /**
+   * ACP tool kind: read, edit, delete, move, search, execute, think, fetch,
+   * switch_mode or other.
+   */
+  tool_kind: string
+}
+
 export interface ProjectAssistantPermissionAnswerRequest {
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
@@ -5615,7 +5643,17 @@ export interface ProjectAssistantPermissionAnswerRequest {
   turn_id: string
 }
 
+/**
+ * One file change the native tool proposes, as the adapter reported it.
+ */
+export interface ProjectAssistantPermissionDiff {
+  new_text: string
+  old_text: string
+  path: string
+}
+
 export interface ProjectAssistantPermissionOffer {
+  action?: ProjectAssistantPermissionAction
   expires_at: string
   fence: ProjectAssistantFence
   id: string
@@ -5767,6 +5805,16 @@ export interface ProjectAssistantReadPermissionSummary {
   fence: ProjectAssistantFence
   id: string
   state: ProjectAssistantPermissionState
+
+  /**
+   * The proposed action's one-line description; empty from a daemon without it.
+   */
+  title?: string
+
+  /**
+   * The proposed action's ACP tool kind; empty from a daemon without it.
+   */
+  tool_kind?: string
   turn_id: string
 }
 

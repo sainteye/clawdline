@@ -1334,6 +1334,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.permission_action_bytes",
+    "Class": "narrative",
+    "Unit": "bytes",
+    "Limit": 32768,
+    "WarnAt": 0,
+    "AtLimit": "summarize",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotPermissionActionBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.processes",
     "Class": "buffer",
     "Unit": "rows",

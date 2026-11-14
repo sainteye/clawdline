@@ -4853,6 +4853,24 @@ const (
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
 var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
 
+// What the native tool asks to do, for the person to read before answering.
+// Display only: it never authorizes anything.
+type ProjectAssistantPermissionAction struct {
+	// The command, URL or other input, shortened to the registered bound.
+	Detail string                           `json:"detail"`
+	Diffs  []ProjectAssistantPermissionDiff `json:"diffs"`
+
+	// True when detail or diffs were shortened to the bound.
+	Shortened bool `json:"shortened"`
+
+	// The adapter's one-line description of the call.
+	Title string `json:"title"`
+
+	// ACP tool kind: read, edit, delete, move, search, execute, think, fetch,
+	// switch_mode or other.
+	ToolKind string `json:"tool_kind"`
+}
+
 type ProjectAssistantPermissionAnswerRequest struct {
 	Command  ProjectAssistantCommand `json:"command"`
 	Fence    ProjectAssistantFence   `json:"fence"`
@@ -4861,7 +4879,15 @@ type ProjectAssistantPermissionAnswerRequest struct {
 	TurnID   string                  `json:"turn_id"`
 }
 
+// One file change the native tool proposes, as the adapter reported it.
+type ProjectAssistantPermissionDiff struct {
+	NewText string `json:"new_text"`
+	OldText string `json:"old_text"`
+	Path    string `json:"path"`
+}
+
 type ProjectAssistantPermissionOffer struct {
+	Action           *ProjectAssistantPermissionAction  `json:"action,omitempty"`
 	ExpiresAt        string                             `json:"expires_at"`
 	Fence            ProjectAssistantFence              `json:"fence"`
 	ID               string                             `json:"id"`
@@ -5012,7 +5038,13 @@ type ProjectAssistantReadPermissionSummary struct {
 	Fence     ProjectAssistantFence           `json:"fence"`
 	ID        string                          `json:"id"`
 	State     ProjectAssistantPermissionState `json:"state"`
-	TurnID    string                          `json:"turn_id"`
+
+	// The proposed action's one-line description; empty from a daemon without it.
+	Title string `json:"title,omitempty"`
+
+	// The proposed action's ACP tool kind; empty from a daemon without it.
+	ToolKind string `json:"tool_kind,omitempty"`
+	TurnID   string `json:"turn_id"`
 }
 
 type ProjectAssistantReadRequest struct {

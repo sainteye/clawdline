@@ -458,6 +458,9 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 		detail, f := s.cursor(q, out.Head, viewPosition{Collection: "permission", ID: id})
 		item := app.ReadViewItem{ID: id, Kind: app.ReadItemPermissionSummary, ObservedEventSeq: out.Head.EventFrontier, Failure: f}
 		item.PermissionSummary = &app.ReadPermissionSummary{ID: id, Fence: offer.Fence, TurnID: offer.TurnID, State: offer.State, ExpiresAt: offer.ExpiresAt, DetailCursor: detail}
+		if offer.Action != nil {
+			item.PermissionSummary.Title, item.PermissionSummary.ToolKind = offer.Action.Title, offer.Action.ToolKind
+		}
 		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "permissions", ID: id})
 		out.Items = append(out.Items, item)
 	}

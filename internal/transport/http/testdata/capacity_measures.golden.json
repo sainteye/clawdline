@@ -321,6 +321,11 @@
     "Note": true
   },
   {
+    "Name": "bots.permission_action_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.processes",
     "Known": true,
     "Note": true

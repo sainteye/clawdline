@@ -63,11 +63,15 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 	params := map[string]any{"cwd": q.Directory, "mcpServers": servers}
 	switch q.Bot.Agent {
 	case pa.ClaudeCode:
+		// As Codync's bot launch: the adapter's own setting sources stay, so
+		// the Project's CLAUDE.md, settings, hooks and MCP servers load as in
+		// the person's own Claude Code; only native memory and dreaming are
+		// turned off and the Host's tools allowed. The user source is the
+		// Bot's own CLAUDE_CONFIG_DIR, not the person's ~/.claude.
 		options := map[string]any{
-			"settingSources": []string{}, "strictMcpConfig": true,
 			"allowDangerouslySkipPermissions": false,
 			"persistSession":                  q.PersistNativeSession, "promptSuggestions": false, "agentProgressSummaries": false,
-			"settings": map[string]any{"autoMemoryEnabled": false, "autoDreamEnabled": false, "disableAllHooks": true},
+			"settings": map[string]any{"autoMemoryEnabled": false, "autoDreamEnabled": false},
 		}
 		// Native tools stay available under Claude Code's default mode, which
 		// decides what to ask about. The three Host-owned tools of this
