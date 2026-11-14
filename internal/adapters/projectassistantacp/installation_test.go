@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -36,6 +37,10 @@ func TestInstalledClaudeWithoutClaudeCodeStartsNothing(t *testing.T) {
 	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex} {
 		caps, e := provider.Capabilities(context.Background(), pa.Bot{Agent: agent})
 		want := pa.CLINotInstalled
+		if runtime.GOOS != "darwin" {
+			// Only macOS is supported; elsewhere the platform is refused first.
+			want = pa.Unsupported
+		}
 		if agent == pa.Codex {
 			want = pa.AdapterNotFound
 		}
