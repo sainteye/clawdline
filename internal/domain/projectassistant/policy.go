@@ -253,15 +253,13 @@ func CheckPermission(offer PermissionOffer, answer PermissionAnswer, context Per
 	}
 	for _, option := range offer.Options {
 		if option.ID == answer.OptionID {
-			// Native approval cannot widen the enforced read-only chat sandbox.
+			// The person answers one action at a time; a standing rule would
+			// outlive this card, so it is refused.
 			if option.Kind == AllowAlways || option.Kind == RejectAlways {
 				return fail(ScopeExpansionDenied, "persistent_permission")
 			}
 			if (option.Kind != AllowOnce && option.Kind != RejectOnce) || option.Allow != (option.Kind == AllowOnce) {
 				return fail(Invalid, "permission_kind")
-			}
-			if option.Allow && !option.ReadOnly {
-				return fail(ScopeExpansionDenied, "native_write")
 			}
 			return nil
 		}

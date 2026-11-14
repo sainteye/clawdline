@@ -100,3 +100,10 @@ test("a late second permission preflight refusal latches only its current scope 
     assert.equal(effects,0);assert.equal(attempts,1,"no automatic permission replay")
   }
 })
+test("an enabled permission card can allow one action that changes something",()=>{
+  const offer={id:"offer",fence:{key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1},turn_id:"t",native_request_id:"1",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",
+    options:[{id:"once",kind:"allow_once",allow:true,read_only:false,label:"Yes"},{id:"always",kind:"allow_always",allow:true,read_only:false,label:"Always"},{id:"no",kind:"reject_once",allow:false,read_only:false,label:"No"}]}
+  const html=render(PermissionCard,{offer,enabled:true,onAnswer:async()=>{},w:words("en")})
+  const buttons=[...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map(m=>[m[1],/disabled=""/.test(m[0])])
+  assert.deepEqual(buttons,[["Allow once",false],["Always allow (unavailable)",true],["Reject once",false]])
+})
