@@ -142,7 +142,17 @@ kept connection recovery stale until a new snapshot and fenced delayed startup/f
 close. Phone header controls no longer wrap and rim labels are clamped to the scene; selected
 Project information remains in the bottom sheet. These changes preserve the child's art direction.
 
-The updated inline script parses. A fresh desktop capture was taken using the generic demo
-Project labels. Phone revalidation remains pending: the browser tool began refusing further reads
-with `browser_setup_required` during the integration run. Earlier child screenshots containing
-the retired private demo label are not suitable for delivery. No recording is claimed.
+The updated inline script parses. After a temporary `browser_setup_required` refusal cleared,
+the root used the same user Chrome profile to capture the current desktop and 390px phone
+layouts with generic demo Project labels. The root exercised phone opening, selection, details,
+host navigation to the selected Session, reopening and closing. Header buttons stayed on one
+row and Project rim labels stayed within the phone scene. These captures use the reduced-motion
+review mode; the background tab correctly pauses rendering, so they do not prove animation
+timing. Earlier child screenshots containing the retired private demo label are not delivered.
+No recording is claimed. Native phone Back integration remains future host work; the prototype
+uses its close control and desktop Escape.
+
+The complete integrated check passed in 13m22s with `GOFLAGS=-p=1`, without excluding tests.
+Earlier full runs had native-hook timeouts; focused tests in the original base and the spec tree
+passed, which does not establish the cause of those timeouts. This evidence applies to the
+prototype and contract, not to an unimplemented runtime plugin installer or production Cloud host.
