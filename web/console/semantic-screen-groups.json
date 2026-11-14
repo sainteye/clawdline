@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11969,
+  "englishContentKeys": 11970,
   "riskKeys": 5208,
-  "nonRiskCount": 6761,
+  "nonRiskCount": 6762,
   "groups": [
     {
       "name": "acp / other",
@@ -3902,7 +3902,7 @@
     },
     {
       "name": "next / other",
-      "count": 1062,
+      "count": 1063,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4362,6 +4362,7 @@
         "next.joinSubmit",
         "next.joinTitle",
         "next.joinUsed",
+        "next.listModeChoose",
         "next.machineDiskFree",
         "next.machineMonitoringNav",
         "next.machineNeedsUpdateLink",
@@ -4610,6 +4611,7 @@
         "next.sessionCallbacksActive",
         "next.sessionCountOne",
         "next.sessionLastActivity",
+        "next.sessionListMode",
         "next.sessionModelCapacity",
         "next.sessionStateFilterActive",
         "next.sessionStateFilterAll",
@@ -4686,7 +4688,6 @@
         "next.sidebarMain",
         "next.sidebarManage",
         "next.sidebarMore",
-        "next.sidebarRecentSessions",
         "next.sidebarServiceVersion",
         "next.sidebarVersionReading",
         "next.sidebarWork",

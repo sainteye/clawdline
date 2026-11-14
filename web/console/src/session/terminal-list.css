@@ -46,8 +46,21 @@
 .terminal-list-notice button { flex: none; min-height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-hi); color: var(--ink); font: 600 13px var(--ui); cursor: pointer; }
 .terminal-list-notice button:disabled { opacity: .5; cursor: progress; }
 .sheet #start-mode-panel [hidden] { display: none; }
-.session-mode-tabs { flex: 0 0 auto; align-self: stretch; display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; }
-.filter-row .session-mode-tabs .session-mode-choice { border: 0; border-radius: 0; }
-.filter-row .session-mode-tabs .session-mode-choice + .session-mode-choice { border-left: 1px solid var(--line); }
-.filter-row .session-mode-tabs .session-mode-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* What the list shows is chosen inside the search box: a quiet grey prefix, divided from the
+   query, because it says which list the query filters. It is not a primary action. */
+.filter-row .session-search { position: relative; flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; }
+.filter-row .session-search input { flex: 1 1 auto; width: 100%; padding-left: 58px; }
+.filter-row .session-mode-pick { position: absolute; left: 1px; top: 1px; bottom: 1px; display: flex; align-items: center; gap: 2px; padding: 0 10px 0 9px; border: 0; border-radius: 8px 0 0 8px; background: none; color: var(--dim); cursor: pointer; z-index: 1; }
+.filter-row .session-mode-pick::after { content: ""; position: absolute; right: 0; top: 50%; height: 20px; margin-top: -10px; border-right: 1px solid var(--line); }
+.filter-row .session-mode-pick:hover, .filter-row .session-mode-pick[aria-expanded="true"] { color: var(--ink); }
+.filter-row .session-mode-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.filter-row .session-mode-pick .session-mode-icon { width: 16px; height: 16px; }
+.filter-row .session-mode-pick .session-mode-chevron { width: 10px; height: 10px; color: var(--faint); }
+.session-mode-menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; min-width: 200px; padding: 5px; display: flex; flex-direction: column; gap: 2px; background: var(--card-hi); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); }
+.session-mode-menu .session-mode-choice { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 14px var(--ui); text-align: left; cursor: pointer; }
+.session-mode-menu .session-mode-choice:hover, .session-mode-menu .session-mode-choice:focus-visible { background: var(--card); outline: none; }
+.session-mode-menu .session-mode-choice[aria-checked="true"] { background: var(--card); }
+.session-mode-menu .session-mode-icon { width: 17px; height: 17px; color: var(--dim); flex: none; }
+.session-mode-menu .session-mode-check { width: 15px; height: 15px; margin-left: auto; color: var(--accent); visibility: hidden; flex: none; }
+.session-mode-menu .session-mode-choice[aria-checked="true"] .session-mode-check { visibility: visible; }
 @media (max-width: 480px) { .filter-row { gap: 5px; padding-inline: 7px; white-space: nowrap; } .filter-row .start { width: 34px; min-width: 34px; } }
