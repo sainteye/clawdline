@@ -40,6 +40,8 @@ test("every successful type result is private even when focus classification is 
       }
       runInNewContext(pageSource.replaceAll("export function", "function") + "\n" + workerSource.replace(/^import .*$/m, ""),
         {chrome, navigator:{userAgent:"test"}, setTimeout, clearTimeout})
+      // The worker connects after reading its folder marker (no fetch here).
+      for (let i = 0; i < 50 && !receive; i++) await new Promise(resolve => setTimeout(resolve, 5))
       const result = await new Promise(resolve => {
         finish = resolve
         receive({command:{id:"type",op:"type",tab:1,person,args:{text:"synthetic-🔐",secret}}})
@@ -81,7 +83,8 @@ test("type never discloses field text across focus boundaries", { skip: !browser
   // chrome.debugger commands run unchanged inside Chrome's extension realm.
   await writeFile(join(ext, "test-entry.js"), `
     let receive; const waiting = new Map(); let next = 0;
-    chrome.runtime.connectNative = () => ({
+    // The worker connects once it has read its folder marker.
+    chrome.runtime.connectNative = () => (globalThis.connected = true, {
       onMessage: { addListener(fn) { receive = fn } },
       onDisconnect: { addListener() {} },
       postMessage(msg) { for (const r of msg.results || []) { waiting.get(r.id)(r); waiting.delete(r.id) } }
@@ -183,7 +186,7 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     assert.equal(r.exceptionDetails, undefined, r.exceptionDetails?.text)
     return r.result.value
   }
-  for (let i = 0; i < 100 && !await evaluate("globalThis.ready === true"); i++) await new Promise(resolve => setTimeout(resolve, 50))
+  for (let i = 0; i < 100 && !await evaluate("globalThis.ready === true && globalThis.connected === true"); i++) await new Promise(resolve => setTimeout(resolve, 50))
   const command = c => evaluate(`command(${JSON.stringify(c)})`)
   t.diagnostic("extension is ready; opening synthetic form")
   const opened = await command({op:"open", args:{url:`http://127.0.0.1:${server.address().port}/`}})
@@ -351,4 +354,65 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     assert.equal((await command({op:"navigate",tab,args:{url}})).ok, false, "only person navigation uses this command")
     assert.equal(await page("location.href"), url)
   })
+})
+
+// The worker tells its host which folder Chrome loaded: "stable" when the
+// stable folder's marker is there, "revision" otherwise (docs/browser.md,
+// "Updating the extension").
+test("the hello names the folder Chrome loaded", { skip: !browser, timeout: 60000 }, async (t) => {
+  for (const stable of [true, false]) {
+    const dir = await mkdtemp(join(process.env.CLAWDLINE_BROWSER_TEST_TMP || tmpdir(), "worker-folder-"))
+    let chromeProcess, ws
+    try {
+      const ext = join(dir, "extension")
+      await cp(new URL("../../../extension/chrome/", import.meta.url), ext, { recursive: true })
+      if (stable) await writeFile(join(ext, "clawdline-folder.json"), JSON.stringify({ stable: true, revision: "test", version: "test" }))
+      const manifest = JSON.parse(await readFile(join(ext, "manifest.json"), "utf8"))
+      manifest.background.service_worker = "test-entry.js"
+      await writeFile(join(ext, "manifest.json"), JSON.stringify(manifest))
+      await writeFile(join(ext, "test-entry.js"), `globalThis.sent = [];
+        chrome.runtime.connectNative = () => ({ onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, postMessage(msg) { globalThis.sent.push(msg) } });
+        ${workerSource}
+        globalThis.ready = true;`)
+      chromeProcess = spawn(browser, ["--headless=new", "--no-first-run", "--no-default-browser-check",
+        "--use-mock-keychain", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+        `--user-data-dir=${join(dir, "profile")}`, `--load-extension=${ext}`, `--disable-extensions-except=${ext}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
+      const endpoint = await new Promise((resolve, reject) => {
+        let stderr = ""
+        const timer = setTimeout(() => reject(Error(`Chrome did not start: ${stderr}`)), 15000)
+        chromeProcess.stderr.on("data", data => { stderr += data; const hit = stderr.match(/DevTools listening on (ws:\/\/\S+)/); if (hit) { clearTimeout(timer); resolve(hit[1]) } })
+      })
+      ws = new WebSocket(endpoint); await once(ws, "open")
+      let next = 0
+      const pending = new Map()
+      ws.onmessage = event => { const msg = JSON.parse(event.data), p = pending.get(msg.id); if (p) { pending.delete(msg.id); p(msg) } }
+      const send = (method, params = {}, sessionId) => new Promise(resolve => {
+        const id = ++next, timer = setTimeout(() => { pending.delete(id); resolve({}) }, 3000)
+        pending.set(id, msg => { clearTimeout(timer); resolve(msg) }); ws.send(JSON.stringify({id, method, params, sessionId}))
+      })
+      let worker
+      for (let i = 0; i < 100 && !worker; i++) {
+        worker = (await send("Target.getTargets")).result?.targetInfos?.find(x => x.type === "service_worker" && x.url.endsWith("/test-entry.js"))
+        if (!worker) await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      assert.ok(worker, "extension worker started")
+      const {sessionId} = (await send("Target.attachToTarget", {targetId: worker.targetId, flatten: true})).result
+      await send("Runtime.enable", {}, sessionId)
+      await send("Runtime.runIfWaitingForDebugger", {}, sessionId)
+      let folder
+      for (let i = 0; i < 60 && !folder; i++) {
+        // Exactly one hello, and it already names the folder.
+        const r = await send("Runtime.evaluate", {expression: "JSON.stringify((globalThis.sent || []).filter(m => m.hello).map(m => m.hello.folder || 'none'))", returnByValue: true}, sessionId)
+        folder = JSON.parse(r.result?.result?.value || "[]")[0]
+        if (!folder) await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      assert.equal(folder, stable ? "stable" : "revision")
+      const hellos = await send("Runtime.evaluate", {expression: "(globalThis.sent || []).filter(m => m.hello).length", returnByValue: true}, sessionId)
+      assert.equal(hellos.result?.result?.value, 1, "one hello per connection")
+    } finally {
+      ws?.close()
+      if (chromeProcess && chromeProcess.exitCode === null && chromeProcess.signalCode === null) { chromeProcess.kill(); await once(chromeProcess, "exit") }
+      await rm(dir, { recursive: true, force: true, maxRetries: 5 })
+    }
+  }
 })

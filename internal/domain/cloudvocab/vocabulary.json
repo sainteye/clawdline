@@ -328,6 +328,21 @@
       "decode": {"reply": "action", "fields": {"journal": {"type": "object", "max_bytes": 65536, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-journal", "body": {"object": "journal"}}}
     },
     {
+      "op": "copilot-live",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/voice/copilot-live",
+      "console_seam": "writer",
+      "console_note": "The voice copilot's GPT-Live call start (`realtime/copilot-live.ts`): the browser's WebRTC offer and the live model's instructions, which the machine posts to OpenAI with its key; it answers OpenAI's offer answer and the session id.",
+      "local": {"method": "POST", "device": true},
+      "example": {"live": {"sdp": "v=0", "instructions": "Speak briefly."}, "request": "req-live", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["live", "request", "session"], "path": "/v1/voice/copilot-live", "local_body": ["instructions", "sdp"]}
+      ],
+      "decode": {"reply": "action", "fields": {"live": {"type": "object", "max_bytes": 61440, "copies": {"max_bytes": "copilotLiveCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-live", "body": {"object": "live"}}}
+    },
+    {
       "op": "copilot-recap",
       "kind": "command",
       "write_gate": true,
@@ -384,7 +399,7 @@
       "shapes": [
         {"body": ["changes", "request", "session"], "path": "/v1/settings/copilot", "local_body": ["eagerness"]}
       ],
-      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 12, "properties": {"work_auto_continue":{"type":"integer","nullable":true,"min":1,"max":8,"copies":{"max":"voicework.MaxAutoContinue"}},"work_enabled":{"type":"bool","nullable":true},"work_assistant":{"type":"string","nullable":true,"enum":["claude","codex"]},"brief": {"type": "bool", "nullable": true}, "speed": {"type": "string", "nullable": true, "enum": ["0.8", "0.9", "1.0", "1.1"]}, "openai_key": {"type": "string", "nullable": true, "max_bytes": 400}, "model": {"type": "string", "nullable": true, "enum": ["gpt-realtime-mini", "gpt-realtime"]}, "eagerness": {"type": "string", "nullable": true, "enum": ["low", "auto", "high"]}, "voice": {"type": "string", "nullable": true, "enum": ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]}, "extra_instructions": {"type": "string", "nullable": true, "max_bytes": 8000}, "briefing_assistant": {"type": "string", "nullable": true, "enum": ["claude", "codex"]}, "briefing": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/copilot", "body": {"object": "changes"}}}
+      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 13, "properties": {"work_auto_continue":{"type":"integer","nullable":true,"min":1,"max":8,"copies":{"max":"voicework.MaxAutoContinue"}},"work_enabled":{"type":"bool","nullable":true},"engine":{"type":"string","nullable":true,"enum":["realtime","live"]},"work_assistant":{"type":"string","nullable":true,"enum":["claude","codex"]},"brief": {"type": "bool", "nullable": true}, "speed": {"type": "string", "nullable": true, "enum": ["0.8", "0.9", "1.0", "1.1"]}, "openai_key": {"type": "string", "nullable": true, "max_bytes": 400}, "model": {"type": "string", "nullable": true, "enum": ["gpt-realtime-mini", "gpt-realtime"]}, "eagerness": {"type": "string", "nullable": true, "enum": ["low", "auto", "high"]}, "voice": {"type": "string", "nullable": true, "enum": ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]}, "extra_instructions": {"type": "string", "nullable": true, "max_bytes": 8000}, "briefing_assistant": {"type": "string", "nullable": true, "enum": ["claude", "codex"]}, "briefing": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/copilot", "body": {"object": "changes"}}}
     },
     {
       "op": "copilot-work",

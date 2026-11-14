@@ -299,5 +299,23 @@ func artifactsBounds() []Entry {
 			Limit: 2000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
 			Sources: []string{"internal/domain/copilot.MaxExtraInstructionsRunes"},
 		},
+		{
+			// A GPT-Live call start's WebRTC offer, carried to the machine.
+			Name: "voice.copilot_live_offer_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 32 << 10, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/domain/copilot.MaxLiveSDPBytes"},
+		},
+		{
+			// The live model's instructions a GPT-Live call start carries.
+			Name: "voice.copilot_live_instructions_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 24 << 10, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/domain/copilot.MaxLiveInstructionsBytes"},
+		},
+		{
+			// The whole GPT-Live call start body: offer, instructions and JSON.
+			Name: "voice.copilot_live_body_bytes", Class: Buffer, Unit: Bytes,
+			Limit: (32 << 10) + (24 << 10) + 4096, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+			Sources: []string{"internal/transport/http.copilotLiveBodyLimit", "internal/app/cloudops.copilotLiveCloudBodyLimit"},
+		},
 	}
 }

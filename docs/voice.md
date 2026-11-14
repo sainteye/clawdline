@@ -378,6 +378,42 @@ A demo film of a call, recorded from the built console in English and Traditiona
 [the voice copilot demo](copilot-demo.md).
 
 
+### GPT-Live calls
+
+Voice assistant › Settings › **Voice system** (`engine` in `copilot.json`: `realtime` by default,
+or `live`) chooses the engine for the next call. A GPT-Live call (`realtime/copilot-live.ts`)
+differs from a Realtime call in four ways; its tools, Session targeting and confirmation rules
+are the same `runCopilotTool` a Realtime call runs.
+
+- **Who opens it.** GPT-Live has no client secret: the server holding the key creates the
+  session. The browser gathers a complete WebRTC offer and posts it with the live model's short
+  instructions to `POST /v1/voice/copilot-live` (Cloud word `copilot-live`, API level 67); the
+  machine posts `{session, transport: {type: "webrtc", sdp}}` to OpenAI's `/v1/live/sessions`
+  with its key and answers only the SDP answer and the session id (`copilot_live.go`). The key
+  never leaves the machine. Bounds: `voice.copilot_live_offer_bytes`,
+  `voice.copilot_live_instructions_bytes`, `voice.copilot_live_body_bytes`.
+- **Two models.** `gpt-live-1` speaks and listens at once with a persona, backchannel,
+  interruption and delegation policy (`liveInstructions`). It hands every Session question and
+  action to a Responses backend, `gpt-6-luna`, whose instructions are the Realtime call's whole
+  tool rules plus the snapshot, memory, briefing and focus, and whose tools are `COPILOT_TOOLS`
+  (`liveBackendUpdate`, sent by `session.update` after `session.started` and again when the
+  focus, briefing or answer length changes). Tools run one at a time (`parallel_tool_calls: false`).
+- **Tool results.** A finished backend `function_call` arrives inside a `response.event`
+  envelope; the browser runs it and returns `response.item.create`, then `response.create` once
+  nothing is pending.
+- **What it does not do yet.** The background work list, the program-paced Session report
+  batches, the opening handover of a clicked Session and the speaking speed are Realtime-only;
+  a GPT-Live call greets once (`session.commentary.append`) and tells the live model when the
+  focus moves (`session.thinking.append`).
+
+**Cost.** OpenAI bills a Live session per second ($0.05 a minute on 2026-11-15) and the backend
+per token ($0.10 in, $0.01 cached, $0.50 out per 1M for `gpt-6-luna`). The call's cost line adds
+`session.usage.updated` seconds and each forwarded `response.completed` usage at those rates.
+
+**Not yet verified.** The event names and shapes follow OpenAI's GPT-Live guides
+(`live-delegation`, `live-conversations`, `voice-webrtc`) as read on 2026-11-15; the tests drive
+them with a stand-in, and no call has run against OpenAI.
+
 ### Connection and processing acknowledgement
 
 The call does not rely on generated speech to prove connection. The service must

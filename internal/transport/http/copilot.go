@@ -117,6 +117,8 @@ type copilotSettingsAnswer struct {
 	Brief              bool     `json:"brief"`
 	SessionRecaps      string   `json:"session_recaps"`
 	RecapModes         []string `json:"session_recap_modes"`
+	Engine             string   `json:"engine"`
+	Engines            []string `json:"engines"`
 	BriefingAssistant  string   `json:"briefing_assistant"`
 	WorkEnabled        bool     `json:"work_enabled"`
 	WorkAssistant      string   `json:"work_assistant"`
@@ -134,7 +136,7 @@ func copilotAnswer(v copilot.Settings) copilotSettingsAnswer {
 		WorkAutoContinue: e.WorkAutoContinue, MaxAutoContinue: voicework.MaxAutoContinue,
 		KeySet: strings.TrimSpace(v.Key) != "", KeyHint: v.KeyHint(),
 		Model: e.Model, Eagerness: e.Eagerness, Voice: e.Voice, Speed: e.Speed, ExtraInstructions: e.ExtraInstructions,
-		Briefing: !e.BriefingOff, Brief: !e.LongAnswers, SessionRecaps: e.SessionRecaps, RecapModes: copilot.RecapModes, BriefingAssistant: e.BriefingAssistant, WorkEnabled: e.WorkEnabled, WorkAssistant: e.WorkAssistant,
+		Briefing: !e.BriefingOff, Brief: !e.LongAnswers, SessionRecaps: e.SessionRecaps, RecapModes: copilot.RecapModes, Engine: e.Engine, Engines: copilot.Engines, BriefingAssistant: e.BriefingAssistant, WorkEnabled: e.WorkEnabled, WorkAssistant: e.WorkAssistant,
 		Models: copilot.Models, Eagernesses: copilot.Eagerness, Voices: copilot.Voices, Speeds: copilot.Speeds, BriefingAssistants: copilot.BriefingAssistants,
 		MaxInstructions: copilot.MaxExtraInstructionsRunes,
 	}
@@ -167,7 +169,7 @@ func (s *Server) copilotSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, copilot.ErrBadKey):
 			writeRefusal(w, http.StatusBadRequest, "copilot_bad_key", "An OpenAI API key starts with sk- and has no spaces.")
-		case errors.Is(err, copilot.ErrBadContinuation), errors.Is(err, copilot.ErrBadModel), errors.Is(err, copilot.ErrBadEagerness), errors.Is(err, copilot.ErrBadVoice), errors.Is(err, copilot.ErrBadSpeed), errors.Is(err, copilot.ErrBadAssistant), errors.Is(err, copilot.ErrBadRecapMode):
+		case errors.Is(err, copilot.ErrBadContinuation), errors.Is(err, copilot.ErrBadModel), errors.Is(err, copilot.ErrBadEagerness), errors.Is(err, copilot.ErrBadVoice), errors.Is(err, copilot.ErrBadSpeed), errors.Is(err, copilot.ErrBadAssistant), errors.Is(err, copilot.ErrBadRecapMode), errors.Is(err, copilot.ErrBadEngine):
 			writeRefusal(w, http.StatusBadRequest, err.Error(), "That choice is not one this machine offers.")
 		case errors.Is(err, copilot.ErrBadInstructions):
 			writeRefusal(w, http.StatusBadRequest, "copilot_bad_instructions", "The extra instructions are too long.")

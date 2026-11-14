@@ -149,6 +149,7 @@ func init() {
 		op{name: "copilot-settings", read: true},
 		op{name: "copilot-settings-update"},
 		op{name: "copilot-session"},
+		op{name: "copilot-live"},
 		op{name: "copilot-briefing"},
 		op{name: "copilot-decide"},
 		op{name: "copilot-recap"},

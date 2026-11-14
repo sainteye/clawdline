@@ -3599,6 +3599,21 @@
     "Note": true
   },
   {
+    "Name": "voice.copilot_live_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_live_instructions_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.copilot_live_offer_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "voice.copilot_recap_body_bytes",
     "Known": true,
     "Note": true

@@ -40,6 +40,7 @@ var generatedDecoders = map[string]genDecoder{
 	"copilot-briefing":                   genDecodeCopilotBriefing,
 	"copilot-decide":                     genDecodeCopilotDecide,
 	"copilot-journal":                    genDecodeCopilotJournal,
+	"copilot-live":                       genDecodeCopilotLive,
 	"copilot-recap":                      genDecodeCopilotRecap,
 	"copilot-session":                    genDecodeCopilotSession,
 	"copilot-settings":                   genDecodeCopilotSettings,
@@ -1137,6 +1138,27 @@ func genDecodeCopilotJournal(b body) (plan, LocalRequest, bool) {
 	return p, req, true
 }
 
+// genDecodeCopilotLive is the `copilot-live` row's decode.
+func genDecodeCopilotLive(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "live", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("live", genRule{kind: "object", maxBytes: 61440}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-live"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("live")
+	return p, req, true
+}
+
 // genDecodeCopilotRecap is the `copilot-recap` row's decode.
 func genDecodeCopilotRecap(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -1199,7 +1221,7 @@ func genDecodeCopilotSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"brief": genRule{kind: "bool", nullable: true}, "briefing": genRule{kind: "bool", nullable: true}, "briefing_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "eagerness": genRule{kind: "string", enum: []string{"low", "auto", "high"}, nullable: true}, "extra_instructions": genRule{kind: "string", maxBytes: 8000, nullable: true}, "model": genRule{kind: "string", enum: []string{"gpt-realtime-mini", "gpt-realtime"}, nullable: true}, "openai_key": genRule{kind: "string", maxBytes: 400, nullable: true}, "speed": genRule{kind: "string", enum: []string{"0.8", "0.9", "1.0", "1.1"}, nullable: true}, "voice": genRule{kind: "string", enum: []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"}, nullable: true}, "work_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "work_auto_continue": genRule{kind: "integer", min: genInt(1), max: genInt(8), nullable: true}, "work_enabled": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 12}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"brief": genRule{kind: "bool", nullable: true}, "briefing": genRule{kind: "bool", nullable: true}, "briefing_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "eagerness": genRule{kind: "string", enum: []string{"low", "auto", "high"}, nullable: true}, "engine": genRule{kind: "string", enum: []string{"realtime", "live"}, nullable: true}, "extra_instructions": genRule{kind: "string", maxBytes: 8000, nullable: true}, "model": genRule{kind: "string", enum: []string{"gpt-realtime-mini", "gpt-realtime"}, nullable: true}, "openai_key": genRule{kind: "string", maxBytes: 400, nullable: true}, "speed": genRule{kind: "string", enum: []string{"0.8", "0.9", "1.0", "1.1"}, nullable: true}, "voice": genRule{kind: "string", enum: []string{"marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"}, nullable: true}, "work_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "work_auto_continue": genRule{kind: "integer", min: genInt(1), max: genInt(8), nullable: true}, "work_enabled": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 13}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
