@@ -73,6 +73,9 @@ function fixture(): Server {
       if (state.connects) setTimeout(() => { mine.connected = true }, 2500)
       return json(res, 200, { ok: true, pid: 4242, browser: "/fixture/Chromium", profile: "/fixture/chrome-profile", extension_id: "a".repeat(32) })
     }
+    // The guide reads the settings before Finish; this stand-in has no
+    // browser_policy, so the guide saves the legacy switch.
+    if (req.method === "GET" && path === "/v1/browser/settings") return json(res, 200, { browser_enabled: state.enabled, browser_notify_new_site: state.notify })
     if (req.method === "POST" && path === "/v1/browser/settings") {
       const b = await body(req)
       state.settings.push(b)
@@ -174,7 +177,7 @@ async function open(name: string, width: number, height: number, ui: string, ove
   await run(`document.getElementById("detail-actions-trigger").click()`)
   await until(`!document.getElementById("session-actions").hidden && !document.getElementById("session-browser").hidden`)
   await run(`document.getElementById("session-browser").click()`)
-  await until(`!!document.querySelector("#browser-panel:not([hidden]) .browser-setup-ask button")`)
+  await until(`!!document.querySelector("#browser-panel:not([hidden]) .browser-card-primary")`)
   return { run, until, shot, close: () => browser.send("Target.closeTarget", { targetId }).catch(() => {}) }
 }
 
@@ -183,10 +186,10 @@ const heading = `${SETUP}?.querySelector("h2")?.textContent`
 const press = (text: string) => `[...${SETUP}.querySelectorAll("button")].find((b) => b.textContent === ${JSON.stringify(text)}).click()`
 
 const WORDS = {
-  "zh-Hant": { ask: "設定瀏覽器", notConnected: "Clawdline Chrome 擴充功能尚未連線", off: "瀏覽器使用目前是關閉的", next: "下一步", launch: "打開 Clawdline 專用 Chrome", waiting: "等待 Chrome 連線…",
+  "zh-Hant": { ask: "設定瀏覽器", notConnected: "電腦上的 Chrome 還沒連上", off: "瀏覽器使用已關閉", next: "下一步", launch: "打開 Clawdline 專用 Chrome", waiting: "等待 Chrome 連線…",
     title: "讓 Agent 用瀏覽器做事，你隨時看得到", confirm: "在這個 Chrome 裡登入一次", start: "開始使用", finish: "完成", done: "瀏覽器設定好了", close: "關閉", later: "稍後再說",
     noChromium: "找不到 Chromium", closed: "Chrome 視窗被關掉了", still: "仍在等待連線，偵測到會自動繼續" },
-  en: { ask: "Set up the browser", notConnected: "The Clawdline Chrome extension is not connected", off: "Browser use is turned off", next: "Next", launch: "Open Clawdline's Chrome", waiting: "Waiting for Chrome to connect…",
+  en: { ask: "Set up the browser", notConnected: "Chrome on the computer isn't connected yet", off: "Browser use is turned off", next: "Next", launch: "Open Clawdline's Chrome", waiting: "Waiting for Chrome to connect…",
     title: "Let agents work in a browser, and see it whenever you like", confirm: "Sign in once, in this Chrome", start: "Start using it", finish: "Finish", done: "The browser is set up", close: "Close", later: "Not now",
     noChromium: "No Chromium was found", closed: "The Chrome window was closed", still: "Still waiting for a connection" },
 } as const
@@ -209,9 +212,9 @@ for (const [name, width, height, ui] of [["desktop", 1280, 800, "zh-Hant"], ["ph
     const w = WORDS[ui]
     const page = await open(name, width, height, ui, {})
     try {
-      assert.ok(await page.run(`document.querySelector("#browser-panel .browser-setup-ask")?.textContent?.includes(${JSON.stringify(w.notConnected)})`))
+      assert.ok(await page.run(`document.querySelector("#browser-panel .browser-card")?.textContent?.includes(${JSON.stringify(w.notConnected)})`))
       await page.shot("panel")
-      await page.run(`document.querySelector("#browser-panel .browser-setup-ask button").click()`)
+      await page.run(`document.querySelector("#browser-panel .browser-card-primary").click()`)
       await page.until(`${SETUP}?.open && ${heading} === ${JSON.stringify(w.title)}`)
       assert.equal(await page.run(`${SETUP}.querySelectorAll(".browser-setup-features li").length`), 4)
       await fits(page, width)
@@ -256,7 +259,7 @@ for (const [name, width, height, ui] of [["phone", 390, 844, "zh-Hant"], ["deskt
     const w = WORDS[ui]
     const page = await open(name, width, height, ui, { chromium: false })
     try {
-      await page.run(`document.querySelector("#browser-panel .browser-setup-ask button").click()`)
+      await page.run(`document.querySelector("#browser-panel .browser-card-primary").click()`)
       await page.until(`${SETUP}?.open`)
       await page.run(press(w.next))
       await page.until(`!!${SETUP}.querySelector(".setup-primary") && ${SETUP}.querySelector(".setup-primary").textContent === ${JSON.stringify(w.launch)}`)
@@ -277,7 +280,7 @@ test("desktop zh-Hant: after 30 seconds without a connection the guide lists wha
   const w = WORDS["zh-Hant"]
   const page = await open("desktop", 1280, 800, "zh-Hant", { connects: false })
   try {
-    await page.run(`document.querySelector("#browser-panel .browser-setup-ask button").click()`)
+    await page.run(`document.querySelector("#browser-panel .browser-card-primary").click()`)
     await page.until(`${SETUP}?.open`)
     await page.run(press(w.next))
     await page.until(`!!${SETUP}.querySelector(".setup-primary") && ${SETUP}.querySelector(".setup-primary").textContent === ${JSON.stringify(w.launch)}`)
@@ -300,10 +303,10 @@ test("phone en: with browser use turned off the panel says so and offers the gui
   const w = WORDS.en
   const page = await open("phone", 390, 844, "en", { connected: true, enabled: false })
   try {
-    assert.ok(await page.run(`document.querySelector("#browser-panel .browser-setup-ask")?.textContent?.includes(${JSON.stringify(w.off)})`))
+    assert.ok(await page.run(`document.querySelector("#browser-panel .browser-card")?.textContent?.includes(${JSON.stringify(w.off)})`))
     assert.ok(await page.run(`document.documentElement.scrollWidth <= innerWidth`), "no horizontal page scroll")
     await page.shot("panel-off")
-    await page.run(`document.querySelector("#browser-panel .browser-setup-ask button").click()`)
+    await page.run(`document.querySelector("#browser-panel .browser-card-primary").click()`)
     await page.until(`${SETUP}?.open`)
     await page.run(press(w.later))
     await page.until(`!${SETUP}`)

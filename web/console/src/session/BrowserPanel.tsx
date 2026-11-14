@@ -1,5 +1,5 @@
 import type { SessionRow } from "@clawdline/contract"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { followsRelay } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
@@ -8,6 +8,7 @@ import { openBrowserSetup } from "./BrowserSetup.js"
 import { BrowserViewport } from "./BrowserViewport.js"
 import { BrowserComposer, type BrowserKeyboardHandle, type PageField } from "./BrowserComposer.js"
 import type { InputReceipt } from "./browser-keyboard.js"
+import { webAddress } from "./browser-address.js"
 import "./browser-panel.css"
 
 /**
@@ -84,6 +85,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const [toolsOpen, setToolsOpen] = useState(false)
   const [reminded, setReminded] = useState(false)
   const [activity, setActivity] = useState<Activity[]>([])
+  const [statusTick, setStatusTick] = useState(0)
   const closeRef = useRef<HTMLButtonElement>(null)
   const nativeKeyboard = useRef<BrowserKeyboardHandle>(null)
   const controlRevision = useRef(0)
@@ -114,7 +116,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     read()
     const timer = window.setInterval(() => { if (!document.hidden) read() }, STATUS_MS)
     return () => { alive = false; window.clearInterval(timer) }
-  }, [open, relay, conversation])
+  }, [open, relay, conversation, statusTick])
 
   useEffect(() => {
     setReminded(false)
@@ -251,22 +253,35 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const body = () => {
     if (statusError) return <div className="screen-note err" role="alert">{said(statusError, "browserPanelReadFailed")}</div>
     if (!status) return <div className="screen-note" role="status">…</div>
-    // Not connected, or browser use switched off: the guide sets up both.
+    // Not connected, or browser use switched off: one card and one main
+    // action. Setup happens only on the computer, so through Cloud the main
+    // action is the reminder and the setup steps are secondary.
     if (!status.status.connected || !status.enabled) {
+      const off = status.status.connected
+      const remind = async () => {
+        setBusy(true); setActError(null)
+        try { await call("POST", "/v1/browser/reminder", { conversation }); setReminded(true) }
+        catch (e) { setActError(e) } finally { setBusy(false) }
+      }
       return (
-        <div className="browser-setup-ask">
-          <div className="screen-note" role="status">{nextWord(status.status.connected ? "browserPanelDisabled" : "browserPanelNotConnected")}</div>
-          <button type="button" className="browser-setup-start" onClick={() => openBrowserSetup()}>{nextWord("browserSetupOpen")}</button>
-          {relay && <button type="button" className="chip" disabled={busy || reminded} onClick={async () => {
-            setBusy(true);setActError(null)
-            try { await call("POST", "/v1/browser/reminder", { conversation }); setReminded(true) }
-            catch(e) { setActError(e) } finally { setBusy(false) }
-          }}>{nextWord(reminded ? "browserReminded" : "browserRemind")}</button>}
-          {actError ? <p role="alert">{said(actError,"browserPanelActFailed")}</p> : null}
+        <div className="browser-card-wrap">
+          <div className="browser-card" role="status">
+            <span className="browser-card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /><path d="M9.5 8.5l5 5M14.5 8.5l-5 5" /></svg>
+            </span>
+            <h3>{nextWord(off ? "browserCardDisabledTitle" : "browserCardNotConnectedTitle")}</h3>
+            <p>{nextWord(off ? "browserCardDisabledBody" : relay ? "browserCardNotConnectedBody" : "browserCardNotConnectedLocal")}</p>
+            {relay ? <>
+              <button type="button" className="browser-card-primary" disabled={busy || reminded} onClick={() => void remind()}>{nextWord(reminded ? "browserReminded" : "browserRemind")}</button>
+              <button type="button" className="browser-card-secondary" onClick={() => openBrowserSetup()}>{nextWord("browserCardSetupSteps")}</button>
+            </> : <button type="button" className="browser-card-primary" onClick={() => openBrowserSetup()}>{nextWord("browserSetupOpen")}</button>}
+            {actError ? <p className="browser-card-error" role="alert">{said(actError, "browserPanelActFailed")}</p> : null}
+          </div>
+          {relay && !off && <p className="browser-card-hint">{nextWord("browserCardNotConnectedHint")}</p>}
         </div>
       )
     }
-    if (!tab) return <div className="screen-note" role="status">{nextWord("browserPanelNoTab")}</div>
+    if (!tab) return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={() => setStatusTick((n) => n + 1)} />
     return (
       <div className="browser-stage">
         {status.status.state_error && <div className="screen-note err" role="alert">{nextWord("browserStateUnsaved")}</div>}
@@ -334,6 +349,50 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * A Session without a tab: the person may open one themselves. The daemon
+ * gives the new tab to this Session already taken over by the person, so the
+ * agent waits until they hand it back (POST /v1/browser/open; through Cloud,
+ * chrome-tab-open).
+ */
+function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: string; assistant: string; onOpened: () => void }) {
+  const [text, setText] = useState("")
+  const [opening, setOpening] = useState(false)
+  const [error, setError] = useState("")
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (opening) return
+    const url = webAddress(text)
+    if (!url) { setError(nextWord("browserOpenBadAddress")); return }
+    setOpening(true); setError("")
+    try {
+      await call("POST", "/v1/browser/open", { conversation, url })
+      onOpened()
+    } catch (e) {
+      setError(nextWord("browserOpenFailed", { reason: L.failureSentence(e, { fallback: (e as Error)?.message || "" }) }))
+    } finally {
+      setOpening(false)
+    }
+  }
+  return (
+    <div className="browser-card-wrap">
+      <form className="browser-card" onSubmit={(e) => void submit(e)}>
+        <h3>{nextWord("browserCardNoTabTitle")}</h3>
+        <p>{nextWord("browserCardNoTabBody", { assistant })}</p>
+        <label className="browser-card-label" htmlFor="browser-open-url">{nextWord("browserOpenLabel")}</label>
+        <input id="browser-open-url" className="browser-card-input" type="text" inputMode="url" enterKeyHint="go"
+          autoCapitalize="off" autoCorrect="off" autoComplete="url" spellCheck={false}
+          placeholder={nextWord("browserOpenPlaceholder")} value={text} disabled={opening}
+          aria-invalid={error ? true : undefined} aria-describedby={error ? "browser-open-error" : undefined}
+          onChange={(e) => { setText(e.target.value); if (error) setError("") }} />
+        <button type="submit" className="browser-card-primary" disabled={opening || !text.trim()}>{nextWord(opening ? "browserOpenOpening" : "browserOpenSubmit")}</button>
+        {error ? <p id="browser-open-error" className="browser-card-error" role="alert">{error}</p> : null}
+      </form>
+      <p className="browser-card-hint">{nextWord("browserOpenNote", { assistant })}</p>
+    </div>
   )
 }
 

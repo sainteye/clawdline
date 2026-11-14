@@ -303,7 +303,7 @@ for (const [label,width,height,mobile] of [["desktop",1280,800,false],["phone",3
   try{
    await tab.go("/#page=settings")
    await tab.until("settings tabs load",s=>s.text.length>0)
-   await tab.run(`document.querySelector('#settings-tab-1').click()`)
+   await tab.run(`document.querySelector('#settings-tab-2').click()`)
    let seen=await tab.until("saved native model appears",s=>s.settings?.includes("native-synthetic")&&!s.settingsDisabled)
    assert.ok(seen.wide<=width)
    await tab.click("#settings-antigravity-default-effort")
@@ -323,10 +323,10 @@ for (const [label,width,height,mobile] of [["desktop",1280,800,false],["phone",3
    await tab.run(`document.querySelector('#settings-default-models [role=option]').click()`)
    await tab.until("explicit native default is saved",s=>s.settings&&!s.settings.includes("native-synthetic")&&!s.settingsDisabled)
    assert.deepEqual(writes.at(-1),{antigravity_default_model:""})
-   await tab.go("/?saved=1#page=settings");await tab.run(`document.querySelector('#settings-tab-1').click()`)
+   await tab.go("/?saved=1#page=settings");await tab.run(`document.querySelector('#settings-tab-2').click()`)
    await tab.until("native setting persists on reopening",s=>s.effort?.includes("low"))
    for(const state of ["settings-loading","settings-error"]){
-    mode=state;await tab.go("/?state="+state+"#page=settings");await tab.run(`document.querySelector('#settings-tab-1').click()`)
+    mode=state;await tab.go("/?state="+state+"#page=settings");await tab.run(`document.querySelector('#settings-tab-2').click()`)
     if(state==="settings-loading") await tab.until("loading controls disabled",s=>s.settingsDisabled===true)
     else await tab.until("failed read disables settings",s=>s.settingsDisabled===true && s.retryDisabled===false && s.settingsSaid?.length>0)
    }

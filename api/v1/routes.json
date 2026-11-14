@@ -79,6 +79,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/browser/open",
+      "since": 64
+    },
+    {
+      "method": "*",
       "pattern": "/v1/browser/person",
       "since": 50
     },

@@ -13,7 +13,7 @@
   "controlTitle": { "message": "主控權在你手上" },
   "control1": { "message": "每個動作都會記錄在 Clawdline；輸入到密碼欄位的內容不會被記錄。" },
   "control2": { "message": "可以從 Clawdline console 或手機接手任何分頁；交回之前，Agent 看不到也不能操作。" },
-  "control3": { "message": "在 Clawdline 的「設定 → 瀏覽器」可以一鍵停止所有瀏覽器操作。" },
+  "control3": { "message": "在 Clawdline 的「設定 → Chrome」可以一鍵停止所有瀏覽器操作。" },
   "privacyTitle": { "message": "資料會送到哪裡" },
   "privacy1": { "message": "只透過 Chrome 的 Native Messaging 送到這台電腦上的 Clawdline。擴充功能本身不連線到任何伺服器。" },
   "removeTitle": { "message": "如何移除" },

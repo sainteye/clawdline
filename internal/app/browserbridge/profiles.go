@@ -573,6 +573,64 @@ func (h *Profiles) PersonDo(ctx context.Context, mode, op string, tab int, args 
 	return b.PersonDoWithAdmission(ctx, op, tab, args, b.Mode(), h.mu.Unlock)
 }
 
+// PersonOpen opens a Session's tab at the person's request, in the browser
+// the Session already uses or, before it has used one, the first that
+// automatic selection would choose. Agent native tools have no tab to open.
+// Choosing a browser here is remembered for the Session like an agent's
+// first command, so the agent continues in the same profile.
+func (h *Profiles) PersonOpen(ctx context.Context, conversation, address string, policy browserpolicy.Policy) (json.RawMessage, error) {
+	if !webURL(address) {
+		return nil, BadRequest
+	}
+	h.mu.Lock()
+	if h.err != nil {
+		h.mu.Unlock()
+		return nil, StateWriteFailed
+	}
+	if h.stopped {
+		h.mu.Unlock()
+		return nil, Stopped
+	}
+	if !policy.Valid() || conversation == "" || len(conversation) > 128 {
+		h.mu.Unlock()
+		return nil, BadRequest
+	}
+	choice := h.selection(conversation, policy)
+	if !browserpolicy.ValidMode(choice.Mode) || choice.Mode == browserpolicy.Native {
+		h.mu.Unlock()
+		return nil, SetupRequired
+	}
+	b := h.channels[choice.Mode]
+	if b == nil || !b.SetupConnected() {
+		h.mu.Unlock()
+		return nil, SetupRequired
+	}
+	if b.Status().StateError {
+		h.mu.Unlock()
+		return nil, StateWriteFailed
+	}
+	previous, exists := h.selected[conversation]
+	if !exists && len(h.selected) >= MaxSessionBrowsers {
+		h.mu.Unlock()
+		return nil, SessionChoicesFull
+	}
+	if !exists || previous != choice {
+		h.selected[conversation] = choice
+		if err := h.save(); err != nil {
+			if exists {
+				h.selected[conversation] = previous
+			} else {
+				delete(h.selected, conversation)
+			}
+			h.err = err
+			h.writeFailed = true
+			h.mu.Unlock()
+			return nil, StateWriteFailed
+		}
+	}
+	return b.PersonOpenWithAdmission(ctx, conversation, address, h.mu.Unlock)
+}
+
 func (h *Profiles) Legacy() *Bridge  { return h.channels[h.primary] }
 func (h *Profiles) StateError() bool { h.mu.Lock(); defer h.mu.Unlock(); return h.err != nil }
 func (h *Profiles) Ready(mode string) bool {

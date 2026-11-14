@@ -84,6 +84,22 @@ the agent's commands to that tab; only then does a tap on the picture become a c
 point of the page, and the text box, Tab, Enter, Delete and scroll reach it. What the person types
 is not recorded. **Hand back** returns the tab to the agent.
 
+When the extension is not connected, or browser use is off, the panel shows one card with one main
+action. Setup happens only on the computer, so through Cloud the main action is **Remind me when
+I'm back at the computer** (`POST /v1/browser/reminder`) and the setup steps are secondary; on the
+computer the main action opens the setup guide.
+
+**The person can open a Session tab** (2026-11-14). A Session without a tab shows an address field;
+the console accepts only http and https, adds `https://` to a bare host and refuses other schemes
+before sending. `POST /v1/browser/open {conversation, url}` (a device that may send; an agent's
+machine token is refused; the Session must be live) runs the same open as an agent's command in the
+browser the Session already uses or, before it has used one, the first that automatic selection
+would choose; agent native tools have no tab to open. The tab belongs to the Session and starts
+taken over by the person, so the agent's commands to it answer `browser_person_controlling` until
+**Hand back**. The emergency stop, the machine switch and the Session's saved browser choice apply
+as to an agent's open. The audit row is the person's (`person: true`); its site counts as seen for
+the Session but sends no new-site notification, since the person chose it.
+
 Through Clawdline Cloud the panel uses the same routes as four words of
 `internal/domain/cloudvocab/vocabulary.json`, each end-to-end encrypted like every other word and
 run on the machine as the viewer's device (`local.device`), so a phone needs read access to look
@@ -95,15 +111,17 @@ and send access to take over and act:
 | `chrome-tab-screenshot` | read | `GET /v1/browser/screenshot?tab=N&quality=Q` (asked at quality 45 through the relay) |
 | `chrome-tab-input` | command | `POST /v1/browser/person` (click, type, key, scroll) |
 | `chrome-tab-control` | command | `POST /v1/browser/control` |
+| `chrome-tab-open` | command | `POST /v1/browser/open` (the person opens a Session tab) |
 | `chrome-setup` | read | `GET /v1/browser/setup` |
 | `chrome-launch` | command | `POST /v1/browser/launch` |
 | `chrome-prepare` | command | `POST /v1/browser/prepare` (own extension files only) |
 
 ## The Settings block
 
-Settings has a **Browser** tab
+Settings has its own **Chrome** tab, first in the list (2026-11-14; until then the block sat at
+the top of the tab now called **General**)
 (`web/console/src/pages/settings/BrowserSettingsBlock.tsx`): whether the extension is connected
-and which browser it is in, three ordered browsers with independent automatic-selection switches, expandable setup instructions, and `browser_notify_new_site`
+and which browser it is in, three ordered browsers with independent automatic-selection switches, and `browser_notify_new_site`
 (off on a new machine), the emergency stop with its banner and Resume, and a View activity button. The audit is read only while its modal is open,
 narrowed by Session, site and day. Closing or leaving Settings aborts pending reads
 and stops its polling; opening Settings alone makes no audit request. `GET/POST /v1/browser/settings` reads and writes the ordered `browser_policy`, legacy projections and notification preference; an agent's machine token is refused, and writing needs a device that may send.
@@ -116,6 +134,11 @@ besides `limit`. Through Clawdline Cloud the block uses four more words:
 | `chrome-settings-update` | command | `POST /v1/browser/settings` |
 | `chrome-stop` | command | `POST /v1/browser/stop` |
 | `chrome-audit` | read | `GET /v1/browser/audit` (always with `limit`) |
+
+Each browser is one row: a drag handle, its name, one line of state and its automatic switch.
+Dragging the handle reorders the rows live and saves once on release; on the focused handle the
+up and down arrow keys move a row one place, so no arrow buttons are drawn. Only a browser that is
+not connected offers **Set up**, which opens its setup guide.
 
 `web/console/src/pages/settings/browser-settings.e2e.ts` exercises the block against a stand-in
 daemon at desktop and phone widths, in English and Chinese.
@@ -287,7 +310,7 @@ Session, and refuses while the person controls it. `release` relinquishes
 ownership and leaves the page open. A late response from a closed tab cannot
 restore its ownership or return old page data.
 
-Settings → Browser controls only the Clawdline
+Settings → Chrome controls only the Clawdline
 channel. Disabling it cancels queued agent commands and viewer input, and invalidates in-flight
 results, including across a later off/on cycle. An operation already dispatched
 to Chrome may have run; the setting cannot undo it. Agents' native browser tools

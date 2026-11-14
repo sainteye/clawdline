@@ -72,7 +72,7 @@ Click a provider to see all known windows, reset times, sources and the age of t
 Desktop keeps each provider's windows together with middle dots. Mobile shows the two
 tightest providers, with remaining providers available through **+N**.
 
-**Settings → Browser** has separate **Show quota bar on desktop** and **Show quota bar in the
+**Settings → General** has separate **Show quota bar on desktop** and **Show quota bar in the
 mobile Session list** switches, both on by default. Each choice is saved independently in this
 browser and survives reloads. Existing saved visibility carries over until you change a switch. It does not change the dispatch quota check. Cloud shows
 the selected machine's reading rather than adding the same account's quota across machines.

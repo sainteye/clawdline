@@ -72,6 +72,9 @@ export const CARRIED = {
   // Turn one Session's new-site notification off or back on, from the Chrome
   // tab panel.
   "chrome-tab-mute": "POST /v1/browser/mute",
+  // The person opens a new tab for a live Session from the Chrome tab panel; it
+  // starts taken over by them.
+  "chrome-tab-open": "POST /v1/browser/open",
   // One picture of the Session's Chrome tab, asked about once a second while
   // the panel is open.
   "chrome-tab-screenshot": "GET /v1/browser/screenshot",

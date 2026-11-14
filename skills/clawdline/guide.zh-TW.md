@@ -1312,11 +1312,11 @@ clawdline note create --requested-by-person --body-file note.json
 
 ## 9b. 使用瀏覽器
 
-設定 → 瀏覽器 會依優先順序列出三種瀏覽器，每種各有「自動選用」開關：Agent 原生工具、獨立測試 Chrome，以及使用者日常的 Chrome。選用前先執行 `clawdline browser status`。原生工具是否可用要看你實際擁有的工具，daemon 不會替你執行。尚未執行任何操作前，可以略過明確不可用的選項，再試下一個已開啟自動選用的瀏覽器。已執行或結果不確定的點擊、輸入與破壞性操作，絕不能換瀏覽器重做。
+設定 → Chrome 會依優先順序列出三種瀏覽器，每種各有「自動選用」開關：Agent 原生工具、獨立測試 Chrome，以及使用者日常的 Chrome。選用前先執行 `clawdline browser status`。原生工具是否可用要看你實際擁有的工具，daemon 不會替你執行。尚未執行任何操作前，可以略過明確不可用的選項，再試下一個已開啟自動選用的瀏覽器。已執行或結果不確定的點擊、輸入與破壞性操作，絕不能換瀏覽器重做。
 
 開關只控制自動選用。使用者明確指定瀏覽器時，可以讓**本次 Session**使用，不更改全域開關。只有收到這項實際要求，才能使用 `--browser isolated|user_chrome --explicit`；未加 `--explicit` 的指定仍遵守開關。兩種 Chrome 都必須先載入擴充功能並連上原生主機；只有準備檔案不算完成。明確指定也不能略過緊急停止、使用者接手、尚未完成的操作，或安裝日常 Chrome 所需的同意。
 
-每種 Chrome 分別保留分頁與紀錄；相同分頁編號在不同瀏覽器代表不同分頁。檢視畫面會附上 Session 與模式。Session 開始操作後不會自動換瀏覽器。已設定瀏覽器政策時，新 Session 會收到這些規則；恢復執行仍沿用封存的啟動說明。每個 Clawdline 操作都會記錄，使用者可從這台機器或手機查看與接手。
+每種 Chrome 分別保留分頁與紀錄；相同分頁編號在不同瀏覽器代表不同分頁。檢視畫面會附上 Session 與模式。Session 開始操作後不會自動換瀏覽器。已設定瀏覽器政策時，新 Session 會收到這些規則；恢復執行仍沿用封存的啟動說明。每個 Clawdline 操作都會記錄，使用者可從這台機器或手機查看與接手。使用者也可以從面板替你的 Session 開分頁；這種分頁一開就由使用者操作，所以收到 `browser_person_controlling` 時要等使用者交回。
 
 ```sh
 clawdline browser status
@@ -1339,7 +1339,7 @@ clawdline browser --help
 - 優先用 `read` 和它回傳的 label，不要用座標。只有非看版面不可時才截圖。
 - `browser_person_controlling`：使用者已經接手這個分頁。等待，不要迴圈重試。
 - `browser_stopped`：使用者停止了 Clawdline 瀏覽器通道。不要重試。
-- `browser_setup_required` 或 `browser_extension_missing`：指定的 Chrome 尚未就緒。展開 設定 → 瀏覽器 中的設定說明；不能假裝安裝完成，也不能把使用者明確指定的瀏覽器換成別的。
+- `browser_setup_required` 或 `browser_extension_missing`：指定的 Chrome 尚未就緒。請使用者到 設定 → Chrome 完成設定；不能假裝安裝完成，也不能把使用者明確指定的瀏覽器換成別的。
 - `browser_disabled`：這種瀏覽器的自動選用已關閉。只有使用者明確指定，才能在本次 Session 使用 `--explicit`。
 - `browser_native_tools`：使用實際可用的原生工具；daemon 尚未執行瀏覽器操作。
 - `browser_session_busy` 或 `browser_tab_closing`：等待已接受的操作完成，不可換瀏覽器重做。

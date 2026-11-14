@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11974,
-  "riskKeys": 5211,
-  "nonRiskCount": 6763,
+  "englishContentKeys": 11994,
+  "riskKeys": 5219,
+  "nonRiskCount": 6775,
   "groups": [
     {
       "name": "acp / other",
@@ -3902,7 +3902,7 @@
     },
     {
       "name": "next / other",
-      "count": 1063,
+      "count": 1075,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3976,6 +3976,10 @@
         "next.browserAuditWhyClosing",
         "next.browserAuditWhyMode",
         "next.browserAuditWhyPerson",
+        "next.browserCardDisabledTitle",
+        "next.browserCardNotConnectedLocal",
+        "next.browserCardNotConnectedTitle",
+        "next.browserCardSetupSteps",
         "next.browserChip",
         "next.browserModeIsolated",
         "next.browserModeIsolatedHelp",
@@ -3994,6 +3998,11 @@
         "next.browserOpTakeover",
         "next.browserOpType",
         "next.browserOpViewport",
+        "next.browserOpenBadAddress",
+        "next.browserOpenLabel",
+        "next.browserOpenNote",
+        "next.browserOpenOpening",
+        "next.browserOpenPlaceholder",
         "next.browserPanelActivity",
         "next.browserPanelAgentActs",
         "next.browserPanelChecked",
@@ -4042,6 +4051,7 @@
         "next.browserPanelZoomOut",
         "next.browserPolicyAuto",
         "next.browserPolicyDown",
+        "next.browserPolicyDrag",
         "next.browserPolicyNativeReady",
         "next.browserPolicyNeedSetup",
         "next.browserPolicyNeedsUpdate",
@@ -4626,6 +4636,8 @@
         "next.sessionWriteDisabled",
         "next.sessionsListWaitTitle",
         "next.sessionsMachineOfflineTitle",
+        "next.settingsChromeTab",
+        "next.settingsGeneralTab",
         "next.setupAppBusy",
         "next.setupAppContinue",
         "next.setupAppDone",

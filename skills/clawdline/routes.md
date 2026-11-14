@@ -19,6 +19,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/browser/host/results` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/launch` | 54 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/mute` | 51 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/browser/open` | 64 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/person` | 50 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/prepare` | 57 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/browser/reminder` | 55 | `clawdline guide connect` | `docs/user/first-session.md` |

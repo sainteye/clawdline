@@ -416,7 +416,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     assert.ok(!(word in DEFERRED), word)
     assert.ok(!(word in NO_MACHINE_ROUTE), word)
   }
-  assert.equal(Object.keys(CARRIED).length, 255)
+  assert.equal(Object.keys(CARRIED).length, 256)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
@@ -868,7 +868,7 @@ test("the work-gate block stays visible on Cloud and asks only its narrow route"
   const block = readFileSync(resolve(console_, "src/pages/settings/GateSettingsBlock.tsx"), "utf8")
   const page = readFileSync(resolve(console_, "src/pages/settings.tsx"), "utf8")
   const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
-  assert.match(page, /<GateSettingsBlock shown=\{shown && tab === 1\} \/>/)
+  assert.match(page, /<GateSettingsBlock shown=\{shown && tab === 2\} \/>/)
   assert.equal(writeRoute("GET", "/v1/settings/work-gates")?.word, "work-gate-settings")
   assert.equal(writeRoute("GET", "/v1/settings/workflow")?.word, "workflow-settings")
   assert.equal(writeRoute("POST", "/v1/settings/work-gates")?.word, "work-gate-settings-update")

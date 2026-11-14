@@ -27,6 +27,7 @@ import (
 //   - POST /v1/browser/stop           {stopped}; the machine may only stop, a person may also resume
 //   - POST /v1/browser/control        {tab, person}; a person who may send
 //   - POST /v1/browser/person         {op, tab, args}; the person's own view and input
+//   - POST /v1/browser/open           {conversation, url}; the person opens a Session tab, taken over from the start
 //   - POST /v1/browser/mute           {conversation, muted}; one Session's new-site notification, a person who may send
 //   - GET  /v1/browser/activity       ?conversation=; a Session's recent actions with a picture of each, a person who may read
 //   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
@@ -44,6 +45,7 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/stop"}, s.browserStopRoute},
 		{Route{"*", "/v1/browser/control"}, s.browserControlRoute},
 		{Route{"*", "/v1/browser/person"}, s.browserPersonRoute},
+		{Route{"*", "/v1/browser/open"}, s.browserPersonOpenRoute},
 		{Route{"*", "/v1/browser/screenshot"}, s.browserScreenshotRoute},
 		{Route{"*", "/v1/browser/mute"}, s.browserMuteRoute},
 		{Route{"*", "/v1/browser/activity"}, s.browserActivityRoute},
@@ -191,7 +193,7 @@ func writeBrowserError(w http.ResponseWriter, err error) {
 	if refusal, ok := browserbridge.IsRefusal(err); ok {
 		switch refusal {
 		case browserbridge.SetupRequired:
-			writeRefusal(w, http.StatusConflict, string(refusal), "This browser's extension setup is not confirmed. Open its setup instructions in Settings, Browser.")
+			writeRefusal(w, http.StatusConflict, string(refusal), "This browser's extension setup is not confirmed. Set it up from Settings, Chrome.")
 		case browserbridge.NativeTools:
 			writeRefusal(w, http.StatusConflict, string(refusal), "Use this agent's native browser tools. If they are unavailable, consult the browser priority and automatic-selection switches before choosing another browser.")
 		case browserbridge.SessionChoicesFull:
@@ -203,7 +205,7 @@ func writeBrowserError(w http.ResponseWriter, err error) {
 		case browserbridge.Closing:
 			writeRefusal(w, http.StatusConflict, string(refusal), "This tab is closing. Wait for its result before taking over or sending another command.")
 		case browserbridge.Disabled:
-			writeRefusal(w, http.StatusForbidden, string(refusal), "Automatic selection is off for this browser. Use Settings, Browser, or honor the person's explicit request for this Session after setup is complete.")
+			writeRefusal(w, http.StatusForbidden, string(refusal), "Automatic selection is off for this browser. Use Settings, Chrome, or honor the person's explicit request for this Session after setup is complete.")
 		case browserbridge.StateWriteFailed:
 			writeRefusal(w, http.StatusServiceUnavailable, string(refusal), "The browser control state could not be saved. Keep Clawdline running and retry before restarting. Browser use remains paused.")
 		case browserbridge.SecretInputFailed:
@@ -438,6 +440,49 @@ func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.browsers().PersonDo(r.Context(), in.Mode, in.Op, in.Tab, in.Args)
+	if err != nil {
+		writeBrowserError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"ok": true, "value": value})
+}
+
+// browserPersonOpenRoute opens a tab for a live Session at the person's own
+// request, from the panel on this machine or a phone through Cloud
+// (chrome-tab-open). The tab starts taken over by the person; the agent
+// continues only after they hand it back. Agents open tabs with
+// clawdline browser open instead.
+func (s *Server) browserPersonOpenRoute(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Conversation string `json:"conversation"`
+		URL          string `json:"url"`
+	}
+	if !readBrowserBody(w, r, browserbridge.MaxArgBytes+4096, &in) {
+		return
+	}
+	if machineAuthed(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "This is the person's own route; agents use clawdline browser open.")
+		return
+	}
+	if !maySend(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
+		return
+	}
+	if s.broker == nil {
+		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved", "The live Session registry is unavailable.")
+		return
+	}
+	if _, err := s.broker.LiveSession(r.Context(), in.Conversation); err != nil {
+		writeRefusal(w, http.StatusConflict, "session_unresolved", "A tab can be opened only for a live Session.")
+		return
+	}
+	policy, err := s.browserPolicy()
+	if err != nil {
+		writeBrowserError(w, browserbridge.StateWriteFailed)
+		return
+	}
+	value, err := s.browsers().PersonOpen(r.Context(), in.Conversation, in.URL, policy)
 	if err != nil {
 		writeBrowserError(w, err)
 		return

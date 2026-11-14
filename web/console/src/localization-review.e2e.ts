@@ -287,7 +287,7 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
               assert.ok((await page.locator('.cap-rows').innerText()).includes('Synthetic review evidence'))
             }
             if (surface.action === 'machine-remote') {
-              await page.locator('#settings-tab-6').click()
+              await page.locator('#settings-tab-7').click()
               await page.locator('#sw-pane-2').waitFor()
             }
             if (surface.action === 'devices-loaded') {
@@ -297,7 +297,7 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
               assert.equal(await page.locator('#devices-rows .device-card').count(), 1)
             }
             if (surface.id === 'machine-settings') {
-              await page.locator('#settings-tab-4').click()
+              await page.locator('#settings-tab-5').click()
             }
             if (surface.action === 'machine-language-menu') {
               await page.locator('#settings-ui-language-select').click()
@@ -307,7 +307,7 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
               assert.ok(box && box.x >= 0 && box.x + box.width <= width, 'Expanded language menu stays inside the viewport')
             }
             if (surface.action === 'machine-voice') {
-              await page.locator('#settings-tab-5').click()
+              await page.locator('#settings-tab-6').click()
               await page.locator('.sw-voice-paths').first().waitFor({ state: 'visible' })
             }
             if (surface.action === 'cloud-pairing-open') {
