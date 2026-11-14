@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12044,
-  "riskKeys": 5239,
-  "nonRiskCount": 6805,
+  "englishContentKeys": 12063,
+  "riskKeys": 5244,
+  "nonRiskCount": 6819,
   "groups": [
     {
       "name": "acp / other",
@@ -3903,7 +3903,7 @@
     },
     {
       "name": "next / other",
-      "count": 1078,
+      "count": 1092,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3982,6 +3982,17 @@
         "next.browserCardNotConnectedTitle",
         "next.browserCardSetupSteps",
         "next.browserChip",
+        "next.browserGuideApplyIntro",
+        "next.browserGuideApplyTitle",
+        "next.browserGuideConnectOnce",
+        "next.browserGuideCurrent",
+        "next.browserGuideCurrentTitle",
+        "next.browserGuideDeveloperMode",
+        "next.browserGuideLoad",
+        "next.browserGuideLoadMac",
+        "next.browserGuideMoveIntro",
+        "next.browserGuideMoveTitle",
+        "next.browserGuideReloadArrow",
         "next.browserModeIsolated",
         "next.browserModeIsolatedHelp",
         "next.browserModeNative",
@@ -4052,9 +4063,12 @@
         "next.browserPanelZoom",
         "next.browserPanelZoomIn",
         "next.browserPanelZoomOut",
+        "next.browserPolicyApply",
         "next.browserPolicyAuto",
         "next.browserPolicyDown",
         "next.browserPolicyDrag",
+        "next.browserPolicyIsolatedPending",
+        "next.browserPolicyMove",
         "next.browserPolicyNativeReady",
         "next.browserPolicyNeedSetup",
         "next.browserPolicyNeedsUpdate",

@@ -416,7 +416,7 @@ func relayBrowserHost(b *broker, mode, profile string, in io.Reader, out, errOut
 			if m.Hello != nil {
 				infoMu.Lock()
 				for k, v := range m.Hello {
-					if k == "version" || k == "browser" {
+					if k == "version" || k == "browser" || (k == "folder" && (v == "stable" || v == "revision")) {
 						info[k] = v
 					}
 				}

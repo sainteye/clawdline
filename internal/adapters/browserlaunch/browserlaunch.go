@@ -342,8 +342,10 @@ func Launch(o Options) (Started, error) {
 	if o.Browser == "" {
 		return Started{}, ErrChromiumMissing
 	}
-	extDir := ExtensionDir(o.Dir)
-	if err := WriteExtension(extDir); err != nil {
+	// The test Chrome loads the same stable folder, so a relaunch is all it
+	// needs to run a new release.
+	extDir := StableExtensionDir(o.Dir)
+	if _, err := WriteStableExtension(o.Dir); err != nil {
 		return Started{}, err
 	}
 	real, err := filepath.EvalSymlinks(extDir)

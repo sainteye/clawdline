@@ -24,35 +24,18 @@ type PreparedExtension struct {
 	ConnectCommand string `json:"connect_command"`
 }
 
-// PrepareUserChrome publishes a complete, content-addressed payload. Repeated
-// requests verify and reuse it without replacing files Chrome may be reading.
-// Native host registration remains a separate person-authorized operation.
+// PrepareUserChrome makes the stable folder hold this build's extension and
+// describes it. The folder's path never changes, so after a person loads it
+// once, later releases only replace its contents and Chrome reads them when it
+// next starts. Native host registration remains a separate person-authorized
+// operation.
 func PrepareUserChrome(dir string) (PreparedExtension, error) {
 	var receipt PreparedExtension
 	if dir == "" {
 		return receipt, fmt.Errorf("the Clawdline directory is unavailable")
 	}
-	target := ExtensionDir(dir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return receipt, err
-	}
-	if _, err := os.Lstat(target); os.IsNotExist(err) {
-		staging, err := os.MkdirTemp(dir, ".chrome-prepare-")
-		if err != nil {
-			return receipt, err
-		}
-		defer os.RemoveAll(staging)
-		if err := WriteExtension(filepath.Join(staging, "payload")); err != nil {
-			return receipt, err
-		}
-		if err := os.Rename(filepath.Join(staging, "payload"), target); err != nil {
-			// Another request may have published this exact revision first. Verify
-			// that winner below; never remove or overwrite an existing directory.
-			if _, statErr := os.Lstat(target); statErr != nil {
-				return receipt, err
-			}
-		}
-	} else if err != nil {
+	target := StableExtensionDir(dir)
+	if _, err := WriteStableExtension(dir); err != nil {
 		return receipt, err
 	}
 	if err := verifyPreparedExtension(target); err != nil {
@@ -89,6 +72,13 @@ func verifyPreparedExtension(dir string) error {
 		if err != nil {
 			return err
 		}
+		// The stable folder's own marker is the one file the build lacks.
+		if rel == FolderMarker {
+			if !entry.Type().IsRegular() {
+				return fmt.Errorf("the prepared extension contains a non-regular file")
+			}
+			return nil
+		}
 		name := "chrome"
 		if rel != "." {
 			name += "/" + filepath.ToSlash(rel)
@@ -106,6 +96,14 @@ func verifyPreparedExtension(dir string) error {
 				return err
 			}
 			wanted, err := fs.ReadDir(extension.Chrome, name)
+			if rel == "." {
+				for i, e := range actual {
+					if e.Name() == FolderMarker {
+						actual = append(actual[:i:i], actual[i+1:]...)
+						break
+					}
+				}
+			}
 			if err != nil || len(actual) != len(wanted) {
 				return fmt.Errorf("the prepared extension is incomplete")
 			}

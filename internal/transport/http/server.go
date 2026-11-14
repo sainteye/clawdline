@@ -73,12 +73,15 @@ type Server struct {
 	browserMu          sync.Mutex
 	browserBridge      *browserbridge.Bridge
 	browserProfiles    *browserbridge.Profiles
-	codegraphBuilder   *codegraph.Builder
-	githubMu           sync.Mutex
-	githubConn         *githubissues.Connection
-	jiraHTTP           *jiraissues.Client
-	issueSync          *issueSyncWorker
-	claudeRemote       interface {
+	// browserRelaunched is the extension version the test Chrome was last
+	// relaunched for (browser_upkeep.go); guarded by browserMu.
+	browserRelaunched string
+	codegraphBuilder  *codegraph.Builder
+	githubMu          sync.Mutex
+	githubConn        *githubissues.Connection
+	jiraHTTP          *jiraissues.Client
+	issueSync         *issueSyncWorker
+	claudeRemote      interface {
 		SendRemote(context.Context, session.Session, string, func() error) error
 		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
 	}

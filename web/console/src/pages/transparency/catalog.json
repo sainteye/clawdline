@@ -3604,7 +3604,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "1e670ab828c498f072751572fbc627836e95ec677c3dc52df503a818d51450e3",
+    "cmd/clawdline/main.go": "186c9d988c802898a3aed86061c755d4d2ddab3c331d1f371727b9ffcf39dd29",
     "cmd/clawdline/project_assistants.go": "d4ded77207df9fa557b0095cfddd4447065a8678749777cbbb2e8163d7be13f0",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
@@ -3733,7 +3733,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "7b52b236e435c324dca8448f013040f5ac3578dd3d672e205dde444c2a4d6fe4",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "2b7db25a64bed78d9f250650b3b5a211a2b6120332d30ff79fe0fe17912ce0e9",
+    "web/console/src/next-strings.ts": "424c402ceb5a06c85f719ebdceef6badd5eaec072f5c72b08ab0404d048a8630",
     "web/console/src/overlays/info.ts": "afee5b67146a062576bef9a06e2531329d275899e5d4a23965ee2e419c9d8c30",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",

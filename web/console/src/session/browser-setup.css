@@ -101,3 +101,8 @@
 .browser-setup summary { padding: 10px 0; cursor: pointer; }
 .browser-setup .browser-setup-copy { max-width: 100%; min-width: 0; }
 .browser-setup .browser-setup-copy input { min-width: 0; }
+/* The usual-Chrome guide: the real steps, then what Chrome now reports. */
+.browser-guide-steps { display: flex; flex-direction: column; gap: 12px; padding-left: 20px; }
+.browser-guide-steps li p { margin: 0 0 6px; }
+.browser-guide-wait { color: var(--dim); font-size: 13px; }
+.browser-guide-done { color: var(--ok); }

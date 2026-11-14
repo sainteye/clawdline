@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // TabsFile keeps which Session owns which tab, the person's takeovers and
@@ -129,4 +130,44 @@ func (b *Bridge) forgetLocked(tab int) {
 	if c != "" && b.current[c] == tab {
 		delete(b.current, c)
 	}
+}
+
+// Quiet reports whether nothing on this channel needs Chrome to stay up: no
+// command queued or in flight, no tab the person has taken over, no close
+// waiting for its receipt, and no recorded action within the last quiet
+// period. The test Chrome is relaunched to load a new extension only then.
+func (b *Bridge) Quiet(now time.Time, quiet time.Duration) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.queue) > 0 || len(b.inflight) > 0 {
+		return false
+	}
+	for _, on := range b.person {
+		if on {
+			return false
+		}
+	}
+	for _, id := range b.closing {
+		if id != "" {
+			return false
+		}
+	}
+	if n := len(b.audit); n > 0 && now.Sub(time.Unix(b.audit[n-1].At, 0)) < quiet {
+		return false
+	}
+	return true
+}
+
+// ForgetAll drops every tab this channel remembers, after its browser was
+// restarted and those tabs are gone.
+func (b *Bridge) ForgetAll() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for tab := range b.owner {
+		b.forgetLocked(tab)
+	}
+	for tab := range b.person {
+		b.forgetLocked(tab)
+	}
+	b.saveTabs()
 }
