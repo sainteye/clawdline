@@ -252,12 +252,25 @@ async function run(c) {
   }
   await ensureAttached(tab)
   switch (c.op) {
+    case "navigate": {
+      if (!c.person) throw new Error("navigation needs person control")
+      let url
+      try { url = new URL(a.url) } catch { throw new Error("use an http or https address") }
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("use an http or https address")
+      await chrome.tabs.update(tab, { url: url.href })
+      await waitForLoad(tab)
+      const current = await chrome.tabs.get(tab)
+      return { tab, url: current.url || url.href, value: { tab, url: current.url || url.href, title: current.title || "" } }
+    }
     case "viewport": {
       if (a.mode !== "mobile" && a.mode !== "desktop") throw new Error("use mobile or desktop")
       const mobile = a.mode === "mobile"
       if (mobile) {
         const userAgent = await evaluate(tab, () => navigator.userAgent)
-        await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android" })
+        await cdp(tab, "Emulation.setUserAgentOverride", {
+          userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android",
+          userAgentMetadata: { platform: "Android", platformVersion: "13.0.0", architecture: "", model: "", mobile: true },
+        })
         await cdp(tab, "Emulation.setDeviceMetricsOverride", { width: 390, height: 720, deviceScaleFactor: 1, mobile: true })
       } else {
         await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: "" })
@@ -265,7 +278,10 @@ async function run(c) {
       }
       await cdp(tab, "Emulation.setTouchEmulationEnabled", { enabled: mobile })
       layouts.set(tab, a.mode)
-      await new Promise((r) => setTimeout(r, 250))
+      // Server-selected layouts and viewport metadata need a new document,
+      // after both the browser identity and rendering metrics have changed.
+      await chrome.tabs.reload(tab)
+      await waitForLoad(tab)
       return { tab, url: await tabURL(tab), target: a.mode, thumb: c.person ? undefined : await thumb(tab), value: { tab, mode: a.mode } }
     }
     case "read": {

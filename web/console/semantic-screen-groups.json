@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11996,
+  "englishContentKeys": 11998,
   "riskKeys": 5220,
-  "nonRiskCount": 6776,
+  "nonRiskCount": 6778,
   "groups": [
     {
       "name": "acp / other",
@@ -3902,7 +3902,7 @@
     },
     {
       "name": "next / other",
-      "count": 1075,
+      "count": 1077,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4010,6 +4010,7 @@
         "next.browserPanelDraftHint",
         "next.browserPanelFieldNow",
         "next.browserPanelFit",
+        "next.browserPanelGo",
         "next.browserPanelHandBack",
         "next.browserPanelHandBackShort",
         "next.browserPanelImageAlt",
@@ -4017,6 +4018,7 @@
         "next.browserPanelKeepPage",
         "next.browserPanelKeyboard",
         "next.browserPanelLayout",
+        "next.browserPanelLayoutReload",
         "next.browserPanelLayoutTakeover",
         "next.browserPanelMenu",
         "next.browserPanelMismatchNow",

@@ -14,6 +14,23 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/auth"
 )
 
+func TestBrowserStatusAdvertisesNavigationWithoutGrantingBrowserUse(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/browser/status", nil).WithContext(context.WithValue(context.Background(), accessKey{}, access{verdict: auth.Verdict{Allowed: true, Caps: auth.NewCaps(auth.Read)}}))
+	response := httptest.NewRecorder()
+	s.browserStatusRoute(response, req)
+	var status struct {
+		Navigate bool `json:"person_navigate"`
+		Enabled  bool `json:"enabled"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || !status.Navigate || status.Enabled {
+		t.Fatalf("navigation capability changed automatic permission: %d %s", response.Code, response.Body)
+	}
+}
+
 func TestBrowserSetupSeesAnIsolatedHostBeforePermissionIsGranted(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
 	ctx, cancel := context.WithCancel(context.Background())

@@ -107,8 +107,13 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     globalThis.ready = true;
   `)
 
-  server = createServer((_req, res) => {
+  server = createServer((req, res) => {
     res.setHeader("Content-Type", "text/html")
+    if (req.url?.startsWith("/layout")) {
+      const mobile = /Mobile/.test(req.headers["user-agent"] || "")
+      res.end(`<!doctype html>${mobile ? '<meta name="viewport" content="width=device-width,initial-scale=1">' : ''}<title>Layout</title><h1>${mobile ? "Mobile" : "Desktop"}</h1><p>${req.headers["sec-ch-ua-mobile"] || "missing"}</p>`)
+      return
+    }
     res.end(`<!doctype html><input id=plain><input id=password type=password><input id=otp autocomplete=one-time-code>
       <textarea id=area></textarea><div id=editable contenteditable=true></div>
       <div id=shadow></div><div id=nested></div><div id=closed></div>
@@ -291,5 +296,30 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     const result = await command({op:"type", tab, args:{text:"secret",secret:true}})
     assert.equal(result.password, true)
     assert.equal(result.thumb, undefined)
+  })
+  await t.test("layout changes reload server-selected pages with matching client hints", async () => {
+    await evaluate(`chrome.tabs.update(${tab}, {url:${JSON.stringify(`http://127.0.0.1:${server.address().port}/layout`)}})`)
+    for (let i = 0; i < 100 && !await page('document.title === "Layout"'); i++) await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(await page('document.querySelector("h1").textContent'), "Desktop")
+    assert.equal((await command({op:"viewport",tab,person:true,args:{mode:"mobile"}})).ok, true)
+    assert.equal(await page('document.querySelector("h1").textContent'), "Mobile", "the server receives the new mobile identity")
+    assert.equal(await page("innerWidth"), 390)
+    assert.equal(await page("navigator.userAgentData.mobile"), true)
+    assert.equal(await page('document.querySelector("p").textContent'), "?1")
+    assert.equal((await command({op:"viewport",tab,person:true,args:{mode:"desktop"}})).ok, true)
+    assert.equal(await page('document.querySelector("h1").textContent'), "Desktop")
+    assert.equal(await page("navigator.userAgentData.mobile"), false)
+  })
+  await t.test("person navigation changes the existing tab and refuses other schemes", async () => {
+    const url = `http://127.0.0.1:${server.address().port}/layout?person=1`
+    const result = await command({op:"navigate",tab,person:true,args:{url}})
+    assert.equal(result.ok, true)
+    assert.equal(result.tab, tab)
+    assert.equal(await page("location.href"), url)
+    for (const url of ["javascript:alert(1)", "file:///tmp/page", "chrome://settings"]) {
+      assert.equal((await command({op:"navigate",tab,person:true,args:{url}})).ok, false)
+    }
+    assert.equal((await command({op:"navigate",tab,args:{url}})).ok, false, "only person navigation uses this command")
+    assert.equal(await page("location.href"), url)
   })
 })

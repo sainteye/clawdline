@@ -522,7 +522,7 @@ func (b *Bridge) SetPersonControlForMode(tab int, on bool, mode string) error {
 // at any time, and acting on it only while they have taken it over.
 // field reads the focused field for the person's own check of what they
 // sent; an agent cannot ask for it.
-var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true, "viewport": true, "field": true}
+var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true, "viewport": true, "field": true, "navigate": true}
 
 // NotTakenOver is a person's input to a tab they have not taken over.
 const NotTakenOver Refusal = "browser_take_over_first"
@@ -552,6 +552,14 @@ func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.Raw
 	}
 	if op == "viewport" && !validViewport(args) {
 		return nil, BadRequest
+	}
+	if op == "navigate" {
+		var address struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(args, &address) != nil || !webURL(address.URL) {
+			return nil, BadRequest
+		}
 	}
 	b.mu.Lock()
 	if mode == "" {

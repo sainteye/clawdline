@@ -321,6 +321,39 @@ func TestViewportChangesRespectTheControlOwnerAndOnlyAcceptPresets(t *testing.T)
 	}
 }
 
+func TestPersonNavigationKeepsTheTabAndRequiresTakeover(t *testing.T) {
+	b, ctx := connected(t)
+	fakeHost(ctx, b, func(c Command) Result {
+		return Result{ID: c.ID, OK: true, Tab: c.Tab, Value: json.RawMessage(`{"tab":5}`)}
+	})
+	args := json.RawMessage(`{"url":"https://example.com/next"}`)
+	if _, err := b.PersonDo(ctx, "navigate", 5, args); err != NotTakenOver {
+		t.Fatalf("before takeover: %v", err)
+	}
+	b.SetPersonControl(5, true)
+	if _, err := b.PersonDo(ctx, "navigate", 5, args); err != nil {
+		t.Fatalf("navigate after takeover: %v", err)
+	}
+	for _, raw := range []string{`{}`, `{"url":"javascript:alert(1)"}`, `{"url":"file:///tmp/page"}`, `{"url":"chrome://settings"}`, `{"url":"https://"}`} {
+		if _, err := b.PersonDo(ctx, "navigate", 5, json.RawMessage(raw)); err != BadRequest {
+			t.Fatalf("invalid address %s: %v", raw, err)
+		}
+	}
+	if _, err := b.Do(ctx, "c1", "navigate", args); err != BadRequest {
+		t.Fatalf("navigation must use the person's route: %v", err)
+	}
+	b.SetPersonControl(5, false)
+	if _, err := b.PersonDo(ctx, "navigate", 5, args); err != NotTakenOver {
+		t.Fatalf("after handback: %v", err)
+	}
+	rows, _ := b.Records("", 10)
+	for _, row := range rows {
+		if row.Op == "navigate" {
+			t.Fatalf("the person's address was recorded: %+v", row)
+		}
+	}
+}
+
 func TestASecretHandoffIsNeverAudited(t *testing.T) {
 	b, ctx := connected(t)
 	fakeHost(ctx, b, func(c Command) Result { return Result{ID: c.ID, OK: true, Tab: 2, URL: "https://example.com/login"} })
