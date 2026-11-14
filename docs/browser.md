@@ -95,6 +95,8 @@ action. Setup happens only on the computer, so through Cloud the main action is 
 I'm back at the computer** (`POST /v1/browser/reminder`) and the setup steps are secondary; on the
 computer the main action opens the setup guide.
 
+On machines advertising `person_navigate` in browser status and connected to extension 0.5.0 or newer, after takeover the address bar also accepts a new HTTP or HTTPS address. A bare host gains `https://`; Enter or **Go to address** navigates the same owned tab and leaves it taken over. Invalid schemes are refused in both the panel and daemon. The draft survives screenshot refreshes and is cleared when the person hands back or switches Session/profile/tab. This uses the existing encrypted `chrome-tab-input` word with `op: "navigate"`, and the person's address is not recorded in the activity audit.
+
 **The person can open a Session tab** (2026-11-14). A Session without a tab shows an address field;
 the console accepts only http and https, adds `https://` to a bare host and refuses other schemes
 before sending. `POST /v1/browser/open {conversation, url}` (a device that may send; an agent's
@@ -214,15 +216,14 @@ height. A secret field, an unknown focus or contenteditable shows only "✓ Sent
 After takeover, **Mobile site** changes this tab to a 390 × 720 mobile viewport, mobile user agent
 and touch emulation; **Desktop site** clears those overrides. An agent can request the same with
 `clawdline browser viewport mobile` or `desktop`, subject to the existing ownership, stop and
-takeover fences. This reflows responsive pages without reloading or discarding form input.
+takeover fences. The switch reloads the current page after applying its viewport, touch mode and browser identity, including mobile Client Hints. This lets server-selected layouts and viewport metadata follow the selected mode; unsent form input is discarded by the reload. The panel uses a custom, keyboard-accessible choice menu rather than a native select.
 Under that emulation the page lays out at 390 × 720 whatever the real view is, but Chrome can still
 map dispatched mouse coordinates through a scale: tab zoom multiplies them, and an emulated size
 larger than the actual view is fitted into it. No CDP metric reports that scale, so before each phone
 click or scroll the worker moves the mouse to a known point, reads where the page saw it, and divides
 the target by the measured ratio. On 2026-11-13 the tester's agent view measured 195 × 360: every
 pictured tap reached twice its position, the field never focused, and Send text was refused.
-Server-selected mobile pages may need a subsequent navigation; changing layout does not guarantee
-that a site has a mobile design. The encrypted Cloud person-input route carries the same command.
+Changing layout does not guarantee that a site has a mobile design. The encrypted Cloud person-input route carries the same command.
 
 `clawdline browser launch [--browser PATH]` needs nothing installed into the person's Chrome. It
 writes the extension carried in the binary (`extension/embed.go`) to

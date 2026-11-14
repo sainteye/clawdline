@@ -12122,5 +12122,7 @@
   "capacityRow.session.recap_detail_characters.what": "Session 摘要裡給語音助理看的詳細版最長多少字。只有語音助理會讀，用來回答 Session 完成了什麼、你要決定什麼。",
   "capacityRow.session.recap_detail_characters.full": "超過的部分會被截掉，結尾加上刪節號。",
   "next.infoRecap": "摘要",
-  "next.infoRecapMovedOn": "寫完這份摘要後它又有新進展；下次停下來時會再寫一份新的。"
+  "next.infoRecapMovedOn": "寫完這份摘要後它又有新進展；下次停下來時會再寫一份新的。",
+  "next.browserPanelLayoutReload": "切換版面會重新載入這個網頁。",
+  "next.browserPanelGo": "前往網址"
 }

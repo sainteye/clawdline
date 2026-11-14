@@ -548,3 +548,12 @@ those controls from live-provider evidence. The unrelated Antigravity launch
 context is unchanged; its source link follows the CLI entry-point movement.
 The public website snapshot still follows approval and publication of the
 reviewed product tree.
+
+## Browser layout and address controls (2026-11-15)
+
+The new English and Taiwan Traditional Chinese reload hint and address-navigation
+label in `next-strings.ts` are browser UI copy. They do not change the localized
+handoff request or any provider instructions. The `session-rotation` explanation,
+original excerpt, loading condition and effect were reviewed in both languages
+and remain accurate. The source receipt follows these two browser labels;
+website snapshot publication remains a separate step.

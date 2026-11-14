@@ -335,7 +335,7 @@ func (s *Server) browserStatusRoute(w http.ResponseWriter, r *http.Request) {
 	if conversation != "" {
 		personOpen = s.browsers().PersonOpenMode(conversation, policy)
 	}
-	writeJSON(w, map[string]any{"ok": true, "mode": mode, "enabled": mode != "native" && profiles[mode].Ready, "person_open": personOpen, "extension_version": browserlaunch.EmbeddedVersion(), "browser_policy": policy, "profiles": profiles, "notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
+	writeJSON(w, map[string]any{"ok": true, "mode": mode, "enabled": mode != "native" && profiles[mode].Ready, "person_open": personOpen, "extension_version": browserlaunch.EmbeddedVersion(), "person_navigate": true, "browser_policy": policy, "profiles": profiles, "notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
 }
 
 func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
