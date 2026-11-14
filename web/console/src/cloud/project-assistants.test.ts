@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node executes source extensions.
-import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayRequest, capturedAssistantRelayFetch, type AssistantGrant, type AssistantFetch } from "./project-assistants.ts"
+import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayRequest, cloudAssistantGrants, capturedAssistantRelayFetch, type AssistantGrant, type AssistantFetch } from "./project-assistants.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { command, errorCode } from "../project-assistants/client.ts"
 import { CloudClient } from "../legacy/js/net/cloud-client.js"
@@ -410,4 +410,14 @@ test("a Bot draft is kept in this browser's storage",()=>{
     assert.equal(saved.get("draft-key"),"unsent words")
     assert.equal(new ProjectAssistantRegistry("account","trusted-reader").viewState.draft("draft-key"),"unsent words")
   }finally{g.window=before}
+})
+
+// Every paired device may act (2026-11-14): a machine whose operation flag has
+// not arrived yet is not read-only; only one that turned Cloud operation off is.
+test("a paired phone may change Bots unless the machine turned Cloud operation off",()=>{
+  const machine = (operationAllowed: boolean | null) => ({ id: "m", pairing: "paired", freshness: "current", operationAllowed }) as never
+  const grant = (operationAllowed: boolean | null) => cloudAssistantGrants("acct", [machine(operationAllowed)], () => 63, () => "r")[0]
+  assert.equal(grant(null).writable, true)
+  assert.equal(grant(true).writable, true)
+  assert.equal(grant(false).writable, false)
 })

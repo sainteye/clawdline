@@ -9936,7 +9936,7 @@
   "projectAssistants.sendNow": "立即送出，加進目前的回覆",
   "projectAssistants.approveAutomatically": "自動允許",
   "projectAssistants.cannotEdit": "目前無法修改這個 Bot",
-  "projectAssistants.readOnlySource": "這台機器目前只允許從這裡查看",
+  "projectAssistants.readOnlySource": "這台機器關閉了從 Clawdline Cloud 操作",
   "projectAssistants.approvalAuto": "由 agent 判斷哪些安全、直接執行；有風險的動作會出現權限卡問你。新 Bot 預設用這個。",
   "projectAssistants.approvalMode": "agent 用這個模式工作；它要問的事都會出現權限卡。",
   "projectAssistants.approvalApprove": "每個請求都會用 agent 的「允許一次」自動同意。agent 自己的設定（例如 Claude Code 的權限規則）仍然有效。",
