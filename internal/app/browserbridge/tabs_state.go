@@ -1,6 +1,7 @@
 package browserbridge
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -170,4 +171,74 @@ func (b *Bridge) ForgetAll() {
 		b.forgetLocked(tab)
 	}
 	b.saveTabs()
+}
+
+// ForgetClosedTabs asks the extension which tabs its agent window still
+// has and forgets every remembered tab that is gone, takeovers included. A
+// Chrome that was restarted leaves its old tabs in the saved state; without
+// this, a takeover of a tab that no longer exists kept the test Chrome from
+// ever counting as quiet (2026-11-15). A refused or unanswered listing
+// forgets nothing.
+func (b *Bridge) ForgetClosedTabs(ctx context.Context) error {
+	b.mu.Lock()
+	if !b.hostConnected() {
+		b.mu.Unlock()
+		return HostMissing
+	}
+	if len(b.queue) >= MaxPendingCommands {
+		b.mu.Unlock()
+		return QueueFull
+	}
+	c := Command{ID: newID(), Op: "tabs"}
+	ch := make(chan Result, 1)
+	b.waiting[c.ID] = ch
+	b.queue = append(b.queue, c)
+	b.signal()
+	b.mu.Unlock()
+	timer := time.NewTimer(b.timeout)
+	defer timer.Stop()
+	var res Result
+	select {
+	case res = <-ch:
+	case <-timer.C:
+		res = Result{Error: string(TimedOut)}
+	case <-ctx.Done():
+		res = Result{Error: string(TimedOut)}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.waiting, c.ID)
+	b.dropQueued(c.ID)
+	if !res.OK {
+		return Refusal(res.Error)
+	}
+	var listed struct {
+		Tabs []struct {
+			Tab int `json:"tab"`
+		} `json:"tabs"`
+	}
+	if json.Unmarshal(res.Value, &listed) != nil {
+		return BadRequest
+	}
+	live := map[int]bool{}
+	for _, t := range listed.Tabs {
+		live[t.Tab] = true
+	}
+	changed := false
+	for tab := range b.owner {
+		if !live[tab] && b.closing[tab] == "" {
+			b.forgetLocked(tab)
+			changed = true
+		}
+	}
+	for tab := range b.person {
+		if !live[tab] && b.closing[tab] == "" {
+			b.forgetLocked(tab)
+			changed = true
+		}
+	}
+	if changed {
+		return b.saveTabs()
+	}
+	return nil
 }

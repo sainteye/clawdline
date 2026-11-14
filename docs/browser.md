@@ -426,7 +426,7 @@ Chrome's own start:
   folder and running the connection command once (the ID changes once, with the path).
 - **The test Chrome** is relaunched by the daemon when it runs another release, once per release,
   and only when its channel is quiet: nothing queued or in flight, no tab taken over by the person,
-  no close awaiting a receipt, and no recorded action for two minutes. Closing it closes only its
+  no close awaiting a receipt, and no recorded action for two minutes. Before deciding, it asks the extension which tabs its agent window still has and forgets the rest (`ForgetClosedTabs`), so a takeover of a tab an earlier restart already closed does not block it. Closing it closes only its
   own tabs, which the bridge then forgets. The settings row says it restarts by itself when idle.
 - **The guide** lists the real steps (open `chrome://extensions`, Developer mode, Load unpacked with
   Command-Shift-G on a Mac and the stable path, the connection command once) and follows the

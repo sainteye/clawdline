@@ -68,6 +68,13 @@ func (s *Server) relaunchStaleTestChrome(now time.Time) {
 	if !st.Connected || st.Host.Version == "" || st.Host.Version == want {
 		return
 	}
+	// Tabs a restart already closed must not count as in use.
+	pruneCtx, cancel := context.WithTimeout(context.Background(), browserStopWait)
+	if err := b.ForgetClosedTabs(pruneCtx); err != nil {
+		cancel()
+		return
+	}
+	cancel()
 	s.browserMu.Lock()
 	tried := s.browserRelaunched == want
 	if !tried {
