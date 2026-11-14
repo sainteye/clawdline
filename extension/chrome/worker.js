@@ -24,6 +24,8 @@ function setState(next) {
   chrome.storage.session.set({ state }).catch(() => {})
 }
 
+let loadedFolderKind = "revision"
+
 async function loadedFolder() {
   try {
     const answer = await fetch(chrome.runtime.getURL("clawdline-folder.json"), { cache: "no-store" })
@@ -42,13 +44,11 @@ function connect() {
     return
   }
   setState({ host: "connected", error: "" })
-  const hello = { version: chrome.runtime.getManifest().version, browser: navigator.userAgent }
-  port.postMessage({ hello })
-  // Whether Chrome loaded the stable folder (its marker file) or an older
-  // one-off folder: the stable one picks up new releases at Chrome's next
-  // start, the other needs a one-time move.
-  const sent = port
-  loadedFolder().then((folder) => { if (port === sent) sent.postMessage({ hello: { ...hello, folder } }) })
+  // One hello, naming the folder Chrome loaded: the stable one picks up new
+  // releases at Chrome's next start, an older one-off folder needs a one-time
+  // move. The folder is read once, before the first connection (a second,
+  // later hello never reached the daemon on 2026-11-15).
+  port.postMessage({ hello: { version: chrome.runtime.getManifest().version, browser: navigator.userAgent, folder: loadedFolderKind } })
   port.onMessage.addListener(onHostMessage)
   port.onDisconnect.addListener(() => {
     const error = chrome.runtime.lastError ? chrome.runtime.lastError.message : ""
@@ -400,4 +400,4 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg && msg.type === "status") reply(state)
 })
 
-connect()
+loadedFolder().then((kind) => { loadedFolderKind = kind }).finally(connect)
