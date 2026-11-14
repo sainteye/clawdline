@@ -334,7 +334,36 @@ func (h *Host) Enable(ctx context.Context) error {
 		h.engine = nil
 	}
 	h.enabled = true
+	go h.resumeInterrupted()
 	return nil
+}
+
+// resumeInterrupted lets each Bot carry on with the turn the previous daemon
+// process cut off, as Codync's bot actor does on spawn. It runs after Enable
+// returns and changes nothing for a Bot without such a turn.
+func (h *Host) resumeInterrupted() {
+	h.mu.Lock()
+	st, r := h.store, h.engine
+	h.mu.Unlock()
+	if st == nil || r == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), h.o.Limits.CleanupTimeout*4)
+	defer cancel()
+	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
+	for {
+		page, err := st.List(ctx, query)
+		if err != nil {
+			return
+		}
+		for _, bot := range page.Items {
+			_ = r.ResumeInterrupted(ctx, bot.Bot.Key)
+		}
+		if page.NextCursor == "" {
+			return
+		}
+		query.Cursor = page.NextCursor
+	}
 }
 
 func (h *Host) Disable(ctx context.Context) error { return h.stop(ctx, false) }
@@ -356,7 +385,11 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	if r != nil {
 		result = r.Close(ctx)
 	}
-	result = errors.Join(result, h.quiesce(ctx))
+	field := "execution"
+	if closeHost {
+		field = app.RestartField
+	}
+	result = errors.Join(result, h.quiesceFor(ctx, field))
 	if result != nil {
 		return errors.Join(failure(pa.ExecutionEffectUnknown, "host_cleanup"), result)
 	}
@@ -371,7 +404,9 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 
 // One page at a time under the caller's SINGLE total cleanup deadline. There
 // is no provider, actor allocation, retained cursor registry or background loop.
-func (h *Host) quiesce(ctx context.Context) error {
+func (h *Host) quiesce(ctx context.Context) error { return h.quiesceFor(ctx, "execution") }
+
+func (h *Host) quiesceFor(ctx context.Context, field string) error {
 	h.mu.Lock()
 	st := h.store
 	h.mu.Unlock()
@@ -385,7 +420,7 @@ func (h *Host) quiesce(ctx context.Context) error {
 			return err
 		}
 		for _, bot := range page.Items {
-			if err = app.QuiesceHistory(ctx, st, h.o.Clock, h.o.ID, bot.Bot.Key); err != nil {
+			if err = app.QuiesceHistoryFor(ctx, st, h.o.Clock, h.o.ID, bot.Bot.Key, field); err != nil {
 				return err
 			}
 		}

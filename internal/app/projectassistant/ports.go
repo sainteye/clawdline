@@ -15,6 +15,10 @@ type Submission struct {
 	Message pa.SendMessage
 	Feature pa.FeatureState
 	Source  pa.SourceStatus
+	// Notice marks a message Clawdline itself sends the agent, such as the
+	// resume prompt after a restart; it is shown as a notice, not as the
+	// person's words.
+	Notice bool
 }
 type StopRequest struct {
 	Command pa.Command

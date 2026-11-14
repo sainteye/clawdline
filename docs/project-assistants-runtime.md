@@ -269,3 +269,15 @@ handoff card and transcript excerpt copying are outside this first-version data
 unit. Filtered SQLite memory, rather than opaque provider context, is the source
 for the new opening after forgetting. This does not establish real Claude/Codex
 adapter admission or claim that a native provider erased its external memory.
+
+## Resuming after a restart
+
+Since 2026-11-14, as in Codync (host/src/agent/bot/mod.rs RESUME_PROMPT,
+STALE_RESUME_MS), a turn that a daemon restart cut off is still recorded as
+unknown, and when its message is less than an hour old and nothing else is
+queued, the runtime sends the agent Codync's resume prompt as a notice
+message. The notice acknowledges the unknown turn (its receipt stays
+unknown) and runs in the same native session when it can be loaded; the
+prompt tells the agent to finish without repeating a completed action. An
+older interrupted turn, or one with queued messages behind it, waits for the
+person's next message as before.

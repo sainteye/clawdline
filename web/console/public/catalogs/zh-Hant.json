@@ -9903,6 +9903,7 @@
   "projectAssistants.reject_once": "拒絕這次",
   "projectAssistants.remember": "儲存記憶",
   "projectAssistants.removePicture": "移除圖片",
+  "projectAssistants.resumedNotice": "Clawdline 重新啟動後，已請 Bot 從中斷處接著做，不重複已完成的步驟。",
   "projectAssistants.retry": "重試",
   "projectAssistants.revoked": "授權已撤銷",
   "projectAssistants.running": "工作中",

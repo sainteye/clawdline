@@ -96,7 +96,7 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 				} `json:"mcpServers"`
 				SystemPrompt struct{ Content []struct{ Text string } } `json:"systemPrompt"`
 			}
-			if json.Unmarshal(f.Params, &p) != nil || len(p.MCPServers) != 1 || len(p.MCPServers[0].Headers) != 1 || p.MCPServers[0].Type != "http" || len(p.SystemPrompt.Content) != 1 || p.SystemPrompt.Content[0].Text != "Read only" {
+			if json.Unmarshal(f.Params, &p) != nil || len(p.MCPServers) != 1 || len(p.MCPServers[0].Headers) != 1 || p.MCPServers[0].Type != "http" || len(p.SystemPrompt.Content) != 1 || !strings.HasPrefix(p.SystemPrompt.Content[0].Text, "Agent profile:") || !strings.HasSuffix(p.SystemPrompt.Content[0].Text, "\nRead only") {
 				os.Exit(16)
 			}
 			endpoint, authorization = p.MCPServers[0].URL, p.MCPServers[0].Headers[0].Value

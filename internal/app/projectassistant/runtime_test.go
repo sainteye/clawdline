@@ -1014,3 +1014,82 @@ func TestPicturesSentWithAMessageReachThePrompt(t *testing.T) {
 		t.Fatalf("prompt pictures: %+v", q.Images)
 	}
 }
+
+// As in Codync, a turn a restart cut off within the last hour is resumed with
+// the resume prompt, shown as a notice; an older one stays unknown.
+func TestARestartResumesARecentInterruptedTurn(t *testing.T) {
+	for _, age := range []time.Duration{0, 2 * time.Hour} {
+		f := newRuntimeFixture(t)
+		rec, err := f.submit(t, "one", "one")
+		if err != nil {
+			t.Fatal(err)
+		}
+		receivePrompt(t, f.provider)
+		options := f.r.o
+		options.Clock = func() time.Time { return time.Now().Add(age) }
+		restarted, err := NewRuntime(options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = restarted.Recover(context.Background(), f.key); err != nil {
+			t.Fatal(err)
+		}
+		if age > 0 {
+			awaitTurn(t, f, rec.ResourceID, pa.TurnUnknown)
+			time.Sleep(200 * time.Millisecond)
+			if f.provider.count() != 1 {
+				t.Fatal("a stale interrupted turn was resumed")
+			}
+			continue
+		}
+		resumed := receivePrompt(t, f.provider)
+		if resumed.Text != resumePrompt {
+			t.Fatalf("resume prompt=%q", resumed.Text)
+		}
+		f.store.mu.Lock()
+		old := f.store.turns[rec.ResourceID].State
+		notice := false
+		for _, m := range f.store.messages {
+			notice = notice || m.Kind == pa.NoticeMessage && m.Text == resumePrompt
+		}
+		f.store.mu.Unlock()
+		if old != pa.TurnFailed || !notice {
+			t.Fatalf("interrupted turn=%s notice=%v", old, notice)
+		}
+	}
+}
+
+// The daemon's shutdown records the turn it cut off with RestartField; the
+// next start resumes that one and leaves other unknown turns to the person.
+func TestAStartResumesOnlyATurnTheShutdownCutOff(t *testing.T) {
+	for _, field := range []string{RestartField, "execution"} {
+		f := newRuntimeFixture(t)
+		rec, err := f.submit(t, "one", "one")
+		if err != nil {
+			t.Fatal(err)
+		}
+		receivePrompt(t, f.provider)
+		if err = QuiesceHistoryFor(context.Background(), f.store, time.Now, func() string { return fmt.Sprint(time.Now().UnixNano()) }, f.key, field); err != nil {
+			t.Fatal(err)
+		}
+		options := f.r.o
+		restarted, err := NewRuntime(options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = restarted.ResumeInterrupted(context.Background(), f.key); err != nil {
+			t.Fatal(err)
+		}
+		if field != RestartField {
+			time.Sleep(200 * time.Millisecond)
+			if f.provider.count() != 1 {
+				t.Fatal("an unknown turn that no shutdown cut off was resumed")
+			}
+			awaitTurn(t, f, rec.ResourceID, pa.TurnUnknown)
+			continue
+		}
+		if resumed := receivePrompt(t, f.provider); resumed.Text != resumePrompt {
+			t.Fatalf("resume prompt=%q", resumed.Text)
+		}
+	}
+}

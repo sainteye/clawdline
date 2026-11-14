@@ -89,7 +89,7 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 						Mode    string
 						Content []struct{ Type, Text string }
 					}
-					if json.Unmarshal(wire.Params["systemPrompt"], &prompt) != nil || prompt.Mode != "append" || len(prompt.Content) != 1 || prompt.Content[0].Text != q.Bot.Instructions.Text {
+					if json.Unmarshal(wire.Params["systemPrompt"], &prompt) != nil || prompt.Mode != "append" || len(prompt.Content) != 1 || !framed(prompt.Content[0].Text, q.Bot.Instructions.Text) {
 						t.Fatal("Codex system prompt", string(request))
 					}
 				}
@@ -119,7 +119,7 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 							t.Fatal("native persistence or background models enabled")
 						}
 					}
-					if meta.SystemPrompt.Append != q.Bot.Instructions.Text || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || len(o.AllowedTools) != 3 || o.AllowedTools[0] != "mcp__clawdline__send_message" || o.AllowedTools[1] != "mcp__clawdline__dispatch_work" || o.AllowedTools[2] != "mcp__clawdline__work_status" || o.SettingSources != nil || o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || o.Settings.DisableAllHooks {
+					if !framed(meta.SystemPrompt.Append, q.Bot.Instructions.Text) || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || len(o.AllowedTools) != 3 || o.AllowedTools[0] != "mcp__clawdline__send_message" || o.AllowedTools[1] != "mcp__clawdline__dispatch_work" || o.AllowedTools[2] != "mcp__clawdline__work_status" || o.SettingSources != nil || o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || o.Settings.DisableAllHooks {
 						t.Fatal("Claude owned preset", string(request))
 					}
 				}
@@ -171,4 +171,11 @@ func TestProviderRefusesUnownedOrRevokedToolsBeforeLaunching(t *testing.T) {
 			t.Fatal("unowned session started")
 		}
 	}
+}
+
+// framed is the Codync frame followed by the person's instructions: who the
+// Bot is, how replies reach the user, and that its Project grants nothing.
+func framed(prompt, instructions string) bool {
+	return strings.HasPrefix(prompt, "Agent profile:") && strings.HasSuffix(prompt, "\n"+instructions) &&
+		strings.Contains(prompt, "send_message") && strings.Contains(prompt, "dispatch_work") && strings.Contains(prompt, "not a sandbox or a grant of access")
 }
