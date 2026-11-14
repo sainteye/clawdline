@@ -1288,3 +1288,27 @@ func (r *Engine) images(key pa.BotKey, attachments []pa.Attachment) ([]PromptIma
 	}
 	return out, nil
 }
+
+// ResumeInterrupted resumes, as Recover does, a turn the daemon's own
+// shutdown cut off (RestartField) when it is the Bot's only pending turn and
+// its message is under an hour old. Anything else waits for the person.
+func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
+	pending, err := r.o.Repository.PendingTurns(ctx, key)
+	if err != nil || len(pending) != 1 {
+		return err
+	}
+	t := pending[0]
+	if t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+		return nil
+	}
+	x, err := r.o.Repository.Export(ctx, key)
+	if err != nil {
+		return err
+	}
+	for _, m := range x.Messages {
+		if m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume {
+			return r.resumeInterrupted(ctx, key, t)
+		}
+	}
+	return nil
+}

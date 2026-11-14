@@ -57,6 +57,15 @@ func (r *Engine) stopPendingLocked(ctx context.Context, a *runtimeActor) error {
 // provider. It shares the runtime terminal-receipt namespace and CAS contract.
 // A failed/partial scan remains inspectable and is safe to repeat explicitly.
 func QuiesceHistory(ctx context.Context, repo Repository, clock func() time.Time, id func() string, key pa.BotKey) error {
+	return QuiesceHistoryFor(ctx, repo, clock, id, key, "execution")
+}
+
+// RestartField marks a turn the daemon's own shutdown cut off, which a later
+// start may resume (ResumeInterrupted); "execution" marks any other stop.
+const RestartField = "restart"
+
+// QuiesceHistoryFor is QuiesceHistory recording why an active turn stopped.
+func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.Time, id func() string, key pa.BotKey, field string) error {
 	if repo == nil || clock == nil || id == nil {
 		return runtimeFailure(pa.Invalid, "history_cleanup")
 	}
@@ -91,7 +100,7 @@ func QuiesceHistory(ctx context.Context, repo Repository, clock func() time.Time
 			state = pa.TurnUnknown
 		}
 		t.State = state
-		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "execution"}
+		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: field}
 		conversation := x.Conversation
 		if conversation.ActiveTurnID == t.ID {
 			conversation.ActiveTurnID = ""

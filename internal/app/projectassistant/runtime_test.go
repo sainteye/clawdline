@@ -1058,3 +1058,38 @@ func TestARestartResumesARecentInterruptedTurn(t *testing.T) {
 		}
 	}
 }
+
+// The daemon's shutdown records the turn it cut off with RestartField; the
+// next start resumes that one and leaves other unknown turns to the person.
+func TestAStartResumesOnlyATurnTheShutdownCutOff(t *testing.T) {
+	for _, field := range []string{RestartField, "execution"} {
+		f := newRuntimeFixture(t)
+		rec, err := f.submit(t, "one", "one")
+		if err != nil {
+			t.Fatal(err)
+		}
+		receivePrompt(t, f.provider)
+		if err = QuiesceHistoryFor(context.Background(), f.store, time.Now, func() string { return fmt.Sprint(time.Now().UnixNano()) }, f.key, field); err != nil {
+			t.Fatal(err)
+		}
+		options := f.r.o
+		restarted, err := NewRuntime(options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = restarted.ResumeInterrupted(context.Background(), f.key); err != nil {
+			t.Fatal(err)
+		}
+		if field != RestartField {
+			time.Sleep(200 * time.Millisecond)
+			if f.provider.count() != 1 {
+				t.Fatal("an unknown turn that no shutdown cut off was resumed")
+			}
+			awaitTurn(t, f, rec.ResourceID, pa.TurnUnknown)
+			continue
+		}
+		if resumed := receivePrompt(t, f.provider); resumed.Text != resumePrompt {
+			t.Fatalf("resume prompt=%q", resumed.Text)
+		}
+	}
+}
