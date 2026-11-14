@@ -195,7 +195,7 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
  AND (SELECT count(*) FROM messages)=(SELECT json_extract(j,'$.Conversation.last_message_seq') FROM a)
  AND (SELECT coalesce(max(anchor),0) FROM messages)=(SELECT json_extract(j,'$.Conversation.last_message_seq') FROM a)
  AND NOT EXISTS(SELECT 1 FROM turns t LEFT JOIN messages m ON m.id=t.message_id
- WHERE m.id IS NULL OR json_extract(m.j,'$.kind')!='user' OR json_extract(m.j,'$.turn_id')!=t.id)
+ WHERE m.id IS NULL OR json_extract(m.j,'$.kind') NOT IN ('user','notice') OR json_extract(m.j,'$.turn_id')!=t.id)
  AND (SELECT count(*) FROM timeline WHERE kind=1)=(SELECT count(*) FROM a,json_each(a.j,'$.WorkLinks') WHERE type='object')
  AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p LEFT JOIN turns t ON t.id=json_extract(p.value,'$.turn_id')
  WHERE p.type='object' AND (t.id IS NULL OR json_extract(p.value,'$.fence.binding_id')!=json_extract(t.j,'$.fence.binding_id')

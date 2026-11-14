@@ -15,6 +15,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	hoststore "github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -156,14 +157,7 @@ func newHostFixture(t *testing.T) *hostFixture {
 	fixtureGit(t, f.repo, "commit", "-q", "-m", "Initial fixture")
 	dir := t.TempDir()
 	f.launcher = &fixtureLauncher{}
-	broker := &orchestrator.Broker{Store: f.st, Tasks: taskdir.New(dir), Git: gitadapter.New(), Dir: dir, Launcher: f.launcher, ScreenReadEvery: time.Millisecond, Terminal: func() projects.TerminalChoice { return projects.TerminalTmux }, Live: func(context.Context) []session.Session {
-		return []session.Session{{ID: "%80", Backend: session.BackendTmux, Assistant: session.AssistantCodex}}
-	}, Type: func(context.Context, string, string) error { return nil }}
-	screen, e := os.ReadFile("../../app/orchestrator/testdata/codex-composer.txt")
-	if e != nil {
-		t.Fatal(e)
-	}
-	broker.Screen = func(context.Context, string) (string, bool) { return string(screen), true }
+	broker := f.broker(t, dir)
 	f.o = Options{Database: f.st.ProjectAssistantDatabase(), MachineID: "source", Projects: fixtureResolver{f}, Broker: broker, Clock: time.Now, ID: func() string { return fmt.Sprintf("host-%d", f.seq.Add(1)) }, Limits: app.RuntimeLimits{MaxBots: 4, MaxProcesses: 1, PromptTimeout: 5 * time.Second, CleanupTimeout: 100 * time.Millisecond},
 		Source: func(context.Context, pa.BotKey, bool) (pa.SourceStatus, error) {
 			s := pa.SourceStatus{MachineID: "source", State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive}
@@ -186,6 +180,20 @@ func newHostFixture(t *testing.T) *hostFixture {
 		return app.Authority{PrincipalID: reader, ReaderID: reader, AuthorizationRevision: "current", Feature: pa.FeatureState{Enabled: true}, Source: s}, e
 	}
 	return f
+}
+
+// broker builds the fixture's broker; a new daemon process builds its own.
+func (f *hostFixture) broker(t *testing.T, dir string) *orchestrator.Broker {
+	t.Helper()
+	broker := &orchestrator.Broker{Store: f.st, Tasks: taskdir.New(dir), Git: gitadapter.New(), Dir: dir, Launcher: f.launcher, ScreenReadEvery: time.Millisecond, Terminal: func() projects.TerminalChoice { return projects.TerminalTmux }, Live: func(context.Context) []session.Session {
+		return []session.Session{{ID: "%80", Backend: session.BackendTmux, Assistant: session.AssistantCodex}}
+	}, Type: func(context.Context, string, string) error { return nil }}
+	screen, e := os.ReadFile("../../app/orchestrator/testdata/codex-composer.txt")
+	if e != nil {
+		t.Fatal(e)
+	}
+	broker.Screen = func(context.Context, string) (string, bool) { return string(screen), true }
+	return broker
 }
 func (f *hostFixture) start(t *testing.T) {
 	t.Helper()
@@ -796,4 +804,65 @@ func TestHostDurableCleanupFailureAndTimeoutKeepReenableFenced(t *testing.T) {
 			t.Fatal("timeout retry started execution")
 		}
 	})
+}
+
+// As in Codync, a turn the daemon's own restart cut off resumes on the next
+// start through the real store: the interrupted turn is acknowledged and the
+// resume prompt runs as a notice. A refused resume must not acknowledge it.
+func TestHostRestartResumesTheTurnItCutOff(t *testing.T) {
+	f := newHostFixture(t)
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	first, e := f.send(t, b, "one")
+	if e != nil {
+		t.Fatal(e)
+	}
+	fixtureReceive(t, f.p.sent)
+	if e = f.h.Close(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	// A new process has a new broker, as the daemon builds one per start.
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.start(t)
+	f.enable(t)
+	resumed := fixtureReceive(t, f.p.sent)
+	if !strings.Contains(resumed.Text, "Clawdline restarted") {
+		t.Fatalf("resume prompt=%q", resumed.Text)
+	}
+	// While the resume runs, the chat still reads: its pending turn's input
+	// is the notice, not a person's message.
+	s, e := f.h.Service()
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, c, _, e := s.Get(context.Background(), b.Key)
+	if e != nil {
+		t.Fatal(e)
+	}
+	view, e := s.View(context.Background(), pa.ReadViewRequest{Key: b.Key, ConversationID: c.ID, Mode: pa.ReadViewSnapshot, PageSize: 100})
+	if e != nil {
+		t.Fatalf("the chat did not read during a resume: %v", e)
+	}
+	if view.View.Snapshot == nil || len(view.View.Snapshot.PendingTurns) != 1 {
+		t.Fatalf("resumed turn not pending in the view: %+v", view.View.Snapshot)
+	}
+	fixtureReceive(t, f.p.sessions) // the first process's session
+	fixtureReceive(t, f.p.sessions).reply <- app.PromptResult{FinalText: "Carried on"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+	// A finished resume stays in the history the chat reads.
+	if view, e = s.View(context.Background(), pa.ReadViewRequest{Key: b.Key, ConversationID: c.ID, Mode: pa.ReadViewSnapshot, PageSize: 100}); e != nil {
+		t.Fatalf("the chat did not read after a resume: %v", e)
+	}
+	x, e := f.h.store.Export(context.Background(), b.Key)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, turn := range x.Turns {
+		if turn.ID == first.ResourceID && turn.State != pa.TurnFailed {
+			t.Fatalf("interrupted turn=%s", turn.State)
+		}
+	}
 }

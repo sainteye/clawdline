@@ -384,7 +384,7 @@ func (h *Host) resumeInterrupted() {
 	}
 	for _, key := range keys {
 		if err := r.ResumeInterrupted(ctx, key); err != nil {
-			log.Printf("bots: an interrupted turn was not resumed: %s", pa.Code(err))
+			log.Printf("bots: an interrupted turn was not resumed: %v", err)
 		}
 	}
 }

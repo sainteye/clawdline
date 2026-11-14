@@ -489,7 +489,7 @@ func validateAggregate(a aggregate) error {
 		}
 		if msg.TurnID != "" {
 			t, ok := a.Turns[msg.TurnID]
-			if !ok || t.Fence.Key != msg.Fence.Key || t.Fence.Project != msg.Fence.Project || t.Fence.ConversationID != msg.Fence.ConversationID || (msg.Kind != pa.UserMessage && t.Fence != msg.Fence) || msg.Fence.Generation > t.Fence.Generation {
+			if !ok || t.Fence.Key != msg.Fence.Key || t.Fence.Project != msg.Fence.Project || t.Fence.ConversationID != msg.Fence.ConversationID || (msg.Kind != pa.UserMessage && t.MessageID != msg.ID && t.Fence != msg.Fence) || msg.Fence.Generation > t.Fence.Generation {
 				return failure(pa.ScopeDenied, "message_turn")
 			}
 		}
@@ -504,7 +504,9 @@ func validateAggregate(a aggregate) error {
 	}
 	for _, t := range a.Turns {
 		message, ok := messageFacts[t.MessageID]
-		if !ok || message.Kind != pa.UserMessage || message.TurnID != t.ID {
+		// A turn runs a person's message, or Clawdline's own resume notice
+		// after a restart cut the previous turn off.
+		if !ok || message.Kind != pa.UserMessage && message.Kind != pa.NoticeMessage || message.TurnID != t.ID {
 			return failure(pa.ScopeDenied, "turn_message")
 		}
 	}

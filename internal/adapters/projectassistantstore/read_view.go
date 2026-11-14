@@ -198,7 +198,7 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 		if e == nil {
 			e = viewCheckFence(m.Fence, h, false)
 		}
-		if e != nil || m.ID != summary.MessageID || m.Kind != pa.UserMessage || m.TurnID != summary.ID {
+		if e != nil || m.ID != summary.MessageID || m.Kind != pa.UserMessage && m.Kind != pa.NoticeMessage || m.TurnID != summary.ID {
 			rows.Close()
 			return nil, failure(pa.Invalid, "read_view_turn_message")
 		}
