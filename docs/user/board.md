@@ -28,7 +28,7 @@ keeps its phase visible in **Needs attention**. Press a card to open its details
 
 Turn on **Show Agent proposals** or **Show Plans** to reveal their columns on the
 left. **Show completed** reveals completed items on the right. All three start off;
-a hidden column leaves no empty space. Each column keeps a fixed width, and the
+a hidden column leaves no empty space. Each column adapts with an upper width limit (between 280 and 340 pixels), and the
 Board scrolls horizontally inside its own region. The heading and filters stay in place.
 The phone Board keeps its existing layout and controls.
 
