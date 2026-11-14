@@ -305,3 +305,12 @@
 /* Every create field labels itself at the same size. */
 .project-assistants .pa-field>span { font-size:12px;color:var(--pa-dim); }
 
+/* The shared assistant logo fills the box AgentMark gives it. */
+.project-assistants .pa-agent-logo { display:inline-flex; flex:none; }
+.project-assistants .pa-agent-logo .assistant-logo { width:100%; height:100%; }
+
+/* Bots gather under the Project they work in. */
+.project-assistants .pa-project-group + .pa-project-group { margin-top:10px; }
+.project-assistants .pa-project-heading { display:flex; align-items:center; gap:6px; margin:0; padding:10px 4px 4px; font-size:12px; font-weight:600; color:var(--pa-dim); }
+.project-assistants .pa-project-heading span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-assistants .pa-project-heading small { margin-left:auto; font-weight:400; font-size:11px; }
