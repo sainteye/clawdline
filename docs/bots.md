@@ -55,8 +55,11 @@ first-use setup ahead of time and prints which Claude Code version it found;
 3. Send a message. Up to four pictures can go with it: press **+**, paste
    them or drop them on the message box. The Bot sees them as images. (Pictures
    work from this machine's own console; not yet through Clawdline Cloud.)
-   The Bot answers in the chat. A message sent while it is
-   still working waits in line and is shown as pending.
+   The Bot answers in the chat. While it works, the chat shows what it is
+   doing (the tool it is using, or that it is writing) and how long the turn
+   has run. A message sent while it is still working waits in line and is
+   shown as pending; **×** on a pending message takes it back before it is
+   sent, leaving the current reply and the other pending messages alone.
 4. Ask it to dispatch work, for example "add a file and commit it". It
    starts an isolated worker in that Project's worktree, and a work card
    follows the work from accepted to running to done. The worker's summary

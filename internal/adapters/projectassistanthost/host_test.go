@@ -921,3 +921,84 @@ func TestHostBotMemoryToolsKeepTheSessionUntilForgetting(t *testing.T) {
 		t.Fatalf("after forgetting: resume=%v handoff=%v memory=%q", third.q.Resume, prompt.Handoff != nil, prompt.Context.Text)
 	}
 }
+
+// As Codync's unqueue, stopping a queued turn takes back that one message: the
+// running turn and the rest of the queue carry on, and it is never sent. A
+// running turn records when it started, for the chat's elapsed time.
+func TestHostStoppingAQueuedTurnRemovesOnlyThatMessage(t *testing.T) {
+	f := newHostFixture(t)
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	ctx := context.Background()
+	first, e := f.send(t, b, "one")
+	if e != nil {
+		t.Fatal(e)
+	}
+	fixtureReceive(t, f.p.sent)
+	running := fixtureReceive(t, f.p.sessions)
+	second, e := f.send(t, b, "two")
+	if e != nil {
+		t.Fatal(e)
+	}
+	third, e := f.send(t, b, "three")
+	if e != nil {
+		t.Fatal(e)
+	}
+	s, e := f.h.Service()
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, c, _, e := s.Get(ctx, b.Key)
+	if e != nil {
+		t.Fatal(e)
+	}
+	fence := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
+	if _, e = s.Stop(ctx, app.StopRequest{Command: pa.Command{Key: b.Key, Operation: pa.StopOperation, IdempotencyKey: "remove-two"}, Fence: fence, TurnID: second.ResourceID}); e != nil {
+		t.Fatalf("removing a queued message: %v", e)
+	}
+	turns := func() map[string]pa.Turn {
+		x, e := f.h.store.Export(ctx, b.Key)
+		if e != nil {
+			t.Fatal(e)
+		}
+		out := map[string]pa.Turn{}
+		for _, turn := range x.Turns {
+			out[turn.ID] = turn
+		}
+		return out
+	}
+	now := turns()
+	if now[first.ResourceID].State != pa.TurnRunning || now[first.ResourceID].StartedAt == nil {
+		t.Fatalf("running turn: %+v", now[first.ResourceID])
+	}
+	if now[second.ResourceID].State != pa.TurnCancelled || now[second.ResourceID].Failure != nil {
+		t.Fatalf("removed turn: %+v", now[second.ResourceID])
+	}
+	if now[third.ResourceID].State != pa.TurnQueued {
+		t.Fatalf("the rest of the queue: %+v", now[third.ResourceID])
+	}
+	view, e := s.View(ctx, pa.ReadViewRequest{Key: b.Key, ConversationID: c.ID, Mode: pa.ReadViewSnapshot, PageSize: 100})
+	if e != nil || view.View.Snapshot == nil {
+		t.Fatal(e)
+	}
+	started := ""
+	for _, turn := range view.View.Snapshot.PendingTurns {
+		if turn.ID == first.ResourceID {
+			started = turn.StartedAt
+		}
+	}
+	if _, e = time.Parse(time.RFC3339, started); e != nil {
+		t.Fatalf("the chat cannot read when the running turn started: %q", started)
+	}
+	if _, e = s.Stop(ctx, app.StopRequest{Command: pa.Command{Key: b.Key, Operation: pa.StopOperation, IdempotencyKey: "remove-two-again"}, Fence: fence, TurnID: second.ResourceID}); pa.Code(e) != pa.StaleVersion {
+		t.Fatalf("removing a removed message again: %v", e)
+	}
+	running.reply <- app.PromptResult{FinalText: "One done"}
+	next := fixtureReceive(t, f.p.sent)
+	if !strings.Contains(next.Text, "three") {
+		t.Fatalf("after the running turn, the next prompt was %q", next.Text)
+	}
+}

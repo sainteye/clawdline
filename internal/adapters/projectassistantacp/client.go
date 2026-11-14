@@ -499,6 +499,7 @@ func (c *Client) handle(f frame) error {
 			Update    struct {
 				SessionUpdate string `json:"sessionUpdate"`
 				MessageID     string `json:"messageId"`
+				Title         string `json:"title"`
 				// A message chunk carries one content block; a tool call
 				// carries an array. Only a chunk's block is decoded below.
 				Content json.RawMessage `json:"content"`
@@ -520,7 +521,15 @@ func (c *Client) handle(f frame) error {
 			c.mu.Lock()
 			c.segmentClosed = true
 			c.mu.Unlock()
-			return nil
+			// As Codync's working indicator, the call's title is the Bot's
+			// current activity; the console reads it from this trace.
+			title := strings.TrimSpace(p.Update.Title)
+			if title == "" || pa.ValidateMessage(title) != nil {
+				return nil
+			}
+			e := c.event(c.eventID())
+			e.Trace = &pa.Trace{TurnID: e.TurnID, Category: "tool_call", Text: title}
+			return c.sink(c.ctx, e)
 		}
 		if p.Update.SessionUpdate != "agent_message_chunk" {
 			return nil

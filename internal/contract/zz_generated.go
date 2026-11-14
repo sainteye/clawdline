@@ -5089,11 +5089,14 @@ type ProjectAssistantReadTraceSummary struct {
 
 type ProjectAssistantReadTurnSummary struct {
 	// Empty when absent; no captured instructions or failure narrative.
-	FailureCode string                    `json:"failure_code"`
-	Fence       ProjectAssistantFence     `json:"fence"`
-	ID          string                    `json:"id"`
-	MessageID   string                    `json:"message_id"`
-	State       ProjectAssistantTurnState `json:"state"`
+	FailureCode string                `json:"failure_code"`
+	Fence       ProjectAssistantFence `json:"fence"`
+	ID          string                `json:"id"`
+	MessageID   string                `json:"message_id"`
+
+	// When the turn began running, RFC 3339; empty while it waits.
+	StartedAt string                    `json:"started_at"`
+	State     ProjectAssistantTurnState `json:"state"`
 }
 
 // One SQL snapshot. Only a successful snapshot-mode response may replace the
@@ -5301,7 +5304,10 @@ type ProjectAssistantTurn struct {
 	Instructions   ProjectAssistantInstructions `json:"instructions"`
 	MemoryRevision int64                        `json:"memory_revision"`
 	MessageID      string                       `json:"message_id"`
-	State          ProjectAssistantTurnState    `json:"state"`
+
+	// When the turn began running, RFC 3339; absent while it waits.
+	StartedAt string                    `json:"started_at,omitempty"`
+	State     ProjectAssistantTurnState `json:"state"`
 }
 
 type ProjectAssistantTurnState string

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 11965,
+  "englishKeys": 11967,
   "counts": {
     "negation": 3257,
     "state": 1999,
     "permission": 701,
-    "deletion": 266,
+    "deletion": 267,
     "uncertainty": 456
   },
-  "unionCount": 5207,
+  "unionCount": 5208,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6212,6 +6212,7 @@
       "projectAssistants.clearQuote",
       "projectAssistants.permissionDelete",
       "projectAssistants.removePicture",
+      "projectAssistants.removeQueued",
       "settings.settingsHooksLegacy",
       "settings.settingsHooksRemove",
       "settings.settingsScopeHint",
@@ -11341,6 +11342,7 @@
     "projectAssistants.policy",
     "projectAssistants.reject_always",
     "projectAssistants.removePicture",
+    "projectAssistants.removeQueued",
     "projectAssistants.resumedNotice",
     "projectAssistants.revoked",
     "projectAssistants.savedMemory",

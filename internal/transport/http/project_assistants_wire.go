@@ -110,6 +110,9 @@ func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 	out.Instructions = paWireInstructionSnapshot(value.Instructions)
 	out.MemoryRevision = value.MemoryRevision
 	out.IdempotencyKey = value.IdempotencyKey
+	if value.StartedAt != nil {
+		out.StartedAt = value.StartedAt.UTC().Format(time.RFC3339)
+	}
 	if value.Failure != nil {
 		converted := paWireFailure(*value.Failure)
 		out.Failure = &converted

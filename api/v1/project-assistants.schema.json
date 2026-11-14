@@ -557,6 +557,10 @@
         },
         "failure": {
           "$ref": "#/$defs/ProjectAssistantFailure"
+        },
+        "started_at": {
+          "type": "string",
+          "description": "When the turn began running, RFC 3339; absent while it waits."
         }
       },
       "required": [
@@ -2030,6 +2034,10 @@
         "failure_code": {
           "type": "string",
           "description": "Empty when absent; no captured instructions or failure narrative."
+        },
+        "started_at": {
+          "type": "string",
+          "description": "When the turn began running, RFC 3339; empty while it waits."
         }
       },
       "required": [
@@ -2037,7 +2045,8 @@
         "fence",
         "message_id",
         "state",
-        "failure_code"
+        "failure_code",
+        "started_at"
       ],
       "additionalProperties": false
     },

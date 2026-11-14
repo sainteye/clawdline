@@ -25,6 +25,7 @@ type StopRequest struct {
 	Fence   pa.Fence
 	// Stop cancels queued messages as well as the active turn. Closing the UI
 	// never calls Stop. Unknown external work is recorded, never replayed.
+	// Naming a turn that is still queued removes only that message (API 63).
 	TurnID string
 }
 type AnswerRequest struct {

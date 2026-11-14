@@ -5874,6 +5874,11 @@ export interface ProjectAssistantReadTurnSummary {
   fence: ProjectAssistantFence
   id: string
   message_id: string
+
+  /**
+   * When the turn began running, RFC 3339; empty while it waits.
+   */
+  started_at: string
   state: ProjectAssistantTurnState
 }
 
@@ -6116,6 +6121,11 @@ export interface ProjectAssistantTurn {
   instructions: ProjectAssistantInstructions
   memory_revision: number
   message_id: string
+
+  /**
+   * When the turn began running, RFC 3339; absent while it waits.
+   */
+  started_at?: string
   state: ProjectAssistantTurnState
 }
 

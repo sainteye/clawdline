@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
@@ -136,7 +137,7 @@ func viewCheckFence(f pa.Fence, h app.ReadViewHead, current bool) error {
 func viewTurnProjection(value string) string {
 	return `json_object('id',json_extract(` + value + `,'$.id'),'fence',json_extract(` + value + `,'$.fence'),
  'message_id',json_extract(` + value + `,'$.message_id'),'state',json_extract(` + value + `,'$.state'),
- 'failure',json_object('code',json_extract(` + value + `,'$.failure.code')))`
+ 'failure',json_object('code',json_extract(` + value + `,'$.failure.code')),'started_at',json_extract(` + value + `,'$.started_at'))`
 }
 
 func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
@@ -148,6 +149,9 @@ func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
 		return app.ReadTurnSummary{}, err
 	}
 	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State}
+	if turn.StartedAt != nil {
+		summary.StartedAt = turn.StartedAt.UTC().Format(time.RFC3339)
+	}
 	if turn.Failure != nil {
 		summary.FailureCode = turn.Failure.Code
 	}

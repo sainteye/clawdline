@@ -23,6 +23,9 @@ export interface SourceClient {
   export(request: W.ProjectAssistantBotKey, signal: AbortSignal): Promise<W.ProjectAssistantExport>
   /** Whether this source accepts pictures with a message. */
   pictures?(): boolean
+  /** Takes one queued message back before it is sent: Stop naming that queued turn. */
+  unqueue?(request: W.ProjectAssistantStopRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
+  canUnqueue?(): boolean
   /** Where the console reads a stored picture, or null when it cannot. */
   attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null
 }

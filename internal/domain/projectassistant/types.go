@@ -176,6 +176,8 @@ type Turn struct {
 	MemoryRevision int64               `json:"memory_revision"`
 	IdempotencyKey string              `json:"idempotency_key"`
 	Failure        *Failure            `json:"failure,omitempty"`
+	// StartedAt is when the turn began running; absent while it waits.
+	StartedAt *time.Time `json:"started_at,omitempty"`
 }
 
 type ExecutionBinding struct {

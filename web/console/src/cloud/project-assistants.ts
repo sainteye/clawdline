@@ -16,6 +16,8 @@ export const PROJECT_ASSISTANTS_API_LEVEL = 60
 export const PROJECT_ASSISTANTS_VIEW_API_LEVEL = 61
 // Pictures with a message and their read route arrived at 62.
 export const PROJECT_ASSISTANTS_PICTURES_API_LEVEL = 62
+// Stopping a queued turn removes that one message, and turns carry started_at, from 63.
+export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -164,6 +166,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   pictures() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_PICTURES_API_LEVEL }
   attachmentURL(key: W.ProjectAssistantBotKey, id: string) { return this.pictures() && key.machine_id === this.machineID ? endpoint(key,`/attachments/${encodeURIComponent(id)}`)+query({machine_id:this.machineID}) : null }
   stop(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST") }
+  unqueue(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST",true,PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL) }
+  canUnqueue() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }

@@ -52,7 +52,8 @@ function message(m:W.ProjectAssistantMessage,scope:ReadScope) {
   own(m.fence,scope)
 }
 function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.ProjectAssistantFence) {
-  if(!t||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states)||typeof t.failure_code!=="string")throw failure("pa_invalid")
+  // started_at arrived with API level 63; an older daemon omits it.
+  if(!t||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states)||typeof t.failure_code!=="string"||t.started_at!==undefined&&typeof t.started_at!=="string")throw failure("pa_invalid")
   own(t.fence,scope,current)
 }
 function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.ProjectAssistantFence) {
@@ -161,4 +162,4 @@ export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],eve
   return mergeTimeline([rows,added])
 }
 
-export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??""}}
+export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",started_at:t.started_at??""}}

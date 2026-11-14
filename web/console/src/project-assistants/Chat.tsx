@@ -14,6 +14,8 @@ import { Composer, MAX_PICTURES } from "./Composer"
 import { PermissionCard } from "./PermissionCard"
 import { Trace } from "./Trace"
 import { WorkResultCard } from "./WorkResultCard"
+import { activityOf } from "./working"
+import { WorkingIndicator } from "./WorkingIndicator"
 import type { Words } from "./words"
 
 export const EventRefreshMs = 3000
@@ -38,7 +40,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
-  const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([])
+  const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
   const permissionRows=useRef(permissions)
   const [traceSummaries,setTraceSummaries]=useState<W.ProjectAssistantReadTraceSummary[]>([])
   const traceRows=useRef(traceSummaries)
@@ -144,6 +146,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           for(const row of page.items){const event=row.event!
             if(!sameFence(event.fence,page.head.current_fence))continue
             if(event.turn&&sameFence(event.turn.fence,page.head.current_fence))setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),turnSummary(event.turn!)])
+            if(event.trace){const now=activityOf(event.trace),id=event.trace.turn_id;if(now)setActivity(old=>({...old,[id]:now}))}
             if(event.permission){const next={...detailRows.current};delete next[event.permission.id];detailRows.current=next;setDetails(next)}
             if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
           }
@@ -269,6 +272,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     finally{stopping.current=false;if(valid())setBusy(false)}
   }
 
+  // Codync's unqueue: Stop naming one queued turn takes that message back.
+  const unqueue=async(turnID:string)=>{
+    if(busy||!valid()||recovery.current||!source.unqueue)return
+    setBusy(true)
+    try{
+      const result=await mutate((d,s)=>source.unqueue!({command:command(key,"stop"),fence:fence(d),turn_id:turnID},s))
+      if(valid()){setReceipt(result.receipt);void refresh()}
+    }catch(e){fail(e)}
+    finally{if(valid())setBusy(false)}
+  }
+
   const detail=async(kind:"permission"|"trace",id:string,reference:string)=>{
     const captured=headRef.current,capturedEpoch=epoch.current
     if(!captured||!valid()||recovery.current||collectionBusy.current.has(reference))return
@@ -382,7 +396,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows attachmentURL={id=>source.attachmentURL?.(key,id)??null} messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>
       {works.map(work=><WorkResultCard key={work.id} work={work} w={w} onOpen={onOpenWork}/>)}<Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
-      {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=><p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
+      {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=>t.state==="running"||t.state==="waiting_permission"?<WorkingIndicator key={t.id} turn={t} activity={activity[t.id]??""} w={w}/>:<p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
       {memory&&<MemoryPanel value={memory} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>{memoryShown.current=false;setMemory(null)}} w={w}/>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
@@ -393,7 +407,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         </button>
       </div>
     </div>
-    <div className="pa-chat-footer">{parts.queued.map(m=><div className="pa-queued" key={m.id}>{w.queued}: {m.text}</div>)}{receipt&&<p role="status">{w[receipt.state]} · {receipt.id}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
+    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text}</span>{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&<p role="status">{w[receipt.state]} · {receipt.id}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
       <div className="pa-chat-tools"><button onClick={()=>void refresh(true)}>{w.refresh}</button><button onClick={()=>{memoryShown.current=true;void loadExport().catch(fail)}}>{w.memory}</button><button onClick={()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)}>{w.export}</button>{data?.conversation.active_turn_id&&<button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button>}</div>
       <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))}/>
     </div>

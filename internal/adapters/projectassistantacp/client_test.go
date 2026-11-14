@@ -482,3 +482,26 @@ func TestReplySegmentsAreSeparatedAndToolMarkupIsDropped(t *testing.T) {
 		t.Fatalf("reply=%q %v", result.FinalText, err)
 	}
 }
+
+// As Codync's working indicator, a tool call's title becomes the Bot's
+// current activity, carried as a tool_call trace.
+func TestAToolCallTitleIsTheBotsActivity(t *testing.T) {
+	var mu sync.Mutex
+	var traces []pa.Trace
+	c, _ := openTestClient(t, "toolcall", func(_ context.Context, e app.ProtocolEvent) error {
+		if e.Trace != nil {
+			mu.Lock()
+			traces = append(traces, *e.Trace)
+			mu.Unlock()
+		}
+		return nil
+	})
+	if _, err := sendTestPrompt(t, c).Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(traces) == 0 || traces[0].Category != "tool_call" || traces[0].Text != "Read notes.md" {
+		t.Fatalf("traces=%+v", traces)
+	}
+}
