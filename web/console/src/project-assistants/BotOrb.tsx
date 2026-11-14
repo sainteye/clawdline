@@ -13,8 +13,8 @@ const ORB = 60
  * icon back up floats it again. A press without a drag opens Bots either way. */
 export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,variant="float"}:BotOrbProps) {
   const w=words(language), count=unread+pendingPermissions
-  const place=useSyncExternalStore(subscribeOrbPlace,orbPlace)
-  const dock=useSyncExternalStore(subscribeDock,dockAvailable)
+  const place=useSyncExternalStore(subscribeOrbPlace,orbPlace,orbPlace)
+  const dock=useSyncExternalStore(subscribeDock,dockAvailable,dockAvailable)
   const drag=useRef<{x:number;y:number;right:number;bottom:number;moved:boolean}|null>(null)
   const dragged=useRef(false)
   const [offset,setOffset]=useState<{right:number;bottom:number}|null>(null)
