@@ -1334,7 +1334,7 @@ clawdline browser release
 clawdline browser --help
 ```
 
-- `viewport mobile` 切成網站手機版；`viewport desktop` 恢復視窗版面。
+- `viewport mobile` 切成網站手機版並重新載入頁面，讓網站送出手機版；`viewport desktop` 恢復視窗版面並重新載入。
 - `close` 關閉自己目前的分頁，或用 `--tab N` 指定自己持有的分頁。`release` 只交回控制權，分頁仍開著。使用者已接手的分頁不能關閉。
 - 優先用 `read` 和它回傳的 label，不要用座標。只有非看版面不可時才截圖。
 - `browser_person_controlling`：使用者已經接手這個分頁。等待，不要迴圈重試。

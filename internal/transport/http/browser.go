@@ -27,7 +27,7 @@ import (
 //   - POST /v1/browser/stop           {stopped}; the machine may only stop, a person may also resume
 //   - POST /v1/browser/control        {tab, person}; a person who may send
 //   - POST /v1/browser/person         {op, tab, args}; the person's own view and input
-//   - POST /v1/browser/open           {conversation, url}; the person opens a Session tab, taken over from the start
+//   - POST /v1/browser/open           {conversation, url, layout?}; the person opens a Session tab, taken over from the start
 //   - POST /v1/browser/mute           {conversation, muted}; one Session's new-site notification, a person who may send
 //   - GET  /v1/browser/activity       ?conversation=; a Session's recent actions with a picture of each, a person who may read
 //   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
@@ -464,6 +464,7 @@ func (s *Server) browserPersonOpenRoute(w http.ResponseWriter, r *http.Request) 
 	var in struct {
 		Conversation string `json:"conversation"`
 		URL          string `json:"url"`
+		Layout       string `json:"layout,omitempty"`
 	}
 	if !readBrowserBody(w, r, browserbridge.MaxArgBytes+4096, &in) {
 		return
@@ -489,7 +490,7 @@ func (s *Server) browserPersonOpenRoute(w http.ResponseWriter, r *http.Request) 
 		writeBrowserError(w, browserbridge.StateWriteFailed)
 		return
 	}
-	value, err := s.browsers().PersonOpen(r.Context(), in.Conversation, in.URL, policy)
+	value, err := s.browsers().PersonOpen(r.Context(), in.Conversation, in.URL, in.Layout, policy)
 	if err != nil {
 		writeBrowserError(w, err)
 		return

@@ -9524,6 +9524,8 @@
   "next.browserOpenNote": "The tab opens in the agent's Chrome window on the computer. {assistant} pauses while you operate, and every action is recorded.",
   "next.browserOpenBadAddress": "Only web addresses starting with http or https can be opened.",
   "next.browserOpenFailed": "The tab did not open: {reason}",
+  "next.browserPanelReload": "Reload the page",
+  "next.browserPanelReloadNeedsUpdate": "Update the Clawdline Chrome extension to reload pages from here",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

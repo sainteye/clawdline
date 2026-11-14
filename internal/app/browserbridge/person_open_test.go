@@ -31,7 +31,7 @@ func TestThePersonOpensASessionTabTheyAlreadyControl(t *testing.T) {
 		return Result{ID: c.ID, OK: true, Tab: tab, URL: "https://github.com/login"}
 	})
 	policy := personOpenPolicy()
-	if _, err := h.PersonOpen(context.Background(), "s1", "https://github.com/login", policy); err != nil {
+	if _, err := h.PersonOpen(context.Background(), "s1", "https://github.com/login", "", policy); err != nil {
 		t.Fatal(err)
 	}
 	st := b.Status()
@@ -72,14 +72,14 @@ func TestThePersonCannotOpenWhileStoppedOrWithoutAWebAddress(t *testing.T) {
 	b := profilesHost(t, h, "isolated", nil)
 	policy := personOpenPolicy()
 	for _, address := range []string{"", "github.com", "javascript:alert(1)", "file:///etc/passwd", "chrome://settings"} {
-		if _, err := h.PersonOpen(context.Background(), "s1", address, policy); err != BadRequest {
+		if _, err := h.PersonOpen(context.Background(), "s1", address, "", policy); err != BadRequest {
 			t.Fatalf("%q: %v, want %s", address, err, BadRequest)
 		}
 	}
 	if err := h.SetStopped(true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", policy); err != Stopped {
+	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", "", policy); err != Stopped {
 		t.Fatalf("while stopped: %v, want %s", err, Stopped)
 	}
 	if len(b.Status().Tabs) != 0 {
@@ -99,14 +99,14 @@ func TestThePersonOpensInChromeEvenWhenNativeToolsComeFirst(t *testing.T) {
 	if got := h.PersonOpenMode("s1", native); got != "" {
 		t.Fatalf("with no Chrome connected PersonOpenMode = %q, want none", got)
 	}
-	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", native); err != SetupRequired {
+	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", "", native); err != SetupRequired {
 		t.Fatalf("no Chrome connected: %v, want %s", err, SetupRequired)
 	}
 	profilesHost(t, h, "isolated", nil)
 	if got := h.PersonOpenMode("s1", native); got != "isolated" {
 		t.Fatalf("PersonOpenMode = %q, want isolated", got)
 	}
-	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", native); err != nil {
+	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", "", native); err != nil {
 		t.Fatal(err)
 	}
 	mode, st, _ := h.SelectedStatus("s1", native)
@@ -126,5 +126,43 @@ func TestThePersonsMarkCannotCarryAnotherOp(t *testing.T) {
 	b, ctx := connected(t)
 	if _, err := b.do(ctx, "s1", "click", json.RawMessage(`{"tab":1}`), nil, true); err != BadRequest {
 		t.Fatalf("person click through do: %v, want %s", err, BadRequest)
+	}
+}
+
+// A phone open asks the extension for the phone layout before the first
+// request; a desktop or unnamed layout asks for nothing, and another word is
+// refused before anything reaches the extension.
+func TestThePersonsPhoneOpenAsksForThePhoneLayout(t *testing.T) {
+	h, err := OpenProfiles("", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var sent []string
+	profilesHost(t, h, "isolated", func(c Command) Result {
+		mu.Lock()
+		sent = append(sent, string(c.Args))
+		mu.Unlock()
+		return Result{ID: c.ID, OK: true, Tab: 30 + len(sent)}
+	})
+	policy := personOpenPolicy()
+	if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", "tablet", policy); err != BadRequest {
+		t.Fatalf("unknown layout: %v, want %s", err, BadRequest)
+	}
+	for _, layout := range []string{"mobile", "desktop", ""} {
+		if _, err := h.PersonOpen(context.Background(), "s1", "https://example.com", layout, policy); err != nil {
+			t.Fatalf("%q: %v", layout, err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{`{"url":"https://example.com","viewport":"mobile"}`, `{"url":"https://example.com"}`, `{"url":"https://example.com"}`}
+	if len(sent) != len(want) {
+		t.Fatalf("sent %v, want %v", sent, want)
+	}
+	for i := range want {
+		if sent[i] != want[i] {
+			t.Fatalf("open %d sent %s, want %s", i, sent[i], want[i])
+		}
 	}
 }

@@ -105,6 +105,17 @@ Session and starts taken over by the person, so the agent's commands to it answe
 open. The audit row is the person's (`person: true`); its site counts as seen for
 the Session but sends no new-site notification, since the person chose it.
 
+**Phone layout and reload** (2026-11-14, extension 0.3.0). A tab the person opens from a
+phone-sized console (at most 700 px wide) is opened with `layout: "mobile"`: the extension starts
+it on a blank page, applies the phone viewport and user agent, then loads the address, so a site
+that picks its layout on the server sends its phone page from the first request. An older
+extension ignores the field and the panel switches the layout once the tab appears. Switching the
+layout now reloads the page when it changes, because the user agent reaches the server only with a
+new request; choosing the current layout does not reload. The toolbar's reload button sends the
+person-only `reload` op (`chrome-tab-input` through Cloud) after taking the tab over; with an
+extension older than 0.3.0 the button stays disabled and says the extension needs updating.
+Loaded unpacked extensions do not update themselves (see the update boundary below).
+
 Through Clawdline Cloud the panel uses the same routes as four words of
 `internal/domain/cloudvocab/vocabulary.json`, each end-to-end encrypted like every other word and
 run on the machine as the viewer's device (`local.device`), so a phone needs read access to look

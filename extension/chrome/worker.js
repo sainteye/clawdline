@@ -73,18 +73,70 @@ async function agentWindow() {
   return null
 }
 
-async function openTab(url) {
+// A mobile open starts on a blank page so the phone layout and user agent
+// are in place before the first request: a site that chooses its layout on
+// the server then sends its phone page from the start.
+async function openTab(url, layout) {
+  const first = layout === "mobile" ? "about:blank" : url
   const existing = await agentWindow()
   let tab
   if (existing) {
-    tab = await chrome.tabs.create({ windowId: existing, url, active: true })
+    tab = await chrome.tabs.create({ windowId: existing, url: first, active: true })
   } else {
-    const w = await chrome.windows.create({ url, focused: false, width: 1280, height: 860 })
+    const w = await chrome.windows.create({ url: first, focused: false, width: 1280, height: 860 })
     await chrome.storage.session.set({ agentWindowId: w.id })
     tab = w.tabs[0]
   }
   await waitForLoad(tab.id)
+  if (layout === "mobile") {
+    await ensureAttached(tab.id)
+    await applyLayout(tab.id, "mobile")
+    const loaded = waitForNavigation(tab.id)
+    await chrome.tabs.update(tab.id, { url })
+    await loaded
+  }
   return tab.id
+}
+
+// Waits for the next completed load only, never a page already complete.
+function waitForNavigation(tabId) {
+  return new Promise((resolve) => {
+    let started = false
+    const timer = setTimeout(done, LOAD_WAIT_MS)
+    function done() {
+      clearTimeout(timer)
+      chrome.tabs.onUpdated.removeListener(listen)
+      resolve()
+    }
+    function listen(id, info) {
+      if (id !== tabId) return
+      if (info.status === "loading") started = true
+      if (started && info.status === "complete") done()
+    }
+    chrome.tabs.onUpdated.addListener(listen)
+  })
+}
+
+// The phone layout overrides the user agent and the viewport together; the
+// desktop layout clears both.
+async function applyLayout(tab, mode) {
+  const mobile = mode === "mobile"
+  if (mobile) {
+    const userAgent = await evaluate(tab, () => navigator.userAgent)
+    await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android" })
+    await cdp(tab, "Emulation.setDeviceMetricsOverride", { width: 390, height: 720, deviceScaleFactor: 1, mobile: true })
+  } else {
+    await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: "" })
+    await cdp(tab, "Emulation.clearDeviceMetricsOverride")
+  }
+  await cdp(tab, "Emulation.setTouchEmulationEnabled", { enabled: mobile })
+  layouts.set(tab, mode)
+}
+
+async function reload(tab) {
+  const loaded = waitForNavigation(tab)
+  await cdp(tab, "Page.reload", { ignoreCache: false })
+  await loaded
 }
 
 function waitForLoad(tabId) {
@@ -223,7 +275,7 @@ async function tabURL(tabId) {
 async function run(c) {
   const a = c.args || {}
   if (c.op === "open") {
-    const tab = await openTab(a.url)
+    const tab = await openTab(a.url, a.viewport)
     const url = await tabURL(tab)
     const t = await chrome.tabs.get(tab)
     let picture
@@ -254,19 +306,17 @@ async function run(c) {
   switch (c.op) {
     case "viewport": {
       if (a.mode !== "mobile" && a.mode !== "desktop") throw new Error("use mobile or desktop")
-      const mobile = a.mode === "mobile"
-      if (mobile) {
-        const userAgent = await evaluate(tab, () => navigator.userAgent)
-        await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android" })
-        await cdp(tab, "Emulation.setDeviceMetricsOverride", { width: 390, height: 720, deviceScaleFactor: 1, mobile: true })
-      } else {
-        await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: "" })
-        await cdp(tab, "Emulation.clearDeviceMetricsOverride")
-      }
-      await cdp(tab, "Emulation.setTouchEmulationEnabled", { enabled: mobile })
-      layouts.set(tab, a.mode)
-      await new Promise((r) => setTimeout(r, 250))
+      const changed = (layouts.get(tab) || "desktop") !== a.mode
+      await applyLayout(tab, a.mode)
+      // The user agent reaches the server only with a new request: reload so
+      // a site that picks its layout on the server shows the chosen one.
+      if (changed) await reload(tab)
+      else await new Promise((r) => setTimeout(r, 250))
       return { tab, url: await tabURL(tab), target: a.mode, thumb: c.person ? undefined : await thumb(tab), value: { tab, mode: a.mode } }
+    }
+    case "reload": {
+      await reload(tab)
+      return { tab, url: await tabURL(tab), value: { tab, reloaded: true } }
     }
     case "read": {
       const page = await evaluate(tab, readPage, TEXT_LIMIT, ELEMENT_LIMIT)

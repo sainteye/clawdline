@@ -1519,7 +1519,7 @@ clawdline browser release
 clawdline browser --help
 ```
 
-- `viewport mobile` switches to a responsive phone layout; `viewport desktop` restores the window layout.
+- `viewport mobile` switches to a responsive phone layout and reloads the page so the site serves its phone version; `viewport desktop` restores the window layout and reloads.
 - `close` closes your current tab (`--tab N` names another tab you own). `release` only gives up control and leaves the tab open. Neither may close a tab the person has taken over.
 - Prefer `read` and the labels it returns over coordinates. Take a screenshot only when you must
   see the layout.

@@ -9524,6 +9524,8 @@
   "next.browserOpenNote": "分頁會開在電腦的 Agent 視窗；你操作期間 {assistant} 會暫停，每個動作都有紀錄。",
   "next.browserOpenBadAddress": "只能打開 http 或 https 開頭的網址。",
   "next.browserOpenFailed": "分頁沒有打開：{reason}",
+  "next.browserPanelReload": "重新整理頁面",
+  "next.browserPanelReloadNeedsUpdate": "更新 Clawdline Chrome 擴充功能後，才能從這裡重新整理",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",
