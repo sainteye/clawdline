@@ -419,9 +419,11 @@ Chrome's own start:
 - **The marker.** Only the stable folder carries `clawdline-folder.json`. Extension 0.4.0 reads it
   and reports `folder: "stable"` (or `"revision"` for an older one-off folder) in its hello; the
   status route also reports the build's `extension_version`.
-- **The usual Chrome** runs a new release at its next start. Settings → Chrome says so, with an
-  "Apply now" link to a guide whose one step is the reload arrow on Clawdline in
-  `chrome://extensions`. A Chrome still on an older one-off folder shows **Switch to
+- **The usual Chrome** applies a new release from the reload arrow on Clawdline in
+  `chrome://extensions`: Settings → Chrome shows **New version ready · Apply with ↻**, opening a
+  guide whose one step is that arrow. Whether a plain Chrome restart is enough is not
+  established: Chrome kept an older registered service worker across restarts in the test
+  profile (below), and a Load-unpacked install could not be restarted in the test harness. A Chrome still on an older one-off folder shows **Switch to
   self-updating** instead: the same guide, with removing the old extension, loading the stable
   folder and running the connection command once (the ID changes once, with the path).
 - **The test Chrome** is relaunched by the daemon when it runs another release, once per release,
@@ -432,8 +434,14 @@ Chrome's own start:
   Command-Shift-G on a Mac and the stable path, the connection command once) and follows the
   status every two seconds until Chrome runs the current release.
 
-Files that change while Chrome runs may be read by a restarted service worker before Chrome
-restarts; the manifest, and so the reported version, changes only at Chrome's start.
+**Chrome keeps registered service workers.** On 2026-11-15 the test Chrome reported manifest
+0.4.1 from the stable folder while running a months-old `worker.js` that an older Clawdline had
+registered from the same path; restarts and version changes did not replace it. So:
+
+- `Launch` clears the test profile's `Default/Service Worker` once per extension release
+  (`forgetStaleServiceWorkers`, recorded in the profile), before Chrome starts;
+- the worker's hello reports `WORKER_VERSION`, the version of its own code (a test keeps it equal
+  to the manifest), so a stale worker cannot claim the new release.
 
 ### Extension update boundary and proposed automatic flow
 
