@@ -187,7 +187,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -511,6 +511,34 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		settings := request.Settings
 		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
+	case "visibility":
+		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)
+		if err != nil {
+			return nil, err
+		}
+		command, err := h.command(r, route, request.Command, pa.VisibilityOperation)
+		if err != nil {
+			return nil, err
+		}
+		bot, receipt, err := s.SetHidden(ctx, command, request.Hidden)
+		return paHTTPBot(bot, receipt, err)
+	case "delete":
+		request, err := paDecodeHTTP[contract.ProjectAssistantDeleteRequest](w, r)
+		if err != nil {
+			return nil, err
+		}
+		command, err := h.command(r, route, request.Command, pa.DeleteOperation)
+		if err != nil {
+			return nil, err
+		}
+		if err = s.Delete(ctx, command); err != nil {
+			return nil, err
+		}
+		// The Bot's pictures go with it; files it changed in the Project stay.
+		if h.options.Attachments.Dir != "" {
+			_ = h.options.Attachments.RemoveBot(command.Key)
+		}
+		return contract.ProjectAssistantRulesResponse{ContractVersion: pa.ContractVersion, Rules: []contract.ProjectAssistantPermissionRule{}}, nil
 	case "send":
 		request, err := paDecodeHTTPLimit[contract.ProjectAssistantSendRequest](w, r, capacity.MaximumBotSendBodyBytes)
 		if err != nil {

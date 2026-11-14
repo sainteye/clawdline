@@ -817,3 +817,28 @@ func (s *Store) Observe(ctx context.Context, cmd pa.Command, receiptID string, s
 	}
 	return r, tx.Commit()
 }
+
+// DeleteBot removes one Bot's aggregate, events and receipts in one
+// transaction; a Bot that does not exist answers not found.
+func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
+	unlock := s.lock(key)
+	defer unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_bots WHERE machine=? AND bot=?`, key.MachineID, key.BotID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return failure(pa.NotFound, "bot")
+	}
+	for _, table := range []string{"project_assistant_events", "project_assistant_receipts"} {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

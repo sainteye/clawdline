@@ -39,7 +39,9 @@ type ServiceOptions struct {
 	Runtime           Runtime
 	Projects          ProjectResolver
 	// Rules is optional; without it the rules routes answer unsupported.
-	Rules     RuleStore
+	Rules RuleStore
+	// Deleter removes a Bot's stored records; without it Delete is unsupported.
+	Deleter   BotDeleter
 	Authorize func(context.Context, pa.BotKey, bool) (Authority, error)
 	Clock     func() time.Time
 	ID        func() string
@@ -592,4 +594,73 @@ func (s *Service) ruleDirectory(ctx context.Context, key pa.BotKey) (string, err
 		err = serviceFailure(pa.ScopeDenied, "rules_project")
 	}
 	return resolved.Directory, err
+}
+
+// SetHidden hides the Bot from the list or brings it back, as Codync's Hide
+// from list: its chat, memory and settings stay.
+func (s *Service) SetHidden(ctx context.Context, c pa.Command, hidden bool) (pa.Bot, pa.Receipt, error) {
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	if c, err = canonicalCommand(c, pa.VisibilityOperation, a.PrincipalID, hidden); err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	if prior, e := s.replay(ctx, c); e != nil || prior != nil {
+		if e != nil {
+			return pa.Bot{}, pa.Receipt{}, e
+		}
+		bot, e := s.opts.Repository.Bot(ctx, c.Key)
+		return bot, *prior, e
+	}
+	bot, err := s.opts.Repository.Bot(ctx, c.Key)
+	if err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	next := bot
+	next.Hidden = hidden
+	next.Version++
+	next.UpdatedAt = s.opts.Clock().UTC()
+	conversation, err := s.opts.Repository.Conversation(ctx, c.Key, bot.ConversationID)
+	if err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	if a, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	fence := pa.Fence{Key: c.Key, Project: bot.Project, ConversationID: conversation.ID, BindingID: conversation.BindingID, Generation: conversation.Generation}
+	summary := pa.BotSummary{Bot: next, Source: a.Source, Version: next.Version}
+	r, err := s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: bot.Version, Bot: &next,
+		Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
+		Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotUpdated, At: next.UpdatedAt, Bot: &summary}}})
+	return next, r, err
+}
+
+// Delete removes the Bot and its conversation, as Codync's Delete; files it
+// changed in the Project stay. A Bot still working is refused, so no native
+// process is left running for a Bot that no longer exists.
+func (s *Service) Delete(ctx context.Context, c pa.Command) error {
+	if s.opts.Deleter == nil {
+		return serviceFailure(pa.Unsupported, "delete")
+	}
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return err
+	}
+	if c, err = canonicalCommand(c, pa.DeleteOperation, a.PrincipalID, c.Key); err != nil {
+		return err
+	}
+	pending, err := s.opts.Repository.PendingTurns(ctx, c.Key)
+	if err != nil {
+		return err
+	}
+	for _, t := range pending {
+		if t.State != pa.TurnUnknown {
+			return serviceFailure(pa.StaleVersion, "delete_busy")
+		}
+	}
+	if _, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return err
+	}
+	return s.opts.Deleter.DeleteBot(ctx, c.Key)
 }

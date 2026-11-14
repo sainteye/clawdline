@@ -64,6 +64,7 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 	out.Agent = contract.ProjectAssistantAgent(value.Agent)
 	out.PermissionPolicy = contract.ProjectAssistantPermissionPolicy(value.PermissionPolicy)
 	out.Mode = value.Mode
+	out.Hidden = value.Hidden
 	out.Instructions = paWireInstructionSnapshot(value.Instructions)
 	out.Version = value.Version
 	convertedCreatedAt, err := paWireTime(value.CreatedAt)

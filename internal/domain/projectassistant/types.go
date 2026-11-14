@@ -114,7 +114,10 @@ type Bot struct {
 	PermissionPolicy PermissionPolicy `json:"permission_policy"`
 	// Mode is the agent mode the Bot works in, as in Codync: AutoMode (or
 	// empty) is the agent's own Auto mode, otherwise one of AgentModes.
-	Mode         string              `json:"mode,omitempty"`
+	Mode string `json:"mode,omitempty"`
+	// Hidden keeps the Bot out of the list and its badge, as Codync's Hide
+	// from list does; its chat, memory and settings stay.
+	Hidden       bool                `json:"hidden,omitempty"`
 	Instructions InstructionSnapshot `json:"instructions"`
 	Version      int64               `json:"version"`
 	CreatedAt    time.Time           `json:"created_at"`
@@ -495,6 +498,8 @@ const (
 	StopOperation       Operation = "stop"
 	SendNowOperation    Operation = "send_now"
 	RuleRemoveOperation Operation = "rule_remove"
+	DeleteOperation     Operation = "delete"
+	VisibilityOperation Operation = "visibility"
 	AnswerOperation     Operation = "answer"
 	ReadOperation       Operation = "read"
 	ObserveOperation    Operation = "observe"

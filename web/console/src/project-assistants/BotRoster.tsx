@@ -3,10 +3,10 @@ import type * as W from "@clawdline/contract"
 import { BotRow } from "./BotRow"
 import { botIdentity } from "./view-state"
 import type { Words } from "./words"
-export function BotRoster({items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,status,machineNames}: {
+export function BotRoster({items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,status,machineNames,hidden}: {
   items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
-  errors:readonly [string,string][];onMore?:()=>void;projectNames:ReadonlyMap<string,string>;status?:ReactNode;machineNames?:ReadonlyMap<string,string>
+  errors:readonly [string,string][];onMore?:()=>void;projectNames:ReadonlyMap<string,string>;status?:ReactNode;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode
 }) {
   const shown=items.filter(i=>!machine||i.bot.key.machine_id===machine)
   return <aside className="pa-roster" aria-label={w.allBots}>
@@ -15,7 +15,7 @@ export function BotRoster({items,machines,selected,query,onQuery,machine,onMachi
     <div className="pa-roster-filter"><span>{w.total} {shown.length}</span><select aria-label={w.machine} value={machine} onChange={e=>onMachine(e.target.value)}><option value="">{w.allMachines}</option>{machines.map(m=><option key={m} value={m}>{machineNames?.get(m)||m}</option>)}</select></div>
     <div className="pa-roster-scroll">{status}{errors.map(([id,error])=><p role="status" className="pa-source-error" key={id}>{id} · {error}</p>)}{loading&&<p role="status">{w.loading}</p>}{!loading&&!items.length&&!errors.length&&<p className="pa-empty">{w.empty}</p>}
       {shown.map(item=><BotRow key={botIdentity(item.bot.key)} item={item} selected={selected===botIdentity(item.bot.key)} onSelect={()=>onSelect(item)} w={w} language={language} projectName={projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>)}
-      {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}
+      {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
     </div>
   </aside>
 }

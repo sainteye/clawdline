@@ -365,6 +365,10 @@
         "mode": {
           "type": "string",
           "description": "The agent mode the Bot works in: auto (or empty) for the agent's Auto mode, otherwise one the agent offers (API level 65)."
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "Kept out of the Bot list and its badge (API level 67)."
         }
       },
       "required": [
@@ -1775,6 +1779,8 @@
         "stop",
         "send_now",
         "rule_remove",
+        "delete",
+        "visibility",
         "answer",
         "read",
         "observe",
@@ -2446,6 +2452,36 @@
       "required": [
         "command",
         "rule"
+      ]
+    },
+    "ProjectAssistantDeleteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Deletes the Bot and its conversation, as Codync's Delete; files it changed stay (API level 67).",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        }
+      },
+      "required": [
+        "command"
+      ]
+    },
+    "ProjectAssistantVisibilityRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hides the Bot from the list or brings it back, as Codync's Hide from list (API level 67).",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command",
+        "hidden"
       ]
     }
   }
