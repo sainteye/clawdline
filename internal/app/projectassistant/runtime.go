@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -200,10 +202,6 @@ func (r *Engine) mutate(ctx context.Context, bot pa.Bot, m Mutation) (pa.Receipt
 			}
 		}
 	}
-	m.ExpectedVersion = bot.Version
-	bot.Version++
-	bot.UpdatedAt = r.o.Clock()
-	m.Bot = &bot
 	if m.Receipt.ID == "" {
 		m.Receipt.ID = r.o.ID()
 	}
@@ -213,7 +211,39 @@ func (r *Engine) mutate(ctx context.Context, bot pa.Bot, m Mutation) (pa.Receipt
 		m.Events[i].ID = r.o.ID()
 		m.Events[i].At = r.o.Clock()
 	}
-	return r.o.Repository.Commit(ctx, m)
+	base := bot
+	for attempt := 0; ; attempt++ {
+		next := base
+		m.ExpectedVersion = base.Version
+		next.Version++
+		next.UpdatedAt = r.o.Clock()
+		m.Bot = &next
+		receipt, err := r.o.Repository.Commit(ctx, m)
+		if err == nil || attempt == capacity.MaximumBotVersionRetries || !staleBotOnly(err) {
+			return receipt, err
+		}
+		// A reader's read cursor or observation advances the Bot version
+		// outside this actor's lock. When nothing else about the Bot moved,
+		// the same change is committed at the new version; on 2026-11-14 a
+		// read during "Allow once" failed the answer after the native side had
+		// already acted. Any other concurrent change is still a conflict.
+		fresh, loadErr := r.o.Repository.Bot(ctx, bot.Key)
+		if loadErr != nil || !sameBotApartFromVersion(fresh, bot) {
+			return receipt, err
+		}
+		base = fresh
+	}
+}
+
+func staleBotOnly(err error) bool {
+	var f *pa.Failure
+	return errors.As(err, &f) && f.Code == pa.StaleVersion && f.Field == "bot"
+}
+
+func sameBotApartFromVersion(a, b pa.Bot) bool {
+	a.Version, a.UpdatedAt = 0, time.Time{}
+	b.Version, b.UpdatedAt = 0, time.Time{}
+	return reflect.DeepEqual(a, b)
 }
 
 func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {

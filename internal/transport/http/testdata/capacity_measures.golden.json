@@ -366,6 +366,11 @@
     "Note": true
   },
   {
+    "Name": "bots.version_retries",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.write_ms",
     "Known": true,
     "Note": true
