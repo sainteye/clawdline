@@ -19,3 +19,20 @@ export function readOnlyReason(source: { state: string; fresh: boolean; writable
   if (!source.writable) return w.readOnlySource ?? ""
   return ""
 }
+
+/**
+ * What went wrong with a Bot action and what to do, in the person's words;
+ * the code itself is shown beside it in small print.
+ */
+export function botFailureText(code: string, w: Record<string, string>): string {
+  if (code === "pa_stale_version" || code === "pa_stale_generation" || code === "pa_revoked") return w.failRetry
+  if (code === "pa_offline" || code === "unavailable") return w.failOffline
+  if (code === "pa_read_only") return w.failCloudOff
+  if (code === "pa_disabled") return w.failBotsOff
+  if (code === "pa_invalid") return w.failInvalid
+  if (code === "pa_capacity_full") return w.failFull
+  if (code === "pa_scope_denied" || code === "pa_not_found") return w.failProject
+  if (code === "pa_outcome_unknown" || code === "execution_effect_unknown") return w.failUnknown
+  // refusal-ok: an unrecognised code still shows beside this sentence in small print.
+  return w.failGeneric
+}

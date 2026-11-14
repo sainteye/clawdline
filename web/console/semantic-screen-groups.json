@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12042,
-  "riskKeys": 5236,
-  "nonRiskCount": 6806,
+  "englishContentKeys": 12054,
+  "riskKeys": 5240,
+  "nonRiskCount": 6814,
   "groups": [
     {
       "name": "acp / other",
@@ -5560,7 +5560,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 120,
+      "count": 128,
       "sources": [
         null
       ],
@@ -5588,6 +5588,11 @@
         "projectAssistants.earlier",
         "projectAssistants.executing",
         "projectAssistants.export",
+        "projectAssistants.failBotsOff",
+        "projectAssistants.failCloudOff",
+        "projectAssistants.failFull",
+        "projectAssistants.failGeneric",
+        "projectAssistants.failInvalid",
         "projectAssistants.fixBotsOff",
         "projectAssistants.fixCloudOff",
         "projectAssistants.forget",
@@ -5624,6 +5629,7 @@
         "projectAssistants.permissionSwitchMode",
         "projectAssistants.picture",
         "projectAssistants.project",
+        "projectAssistants.projectsFailed",
         "projectAssistants.projectsLoading",
         "projectAssistants.queued",
         "projectAssistants.quote",
@@ -5632,6 +5638,7 @@
         "projectAssistants.readOnlySource",
         "projectAssistants.refresh",
         "projectAssistants.reject_once",
+        "projectAssistants.reloadProjects",
         "projectAssistants.remember",
         "projectAssistants.retry",
         "projectAssistants.rulesTitle",
@@ -5642,6 +5649,7 @@
         "projectAssistants.selectBot",
         "projectAssistants.send",
         "projectAssistants.sendNow",
+        "projectAssistants.sending",
         "projectAssistants.sessions",
         "projectAssistants.settings",
         "projectAssistants.setup_version_unsupported",

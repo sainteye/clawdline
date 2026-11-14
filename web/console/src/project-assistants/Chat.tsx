@@ -53,7 +53,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [permissionMore,setPermissionMore]=useState(""),[traceMore,setTraceMore]=useState("")
   const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
   const [text,setText]=useState(()=>view.draft(draftKey)),[quote,setQuote]=useState(view.quotes.get(draftKey)??"")
-  const [error,setError]=useState(()=>recoveryRequired?"pa_read_only":""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false)
+  const [error,setError]=useState(()=>recoveryRequired?"pa_read_only":""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
   const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
@@ -238,7 +238,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const send=async()=>{
     if(busy||unknown||view.heldOutcomes.has(draftKey)||(!text.trim()&&images.length===0)||!currentData.current)return
     const submitted=text,pictures=images,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
-    let attempted=false;setBusy(true)
+    let attempted=false;setBusy(true);setSending(submitted)
     try{
       const result=await mutate((_,s)=>{
         // An earlier unknown turn stays visible and is never resent; a new
@@ -257,12 +257,12 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         setImages(old=>old===pictures?[]:old)
         setQuote("");view.quotes.delete(draftKey);flush()
       }
-      void refresh()
+      await refresh()
     }catch(e){
       const code=errorCode(e),unresolved=attempted&&(code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
       if(attempted&&!unresolved)view.heldOutcomes.delete(draftKey)
       if(valid()){fail(e);if(unresolved)setUnknown(true)}
-    }finally{if(valid())setBusy(false)}
+    }finally{if(valid()){setBusy(false);setSending(null)}}
   }
 
   const stop=async()=>{
@@ -415,7 +415,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{!data&&!error&&<p role="status">{w.loading}</p>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
-      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows attachmentURL={id=>source.attachmentURL?.(key,id)??null} messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>
+      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows attachmentURL={id=>source.attachmentURL?.(key,id)??null} messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small>{w.sending}</small></article>}
       {works.map(work=><WorkResultCard key={work.id} work={work} w={w} onOpen={onOpenWork}/>)}<Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
       {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=>t.state==="running"||t.state==="waiting_permission"?<WorkingIndicator key={t.id} turn={t} activity={activity[t.id]??""} w={w}/>:<p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
@@ -429,7 +429,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         </button>
       </div>
     </div>
-    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text}</span>{queuedTurn&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
+    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text}</span>{queuedTurn&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
       <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))}/>
     </div>

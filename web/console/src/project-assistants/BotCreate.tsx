@@ -8,6 +8,8 @@ import type { Words } from "./words"
 import { ApprovalSelect } from "./ApprovalSelect"
 import { PaSelect } from "./PaSelect"
 import { ProjectMark } from "./ProjectMark"
+import { AgentMark, agentName } from "./AgentMark"
+import { botFailureText } from "./source-errors"
 import { withApproval } from "./approvals"
 
 interface CatalogPage {source:SourceClient;answer:W.ProjectAssistantProjectsResponse;cursors:string[]}
@@ -16,7 +18,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
   const [appearance,setAppearance]=useState<W.ProjectAssistantAppearance>({shape:"blob",color:"#e39567"})
   const [agent,setAgent]=useState<W.ProjectAssistantAgent>("claude"),[project,setProject]=useState(""),[instructions,setInstructions]=useState("")
   const [policy,setPolicy]=useState<W.ProjectAssistantPermissionPolicy>("ask"),[mode,setMode]=useState<string|undefined>(undefined),[catalog,setCatalog]=useState<CatalogPage|null>(null)
-  const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState("")
+  const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(""),[createError,setCreateError]=useState("")
   const pending=useRef<{source:SourceClient;request:W.ProjectAssistantCreateRequest;unknown:boolean}|null>(null)
   const source=sources.find(s=>s.machineID===machine),selected=useRef(source);selected.current=source
   const lifetime=useRef<AbortController|null>(null),read=useRef<AbortController|null>(null),sequence=useRef(0)
@@ -59,7 +61,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
     if(!source||busy||(!ready&&!canRetryCreate)||!name.trim()||!own?.items.some(item=>item.target.project_id===project)||!own.agents.includes(agent)||pending.current&&pending.current.source!==source)return
     const control=lifetime.current
     if(!control||control.signal.aborted)return
-    setBusy(true);setError("")
+    setBusy(true);setCreateError("")
     const settings:W.ProjectAssistantCreateSettings={name:name.trim(),appearance,agent,instructions,permission_policy:policy,...(mode?{mode}:{}),role_snapshot_ref:"",target:{machine_id:machine,project_id:project}}
     // Unknown outcomes retain this exact source, command and settings for manual retry.
     if(!pending.current)pending.current={source,unknown:false,request:{command:command({machine_id:machine,bot_id:crypto.randomUUID()},"create"),settings}}
@@ -74,7 +76,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
       if(!control.signal.aborted&&selected.current===source)onCreated(response.bot)
     }catch(e){
       if(!control.signal.aborted&&selected.current===source){
-        const code=errorCode(e);setError(code)
+        const code=errorCode(e);setCreateError(code)
         if(["pa_outcome_unknown","execution_effect_unknown","unavailable"].includes(code))held.unknown=true
         else if(!held.unknown)pending.current=null
       }
@@ -87,13 +89,15 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
     <div className="pa-form-body"><div className="pa-form-avatar"><BotAvatar appearance={appearance} size={70}/></div><fieldset disabled={busy||!!pending.current}>
       <AppearancePicker value={appearance} onChange={setAppearance} w={w}/><label>{w.name}<input required value={name} onChange={e=>setName(e.target.value)}/></label>
       {sources.length>1&&<PaSelect label={w.machine} value={machine} onChange={value=>{setProject("");setCatalog(null);setMachine(value)}} options={sources.map(s=>({value:s.machineID,label:s.machineName||w.thisMachine}))}/>}
-      <label>{w.agent}<select value={agent} onChange={e=>{setAgent(e.target.value as W.ProjectAssistantAgent);setMode(undefined)}}>{own?.agents.map(a=><option key={a} value={a}>{a==="claude"?"Claude Code":"Codex"}</option>)}</select></label>
+      <div className="pa-field" role="radiogroup" aria-label={w.agent}><span>{w.agent}</span><div className="pa-agent-choices">{(own?.agents??["claude","codex"]).map(a=><button key={a} type="button" role="radio" aria-checked={agent===a} className="pa-agent-choice" disabled={!own?.agents.includes(a)} onClick={()=>{setAgent(a);setMode(undefined)}}><AgentMark agent={a}/><span>{agentName(a)}</span></button>)}</div></div>
       <PaSelect label={w.project} value={project} busy={loading} disabled={loading||!!error||!own} placeholder={w.chooseProject} onChange={setProject} options={own?.items.map(p=>({value:p.target.project_id,label:p.label,icon:<ProjectMark icon={p.icon} size={16}/>}))??[]}/>
       {loading&&<p role="status">{w.projectsLoading}</p>}
       {own?.has_more&&!loading&&!error&&<button type="button" onClick={()=>void load(own.next_cursor,catalog)}>{w.more}</button>}
-      {error&&!pending.current&&<button type="button" disabled={loading} onClick={()=>void load(retry.current,retry.current?catalog:null)}>{w.retry}</button>}
+      {error&&!pending.current&&<button type="button" disabled={loading} onClick={()=>void load(retry.current,retry.current?catalog:null)}>{w.reloadProjects}</button>}
       <ApprovalSelect agent={agent} policy={policy} mode={mode} w={w} onChange={id=>{const next=withApproval(id);setPolicy(next.permission_policy);setMode(next.mode)}}/>
       <label>{w.instructions}<textarea value={instructions} onChange={e=>setInstructions(e.target.value)}/></label>
-    </fieldset><p>{w.createHint}</p>{error&&<p role="alert">{w.unavailable} ({error})</p>}</div>
+    </fieldset><p>{w.createHint}</p>{error&&<p role="alert" className="pa-form-error">{w.projectsFailed} <small>({error})</small></p>}
+      {createError&&<p role="alert" className="pa-form-error">{botFailureText(createError,w as unknown as Record<string,string>)} <small>({createError})</small></p>}
+      <button type="button" className="pa-create-bottom" disabled={busy||(!ready&&!canRetryCreate)||!name.trim()||!project||!own?.agents.includes(agent)} onClick={()=>void submit()}>{pending.current?w.retry:w.createSubmit}</button></div>
   </section>
 }
