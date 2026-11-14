@@ -62,10 +62,12 @@ but future positive classifications need an agent-bound trusted callback.
 The integrating root wires this default in `Provider.Open`; it does not derive
 trusted identity from the permission request or enable native execution.
 
-This is defense in depth, not admission evidence. Preserve `Verify`, native
-memory isolation, effective read-only sandbox and feature-off gates. Before
-allowing any known pure read, prove the OS/process/tool/hook boundary and exact
-supported payload schema, including canonical/symlink/worktree path behavior.
+This is defense in depth, not admission evidence. Since 2026-11-14 the Bots
+follow Codync and there is no read-only sandbox to preserve: the native CLI
+acts in the Bot's Project and the person answers each permission card, which
+shows the requested action (see project-assistants-native-entry.md). The
+classifier above still only gates the automatic answers of the AutoRead
+policy; `Verify`, native memory controls and the feature-off gate remain.
 If that evidence later permits allow-once, keep persistent permissions and all
 filesystem/terminal/MCP scope expansion rejected. The current policy still
 permits the existing reject-once/cancel path; it never converts a denial into

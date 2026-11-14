@@ -9845,7 +9845,6 @@
   "projectAssistants.quote": "Reply",
   "projectAssistants.quoteMissing": "Quoted message is in earlier history",
   "projectAssistants.read": "Read",
-  "projectAssistants.readOnly": "Enforced read-only",
   "projectAssistants.refresh": "Check for updates",
   "projectAssistants.reject_always": "Always reject (unavailable)",
   "projectAssistants.reject_once": "Reject once",

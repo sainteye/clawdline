@@ -138,8 +138,9 @@ does not call Stop. Permission answers bind offer, source, Project, Bot,
 Conversation, binding, generation and active Turn. Pending/answered/expired/
 cancelled/unknown are separate states. A repeated command returns its receipt
 before revalidating an already answered offer. A new answer to an old offer
-is refused. An allow option cannot widen the enforced read-only sandbox;
-native mode changes and persistent escalation remain denied.
+is refused. Since 2026-11-14 there is no read-only sandbox: as in Codync, the
+native CLI acts in the Bot's Project, and an allow-once answer lets that one
+action run; standing allow or reject rules are still refused.
 
 Within a turn, each `send_message` tool call is durably deduplicated by
 binding/turn/call ID; identical text under different calls remains two
