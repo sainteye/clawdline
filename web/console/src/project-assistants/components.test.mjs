@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url"
 import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
+// ChatRows renders replies with the console's legacy Markdown reader, whose
+// module chain looks up a few elements when it loads; a page always has a
+// document, this test environment needs a stand-in.
+globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{},createElement:()=>({style:{},setAttribute(){},appendChild(){},addEventListener(){}}),documentElement:{style:{},setAttribute(){},lang:"en"},body:{appendChild(){},classList:{add(){},remove(){},toggle(){},contains:()=>false}}}
 const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
@@ -120,4 +124,16 @@ test("a permission card says what the tool will do before it is answered",()=>{
   assert.match(changed,/Wants to change a file/);assert.match(changed,/old line/);assert.match(changed,/new line/);assert.match(changed,/Shortened/)
   const summaryOnly=render(PermissionCard,{summary:{id:"offer",fence,turn_id:"t",state:"pending",expires_at:"2099-01-01T00:00:00Z",detail_cursor:"d",title:"curl example.com",tool_kind:"fetch"},enabled:true,onAnswer:async()=>{},w:words("en")})
   assert.match(summaryOnly,/Wants to use the network/);assert.match(summaryOnly,/curl example.com/)
+})
+
+// A Bot's reply reads as Markdown; the person's own text stays exactly as typed,
+// and markup a reply carries is escaped, never run.
+test("a Bot reply renders Markdown while the person's message stays literal",()=>{
+  const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
+  const message=(id,kind,text,seq)=>({id,kind,text,seq,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"})
+  const items=[{id:"u",kind:"message",anchor_message_seq:1,observed_event_seq:1,message:message("u","user","**not bold**",1)},{id:"a",kind:"message",anchor_message_seq:2,observed_event_seq:1,message:message("a","assistant","**bold**\n\n- one\n- two\n\n<script>x()</script>",2)}]
+  const html=render(ChatRows,{items,messages:items.map(i=>i.message),w:words("en"),onQuote:()=>{}})
+  assert.match(html,/<strong>bold<\/strong>/);assert.match(html,/<li>one<\/li>/)
+  assert.match(html,/\*\*not bold\*\*/)
+  assert.ok(!html.includes("<script>"),"a reply's markup was not escaped")
 })

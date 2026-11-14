@@ -216,3 +216,17 @@
 .project-assistants .pa-rules code { flex:1; min-width:0; overflow-wrap:anywhere; font-size:12px; }
 .project-assistants .pa-rule-kind { flex:none; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--pa-line); }
 .project-assistants .pa-rule-kind[data-behavior="deny"] { color:#e0a07a; }
+.project-assistants .pa-markdown { line-height:1.55; overflow-wrap:anywhere; }
+.project-assistants .pa-markdown > :first-child { margin-top:0; }
+.project-assistants .pa-markdown > :last-child { margin-bottom:0; }
+.project-assistants .pa-markdown p, .project-assistants .pa-markdown ul, .project-assistants .pa-markdown ol { margin:0 0 .6em; }
+.project-assistants .pa-markdown ul, .project-assistants .pa-markdown ol { padding-left:1.3em; }
+.project-assistants .pa-markdown h1, .project-assistants .pa-markdown h2, .project-assistants .pa-markdown h3, .project-assistants .pa-markdown h4 { margin:.8em 0 .4em; font-size:1em; font-weight:700; }
+.project-assistants .pa-markdown code { font-family:ui-monospace,Menlo,monospace; font-size:.9em; padding:1px 5px; border-radius:6px; background:var(--pa-line); }
+.project-assistants .pa-markdown pre { margin:0 0 .6em; padding:10px 12px; border-radius:10px; background:var(--pa-line); overflow-x:auto; }
+.project-assistants .pa-markdown pre code { padding:0; background:transparent; }
+.project-assistants .pa-markdown .tablewrap { overflow-x:auto; margin:0 0 .6em; }
+.project-assistants .pa-markdown table { border-collapse:collapse; font-size:.92em; }
+.project-assistants .pa-markdown th, .project-assistants .pa-markdown td { border:1px solid var(--pa-line); padding:4px 8px; text-align:left; }
+.project-assistants .pa-markdown blockquote { margin:0 0 .6em; padding-left:10px; border-left:3px solid var(--pa-line); color:var(--pa-dim); }
+.project-assistants .pa-markdown a { color:#e39567; }
