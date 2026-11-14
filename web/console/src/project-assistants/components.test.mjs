@@ -9,10 +9,10 @@ import { renderToStaticMarkup } from "react-dom/server"
 // module chain looks up a few elements when it loads; a page always has a
 // document, this test environment needs a stand-in.
 globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{},createElement:()=>({style:{},setAttribute(){},appendChild(){},addEventListener(){}}),documentElement:{style:{},setAttribute(){},lang:"en"},body:{appendChild(){},classList:{add(){},remove(){},toggle(){},contains:()=>false}}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words}=compiled.exports
+const {BotRow,PaSelect,BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
   let opened=0
@@ -126,6 +126,26 @@ test("a permission card says what the tool will do before it is answered",()=>{
   assert.match(summaryOnly,/Wants to use the network/);assert.match(summaryOnly,/curl example.com/)
 })
 
+test("a Bot row names its Project with its mark and says nothing internal",async()=>{
+  const s=fixtureSource(),page=await s.list({machine_id:s.bots[0].key.machine_id,query:"",cursor:"",page_size:100},new AbortController().signal),first=page.items[0]
+  const item={...first,bot:{...first.bot,project:{...first.bot.project,project_id:"0f45f5f1db4a5785"}}}
+  const icon={accent:"#e39567",cells:[["#e39567",null],[null,"#e39567"]]}
+  const html=render(BotRow,{item:{...item,unread_count:2,latest_message:"- **改程式與檔案**：在[這裡](https://example.com)看"},selected:false,onSelect:()=>{},w:words("zh-Hant"),language:"zh-Hant",projectName:"Team site",projectIcon:icon}).replace(/ data-bot-key="[^"]*"/,"")
+  assert.match(html,/Team site/);assert.match(html,/<svg class="pa-project-mark"/);assert.match(html,/未讀 2/);assert.match(html,/改程式與檔案：在這裡看/);assert.doesNotMatch(html,/\*\*|example\.com/)
+  assert.ok(!html.includes(item.bot.key.machine_id),"the machine ID stays out of a one-machine row")
+  assert.ok(!html.includes(item.bot.project.project_id),"the Project ID stays out of the row and its label")
+})
+test("the process trace says what each step is, never its turn ID or provider category",()=>{
+  const summaries=[{id:"t1",turn_id:"5ba44472905d8854d481db30b022c77f",category:"agent_message_chunk",complete:true,detail_cursor:"c"},{id:"t2",turn_id:"5ba44472905d8854d481db30b022c77f",category:"something_new",complete:true,detail_cursor:"c"}]
+  const html=render(Trace,{summaries,total:2,w:words("zh-Hant")})
+  assert.match(html,/回覆內容/);assert.match(html,/處理步驟/)
+  assert.doesNotMatch(html,/5ba44472|agent_message_chunk|something_new/)
+})
+test("a Bots drop-down reads as one, with its value and a chevron, and no platform select",()=>{
+  const html=render(PaSelect,{label:"Project",value:"",placeholder:"選擇 Project",options:[{value:"a",label:"clawdline"}],onChange:()=>{}})
+  assert.match(html,/aria-haspopup="listbox"/);assert.match(html,/aria-expanded="false"/);assert.match(html,/pa-select-chevron/);assert.match(html,/選擇 Project/)
+  assert.doesNotMatch(html,/<select/)
+})
 // A Bot's reply reads as Markdown; the person's own text stays exactly as typed,
 // and markup a reply carries is escaped, never run.
 test("a Bot reply renders Markdown while the person's message stays literal",()=>{

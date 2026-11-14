@@ -11899,6 +11899,123 @@
   },
   {
     "Register": "daemon",
+    "Name": "session.recap_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 400,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxRecapRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.recap_detail_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 1200,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/planner.MaxRecapDetailRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.recap_fork_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 120000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxSessionRecapDuration"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.recap_on_demand_forks",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxSessionRecapOnDemand",
+      "internal/transport/http.newRecapBook:chan(maxSessionRecapOnDemand)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.recap_rows",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxSessionRecapRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.recap_wait_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 45000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxSessionRecapWait"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "session.report_open_todo_characters",
     "Class": "buffer",
     "Unit": "characters",

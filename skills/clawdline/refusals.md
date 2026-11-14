@@ -284,6 +284,12 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `session_has_no_record` | `internal/transport/http/images.go` |
 | `session_missing` | `internal/transport/http/copilot_recap.go` |
 | `session_not_found` | `internal/transport/http/actions.go`, `internal/transport/http/images.go`, `internal/transport/http/ops_documents.go` |
+| `session_recap_failed` | `internal/transport/http/copilot_recap.go` |
+| `session_recap_quota` | `internal/transport/http/copilot_recap.go` |
+| `session_recap_slow` | `internal/transport/http/copilot_recap.go` |
+| `session_recap_unavailable` | `internal/transport/http/copilot_recap.go` |
+| `session_recaps_busy` | `internal/transport/http/copilot_recap.go` |
+| `session_recaps_off` | `internal/transport/http/copilot_recap.go` |
 | `session_required` | `internal/transport/http/proposals.go`, `internal/transport/http/work_v2_session_name.go` |
 | `session_unavailable` | `internal/transport/http/ops_documents.go` |
 | `session_unresolved` | `internal/transport/http/browser.go`, `internal/transport/http/browser_reminder.go`, `internal/transport/http/human_interventions.go`, `internal/transport/http/work_v2_agent.go` |

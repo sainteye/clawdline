@@ -1827,6 +1827,10 @@
         },
         "label": {
           "type": "string"
+        },
+        "icon": {
+          "description": "The Project's mark as the new-Session sheet draws it; absent when the source has none.",
+          "$ref": "common.schema.json#/$defs/Icon"
         }
       },
       "required": [
