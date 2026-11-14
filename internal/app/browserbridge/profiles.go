@@ -609,8 +609,8 @@ func (h *Profiles) PersonOpenMode(conversation string, policy browserpolicy.Poli
 // personOpenModeLocked names. The choice is saved for the Session as an
 // explicit one, so the agent continues in the same profile after hand back
 // even when automatic selection would have chosen native tools.
-func (h *Profiles) PersonOpen(ctx context.Context, conversation, address string, policy browserpolicy.Policy) (json.RawMessage, error) {
-	if !webURL(address) {
+func (h *Profiles) PersonOpen(ctx context.Context, conversation, address, layout string, policy browserpolicy.Policy) (json.RawMessage, error) {
+	if !webURL(address) || (layout != "" && layout != "mobile" && layout != "desktop") {
 		return nil, BadRequest
 	}
 	h.mu.Lock()
@@ -661,7 +661,7 @@ func (h *Profiles) PersonOpen(ctx context.Context, conversation, address string,
 			return nil, StateWriteFailed
 		}
 	}
-	return b.PersonOpenWithAdmission(ctx, conversation, address, h.mu.Unlock)
+	return b.PersonOpenWithAdmission(ctx, conversation, address, layout, h.mu.Unlock)
 }
 
 func (h *Profiles) Legacy() *Bridge  { return h.channels[h.primary] }

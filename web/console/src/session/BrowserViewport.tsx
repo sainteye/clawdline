@@ -12,9 +12,9 @@ type Shot = { data: string; width: number; height: number; url: string; title: s
  * Gestures change only this view. Only a released, unmoved single pointer may
  * become a browser click, and its coordinates come from the transformed image.
  */
-export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onFocusKeyboard, onCloseKeyboard, layoutControl }: {
+export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onFocusKeyboard, onCloseKeyboard, layoutControl, reloadControl }: {
   shot: Shot; canClick: boolean; person: boolean; onTap: (x: number, y: number) => Promise<InputReceipt>;
-  onKeyboard: (kind: string, ready: Promise<boolean>) => void; onFocusKeyboard: () => void; onCloseKeyboard: () => void; layoutControl: ReactNode;
+  onKeyboard: (kind: string, ready: Promise<boolean>) => void; onFocusKeyboard: () => void; onCloseKeyboard: () => void; layoutControl: ReactNode; reloadControl?: ReactNode;
 }) {
   const frame = useRef<HTMLDivElement>(null)
   const image = useRef<HTMLImageElement>(null)
@@ -141,6 +141,7 @@ export function BrowserViewport({ shot, canClick, person, onTap, onKeyboard, onF
   return <div className="browser-picture">
     <div className="browser-zoom" role="group" aria-label={nextWord("browserPanelZoom")}>
       {layoutControl}
+      {reloadControl}
       <button type="button" className="chip" aria-label={nextWord("browserPanelZoomOut")} onClick={() => scaleTo(view.scale / 1.5)}>−</button>
       <button type="button" className="browser-scale" aria-label={nextWord("browserPanelOriginal")} title={nextWord("browserPanelOriginal")} onClick={native}>{Math.round(fitted.current * view.scale * 100)}%</button>
       <button type="button" className="chip" aria-label={nextWord("browserPanelZoomIn")} onClick={() => scaleTo(view.scale * 1.5)}>+</button>

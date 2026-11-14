@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11996,
+  "englishContentKeys": 11998,
   "riskKeys": 5220,
-  "nonRiskCount": 6776,
+  "nonRiskCount": 6778,
   "groups": [
     {
       "name": "acp / other",
@@ -3902,7 +3902,7 @@
     },
     {
       "name": "next / other",
-      "count": 1075,
+      "count": 1077,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4028,6 +4028,8 @@
         "next.browserPanelOriginal",
         "next.browserPanelPersonActs",
         "next.browserPanelPullField",
+        "next.browserPanelReload",
+        "next.browserPanelReloadNeedsUpdate",
         "next.browserPanelReplaceCancel",
         "next.browserPanelReplaceField",
         "next.browserPanelReplaceMode",

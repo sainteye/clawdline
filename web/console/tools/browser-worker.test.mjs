@@ -107,8 +107,13 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     globalThis.ready = true;
   `)
 
-  server = createServer((_req, res) => {
+  server = createServer((req, res) => {
     res.setHeader("Content-Type", "text/html")
+    // What the server saw: a site that picks its layout from the user agent.
+    if (req.url === "/ua") {
+      const ua = String(req.headers["user-agent"] || "").replace(/[<&]/g, "")
+      return res.end(`<!doctype html><div id=ua>${ua}</div><script>window.loads=(+sessionStorage.loads||0)+1;sessionStorage.loads=window.loads</script>`)
+    }
     res.end(`<!doctype html><input id=plain><input id=password type=password><input id=otp autocomplete=one-time-code>
       <textarea id=area></textarea><div id=editable contenteditable=true></div>
       <div id=shadow></div><div id=nested></div><div id=closed></div>
@@ -291,5 +296,29 @@ test("type never discloses field text across focus boundaries", { skip: !browser
     const result = await command({op:"type", tab, args:{text:"secret",secret:true}})
     assert.equal(result.password, true)
     assert.equal(result.thumb, undefined)
+  })
+  // A phone open sends its first request with the phone user agent, a layout
+  // switch reloads so the server sees the new one, and reload reloads.
+  await t.test("a phone open, a layout switch and reload reach the server", async () => {
+    const url = `http://127.0.0.1:${server.address().port}/ua`
+    const phone = await command({op:"open", args:{url, viewport:"mobile"}})
+    assert.equal(phone.ok, true)
+    const other = phone.tab
+    try {
+      const at = expression => evaluate(`pageEval(${other},${JSON.stringify(expression)})`)
+      assert.match(await at("ua.textContent"), /Mobile/, "the first request already carries the phone user agent")
+      assert.equal(await at("window.loads"), 1)
+      assert.equal((await command({op:"screenshot", tab:other, person:true, args:{}})).value.layout, "mobile")
+      assert.equal((await command({op:"viewport", tab:other, person:true, args:{mode:"desktop"}})).ok, true)
+      assert.doesNotMatch(await at("ua.textContent"), /Mobile/, "the desktop switch reloaded with the desktop user agent")
+      assert.equal(await at("window.loads"), 2)
+      assert.equal((await command({op:"viewport", tab:other, person:true, args:{mode:"desktop"}})).ok, true)
+      assert.equal(await at("window.loads"), 2, "choosing the current layout does not reload")
+      const again = await command({op:"reload", tab:other, person:true, args:{}})
+      assert.equal(again.ok, true)
+      assert.equal(await at("window.loads"), 3)
+    } finally {
+      await command({op:"close", tab:other})
+    }
   })
 })

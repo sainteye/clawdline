@@ -521,8 +521,8 @@ func (b *Bridge) SetPersonControlForMode(tab int, on bool, mode string) error {
 // personOps are what a person's own device may send to a tab: looking at it
 // at any time, and acting on it only while they have taken it over.
 // field reads the focused field for the person's own check of what they
-// sent; an agent cannot ask for it.
-var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true, "viewport": true, "field": true}
+// sent; an agent cannot ask for it. reload reloads the page (extension 0.3.0).
+var personOps = map[string]bool{"screenshot": true, "click": true, "type": true, "key": true, "scroll": true, "viewport": true, "field": true, "reload": true}
 
 // NotTakenOver is a person's input to a tab they have not taken over.
 const NotTakenOver Refusal = "browser_take_over_first"
@@ -703,11 +703,17 @@ func (b *Bridge) DoWithAdmission(ctx context.Context, conversation, op string, a
 // starts taken over by the person, so the agent's commands to it wait until
 // the person hands it back. The stop, the machine switch and the audit apply
 // exactly as to an agent's open; the row is marked as the person's.
-func (b *Bridge) PersonOpenWithAdmission(ctx context.Context, conversation, address string, release func()) (json.RawMessage, error) {
+func (b *Bridge) PersonOpenWithAdmission(ctx context.Context, conversation, address, layout string, release func()) (json.RawMessage, error) {
 	var once sync.Once
 	unlock := func() { once.Do(release) }
 	defer unlock()
-	args, err := json.Marshal(map[string]string{"url": address})
+	open := map[string]string{"url": address}
+	// A phone layout is set before the first request (extension 0.3.0; an
+	// older one ignores it and the viewer switches the layout afterwards).
+	if layout == "mobile" {
+		open["viewport"] = "mobile"
+	}
+	args, err := json.Marshal(open)
 	if err != nil {
 		return nil, BadRequest
 	}
