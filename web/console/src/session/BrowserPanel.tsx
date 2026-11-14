@@ -239,6 +239,8 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     nativeKeyboard.current?.close()
     if (await ensureControl()) await act("viewport", { mode })
   }
+  const keyPress = async (key: string) => { if (await ensureControl()) await act("key", { key }) }
+  const scrollPage = async (direction: "up" | "down") => { if (await ensureControl()) await act("scroll", { direction }) }
   const canReload = extensionCurrent(status?.status.host?.version)
   const reloadPage = async () => {
     nativeKeyboard.current?.close()
@@ -357,8 +359,28 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
             available={ready && !otherDebugger && !controlBusy && !busy}
             onPrepare={ensureControl} onSend={(text, replace) => act("type", replace ? { text, replace: true } : { text })}
             onDelete={() => void act("key", { key: "Backspace" })} onReadField={readField} />
+          {/* The everyday keys sit in the panel itself (direction C,
+              2026-11-14): keyboard, Tab, Enter and scrolling, each taking
+              the tab over first like a tap does. More keeps the rest. */}
+          <p className="browser-who-line" data-person={person ? "true" : undefined} aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</p>
           <div className="browser-who" data-person={person ? "true" : undefined}>
-            <span aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</span>
+            <div className="browser-keys" role="group" aria-label={nextWord("browserPanelKeys")}>
+              <button type="button" className="browser-keyboard-open" aria-label={nextWord("browserPanelKeyboard")} title={nextWord("browserPanelKeyboard")} disabled={busy || controlBusy || otherDebugger} onClick={() => nativeKeyboard.current?.open()}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9" /></svg>
+              </button>
+              <button type="button" aria-label="Tab" title="Tab" disabled={busy || controlBusy || otherDebugger} onClick={() => void keyPress("Tab")}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M13 8l4 4-4 4M20 6v12" /></svg>
+              </button>
+              <button type="button" aria-label="Enter" title="Enter" disabled={busy || controlBusy || otherDebugger} onClick={() => void keyPress("Enter")}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6v6H6M10 8l-4 4 4 4" /></svg>
+              </button>
+              <button type="button" aria-label={nextWord("browserPanelScrollUp")} title={nextWord("browserPanelScrollUp")} disabled={busy || controlBusy || otherDebugger} onClick={() => void scrollPage("up")}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6" /></svg>
+              </button>
+              <button type="button" aria-label={nextWord("browserPanelScrollDown")} title={nextWord("browserPanelScrollDown")} disabled={busy || controlBusy || otherDebugger} onClick={() => void scrollPage("down")}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10l6 6 6-6" /></svg>
+              </button>
+            </div>
             <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={controlBusy || otherDebugger} onClick={() => void control(!person)}>
               {person ? nextWord("browserPanelHandBackShort") : nextWord("browserPanelTakeOverShort")}
             </button>
@@ -366,13 +388,6 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
           </div>
           <div id="browser-tools" className="browser-tools" hidden={!toolsOpen}>
             <div className="browser-tools-head"><b>{nextWord("browserPanelTools")}</b><button type="button" onClick={() => setToolsOpen(false)} aria-label={L.strings.webClose}>×</button></div>
-            <div className="browser-keys">
-              <button type="button" className="browser-keyboard-open" disabled={busy || controlBusy || otherDebugger} onClick={() => { nativeKeyboard.current?.open(); setToolsOpen(false) }}>{nextWord("browserPanelKeyboard")}</button>
-              <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Tab" })}>Tab</button>
-              <button type="button" disabled={!person || busy} onClick={() => void act("key", { key: "Enter" })}>Enter</button>
-              <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "up" })}>{nextWord("browserPanelScrollUp")}</button>
-              <button type="button" disabled={!person || busy} onClick={() => void act("scroll", { direction: "down" })}>{nextWord("browserPanelScrollDown")}</button>
-            </div>
             <button type="button" className="browser-notify" aria-pressed={!muted} disabled={busy} onClick={() => void mute(!muted)}>{nextWord(muted ? "browserPanelNotifyOff" : "browserPanelNotifyOn")}</button>
             {activityList()}
           </div>

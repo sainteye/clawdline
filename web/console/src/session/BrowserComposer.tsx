@@ -112,6 +112,7 @@ export function BrowserComposer({ keyboardRef, person, available, onPrepare, onS
     id: "browser-native-keyboard", className: "browser-composer-input", value: draft,
     maxLength: BROWSER_INPUT_BYTES, autoComplete: "off", autoCorrect: "off", autoCapitalize: "off", spellCheck: false,
     "aria-label": nextWord("browserPanelNativeInput"), placeholder: nextWord("browserPanelDraftHint"),
+    enterKeyHint: "send" as const,
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(event.currentTarget.value),
     onCompositionStart: () => { composing.current = true }, onCompositionEnd: () => { composing.current = false },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -121,7 +122,9 @@ export function BrowserComposer({ keyboardRef, person, available, onPrepare, onS
       if (!event.nativeEvent.isComposing && !composing.current && event.key === "Backspace" && !draft && person && available) {
         event.preventDefault(); onDelete(); return
       }
-      if (!event.nativeEvent.isComposing && !composing.current && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      // Enter sends, as in the chat composer; Shift+Enter keeps a new line
+      // for a multi-line page field. An IME's confirming Enter never sends.
+      if (!event.nativeEvent.isComposing && !composing.current && event.key === "Enter" && !event.shiftKey) {
         event.preventDefault(); void send()
       }
     },
