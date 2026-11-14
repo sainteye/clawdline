@@ -291,7 +291,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         if(!valid()||s.aborted||recovery.current||capturedEpoch!==epoch.current||view.heldOutcomes.has(draftKey)||detailRows.current[offer.id]!==offer)throw failure("pa_read_only")
         if(!canWrite(page.source)||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence)||!sameFence(page.head.current_fence,fence(d)))throw failure("pa_stale_generation")
         if(!live||live.id!==offer.id||live.turn_id!==offer.turn_id||live.state!=="pending"||Date.parse(live.expires_at)<=Date.now()||!sameFence(live.fence,fence(d)))throw failure("pa_stale_generation")
-        if(!live.options.some(o=>o.id===option.id&&(o.kind==="reject_once"||o.kind==="allow_once"&&o.read_only)))throw failure("pa_scope_denied")
+        // One action at a time, as in CodyNC; a standing rule is never answered from here.
+        if(!live.options.some(o=>o.id===option.id&&(o.kind==="reject_once"||o.kind==="allow_once")))throw failure("pa_scope_denied")
         const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option.id}
         attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
         return source.answer(intent,s)
