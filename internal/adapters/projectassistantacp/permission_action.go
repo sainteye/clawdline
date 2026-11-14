@@ -58,14 +58,14 @@ func permissionAction(params json.RawMessage) *pa.PermissionAction {
 }
 
 // inputDetail is the part of a tool's input a person reads first: a shell
-// command, a URL, a path, else the input itself as compact JSON.
+// command, a plan, a URL, a path, else the input itself as compact JSON.
 func inputDetail(raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) == nil {
-		for _, name := range []string{"command", "cmd", "url", "file_path", "path", "pattern", "query"} {
+		for _, name := range []string{"command", "cmd", "plan", "url", "file_path", "path", "pattern", "query"} {
 			value, ok := fields[name]
 			if !ok {
 				continue

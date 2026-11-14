@@ -18,8 +18,12 @@ func TestAPermissionCardSaysWhatTheToolWantsToDo(t *testing.T) {
 	if edit == nil || edit.Detail != "/repo/notes.md" || len(edit.Diffs) != 1 || edit.Diffs[0].OldText != "a" || edit.Diffs[0].NewText != "b" {
 		t.Fatalf("edit: %+v", edit)
 	}
-	other := permissionAction(json.RawMessage(`{"toolCall":{"title":"Plan","kind":"switch_mode","rawInput":{"plan":"x"}}}`))
-	if other == nil || other.Detail != `{"plan":"x"}` {
+	plan := permissionAction(json.RawMessage(`{"toolCall":{"title":"Approve Plan","kind":"switch_mode","rawInput":{"plan":"# Plan\n1. Write","planFilePath":"/p.md"}}}`))
+	if plan == nil || plan.Detail != "# Plan\n1. Write" {
+		t.Fatalf("plan text: %+v", plan)
+	}
+	other := permissionAction(json.RawMessage(`{"toolCall":{"title":"Other","kind":"other","rawInput":{"answer":"x"}}}`))
+	if other == nil || other.Detail != `{"answer":"x"}` {
 		t.Fatalf("input as JSON: %+v", other)
 	}
 	if permissionAction(json.RawMessage(`{"toolCall":"not an object"}`)) != nil || permissionAction(json.RawMessage(`{"options":[]}`)) != nil {
