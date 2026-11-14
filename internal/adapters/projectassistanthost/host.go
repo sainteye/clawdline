@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"sync"
 	"time"
 
@@ -346,13 +347,14 @@ func (h *Host) Enable(ctx context.Context) error {
 // returns and changes nothing for a Bot without such a turn.
 func (h *Host) resumeInterrupted() {
 	h.mu.Lock()
-	st, r := h.store, h.engine
+	st := h.store
 	h.mu.Unlock()
-	if st == nil || r == nil {
+	if st == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.o.Limits.CleanupTimeout*4)
 	defer cancel()
+	var keys []pa.BotKey
 	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
 	for {
 		page, err := st.List(ctx, query)
@@ -360,12 +362,30 @@ func (h *Host) resumeInterrupted() {
 			return
 		}
 		for _, bot := range page.Items {
-			_ = r.ResumeInterrupted(ctx, bot.Bot.Key)
+			pending, err := st.PendingTurns(ctx, bot.Bot.Key)
+			if err == nil && len(pending) == 1 && pending[0].State == pa.TurnUnknown && pending[0].Failure != nil && pending[0].Failure.Field == app.RestartField {
+				keys = append(keys, bot.Bot.Key)
+			}
 		}
 		if page.NextCursor == "" {
-			return
+			break
 		}
 		query.Cursor = page.NextCursor
+	}
+	if len(keys) == 0 {
+		return
+	}
+	// The runtime is otherwise built on first use; resuming is a use, so it
+	// is built only when some Bot has a turn to resume.
+	r, err := h.runtime()
+	if err != nil {
+		log.Printf("bots: interrupted turns were not resumed: %s", pa.Code(err))
+		return
+	}
+	for _, key := range keys {
+		if err := r.ResumeInterrupted(ctx, key); err != nil {
+			log.Printf("bots: an interrupted turn was not resumed: %s", pa.Code(err))
+		}
 	}
 }
 
