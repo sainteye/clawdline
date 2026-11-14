@@ -187,7 +187,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory":
+					case "stop", "read", "observed", "memory", "send-now":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -530,6 +530,20 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		return paHTTPReceipt(s.Stop(ctx, app.StopRequest{Command: command, Fence: fence, TurnID: request.TurnID}))
+	case "send-now":
+		request, err := paDecodeHTTP[contract.ProjectAssistantSendNowRequest](w, r)
+		if err != nil {
+			return nil, err
+		}
+		command, err := h.command(r, route, request.Command, pa.SendNowOperation)
+		if err != nil {
+			return nil, err
+		}
+		fence, err := paHTTPFence(command, request.Fence)
+		if err != nil {
+			return nil, err
+		}
+		return paHTTPReceipt(s.SendNow(ctx, app.SendNowRequest{Command: command, Fence: fence, TurnID: request.TurnID}))
 	case "answer":
 		request, err := paDecodeHTTP[contract.ProjectAssistantPermissionAnswerRequest](w, r)
 		if err != nil {

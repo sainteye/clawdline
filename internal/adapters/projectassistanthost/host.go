@@ -549,6 +549,15 @@ func (f runtimeFacade) Submit(ctx context.Context, q app.Submission) (pa.Receipt
 	}
 	return r.Submit(ctx, q)
 }
+func (f runtimeFacade) SendNow(ctx context.Context, q app.SendNowRequest) (pa.Receipt, error) {
+	f.h.mu.Lock()
+	r := f.h.engine
+	f.h.mu.Unlock()
+	if r == nil {
+		return pa.Receipt{}, failure(pa.StaleGeneration, "runtime")
+	}
+	return r.SendNow(ctx, q)
+}
 func (f runtimeFacade) Stop(ctx context.Context, q app.StopRequest) (pa.Receipt, error) {
 	f.h.mu.Lock()
 	r := f.h.engine

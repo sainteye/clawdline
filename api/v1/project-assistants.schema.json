@@ -561,6 +561,10 @@
         "started_at": {
           "type": "string",
           "description": "When the turn began running, RFC 3339; absent while it waits."
+        },
+        "joined_turn_id": {
+          "type": "string",
+          "description": "The running turn this queued message was sent into with Send now; absent otherwise."
         }
       },
       "required": [
@@ -1254,7 +1258,7 @@
     "ProjectAssistantStopRequest": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Cancels active and queued turns; a collapsed UI never sends this.",
+      "description": "Cancels active and queued turns; a collapsed UI never sends this. Naming a turn that is still queued removes only that message (API level 63).",
       "properties": {
         "command": {
           "$ref": "#/$defs/ProjectAssistantCommand"
@@ -1752,6 +1756,7 @@
         "edit",
         "send",
         "stop",
+        "send_now",
         "answer",
         "read",
         "observe",
@@ -2344,6 +2349,27 @@
         "id",
         "media_type",
         "bytes"
+      ]
+    },
+    "ProjectAssistantSendNowRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sends one queued message into the running turn, as Codync's steer (API level 64).",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "turn_id"
       ]
     }
   }

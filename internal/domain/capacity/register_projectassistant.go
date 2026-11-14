@@ -33,6 +33,9 @@ const (
 	MaximumBotPermissionActionBytes = 32768
 	// One send with its pictures as data: URLs.
 	MaximumBotSendBodyBytes = 24 << 20
+	// How long the agent may take to say whether a Send now joined its turn
+	// (Codync's STEER_ANSWER).
+	MaximumBotSteerAnswerMilliseconds = 15000
 )
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
@@ -126,6 +129,9 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsSendBodyBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotSendBodyBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotSendBodyBytes"}},
+		{Name: BotsSteerAnswer, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotSteerAnswerMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotSteerAnswerMilliseconds"}},
 		{Name: BotsMemoryEntries, Class: Evidence, Unit: Rows, Limit: pa.MaxMemoryEntries, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
 			Sources: []string{"internal/domain/projectassistant.MaxMemoryEntries"}},

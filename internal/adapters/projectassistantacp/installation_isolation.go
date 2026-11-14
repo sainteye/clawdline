@@ -94,6 +94,13 @@ type isolatedNativeSession struct {
 	once    sync.Once
 }
 
+// Steer forwards Send now to the client when it can steer.
+func (s *isolatedNativeSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+	if steerer, ok := s.ProviderSession.(app.SteeringSession); ok {
+		return steerer.Steer(ctx, text)
+	}
+	return "", refusal(pa.Unsupported, "steering")
+}
 func (s *isolatedNativeSession) Close(ctx context.Context) error {
 	if e := s.ProviderSession.Close(ctx); e != nil {
 		return e

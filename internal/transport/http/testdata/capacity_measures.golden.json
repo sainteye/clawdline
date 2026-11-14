@@ -386,6 +386,11 @@
     "Note": true
   },
   {
+    "Name": "bots.steer_answer_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.survey_ms",
     "Known": true,
     "Note": true

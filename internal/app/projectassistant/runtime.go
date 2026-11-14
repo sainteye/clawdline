@@ -61,6 +61,9 @@ type runtimeActor struct {
 	session    ProviderSession
 	turnID     string
 	stopped    bool
+	// steering holds queued turns handed to the agent by Send now until it
+	// answers; the worker does not start one meanwhile (actor.mu).
+	steering map[string]bool
 }
 
 var _ Runtime = (*Engine)(nil)
@@ -489,7 +492,7 @@ func (r *Engine) work(a *runtimeActor) {
 		blocked := false
 		for i := range pending {
 			t := pending[i]
-			if t.State == pa.TurnUnknown || t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
+			if t.State == pa.TurnUnknown || t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || a.steering[t.ID] {
 				blocked = true
 				break
 			}

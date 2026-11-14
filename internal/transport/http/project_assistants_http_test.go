@@ -118,6 +118,9 @@ func (r *paHTTPRuntime) Submit(_ context.Context, request app.Submission) (pa.Re
 	r.submissions = append(r.submissions, request)
 	return pa.Receipt{Command: request.Command, ID: "receipt-send", State: pa.EffectAccepted}, r.err
 }
+func (r *paHTTPRuntime) SendNow(_ context.Context, request app.SendNowRequest) (pa.Receipt, error) {
+	return pa.Receipt{Command: request.Command, ID: "receipt-send-now", State: pa.EffectDelivered}, r.err
+}
 func (r *paHTTPRuntime) Stop(_ context.Context, request app.StopRequest) (pa.Receipt, error) {
 	r.stops = append(r.stops, request)
 	return pa.Receipt{Command: request.Command, ID: "receipt-stop", State: pa.EffectAccepted}, r.err

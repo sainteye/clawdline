@@ -326,7 +326,7 @@ func DecideReplay(command Command, receipt *Receipt) (ReplayDecision, error) {
 		return "", fail(Invalid, "content_hash")
 	}
 	switch command.Operation {
-	case CreateOperation, EditOperation, SendOperation, StopOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
+	case CreateOperation, EditOperation, SendOperation, StopOperation, SendNowOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
 	default:
 		return "", fail(Invalid, "operation")
 	}
@@ -346,7 +346,9 @@ func CanTransition(from, to TurnState) bool {
 	case TurnAccepted:
 		return to == TurnQueued || to == TurnCancelled
 	case TurnQueued:
-		return to == TurnRunning || to == TurnCancelled || to == TurnFailed
+		// Succeeded only when Send now joined it to the running turn; the
+		// store checks JoinedTurnID names that turn.
+		return to == TurnRunning || to == TurnCancelled || to == TurnFailed || to == TurnSucceeded
 	case TurnRunning:
 		return to == TurnWaitingPermission || to == TurnSucceeded || to == TurnFailed || to == TurnCancelled || to == TurnUnknown
 	case TurnWaitingPermission:

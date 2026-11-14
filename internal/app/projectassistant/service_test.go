@@ -108,6 +108,10 @@ func (r *serviceRuntime) Answer(_ context.Context, a AnswerRequest) (pa.Receipt,
 	r.answers = append(r.answers, a)
 	return pa.Receipt{Command: a.Command}, nil
 }
+func (r *serviceRuntime) SendNow(_ context.Context, a SendNowRequest) (pa.Receipt, error) {
+	r.calls++
+	return pa.Receipt{Command: a.Command}, nil
+}
 func (r *serviceRuntime) Stop(_ context.Context, a StopRequest) (pa.Receipt, error) {
 	r.calls++
 	r.stops = append(r.stops, a)

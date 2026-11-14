@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11966,
+  "englishContentKeys": 11969,
   "riskKeys": 5208,
-  "nonRiskCount": 6758,
+  "nonRiskCount": 6761,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 542,
+      "count": 544,
       "sources": [
         null
       ],
@@ -478,6 +478,8 @@
         "capacityRow.bots.send_body_bytes.what",
         "capacityRow.bots.stderr_bytes.full",
         "capacityRow.bots.stderr_bytes.what",
+        "capacityRow.bots.steer_answer_ms.full",
+        "capacityRow.bots.steer_answer_ms.what",
         "capacityRow.bots.survey_ms.what",
         "capacityRow.bots.tool_probe_bytes.what",
         "capacityRow.bots.tool_probe_ms.what",
@@ -5541,7 +5543,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 91,
+      "count": 92,
       "sources": [
         null
       ],
@@ -5614,6 +5616,7 @@
         "projectAssistants.search",
         "projectAssistants.selectBot",
         "projectAssistants.send",
+        "projectAssistants.sendNow",
         "projectAssistants.sessions",
         "projectAssistants.settings",
         "projectAssistants.setup_version_unsupported",

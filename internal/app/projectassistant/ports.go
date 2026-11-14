@@ -41,8 +41,17 @@ type AnswerRequest struct {
 type Runtime interface {
 	Submit(context.Context, Submission) (pa.Receipt, error)
 	Stop(context.Context, StopRequest) (pa.Receipt, error)
+	SendNow(context.Context, SendNowRequest) (pa.Receipt, error)
 	Answer(context.Context, AnswerRequest) (pa.Receipt, error)
 	Disable(context.Context, pa.ProjectSelection) error
+}
+
+// SendNowRequest is Codync's steer: send one queued message into the turn
+// that is running now instead of waiting for it to end.
+type SendNowRequest struct {
+	Command pa.Command
+	Fence   pa.Fence
+	TurnID  string
 }
 
 type HistoryQuery struct {

@@ -54,6 +54,21 @@ type ProviderSession interface {
 	Close(context.Context) error
 }
 
+// SteeringSession is a native session that can take a message into the turn
+// it is running (ACP _session/steering), as Codync steers.
+type SteeringSession interface {
+	Steer(context.Context, string) (SteerOutcome, error)
+}
+
+// SteerOutcome is the agent's answer to a steer: joined the running turn, or
+// that turn had just ended and the message needs a prompt of its own.
+type SteerOutcome string
+
+const (
+	SteerJoined SteerOutcome = "injected"
+	SteerNext   SteerOutcome = "promptRequired"
+)
+
 type PendingPrompt interface {
 	Wait(context.Context) (PromptResult, error)
 }

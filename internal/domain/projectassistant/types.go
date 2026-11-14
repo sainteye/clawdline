@@ -178,6 +178,9 @@ type Turn struct {
 	Failure        *Failure            `json:"failure,omitempty"`
 	// StartedAt is when the turn began running; absent while it waits.
 	StartedAt *time.Time `json:"started_at,omitempty"`
+	// JoinedTurnID names the running turn this queued message was sent into
+	// with Send now, as Codync's steer; the message has no reply of its own.
+	JoinedTurnID string `json:"joined_turn_id,omitempty"`
 }
 
 type ExecutionBinding struct {
@@ -479,6 +482,7 @@ const (
 	EditOperation       Operation = "edit"
 	SendOperation       Operation = "send"
 	StopOperation       Operation = "stop"
+	SendNowOperation    Operation = "send_now"
 	AnswerOperation     Operation = "answer"
 	ReadOperation       Operation = "read"
 	ObserveOperation    Operation = "observe"

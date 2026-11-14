@@ -380,6 +380,27 @@ func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, er
 	return s.opts.Runtime.Stop(ctx, request)
 }
 
+func (s *Service) SendNow(ctx context.Context, request SendNowRequest) (pa.Receipt, error) {
+	a, err := s.authorize(ctx, request.Command.Key, true)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if request.Command.Key != request.Fence.Key || request.TurnID == "" {
+		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "send_now_key")
+	}
+	request.Command, err = canonicalCommand(request.Command, pa.SendNowOperation, a.PrincipalID, struct {
+		Fence  pa.Fence
+		TurnID string
+	}{request.Fence, request.TurnID})
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if _, err = s.authorizeEffect(ctx, request.Command.Key, true, a); err != nil {
+		return pa.Receipt{}, err
+	}
+	return s.opts.Runtime.SendNow(ctx, request)
+}
+
 func (s *Service) Answer(ctx context.Context, c pa.Command, answer pa.PermissionAnswer) (pa.Receipt, error) {
 	a, err := s.authorize(ctx, c.Key, true)
 	if err != nil {

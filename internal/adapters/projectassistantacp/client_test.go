@@ -74,6 +74,8 @@ func TestACPTestPeer(t *testing.T) {
 					version = "wrong"
 				}
 				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": name, "version": version}, "agentCapabilities": map[string]any{"loadSession": true, "mcpCapabilities": map[string]bool{"http": true}, "sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}, "_meta": map[string]any{"claudeCode": map[string]any{}}}})})
+			} else if mode == "steer" {
+				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]bool{"loadSession": true}, "_meta": map[string]any{"steering": map[string]bool{"supported": true}}})})
 			} else {
 				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]bool{"loadSession": true}})})
 			}
@@ -112,7 +114,7 @@ func TestACPTestPeer(t *testing.T) {
 			if mode == "exit" {
 				os.Exit(8)
 			}
-			if mode == "silent" {
+			if mode == "silent" || mode == "steer" {
 				continue
 			}
 			if mode == "permission" {
@@ -147,6 +149,24 @@ func TestACPTestPeer(t *testing.T) {
 			}
 			send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "partial"}}})})
 			send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+		case "_session/steering":
+			var steer struct {
+				SessionID string `json:"sessionId"`
+				Prompt    []struct {
+					Text string `json:"text"`
+				} `json:"prompt"`
+				Meta struct {
+					Steering struct {
+						IdleBehavior string `json:"idleBehavior"`
+					} `json:"steering"`
+				} `json:"_meta"`
+			}
+			if json.Unmarshal(f.Params, &steer) != nil || steer.SessionID != "scripted-session" || len(steer.Prompt) != 1 || steer.Prompt[0].Text != "also this" || steer.Meta.Steering.IdleBehavior != "promptRequired" {
+				os.Exit(9)
+			}
+			send(frame{ID: f.ID, Result: raw(map[string]string{"outcome": "injected"})})
+			send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "both done"}}})})
+			send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "end_turn"})})
 		case "session/cancel":
 			send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "cancelled"})})
 		case "":
@@ -503,5 +523,24 @@ func TestAToolCallTitleIsTheBotsActivity(t *testing.T) {
 	defer mu.Unlock()
 	if len(traces) == 0 || traces[0].Category != "tool_call" || traces[0].Text != "Read notes.md" {
 		t.Fatalf("traces=%+v", traces)
+	}
+}
+
+// As Codync hands a queued message to the agent, Send now uses ACP
+// _session/steering when the adapter advertises it, asking a turn that already
+// ended to say so rather than start one.
+func TestSendNowSteersIntoTheRunningTurn(t *testing.T) {
+	c, _ := openTestClient(t, "steer", func(context.Context, app.ProtocolEvent) error { return nil })
+	pending := sendTestPrompt(t, c)
+	outcome, err := c.Steer(context.Background(), "also this")
+	if err != nil || outcome != app.SteerJoined {
+		t.Fatalf("steer: %q %v", outcome, err)
+	}
+	result, err := pending.Wait(context.Background())
+	if err != nil || result.FinalText != "both done" {
+		t.Fatalf("reply=%+v %v", result, err)
+	}
+	if outcome, err = c.Steer(context.Background(), "after"); err != nil || outcome != app.SteerNext {
+		t.Fatalf("a steer after the turn: %q %v", outcome, err)
 	}
 }

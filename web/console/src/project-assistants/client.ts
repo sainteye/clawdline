@@ -26,6 +26,9 @@ export interface SourceClient {
   /** Takes one queued message back before it is sent: Stop naming that queued turn. */
   unqueue?(request: W.ProjectAssistantStopRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   canUnqueue?(): boolean
+  /** Sends one queued message into the running turn (Codync's steer). */
+  sendNow?(request: W.ProjectAssistantSendNowRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
+  canSendNow?(): boolean
   /** Where the console reads a stored picture, or null when it cannot. */
   attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null
 }
