@@ -21,3 +21,11 @@ test("a Bot that cannot be changed says why",()=>{
   assert.equal(readOnlyReason({ ...ok, writable: false }, w), "這台機器關閉了從 Clawdline Cloud 操作")
   assert.equal(readOnlyReason(undefined, w), "正在載入")
 })
+// @ts-expect-error Node executes source extensions.
+import { botFailureText } from "./source-errors.ts"
+test("a failed Bot action says what to do, never only its code",()=>{
+  const w = { failRetry: "再按一次", failOffline: "連不上", failGeneric: "失敗了" } as Record<string,string>
+  assert.equal(botFailureText("pa_stale_version", w), "再按一次")
+  assert.equal(botFailureText("pa_offline", w), "連不上")
+  assert.equal(botFailureText("something_new", w), "失敗了")
+})

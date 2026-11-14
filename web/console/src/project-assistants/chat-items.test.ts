@@ -16,8 +16,11 @@ test("Codync author grouping resets after a time separator",()=>{
 })
 test("queue to running transition keeps each message on exactly one surface",()=>{
   const a=message("a",1,"user"),b=message("b",2)
-  const queued=partitionMessages([a,b],[{message_id:"a",state:"queued"} as W.ProjectAssistantTurn])
+  const queued=partitionMessages([a,b],[{message_id:"x",state:"running"} as W.ProjectAssistantTurn,{message_id:"a",state:"queued"} as W.ProjectAssistantTurn])
   assert.deepEqual(queued.queued,[a]);assert.deepEqual(queued.chat,[b])
+  // Nothing running: the message about to run is in the conversation, not a queue.
+  const next=partitionMessages([a,b],[{message_id:"a",state:"queued"} as W.ProjectAssistantTurn])
+  assert.deepEqual(next.queued,[]);assert.deepEqual(next.chat,[a,b])
   const running=partitionMessages([a,b],[{message_id:"a",state:"running"} as W.ProjectAssistantTurn])
   assert.deepEqual(running.queued,[]);assert.deepEqual(running.chat,[a,b])
 })

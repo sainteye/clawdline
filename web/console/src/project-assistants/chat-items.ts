@@ -20,8 +20,11 @@ export function buildChat(messages: readonly W.ProjectAssistantMessage[]): ChatI
   }
   return out
 }
-/** A queued user message stays in exactly one surface, including the transition to idle. */
+/** A queued user message stays in exactly one surface, including the transition to idle.
+ *  It waits in the queue tray only behind a turn that is running, as Codync's tray does;
+ *  a message about to run next is already part of the conversation. */
 export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly Pick<W.ProjectAssistantReadTurnSummary,"message_id"|"state">[]) {
-  const queuedIDs = new Set(turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id))
+  const busy = turns.some(t=>t.state==="running" || t.state==="waiting_permission")
+  const queuedIDs = new Set(busy ? turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id) : [])
   return { queued: messages.filter(m=>m.kind==="user" && queuedIDs.has(m.id)), chat: messages.filter(m=>!queuedIDs.has(m.id) || m.kind!=="user") }
 }

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12056,
+  "englishKeys": 12068,
   "counts": {
-    "negation": 3274,
-    "state": 2012,
+    "negation": 3277,
+    "state": 2014,
     "permission": 714,
     "deletion": 267,
     "uncertainty": 454
   },
-  "unionCount": 5242,
+  "unionCount": 5246,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2943,6 +2943,9 @@
       "projectAssistants.draftUnavailable",
       "projectAssistants.empty",
       "projectAssistants.emptyMemory",
+      "projectAssistants.failOffline",
+      "projectAssistants.failProject",
+      "projectAssistants.failUnknown",
       "projectAssistants.noCapabilities",
       "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
@@ -5073,6 +5076,8 @@
       "projectAssistants.draftUnavailable",
       "projectAssistants.emptyMemory",
       "projectAssistants.expired",
+      "projectAssistants.failOffline",
+      "projectAssistants.failRetry",
       "projectAssistants.failed",
       "projectAssistants.fixAgent",
       "projectAssistants.fixOffline",
@@ -11392,6 +11397,10 @@
     "projectAssistants.empty",
     "projectAssistants.emptyMemory",
     "projectAssistants.expired",
+    "projectAssistants.failOffline",
+    "projectAssistants.failProject",
+    "projectAssistants.failRetry",
+    "projectAssistants.failUnknown",
     "projectAssistants.failed",
     "projectAssistants.fixAgent",
     "projectAssistants.fixOffline",
