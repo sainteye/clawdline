@@ -386,7 +386,11 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	h.mu.Unlock()
 	var result error
 	if r != nil {
-		result = r.Close(ctx)
+		if closeHost {
+			result = r.CloseForRestart(ctx)
+		} else {
+			result = r.Close(ctx)
+		}
 	}
 	field := "execution"
 	if closeHost {

@@ -50,7 +50,7 @@ func (r *Engine) stopPendingLocked(ctx context.Context, a *runtimeActor) error {
 	if a.cancel != nil {
 		a.cancel()
 	}
-	return QuiesceHistory(ctx, r.o.Repository, r.o.Clock, r.o.ID, a.key)
+	return QuiesceHistoryFor(ctx, r.o.Repository, r.o.Clock, r.o.ID, a.key, r.unknownField())
 }
 
 // QuiesceHistory stops durable chat work without constructing a Runtime or
@@ -150,6 +150,24 @@ func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.T
 // Close seals admission before cancellation. It is bounded by the existing
 // cleanup policy and never detaches an outstanding Open/Close owner.
 func (r *Engine) Close(ctx context.Context) error { return r.shutdown(ctx, nil) }
+
+// CloseForRestart is Close for the daemon's own shutdown: a turn it cuts off
+// is recorded with RestartField, so the next start may resume it.
+func (r *Engine) CloseForRestart(ctx context.Context) error {
+	r.mu.Lock()
+	r.restarting = true
+	r.mu.Unlock()
+	return r.shutdown(ctx, nil)
+}
+
+func (r *Engine) unknownField() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.restarting {
+		return RestartField
+	}
+	return "execution"
+}
 
 func (r *Engine) shutdown(ctx context.Context, project *pa.ProjectSelection) error {
 	ctx, cancel := context.WithTimeout(ctx, r.o.Limits.CleanupTimeout)

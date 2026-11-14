@@ -40,7 +40,9 @@ type Engine struct {
 	slots    chan struct{}
 	disabled map[pa.ProjectSelection]bool
 	closed   bool
-	changed  chan struct{}
+	// restarting marks the daemon's own shutdown (CloseForRestart).
+	restarting bool
+	changed    chan struct{}
 }
 
 type runtimeActor struct {
@@ -873,7 +875,11 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 	}
 	t.State = state
 	if cause != nil {
-		t.Failure = &pa.Failure{Code: pa.Code(cause), Field: "execution"}
+		field := "execution"
+		if state == pa.TurnUnknown {
+			field = r.unknownField()
+		}
+		t.Failure = &pa.Failure{Code: pa.Code(cause), Field: field}
 	}
 	if c.ActiveTurnID == t.ID {
 		c.ActiveTurnID = ""
