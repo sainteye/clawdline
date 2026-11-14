@@ -1335,11 +1335,11 @@
   {
     "Register": "daemon",
     "Name": "bots.permission_action_bytes",
-    "Class": "narrative",
+    "Class": "buffer",
     "Unit": "bytes",
     "Limit": 32768,
     "WarnAt": 0,
-    "AtLimit": "summarize",
+    "AtLimit": "refuse",
     "Deviation": "",
     "Told": [
       "diagnostics",

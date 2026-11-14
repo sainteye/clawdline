@@ -118,7 +118,7 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsFeatureProbeBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotFeatureProbeBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotFeatureProbeBytes"}},
-		{Name: BotsPermissionActionBytes, Class: Narrative, Unit: Bytes, Limit: MaximumBotPermissionActionBytes, AtLimit: Summarize,
+		{Name: BotsPermissionActionBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotPermissionActionBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotPermissionActionBytes"}},
 	}
