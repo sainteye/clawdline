@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url"
 import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {BotStatus} from "./BotStatus";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,BotStatus,ChatRows,fixtureSource,words}=compiled.exports
+const {BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
   let opened=0
@@ -21,10 +21,11 @@ test("permission options keep the persistent grants and disable them in history"
   assert.equal((html.match(/disabled=""/g)||[]).length,3)
   assert.match(html,/Always allow/)
 })
-test("offline status remains distinct from an empty source",async()=>{
+test("an offline machine shows as a problem at the top of the list, with its fix",async()=>{
   const s=fixtureSource();s.setState("offline")
-  const value=await s.status(new AbortController().signal),html=render(BotStatus,{sources:value.sources,w:words("zh-Hant")})
-  assert.match(html,/離線/);assert.match(html,/尚未確認是否最新/)
+  const value=await s.status(new AbortController().signal),w=words("zh-Hant")
+  const html=render(SourceStatusPanel,{health:sourceHealth(value.sources,new Map(),[],w),w})
+  assert.match(html,/這台機器：離線/);assert.match(html,/確認那台機器開著/);assert.match(html,/aria-expanded="false"/)
 })
 test("reading, selecting and metadata creation do not start a scripted model",async()=>{
   const log=[],s=fixtureSource("one",log),signal=new AbortController().signal

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 11998,
-  "riskKeys": 5220,
-  "nonRiskCount": 6778,
+  "englishContentKeys": 12022,
+  "riskKeys": 5228,
+  "nonRiskCount": 6794,
   "groups": [
     {
       "name": "acp / other",
@@ -5558,12 +5558,13 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 94,
+      "count": 110,
       "sources": [
         null
       ],
       "keys": [
         "projectAssistants.agent",
+        "projectAssistants.agentTooOld",
         "projectAssistants.allBots",
         "projectAssistants.allMachines",
         "projectAssistants.answered",
@@ -5584,6 +5585,8 @@
         "projectAssistants.earlier",
         "projectAssistants.executing",
         "projectAssistants.export",
+        "projectAssistants.fixBotsOff",
+        "projectAssistants.fixCloudOff",
         "projectAssistants.forget",
         "projectAssistants.forgetScope",
         "projectAssistants.forgotten",
@@ -5648,7 +5651,20 @@
         "projectAssistants.sourceIDs",
         "projectAssistants.stale",
         "projectAssistants.status",
+        "projectAssistants.statusAgent",
+        "projectAssistants.statusBotsOff",
+        "projectAssistants.statusBotsOn",
+        "projectAssistants.statusCloudOff",
+        "projectAssistants.statusCloudOperation",
+        "projectAssistants.statusConnected",
+        "projectAssistants.statusHide",
+        "projectAssistants.statusMachineId",
+        "projectAssistants.statusManyOk",
+        "projectAssistants.statusOffline",
+        "projectAssistants.statusOneOk",
+        "projectAssistants.statusShow",
         "projectAssistants.stop",
+        "projectAssistants.thisMachine",
         "projectAssistants.total",
         "projectAssistants.trace",
         "projectAssistants.unread",

@@ -32,6 +32,8 @@ export interface AssistantGrant {
   paired: boolean
   online: boolean
   writable: boolean
+  /** The machine's own name, when Cloud knows it. */
+  name?: string
 }
 
 /** Preserve source refusals verbatim; transport failures retain their original evidence. */
@@ -57,13 +59,14 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly machineID: string
   readonly authorizationRevision: string
   readonly grant: Readonly<AssistantGrant>
+  readonly machineName?: string
   private readonly transport: AssistantFetch
   private readonly currentGrant: () => AssistantGrant | null
   private readonly lifetime = new AbortController()
   private access: W.ProjectAssistantAccess = "hidden"
   private lastStatus: W.ProjectAssistantSourceStatus | null = null
   constructor(grant: AssistantGrant, transport: AssistantFetch, currentGrant: () => AssistantGrant | null) {
-    this.grant = { ...grant }; this.machineID = grant.machineID; this.authorizationRevision = grant.authorizationRevision
+    this.grant = { ...grant }; this.machineID = grant.machineID; this.machineName = grant.name; this.authorizationRevision = grant.authorizationRevision
     this.transport = transport; this.currentGrant = currentGrant
   }
   revoke() { this.lifetime.abort() }
@@ -310,7 +313,7 @@ export function cloudAssistantGrants(account: string, machines: readonly CloudMa
     // Every paired device may act (the person, 2026-11-14). Only a machine
     // that turned Cloud operation off is read-only here; an operation flag not
     // yet received is not a refusal, and the daemon still checks each write.
-    online:machine.freshness === "current",writable:machine.operationAllowed !== false}))
+    online:machine.freshness === "current",writable:machine.operationAllowed !== false,name:machine.name||undefined}))
 }
 
 export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], authorized: readonly SourceClient[]) {
