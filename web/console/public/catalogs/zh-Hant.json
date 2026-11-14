@@ -9908,6 +9908,8 @@
   "projectAssistants.remember": "儲存記憶",
   "projectAssistants.removePicture": "移除圖片",
   "projectAssistants.resumedNotice": "Clawdline 重新啟動後，已請 Bot 從中斷處接著做，不重複已完成的步驟。",
+  "projectAssistants.writingReply": "正在回覆…",
+  "projectAssistants.removeQueued": "移除這則待送訊息",
   "projectAssistants.retry": "重試",
   "projectAssistants.revoked": "授權已撤銷",
   "projectAssistants.running": "工作中",

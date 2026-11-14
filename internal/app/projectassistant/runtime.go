@@ -678,6 +678,8 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	binding.ForgottenThrough = current.ForgottenThrough
 	binding.InstructionRevision = bot.Instructions.Revision
 	t.State = pa.TurnRunning
+	started := r.o.Clock().UTC()
+	t.StartedAt = &started
 	t.MemoryRevision = current.Revision
 	t.Instructions = bot.Instructions
 	c.ActiveTurnID = t.ID
@@ -1234,7 +1236,7 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (pa.Receipt, error) {
 		return pa.Receipt{}, err
 	}
 	if q.TurnID != "" && c.ActiveTurnID != q.TurnID {
-		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "stop_turn")
+		return r.unqueueLocked(ctx, a, bot, q)
 	}
 	a.stopped = true
 	if a.cancel != nil {
@@ -1271,6 +1273,34 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (pa.Receipt, error) {
 		_ = a.session.Cancel(ctx)
 	}
 	return receipt, err
+}
+
+// unqueueLocked is Codync's unqueue (host/src/agent/bot/steer.rs): stopping a
+// turn that is still queued takes that one message back before it is sent,
+// and leaves the running turn and the rest of the queue alone. The turn ends
+// cancelled with no failure, which is how a removed message differs from one
+// a Stop cancelled. The caller holds a.mu.
+func (r *Engine) unqueueLocked(ctx context.Context, a *runtimeActor, bot pa.Bot, q StopRequest) (pa.Receipt, error) {
+	pending, err := r.o.Repository.PendingTurns(ctx, a.key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	for _, t := range pending {
+		if t.ID != q.TurnID {
+			continue
+		}
+		if t.State != pa.TurnQueued || a.turnID == t.ID {
+			break
+		}
+		if err = r.finishLocked(ctx, a, t, pa.TurnCancelled, "", nil); err != nil {
+			return pa.Receipt{}, err
+		}
+		if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
+			return pa.Receipt{}, err
+		}
+		return r.mutate(ctx, bot, Mutation{Command: q.Command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: t.ID}})
+	}
+	return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "stop_turn")
 }
 
 func (r *Engine) Disable(ctx context.Context, project pa.ProjectSelection) error {

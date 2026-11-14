@@ -63,7 +63,7 @@ test("consumed Source and Bot primitives and enums reject malformed successful e
 })
 test("all pending user messages map exactly to their summary without moving running turns into the queue",()=>{
   const a=answer(),s=a.snapshot!
-  s.pending_turns=(["accepted","queued","running","waiting_permission"] as const).map((state,i)=>({id:`pending-${i}`,fence,message_id:`message-${i}`,state,failure_code:""}))
+  s.pending_turns=(["accepted","queued","running","waiting_permission"] as const).map((state,i)=>({id:`pending-${i}`,fence,message_id:`message-${i}`,state,failure_code:"",started_at:""}))
   s.queued_messages=s.pending_turns.map((t,i)=>({...message(t.message_id,i+1),kind:"user",turn_id:t.id}))
   assert.equal(readView(a,request(),fence).snapshot!.queued_messages.length,4)
   const partition=partitionMessages(s.queued_messages,s.pending_turns)
@@ -98,7 +98,7 @@ test("invalid counts, mismatched mode, foreign scope, epochs and dishonest conti
 })
 test("snapshot contains all sixteen pending summaries and queued messages without a fabricated full Turn",()=>{
   const a=answer(),s=a.snapshot!
-  s.pending_turns=Array.from({length:16},(_,i)=>({id:`turn-${i}`,fence,message_id:`queued-${i}`,state:"queued",failure_code:""}))
+  s.pending_turns=Array.from({length:16},(_,i)=>({id:`turn-${i}`,fence,message_id:`queued-${i}`,state:"queued",failure_code:"",started_at:""}))
   s.queued_messages=s.pending_turns.map((t,i)=>({...message(t.message_id,i+1),kind:"user",turn_id:t.id}))
   assert.equal(readView(a,request(),fence).snapshot!.queued_messages.length,16)
   assert.equal("instructions" in s.pending_turns[0],false)

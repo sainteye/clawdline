@@ -69,7 +69,17 @@
 .project-assistants .pa-send { background:#fafafa;color:#080808;border:0;width:34px;height:34px;min-width:34px;border-radius:50%;padding:0;font-size:24px; }
 .project-assistants .pa-reply { display:flex;gap:8px;align-items:center;padding:6px 12px;color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-reply>span { white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1; }
-.project-assistants .pa-queued { margin:5px 0;padding:8px 14px;border:1px solid var(--pa-line);border-radius:12px;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-queued { display:flex;align-items:center;gap:8px;margin:5px 0;padding:8px 14px;border:1px solid var(--pa-line);border-radius:12px;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-queued>span { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-queued-remove { flex:none;width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:inherit;font-size:15px;line-height:1;cursor:pointer; }
+.project-assistants .pa-queued-remove:hover:not(:disabled) { background:var(--pa-line); }
+.project-assistants .pa-working { display:flex;align-items:center;gap:8px;font-size:12px; }
+.project-assistants .pa-working-dot { width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7;animation:pa-working-pulse 1.2s ease-in-out infinite; }
+.project-assistants .pa-working[data-waiting] { color:var(--warn,#d29a3a); }
+.project-assistants .pa-working-text { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-working-time { font-variant-numeric:tabular-nums;opacity:.7; }
+@keyframes pa-working-pulse { 0%,100% { opacity:.25 } 50% { opacity:.9 } }
+@media (prefers-reduced-motion: reduce) { .project-assistants .pa-working-dot { animation:none; } }
 .project-assistants .pa-tabs { position:absolute;bottom:max(20px,env(safe-area-inset-bottom));left:48px;display:flex;gap:4px;border:1px solid var(--pa-line);padding:5px;border-radius:30px;background:#141414; }
 .project-assistants .pa-tabs button { border:0;background:transparent;color:var(--pa-dim); }
 .project-assistants .pa-tabs button[aria-pressed="true"] { color:#fafafa;background:#303033; }
