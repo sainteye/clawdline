@@ -24,9 +24,9 @@
 .project-assistants .pa-bot-row:hover,.project-assistants .pa-bot-row[aria-current="true"] { background:#242426; }
 .project-assistants .pa-row-body { display:flex;flex-direction:column;gap:3px;min-width:0;flex:1; }
 .project-assistants .pa-row-body strong { font-size:14px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.project-assistants .pa-row-body>span,.project-assistants .pa-row-body>small { white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--pa-dim); }
-.project-assistants .pa-row-body>small { font-size:9px;color:#77777d; }
-.project-assistants .pa-row-meta { display:flex;flex-direction:column;align-items:flex-end;gap:10px;font-size:10px;color:var(--pa-dim); }
+.project-assistants .pa-row-body>span,.project-assistants .pa-row-body>small { white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--pa-dim); }
+.project-assistants .pa-row-body>small { font-size:12px;color:#8a8a90; }
+.project-assistants .pa-row-meta { display:flex;flex-direction:column;align-items:flex-end;gap:10px;font-size:12px;color:var(--pa-dim); }
 .project-assistants .pa-row-meta time { max-width:40px; }
 .project-assistants .pa-unread { background:#fafafa;color:#080808;min-width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-size:10px; }
 .project-assistants .pa-avatar-status { position:relative;display:flex; }
@@ -60,7 +60,7 @@
 .project-assistants .pa-chat-footer { padding:8px 24px max(24px,env(safe-area-inset-bottom));width:100%;max-width:864px;margin:auto; }
 .project-assistants .pa-chat-footer>p,.project-assistants .pa-turn { font-size:11px;color:var(--pa-dim);margin:5px 0; }
 .project-assistants .pa-chat-tools { display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px; }
-.project-assistants .pa-chat-tools button { padding:2px 6px;font-size:10px;color:var(--pa-dim);background:transparent;border:0; }
+.project-assistants .pa-chat-tools button { padding:2px 6px;font-size:12px;color:var(--pa-dim);background:transparent;border:0; }
 .project-assistants .pa-composer { display:flex;align-items:flex-end;gap:8px;border:1px solid var(--pa-line);background:#141414;border-radius:24px;padding:5px 6px 5px 15px; }
 .project-assistants .pa-editor { flex:1;display:grid;min-width:0;max-height:30dvh;overflow:auto; }
 .project-assistants .pa-editor textarea,.project-assistants .pa-editor-mirror { grid-area:1/1;padding:6px 0;line-height:24px;white-space:pre-wrap;overflow-wrap:anywhere;min-height:36px; }
@@ -94,6 +94,8 @@
 .project-assistants label { display:block;font-size:12px;color:var(--pa-dim);margin:14px 0; }
 .project-assistants label input,.project-assistants label select,.project-assistants label textarea { display:block;width:100%;background:var(--pa-card);border:1px solid var(--pa-line);border-radius:13px;padding:12px 14px;margin-top:7px;min-height:44px;color:#fafafa; }
 .project-assistants label textarea { min-height:90px;resize:vertical; }
+/* Typed text matches the pickers beside it, and 16px keeps iOS from zooming the page on focus. */
+.project-assistants label input,.project-assistants label textarea { font-size:16px;line-height:1.5; }
 .project-assistants label select { appearance:none; }
 .project-assistants .pa-form-body>p { color:var(--pa-dim);font-size:12px;margin:18px 0; }
 .project-assistants .pa-appearance { margin:14px 0; }
@@ -113,16 +115,16 @@
   .project-assistants .pa-roster .pa-toolbar { min-height:48px; }
   .project-assistants .pa-bot-row { min-height:86px;gap:12px;padding:10px 5px; }
   .project-assistants .pa-row-body strong { font-size:16px; }
-  .project-assistants .pa-row-body>span { font-size:12px; }
-  .project-assistants .pa-row-body>small { font-size:10px; }
-  .project-assistants .pa-row-meta { font-size:10px; }
+  .project-assistants .pa-row-body>span { font-size:14px; }
+  .project-assistants .pa-row-body>small { font-size:13px; }
+  .project-assistants .pa-row-meta { font-size:13px; }
   .project-assistants .pa-main { display:none; }
   .project-assistants.pa-selected .pa-roster { display:none; }
   .project-assistants.pa-selected .pa-main { display:block; }
   .project-assistants .pa-chat-back { display:grid; }
   .project-assistants .pa-chat-header { border:0;min-height:76px;padding:12px 16px;gap:10px; }
   .project-assistants .pa-chat-header h2 { font-size:15px; }
-  .project-assistants .pa-chat-header small { font-size:10px; }
+  .project-assistants .pa-chat-header small { font-size:13px; }
   .project-assistants .pa-chat-scroll { padding:12px 20px 24px; }
   .project-assistants .pa-message p { font-size:15px;line-height:1.8; }
   .project-assistants .pa-message.pa-mine { max-width:85%;padding:12px 16px; }
@@ -311,6 +313,6 @@
 
 /* Bots gather under the Project they work in. */
 .project-assistants .pa-project-group + .pa-project-group { margin-top:10px; }
-.project-assistants .pa-project-heading { display:flex; align-items:center; gap:6px; margin:0; padding:10px 4px 4px; font-size:12px; font-weight:600; color:var(--pa-dim); }
+.project-assistants .pa-project-heading { display:flex; align-items:center; gap:6px; margin:0; padding:10px 4px 4px; font-size:13px; font-weight:600; color:var(--pa-dim); }
 .project-assistants .pa-project-heading span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .project-assistants .pa-project-heading small { margin-left:auto; font-weight:400; font-size:11px; }
