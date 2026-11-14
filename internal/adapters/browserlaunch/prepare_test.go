@@ -57,11 +57,39 @@ func TestPrepareKeepsAnExistingPayloadAndReturnsItsRealDirectory(t *testing.T) {
 	if err = os.WriteFile(file, []byte("preserve unexpected bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = PrepareUserChrome(dir); err == nil {
-		t.Fatal("modified payload reported ready")
+	// The stable folder is Clawdline's own: a changed copy is replaced by
+	// this build's files, and the changed one is kept once beside it.
+	again, err := PrepareUserChrome(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Directory != got.Directory || again.ExtensionID != got.ExtensionID {
+		t.Fatalf("the stable folder moved: %+v then %+v", got, again)
 	}
 	data, _ := os.ReadFile(file)
-	if string(data) != "preserve unexpected bytes" {
-		t.Fatal("modified files overwritten")
+	if string(data) == "preserve unexpected bytes" {
+		t.Fatal("a changed stable folder was reported ready")
+	}
+	kept, _ := os.ReadFile(filepath.Join(previousDir(dir), "worker.js"))
+	if string(kept) != "preserve unexpected bytes" {
+		t.Fatal("the replaced copy was not kept")
+	}
+}
+
+func TestTheStableFolderCarriesItsMarkerAndVersion(t *testing.T) {
+	dir := t.TempDir()
+	changed, err := WriteStableExtension(dir)
+	if err != nil || !changed {
+		t.Fatalf("first write: changed=%v err=%v", changed, err)
+	}
+	marker, err := os.ReadFile(filepath.Join(StableExtensionDir(dir), FolderMarker))
+	if err != nil || !strings.Contains(string(marker), `"stable":true`) || !strings.Contains(string(marker), EmbeddedVersion()) {
+		t.Fatalf("marker %s %v", marker, err)
+	}
+	if EmbeddedVersion() == "" {
+		t.Fatal("the build's extension version is unknown")
+	}
+	if changed, err := WriteStableExtension(dir); err != nil || changed {
+		t.Fatalf("a current folder was rewritten: changed=%v err=%v", changed, err)
 	}
 }

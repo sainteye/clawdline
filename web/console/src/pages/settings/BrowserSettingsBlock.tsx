@@ -247,7 +247,7 @@ export function BrowserSettingsBlock({ shown }: { shown: boolean }) {
   return <div className="block settings-workflow settings-browser" id="settings-browser" aria-busy={busy !== null}>
     <b>{nextWord("browserSettingsTitle")}</b>
     <p className="say">{nextWord("browserSettingsIntro")}</p>
-    <BrowserPolicyRows policy={policy} profiles={status?.profiles} busy={busy !== null} supported={!!settings?.browser_policy} onChange={value => void savePolicy(value)} />
+    <BrowserPolicyRows policy={policy} profiles={status?.profiles} wanted={status?.extension_version} busy={busy !== null} supported={!!settings?.browser_policy} onChange={value => void savePolicy(value)} />
 
     {switches.map(({ key, title, help }) => {
       const id = "browser-setting-" + key

@@ -112,10 +112,14 @@ type Activity struct {
 
 // HostInfo is what the host says about itself when it polls.
 type HostInfo struct {
-	Mode     string `json:"mode,omitempty"`
-	Version  string `json:"version"`
-	Browser  string `json:"browser,omitempty"`
-	Profile  string `json:"profile,omitempty"`
+	Mode    string `json:"mode,omitempty"`
+	Version string `json:"version"`
+	Browser string `json:"browser,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	// Folder is "stable" when Chrome loaded the stable extension folder,
+	// which picks up new releases at Chrome's next start, or "revision" for
+	// an older one-off folder (extension 0.4.0 or later says which).
+	Folder   string `json:"folder,omitempty"`
 	LastPoll int64  `json:"last_poll"`
 }
 

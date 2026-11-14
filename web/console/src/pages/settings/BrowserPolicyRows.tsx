@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
 import { nextWord, type NextWord } from "../../next-strings.js"
 import { openBrowserSetup } from "../../session/BrowserSetup.js"
-import { extensionCurrent } from "../../session/browser-extension.js"
 import type { BrowserMode, BrowserPolicy, BrowserProfileReadiness } from "./api.js"
 import { Switch } from "./Switch.js"
 
@@ -29,8 +28,10 @@ export function placeBrowser(order: readonly BrowserMode[], browser: BrowserMode
  * move a row one place, so no arrow buttons are drawn. Only a browser that is
  * not connected offers its setup.
  */
-export function BrowserPolicyRows({ policy, profiles, busy, supported, onChange }: {
+export function BrowserPolicyRows({ policy, profiles, wanted, busy, supported, onChange }: {
   policy: BrowserPolicy
+  /** The extension version this build carries (status `extension_version`). */
+  wanted?: string
   profiles?: Partial<Record<BrowserMode, BrowserProfileReadiness>>
   busy: boolean
   supported: boolean
@@ -102,9 +103,13 @@ export function BrowserPolicyRows({ policy, profiles, busy, supported, onChange 
         const title = nextWord(TITLES[browser])
         const automatic = policy.automatic[browser]
         const ready = browser === "native" || profiles?.[browser]?.ready === true
-        // A connected extension older than the console needs is updated
-        // from its setup guide; it does not update itself.
-        const outdated = browser !== "native" && ready && !extensionCurrent(profiles?.[browser]?.host?.version)
+        // A connected Chrome running another release than this build carries.
+        // The usual Chrome on the stable folder picks it up at its next start
+        // (or from the reload arrow now); on an older one-off folder it needs
+        // the one-time move; the test Chrome relaunches itself when idle.
+        const host = profiles?.[browser]?.host
+        const behind = browser !== "native" && ready && !!wanted && host?.version !== wanted
+        const update: NextWord | null = !behind ? null : browser === "isolated" ? "browserPolicyIsolatedPending" : host?.folder === "stable" ? "browserPolicyApply" : "browserPolicyMove"
         const id = "browser-policy-" + browser
         const offset = shift(index)
         return <li key={browser} data-browser={browser} data-dragging={drag?.browser === browser ? "true" : undefined}
@@ -118,8 +123,10 @@ export function BrowserPolicyRows({ policy, profiles, busy, supported, onChange 
           </button>
           <div className="browser-policy-copy">
             <strong id={id + "-title"}>{title}</strong>
-            {outdated
-              ? <button type="button" className="browser-policy-setup-link" onClick={() => openBrowserSetup(browser as "isolated" | "user_chrome")}>{nextWord("browserPolicyUpdate")}</button>
+            {update === "browserPolicyIsolatedPending"
+              ? <span className="browser-policy-state" role="status">{nextWord(update)}</span>
+              : update
+              ? <button type="button" className="browser-policy-setup-link" onClick={() => openBrowserSetup("user_chrome")}>{nextWord(update)}</button>
               : ready
               ? <span className={browser === "native" ? "browser-policy-state" : "browser-policy-ready"} role="status">{nextWord(browser === "native" ? "browserPolicyNativeReady" : "browserPolicyReady")}</span>
               : <button type="button" className="browser-policy-setup-link" onClick={() => openBrowserSetup(browser as "isolated" | "user_chrome")}>{nextWord("browserPolicyGoSetup")}</button>}

@@ -388,7 +388,7 @@ export function writeWorkflowSettings(change: Partial<WorkflowSettingsRequest>, 
 /** The Browser block's two machine switches (`/v1/browser/settings`, chrome-settings over Cloud). */
 export type BrowserMode = "native" | "user_chrome" | "isolated"
 export type BrowserPolicy = { order: BrowserMode[]; automatic: Record<BrowserMode, boolean> }
-export type BrowserProfileReadiness = { ready: boolean; connected: boolean; state_error?: boolean; host?: { version?: string; browser?: string } }
+export type BrowserProfileReadiness = { ready: boolean; connected: boolean; state_error?: boolean; host?: { version?: string; browser?: string; folder?: string } }
 export type ChromeSettings = { browser_policy?: BrowserPolicy; browser_mode?: BrowserMode; browser_enabled: boolean; browser_notify_new_site: boolean }
 
 export function readChromeSettings(signal?: AbortSignal): Promise<ChromeSettings> {
@@ -404,6 +404,8 @@ export function writeChromeSettings(change: Partial<ChromeSettings>): Promise<Ch
 
 /** What `/v1/browser/status` says about the extension and the stop. */
 export type BrowserStatus = {
+  /** The extension version this build carries; Chrome runs it after its next start. */
+  extension_version?: string
   profiles?: Partial<Record<BrowserMode, BrowserProfileReadiness>>
   status: { connected: boolean; stopped: boolean; state_error?: boolean; host?: { version?: string; browser?: string } }
 }

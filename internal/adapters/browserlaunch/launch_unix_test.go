@@ -44,7 +44,7 @@ func TestLaunchStartsChromiumOnClawdlinesOwnProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the stand-in Chromium never ran: %v", err)
 	}
-	ext, _ := filepath.EvalSymlinks(ExtensionDir(dir))
+	ext, _ := filepath.EvalSymlinks(StableExtensionDir(dir))
 	for _, want := range []string{"--user-data-dir=" + ProfileDir(dir), "--load-extension=" + ext, "--disable-extensions-except=" + ext, "--use-mock-keychain", "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "about:blank"} {
 		if !strings.Contains(string(got), want+"\n") {
 			t.Errorf("argument %q missing from:\n%s", want, got)
@@ -60,7 +60,7 @@ func TestLaunchStartsChromiumOnClawdlinesOwnProfile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(ProfileDir(dir), "NativeMessagingHosts", HostName+".json")); err != nil {
 		t.Errorf("host manifest: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(ExtensionDir(dir), "manifest.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(StableExtensionDir(dir), "manifest.json")); err != nil {
 		t.Errorf("extension: %v", err)
 	}
 	if Running(dir) {

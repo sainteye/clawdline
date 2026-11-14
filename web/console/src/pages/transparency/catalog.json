@@ -3637,7 +3637,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "1e670ab828c498f072751572fbc627836e95ec677c3dc52df503a818d51450e3",
+    "cmd/clawdline/main.go": "186c9d988c802898a3aed86061c755d4d2ddab3c331d1f371727b9ffcf39dd29",
     "cmd/clawdline/project_assistants.go": "d4ded77207df9fa557b0095cfddd4447065a8678749777cbbb2e8163d7be13f0",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
@@ -3671,6 +3671,7 @@
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
+    "internal/adapters/planner/recap.go": "20242775791a8bbc1eb9a2d06f95294431148aafe2ad97bb5e26ffecf38d4be1",
     "internal/adapters/planner/voice_work.go": "479cc577226c6bb28ec84d56246d206618369a76c3613461013bc9efb1d906a6",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
     "internal/adapters/projectassistantacp/client.go": "6ae77ad5120b8cfdeeb2cae61114e4dc4bd0801ec85489bab1df1a39a0842064",
@@ -3746,6 +3747,7 @@
     "internal/transport/http/session_auto_title.go": "dfc0782eb60a8572f8e44734d3b15024ea059d0e3465722a13774cbdcce1f3c7",
     "internal/transport/http/session_handoff_title.go": "b7e73b436265c3ed427bc950e40d29b2cd494ee2590acb71b6722fcd59c641af",
     "internal/transport/http/session_naming_context.go": "73738b817bbb5addd5b241a6770194b3d04dc8d8fb966f5e129e641bff0ef8ef",
+    "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf",
     "internal/transport/http/session_rotation.go": "f2bf1a2bf22ab8dfcccf89e39112d519fe8bb3f8c864e070ae7db6bf495dfa4c",
     "internal/transport/http/start.go": "3926180db1479bd72a4739b9587e243a9766e4a610aafa1c08427d6865a315e3",
     "internal/transport/http/voice_polish.go": "b8c10d3898ee1d04ed815468011fb43d57efbc1f7488143982a8bc6f02f753cd",
@@ -3766,7 +3768,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "7b52b236e435c324dca8448f013040f5ac3578dd3d672e205dde444c2a4d6fe4",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "c9deae59374c7458faf32432433ba145f00c340c2495a9eb3d73bf42dc7616f9",
+    "web/console/src/next-strings.ts": "8e8855c6c97337c766daaacf7a7f007f9f5fdf3bad8cb7d69b5589d85591db53",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
@@ -3786,9 +3788,7 @@
     "web/console/src/voice-work/engine.ts": "db01c781fee0ad75878208f0c91968b218b8ceb80602569a4bad2b83f805d1cf",
     "web/console/src/voice-work/narrator.ts": "eea2881cca2bc2892879e652cf330ef2b5acc8aa473944bea83a6c4eed239a07",
     "web/console/src/voice-work/observations.ts": "a5ab815a1b6a7c4ef4d173effea5c16ff89a6f293b38a137d086553b22fa3b6c",
-    "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704",
-    "internal/adapters/planner/recap.go": "20242775791a8bbc1eb9a2d06f95294431148aafe2ad97bb5e26ffecf38d4be1",
-    "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf"
+    "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704"
   },
   "copyChecks": {
     "en": "b28104fbc4adbec67f9dc2c5e976a23b223ac53bffca4cec60c0afa2690875d0",

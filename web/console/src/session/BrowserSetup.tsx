@@ -128,36 +128,66 @@ export function BrowserSetup({ onClose, requestedMode }: { onClose: () => void; 
 }
 
 type PreparedExtension = { directory: string; platform: string; open_command?: string; connect_command: string; revision: string }
+type ChromeState = { version?: string; folder?: string; connected?: boolean; wanted?: string }
 
+/**
+ * Connect, move or update the person's usual Chrome with the steps exactly as
+ * they are (docs/browser.md, "Updating the extension"). Opening the guide
+ * prepares the stable folder; the steps follow what Chrome reports:
+ *
+ *   - not connected or on an older one-off folder: load the stable folder
+ *     (removing the old Clawdline first when there is one) and run the
+ *     connection command once;
+ *   - on the stable folder with an older version: press the reload arrow on
+ *     Clawdline in chrome://extensions, or just restart Chrome.
+ *
+ * The guide watches the status and says when Chrome runs the current release.
+ */
 function UserChromeGuide({ onClose }: { onClose: () => void }) {
   const [prepared, setPrepared] = useState<PreparedExtension | null>(null)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const prepare = async () => {
-    if (busy) return
-    setBusy(true); setError("")
-    try { setPrepared(await browserCall<PreparedExtension>("POST", "/v1/browser/prepare", {})) }
-    catch (error) { setError(said(error, "browserUserChromePrepareFailed")) }
-    finally { setBusy(false) }
-  }
+  const [chrome, setChrome] = useState<ChromeState | null>(null)
+  useEffect(() => {
+    let alive = true
+    browserCall<PreparedExtension>("POST", "/v1/browser/prepare", {}).then(
+      (value) => { if (alive) setPrepared(value) },
+      (e) => { if (alive) setError(said(e, "browserUserChromePrepareFailed")) })
+    const read = () => browserCall<{ extension_version?: string; profiles?: { user_chrome?: { connected?: boolean; host?: { version?: string; folder?: string } } } }>("GET", "/v1/browser/status").then(
+      (value) => {
+        if (!alive) return
+        const profile = value.profiles?.user_chrome
+        setChrome({ connected: profile?.connected, version: profile?.host?.version, folder: profile?.host?.folder, wanted: value.extension_version })
+      }, () => {})
+    void read()
+    const timer = window.setInterval(read, 2000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [])
+  const current = !!chrome?.connected && chrome.folder === "stable" && !!chrome.wanted && chrome.version === chrome.wanted
+  const onStable = !!chrome?.connected && chrome.folder === "stable"
+  const moving = !!chrome?.connected && !onStable
+  const mac = prepared?.platform === "darwin"
   return <div className="setup-body">
-    <h2>{nextWord("browserUserChromeTitle")}</h2>
-    <p>{nextWord("browserUserChromeIntro")}</p>
-    <ol>
-      <li><p>{nextWord("browserUserChromePrepare")}</p>
-        <button type="button" id="browser-prepare-extension" className="setup-secondary" disabled={busy} onClick={() => void prepare()}>{nextWord(busy ? "browserSettingsLoading" : "browserUserChromePrepareButton")}</button>
-        {error && <p className="setup-said" role="alert">{error}</p>}
-        {prepared && <div className="browser-prepared" role="status">
-          <p>{nextWord("browserUserChromeDirectory")}</p><CopyLine text={prepared.directory} />
-          {prepared.platform === "darwin" && prepared.open_command && <><p>{nextWord("browserUserChromeOpenFolder")}</p><CopyLine text={prepared.open_command} /><p>{nextWord("browserUserChromeFinderHint")}</p></>}
-        </div>}
-        <details><summary>{nextWord("browserUserChromeTerminal")}</summary><CopyLine text="clawdline browser prepare --mode user_chrome" /></details>
-      </li>
-      <li><p>{nextWord("browserUserChromeLoad")}</p></li>
-      <li><p>{nextWord("browserUserChromeConnect")}</p>{prepared && <CopyLine text={prepared.connect_command} />}</li>
-    </ol>
-    <p className="browser-setup-plain">{nextWord("browserUserChromeUpdates")}</p>
-    <div className="setup-actions"><button type="button" className="setup-primary" onClick={onClose}>{nextWord("browserSetupClose")}</button></div>
+    <h2>{nextWord(current ? "browserGuideCurrentTitle" : onStable ? "browserGuideApplyTitle" : moving ? "browserGuideMoveTitle" : "browserUserChromeTitle")}</h2>
+    {current ? <p className="browser-guide-done" role="status">{nextWord("browserGuideCurrent", { version: chrome?.version ?? "" })}</p> : onStable ? <>
+      <p>{nextWord("browserGuideApplyIntro")}</p>
+      <ol className="browser-guide-steps">
+        <li><p>{nextWord("browserGuideOpenExtensions")}</p><CopyLine text="chrome://extensions" /></li>
+        <li><p>{nextWord("browserGuideReloadArrow")}</p></li>
+      </ol>
+    </> : <>
+      <p>{nextWord(moving ? "browserGuideMoveIntro" : "browserUserChromeIntro")}</p>
+      <ol className="browser-guide-steps">
+        <li><p>{nextWord("browserGuideOpenExtensions")}</p><CopyLine text="chrome://extensions" /></li>
+        <li><p>{nextWord("browserGuideDeveloperMode")}</p></li>
+        {moving && <li><p>{nextWord("browserGuideRemoveOld")}</p></li>}
+        <li><p>{nextWord(mac ? "browserGuideLoadMac" : "browserGuideLoad")}</p>
+          {prepared ? <CopyLine text={prepared.directory} /> : error ? <p className="setup-said" role="alert">{error}</p> : <p>{nextWord("browserSettingsLoading")}</p>}</li>
+        <li><p>{nextWord("browserGuideConnectOnce")}</p>{prepared && <CopyLine text={prepared.connect_command} />}</li>
+      </ol>
+      <p className="browser-guide-wait" role="status">{nextWord("browserGuideWaiting")}</p>
+    </>}
+    <p className="browser-setup-plain">{nextWord("browserGuideAfter")}</p>
+    <div className="setup-actions"><button type="button" className="setup-primary" onClick={onClose}>{nextWord(current ? "browserGuideDone" : "browserSetupClose")}</button></div>
   </div>
 }
 

@@ -42,7 +42,7 @@ func TestPreparingUserChromeNeverInstallsItsNativeHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "chrome-extension-") {
+	if len(entries) != 1 || entries[0].Name() != "chrome-extension" {
 		t.Fatalf("prepare wrote outside its payload: %v", entries)
 	}
 }
