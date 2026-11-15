@@ -175,7 +175,7 @@ the instruction inventory and its human copy do not gain another injection.
 
 
 The Session tool library adds a conditional user-message attachment, not a
-startup default. The person chooses a repository and Skill, reviews installation
+startup default. The person chooses a repository and tool, reviews setup
 scope, prepares the visible draft, then sends it through the existing composer.
 The instructions ask the receiving agent to inspect existing tools, pin and read
 the source, perform permitted reversible setup, verify availability and execute
@@ -568,3 +568,12 @@ Bot context explanation now follows the agent's four permission choices and
 revocable Claude standing rules. Source receipts cover the actual output
 producers and viewer; they do not establish a deployed website or a live
 provider result.
+
+
+Desktop tool preparation identifies Recordly as an independent application with
+no Skill entry. Both language cards describe host and permission checks, local
+recording/import and file export, and the difference between task/Project file
+locations and machine-wide installation. The prompt grants neither OS permissions
+nor cloud uploads. The reviewed excerpt includes the conditional desktop path;
+listing a source does not establish installation or a successful recording.
+The public website snapshot must follow this reviewed product revision.
