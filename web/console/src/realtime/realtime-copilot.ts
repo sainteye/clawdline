@@ -1246,10 +1246,18 @@ export class RealtimeCopilotClient {
     const dc = this.dc, attempt = this.attempt, revision = ++this.liveFocusRevision
     const current = () => this.dc === dc && attempt === this.attempt && revision === this.liveFocusRevision && dc?.readyState === 'open'
     const deps = this.toolDeps()
+    const focus = this.focus
+    // A switch is journaled whatever follows, so a call that says nothing
+    // about the new Session shows why (2026-11-16: two switches left no trace).
+    if (switched) this.journal('tool', 'switch_summary', { args: JSON.stringify({ session_id: focus }), answer: '' })
     const read = await readRows(deps).catch(() => ({ error: 'unreadable' }))
-    if (!current() || !dc) return
-    const row = 'rows' in read ? read.rows.find((r) => r.id === this.focus) : undefined
-    if (!row) { if (!switched) dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING))); return }
+    if (!current() || !dc) { if (switched) this.journal('tool', 'switch_summary', { args: JSON.stringify({ session_id: focus }), outcome: 'superseded', answer: '' }); return }
+    const row = 'rows' in read ? read.rows.find((r) => r.id === focus) : undefined
+    if (!row) {
+      if (switched) this.journal('tool', 'switch_summary', { args: JSON.stringify({ session_id: focus }), outcome: 'failed', answer: 'rows' in read ? 'not on the Session list' : 'the Session list could not be read' })
+      else dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING)))
+      return
+    }
     const now = nowSeconds()
     const kept = row.recap?.text || row.delivered || ''
     const written = row.recap?.text ? String(recapFields(row.recap, now).recap_written ?? '') : ''

@@ -756,6 +756,45 @@ test('the sheet\'s toggle places a ringing or live call again on the other voice
   assert.deepEqual(events, [])
 })
 
+test('a GPT-Live call follows the Session opened on screen with its summary', async (t) => {
+  globalThis.document = { documentElement: { lang: 'zh-Hant' } }
+  const old = globalThis.location
+  globalThis.location = { hash: '#machine=mac-1&session=%258&generation=0123456789abcdef0123456789abcdef' }
+  const now = Math.floor(Date.now() / 1000)
+  const sent = []
+  const c = new RealtimeCopilotClient()
+  t.after(() => { clearInterval(c.liveTicker); c.dc.readyState = 'closed'; globalThis.location = old })
+  c.live = true
+  c.attempt = 1
+  c.liveQuietMs = 0
+  c.livePollMs = 1
+  c.personSpoke = true
+  c.focus = '%7'
+  c.journalCall = 'call-test'
+  c.state = { ...c.state, status: 'connected', speakingState: 'idle' }
+  c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
+  c.call = { memory: '', snapshot: '', options: {} }
+  c.snapshot = Promise.resolve('')
+  c.memory = []
+  c.addLog = () => {}
+  c.recapMode = 'background'
+  const other = { ...row, id: '%8', label: 'Keyboard fix', recap: { text: 'The keyboard fix is being written.', at: now - 60, current: false } }
+  c.toolDeps = () => ({ ...c.constructor.prototype.toolDeps.call(c), sleep: async () => {}, tasks: undefined, fleet: undefined,
+    fetch: async (path) => path === '/v1/sessions' ? Response.json({ sessions: [row, other] }) : Response.json({}) })
+  await c.onScreenChange()
+  for (let i = 0; i < 40; i++) await tick()
+  assert.equal(c.focus, '%8')
+  const notes = sent.filter(e => e.type === 'session.commentary.append').map(e => e.content)
+  assert.equal(notes.length, 1, 'the Session opened on screen is told from its summary without being asked')
+  assert.match(notes[0], /switched the call to Session "Keyboard fix".*The keyboard fix is being written/)
+  assert.ok(c.journalLines.some(l => l.text === 'switch_summary' && l.tool.args.includes('%8')), 'every switch leaves a trace in the call journal')
+  // A Session the list does not have is journaled as such, not dropped silently.
+  globalThis.location = { hash: '#machine=mac-1&session=%259&generation=0123456789abcdef0123456789abcdef' }
+  c.focus = '%9'
+  await c.openFromOrigin(true)
+  assert.ok(c.journalLines.some(l => l.text === 'switch_summary' && l.tool.outcome === 'failed' && /not on the Session list/.test(l.tool.answer)))
+})
+
 test('a GPT-Live call switched to another Session says its summary at once and goes on with the latest one', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
