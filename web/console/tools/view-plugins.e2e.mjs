@@ -17,9 +17,11 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  let listeners=new Set(),remoteConnected=true,active=true,navigations=[];window.fixture={rows,navigations,async disableList(){const row=(await installedPackages()).find(r=>r.id==="com.clawdline.session-list");await enablePackage(row,false)},change(){for(const fn of listeners)fn()},disconnect(){remoteConnected=false;this.change()},revoke(){active=false;window.renderHost()}};
  function Host(){const [,render]=useState(0);window.renderHost=()=>render(n=>n+1);const api=useViewPlugins(active?[{key:"studio",label:"Studio",async read(){return{sessions:[...rows],connected:true}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>navigations.push("studio:"+key)}},{key:"field",label:"Field",async read(){return{sessions:[{...rows[0],title:"Remote Session"}],connected:remoteConnected}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>navigations.push("field:"+key)}}]:[],document.documentElement.lang);return <><button id="outside">Original interface</button><button id="manager" onClick={e=>api.openManager(e.currentTarget)}>{document.documentElement.lang === "en" ? "View plugins" : "視圖擴充"}</button><div id="dock">{api.dock}{api.entry}</div>{api.content}</>};createRoot(document.getElementById("root")).render(<Host/>);
  `,resolveDir:fileURLToPath(new URL("../src",import.meta.url)),loader:"tsx"},bundle:true,write:false,outfile:"host.js",format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
+ const oldDeadpan=await readFile(new URL("../src/view-plugins/testdata/legacy-session-absurd.zip",import.meta.url))
  let forbiddenRequests=0
  const files=new Map(result.outputFiles.map(f=>["/"+f.path.split("/").at(-1),f.text]))
  const server=createServer(async(req,res)=>{try{const u=new URL(req.url,"http://test");let body;if(u.pathname==="/")body=`<!doctype html><html lang="${u.searchParams.get("lang")||"en"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script>`;
+ else if(u.pathname==="/view-plugins/session-absurd.zip" && req.headers["x-fixture-previous"]==="1"){res.setHeader("Cache-Control","public, max-age=14400");body=oldDeadpan}
  else if(/^\/view-plugins\/(session-galaxy|session-list|session-pop-art|session-absurd)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
  if(u.pathname.startsWith("/v1/"))forbiddenRequests++
  if(body===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",u.pathname.endsWith(".js")?"text/javascript":u.pathname.endsWith(".css")?"text/css":u.pathname.endsWith(".zip")?"application/zip":"text/html");res.end(body)}catch(e){res.writeHead(500);res.end(String(e))}})
@@ -188,10 +190,15 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
  await frame.locator(".panel").first().waitFor();assert.equal(await frame.locator(".panel").count(),4,"The old installed Pop still opens without replacing its archive")
  await dismiss()
+ // Warm the browser HTTP cache with the real previous ZIP, as Pages does for four hours.
+ const oldBytes=await page.evaluate(async()=>{const answer=await fetch("/view-plugins/session-absurd.zip",{cache:"reload",headers:{"X-Fixture-Previous":"1"}});return(await answer.arrayBuffer()).byteLength})
+ assert.equal(oldBytes,oldDeadpan.byteLength)
+ // The manager must bypass that cache and review the newly published painting revision.
  // Deadpan is a fourth independent package installed through the same review.
  await manager()
  await page.getByRole("button",{name:zh?"安裝冷面劇場":"Install Deadpan",exact:true}).click()
  await page.locator(".vp-review").getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true}).waitFor()
+ assert.equal(await page.locator(".vp-review").getByText("com.clawdline.session-absurd · 0.2.0",{exact:true}).count(),1,"A cached previous ZIP must not replace the current published painting revision")
  assert.equal(await page.locator('input[type=file]').count(),1,"Only the manager's own import input exists; the example opens no chooser")
  await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
  const deadpan=page.locator(".vp-installed").filter({has:page.getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true})})

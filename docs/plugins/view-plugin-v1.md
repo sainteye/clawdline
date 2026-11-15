@@ -81,6 +81,10 @@ Import a replacement ZIP through the manager to test it without rebuilding the h
 
 The supplied examples also have install buttons in **Explore views**. These fetch
 their static ZIP and enter the same validation and package review as file import.
+Curated install buttons fetch their ZIP with `cache: "no-store"`, so a previously cached
+fixed download URL cannot silently install an older published revision. The standard package
+review still names the exact downloaded identity and version before registry writes.
+
 The Session Pop and Session Deadpan buttons need no native file chooser. The package remains a separate
 archive and uses the existing v1 runtime; community ZIP import stays independent
 of this curated example list.

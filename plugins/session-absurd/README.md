@@ -40,7 +40,8 @@ is 241755 bytes, below the existing 262144-byte bound. Neither the frame nor the
 external image request. Authoring files are not extra ZIP entries. Repacking is deterministic.
 
 Sidebar → View plugins → Explore views → Install Deadpan uses the standard review/install flow;
-ZIP import, replacement and rollback retain the shared registry behavior. Installation remains
+The curated download bypasses browser HTTP caching, so a previous four-hour cached ZIP cannot
+replace the currently published revision. ZIP import, replacement and rollback retain the shared registry behavior. Installation remains
 browser-local. Host API, protocol, two-file archive and package ID are unchanged.
 
 ## Artwork direction
