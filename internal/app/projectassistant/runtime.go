@@ -46,6 +46,11 @@ type Engine struct {
 	changed    chan struct{}
 }
 
+type routineCompletion struct {
+	turn pa.Turn
+	text string
+}
+
 type runtimeActor struct {
 	mu         sync.Mutex
 	key        pa.BotKey
@@ -53,10 +58,11 @@ type runtimeActor struct {
 	users      int // protected by Engine.mu; includes the worker reference
 	lifetime   context.Context
 	stop       context.CancelFunc
-	slot       bool  // Engine.mu: includes setup and unknown cleanup
-	retained   bool  // Engine.mu: cleanup owner and process slot survive unknown cleanup
-	cleanupErr error // Engine.mu
-	opening    bool  // actor.mu
+	slot       bool               // Engine.mu: includes setup and unknown cleanup
+	retained   bool               // Engine.mu: cleanup owner and process slot survive unknown cleanup
+	cleanupErr error              // Engine.mu
+	completion *routineCompletion // actor.mu; persisted before releasing a retained owner
+	opening    bool               // actor.mu
 	working    bool
 	cancel     context.CancelFunc
 	session    ProviderSession
@@ -513,7 +519,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				return nil, err
 			}
 			for _, m := range export.Messages {
-				if m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
+				if t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
 					resumable = append(resumable, t)
 				}
 			}
@@ -575,7 +581,20 @@ func (r *Engine) work(a *runtimeActor) {
 			a.mu.Unlock()
 			return
 		}
-		ctx, cancel := context.WithTimeout(a.lifetime, r.o.Limits.PromptTimeout)
+		timeout := r.o.Limits.PromptTimeout
+		if turn.RoutineRunID != "" {
+			x, e := r.o.Repository.Export(context.Background(), a.key)
+			if e != nil {
+				a.working = false
+				a.mu.Unlock()
+				return
+			}
+			d, _, e := routineForTurn(x, *turn)
+			if e == nil {
+				timeout = time.Duration(d.TimeoutSeconds) * time.Second
+			}
+		}
+		ctx, cancel := context.WithTimeout(a.lifetime, timeout)
 		a.cancel = cancel
 		a.turnID = turn.ID
 		a.stopped = false
@@ -603,7 +622,9 @@ func (r *Engine) work(a *runtimeActor) {
 		a.mu.Lock()
 		a.cancel = nil
 		a.turnID = ""
-		if err != nil {
+		// Only an already completed routine awaiting its terminal commit keeps
+		// that success in memory. Unknown Open/Close still persists TurnUnknown.
+		if err != nil && a.completion == nil {
 			latest, e := r.o.Repository.Turn(context.Background(), a.key, turn.ID)
 			if e == nil && (latest.State == pa.TurnRunning || latest.State == pa.TurnWaitingPermission || latest.State == pa.TurnQueued) {
 				state := pa.TurnUnknown
@@ -718,10 +739,34 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		a.mu.Unlock()
 		return err
 	}
-	binding, err := r.o.Repository.Binding(ctx, a.key, c.BindingID)
+	mainID := c.MainBindingID
+	if mainID == "" {
+		mainID = c.BindingID
+	}
+	binding, err := r.o.Repository.Binding(ctx, a.key, mainID)
 	if err != nil {
 		a.mu.Unlock()
 		return err
+	}
+	var routineRun *pa.RoutineRun
+	if t.RoutineRunID != "" {
+		if !caps.Resume {
+			a.mu.Unlock()
+			return runtimeFailure(pa.ResumeUnsupported, "routine_main_session")
+		}
+		d, run, e := routineForTurn(export, t)
+		if e != nil {
+			a.mu.Unlock()
+			return e
+		}
+		if run.State != pa.TurnQueued {
+			a.mu.Unlock()
+			return runtimeFailure(pa.OutcomeUnknown, "routine_run")
+		}
+		input.Text = d.Instruction
+		run.Instruction = d.Instruction
+		run.TimeoutSeconds = d.TimeoutSeconds
+		routineRun = &run
 	}
 	decision, err := pa.DecideResume(binding, current, snapshot, caps)
 	if err != nil {
@@ -730,7 +775,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	}
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
-	resume := decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	resume := t.RoutineRunID == "" && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
 	// Preparation can block on capability, memory or history reads. Authority
 	// checked before those reads does not authorize a later execution start.
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
@@ -745,8 +790,17 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		a.mu.Unlock()
 		return err
 	}
+	if c.MainBindingID == "" {
+		c.MainBindingID = c.BindingID
+	}
 	c.Generation++
 	c.BindingID = r.o.ID()
+	if t.RoutineRunID != "" {
+		binding.SessionSlot = "routine-" + t.RoutineRunID
+	} else {
+		binding.SessionSlot = ""
+		c.MainBindingID = c.BindingID
+	}
 	t.Fence = currentFence(bot, c)
 	binding.Fence = t.Fence
 	binding.Revoked = false
@@ -766,7 +820,11 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	c.ActiveTurnID = t.ID
 	c.MemoryRevision = current.Revision
 	cmd := r.command(a.key, pa.SendOperation, "runtime-start-"+t.ID, t)
-	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Conversation: &c, Binding: &binding, Turn: &t, Receipt: pa.Receipt{State: pa.EffectExecuting, ResourceID: t.ID}, Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}})
+	if routineRun != nil {
+		routineRun.State = pa.TurnRunning
+		routineRun.BindingID = binding.Fence.BindingID
+	}
+	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Conversation: &c, Binding: &binding, Turn: &t, RoutineRun: routineRun, Receipt: pa.Receipt{State: pa.EffectExecuting, ResourceID: t.ID}, Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}})
 	a.mu.Unlock()
 	if err != nil {
 		return err
@@ -775,7 +833,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	a.opening = true
 	a.mu.Unlock()
 	session, err := r.o.Provider.Open(ctx, OpenRequest{Bot: bot, Binding: binding, Directory: resolution.Directory, Resume: resume}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
-	if session == nil && resume && pa.Code(err) == pa.ResumeUnsupported {
+	if session == nil && resume && t.RoutineRunID == "" && pa.Code(err) == pa.ResumeUnsupported {
 		// As in Codync, a native session that cannot be loaded is replaced by
 		// a new one that receives the filtered history and memory; nothing
 		// was sent to the old one, so nothing is repeated.
@@ -844,7 +902,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 			return err
 		}
 		var handoff *SessionHandoff
-		if !resume {
+		if !resume && t.RoutineRunID == "" {
 			var err error
 			handoff, err = newSessionHandoff(export, t, filtered)
 			if err != nil {
@@ -884,7 +942,12 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return err
 	}
-	return r.finishLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil)
+	err = r.finishLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil)
+	if err != nil && t.RoutineRunID != "" {
+		a.completion = &routineCompletion{turn: t, text: result.FinalText}
+		r.retain(a, err)
+	}
+	return err
 }
 
 // Historical messages do not carry complete memory provenance. After a forget
@@ -1041,7 +1104,30 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 		effect = pa.EffectFailed
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-finish-"+t.ID, t)
-	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Conversation: &c, Turn: &t, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events})
+	var run *pa.RoutineRun
+	if t.RoutineRunID != "" {
+		if export.Bot.Key == (pa.BotKey{}) {
+			export, err = r.o.Repository.Export(ctx, a.key)
+			if err != nil {
+				return err
+			}
+		}
+		for _, v := range export.RoutineRuns {
+			if v.ID == t.RoutineRunID {
+				copy := v
+				copy.State = state
+				at := r.o.Clock()
+				copy.FinishedAt = &at
+				copy.Published = state != pa.TurnUnknown
+				run = &copy
+				break
+			}
+		}
+		if run == nil {
+			return runtimeFailure(pa.NotFound, "routine_run")
+		}
+	}
+	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events})
 	return err
 }
 
@@ -1452,7 +1538,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	t := pending[0]
-	if t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+	if t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
 		return nil
 	}
 	x, err := r.o.Repository.Export(ctx, key)
@@ -1460,7 +1546,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	for _, m := range x.Messages {
-		if m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume {
+		if t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume {
 			return r.resumeInterrupted(ctx, key, t)
 		}
 	}

@@ -1776,6 +1776,166 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.routine_definitions",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "health",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineDefinitions"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_finished_runs",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineFinishedRuns"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_instruction_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineInstructionBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_interval_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 31536000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineIntervalSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_name_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineNameBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutinePendingPerDefinition"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_tick_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineTickMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_timeout_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineTimeoutSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.rpc_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

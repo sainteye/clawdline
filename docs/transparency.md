@@ -577,3 +577,7 @@ locations and machine-wide installation. The prompt grants neither OS permission
 nor cloud uploads. The reviewed excerpt includes the conditional desktop path;
 listing a source does not establish installation or a successful recording.
 The public website snapshot must follow this reviewed product revision.
+
+## Elapsed interval Bot routines in development builds
+
+The conditional `persistent-bot-routines` entry records a new timer-triggered prompt source. The owned MCP endpoint can save, list, pause, delete or explicitly test an elapsed interval for its current Bot. Due work uses the existing actor but a fresh isolated native history slot, and the next ordinary chat loads its remembered main history with a new fence. Enabling an interval authorizes future model turns using that native agent account; saving is not an immediate test. Calendar/webhook triggers and automatic replay remain unsupported in this slice. Interrupted routines are excluded from the ordinary chat restart notice. Both language explanations distinguish scripted A/B/A proof from installed-provider qualification, and state that current Codex without resume refuses routines. Public Release Bots remain hidden. The website still requires its own synchronized snapshot and deployment acceptance after this source lands.

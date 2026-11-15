@@ -41,6 +41,10 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 		Policy, Conversation    string
 		Forgotten, Instructions int64
 	}{nativeHistoryPolicy, f.ConversationID, q.Binding.ForgottenThrough, q.Binding.InstructionRevision})
+	// Keep the byte identity of legacy main histories unchanged.
+	if q.Binding.SessionSlot != "" {
+		epoch = append(epoch, []byte("\x00"+q.Binding.SessionSlot)...)
+	}
 	sum := sha256.Sum256(epoch)
 	identity := hex.EncodeToString(scopeSum[:]) + "/" + hex.EncodeToString(sum[:])
 	root := filepath.Join(state, "project-assistants", "native", filepath.FromSlash(identity))

@@ -430,6 +430,46 @@
     "Note": true
   },
   {
+    "Name": "bots.routine_definitions",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_finished_runs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_instruction_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_interval_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_name_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_pending",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_tick_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_timeout_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.rpc_ms",
     "Known": true,
     "Note": true

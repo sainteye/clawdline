@@ -382,6 +382,28 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 	// Idempotency IDs are explicit durable operation keys, independent of
 	// transport RPC IDs. HTTP/native SDK retries cannot invent a new effect.
 	switch name {
+	case "list_routines", "save_routine", "enable_routine", "delete_routine", "test_run_routine":
+		tools, ok := s.tools.(app.RoutineTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "routine_tools")
+		}
+		var q app.RoutineRequest
+		if mcpDecode(mcpEmpty(arguments), &q) != nil {
+			return nil, refusal(pa.Unsupported, "routine_interval_only")
+		}
+		switch name {
+		case "list_routines":
+			q.Action = "list"
+		case "save_routine":
+			q.Action = "save"
+		case "enable_routine":
+			q.Action = "enable"
+		case "delete_routine":
+			q.Action = "delete"
+		case "test_run_routine":
+			q.Action = "test"
+		}
+		return tools.Routines(ctx, q)
 	case "send_file", "publish_artifact":
 		var q struct {
 			ID       string `json:"idempotency_key"`
@@ -488,6 +510,11 @@ func mcpTools() []any {
 	}
 	text := func() any { return map[string]any{"type": "string", "minLength": 1} }
 	return []any{
+		tool("list_routines", "List this Bot's elapsed-interval routines. Calendar, once, cron, webhook and event schedules are unsupported.", map[string]any{}),
+		tool("save_routine", "Save an explicitly requested elapsed interval in seconds. Saving never executes the instruction. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "id": text(), "name": text(), "instruction": text(), "interval_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineIntervalSeconds}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineTimeoutSeconds}, "enabled": map[string]any{"type": "boolean"}}, "idempotency_key", "name", "instruction", "interval_seconds"),
+		tool("enable_routine", "Enable or pause this Bot's routine. A paused pending wake cannot send a prompt.", map[string]any{"idempotency_key": text(), "id": text(), "enabled": map[string]any{"type": "boolean"}}, "idempotency_key", "id", "enabled"),
+		tool("delete_routine", "Delete this Bot's routine and cancel its pending wake; an already running task may finish.", map[string]any{"idempotency_key": text(), "id": text()}, "idempotency_key", "id"),
+		tool("test_run_routine", "Explicitly enqueue one test run of an enabled routine. It runs in a separate session and returns its result to this chat.", map[string]any{"idempotency_key": text(), "id": text()}, "idempotency_key", "id"),
 		tool("send_file", "Explicitly share a regular file in your Project as an immutable chat snapshot (up to 100 MiB). Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "name": text()}, "idempotency_key", "path"),
 		tool("publish_artifact", "Publish self-contained HTML (inline CSS and JavaScript; up to 5 MiB). New artifacts need a title. To update one subject, reuse its artifact ID and publish the whole HTML. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "title": text(), "artifact": text()}, "idempotency_key", "path"),
 		tool("list_artifacts", "List your published HTML artifacts, newest first. Use the artifact ID to publish an updated whole snapshot.", map[string]any{}),

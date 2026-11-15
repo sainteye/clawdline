@@ -56,6 +56,7 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
+	routines  func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send      func(context.Context, string, string) error
 	dispatch  func(context.Context, string, string, []string) (pa.WorkLink, error)
 	status    func(context.Context, string) (pa.WorkLink, error)
@@ -63,6 +64,13 @@ type NativeWork struct {
 	edit      func(context.Context, string, app.MemoryEdit) error
 	output    func(context.Context, string, app.OutputRequest) (pa.Output, error)
 	artifacts func(context.Context) ([]app.ArtifactInfo, error)
+}
+
+func (w NativeWork) Routines(ctx context.Context, q app.RoutineRequest) (app.RoutineResult, error) {
+	if w.routines == nil {
+		return app.RoutineResult{}, failure(pa.Disabled, "routine_tools")
+	}
+	return w.routines(ctx, q)
 }
 
 func (w NativeWork) PublishOutput(ctx context.Context, id string, q app.OutputRequest) (pa.Output, error) {
@@ -296,6 +304,14 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return ctx, finish, nil
 	}
 	tools := NativeWork{}
+	tools.routines = func(ctx context.Context, request app.RoutineRequest) (app.RoutineResult, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return app.RoutineResult{}, e
+		}
+		defer cancel()
+		return r.Routine(ctx, q.Binding.Fence, turnID, request)
+	}
 	tools.output = func(ctx context.Context, id string, request app.OutputRequest) (pa.Output, error) {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {

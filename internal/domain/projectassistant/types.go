@@ -149,6 +149,7 @@ type EditBot struct {
 }
 
 type Conversation struct {
+	MainBindingID  string `json:"main_binding_id,omitempty"`
 	Key            BotKey `json:"key"`
 	ID             string `json:"id"`
 	Generation     int64  `json:"generation"`
@@ -182,6 +183,7 @@ type Fence struct {
 	Generation     int64        `json:"generation"`
 }
 type Turn struct {
+	RoutineRunID   string              `json:"routine_run_id,omitempty"`
 	ID             string              `json:"id"`
 	Fence          Fence               `json:"fence"`
 	MessageID      string              `json:"message_id"`
@@ -198,6 +200,7 @@ type Turn struct {
 }
 
 type ExecutionBinding struct {
+	SessionSlot         string `json:"session_slot,omitempty"`
 	Fence               Fence  `json:"fence"`
 	Agent               Agent  `json:"agent"`
 	NativeSessionID     string `json:"native_session_id"`

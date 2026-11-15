@@ -133,6 +133,10 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 	if err != nil {
 		return out, err
 	}
+	out.Routines, out.RoutineRuns, err = readRoutines(ctx, tx, key)
+	if err != nil {
+		return out, err
+	}
 	return out, tx.Commit()
 }
 
@@ -267,6 +271,16 @@ func (s *Store) Restore(ctx context.Context, in app.Export) error {
 	}
 	if err = persist(ctx, tx, a, 0); err != nil {
 		return err
+	}
+	for _, d := range in.Routines {
+		if err = applyRoutines(ctx, tx, a, app.Mutation{Routine: &d}); err != nil {
+			return err
+		}
+	}
+	for _, r := range in.RoutineRuns {
+		if err = applyRoutines(ctx, tx, a, app.Mutation{RoutineRun: &r}); err != nil {
+			return err
+		}
 	}
 	for _, e := range in.Events {
 		raw, e2 := json.Marshal(e)
