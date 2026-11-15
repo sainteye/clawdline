@@ -10,7 +10,7 @@ On the machine, open **Settings** → **Voice copilot** and paste an OpenAI API 
 sets the **Voice** (with **Listen** to hear it), the speaking speed, **Short answers**, **Waiting for
 you to finish**, **Prepare a briefing when a call starts**, and **Extra instructions**.
 
-Each call button first asks which voice system to use (**Call with GPT-Live** or **Call with Realtime API**) and dials only after you choose; the choice applies to that call. **Voice system** in Settings is the default for calls started any other way.
+A call dials at once on the **Voice system** chosen in Settings. While it rings or runs, the small **GPT-Live | Realtime API** switch at the top of the call places it again on the other system, about the same Session.
 
 **Voice system** chooses how a call talks. **Realtime API** (the default) takes turns and uses
 the model you pick. **GPT-Live** listens while it speaks, makes short listening sounds and stops

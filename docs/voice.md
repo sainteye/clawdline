@@ -406,7 +406,7 @@ are the same `runCopilotTool` a Realtime call runs.
   a GPT-Live call greets once (`session.commentary.append`) and tells the live model when the
   focus moves (`session.thinking.append`).
 
-**Choosing per call.** A call button (toolbar, Session menu, hold) opens the sheet with `choose(origin)`; the sheet asks GPT-Live or Realtime API and `startChosen(engine)` dials inside that tap, which iOS needs for the microphone. The settings' engine is only the default for other starts.
+**Switching per call.** A call button dials at once on the settings' engine, as before. While the call rings or runs, the sheet's header shows a `GPT-Live | Realtime API` toggle; pressing the other side calls `switchEngine(engine)`, which hangs up and places the call again on that system from the same Session, inside the tap iOS needs for the microphone. (A pick-before-dialing sheet shipped briefly on 2026-11-15 and was replaced at the person's request.)
 
 **Origin and cue.** At `session.started` a Live call resolves the Session it was placed from to the row the tools list (`fleet:<machine>:…` on every machine's list) and uses it as the focus, as a Realtime call's opening handover does; unresolved, every send was refused as "not the Session under discussion". Each backend tool call joins `pendingTools` while it runs, so the progress cue plays when it starts and every `PROGRESS_CUE_REPEAT_MS` until it answers.
 
