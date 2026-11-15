@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12224,
+  "englishKeys": 12226,
   "counts": {
-    "negation": 3295,
+    "negation": 3296,
     "state": 2038,
     "permission": 724,
     "deletion": 276,
     "uncertainty": 460
   },
-  "unionCount": 5302,
+  "unionCount": 5303,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -387,6 +387,7 @@
       "capacityRow.console.closed_session_receipts.full",
       "capacityRow.console.copilot_idle_fallback_seconds.full",
       "capacityRow.console.copilot_idle_fallback_seconds.what",
+      "capacityRow.console.copilot_kept_recap_seconds.full",
       "capacityRow.console.copilot_list_transcript_reads.full",
       "capacityRow.console.copilot_list_transcript_reads.what",
       "capacityRow.console.copilot_recent_idle_seconds.full",
@@ -7430,6 +7431,7 @@
     "capacityRow.console.community_share_fetch_seconds.what",
     "capacityRow.console.copilot_idle_fallback_seconds.full",
     "capacityRow.console.copilot_idle_fallback_seconds.what",
+    "capacityRow.console.copilot_kept_recap_seconds.full",
     "capacityRow.console.copilot_list_transcript_reads.full",
     "capacityRow.console.copilot_list_transcript_reads.what",
     "capacityRow.console.copilot_recap_pages.what",

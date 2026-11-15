@@ -87,7 +87,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     }
     return structuredClone(response)
   }
-  const api:SourceClient={machineID,authorizationRevision:`${machineID}-grant-1`,
+  const api:SourceClient={machineID,machineName:machineID,authorizationRevision:`${machineID}-grant-1`,
     async status(signal){log.push({method:"status",machine:machineID,request:null});if(signal.aborted)throw new DOMException("Aborted","AbortError");const answer={contract_version:contractVersion,sources:[status()]};if(statusGate)await statusGate;return answer},
     async projects(r,signal){
       check("projects",r,signal)

@@ -1712,6 +1712,26 @@ test("on demand, a summary asks the machine to fork a stale recap and speaks the
   assert.equal(out.recap_written, undefined)
 })
 
+test("in the background, a recent recap from the list is read at once with its age, and an old one is written fresh", async () => {
+  // 2026-11-15: four working Sessions took 20-22 s, each waiting for a new fork.
+  const recent = [{ ...RECAP_ROWS[1], recap: { ...RECAP_ROWS[1].recap, at: 2_000_000 - 600 } }]
+  const kept = recapMachine(recent, "background", () => { throw new Error("a recent background recap must not be rewritten") })
+  const out = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Bots tower design" }), kept.deps)).output)
+  assert.equal(out.recap, RECAP_ROWS[1].recap.text)
+  assert.equal(out.recap_written, "10 分鐘前", "its age goes with it")
+  assert.equal(kept.calls.filter((c) => c.path === "/v1/voice/copilot-recap").length, 0)
+  const group = JSON.parse((await runCopilotTool("get_sessions_summary", JSON.stringify({ which: "working" }), kept.deps)).output)
+  assert.equal(group.sessions[0].recap, RECAP_ROWS[1].recap.text)
+  assert.equal(kept.calls.filter((c) => c.path === "/v1/voice/copilot-recap").length, 0, "a group report reads the kept recaps too")
+
+  // An hour old: the machine writes a new one.
+  const bodies: Record<string, unknown>[] = []
+  const old = recapMachine(RECAP_ROWS, "background", (body) => { bodies.push(body); return Response.json({ session_id: body.session, recap: "Fresh.", at: 2_000_000, state: "working", current: true }) })
+  const fresh = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Bots tower design" }), old.deps)).output)
+  assert.deepEqual(bodies, [{ session: "%4", fork: true }])
+  assert.equal(fresh.recap, "Fresh.")
+})
+
 test("a current recap is spoken as it is, without asking the machine again", async () => {
   const { deps, calls } = recapMachine(RECAP_ROWS, "on_demand", () => { throw new Error("must not fork") })
   const out = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Keyboard jump fix" }), deps)).output)

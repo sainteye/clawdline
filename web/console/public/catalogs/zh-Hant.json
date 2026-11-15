@@ -12062,6 +12062,8 @@
   "next.browserUserChromeTerminal": "也可以從 Terminal 準備",
   "next.browserUserChromeUpdates": "程式更新會附帶最新版擴充功能，但 Chrome 不會自動切換。請先交回控制，再重新準備；若資料夾已變更，請移除舊的 Clawdline 擴充功能、載入新資料夾，並執行其連接指令。準備好檔案不代表 Chrome 已載入新版。",
   "next.browserUserChromePrepareFailed": "無法準備擴充功能檔案：{reason}",
+  "capacityRow.console.copilot_kept_recap_seconds.what": "背景已經寫好的 Session 摘要，最多多舊時語音副駕駛會直接拿來用。",
+  "capacityRow.console.copilot_kept_recap_seconds.full": "超過這個時間或還沒有摘要的 Session，會當場重寫，要多等幾秒。",
   "capacityRow.console.copilot_recent_idle_seconds.what": "近期閒置 Session 的預設時間範圍，依最後確認活動估計。",
   "capacityRow.console.copilot_recent_idle_seconds.full": "只納入目前閒置且活動時間已知的 Session；範圍內沒有時才擴至一小時並說明，不讀取較舊的逐字稿。",
   "capacityRow.console.copilot_idle_fallback_seconds.what": "預設範圍沒有符合項目時，閒置 Session 報告使用的擴大範圍。",

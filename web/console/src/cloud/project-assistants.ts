@@ -182,9 +182,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
   removeRule(r: W.ProjectAssistantRuleRemoveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(r.command.key,"/rules/remove"),s,r,"POST",true,PROJECT_ASSISTANTS_RULES_API_LEVEL) }
   setHidden(r: W.ProjectAssistantVisibilityRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,"/visibility"),s,r,"POST",true,PROJECT_ASSISTANTS_MANAGE_API_LEVEL) }
   deleteBot(r: W.ProjectAssistantDeleteRequest,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(r.command.key,"/delete"),s,r,"POST",true,PROJECT_ASSISTANTS_MANAGE_API_LEVEL) }
-  canManage() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_MANAGE_API_LEVEL }
-  canRules() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_RULES_API_LEVEL }
-  canSendNow() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
+  // Hide and delete are carried over Cloud too, so a phone can remove a Bot.
+  canManage() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_MANAGE_API_LEVEL }
+  canRules() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_RULES_API_LEVEL }
+  canSendNow() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }
@@ -229,7 +230,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
     }
-    const action = tail === "/messages" ? "history" : tail === "/events" ? "events" : tail === "/export" ? "export" : tail === "" ? "get" : null
+    const action = tail === "/messages" ? "history" : tail === "/events" ? "events" : tail === "/export" ? "export" : tail === "/rules" ? "rules" : tail === "" ? "get" : null
     if (!action) throw failure("pa_invalid")
     const fields = action === "history" ? {key,conversation_id:q.conversation_id,before_seq:Number(q.before_seq),page_size:Number(q.page_size)} : action === "events" ? {key,after_seq:Number(q.after_seq),page_size:Number(q.page_size)} : key
     return {word:`project-assistants.${action}`,kind:"read" as const,fields,id:""}
@@ -241,7 +242,9 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   if (new Headers(init.headers).get("Idempotency-Key") !== command.idempotency_key) throw failure("pa_invalid")
   const action = !bot && method === "POST" ? "create" : bot && !tail && method === "PATCH" ? "edit" : method !== "POST" ? null :
     tail === "/messages" ? "send" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
-    tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" : null
+    tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :
+    tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
+    tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
   return {word:`project-assistants.${action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }
