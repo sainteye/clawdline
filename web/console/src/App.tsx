@@ -1,3 +1,4 @@
+import { ViewPluginIcon } from "./view-plugins/Artwork.js"
 import { useViewPlugins } from "./view-plugins/Host.js"
 import { useLocalPluginSource } from "./view-plugins/local.js"
 import type { ViewSource } from "./view-plugins/bridge.js"
@@ -1272,6 +1273,10 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
             <button className="sidebar-item" id="nav-machine-monitoring" type="button" aria-haspopup="dialog"
               onClick={() => { closeMenu(); if (onChooseDashboardMachine) onChooseDashboardMachine(); else setMachine(true) }}>
               <SidebarIcon name="usage" />{nextWord("machineMonitoringNav")}
+            </button>
+            <button className="sidebar-item" id="nav-view-plugins" type="button" aria-haspopup="dialog"
+              onClick={event => { closeMenu(); plugins.openManager(brandRef.current ?? event.currentTarget) }}>
+              <ViewPluginIcon className="sidebar-icon" />{plugins.managerLabel}
             </button>
             {sidebarPages.filter((p) => p.id === "devices").map(sidebarPage)}
             {cloudPeerAccess && <button className="sidebar-item" id="nav-peer-access" type="button"

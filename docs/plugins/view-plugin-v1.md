@@ -1,14 +1,17 @@
 # View Plugin v1
 
-Revision 2 describes the **experimental browser-local runtime** implemented in
+Revision 3 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The first two packages are Session Galaxy and
 Session List. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
 
-A bottom status-bar orbit button opens the plugin manager. When the status bar is
-absent, the button sits in the Session-list pane. A granted view fills the app.
+The sidebar’s **View plugins** entry owns installation and management. The bottom
+status-bar orbit button opens installed, enabled views only: one view opens
+directly, while multiple views use a compact picker. An empty launcher points to
+the sidebar without embedding installation controls. When the status bar is
+absent, the orbit button sits in the Session-list pane. A granted view fills the app.
 The host owns installation, consent, current machine identity, history, focus,
 close and Session navigation. The plugin owns its own HTML, CSS, canvas and motion.
 The Session page, classifier and dispatch broker are not plugin extension points.
@@ -17,7 +20,14 @@ After the host update, importing, replacing, disabling, removing and rolling bac
 compatible packages needs no core edit, frontend rebuild, daemon restart or app
 reinstall. Each browser/interface stores its own packages in IndexedDB. They are
 not copied between phones, machines, accounts or browsers. Packages do not start
-automatically. No grant or Session data is persisted by this registry. Installing
+automatically. No grant or Session data is persisted by this registry. After a
+person approves a scope, the mounted interface may remember only the exact
+package digest, source identity and Project selection in memory for that visit.
+The status button can reopen it without repeating consent. Every reopening still
+obtains a fresh authorized reading and creates a new iframe, port, stream and refs.
+No Session snapshot is retained across closing. Page reload, registry mutation,
+source/access changes or a plugin fault clear the matching in-memory approval.
+This memory is bounded by the installed package count and never written to storage. Installing
 on Cloud does not install into a local daemon console or another browser profile.
 
 The person reviews the package ID, version and capabilities before activation.
@@ -65,8 +75,11 @@ Import a replacement ZIP through the manager to test it without rebuilding the h
 
 ## Consent and data ownership
 
-Every opening requires a machine and either all Projects or a specific Project.
-The host obtains a fresh authorized reading before creating the frame. Cloud
+The first opening during an interface visit requires consent for a machine and
+either all Projects or a specific Project. The consent panel explains its lifetime.
+An unchanged package and scope may reuse that in-memory approval until invalidated;
+changes require consent again. The host obtains a fresh authorized reading before
+creating every frame. Cloud
 uses its existing `SessionProjectionSource` and exact execution destinations;
 local uses the existing fleet list. A Cloud read never falls back to phone
 localhost. Account, device, client generation, pairing or access changes invalidate
@@ -212,7 +225,8 @@ refusal, event ordering/coalescing, disconnection, flood isolation and Cloud
 revocation during a delayed read. `tools/view-plugins.e2e.mjs` bundles the production
 manager/frame/registry and supplied packages with synthetic Session sources. It
 exercises import, two distinct views, Project filtering, Back/focus, hostile label
-text, revocation, persisted packages without persisted grants, replacement,
+text, revocation, persisted packages without persisted grants, direct reopening after visit-scoped
+consent, a management-free picker, cross-tab disabling, replacement,
 rollback, failed import, disable and remove. It accepts an existing Playwright
 module path; it installs no browser dependencies.
 

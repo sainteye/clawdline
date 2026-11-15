@@ -16,9 +16,10 @@ export async function runAppPluginAcceptance({playwrightModule,artifacts}) {
  page.on("pageerror",e=>errors.push(e.stack || e.message))
  try{
  await page.goto(`http://127.0.0.1:${server.address().port}/?lang=zh-Hant`)
- await page.getByRole("button",{name:"開啟視圖擴充",exact:true}).waitFor({timeout:10000})
+ await page.getByRole("button",{name:"開啟已安裝視圖",exact:true}).waitFor({timeout:10000})
  await page.evaluate(()=>{window.savedApp=document.querySelector("#app");document.querySelector("#list-scroll").scrollTop=220;window.fixtureHost.beginSyntheticCall()})
- await page.getByRole("button",{name:"開啟視圖擴充",exact:true}).click()
+ await page.getByRole("button",{name:"開啟側邊欄",exact:true}).click()
+ await page.locator("#nav-view-plugins").click()
  await page.getByRole("button",{name:"安裝星系",exact:true}).click()
  await page.getByRole("button",{name:"安裝套件",exact:true}).click()
  await page.getByRole("button",{name:"開啟",exact:true}).click()
@@ -31,6 +32,10 @@ export async function runAppPluginAcceptance({playwrightModule,artifacts}) {
  assert.equal(await page.evaluate(()=>document.querySelector("#list-scroll").scrollTop),220)
  assert.equal(await page.evaluate(()=>fixtureHost.voiceState().status),"connected")
  assert.equal(await page.evaluate(()=>fixtureHost.stats().sessionSends),0)
+ await page.getByRole("button",{name:"開啟已安裝視圖",exact:true}).click()
+ await page.frameLocator("iframe").locator(".node").first().waitFor()
+ assert.equal(await page.getByRole("combobox").count(),0,"The actual App shortcut reopens the approved view without management")
+ await page.getByRole("button",{name:"關閉視圖並返回",exact:true}).click();await page.locator(".vp-host").waitFor({state:"hidden"})
  assert.deepEqual(errors,[]);await writeFile(`${artifacts}/full-app-results.json`,JSON.stringify({passed:true,errors}))
  }catch(e){await page.screenshot({path:`${artifacts}/full-app-failure.png`});await writeFile(`${artifacts}/full-app-errors.json`,JSON.stringify({errors,html:await page.locator("body").innerHTML()}));throw e}
  finally{await browser.close();await new Promise(r=>server.close(r))}
