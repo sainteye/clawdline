@@ -163,6 +163,32 @@ func TestRosterProjectionRetainsFilesOnlyPreview(t *testing.T) {
 	}
 }
 
+func TestRosterHiddenRowsKeepManagementMetadataUntilDeletion(t *testing.T) {
+	db, s, _ := testDB(t)
+	b := seed(t, s, "hidden")
+	views := newTestViews(t, db)
+	q := rosterQuery()
+	initial := rosterRead(t, views, q)
+	b.Hidden = true
+	b.Version++
+	if _, err := s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "hide"), ExpectedVersion: b.Version - 1, Bot: &b, Receipt: pa.Receipt{ID: "hidden", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	q.Request.Cursor = initial.Frame.Cursor
+	hidden := rosterRead(t, views, q)
+	if len(hidden.Frame.Changes) != 1 || !hidden.Frame.Changes[0].Removed || hidden.Frame.Changes[0].Summary == nil || !hidden.Frame.Changes[0].Summary.Bot.Hidden {
+		t.Fatal("hiding a Bot lost the metadata needed to unhide it", hidden.Frame)
+	}
+	if err := s.DeleteBot(testContext, b.Key); err != nil {
+		t.Fatal(err)
+	}
+	q.Request.Cursor = hidden.Frame.Cursor
+	deleted := rosterRead(t, views, q)
+	if len(deleted.Frame.Changes) != 1 || !deleted.Frame.Changes[0].Removed || deleted.Frame.Changes[0].Summary != nil || deleted.Frame.Changes[0].Revision <= hidden.Frame.Changes[0].Revision {
+		t.Fatal("deletion did not replace hidden management metadata with a tombstone", deleted.Frame)
+	}
+}
+
 func TestRosterCursorScopeReaderGrantRestartAndGenerationFences(t *testing.T) {
 	db, s, _ := testDB(t)
 	b := seed(t, s, "one")

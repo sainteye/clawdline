@@ -7,7 +7,8 @@ import { BotCreate } from "./BotCreate"
 import { SourceStatusPanel } from "./SourceStatusPanel"
 import { sourceHealth } from "./source-status"
 import { HiddenBots } from "./HiddenBots"
-import { Chat } from "./Chat"
+import { Chat, EventRefreshMs } from "./Chat"
+import { followLiveRoster } from "./live-roster"
 import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type ViewState } from "./view-state"
 import { words } from "./words"
 import { shownSourceError } from "./source-errors"
@@ -31,6 +32,7 @@ interface SourcePage {revision:string;query:string;items:W.ProjectAssistantBotSu
 export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,manageHistory=false,onSelectionChange}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
+  const [livePending,setLivePending]=useState<Record<string,boolean>>({})
   const [projectNames,setProjectNames]=useState(new Map<string,string>()),[projectIcons,setProjectIcons]=useState(new Map<string,W.Icon>())
   const host=useRef<HTMLDivElement>(null),sourceRef=useRef(sources),closeRef=useRef(onClose),selectRef=useRef(onSelectionChange)
   sourceRef.current=sources;closeRef.current=onClose;selectRef.current=onSelectionChange
@@ -43,7 +45,9 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const controller=useRef<AbortController|null>(null),request=useRef(0)
   const pagesRef=useRef(pages);pagesRef.current=pages
   const allItems=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
-  const items=allItems.filter(i=>!i.bot.hidden),hiddenItems=allItems.filter(i=>i.bot.hidden)
+  const matching=allItems.filter(i=>i.bot.name.toLowerCase().includes(query.toLowerCase()))
+  const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
+  const rosterLoading=loading||sources.some(s=>livePending[s.machineID])
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
   const selectedItem=items.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
@@ -57,6 +61,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     const control=controller.current??new AbortController(),id=++request.current
     setLoading(true)
     await Promise.all(current().map(async source=>{
+      if(source.canRoster?.()&&source.subscribeRoster)return
       const previous=pagesRef.current[source.machineID],cursor=append&&previous?.revision===source.authorizationRevision&&previous.query===query?previous.cursor:""
       if(append&&!cursor)return
       try {
@@ -69,8 +74,25 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     }))
     if(!control.signal.aborted&&id===request.current)setLoading(false)
   },[authorization,query,current])
-  useEffect(()=>{setSelected(null);setPages({});setMachine("");void load();return()=>controller.current?.abort()},[authorization])
-  useEffect(()=>{void load();return()=>controller.current?.abort()},[query])
+  useEffect(()=>{setSelected(null);setPages({});setMachine("");return()=>controller.current?.abort()},[authorization])
+  useEffect(()=>{void load();return()=>controller.current?.abort()},[query,authorization])
+  useEffect(()=>{
+    const control=new AbortController()
+    setLivePending({})
+    for(const source of sources) {
+      if(!source.canRoster?.()||!source.subscribeRoster)continue
+      void followLiveRoster(source,current,control.signal,EventRefreshMs,value=>{
+        if(control.signal.aborted||!current().includes(source))return
+        setLivePending(old=>({...old,[source.machineID]:value.pending}))
+        setPages(old=>{
+          const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
+          const items=value.items??(value.error?previous?.items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):previous?.items)??[]
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,query:"",items,cursor:"",statuses:value.statuses??previous?.statuses??[],error:value.error}}
+        })
+      })
+    }
+    return()=>control.abort()
+  },[sources,current])
   useEffect(()=>{
     const control=new AbortController()
     setProjectNames(new Map());setProjectIcons(new Map())
@@ -116,7 +138,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[creating])
   useEffect(()=>{if(!selected&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>('[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected])
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
-    <BotRoster items={items} machines={sources.map(s=>s.machineID)} selected={selected} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={loading} errors={errors} status={<SourceStatusPanel health={health} w={w}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!loading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <BotRoster items={items} machines={sources.map(s=>s.machineID)} selected={selected} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={errors} status={<SourceStatusPanel health={health} w={w}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
     <main className="pa-main">{selectedItem&&selectedSource?<Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} onBack={back} onOpenWork={onOpenWork} onRead={()=>{const read=selected;setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===read?{...i,unread_count:0}:i)}])))}} onDeleted={()=>{const gone=selected;back();setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.filter(i=>botIdentity(i.bot.key)!==gone)}])))}} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
   </div>

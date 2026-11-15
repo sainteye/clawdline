@@ -12327,5 +12327,7 @@
   "capacityRow.bots.roster_seconds.what": "Maximum total lifetime of one live Bot-list connection, in seconds.",
   "capacityRow.bots.roster_seconds.full": "After 3,600 seconds the connection closes. Reconnect using the last fully applied cursor to catch up on durable changes.",
   "capacityRow.bots.roster_check_ms.what": "Interval in milliseconds for rechecking a live Bot-list connection’s authority and lag.",
-  "capacityRow.bots.roster_check_ms.full": "Every 250 milliseconds, revoked or lagging connections are closed. This checks subscription safety; it does not refresh the Bot list on a timer."
+  "capacityRow.bots.roster_check_ms.full": "Every 250 milliseconds, revoked or lagging connections are closed. This checks subscription safety; it does not refresh the Bot list on a timer.",
+  "capacityRow.bots.roster_client_rows.what": "Rows retained by each live Bot-list client, including removal revisions.",
+  "capacityRow.bots.roster_client_rows.full": "At 1,000 rows, discard the cursor and request a fresh snapshot. If that snapshot still exceeds the limit, stop the subscription and show a capacity error. Retained rows stay marked stale until a complete snapshot arrives."
 }

@@ -706,6 +706,7 @@ const (
 	BotsRosterWakeups       = "bots.roster_wakes"
 	BotsRosterLifetime      = "bots.roster_seconds"
 	BotsRosterRecheck       = "bots.roster_check_ms"
+	BotsRosterClientRows    = "bots.roster_client_rows"
 	BotsReadViewCursorBytes = "bots.read_view_cursor_bytes"
 	BotsNameRunes           = "bots.name_runes"
 	BotsInstructionBytes    = "bots.instruction_bytes"

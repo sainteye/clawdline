@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12327,
+  "englishKeys": 12329,
   "counts": {
     "negation": 3314,
-    "state": 2056,
+    "state": 2057,
     "permission": 728,
-    "deletion": 283,
+    "deletion": 285,
     "uncertainty": 464
   },
-  "unionCount": 5338,
+  "unionCount": 5340,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3448,6 +3448,7 @@
       "capacityRow.bots.read_view_cursor_bytes.full",
       "capacityRow.bots.refresh_ms.full",
       "capacityRow.bots.roster_check_ms.full",
+      "capacityRow.bots.roster_client_rows.full",
       "capacityRow.bots.roster_seconds.full",
       "capacityRow.bots.roster_subs.full",
       "capacityRow.bots.roster_wakes.full",
@@ -6131,6 +6132,8 @@
       "capacityRow.bots.inputs_per_bot.full",
       "capacityRow.bots.inputs_per_message.full",
       "capacityRow.bots.page_rows.what",
+      "capacityRow.bots.roster_client_rows.full",
+      "capacityRow.bots.roster_client_rows.what",
       "capacityRow.browser.audit_rows.full",
       "capacityRow.browser.close_receipt_rows.full",
       "capacityRow.cloud.health_sealed_life_seconds.full",
@@ -7163,6 +7166,8 @@
     "capacityRow.bots.read_view_cursor_bytes.what",
     "capacityRow.bots.refresh_ms.full",
     "capacityRow.bots.roster_check_ms.full",
+    "capacityRow.bots.roster_client_rows.full",
+    "capacityRow.bots.roster_client_rows.what",
     "capacityRow.bots.roster_seconds.full",
     "capacityRow.bots.roster_subs.full",
     "capacityRow.bots.roster_wakes.full",

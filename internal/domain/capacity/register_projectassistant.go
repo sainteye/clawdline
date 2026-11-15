@@ -19,6 +19,8 @@ const (
 	MaximumBotSurveyMilliseconds  = 50
 	MaximumBotChatGapMilliseconds = 3600000
 	MaximumBotRefreshMilliseconds = 3000
+	// Live rows and removal revisions retained by one browser source.
+	MaximumBotRosterClientRows = 1000
 	// The longest isolated work one Bot dispatch may start.
 	MaximumBotDispatchSeconds = 3600
 	// Installing the supplied ACP adapter with the person's npm on first use.
@@ -46,6 +48,7 @@ const (
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
 	return []Entry{
+		{Name: BotsRosterClientRows, Class: Buffer, Unit: Rows, Limit: MaximumBotRosterClientRows, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotRosterClientRows"}},
 		{Name: BotsInputBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxInputBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputBytes"}},
 		{Name: BotsInputChunkBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxInputChunkBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputChunkBytes"}},
 		{Name: BotsInputsPerMessage, Class: Buffer, Unit: Rows, Limit: pa.MaxInputsPerMessage, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputsPerMessage"}},

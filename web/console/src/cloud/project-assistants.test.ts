@@ -1,5 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import http from "node:http"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node executes source extensions.
 import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayRequest, cloudAssistantGrants, capturedAssistantRelayFetch, type AssistantGrant, type AssistantFetch } from "./project-assistants.ts"
@@ -8,6 +9,42 @@ import { command, errorCode } from "../project-assistants/client.ts"
 import { CloudClient } from "../legacy/js/net/cloud-client.js"
 // @ts-expect-error -- Node executes source extensions.
 import { CARRIED } from "./carry-generated.ts"
+// @ts-expect-error -- Node executes source extensions.
+import { RosterStreamFailure } from "../project-assistants/roster-stream.ts"
+
+test("local roster crosses a real Node HTTP SSE connection and cancels cleanly", async () => {
+  let closed!: () => void
+  const disconnected = new Promise<void>(resolve => { closed = resolve })
+  const seen: string[] = []
+  const snapshot = rosterFrame()
+  snapshot.source_epoch = "synthetic-epoch"
+  snapshot.changes![0].summary!.read_cursor.reader_id = "reader:synthetic-owner-identity"
+  const server = http.createServer((request, response) => {
+    seen.push(request.url ?? "")
+    assert.equal(request.headers.accept, "text/event-stream")
+    response.writeHead(200, { "Content-Type": "text/event-stream" })
+    response.write('event: hello\ndata: {"type":"hello","source_epoch":"synthetic-epoch"}\n\n')
+    response.write(rosterWire(snapshot))
+    response.on("close", closed)
+  })
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address === "object")
+    const local: AssistantGrant = { accountKey:"local",readerID:"local",machineID:"one",authorizationRevision:"synthetic-grant",apiLevel:71,paired:true,online:true,writable:false }
+    const source = new ProjectAssistantSourceClient(local, (path, init) => fetch(`http://127.0.0.1:${address.port}`+path, init), () => local)
+    const control = new AbortController(), frames: W.ProjectAssistantRosterFrame[] = []
+    assert.equal(source.canRoster(), true)
+    await assert.rejects(source.subscribeRoster({machine_id:local.machineID}, frame => { frames.push(frame); if(frame.type==="snapshot-complete")control.abort() }, control.signal), e => (e as Error).name === "AbortError")
+    await disconnected
+    assert.deepEqual(frames, [{type:"hello",source_epoch:"synthetic-epoch",changes:[]},snapshot])
+    assert.deepEqual(seen, ["/v1/project-assistants/roster-events?machine_id=one"])
+    console.log("REAL_NODE_ROSTER_SSE_RECEIPT "+JSON.stringify({requests:seen.length,frames:frames.length,readOnly:true,callerAbort:true,serverObservedClose:true,providerRequests:0}))
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+  }
+})
 
 const signal = () => new AbortController().signal
 const viewRequest:W.ProjectAssistantReadViewRequest={key:{machine_id:"one",bot_id:"same/id"},conversation_id:"chat",mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:100}
@@ -495,4 +532,153 @@ test("Cloud refuses oversized picture commands before transport, retaining typed
   const refusal={contract_version:"project-assistants.v1",error:{code:"pa_not_found",field:"attachment",retry_after_seconds:0}}
   const source=make(async()=>Response.json(refusal,{status:404}),{...grant(),apiLevel:68}).source
   await assert.rejects(source.attachment(key,"a".repeat(64),signal()),e=>{assert.deepEqual(e,refusal);return true})
+})
+
+const rosterGrant = (): AssistantGrant => ({...grant(),accountKey:"local",apiLevel:71,writable:false})
+const rosterRequest: W.ProjectAssistantRosterRequest = {machine_id:"one",project_id:"project",cursor:"signed + opaque"}
+const rosterFrame = (): W.ProjectAssistantRosterFrame => ({type:"snapshot-complete",source_epoch:"epoch",cursor:"next",changes:[{key,revision:0,removed:false,summary:{bot:viewWire().snapshot!.bot,source:{...sourceStatus().sources[0],access:"history_only",writable:false},read_cursor:{key,conversation_id:"chat",reader_id:"trusted-reader",message_seq:0},activity:"",activity_at:"0001-01-01T00:00:00Z",latest_message:"",pending_permissions:0,unread_count:4,version:1,status:"idle"}}]})
+const rosterWire = (f: W.ProjectAssistantRosterFrame) => `${f.cursor?`id: ${f.cursor}\n`:""}event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`
+const rosterResponse = (input: string, cancel: ()=>void = ()=>{}) => new Response(new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode(input))},cancel}),{headers:{"Content-Type":"text/event-stream; charset=utf-8"}})
+
+test("roster is local API71 only and cannot enter the Cloud recorder",async()=>{
+  let calls=0
+  for(const first of [grant(),{...grant(),apiLevel:71},{...rosterGrant(),apiLevel:70},{...rosterGrant(),apiLevel:undefined}]) {
+    const {source}=make(async()=>{calls++;return rosterResponse("")},first)
+    assert.equal(source.canRoster(),false)
+    await assert.rejects(source.subscribeRoster(rosterRequest,()=>assert.fail("unsupported callback"),signal()),e=>errorCode(e)==="pa_unsupported")
+  }
+  for(const suffix of ["", "?machine_id=one"]) assert.throws(()=>assistantRelayRequest("/v1/project-assistants/roster-events"+suffix),e=>errorCode(e)==="pa_unsupported")
+  const relay=capturedAssistantRelayFetch("one",()=>({async _machineRequest(){calls++;return {}}}),["project-assistants.get"])
+  await assert.rejects(relay("/v1/project-assistants/roster-events?machine_id=one"),e=>errorCode(e)==="pa_unsupported")
+  assert.equal(calls,0)
+})
+
+test("read-only roster keeps its entire query and rechecks grant before each callback",async()=>{
+  let calls=0,cancelled=0
+  const first=rosterFrame(),second={...rosterFrame(),cursor:"second"}
+  const {source,setGrant}=make(async(path,init)=>{
+    calls++;const url=new URL(path,"http://synthetic.invalid")
+    assert.deepEqual(Object.fromEntries(url.searchParams),rosterRequest)
+    assert.equal(init?.cache,"no-store")
+    assert.equal(new Headers(init?.headers).has("Last-Event-ID"),false)
+    return rosterResponse(rosterWire(first)+rosterWire(second),()=>{cancelled++})
+  },rosterGrant())
+  const seen:W.ProjectAssistantRosterFrame[]=[]
+  await assert.rejects(source.subscribeRoster(rosterRequest,f=>{seen.push(f);setGrant({...rosterGrant(),authorizationRevision:"replaced"})},signal()),e=>errorCode(e)==="pa_revoked")
+  assert.equal(calls,1);assert.equal(cancelled,1);assert.deepEqual(seen,[first])
+})
+
+test("roster accepts source-issued read identities independently of the host logical reader",async()=>{
+  const first={...rosterGrant(),readerID:"local"},value=rosterFrame()
+  value.changes![0].summary!.read_cursor.reader_id="reader:synthetic-owner-identity"
+  const {source}=make(async()=>rosterResponse(rosterWire(value)),first),control=new AbortController()
+  const seen:W.ProjectAssistantRosterFrame[]=[]
+  await assert.rejects(source.subscribeRoster(rosterRequest,f=>{seen.push(f);control.abort()},control.signal),e=>(e as Error).name==="AbortError")
+  assert.deepEqual(seen,[value])
+})
+
+test("roster rejects malformed later rows before any publication",async()=>{
+  for(const change of [(f:W.ProjectAssistantRosterFrame)=>{f.changes!.push({...f.changes![0],key:{...key,machine_id:"foreign"}})}]){
+    const value=rosterFrame();change(value)
+    let callbacks=0,cancelled=0
+    const {source}=make(async()=>rosterResponse(rosterWire(value),()=>{cancelled++}),rosterGrant())
+    await assert.rejects(source.subscribeRoster(rosterRequest,()=>{callbacks++},signal()),e=>errorCode(e)==="pa_scope_denied")
+    assert.equal(callbacks,0);assert.equal(cancelled,1)
+  }
+})
+
+test("roster grant replacement while a read is pending cannot publish its late bytes",async()=>{
+  for(const state of ["account","reader","machine","revision","revoke","abort"] as const) {
+    let controller!: ReadableStreamDefaultController<Uint8Array>,started!:()=>void,cancelled=0
+    const reading=new Promise<void>(resolve=>{started=resolve})
+    const body=new ReadableStream<Uint8Array>({start(c){controller=c},pull(){started()},cancel(){cancelled++}})
+    const {source,setGrant}=make(async()=>new Response(body,{headers:{"Content-Type":"text/event-stream"}}),rosterGrant())
+    const control=new AbortController();let callbacks=0
+    const pending=source.subscribeRoster(rosterRequest,()=>{callbacks++},control.signal)
+    await reading;await Promise.resolve()
+    if(state==="revoke")source.revoke()
+    else if(state==="abort")control.abort()
+    else setGrant({...rosterGrant(),...(state==="account"?{accountKey:"next"}:state==="reader"?{readerID:"next"}:state==="machine"?{machineID:"next"}:{authorizationRevision:"next"})})
+    if(state!=="revoke"&&state!=="abort")controller.enqueue(new TextEncoder().encode(rosterWire(rosterFrame())))
+    await assert.rejects(pending,e=>state==="abort"?(e as Error).name==="AbortError":errorCode(e)==="pa_revoked")
+    assert.equal(callbacks,0);assert.equal(cancelled,1)
+  }
+})
+
+test("roster authority is rechecked after JSON parsing and HTTP refusal decoding",async()=>{
+  const before=JSON.parse
+  const {source,setGrant}=make(async()=>rosterResponse(rosterWire(rosterFrame())),rosterGrant())
+  let callbacks=0
+  JSON.parse=(text: string,reviver?: Parameters<typeof JSON.parse>[1])=>{const value=before(text,reviver);setGrant(null);return value}
+  try {await assert.rejects(source.subscribeRoster(rosterRequest,()=>{callbacks++},signal()),e=>errorCode(e)==="pa_revoked")} finally {JSON.parse=before}
+  assert.equal(callbacks,0)
+  let release!:(v:unknown)=>void,started!:()=>void
+  const reading=new Promise<void>(resolve=>{started=resolve}),body=new Promise(resolve=>{release=resolve})
+  const response=new Response("{}",{status:403});response.json=()=>{started();return body}
+  const late=make(async()=>response,rosterGrant()),control=new AbortController()
+  const pending=late.source.subscribeRoster(rosterRequest,()=>assert.fail("late HTTP callback"),control.signal)
+  await reading;late.setGrant(null);release({contract_version:"project-assistants.v1",error:{code:"pa_scope_denied",field:"roster",retry_after_seconds:0}})
+  await assert.rejects(pending,e=>errorCode(e)==="pa_revoked")
+})
+
+test("roster failures preserve source refusals, terminal frames and unexpected EOF without retry",async()=>{
+  const refusal:W.ProjectAssistantErrorResponse={contract_version:"project-assistants.v1",error:{code:"pa_capacity_full",field:"roster",retry_after_seconds:7}}
+  const {source}=make(async()=>Response.json(refusal,{status:429}),rosterGrant())
+  await assert.rejects(source.subscribeRoster(rosterRequest,()=>assert.fail("HTTP callback"),signal()),e=>{assert.deepEqual(e,refusal);return true})
+  for(const type of ["resync","closure"] as const) {
+    let calls=0,cancelled=0;const value:W.ProjectAssistantRosterFrame={type,failure:refusal.error},seen:W.ProjectAssistantRosterFrame[]=[]
+    const {source}=make(async()=>{calls++;return rosterResponse(rosterWire(value),()=>{cancelled++})},rosterGrant())
+    await assert.rejects(source.subscribeRoster(rosterRequest,f=>seen.push(f),signal()),e=>e instanceof RosterStreamFailure&&e.kind===type&&e.error.code===refusal.error.code)
+    assert.deepEqual(seen,[{...value,changes:[]}]);assert.equal(calls,1);assert.equal(cancelled,1)
+  }
+  const eof=make(async()=>new Response(rosterWire(rosterFrame()),{headers:{"Content-Type":"text/event-stream"}}),rosterGrant()).source
+  const seen:unknown[]=[]
+  await assert.rejects(eof.subscribeRoster(rosterRequest,f=>seen.push(f),signal()),e=>e instanceof RosterStreamFailure&&e.kind==="eof")
+  assert.equal(seen.length,1)
+})
+
+test("roster never upgrades a read-only grant and releases ignored-abort late HTTP bodies",async()=>{
+  const value=rosterFrame();value.changes![0].summary!.source={...sourceStatus().sources[0]}
+  const control=new AbortController(),seen:W.ProjectAssistantRosterFrame[]=[]
+  const {source}=make(async()=>rosterResponse(rosterWire(value)),rosterGrant())
+  await assert.rejects(source.subscribeRoster(rosterRequest,f=>{seen.push(f);control.abort()},control.signal),e=>(e as Error).name==="AbortError")
+  assert.equal(seen[0].changes![0].summary!.source.writable,false)
+  let release!:(response:Response)=>void,cancelled=0
+  const late=make(()=>new Promise(resolve=>{release=resolve}),rosterGrant())
+  const pending=late.source.subscribeRoster(rosterRequest,()=>assert.fail("late callback"),signal())
+  late.setGrant(null);release(rosterResponse(rosterWire(value),()=>{cancelled++}))
+  await assert.rejects(pending,e=>errorCode(e)==="pa_revoked")
+  assert.equal(cancelled,1)
+})
+
+test("roster rejects invalid requests without transport and retains transport versus protocol failure evidence",async()=>{
+  let calls=0
+  const {source}=make(async()=>{calls++;return rosterResponse("")},rosterGrant())
+  for(const request of [{...rosterRequest,machine_id:"foreign"},{...rosterRequest,cursor:"界".repeat(1366)},{...rosterRequest,cursor:"forged\nid"}]) await assert.rejects(source.subscribeRoster(request,()=>assert.fail("invalid callback"),signal()))
+  const control=new AbortController();control.abort()
+  await assert.rejects(source.subscribeRoster(rosterRequest,()=>assert.fail("aborted callback"),control.signal),e=>(e as Error).name==="AbortError")
+  assert.equal(calls,0)
+  const network=new Error("synthetic disconnect")
+  const broken=make(async()=>{throw network},rosterGrant()).source
+  await assert.rejects(broken.subscribeRoster(rosterRequest,()=>{},signal()),e=>errorCode(e)==="pa_offline"&&(e as {response:unknown}).response===network)
+  const invalid=make(async()=>Response.json({}),rosterGrant()).source
+  await assert.rejects(invalid.subscribeRoster(rosterRequest,()=>{},signal()),e=>e instanceof RosterStreamFailure&&e.kind==="invalid")
+  const failed=make(async()=>Response.json({reason:"synthetic unavailable"},{status:503}),rosterGrant()).source
+  await assert.rejects(failed.subscribeRoster(rosterRequest,()=>{},signal()),e=>errorCode(e)==="pa_offline"&&(e as {response:{reason:string}}).response.reason==="synthetic unavailable")
+})
+
+test("roster cleans caller and lifetime abort listeners, reader lock and the transport signal",async()=>{
+  for(const stop of ["caller","lifetime"] as const) {
+    const control=new AbortController(),held:Response[]=[],signals:AbortSignal[]=[];let cancelled=0,adds=0,removes=0,ready!:()=>void
+    const started=new Promise<void>(resolve=>{ready=resolve})
+    const add=control.signal.addEventListener.bind(control.signal),remove=control.signal.removeEventListener.bind(control.signal)
+    control.signal.addEventListener=((...args:Parameters<typeof add>)=>{adds++;add(...args)}) as typeof add
+    control.signal.removeEventListener=((...args:Parameters<typeof remove>)=>{removes++;remove(...args)}) as typeof remove
+    const {source}=make(async(_path,init)=>{signals.push(init!.signal!);const response=rosterResponse(rosterWire({type:"hello",source_epoch:"epoch"}),()=>{cancelled++});held.push(response);return response},rosterGrant())
+    const pending=source.subscribeRoster(rosterRequest,()=>ready(),control.signal)
+    await started
+    if(stop==="caller")control.abort();else source.revoke()
+    await assert.rejects(pending,e=>stop==="caller"?(e as Error).name==="AbortError":errorCode(e)==="pa_revoked")
+    assert.equal(adds,1);assert.equal(removes,1);assert.equal(held[0].body!.locked,false);assert.equal(signals[0].aborted,true);assert.equal(cancelled,1)
+  }
 })

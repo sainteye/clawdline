@@ -170,7 +170,9 @@ func (s *ViewStore) ReadRoster(ctx context.Context, q app.RosterQuery) (app.Rost
 		}
 		removed := id.Removed || row.Bot.Hidden
 		item := pa.RosterChange{Key: key, Revision: revision, Removed: removed}
-		if !removed {
+		// Hidden Bots remain manageable. Only deletion loses their summary;
+		// both kinds are removed from the visible list.
+		if !id.Removed {
 			item.Summary = &row
 		}
 		raw, _ := json.Marshal(item)

@@ -12327,5 +12327,7 @@
   "capacityRow.bots.roster_seconds.what": "單次 Bot 清單即時連線的最長總時間，單位為秒。",
   "capacityRow.bots.roster_seconds.full": "達 3,600 秒時關閉連線；重新連線時，使用最後完整套用的游標補齊已保存的變更。",
   "capacityRow.bots.roster_check_ms.what": "重新檢查 Bot 清單即時連線授權與落後狀態的間隔，單位為毫秒。",
-  "capacityRow.bots.roster_check_ms.full": "每 250 毫秒檢查一次，撤權或落後時關閉連線；這是訂閱安全檢查，不會定時重新讀取 Bot 清單。"
+  "capacityRow.bots.roster_check_ms.full": "每 250 毫秒檢查一次，撤權或落後時關閉連線；這是訂閱安全檢查，不會定時重新讀取 Bot 清單。",
+  "capacityRow.bots.roster_client_rows.what": "每個即時 Bot 清單保留的資料列，包含已移除項目的版本記號。",
+  "capacityRow.bots.roster_client_rows.full": "達到 1,000 列時，捨棄游標並重新讀取快照；若完整快照仍超過上限，就停止訂閱並顯示容量錯誤。完整快照讀取完成前，保留的資料仍標示為非最新。"
 }
