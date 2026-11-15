@@ -246,6 +246,16 @@
     "Note": true
   },
   {
+    "Name": "bots.artifact_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.artifact_title_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.attachment_bytes",
     "Known": true,
     "Note": true
@@ -317,6 +327,16 @@
   },
   {
     "Name": "bots.notice_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.output_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.output_chunk_bytes",
     "Known": true,
     "Note": true
   },

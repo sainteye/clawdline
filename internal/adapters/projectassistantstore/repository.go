@@ -509,6 +509,14 @@ func validateAggregate(a aggregate) error {
 		if err := pa.ValidateSend(msg.Text, msg.Attachments); err != nil {
 			return err
 		}
+		if msg.Output != nil {
+			if msg.Kind != pa.AssistantMessage {
+				return failure(pa.ScopeDenied, "output_message")
+			}
+			if err := pa.ValidateOutput(*msg.Output); err != nil {
+				return err
+			}
+		}
 	}
 	for _, t := range a.Turns {
 		message, ok := messageFacts[t.MessageID]

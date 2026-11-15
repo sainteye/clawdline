@@ -26,6 +26,20 @@ test("bounded view keeps API58 metadata and requires API59 only for its captured
   assert.equal(new URL(paths[0],"http://source.invalid").pathname,"/v1/project-assistants/same%2Fid/view")
 })
 const key = {machine_id:"one",bot_id:"same/id"}
+
+test("explicit output reads keep their captured scope and distinct Cloud word behind API69",async()=>{
+  const paths:string[]=[],request:W.ProjectAssistantOutputRequest={key,conversation_id:"chat",message_id:"card",id:"file",artifact_id:"",offset:393216}
+  const source=make(async path=>{paths.push(path);return Response.json({})},{...grant(),apiLevel:69}).source
+  assert.equal(source.canOutputs(),true)
+  await source.output(request,signal())
+  const routed=assistantRelayRequest(paths[0])
+  assert.equal(routed.word,"project-assistants.output");assert.equal(routed.kind,"read")
+  assert.deepEqual(routed.fields,{machine_id:key.machine_id,bot_id:key.bot_id,conversation_id:"chat",message_id:"card",id:"file",artifact_id:"",offset:393216})
+  assert.equal("project-assistants.output" in CARRIED,true)
+  let calls=0;const old=make(async()=>{calls++;return Response.json({})},{...grant(),apiLevel:68}).source
+  assert.equal(old.canOutputs(),false);await assert.rejects(old.output(request,signal()),e=>errorCode(e)==="pa_unsupported");assert.equal(calls,0)
+  for(const offset of ["-1","1.5","104857601"]){const url=new URL(paths[0],"http://source.invalid");url.searchParams.set("offset",offset);assert.throws(()=>assistantRelayRequest(url.pathname+url.search),e=>errorCode(e)==="pa_invalid")}
+})
 const grant = (machineID = "one"): AssistantGrant => ({accountKey:"account",readerID:"trusted-reader",machineID,authorizationRevision:"grant-1",apiLevel:60,paired:true,online:true,writable:true})
 const sourceStatus = (access: W.ProjectAssistantAccess = "interactive"): W.ProjectAssistantSourcesResponse => ({contract_version:"project-assistants.v1",sources:[{machine_id:"one",access,state:"online",fresh:true,readable:true,writable:access === "interactive",observed_at:"",capabilities:[]}]})
 const viewWire=():W.ProjectAssistantReadViewResponse=>{
@@ -267,7 +281,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)

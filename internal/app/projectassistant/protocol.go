@@ -44,6 +44,27 @@ type NativeTools interface {
 	EditMemory(context.Context, string, MemoryEdit) error
 }
 
+// OutputTools is additive so older native tool adapters remain compatible.
+type OutputTools interface {
+	PublishOutput(context.Context, string, OutputRequest) (pa.Output, error)
+	ListArtifacts(context.Context) ([]ArtifactInfo, error)
+}
+
+// ArtifactInfo gives only the current actor a path to its own immutable HTML.
+// The model edits a Project-local copy and explicitly publishes that copy.
+type ArtifactInfo struct {
+	pa.Output
+	Path string `json:"path"`
+}
+
+type OutputRequest struct {
+	Path     string `json:"path"`
+	Name     string `json:"name,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Artifact string `json:"artifact,omitempty"`
+	HTML     bool   `json:"-"`
+}
+
 // Send performs one bounded write only. Waiting for the model must happen in
 // PendingPrompt.Wait, outside Memory.WithCurrent and outside any store lock.
 type ProviderSession interface {
@@ -122,4 +143,5 @@ type ProtocolEvent struct {
 	Message    string
 	Trace      *pa.Trace
 	Permission *pa.PermissionOffer
+	Output     *pa.Output
 }

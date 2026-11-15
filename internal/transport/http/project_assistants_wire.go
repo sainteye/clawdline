@@ -144,6 +144,10 @@ func paWireMessage(value pa.Message) (contract.ProjectAssistantMessage, error) {
 	out.Kind = contract.ProjectAssistantMessageKind(value.Kind)
 	out.Text = value.Text
 	out.QuoteMessageID = value.QuoteMessageID
+	if value.Output != nil {
+		o := paWireOutput(*value.Output)
+		out.Output = &o
+	}
 	for _, a := range value.Attachments {
 		out.Attachments = append(out.Attachments, contract.ProjectAssistantAttachment{ID: a.ID, MediaType: a.MediaType, Bytes: a.Bytes})
 	}
@@ -573,4 +577,8 @@ func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 		out.WorkLinks[i] = paWireWorkLink(value.WorkLinks[i])
 	}
 	return out, nil
+}
+
+func paWireOutput(o pa.Output) contract.ProjectAssistantOutput {
+	return contract.ProjectAssistantOutput{ID: o.ID, Name: o.Name, Bytes: o.Bytes, Sha256: o.SHA256, ArtifactID: o.ArtifactID}
 }

@@ -1,5 +1,15 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "library": "Library",
+  "artifact": "Artifact",
+  "sharedFile": "Shared file",
+  "openingOutput": "Opening…",
+  "outputFailed": "Couldn't open the file",
+  "saveHTML": "Save as HTML",
+  "downloadFile": "Download file",
+  "artifactLinks": "Open a link",
+  "emptyLibrary": "No shared files or artifacts yet",
+
   "allBots": "All Bots",
   "unread": "Unread",
   "completed": "Completed",
@@ -204,6 +214,16 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "library": "檔案庫",
+  "artifact": "互動文件",
+  "sharedFile": "分享的檔案",
+  "openingOutput": "正在開啟…",
+  "outputFailed": "無法開啟檔案",
+  "saveHTML": "另存 HTML",
+  "downloadFile": "下載檔案",
+  "artifactLinks": "開啟連結",
+  "emptyLibrary": "尚無分享的檔案或互動文件",
+
   "allBots": "所有 Bots",
   "unread": "未讀",
   "completed": "已完成",

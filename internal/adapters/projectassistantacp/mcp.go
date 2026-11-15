@@ -382,6 +382,31 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 	// Idempotency IDs are explicit durable operation keys, independent of
 	// transport RPC IDs. HTTP/native SDK retries cannot invent a new effect.
 	switch name {
+	case "send_file", "publish_artifact":
+		var q struct {
+			ID       string `json:"idempotency_key"`
+			Path     string `json:"path"`
+			Name     string `json:"name"`
+			Title    string `json:"title"`
+			Artifact string `json:"artifact"`
+		}
+		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Path == "" || name == "send_file" && (q.Title != "" || q.Artifact != "") || name == "publish_artifact" && q.Name != "" {
+			return nil, refusal(pa.Invalid, "mcp_output")
+		}
+		tools, ok := s.tools.(app.OutputTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "mcp_output")
+		}
+		return tools.PublishOutput(ctx, q.ID, app.OutputRequest{Path: q.Path, Name: q.Name, Title: q.Title, Artifact: q.Artifact, HTML: name == "publish_artifact"})
+	case "list_artifacts":
+		if mcpDecode(mcpEmpty(arguments), &struct{}{}) != nil {
+			return nil, refusal(pa.Invalid, "mcp_artifacts")
+		}
+		tools, ok := s.tools.(app.OutputTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "mcp_output")
+		}
+		return tools.ListArtifacts(ctx)
 	case "send_message":
 		var q struct {
 			ID   string `json:"idempotency_key"`
@@ -463,6 +488,9 @@ func mcpTools() []any {
 	}
 	text := func() any { return map[string]any{"type": "string", "minLength": 1} }
 	return []any{
+		tool("send_file", "Explicitly share a regular file in your Project as an immutable chat snapshot (up to 100 MiB). Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "name": text()}, "idempotency_key", "path"),
+		tool("publish_artifact", "Publish self-contained HTML (inline CSS and JavaScript; up to 5 MiB). New artifacts need a title. To update one subject, reuse its artifact ID and publish the whole HTML. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "title": text(), "artifact": text()}, "idempotency_key", "path"),
+		tool("list_artifacts", "List your published HTML artifacts, newest first. Use the artifact ID to publish an updated whole snapshot.", map[string]any{}),
 		tool("send_message", "Publish an explicit message to this Bot conversation. Reuse its idempotency key after an uncertain response; do not invent a replacement key.", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
 		tool("dispatch_work", "Dispatch isolated work under the current Project policy. Unknown effects require receipt inspection, never automatic replay with a new key.", map[string]any{"idempotency_key": text(), "brief": text(), "claims": map[string]any{"type": "array", "items": text()}}, "idempotency_key", "brief", "claims"),
 		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval.", map[string]any{"task_id": text()}, "task_id"),

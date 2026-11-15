@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -54,11 +56,26 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
-	send     func(context.Context, string, string) error
-	dispatch func(context.Context, string, string, []string) (pa.WorkLink, error)
-	status   func(context.Context, string) (pa.WorkLink, error)
-	memory   func(context.Context) ([]pa.MemoryEntry, error)
-	edit     func(context.Context, string, app.MemoryEdit) error
+	send      func(context.Context, string, string) error
+	dispatch  func(context.Context, string, string, []string) (pa.WorkLink, error)
+	status    func(context.Context, string) (pa.WorkLink, error)
+	memory    func(context.Context) ([]pa.MemoryEntry, error)
+	edit      func(context.Context, string, app.MemoryEdit) error
+	output    func(context.Context, string, app.OutputRequest) (pa.Output, error)
+	artifacts func(context.Context) ([]app.ArtifactInfo, error)
+}
+
+func (w NativeWork) PublishOutput(ctx context.Context, id string, q app.OutputRequest) (pa.Output, error) {
+	if w.output == nil {
+		return pa.Output{}, failure(pa.Disabled, "output_tools")
+	}
+	return w.output(ctx, id, q)
+}
+func (w NativeWork) ListArtifacts(ctx context.Context) ([]app.ArtifactInfo, error) {
+	if w.artifacts == nil {
+		return nil, failure(pa.Disabled, "output_tools")
+	}
+	return w.artifacts(ctx)
 }
 
 func (w NativeWork) SendMessage(ctx context.Context, id, text string) error {
@@ -279,6 +296,127 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return ctx, finish, nil
 	}
 	tools := NativeWork{}
+	tools.output = func(ctx context.Context, id string, request app.OutputRequest) (pa.Output, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return pa.Output{}, e
+		}
+		defer cancel()
+		if id == "" || len(id) > pa.MaxNameRunes || request.Path == "" {
+			return pa.Output{}, failure(pa.Invalid, "output_request")
+		}
+		payload, _ := json.Marshal(struct {
+			Request app.OutputRequest
+			HTML    bool
+		}{request, request.HTML})
+		digest := sha256.Sum256(payload)
+		requestHash := hex.EncodeToString(digest[:])
+		identity := sha256.Sum256([]byte(turnID + "\x00" + id))
+		outputID := hex.EncodeToString(identity[:])
+		x, e := h.store.Export(ctx, q.Bot.Key)
+		if e != nil {
+			return pa.Output{}, e
+		}
+		for _, m := range x.Messages {
+			if m.Output != nil && m.Output.ID == outputID {
+				if m.Output.RequestHash != requestHash {
+					return pa.Output{}, failure(pa.IdempotencyConflict, "output_request")
+				}
+				return *m.Output, nil
+			}
+		}
+		name := request.Name
+		if name == "" {
+			name = filepath.Base(request.Path)
+		}
+		artifactID := ""
+		if request.HTML {
+			artifactID = request.Artifact
+			name = strings.TrimSpace(request.Title)
+			if artifactID != "" {
+				found := false
+				for _, o := range app.PublishedOutputs(x.Messages) {
+					if o.ArtifactID == artifactID {
+						found = true
+						if name == "" {
+							name = o.Name
+						}
+						break
+					}
+				}
+				if !found {
+					return pa.Output{}, failure(pa.NotFound, "artifact")
+				}
+			} else {
+				artifactID = outputID
+			}
+		}
+		if request.HTML && !pa.ArtifactTitle(name) || !request.HTML && !pa.OutputName(name) {
+			return pa.Output{}, failure(pa.Invalid, "output_name")
+		}
+		check := func() error {
+			c, done, err := bound(ctx)
+			if err != nil {
+				return err
+			}
+			defer done()
+			return c.Err()
+		}
+		out, e := h.o.Outputs.Snapshot(ctx, q.Bot.Key, q.Directory, request.Path, request.HTML, check)
+		if e != nil {
+			return out, e
+		}
+		published := false
+		defer func() {
+			if !published {
+				// A lost SQL commit acknowledgement is not proof of rollback.
+				cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), h.o.Limits.CleanupTimeout)
+				defer cancel()
+				saved, err := h.store.Export(cleanup, q.Bot.Key)
+				if err != nil {
+					return
+				}
+				for _, m := range saved.Messages {
+					if m.Output != nil && m.Output.SnapshotID == out.SnapshotID {
+						return
+					}
+				}
+				_ = h.o.Outputs.Discard(q.Bot.Key, out)
+			}
+		}()
+		out.ID = outputID
+		out.Name = name
+		out.ArtifactID = artifactID
+		out.RequestHash = requestHash
+		if e = check(); e != nil {
+			return pa.Output{}, e
+		}
+		e = r.Publish(ctx, app.ProtocolEvent{ID: "output-" + id, Fence: q.Binding.Fence, TurnID: turnID, Message: name, Output: &out})
+		published = e == nil
+		return out, e
+	}
+	tools.artifacts = func(ctx context.Context) ([]app.ArtifactInfo, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return nil, e
+		}
+		defer cancel()
+		x, e := h.store.Export(ctx, q.Bot.Key)
+		if e != nil {
+			return nil, e
+		}
+		out := []app.ArtifactInfo{}
+		for _, o := range app.PublishedOutputs(x.Messages) {
+			if o.ArtifactID != "" {
+				path, err := h.o.Outputs.Path(q.Bot.Key, o)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, app.ArtifactInfo{Output: o, Path: path})
+			}
+		}
+		return out, nil
+	}
 	tools.memory = func(ctx context.Context) ([]pa.MemoryEntry, error) {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {

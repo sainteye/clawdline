@@ -669,6 +669,9 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantAttachment"
           }
+        },
+        "output": {
+          "$ref": "#/$defs/ProjectAssistantOutput"
         }
       },
       "required": [
@@ -2486,6 +2489,106 @@
       "required": [
         "command",
         "hidden"
+      ]
+    },
+    "ProjectAssistantOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "bytes",
+        "sha256",
+        "artifact_id"
+      ]
+    },
+    "ProjectAssistantOutputResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "output": {
+          "$ref": "#/$defs/ProjectAssistantOutput"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "data": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        }
+      },
+      "required": [
+        "contract_version",
+        "key",
+        "conversation_id",
+        "message_id",
+        "output",
+        "offset",
+        "data",
+        "source"
+      ]
+    },
+    "ProjectAssistantOutputRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "conversation_id",
+        "message_id",
+        "id",
+        "artifact_id",
+        "offset"
       ]
     }
   }

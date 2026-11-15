@@ -395,6 +395,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   const bots = {
     "project-assistants.projects": "captured Bot source GET /v1/project-assistant-targets",
     "project-assistants.status": "captured Bot source GET /v1/project-assistants/status",
+    "project-assistants.output": "captured Bot source GET /v1/project-assistants/{bot_id}/output",
     "project-assistants.list": "captured Bot source GET /v1/project-assistants",
     "project-assistants.create": "captured Bot source POST /v1/project-assistants",
     "project-assistants.get": "captured Bot source GET /v1/project-assistants/{bot_id}",
@@ -421,7 +422,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     assert.ok(!(word in DEFERRED), word)
     assert.ok(!(word in NO_MACHINE_ROUTE), word)
   }
-  assert.equal(Object.keys(CARRIED).length, 264)
+  assert.equal(Object.keys(CARRIED).length, 265)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

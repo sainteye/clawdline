@@ -2,6 +2,9 @@ import type * as W from "@clawdline/contract"
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+	current?(): boolean
+	canOutputs?(): boolean
+	output?(request:W.ProjectAssistantOutputRequest,signal:AbortSignal):Promise<W.ProjectAssistantOutputResponse>
   readonly machineID: string
   /** The machine's own name, when known; the roster says "this machine" otherwise. */
   readonly machineName?: string

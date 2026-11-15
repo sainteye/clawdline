@@ -52,6 +52,7 @@ type Options struct {
 	NativeWork func(context.Context, app.OpenRequest, NativeWork) (func(), error)
 	// Attachments reads the pictures sent with messages for their prompts.
 	Attachments app.AttachmentReader
+	Outputs     featurestore.Outputs
 }
 
 type Host struct {

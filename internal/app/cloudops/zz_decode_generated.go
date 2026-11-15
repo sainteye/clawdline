@@ -109,6 +109,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.list":            genDecodeProjectAssistantsList,
 	"project-assistants.memory":          genDecodeProjectAssistantsMemory,
 	"project-assistants.observed":        genDecodeProjectAssistantsObserved,
+	"project-assistants.output":          genDecodeProjectAssistantsOutput,
 	"project-assistants.projects":        genDecodeProjectAssistantsProjects,
 	"project-assistants.read":            genDecodeProjectAssistantsRead,
 	"project-assistants.rule-remove":     genDecodeProjectAssistantsRuleRemove,
@@ -2723,6 +2724,45 @@ func genDecodeProjectAssistantsObserved(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "event_seq": genValue{from: "event_seq"}, "receipt_id": genValue{from: "receipt_id"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsOutput is the `project-assistants.output` row's decode.
+func genDecodeProjectAssistantsOutput(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "artifact_id", "bot_id", "conversation_id", "id", "machine_id", "message_id", "offset", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("artifact_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("message_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("offset", genRule{kind: "integer", min: genInt(0), max: genInt(104857600)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/output"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"artifact_id": genValue{from: "artifact_id"}, "conversation_id": genValue{from: "conversation_id"}, "id": genValue{from: "id"}, "machine_id": genValue{from: "machine_id"}, "message_id": genValue{from: "message_id"}, "offset": genValue{from: "offset"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

@@ -4829,6 +4829,7 @@ type ProjectAssistantMessage struct {
 	Fence          ProjectAssistantFence        `json:"fence"`
 	ID             string                       `json:"id"`
 	Kind           ProjectAssistantMessageKind  `json:"kind"`
+	Output         *ProjectAssistantOutput      `json:"output,omitempty"`
 	QuoteMessageID string                       `json:"quote_message_id"`
 	Seq            int64                        `json:"seq"`
 	Text           string                       `json:"text"`
@@ -4888,6 +4889,34 @@ const (
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
 var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
+
+type ProjectAssistantOutput struct {
+	ArtifactID string `json:"artifact_id"`
+	Bytes      int64  `json:"bytes"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Sha256     string `json:"sha256"`
+}
+
+type ProjectAssistantOutputRequest struct {
+	ArtifactID     string                 `json:"artifact_id"`
+	ConversationID string                 `json:"conversation_id"`
+	ID             string                 `json:"id"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	MessageID      string                 `json:"message_id"`
+	Offset         int64                  `json:"offset"`
+}
+
+type ProjectAssistantOutputResponse struct {
+	ContractVersion string                       `json:"contract_version"`
+	ConversationID  string                       `json:"conversation_id"`
+	Data            string                       `json:"data"`
+	Key             ProjectAssistantBotKey       `json:"key"`
+	MessageID       string                       `json:"message_id"`
+	Offset          int64                        `json:"offset"`
+	Output          ProjectAssistantOutput       `json:"output"`
+	Source          ProjectAssistantSourceStatus `json:"source"`
+}
 
 // What the native tool asks to do, for the person to read before answering.
 // Display only: it never authorizes anything.

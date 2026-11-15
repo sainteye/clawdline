@@ -1033,6 +1033,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.artifact_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 5242880,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxArtifactBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.artifact_title_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxArtifactTitleBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.attachment_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1330,6 +1370,46 @@
     "Sources": [
       "internal/domain/capacity.MaximumBotNotifications",
       "internal/adapters/projectassistantacp.NewClient:chan(l.Notifications)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.output_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 104857600,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxOutputBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.output_chunk_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 393216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxOutputChunkBytes"
     ]
   },
   {
