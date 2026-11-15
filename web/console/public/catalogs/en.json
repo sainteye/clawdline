@@ -12218,6 +12218,7 @@
   "viewPlugins.added": "Installed",
   "viewPlugins.scopeHint": "Allow this scope for this interface visit. Refreshing or changing access requires approval again.",
   "viewPlugins.everything": "All machines · All Projects",
+  "viewPlugins.returnToApp": "Back to Clawdline",
   "capacityRow.console.view_plugin_archive_bytes.what": "Bounds the ZIP bytes read for one imported view package.",
   "capacityRow.console.view_plugin_archive_bytes.full": "Oversized ZIPs are refused before they can replace an installed package.",
   "capacityRow.console.view_plugin_expanded_bytes.what": "Bounds the combined extracted contents of a view package.",

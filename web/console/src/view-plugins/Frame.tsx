@@ -108,12 +108,12 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
   }, [grant.instanceId])
   useEffect(() => { contextRef.current() }, [language])
   return <section className="vp-view" aria-label={label}>
-    <header className="vp-frame-bar"><span><b>{label}</b><small>{source.label}</small></span>
-      {disconnected && <span role="status">{w.offline}</span>}
-      {disconnected && <button type="button" onClick={() => refreshRef.current()}>{w.retry}</button>}
-      <button type="button" onClick={onClose} aria-label={w.viewClose}>{w.close}</button>
-    </header>
     <iframe ref={frame} title={label} sandbox="allow-scripts" referrerPolicy="no-referrer"
       allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'" />
+    <footer className="vp-frame-bar">
+      <button type="button" onClick={onClose} aria-label={w.viewClose}><span aria-hidden="true">←</span>{w.returnToApp}</button>
+      {disconnected && <span role="status">{w.offline}</span>}
+      {disconnected && <button type="button" onClick={() => refreshRef.current()}>{w.retry}</button>}
+    </footer>
   </section>
 }

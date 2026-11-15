@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12239,
+  "englishContentKeys": 12240,
   "riskKeys": 5307,
-  "nonRiskCount": 6932,
+  "nonRiskCount": 6933,
   "groups": [
     {
       "name": "acp / other",
@@ -7285,7 +7285,7 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 51,
+      "count": 52,
       "sources": [
         null
       ],
@@ -7333,6 +7333,7 @@
         "viewPlugins.read",
         "viewPlugins.replace",
         "viewPlugins.retry",
+        "viewPlugins.returnToApp",
         "viewPlugins.review",
         "viewPlugins.rollback",
         "viewPlugins.scope",

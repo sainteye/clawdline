@@ -1,6 +1,6 @@
 # View Plugin v1
 
-Revision 4 describes the **experimental browser-local runtime** implemented in
+Revision 5 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The first two packages are Session Galaxy and
 Session List. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
@@ -183,7 +183,11 @@ subsequent snapshot events on the same port. Unknown methods/extra request field
 are refused. A different instance is ignored; old ports are closed on disposal.
 `dispose()` closes SDK listeners/port and rejects pending calls. Package code
 should handle Escape (close its own detail panel first, then call `view.close()`).
-The independent host Close button works even if package logic fails.
+The plugin owns its visible title and header controls. The host does not add a
+second visible title/scope bar above the package. A compact **Back to Clawdline**
+control stays below the iframe, outside package control, and works even if package
+close logic fails. Disconnection warnings and retry also stay in that host footer.
+This presentation change leaves existing ZIPs and the v1 wire protocol unchanged.
 
 Errors include `invalid_request`, `method_not_supported`, `permission_denied`,
 `scope_changed`, `session_unavailable`, `host_unavailable`, `busy`,

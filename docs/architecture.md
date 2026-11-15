@@ -392,7 +392,8 @@ Local uses the existing fleet snapshot; Cloud uses the authorized pinned Session
 projection source. Neither grants generic API calls or changes the classifier or
 broker. The sidebar owns management. The bottom status-bar entry opens
 installed views directly (or a compact picker), with a fresh authorized read per
-opening and no scope-selection screen. Installation reviews the fixed access.
+opening and no scope-selection screen. A trusted return control sits below the
+iframe, leaving the visible header to the package. Installation reviews the fixed access.
 Source namespaces keep cross-machine Session and Project identities distinct;
 partial availability is explicit and navigation rechecks the owning source.
 Machine-owned installation and cross-device package distribution are deferred.

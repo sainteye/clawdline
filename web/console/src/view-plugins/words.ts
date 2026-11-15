@@ -1,5 +1,5 @@
 const en = {
-  title: "View plugins", close: "Close", entry: "Open installed views", install: "Import ZIP", preset: "Explore views",
+  title: "View plugins", close: "Close", returnToApp: "Back to Clawdline", entry: "Open installed views", install: "Import ZIP", preset: "Explore views",
   installed: "Installed views", empty: "No view plugins installed.", local: "Packages are saved in this interface. Install separately on each browser or device.",
   galaxy: "Session Galaxy", list: "Session List", addGalaxy: "Install Galaxy", addList: "Install List", download: "Download package",
   open: "Open", enable: "Enable", disable: "Disable", remove: "Remove", rollback: "Roll back", version: "Version",
@@ -27,7 +27,7 @@ const en = {
   } as Record<string, string>,
 }
 const zh: typeof en = {
-  title: "視圖擴充", close: "關閉", entry: "開啟已安裝視圖", install: "匯入 ZIP", preset: "探索視圖",
+  title: "視圖擴充", close: "關閉", returnToApp: "返回 Clawdline", entry: "開啟已安裝視圖", install: "匯入 ZIP", preset: "探索視圖",
   installed: "已安裝視圖", empty: "尚未安裝視圖擴充。", local: "套件保存在目前介面。不同瀏覽器或裝置需各自安裝。",
   galaxy: "Session 星系", list: "Session 清單", addGalaxy: "安裝星系", addList: "安裝清單", download: "下載套件",
   open: "開啟", enable: "啟用", disable: "停用", remove: "移除", rollback: "回退版本", version: "版本",
