@@ -127,5 +127,7 @@ func validDigest(id string) bool {
 
 // RemoveBot deletes every picture kept for key, when the Bot is deleted.
 func (s Attachments) RemoveBot(key pa.BotKey) error {
+	inputWriter.Lock()
+	defer inputWriter.Unlock()
 	return os.RemoveAll(s.botDir(key))
 }

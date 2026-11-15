@@ -157,12 +157,58 @@ SQL acknowledgement preserves a snapshot when its ownership cannot safely be
 disproved. Bot deletion removes the stored output directory with the Bot's other
 attachments.
 
-Input pictures retain their separate attachment protocol. Non-image uploads from
-the person are a separate, later unit. The local regression fixture uses an owned
+Input pictures retain their separate attachment protocol. General input files use
+the separate upload protocol described below. The local regression fixture uses an owned
 ACP subprocess and real MCP, SQLite and HTTP, with zero provider/model calls.
 For its optional real-browser run, supply `PLAYWRIGHT_MODULE`,
 `PLAYWRIGHT_BROWSERS_PATH` and a task-owned `CLAWDLINE_OUTPUT_E2E_DIR`, then run
 `go test ./internal/transport/http -run '^TestProjectAssistantOutputOwnedMCPHTTP$' -count=1`.
+
+## Files attached to a message
+
+From API level 70, explicitly picked, dropped or pasted regular files can be sent
+with text or in a files-only message. The Bot composer keeps removable draft chips.
+Each general file may be empty, binary or extensionless, up to 100 MiB; filenames
+are plain names of at most 128 UTF-8 bytes. A message carries at most four general
+files, independently of the existing four picture blocks. Unsupported image formats
+are not converted into general files. Session file drops still insert paths.
+
+Uploads use UUID IDs and at most 384 KiB per authenticated request. The source
+requires the current Bot, registered Project, conversation and draft execution
+fence. Chunks must arrive in order; exact repeated bytes are idempotent, conflicting
+bytes are refused. Size and SHA-256 must agree before a send can reference an ID.
+A single durable message transaction binds each upload; replay uses the same send
+receipt and cannot reuse the file in another message. No private path appears in
+public metadata. Only the owned native prompt gets an Attached files list of
+verified absolute private paths for native tools to read. The local fixture is a
+synthetic ACP subprocess, not a real model or a provider readiness claim.
+
+Other authorized paired devices can download sent inputs from the same Bot and
+conversation in bounded chunks. The client checks size and SHA-256 before offering
+a download. Queue takeback deletes those private files and reclaims their upload slots after
+the never-started cancellation is durable. Cleanup runs outside execution locks;
+a failed filesystem cleanup can be retried with the same takeback command.
+Stop-dropped messages keep their Not sent evidence. Sent metadata survives restart. Source revocation, changed
+authority and deletion are checked again before publishing each read response.
+General files, native picture blocks and explicit output snapshots remain separate.
+Send now remains unavailable for queued messages carrying attachments.
+
+Files never enter an offline relay mailbox. A failed send retains the complete
+selection for explicit retry. Reloading or leaving a draft loses its File objects;
+a durable marker refuses a partial text-only send until the missing selection is
+explicitly discarded or selected again. Cancel stops further upload chunks and
+ignores late replies. Transfers do not resume in the background. To bound abandoned
+partial data without evicting durable evidence, a Bot retains at most 128 upload
+slots (finished or unfinished, at most 100 MiB each); new uploads then fail with a
+capacity refusal. Taking back a queued message reclaims its inputs; deleting that
+Bot reclaims the entire private input namespace.
+
+Run the real HTTP/SQLite/owned-ACP input fixture with
+`go test ./internal/transport/http -run '^TestProjectAssistantInputOwnedHTTP$' -count=1`.
+Set the existing `PLAYWRIGHT_MODULE`, `PLAYWRIGHT_BROWSERS_PATH` and a task-owned
+`CLAWDLINE_INPUT_E2E_DIR` for actual English desktop and Taiwan Traditional Chinese
+mobile-dimension Chromium acceptance. This is local browser evidence, not production
+Cloud acceptance or a real-phone test. No provider/model requests are made.
 
 ## If something is missing
 

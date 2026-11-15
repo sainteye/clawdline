@@ -346,3 +346,9 @@
 .pa-output-overlay>button{align-self:flex-start}
 .pa-artifact-frame{flex:1;min-height:50vh;width:100%;border:0;background:white}
 .pa-output-overlay a{overflow-wrap:anywhere}
+
+.pa-input-chips{display:flex;gap:6px;flex-wrap:wrap;padding:6px 0;max-width:100%}
+.pa-input-chips>span{display:flex;align-items:center;gap:6px;border:1px solid var(--border,#333);border-radius:6px;padding:4px 8px;max-width:100%;font-size:12px}
+.pa-input-chips>span>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pa-input-chips button{border:0;background:none;color:inherit;cursor:pointer}
+.pa-input-card strong{overflow-wrap:anywhere}

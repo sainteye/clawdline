@@ -11,10 +11,13 @@ import (
 )
 
 type Submission struct {
-	Command pa.Command
-	Message pa.SendMessage
-	Feature pa.FeatureState
-	Source  pa.SourceStatus
+	InputOwner InputOwner
+	// InputCheck revalidates the human grant after streaming and before admission.
+	InputCheck func(context.Context) error
+	Command    pa.Command
+	Message    pa.SendMessage
+	Feature    pa.FeatureState
+	Source     pa.SourceStatus
 	// Notice marks a message Clawdline itself sends the agent, such as the
 	// resume prompt after a restart; it is shown as a notice, not as the
 	// person's words.

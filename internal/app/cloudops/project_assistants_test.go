@@ -34,6 +34,9 @@ func projectAssistantOperationCases() []operationCase {
 		query                map[string]string
 	}{
 		{"status", "GET", "/status", nil, nil},
+		{"input", "GET", "/bot/input", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "message_id": "message", "id": "11111111-1111-4111-8111-111111111111", "offset": 0}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "message_id": "message", "id": "11111111-1111-4111-8111-111111111111", "offset": "0"}},
+		{"upload", "POST", "/bot/upload", map[string]any{"fence": fence, "file": map[string]any{"id": "11111111-1111-4111-8111-111111111111", "name": "empty", "bytes": 0, "sha256": strings.Repeat("a", 64)}, "offset": 0, "data": "", "done": true}, nil},
+		{"send-files", "POST", "/bot/messages", map[string]any{"fence": fence, "text": "", "quote_message_id": "", "upload_ids": []any{"11111111-1111-4111-8111-111111111111"}}, nil},
 		{"output", "GET", "/bot/output", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "message_id": "message", "id": "file", "artifact_id": "", "offset": 0}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "message_id": "message", "id": "file", "artifact_id": "", "offset": "0"}},
 		{"attachment", "GET", "/bot/attachments/" + id, map[string]any{"machine_id": "mac-01", "bot_id": "bot", "id": id}, map[string]string{"machine_id": "mac-01"}},
 		{"send-pictures", "POST", "/bot/messages", map[string]any{"fence": fence, "text": "", "quote_message_id": "", "images": []any{"data:image/png;base64,cG5n"}}, nil},
@@ -75,7 +78,7 @@ func projectAssistantOperationCases() []operationCase {
 			c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
 		}
 		if r.method != "GET" {
-			op := map[string]string{"observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
+			op := map[string]string{"observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-files": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
 			if op == "" {
 				op = r.word
 			}
@@ -111,7 +114,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 25 {
+	if len(out) != 28 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -275,7 +278,10 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				}
 				missing := cloneBody(base)
 				delete(missing, key)
-				mutations = append(mutations, missing)
+				// Pictures are optional on the new send-files word; null still is not.
+				if row.Op != "project-assistants.send-files" || key != "images" {
+					mutations = append(mutations, missing)
+				}
 				null := cloneBody(base)
 				null[key] = nil
 				mutations = append(mutations, null)

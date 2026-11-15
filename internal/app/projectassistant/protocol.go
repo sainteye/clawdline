@@ -104,6 +104,7 @@ type PromptRequest struct {
 	// heard it; as in Codync, the prompt then carries all of Context's memory.
 	MemoryChanged bool
 	Images        []PromptImage
+	Files         []PromptFile
 }
 
 // PromptImage is one picture sent with the person's message.
@@ -144,4 +145,21 @@ type ProtocolEvent struct {
 	Trace      *pa.Trace
 	Permission *pa.PermissionOffer
 	Output     *pa.Output
+}
+
+// PromptFile contains only an owned, verified path for this native execution.
+// It is never projected into a public response.
+type PromptFile struct {
+	File pa.InputFile
+	Path string
+}
+type InputReader interface {
+	Resolve(context.Context, pa.Fence, string, ...InputOwner) (pa.InputFile, string, error)
+	SentPath(context.Context, pa.Fence, pa.InputFile) (string, error)
+}
+
+// InputRemover discards only files proven to belong to a never-started,
+// durably withdrawn message. Runtime invokes it after releasing actor locks.
+type InputRemover interface {
+	Remove(context.Context, pa.Fence, pa.InputFile) error
 }

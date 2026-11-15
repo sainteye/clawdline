@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -361,7 +362,17 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {
 		return nil, err
 	}
-	if err := pa.ValidateSend(q.Text, promptAttachments(q.Images)); err != nil {
+	var ids []string
+	for _, file := range q.Files {
+		if err := pa.ValidateInput(file.File); err != nil {
+			return nil, err
+		}
+		if !filepath.IsAbs(file.Path) {
+			return nil, refusal(pa.ScopeDenied, "input_path")
+		}
+		ids = append(ids, file.File.ID)
+	}
+	if err := pa.ValidateInputSend(q.Text, promptAttachments(q.Images), ids); err != nil {
 		return nil, err
 	}
 	// As in Codync, a native session hears its instructions and memory once:
@@ -371,14 +382,21 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	// all of memory as it is now. Forgetting or new instructions start a fresh
 	// session, so otherwise later prompts carry only the person's text.
 	text := q.Text
+	if len(q.Files) > 0 {
+		text += "\n\nAttached files (explicitly provided for this message; read with your native tools):"
+		for _, file := range q.Files {
+			quoted, _ := json.Marshal(file.Path)
+			text += "\n- " + string(quoted)
+		}
+	}
 	if q.Handoff != nil {
 		opening, err := q.Handoff.Opening(q.Turn, q.Context)
 		if err != nil {
 			return nil, err
 		}
-		text = opening + "\n" + q.Text
+		text = opening + "\n" + text
 	} else if q.MemoryChanged {
-		text = memoryUpdate(q.Context.Text) + "\n" + q.Text
+		text = memoryUpdate(q.Context.Text) + "\n" + text
 	}
 	c.mu.Lock()
 	if c.permissionsSealed {

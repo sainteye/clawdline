@@ -14,6 +14,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_INPUTS_API_LEVEL = 70
 export const PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL = 69
 export const PROJECT_ASSISTANTS_API_LEVEL = 60
 export const PROJECT_ASSISTANTS_VIEW_API_LEVEL = 61
@@ -173,7 +174,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.access=answer.source.access;this.lastStatus=answer.source
     return answer
   }
-  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
+  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
+  canInputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_INPUTS_API_LEVEL }
+  upload(r:W.ProjectAssistantUploadRequest,s:AbortSignal) { return this.request<W.ProjectAssistantUploadResponse>(endpoint(r.command.key,"/upload"),s,r,"POST",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
+  input(r:W.ProjectAssistantInputRequest,s:AbortSignal) { this.key(r.key);const {key,...fields}=r;return this.request<W.ProjectAssistantInputResponse>(endpoint(key,"/input")+query({machine_id:key.machine_id,...fields}),s,undefined,"GET",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
   canOutputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL }
   output(r:W.ProjectAssistantOutputRequest,s:AbortSignal):Promise<W.ProjectAssistantOutputResponse> {
     this.key(r.key)
@@ -252,6 +256,12 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
     }
+    if(tail==="/input") {
+      const fields=["machine_id","conversation_id","message_id","id","offset"]
+      if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(f=>!url.searchParams.has(f))||!/^(0|[1-9][0-9]*)$/.test(q.offset))throw failure("pa_invalid")
+      const offset=Number(q.offset);if(!Number.isSafeInteger(offset)||offset>100*1024*1024)throw failure("pa_invalid")
+      return {word:"project-assistants.input",kind:"read" as const,fields:{...key,conversation_id:q.conversation_id,message_id:q.message_id,id:q.id,offset},id:""}
+    }
     if(tail==="/output") {
       const fields=["machine_id","conversation_id","message_id","id","artifact_id","offset"]
       if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(f=>!url.searchParams.has(f))||! /^(0|[1-9][0-9]*)$/.test(q.offset))throw failure("pa_invalid")
@@ -271,12 +281,12 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   if (!command || typeof command !== "object" || !("idempotency_key" in command) || typeof command.idempotency_key !== "string") throw failure("pa_invalid")
   if (new Headers(init.headers).get("Idempotency-Key") !== command.idempotency_key) throw failure("pa_invalid")
   const action = !bot && method === "POST" ? "create" : bot && !tail && method === "PATCH" ? "edit" : method !== "POST" ? null :
-    tail === "/messages" ? "send" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
+    tail === "/messages" ? "send" : tail === "/upload" ? "upload" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
     tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
     tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
-  return {word:`project-assistants.${action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
+  return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }
 
 /** Uses the passed machine and authenticated connection, never install.ts's active reader. */

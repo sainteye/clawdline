@@ -1,5 +1,17 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "inputLimits": "Choose up to four files, each at most 100 MiB.",
+  "invalidFileName": "Use a plain filename of at most 128 UTF-8 bytes, without folders or control characters.",
+  "foldersUnsupported": "Attach regular files individually; folders are not supported.",
+  "filesUnavailable": "This source needs an update before it can accept general files.",
+
+  "attachFiles": "Attach pictures or files",
+  "removeFile": "Remove file",
+  "attachedFile": "Attached file",
+  "uploadingFiles": "Uploading files…",
+  "filesLost": "The selected files are no longer available. Select them again, or discard them before sending.",
+  "discardFiles": "Discard missing files",
+
   "library": "Library",
   "artifact": "Artifact",
   "sharedFile": "Shared file",
@@ -214,6 +226,18 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "inputLimits": "最多選取四個檔案，每個最多 100 MiB。",
+  "invalidFileName": "檔名最多 128 個 UTF-8 位元組，不能包含資料夾路徑或控制字元。",
+  "foldersUnsupported": "請個別附加一般檔案，目前不支援資料夾。",
+  "filesUnavailable": "這個來源需要更新後才能接收一般檔案。",
+
+ "attachFiles":"附加圖片或檔案",
+ "removeFile":"移除檔案",
+ "attachedFile":"附加檔案",
+ "uploadingFiles":"正在上傳檔案…",
+ "filesLost":"先前選取的檔案已無法使用。請重新選取，或先捨棄附件再傳送。",
+ "discardFiles":"捨棄遺失的附件",
+
   "library": "檔案庫",
   "artifact": "互動文件",
   "sharedFile": "分享的檔案",

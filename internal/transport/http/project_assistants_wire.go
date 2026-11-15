@@ -144,6 +144,9 @@ func paWireMessage(value pa.Message) (contract.ProjectAssistantMessage, error) {
 	out.Kind = contract.ProjectAssistantMessageKind(value.Kind)
 	out.Text = value.Text
 	out.QuoteMessageID = value.QuoteMessageID
+	for _, file := range value.Files {
+		out.Files = append(out.Files, paWireInput(file))
+	}
 	if value.Output != nil {
 		o := paWireOutput(*value.Output)
 		out.Output = &o

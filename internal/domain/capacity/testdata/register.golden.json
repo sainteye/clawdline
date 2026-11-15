@@ -1253,6 +1253,86 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.input_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 104857600,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxInputBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.input_chunk_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 393216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxInputChunkBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.inputs_per_bot",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxInputsPerBot"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.inputs_per_message",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxInputsPerMessage"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.instruction_bytes",
     "Class": "buffer",
     "Unit": "bytes",

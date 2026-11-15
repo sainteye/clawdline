@@ -46,6 +46,10 @@ const (
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
 	return []Entry{
+		{Name: BotsInputBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxInputBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputBytes"}},
+		{Name: BotsInputChunkBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxInputChunkBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputChunkBytes"}},
+		{Name: BotsInputsPerMessage, Class: Buffer, Unit: Rows, Limit: pa.MaxInputsPerMessage, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputsPerMessage"}},
+		{Name: BotsInputsPerBot, Class: Buffer, Unit: Rows, Limit: pa.MaxInputsPerBot, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputsPerBot"}},
 		{Name: BotsArtifactTitleBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxArtifactTitleBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxArtifactTitleBytes"}},
 		{Name: BotsOutputBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxOutputBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxOutputBytes"}},
 		{Name: BotsArtifactBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxArtifactBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxArtifactBytes"}},

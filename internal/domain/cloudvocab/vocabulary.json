@@ -2968,6 +2968,106 @@
       }
     },
     {
+      "op": "project-assistants.input",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{bot_id}/input",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "machine_id": "source-one",
+        "bot_id": "機器人 α",
+        "session": "__clawdline_machine__",
+        "request": "stable-input",
+        "conversation_id": "conversation-a",
+        "message_id": "message-a",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "offset": 0
+      },
+      "shapes": [
+        {
+          "body": [
+            "bot_id",
+            "conversation_id",
+            "id",
+            "machine_id",
+            "message_id",
+            "offset",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{bot_id}/input",
+          "query": [
+            "conversation_id",
+            "id",
+            "machine_id",
+            "message_id",
+            "offset"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "machine_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "bot_id": {
+            "type": "string",
+            "checks": [
+              "pa_bot_id"
+            ]
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "min": 0,
+            "max": 104857600,
+            "copies": {
+              "max": "projectassistant.MaxInputBytes"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{bot_id}/input",
+          "query": {
+            "machine_id": {
+              "from": "machine_id"
+            },
+            "conversation_id": {
+              "from": "conversation_id"
+            },
+            "message_id": {
+              "from": "message_id"
+            },
+            "id": {
+              "from": "id"
+            },
+            "offset": {
+              "from": "offset"
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-assistants.list",
       "kind": "read",
       "write_gate": false,
@@ -4298,6 +4398,294 @@
       }
     },
     {
+      "op": "project-assistants.send-files",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "binding",
+          "generation": 1
+        },
+        "text": "",
+        "quote_message_id": "",
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "send",
+          "idempotency_key": "stable-files",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-files",
+        "upload_ids": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "images": [
+          "data:image/png;base64,cG5n"
+        ]
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "fence",
+            "quote_message_id",
+            "request",
+            "session",
+            "text",
+            "upload_ids"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/messages",
+          "local_body": [
+            "command",
+            "fence",
+            "quote_message_id",
+            "text",
+            "upload_ids"
+          ]
+        },
+        {
+          "body": [
+            "command",
+            "fence",
+            "images",
+            "quote_message_id",
+            "request",
+            "session",
+            "text",
+            "upload_ids"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/messages",
+          "local_body": [
+            "command",
+            "fence",
+            "images",
+            "quote_message_id",
+            "text",
+            "upload_ids"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "send"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "text": {
+            "type": "string",
+            "max_bytes": 32768,
+            "copies": {
+              "max_bytes": "projectassistant.MaxMessageBytes"
+            }
+          },
+          "quote_message_id": {
+            "type": "string"
+          },
+          "images": {
+            "type": "list",
+            "min_items": 1,
+            "max_items": 4,
+            "copies": {
+              "max_items": "projectassistant.MaxAttachmentsPerMessage"
+            },
+            "items": {
+              "type": "string",
+              "non_empty": true
+            }
+          },
+          "upload_ids": {
+            "type": "list",
+            "min_items": 1,
+            "max_items": 4,
+            "copies": {
+              "max_items": "projectassistant.MaxInputsPerMessage"
+            },
+            "items": {
+              "type": "string",
+              "non_empty": true
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/messages",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "quote_message_id": {
+                "from": "quote_message_id"
+              },
+              "text": {
+                "from": "text"
+              },
+              "images": {
+                "from": "images",
+                "omit_empty": true
+              },
+              "upload_ids": {
+                "from": "upload_ids"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-assistants.send-now",
       "kind": "command",
       "write_gate": true,
@@ -5004,6 +5392,291 @@
               },
               "turn_id": {
                 "from": "turn_id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.upload",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/upload",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "binding",
+          "generation": 1
+        },
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "upload",
+          "idempotency_key": "stable-upload",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-upload",
+        "file": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "name": "empty",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "offset": 0,
+        "data": "",
+        "done": true
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "data",
+            "done",
+            "fence",
+            "file",
+            "offset",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/upload",
+          "local_body": [
+            "command",
+            "data",
+            "done",
+            "fence",
+            "file",
+            "offset"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "upload"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "file": {
+            "type": "object",
+            "closed": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "non_empty": true
+              },
+              "name": {
+                "type": "string",
+                "max_bytes": 128,
+                "copies": {
+                  "max_bytes": "projectassistant.MaxNameRunes"
+                }
+              },
+              "bytes": {
+                "type": "integer",
+                "min": 0,
+                "max": 104857600,
+                "copies": {
+                  "max": "projectassistant.MaxInputBytes"
+                }
+              },
+              "sha256": {
+                "type": "string",
+                "length": 64
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "bytes",
+              "sha256"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "min": 0,
+            "max": 104857600,
+            "copies": {
+              "max": "projectassistant.MaxInputBytes"
+            }
+          },
+          "data": {
+            "type": "string",
+            "max_bytes": 524288
+          },
+          "done": {
+            "type": "bool"
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/upload",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "data": {
+                "from": "data"
+              },
+              "done": {
+                "from": "done"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "file": {
+                "from": "file"
+              },
+              "offset": {
+                "from": "offset"
               }
             }
           }

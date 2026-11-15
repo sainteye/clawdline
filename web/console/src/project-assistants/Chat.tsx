@@ -11,6 +11,7 @@ import { BotSettings } from "./BotSettings"
 import { MemoryPanel } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
 import { ChatRows } from "./ChatRows"
+import {uploadInputs,MAX_INPUTS,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
 import { Composer, MAX_PICTURES } from "./Composer"
 import { PermissionCard } from "./PermissionCard"
 import { Trace } from "./Trace"
@@ -181,7 +182,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const visibility=()=>{if(document.visibilityState==="hidden")pause();else if(!recovery.current)void refresh()}
     const show=(event:PageTransitionEvent)=>{if(event.persisted)visibility()}
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show)
-    return()=>{alive.current=false;control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show)}
+    return()=>{alive.current=false;uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
 
   useLayoutEffect(()=>{
@@ -237,11 +238,23 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     },control.signal)}finally{activeMutations.current.delete(control)}
   }
   const [images,setImages]=useState<string[]>([])
+  const marker="clawdline.bot-inputs."+draftKey
+  const [files,setFiles]=useState<DraftInput[]>([]),[filesLost,setFilesLost]=useState(()=>{try{return localStorage.getItem(marker)==="selected"}catch{return true}})
+  const [uploading,setUploading]=useState(""),[fileError,setFileError]=useState("")
+  const uploadControl=useRef<AbortController|null>(null)
+  const rememberFiles=(selected:boolean)=>{try{if(selected)localStorage.setItem(marker,"selected");else localStorage.removeItem(marker)}catch{setDraftDurable(false)}}
+  const canInput=!!source.canInputs?.()&&!!source.upload
+  const addFiles=(selected:readonly File[])=>{
+    if(!canInput||busy||unknown)return false
+    if(files.length+selected.length>MAX_INPUTS||selected.some(f=>f.size>MAX_INPUT_BYTES)){setFileError(w.inputLimits);return false}
+    if(selected.some(f=>!f.name||f.name==="."||f.name===".."||/[\/\\\p{Cc}]/u.test(f.name)||new TextEncoder().encode(f.name).length>128)){setFileError(w.invalidFileName);return false}
+    const next=[...files,...selected.map(file=>({file,id:crypto.randomUUID()}))];setFiles(next);setFileError("");setFilesLost(false);rememberFiles(true);return true
+  }
   const canAttach=!!source.pictures?.()
   const addImages=(files:readonly File[])=>{void Promise.all(files.slice(0,MAX_PICTURES).map(file=>new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file)}))).then(urls=>{if(valid())setImages(old=>[...old,...urls].slice(0,MAX_PICTURES))}).catch(fail)}
   const send=async()=>{
-    if(busy||unknown||view.heldOutcomes.has(draftKey)||(!text.trim()&&images.length===0)||!currentData.current)return
-    const submitted=text,pictures=images,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
+    if(busy||unknown||view.heldOutcomes.has(draftKey)||filesLost||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
+    const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
     let attempted=false;setBusy(true);setSending(submitted)
     // The message leaves the box at once and shows above as sending, as in a
     // messaging app. A send that failed outright gives it back to the box.
@@ -253,11 +266,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(view.draft(draftKey)==="")view.stage(draftKey,submitted)
       if(quoted&&!view.quotes.get(draftKey))view.quotes.set(draftKey,quoted)
       if(!valid())return
-      setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"");setImages(old=>old.length?old:pictures)
+      setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"");setImages(old=>old.length?old:pictures);setFiles(old=>old.length?old:selected)
     }
     changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)
     try{
-      const result=await mutate((_,s)=>{
+      const result=await mutate(async(d,s)=>{
+        if(selected.length){
+          const upload=new AbortController();uploadControl.current=upload;const cancel=()=>upload.abort();s.addEventListener("abort",cancel,{once:true})
+          try{setUploading("0%");intent.fence=fence(d);intent.upload_ids=await uploadInputs(source,intent.fence,selected,upload.signal,(n,total)=>{if(valid()&&!upload.signal.aborted)setUploading((total?Math.floor(n*100/total):100)+"%")},d.bot.instructions.revision)}
+          finally{s.removeEventListener("abort",cancel);uploadControl.current=null;if(valid())setUploading("")}
+          if(s.aborted||!valid()||recovery.current)throw failure("pa_revoked")
+        }
         // An earlier unknown turn stays visible and is never resent; a new
         // message from the person is a new turn. Only this tab's own
         // uncertain send is held.
@@ -270,13 +289,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(result.receipt.state==="unknown"||result.receipt.state==="failed")restore()
       if(!valid()||recovery.current)return
       setReceipt(result.receipt);setUnknown(result.receipt.state==="unknown")
-      if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed")flush()
+      if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed"){setFiles([]);rememberFiles(false);flush()}
       await refresh()
     }catch(e){
       const code=errorCode(e),unresolved=attempted&&(code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
       if(attempted&&!unresolved)view.heldOutcomes.delete(draftKey)
       restore()
-      if(valid()){fail(e);if(unresolved)setUnknown(true)}
+      if(valid()){if(!attempted&&(e as Error)?.name==="AbortError")setError("");else fail(e);if(unresolved)setUnknown(true)}
     }finally{if(valid()){setBusy(false);setSending(null)}}
   }
 
@@ -445,9 +464,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         </button>
       </div>
     </div>
-    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text}</span>{queuedTurn&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
+    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text||m.files?.map(f=>f.name).join(" · ")}</span>{queuedTurn&&!m.files?.length&&!m.attachments?.length&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
-      <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))}/>
+      {fileError&&<p role="alert">{fileError}</p>}<Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} sendBlocked={filesLost} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     {library&&<OutputLibrary source={source} bot={bot} messages={parts.chat} w={w} onClose={()=>setLibrary(false)}/>}
     {settings&&<BotSettings bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}

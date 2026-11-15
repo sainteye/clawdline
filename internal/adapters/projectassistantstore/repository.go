@@ -483,6 +483,7 @@ func validateAggregate(a aggregate) error {
 	}
 	ids := map[string]bool{}
 	messageFacts := map[string]pa.Message{}
+	inputOwners := map[string]bool{}
 	for i, msg := range a.Messages {
 		if msg.ID == "" || ids[msg.ID] || msg.Seq != int64(i+1) {
 			return failure(pa.Invalid, "message")
@@ -506,7 +507,16 @@ func validateAggregate(a aggregate) error {
 		default:
 			return failure(pa.Invalid, "message_kind")
 		}
-		if err := pa.ValidateSend(msg.Text, msg.Attachments); err != nil {
+		for _, file := range msg.Files {
+			if msg.Kind != pa.UserMessage || inputOwners[file.ID] {
+				return failure(pa.ScopeDenied, "input_owner")
+			}
+			inputOwners[file.ID] = true
+			if err := pa.ValidateInput(file); err != nil {
+				return err
+			}
+		}
+		if err := pa.ValidateInputSend(msg.Text, msg.Attachments, inputIDs(msg.Files)); err != nil {
 			return err
 		}
 		if msg.Output != nil {
@@ -682,6 +692,14 @@ func summary(a aggregate, reader string) pa.BotSummary {
 	out := pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, ActivityAt: a.Bot.UpdatedAt, ReadCursor: r}
 	for _, msg := range a.Messages {
 		out.LatestMessage = msg.Text
+		if out.LatestMessage == "" {
+			for i, file := range msg.Files {
+				if i > 0 {
+					out.LatestMessage += " · "
+				}
+				out.LatestMessage += file.Name
+			}
+		}
 		out.ActivityAt = msg.At
 		if reader != "" && msg.Seq > r.MessageSeq {
 			out.UnreadCount++
@@ -849,4 +867,12 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func inputIDs(files []pa.InputFile) []string {
+	ids := make([]string, 0, len(files))
+	for _, f := range files {
+		ids = append(ids, f.ID)
+	}
+	return ids
 }

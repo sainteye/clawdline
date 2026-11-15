@@ -672,6 +672,12 @@
         },
         "output": {
           "$ref": "#/$defs/ProjectAssistantOutput"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantInputFile"
+          }
         }
       },
       "required": [
@@ -1270,6 +1276,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "upload_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Finished explicit uploads, separate from picture blocks; requires API 70."
         }
       },
       "required": [
@@ -1789,7 +1802,8 @@
         "observe",
         "forget",
         "memory_save",
-        "dispatch"
+        "dispatch",
+        "upload"
       ]
     },
     "ProjectAssistantGetResponse": {
@@ -2589,6 +2603,158 @@
         "id",
         "artifact_id",
         "offset"
+      ]
+    },
+    "ProjectAssistantInputFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "bytes",
+        "sha256"
+      ]
+    },
+    "ProjectAssistantUploadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "file": {
+          "$ref": "#/$defs/ProjectAssistantInputFile"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "data": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "file",
+        "offset",
+        "data",
+        "done"
+      ]
+    },
+    "ProjectAssistantUploadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "file": {
+          "$ref": "#/$defs/ProjectAssistantInputFile"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "done": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "key",
+        "file",
+        "offset",
+        "done"
+      ]
+    },
+    "ProjectAssistantInputRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "conversation_id",
+        "message_id",
+        "id",
+        "offset"
+      ]
+    },
+    "ProjectAssistantInputResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "file": {
+          "$ref": "#/$defs/ProjectAssistantInputFile"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "data": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        }
+      },
+      "required": [
+        "contract_version",
+        "key",
+        "conversation_id",
+        "message_id",
+        "file",
+        "offset",
+        "data",
+        "source"
       ]
     }
   }

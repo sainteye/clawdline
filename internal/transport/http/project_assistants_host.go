@@ -115,7 +115,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit,
 		Projects:          projectAssistantProjects{s}, Broker: s.broker, Clock: time.Now,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
-		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(), Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, Rules: projectassistantacp.ClaudeLocalRules{},
+		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, Rules: projectassistantacp.ClaudeLocalRules{},
 		// The provider receives only execution-bound NativeTools from Host.
 		// Dispatch follows CodyNC: a Bot may hand isolated work on any file
 		// of its own repository Project to a Claude worker that accepts
@@ -384,7 +384,7 @@ func (s *Server) projectAssistantsRoute(w http.ResponseWriter, r *http.Request) 
 		paWriteHTTPFailure(w, err)
 		return
 	}
-	newProjectAssistantHTTP(projectAssistantHTTPOptions{Service: service, MachineID: i.MachineID, Attachments: s.projectAssistantAttachments(), Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, BeforeViewPublish: p.beforeViewPublish,
+	newProjectAssistantHTTP(projectAssistantHTTPOptions{Service: service, MachineID: i.MachineID, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, BeforeViewPublish: p.beforeViewPublish,
 		Status: func(ctx context.Context) (pa.SourceStatus, error) {
 			a, err := s.projectAssistantAuthority(ctx, pa.BotKey{MachineID: i.MachineID}, false)
 			return a.Source, err
