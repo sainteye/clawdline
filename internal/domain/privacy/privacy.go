@@ -102,6 +102,10 @@ type Allowance struct {
 // in review; the reason is the part they read. A text that is only allowed in
 // one file is spelled here in two pieces, or this file would trip on it.
 var Allowed = []Allowance{
+	{Path: "plugins/session-orrery/upstream/fonts/OFL-IMFellEnglish.txt", Rule: "email", Text: "mail@" + "iginomarini.com",
+		Why: "the public copyright contact in the unchanged IM Fell English SIL OFL notice from pinned Herdr source 73bf616; the font license must remain intact"},
+	{Path: "plugins/session-orrery/index.html", Rule: "email", Text: "mail@" + "iginomarini.com",
+		Why: "the same public IM Fell English copyright notice embedded with the licensed fonts in the self-contained Orrery package; no other address or rule is exempt"},
 	{Rule: "uuid", Text: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
 		Why: "the WebSocket GUID from RFC 6455 §1.3, the same constant in every implementation"},
 	{Rule: "uuid", Text: "018f2f7a-7d65-4aa8-8e01-11a8f4257ed1",

@@ -49,6 +49,16 @@ That file contains its authors' public email addresses. Only the `email` rule is
 and all other rules, including the person's private-word list, still scan that file. This
 exception applies only to `-dir`, never to a repository tree or history scan.
 
+The Orrery source port retains the original IM Fell English SIL OFL notice and
+embeds that notice beside the fonts in its self-contained HTML. Its public author
+contact is a separate standing allowance: one exact address, the `email` rule and
+only `plugins/session-orrery/upstream/fonts/OFL-IMFellEnglish.txt` or
+`plugins/session-orrery/index.html`. The original notice was checked against pinned
+upstream source. Other addresses in either file, the same address in another file,
+and all private-word, credential and home-path checks remain active. The license
+is preserved; it is not rewritten to make a privacy check pass.
+
+
 ## Four answers, and why the fourth one exists
 
 | Exit | Answer | What it means |

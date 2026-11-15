@@ -144,3 +144,32 @@ func TestAnAllowanceIsExact(t *testing.T) {
 		t.Errorf("allowed text in another file: %+v", got)
 	}
 }
+
+func TestPublicOrreryFontContactHasOnlyTwoScopedAllowances(t *testing.T) {
+	t.Parallel()
+	contact := j("mail@", "iginomarini.com")
+	other := j("owner@", "corp.co")
+	paths := []string{
+		"plugins/session-orrery/index.html",
+		"plugins/session-orrery/upstream/fonts/OFL-IMFellEnglish.txt",
+	}
+	for _, path := range paths {
+		if got := New(nil).Scan(path, []byte(contact)); len(got) != 0 {
+			t.Errorf("the preserved public font notice must pass at %s: %+v", path, got)
+		}
+		if got := New(nil).Scan(path, []byte(contact+" "+other)); len(got) != 1 || got[0].Rule != "email" || got[0].Match != other {
+			t.Errorf("another address in the same file must still fail: %+v", got)
+		}
+		if got := New([]string{"not-published-here"}).Scan(path, []byte(contact+" not-published-here")); len(got) != 1 || got[0].Rule != "private-word" {
+			t.Errorf("the person's word rule must still run: %+v", got)
+		}
+		if got := New(nil).Scan(path, []byte(contact+" "+j("/Users/", "dana/private"))); len(got) != 1 || got[0].Rule != "home-path" {
+			t.Errorf("the home path rule must still run: %+v", got)
+		}
+	}
+	for _, path := range []string{"plugins/session-orrery/README.md", "plugins/other/index.html", "licenses/OFL-IMFellEnglish.txt"} {
+		if got := New(nil).Scan(path, []byte(contact)); len(got) != 1 || got[0].Rule != "email" {
+			t.Errorf("the same address outside the exact files must fail: %+v", got)
+		}
+	}
+}
