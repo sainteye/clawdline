@@ -752,3 +752,43 @@ test('the sheet\'s toggle places a ringing or live call again on the other voice
   c.switchEngine('live')
   assert.deepEqual(events, [])
 })
+
+test('a GPT-Live call placed from a Session opens on its summary at once and goes on with the latest one', async (t) => {
+  globalThis.document = { documentElement: { lang: 'zh-Hant' } }
+  globalThis.location = { hash: '' }
+  const now = Math.floor(Date.now() / 1000)
+  const run = async (latest) => {
+    const sent = [], forks = []
+    const c = new RealtimeCopilotClient()
+    t.after(() => clearInterval(c.liveTicker))
+    c.live = true
+    c.attempt = 1
+    c.state = { ...c.state, status: 'connected' }
+    c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
+    c.call = { memory: '', snapshot: '', options: { origin: { id: '%7', label: 'Prepare screenshots' } } }
+    c.focus = '%7'
+    c.snapshot = Promise.resolve('')
+    c.memory = []
+    c.addLog = () => {}
+    c.recapMode = 'background'
+    const listed = { ...row, recap: { text: 'Four screenshots were taken.', at: now - 1200, current: false } }
+    c.toolDeps = () => ({ ...c.constructor.prototype.toolDeps.call(c), sleep: async () => {}, tasks: undefined, fleet: undefined,
+      fetch: async (path, init) => {
+        if (path === '/v1/sessions') return Response.json({ sessions: [listed] })
+        if (path === '/v1/voice/copilot-recap') { forks.push(JSON.parse(String(init.body))); return Response.json({ recap: latest, at: now, current: true }) }
+        return Response.json({})
+      } })
+    c.handleLiveEvent({ type: 'session.started' })
+    for (let i = 0; i < 40 && forks.length === 0; i++) await tick()
+    for (let i = 0; i < 10; i++) await tick()
+    return { sent: sent.filter(e => e.type === 'session.commentary.append').map(e => e.content), forks }
+  }
+  const changed = await run('All six screenshots are done; it waits for your approval.')
+  assert.equal(changed.forks.length, 1, 'the latest summary is asked for, the kept one being 20 minutes old')
+  assert.equal(changed.sent.length, 2)
+  assert.match(changed.sent[0], /Open the call .*Four screenshots were taken/, 'the kept summary is said at once')
+  assert.doesNotMatch(changed.sent[0], /Greet/)
+  assert.match(changed.sent[1], /Newer information .*All six screenshots are done/)
+  const same = await run('Four screenshots were taken.')
+  assert.equal(same.sent.length, 1, 'an unchanged latest summary is not said again')
+})
