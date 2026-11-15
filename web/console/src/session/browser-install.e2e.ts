@@ -176,7 +176,8 @@ async function open(name: string, width: number, height: number, ui: string, ove
   await until(`!!document.getElementById("detail-actions-trigger") && !document.getElementById("detail-actions-trigger").disabled`)
   await run(`document.getElementById("detail-actions-trigger").click()`)
   await until(`!document.getElementById("session-actions").hidden && !document.getElementById("session-browser").hidden`)
-  await run(`document.getElementById("session-browser").click()`)
+  await run(`document.getElementById("session-more").click()`)
+      await run(`document.getElementById("session-browser").click()`)
   await until(`!!document.querySelector("#browser-panel:not([hidden]) .browser-card-primary")`)
   return { run, until, shot, close: () => browser.send("Target.closeTarget", { targetId }).catch(() => {}) }
 }

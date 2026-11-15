@@ -282,6 +282,7 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       assert.ok(await run(`!!document.activeElement?.closest('.browser-action')`),"focus returns to the action picture")
       await run(`document.getElementById('detail-actions-trigger').click()`)
       await until(`!document.getElementById('session-browser').hidden`)
+      await run(`document.getElementById('session-more').click()`)
       await run(`document.getElementById('session-browser').click()`)
       await until(`document.querySelector('.browser-shot')?.getBoundingClientRect().width>0`)
       assert.equal(await run(`document.querySelector('.browser-host').textContent`), "www.console.example.com")
@@ -655,6 +656,7 @@ for (const [width, ui] of [[390, "zh-Hant"], [360, "en"], [1280, "en"]] as const
       await until(`document.querySelector('#detail-name')?.textContent === 'Browser Session'`)
       await run(`document.getElementById('detail-actions-trigger').click()`)
       await until(`!!document.getElementById('session-browser')`)
+      await run(`document.getElementById('session-more').click()`)
       await run(`document.getElementById('session-browser').click()`)
       await until(`!!document.querySelector('#browser-panel:not([hidden]) #browser-open-url')`)
       const words = ui === "en" ? { title: "This Session has no tab yet", bad: "Only web addresses" } : { title: "這個 Session 還沒有分頁", bad: "只能打開 http 或 https" }

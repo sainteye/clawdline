@@ -713,6 +713,7 @@ for (const assistant of ["claude", "codex"]) {
    await tab.click('#native-terminal .panel-view-head button')
    assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),true)
    await tab.click('#detail-actions-trigger')
+   await tab.click('#session-more')
    await tab.click('#session-native-terminal')
    assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
    await tab.click('#native-terminal .panel-view-head button')
