@@ -1173,6 +1173,20 @@ export class RealtimeCopilotClient {
     if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
     this.addLog(snapshot ? 'info' : 'error', nextWord(snapshot ? 'copilotLogSnapshot' : 'copilotLogNoSnapshot'))
     const section = memorySection(this.memory, nowSeconds())
+    // The Session the call was placed from, as the tools list it. On 所有機器
+    // the page names it by its raw id ("%7") while the tools list
+    // "fleet:<machine>:%257"; a Realtime call resolves it in its opening
+    // handover, which a Live call does not have. Unresolved, every send was
+    // refused as "not the Session under discussion" (2026-11-15).
+    const origin = this.call.options.origin
+    if (origin) {
+      const listed = await this.captureFocus(origin.id, origin.machine)
+      if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
+      if (listed) {
+        this.focus = listed.id
+        this.call.options = { ...this.call.options, origin: { ...origin, id: listed.id } }
+      }
+    }
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.sendLiveContext()
     this.updateState({ connectionReady: true })
