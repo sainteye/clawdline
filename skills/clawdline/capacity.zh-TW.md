@@ -56,6 +56,8 @@
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `bots.actors` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.adapter_install_seconds` | 300 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.artifact_bytes` | 5242880 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.artifact_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachments_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.capture_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -71,6 +73,8 @@
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.notice_rows` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
+| `bots.output_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.output_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.pending_turns` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |

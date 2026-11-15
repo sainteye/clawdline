@@ -557,3 +557,14 @@ handoff request or any provider instructions. The `session-rotation` explanation
 original excerpt, loading condition and effect were reviewed in both languages
 and remain accurate. The source receipt follows these two browser labels;
 website snapshot publication remains a separate step.
+
+
+The persistent Bot output card documents the execution-bound `send_file`,
+`publish_artifact` and `list_artifacts` tools, immutable local snapshots,
+paired chunk reads and the isolated HTML viewer. Its English and Taiwan
+Traditional Chinese explanations distinguish explicit publication from
+automatic Project upload and from general input-file uploads. The existing
+Bot context explanation now follows the agent's four permission choices and
+revocable Claude standing rules. Source receipts cover the actual output
+producers and viewer; they do not establish a deployed website or a live
+provider result.

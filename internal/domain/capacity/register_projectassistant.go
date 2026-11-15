@@ -46,6 +46,10 @@ const (
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
 	return []Entry{
+		{Name: BotsArtifactTitleBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxArtifactTitleBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxArtifactTitleBytes"}},
+		{Name: BotsOutputBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxOutputBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxOutputBytes"}},
+		{Name: BotsArtifactBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxArtifactBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxArtifactBytes"}},
+		{Name: BotsOutputChunkBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxOutputChunkBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxOutputChunkBytes"}},
 		{Name: BotsReadViewCursorBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxReadViewCursorBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxReadViewCursorBytes"}},
 		{Name: BotsOwnedDescendants, Class: Buffer, Unit: Rows, Limit: MaximumBotOwnedDescendants, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotOwnedDescendants"}},
 		{Name: BotsNameRunes, Class: Buffer, Unit: Characters, Limit: pa.MaxNameRunes, AtLimit: Refuse,

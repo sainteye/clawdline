@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node loads the source extension.
+import {outputMetadata} from "./outputs.ts"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Runtime enums use the generated source extension for Node's strip-types runner.
 import { ProjectAssistantAccessValues, ProjectAssistantAgentValues, ProjectAssistantShapeValues, ProjectAssistantPermissionPolicyValues, ProjectAssistantSourceStateValues, ProjectAssistantNativeMemoryModeValues, ProjectAssistantTurnStateValues, ProjectAssistantPermissionStateValues, ProjectAssistantMessageKindValues, ProjectAssistantWorkStateValues, ProjectAssistantEventKindValues, ProjectAssistantErrorCodeValues, ProjectAssistantReadViewModeValues } from "../../../contract/src/generated.ts"
@@ -49,6 +51,7 @@ function work(w:W.ProjectAssistantWorkLink,scope:ReadScope) {
 
 function message(m:W.ProjectAssistantMessage,scope:ReadScope) {
   if(!m||!text(m.id)||!integer(m.seq,1)||typeof m.text!=="string"||typeof m.turn_id!=="string"||typeof m.quote_message_id!=="string"||!date(m.at)||!oneOf(m.kind,ProjectAssistantMessageKindValues)||(m.attachments!==undefined&&(!Array.isArray(m.attachments)||m.attachments.some(a=>!a||!/^[0-9a-f]{64}$/.test(a.id)||typeof a.media_type!=="string"||!integer(a.bytes,1)))))throw failure("pa_invalid")
+  if(m.output!==undefined){outputMetadata(m.output);if(m.kind!=="assistant")throw failure("pa_invalid")}
   own(m.fence,scope)
 }
 function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.ProjectAssistantFence) {

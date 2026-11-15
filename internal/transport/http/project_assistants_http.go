@@ -29,6 +29,7 @@ type projectAssistantHTTPOptions struct {
 	Status    func(context.Context) (pa.SourceStatus, error)
 	// Attachments keeps the pictures sent to Bots.
 	Attachments projectassistantstore.Attachments
+	Outputs     projectassistantstore.Outputs
 	// Private deterministic fixture barrier; production leaves it nil.
 	BeforeViewPublish func()
 }
@@ -87,6 +88,21 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(view.body)
+		return
+	}
+	if output, ok := payload.(paEncodedOutput); ok {
+		if h.options.BeforeViewPublish != nil {
+			h.options.BeforeViewPublish()
+		}
+		if _, err = h.status(r.Context(), true); err == nil {
+			err = output.check(r.Context())
+		}
+		if err != nil {
+			paWriteHTTPFailure(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(output.body)
 		return
 	}
 	if picture, ok := payload.(paAttachmentBytes); ok {
@@ -179,7 +195,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view", "rules":
+					case "events", "export", "view", "rules", "output":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -335,6 +351,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 }
 
 func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, error) {
+	if route.action == "output" {
+		return h.readOutput(r, route)
+	}
 	if route.action == "view" {
 		return h.readView(r, route)
 	}

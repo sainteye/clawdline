@@ -335,3 +335,14 @@
 .project-assistants .pa-quote { display:inline-flex; align-items:center; gap:6px; min-height:36px; margin-top:16px; padding:0 12px; border-radius:18px; border:1px solid var(--pa-line); background:transparent; color:var(--pa-dim); font-size:13px; cursor:pointer; }
 .project-assistants .pa-quote:hover { color:#fafafa; }
 .project-assistants .pa-message:not(.pa-mine) { cursor:auto; }
+/* Explicit Bot publications and their isolated full-size reader. */
+.pa-output-card{margin:.5rem 0}
+.pa-output-card>button{display:flex;flex-direction:column;align-items:flex-start;gap:.35rem;width:100%;padding:1rem;text-align:left;border:1px solid var(--pa-line);background:var(--pa-card);color:inherit}
+.pa-output-card strong{overflow-wrap:anywhere}
+.pa-output-card small{opacity:.7}
+.pa-output-overlay{position:fixed;inset:12px;z-index:1500;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--pa-bg,#080808);color:inherit;border:1px solid var(--pa-line,#303033);overflow:auto}
+.pa-output-overlay>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pa-output-overlay h3{margin:0;overflow-wrap:anywhere}
+.pa-output-overlay>button{align-self:flex-start}
+.pa-artifact-frame{flex:1;min-height:50vh;width:100%;border:0;background:white}
+.pa-output-overlay a{overflow-wrap:anywhere}

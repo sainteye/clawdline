@@ -3507,6 +3507,115 @@
       }
     },
     {
+      "op": "project-assistants.output",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "captured Bot source GET /v1/project-assistants/{bot_id}/output",
+      "console_seam": "client",
+      "local": {
+        "method": "GET",
+        "device": true
+      },
+      "special": [
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "machine_id": "source-one",
+        "bot_id": "機器人 α",
+        "session": "__clawdline_machine__",
+        "request": "stable-output",
+        "conversation_id": "conversation-a",
+        "message_id": "message-a",
+        "id": "file-a",
+        "artifact_id": "",
+        "offset": 0
+      },
+      "shapes": [
+        {
+          "body": [
+            "artifact_id",
+            "bot_id",
+            "conversation_id",
+            "id",
+            "machine_id",
+            "message_id",
+            "offset",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{bot_id}/output",
+          "query": [
+            "artifact_id",
+            "conversation_id",
+            "id",
+            "machine_id",
+            "message_id",
+            "offset"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "machine_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "bot_id": {
+            "type": "string",
+            "checks": [
+              "pa_bot_id"
+            ]
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "min": 0,
+            "max": 104857600,
+            "copies": {
+              "max": "projectassistant.MaxOutputBytes"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{bot_id}/output",
+          "query": {
+            "machine_id": {
+              "from": "machine_id"
+            },
+            "conversation_id": {
+              "from": "conversation_id"
+            },
+            "message_id": {
+              "from": "message_id"
+            },
+            "id": {
+              "from": "id"
+            },
+            "artifact_id": {
+              "from": "artifact_id"
+            },
+            "offset": {
+              "from": "offset"
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-assistants.projects",
       "kind": "read",
       "write_gate": false,

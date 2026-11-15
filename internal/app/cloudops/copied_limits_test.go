@@ -26,6 +26,7 @@ var copiedConstants = map[string]int64{
 	"projectassistant.MaxAttachmentsPerMessage":    projectassistant.MaxAttachmentsPerMessage,
 	"cloud.MaxSafeInteger":                         cloud.MaxSafeInteger,
 	"projectassistant.MaxMessageBytes":             projectassistant.MaxMessageBytes,
+	"projectassistant.MaxOutputBytes":              projectassistant.MaxOutputBytes,
 	"projectassistant.MaxInstructionBytes":         projectassistant.MaxInstructionBytes,
 	"projectassistant.MaxPageRows":                 projectassistant.MaxPageRows,
 	"projectassistant.MaxEventPageRows":            projectassistant.MaxEventPageRows,

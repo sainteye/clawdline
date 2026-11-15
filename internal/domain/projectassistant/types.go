@@ -228,6 +228,7 @@ type Message struct {
 	// Attachments are pictures sent with the message, kept by content
 	// digest; the model receives them as native image blocks.
 	Attachments []Attachment `json:"attachments,omitempty"`
+	Output      *Output      `json:"output,omitempty"`
 }
 type SendMessage struct {
 	Fence          Fence        `json:"fence"`

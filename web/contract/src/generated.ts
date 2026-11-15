@@ -5607,6 +5607,7 @@ export interface ProjectAssistantMessage {
   fence: ProjectAssistantFence
   id: string
   kind: ProjectAssistantMessageKind
+  output?: ProjectAssistantOutput
   quote_message_id: string
   seq: number
   text: string
@@ -5656,6 +5657,34 @@ export type ProjectAssistantOperation =
   | "dispatch"
 
 export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
+
+export interface ProjectAssistantOutput {
+  artifact_id: string
+  bytes: number
+  id: string
+  name: string
+  sha256: string
+}
+
+export interface ProjectAssistantOutputRequest {
+  artifact_id: string
+  conversation_id: string
+  id: string
+  key: ProjectAssistantBotKey
+  message_id: string
+  offset: number
+}
+
+export interface ProjectAssistantOutputResponse {
+  contract_version: string
+  conversation_id: string
+  data: string
+  key: ProjectAssistantBotKey
+  message_id: string
+  offset: number
+  output: ProjectAssistantOutput
+  source: ProjectAssistantSourceStatus
+}
 
 /**
  * What the native tool asks to do, for the person to read before answering. Display

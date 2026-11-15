@@ -9,6 +9,7 @@ import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-view
 import { BotAvatar } from "./BotAvatar"
 import { BotSettings } from "./BotSettings"
 import { MemoryPanel } from "./MemoryPanel"
+import {OutputLibrary} from "./OutputLibrary"
 import { ChatRows } from "./ChatRows"
 import { Composer, MAX_PICTURES } from "./Composer"
 import { PermissionCard } from "./PermissionCard"
@@ -44,6 +45,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const grant=useRef(source.authorizationRevision).current
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
+  const [library,setLibrary]=useState(false)
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
   const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
@@ -422,6 +424,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const bot=data?.bot??summary.bot,enabled=!recoveryRequired&&!!data&&canWrite(data.source), parts=partitionMessages(messages,turns)
   return <section className="pa-chat" aria-label={bot.name}>
     <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36}/><div><h2 tabIndex={-1}>{bot.name}</h2><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></div><PaMenu label={w.moreActions} items={[
+      {id:"library",label:w.library,onSelect:()=>setLibrary(true)},
       {id:"settings",label:w.settings,onSelect:()=>setSettings(true)},
       {id:"memory",label:w.memory,onSelect:()=>{memoryShown.current=true;void loadExport().catch(fail)}},
       {id:"refresh",label:w.refresh,onSelect:()=>void refresh(true)},
@@ -446,6 +449,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
       <Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))}/>
     </div>
+    {library&&<OutputLibrary source={source} bot={bot} messages={parts.chat} w={w} onClose={()=>setLibrary(false)}/>}
     {settings&&<BotSettings bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>
 }

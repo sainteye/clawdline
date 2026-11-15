@@ -14,6 +14,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL = 69
 export const PROJECT_ASSISTANTS_API_LEVEL = 60
 export const PROJECT_ASSISTANTS_VIEW_API_LEVEL = 61
 // Pictures with a message and their read route arrived at 62.
@@ -173,6 +174,12 @@ export class ProjectAssistantSourceClient implements SourceClient {
     return answer
   }
   send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
+  canOutputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL }
+  output(r:W.ProjectAssistantOutputRequest,s:AbortSignal):Promise<W.ProjectAssistantOutputResponse> {
+    this.key(r.key)
+    const {key,...fields}=r
+    return this.request<W.ProjectAssistantOutputResponse>(endpoint(key,"/output")+query({machine_id:key.machine_id,...fields}),s,undefined,"GET",true,PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL)
+  }
   pictures() { return (this.grant.apiLevel ?? 0) >= (this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL) }
   attachmentURL(key: W.ProjectAssistantBotKey, id: string) { return this.grant.accountKey==="local" && this.pictures() && key.machine_id === this.machineID ? endpoint(key,`/attachments/${encodeURIComponent(id)}`)+query({machine_id:this.machineID}) : null }
   async attachment(key: W.ProjectAssistantBotKey,id:string,s:AbortSignal):Promise<Blob> {
@@ -244,6 +251,12 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       const request:W.ProjectAssistantReadViewRequest={key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size)}
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
+    }
+    if(tail==="/output") {
+      const fields=["machine_id","conversation_id","message_id","id","artifact_id","offset"]
+      if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(f=>!url.searchParams.has(f))||! /^(0|[1-9][0-9]*)$/.test(q.offset))throw failure("pa_invalid")
+      const offset=Number(q.offset);if(!Number.isSafeInteger(offset)||offset>100*1024*1024)throw failure("pa_invalid")
+      return {word:"project-assistants.output",kind:"read" as const,fields:{...key,conversation_id:q.conversation_id,message_id:q.message_id,id:q.id,artifact_id:q.artifact_id,offset},id:""}
     }
     const picture=/^\/attachments\/([0-9a-f]{64})$/.exec(tail)
     if(picture){if(url.searchParams.size!==1||!q.machine_id)throw failure("pa_invalid");return {word:"project-assistants.attachment",kind:"read" as const,fields:{...key,id:picture[1]},id:""}}

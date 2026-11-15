@@ -34,6 +34,7 @@ func projectAssistantOperationCases() []operationCase {
 		query                map[string]string
 	}{
 		{"status", "GET", "/status", nil, nil},
+		{"output", "GET", "/bot/output", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "message_id": "message", "id": "file", "artifact_id": "", "offset": 0}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "message_id": "message", "id": "file", "artifact_id": "", "offset": "0"}},
 		{"attachment", "GET", "/bot/attachments/" + id, map[string]any{"machine_id": "mac-01", "bot_id": "bot", "id": id}, map[string]string{"machine_id": "mac-01"}},
 		{"send-pictures", "POST", "/bot/messages", map[string]any{"fence": fence, "text": "", "quote_message_id": "", "images": []any{"data:image/png;base64,cG5n"}}, nil},
 		{"projects", "GET", "/v1/project-assistant-targets", map[string]any{"machine_id": "mac-01", "cursor": "page", "page_size": 100}, map[string]string{"machine_id": "mac-01", "cursor": "page", "page_size": "100"}},
@@ -110,7 +111,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 24 {
+	if len(out) != 25 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

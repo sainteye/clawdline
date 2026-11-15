@@ -1007,7 +1007,12 @@ func (r *Engine) incoming(ctx context.Context, a *runtimeActor, e ProtocolEvent)
 		if err = pa.ValidateMessage(e.Message); err != nil {
 			return err
 		}
-		msg := pa.Message{ID: "explicit-" + t.ID + "-" + e.ID, Fence: e.Fence, TurnID: t.ID, Kind: pa.AssistantMessage, Text: e.Message, At: r.o.Clock()}
+		if e.Output != nil {
+			if err := pa.ValidateOutput(*e.Output); err != nil {
+				return err
+			}
+		}
+		msg := pa.Message{ID: "explicit-" + t.ID + "-" + e.ID, Fence: e.Fence, TurnID: t.ID, Kind: pa.AssistantMessage, Text: e.Message, Output: e.Output, At: r.o.Clock()}
 		m.Messages = []pa.Message{msg}
 		m.Events = append(m.Events, pa.Event{Fence: e.Fence, Kind: pa.MessageCreated, Message: &msg})
 	}

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12245,
-  "riskKeys": 5307,
-  "nonRiskCount": 6938,
+  "englishContentKeys": 12267,
+  "riskKeys": 5316,
+  "nonRiskCount": 6951,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 570,
+      "count": 575,
       "sources": [
         null
       ],
@@ -453,6 +453,8 @@
         "capacityRow.bots.actors.what",
         "capacityRow.bots.adapter_install_seconds.full",
         "capacityRow.bots.adapter_install_seconds.what",
+        "capacityRow.bots.artifact_bytes.what",
+        "capacityRow.bots.artifact_title_bytes.what",
         "capacityRow.bots.attachment_bytes.what",
         "capacityRow.bots.attachments_per_message.what",
         "capacityRow.bots.capture_bytes.what",
@@ -469,6 +471,9 @@
         "capacityRow.bots.memory_search_results.what",
         "capacityRow.bots.name_runes.what",
         "capacityRow.bots.notice_rows.what",
+        "capacityRow.bots.output_bytes.what",
+        "capacityRow.bots.output_chunk_bytes.full",
+        "capacityRow.bots.output_chunk_bytes.what",
         "capacityRow.bots.owned_children.what",
         "capacityRow.bots.permission_action_bytes.full",
         "capacityRow.bots.processes.what",
@@ -5619,7 +5624,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 136,
+      "count": 142,
       "sources": [
         null
       ],
@@ -5631,6 +5636,7 @@
         "projectAssistants.answered",
         "projectAssistants.appearance",
         "projectAssistants.approveAutomatically",
+        "projectAssistants.artifact",
         "projectAssistants.ask",
         "projectAssistants.attachPicture",
         "projectAssistants.back",
@@ -5647,6 +5653,7 @@
         "projectAssistants.createSubmit",
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
+        "projectAssistants.downloadFile",
         "projectAssistants.earlier",
         "projectAssistants.executing",
         "projectAssistants.export",
@@ -5667,6 +5674,7 @@
         "projectAssistants.interactive",
         "projectAssistants.jump",
         "projectAssistants.landed",
+        "projectAssistants.library",
         "projectAssistants.loading",
         "projectAssistants.machine",
         "projectAssistants.memory",
@@ -5683,6 +5691,7 @@
         "projectAssistants.no",
         "projectAssistants.offline",
         "projectAssistants.online",
+        "projectAssistants.openingOutput",
         "projectAssistants.permissionContent",
         "projectAssistants.permissionEdit",
         "projectAssistants.permissionExecute",
@@ -5710,6 +5719,7 @@
         "projectAssistants.rulesTitle",
         "projectAssistants.running",
         "projectAssistants.save",
+        "projectAssistants.saveHTML",
         "projectAssistants.savingMemory",
         "projectAssistants.search",
         "projectAssistants.selectBot",
@@ -5727,6 +5737,7 @@
         "projectAssistants.shape_tablet",
         "projectAssistants.shape_teardrop",
         "projectAssistants.shape_wedge",
+        "projectAssistants.sharedFile",
         "projectAssistants.sourceIDs",
         "projectAssistants.stale",
         "projectAssistants.status",
@@ -7039,7 +7050,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 170,
+      "count": 172,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7143,6 +7154,8 @@
         "transparency.card.notice.effect",
         "transparency.card.notice.summary",
         "transparency.card.notice.title",
+        "transparency.card.persistent-bot-outputs.summary",
+        "transparency.card.persistent-bot-outputs.title",
         "transparency.card.persistent-bots.summary",
         "transparency.card.persistent-bots.title",
         "transparency.card.playbook.condition",

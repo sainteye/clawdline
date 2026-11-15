@@ -106,6 +106,64 @@ rules are shown in this machine's own console; Codex keeps its own and
 Clawdline does not list them yet.) If a worker's terminal shows a question, such as whether to trust a
 folder, the work card tells you to answer it in that Session.
 
+## Files and interactive documents from a Bot
+
+A Bot explicitly shares an output with `send_file` and publishes self-contained
+HTML with `publish_artifact`. Both tools require an `idempotency_key`: reuse the
+same key and arguments after an uncertain reply. A success means the snapshot
+and its chat card are already saved. Project files are never published by scanning
+the directory. Paths must name regular files inside the Bot's current Project;
+absolute paths inside that directory also work. Symlinks, directory traversal,
+directories and special files are refused.
+
+`send_file {idempotency_key, path, name?}` accepts binary, extensionless and empty
+files up to 100 MiB. `publish_artifact {idempotency_key, path, title?, artifact?}`
+accepts UTF-8 HTML up to 5 MiB. A new artifact needs a title; titles are trimmed,
+up to 200 UTF-8 bytes, with no control characters. For an update, pass the previous
+`artifact_id` as `artifact` and publish the complete replacement HTML. Omitting
+the title on an update keeps its current title. `list_artifacts {}` returns the
+Bot's latest artifact descriptors, newest first, including their stable
+`artifact_id`, display `name`, byte count, SHA-256 and the current HTML snapshot's
+`path`. That path is for reading; edit a copy inside the Project and publish the
+copy, rather than modifying stored snapshots.
+
+Click a file card to download its verified snapshot. An artifact card opens the
+newest published HTML, including when opened from an earlier card. **Library**
+in the conversation menu lists shared files and artifacts; multiple revisions
+of an artifact occupy one library row. Earlier messages can be loaded there
+without automatically draining the entire history. The original source may be
+edited or deleted, and a daemon restart does not change the saved bytes.
+
+Every authenticated output read names the Bot and conversation. A file also
+names its exact message and output ID; an artifact names its stable artifact ID.
+The source checks snapshot size and SHA-256 on each read and returns at most
+384 KiB. The client verifies the complete size and SHA-256 before displaying HTML
+or offering a download. Closing the viewer cancels subsequent reads and discards
+late responses; changed authorization invalidates the transfer.
+
+HTML runs in two sandboxed frames with opaque origins. It has no app credentials,
+parent-document access, app storage, network access, popup permission or top-level
+navigation permission. The trusted outer frame's policy also blocks navigation
+of the inner frame. Inline CSS and JavaScript can provide local interaction.
+Links inside the document do not navigate the frame; **Open a link** offers its
+HTTP, HTTPS and mail links as explicit app-owned clicks. **Save as HTML** exports
+the original verified bytes. This adds no public links or automatic publishing.
+
+Copying runs outside the Bot actor and SQL transactions. Current execution
+authority is checked during copying and again at publication; Stop, replaced
+turns and reconfiguration cannot publish a late card. Each copy has its own
+snapshot, so refusing one cannot remove bytes used by another card. An uncertain
+SQL acknowledgement preserves a snapshot when its ownership cannot safely be
+disproved. Bot deletion removes the stored output directory with the Bot's other
+attachments.
+
+Input pictures retain their separate attachment protocol. Non-image uploads from
+the person are a separate, later unit. The local regression fixture uses an owned
+ACP subprocess and real MCP, SQLite and HTTP, with zero provider/model calls.
+For its optional real-browser run, supply `PLAYWRIGHT_MODULE`,
+`PLAYWRIGHT_BROWSERS_PATH` and a task-owned `CLAWDLINE_OUTPUT_E2E_DIR`, then run
+`go test ./internal/transport/http -run '^TestProjectAssistantOutputOwnedMCPHTTP$' -count=1`.
+
 ## If something is missing
 
 - *This Bot needs Claude Code 2.1.323 or newer and Node 22 or newer*:
