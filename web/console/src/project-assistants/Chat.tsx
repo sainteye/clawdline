@@ -57,7 +57,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [permissionMore,setPermissionMore]=useState(""),[traceMore,setTraceMore]=useState("")
   const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
   const [text,setText]=useState(()=>view.draft(draftKey)),[quote,setQuote]=useState(view.quotes.get(draftKey)??"")
-  const [error,setError]=useState(()=>recoveryRequired?"pa_read_only":""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
+  const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
   const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
@@ -174,11 +174,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   useEffect(()=>{
     alive.current=true;const control=new AbortController()
     // Initial entry uses only the new consistent bounded snapshot.
-    if(!recovery.current)void recoverSnapshot(control.signal).then(async()=>{if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}).catch(e=>{if(!control.signal.aborted&&valid()){lock();fail(e)}})
+    // Reopening a Bot retries only its bounded read. Keep the recovery latch
+    // until that snapshot validates; unknown effects are never replayed.
+    void recoverSnapshot(control.signal).then(async()=>{if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}).catch(e=>{if(!control.signal.aborted&&valid()){lock();fail(e)}})
     // pagehide may run while visibilityState is still visible. Leaving must
     // pause IO rather than start a refresh that the unloading page cannot read.
     const pause=()=>{eventControl.current?.abort();if(timer.current){clearTimeout(timer.current);timer.current=null}for(const read of reads.current)read.abort();view.flush(draftKey)}
-    const visibility=()=>{if(document.visibilityState==="hidden")pause();else if(!recovery.current)void refresh()}
+    const visibility=()=>{if(document.visibilityState==="hidden")pause();else void refresh(true)}
     const show=(event:PageTransitionEvent)=>{if(event.persisted)visibility()}
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show)
     return()=>{alive.current=false;control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show)}

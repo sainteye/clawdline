@@ -327,6 +327,12 @@ type pendingRPC struct {
 func (p *pendingRPC) wait(ctx context.Context) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, p.c.l.RPCTimeout)
 	defer cancel()
+	return p.waitResult(ctx)
+}
+
+// The runtime owns the prompt deadline and cancels it on stop, shutdown or
+// revocation. Control RPCs retain their shorter deadline through wait.
+func (p *pendingRPC) waitResult(ctx context.Context) (json.RawMessage, error) {
 	select {
 	case x := <-p.ch:
 		return x.value, x.err
@@ -420,7 +426,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 type promptPending struct{ rpc *pendingRPC }
 
 func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
-	b, err := p.rpc.wait(ctx)
+	b, err := p.rpc.waitResult(ctx)
 	if err != nil {
 		return app.PromptResult{}, err
 	}

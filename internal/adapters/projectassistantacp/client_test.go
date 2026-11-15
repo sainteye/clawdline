@@ -114,6 +114,9 @@ func TestACPTestPeer(t *testing.T) {
 			if mode == "exit" {
 				os.Exit(8)
 			}
+			if mode == "delayed-prompt" {
+				time.Sleep(100 * time.Millisecond)
+			}
 			if mode == "silent" || mode == "steer" {
 				continue
 			}
@@ -326,6 +329,31 @@ func TestACPCancelAndUnknownEffect(t *testing.T) {
 				t.Fatal("unknown effect reported successful")
 			}
 		})
+	}
+}
+
+// A prompt owns the runtime turn deadline, not the shorter control RPC deadline.
+func TestACPPromptOutlivesControlRPCDeadline(t *testing.T) {
+	c, _ := openTestClient(t, "delayed-prompt", func(context.Context, app.ProtocolEvent) error { return nil })
+	c.l.RPCTimeout = 20 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := sendTestPrompt(t, c).Wait(ctx)
+	if err != nil || result.FinalText != "partial" {
+		t.Fatalf("prompt was cut short by control RPC deadline: result=%+v err=%v", result, err)
+	}
+}
+
+func TestACPControlRPCStillTimesOut(t *testing.T) {
+	c, _ := openTestClient(t, "silent", func(context.Context, app.ProtocolEvent) error { return nil })
+	c.l.RPCTimeout = 20 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := c.call(ctx, "fixture/unanswered-control", nil); pa.Code(err) != pa.ExecutionEffectUnknown {
+		t.Fatalf("unanswered control RPC: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("control RPC waited for the turn deadline")
 	}
 }
 
