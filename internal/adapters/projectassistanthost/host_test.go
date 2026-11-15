@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -450,6 +451,64 @@ func TestHostUnavailableProviderKeepsMetadataAndFutureSchemaUntouched(t *testing
 			t.Fatal(data, e)
 		}
 	})
+}
+
+func TestHostDisabledV1HistoryMigratesBeforeReadService(t *testing.T) {
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "legacy")
+	s, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.Export(context.Background(), b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.o.Database.Exec(`UPDATE project_assistant_schema SET version=1`); err != nil {
+		t.Fatal(err)
+	}
+	f.o.Broker = f.broker(t, t.TempDir())
+	f.start(t)
+	var version int
+	if err = f.o.Database.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != 2 {
+		t.Fatalf("disabled history schema=%d, want 2: %v", version, err)
+	}
+	state, err := f.h.Status(context.Background())
+	if err != nil || state.Enabled || !state.HasData || state.Access() != pa.HistoryOnly {
+		t.Fatal(state, err)
+	}
+	s, err = f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.Export(context.Background(), b.Key)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("disabled migration lost history: %v", err)
+	}
+	if _, err = f.send(t, b, "disabled-after-migration"); pa.Code(err) != pa.Disabled {
+		t.Fatal(err)
+	}
+	if f.factories.Load() != 0 || f.p.opens.Load() != 0 || f.h.engine != nil || f.o.Broker.AssistantAuthority != nil || f.o.Broker.AssistantWorkChanged != nil {
+		t.Fatal("disabled migration initialized execution")
+	}
+	// Only construction may accept legacy metadata. Later drift stays strict.
+	if _, err = f.o.Database.Exec(`UPDATE project_assistant_schema SET version=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.h.Status(context.Background()); pa.Code(err) != pa.Unsupported {
+		t.Fatalf("Status accepted legacy metadata after construction: %v", err)
+	}
+	if _, err = f.o.Database.Exec(`UPDATE project_assistant_schema SET version=99`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Export(context.Background(), b.Key); pa.Code(err) != pa.Unsupported {
+		t.Fatalf("read service accepted future metadata: %v", err)
+	}
 }
 
 func TestHostRetainsLateOpenAndUnknownCleanupAcrossReenable(t *testing.T) {

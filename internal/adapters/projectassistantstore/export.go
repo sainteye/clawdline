@@ -45,7 +45,7 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 	if err != nil {
 		return err
 	}
-	if in.Manifest.ContractVersion != pa.ContractVersion || in.Manifest.SchemaVersion != pa.SchemaVersion {
+	if in.Manifest.ContractVersion != pa.ContractVersion || !restorableSchema(in.Manifest.SchemaVersion) || in.Manifest.SchemaVersion != in.Data.SchemaVersion {
 		return failure(pa.Unsupported, "manifest_version")
 	}
 	if sum != in.Manifest.SHA256 {
@@ -53,6 +53,10 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 	}
 	return s.Restore(ctx, in.Data)
 }
+
+// Legacy exports retain their original facts and command identities. Restore
+// validates both versions identically; the next export uses the current schema.
+func restorableSchema(version int) bool { return version == 1 || version == pa.SchemaVersion }
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -144,7 +148,7 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 // existing facts. Sequence/ID collisions reject the entire transaction. The
 // supported disaster-recovery path restores into a caller-owned empty schema.
 func (s *Store) Restore(ctx context.Context, in app.Export) error {
-	if in.ContractVersion != pa.ContractVersion || in.SchemaVersion != pa.SchemaVersion {
+	if in.ContractVersion != pa.ContractVersion || !restorableSchema(in.SchemaVersion) {
 		return failure(pa.Unsupported, "export_version")
 	}
 	unlock := s.lock(in.Bot.Key)
