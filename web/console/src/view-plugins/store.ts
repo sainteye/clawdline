@@ -1,4 +1,4 @@
-import { fail, parsePackage, type ViewPackage } from "./package.js"
+import { fail, parsePackage, RETIRED_PACKAGES, type ViewPackage } from "./package.js"
 import { PLUGIN_LIMITS as B } from "./limits.js"
 
 interface Revision { archive: ArrayBuffer; digest: string }
@@ -38,8 +38,16 @@ async function unpack(r: Revision): Promise<ViewPackage> {
   return result
 }
 export async function installedPackages(): Promise<Installed[]> {
-  const conn = await db(), tx = conn.transaction("packages", "readonly")
-  const saved = await request(tx.objectStore("packages").getAll(undefined, B.packages + 1)) as Saved[]
+  const conn = await db()
+  const saved = await new Promise<Saved[]>((resolve, reject) => {
+    const tx = conn.transaction("packages", "readwrite"), store = tx.objectStore("packages")
+    // Remove withdrawn built-ins, including rollback bytes, before returning launchable rows.
+    for (const id of RETIRED_PACKAGES) store.delete(id)
+    const rows = store.getAll(undefined, B.packages + 1)
+    tx.oncomplete = () => resolve(rows.result as Saved[])
+    tx.onabort = () => reject(new Error("storage_unavailable"))
+    tx.onerror = () => reject(new Error("storage_unavailable"))
+  })
   if (saved.length > B.packages) fail("storage_unavailable")
   return Promise.all(saved.map(async r => {
     const active = await unpack(r.active), previous = r.previous ? await unpack(r.previous) : undefined

@@ -8,7 +8,7 @@ export async function runAppPluginAcceptance({playwrightModule,artifacts}) {
  const {html,files}=await hostBundle();await mkdir(artifacts,{recursive:true})
  const server=createServer(async(req,res)=>{try{const url=new URL(req.url,"http://fixture");let body=files.get(url.pathname)
  if(url.pathname==="/")body=html
- if(/^\/catalogs\/(en|zh-Hant)\.json$/.test(url.pathname)||/^\/view-plugins\/(session-galaxy|session-list)\.zip$/.test(url.pathname))body=await readFile(new URL("../public"+url.pathname,import.meta.url))
+ if(/^\/catalogs\/(en|zh-Hant)\.json$/.test(url.pathname)||/^\/view-plugins\/session-galaxy\.zip$/.test(url.pathname))body=await readFile(new URL("../public"+url.pathname,import.meta.url))
  if(body===undefined){res.writeHead(404);res.end();return}
  res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":url.pathname.endsWith(".json")?"application/json":url.pathname.endsWith(".zip")?"application/zip":"text/html");res.end(body)}catch(e){res.writeHead(500);res.end(String(e))}})
  await new Promise(r=>server.listen(0,"127.0.0.1",r));const pw=await import(pathToFileURL(playwrightModule).href)

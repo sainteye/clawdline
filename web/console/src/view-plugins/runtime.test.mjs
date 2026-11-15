@@ -36,6 +36,17 @@ sys.stdout.buffer.write(out.getvalue())`
  const run=spawnSync("python3",["-c",script],{input:JSON.stringify({zip:Buffer.from(archive).toString("base64"),patch})})
  assert.equal(run.status,0,run.stderr.toString());return run.stdout
 }
+test("Retired built-in views cannot be imported or executed from old archives",async()=>{
+ const original=await readFile(packageURL)
+ for(const id of ["com.clawdline.session-list","com.clawdline.session-pop-art","com.clawdline.session-absurd"]){
+  const archive=changedManifest(original,{id})
+  await assert.rejects(parsePackage(archive),e=>e.code==="retired_package")
+  await assert.rejects(parsePackage(archive,{allowLegacy:true}),e=>e.code==="retired_package")
+  await assert.rejects(installPackage(archive,null),e=>e.code==="retired_package")
+ }
+ const custom=await parsePackage(changedManifest(original,{id:"org.example.community"}))
+ assert.equal(custom.manifest.id,"org.example.community")
+})
 function coverPNG(side=2, height=side, filter=0, options={}) {
  const chunk=(kind,body)=>{const type=Buffer.from(kind),head=Buffer.alloc(4),tail=Buffer.alloc(4);head.writeUInt32BE(body.length);tail.writeUInt32BE(pngCRC(Buffer.concat([type,body])));return Buffer.concat([head,type,body,tail])}
  const head=Buffer.alloc(13);head.writeUInt32BE(side);head.writeUInt32BE(height,4);head[8]=8;head[9]=6
@@ -90,7 +101,7 @@ test("Published examples have real covers and exact legacy archives gain artwork
   assert.equal(pkg.manifest.cover,manifest.cover)
   assert.equal(exampleCover(manifest.id),manifest.cover,"A published example must not disappear behind an absent cover")
  }
- const legacy=await parsePackage(await readFile(new URL("./testdata/legacy-session-pop-art.zip",import.meta.url)),{allowLegacy:true})
+ const legacy=await parsePackage(await readFile(new URL("./testdata/legacy-session-galaxy.zip",import.meta.url)),{allowLegacy:true})
  assert.equal(legacy.manifest.cover,undefined);assert.ok(packageCover(legacy))
  assert.equal(packageCover({...legacy,digest:"unrecognized archive"}),undefined,"An unknown archive cannot impersonate a built-in's legacy cover")
  assert.equal(packageCover({...legacy,manifest:{...legacy.manifest,id:"org.example.legacy"}}),undefined)
@@ -106,8 +117,7 @@ test("The shipped ZIP parses as an independent self-contained package",async()=>
   const pkg=await parsePackage(await readFile(packageURL))
   assert.equal(pkg.manifest.id,"com.clawdline.session-galaxy")
   assert.ok(pkg.html.includes("connectViewPlugin"));assert.ok(!pkg.html.includes("MockHost"));assert.ok(!pkg.html.includes("<!-- CLAWDLINE_SDK -->"))
-  const list=await parsePackage(await readFile(new URL("../../public/view-plugins/session-list.zip",import.meta.url)))
-  assert.notEqual(list.manifest.id,pkg.manifest.id)
+
 })
 test("ZIP corruption, compressed/encrypted archives and overflow are refused before execution",async()=>{
   const original=await readFile(packageURL)
@@ -201,7 +211,7 @@ test("The archive refuses traversal names, aliased entries and symlinks",async()
 
 test("The public packer reproduces all supplied ZIPs from author sources and the SDK",async()=>{
  const root=fileURLToPath(new URL("../../../../",import.meta.url))
- for(const id of ["session-galaxy","session-list","session-pop-art","session-absurd"]){
+ for(const id of ["session-galaxy"]){
   const out=join(scratch,id+".zip"),result=spawnSync("python3",["tools/pack-view-plugin.py","plugins/"+id,out],{cwd:root,encoding:"utf8"})
   assert.equal(result.status,0,result.stderr)
   assert.deepEqual(await readFile(out),await readFile(new URL("../../public/view-plugins/"+id+".zip",import.meta.url)))

@@ -4,8 +4,21 @@ import {createServer} from "node:http"
 import {readFile,mkdir,writeFile} from "node:fs/promises"
 import {pathToFileURL,fileURLToPath} from "node:url"
 import {crc32} from "node:zlib"
+import {spawnSync} from "node:child_process"
 import {build} from "esbuild"
 
+function variant(archive,patch) {
+ const script=`import sys,json,io,zipfile,base64
+p=json.load(sys.stdin)
+with zipfile.ZipFile(io.BytesIO(base64.b64decode(p['archive']))) as z: files={n:z.read(n) for n in z.namelist()}
+m=json.loads(files['manifest.json']);m.update(p['patch']);files['manifest.json']=json.dumps(m).encode()
+out=io.BytesIO()
+with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_STORED) as z:
+ for name,body in files.items():z.writestr(name,body)
+sys.stdout.buffer.write(out.getvalue())`
+ const r=spawnSync("python3",["-c",script],{input:JSON.stringify({archive:archive.toString("base64"),patch})})
+ assert.equal(r.status,0,r.stderr.toString());return r.stdout
+}
 export async function runViewAcceptance({playwrightModule,artifacts,engines=["chromium","webkit"]}) {
  await mkdir(artifacts,{recursive:true})
  const result=await build({stdin:{contents:`
@@ -14,20 +27,22 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  import{setDockAvailable}from"./project-assistants/BotOrb";setDockAvailable(true);
  import{installedPackages,enablePackage}from"./view-plugins/store";
  const rows=[{key:"first",title:"<img src=x onerror=alert(1)>",project:{key:"one",label:"Demo One"},workState:"waiting_you",freshness:"fresh"},{key:"second",title:"Background work",project:{key:"two",label:"Demo Two"},workState:"working",freshness:"fresh"},{key:"third",title:"Unassigned work",project:null,workState:"unknown",freshness:"unknown"}];
- let listeners=new Set(),remoteConnected=true,active=true,navigations=[];window.fixture={rows,navigations,async disableList(){const row=(await installedPackages()).find(r=>r.id==="com.clawdline.session-list");await enablePackage(row,false)},change(){for(const fn of listeners)fn()},disconnect(){remoteConnected=false;this.change()},revoke(){active=false;window.renderHost()}};
+ let listeners=new Set(),remoteConnected=true,active=true,navigations=[];window.fixture={rows,navigations,async disableCommunity(){const row=(await installedPackages()).find(r=>r.id==="org.example.community");await enablePackage(row,false)},change(){for(const fn of listeners)fn()},disconnect(){remoteConnected=false;this.change()},revoke(){active=false;window.renderHost()}};
  function Host(){const [,render]=useState(0);window.renderHost=()=>render(n=>n+1);const api=useViewPlugins(active?[{key:"studio",label:"Studio",async read(){return{sessions:[...rows],connected:true}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>navigations.push("studio:"+key)}},{key:"field",label:"Field",async read(){return{sessions:[{...rows[0],title:"Remote Session"}],connected:remoteConnected}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>navigations.push("field:"+key)}}]:[],document.documentElement.lang);return <><button id="outside">Original interface</button><button id="manager" onClick={e=>api.openManager(e.currentTarget)}>{document.documentElement.lang === "en" ? "View plugins" : "視圖擴充"}</button><div id="dock">{api.dock}{api.entry}</div>{api.content}</>};createRoot(document.getElementById("root")).render(<Host/>);
  `,resolveDir:fileURLToPath(new URL("../src",import.meta.url)),loader:"tsx"},bundle:true,write:false,outfile:"host.js",format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
- const oldDeadpan=await readFile(new URL("../src/view-plugins/testdata/legacy-session-absurd.zip",import.meta.url))
+ const oldGalaxy=await readFile(new URL("../src/view-plugins/testdata/legacy-session-galaxy.zip",import.meta.url))
+ const currentGalaxy=await readFile(new URL("../public/view-plugins/session-galaxy.zip",import.meta.url))
+ const community=variant(currentGalaxy,{id:"org.example.community",name:{en:"Community Map","zh-Hant":"社群地圖"}})
+ const retired=["session-list","session-pop-art","session-absurd"].map(id=>({id:"com.clawdline."+id,archive:variant(currentGalaxy,{id:"com.clawdline."+id})}))
  let forbiddenRequests=0
  const files=new Map(result.outputFiles.map(f=>["/"+f.path.split("/").at(-1),f.text]))
  const server=createServer(async(req,res)=>{try{const u=new URL(req.url,"http://test");let body;if(u.pathname==="/")body=`<!doctype html><html lang="${u.searchParams.get("lang")||"en"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script>`;
- else if(u.pathname==="/view-plugins/session-absurd.zip" && req.headers["x-fixture-previous"]==="1"){res.setHeader("Cache-Control","public, max-age=14400");body=oldDeadpan}
- else if(/^\/view-plugins\/(session-galaxy|session-list|session-pop-art|session-absurd)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
+ else if(u.pathname==="/view-plugins/session-galaxy.zip" && req.headers["x-fixture-previous"]==="1"){res.setHeader("Cache-Control","public, max-age=14400");body=oldGalaxy}
+ else if(/^\/view-plugins\/session-galaxy\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
  if(u.pathname.startsWith("/v1/"))forbiddenRequests++
  if(body===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",u.pathname.endsWith(".js")?"text/javascript":u.pathname.endsWith(".css")?"text/css":u.pathname.endsWith(".zip")?"application/zip":"text/html");res.end(body)}catch(e){res.writeHead(500);res.end(String(e))}})
  await new Promise(r=>server.listen(0,"127.0.0.1",r));const origin=`http://127.0.0.1:${server.address().port}`
  const pw=await import(pathToFileURL(playwrightModule).href),reports=[]
- const legacyPop=await readFile(new URL("../src/view-plugins/testdata/legacy-session-pop-art.zip",import.meta.url))
  try {for(const engine of engines)for(const width of [390,1440])for(const lang of ["en","zh-Hant"]){
  const browser=await pw[engine].launch({headless:true}),context=await browser.newContext({viewport:{width,height:900},reducedMotion:"reduce"}),page=await context.newPage(),errors=[]
  page.on("pageerror",e=>errors.push(e.message))
@@ -42,9 +57,9 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  assert.equal(await page.getByRole("button",{name:zh?"安裝星系":"Install Galaxy",exact:true}).count(),0)
  await dismiss();await manager()
  const covers=page.locator(".vp-example .vp-art img")
- assert.equal(await covers.count(),4,"Every published example has its own real cover")
+ assert.equal(await covers.count(),1,"Only Galaxy is offered to new users")
  await page.waitForFunction(()=>[...document.querySelectorAll(".vp-example .vp-art img")].every(image=>image.complete&&image.naturalWidth>0))
- assert.equal(new Set(await covers.evaluateAll(images=>images.map(image=>image.src))).size,4,"Pop no longer borrows List's artwork")
+ assert.equal(await page.locator(".vp-example").count(),1)
  await page.getByRole("button",{name:zh?"安裝星系":"Install Galaxy",exact:true}).click()
  await page.locator(".vp-review").waitFor()
  assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains("vp-review")),true,"Review is brought into view and keyboard focus")
@@ -90,7 +105,7 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await page.locator(".vp-host").waitFor({state:"hidden"})
  await page.waitForFunction(label=>document.activeElement?.getAttribute("aria-label")===label,entry)
  await manager()
- await page.getByRole("button",{name:zh?"安裝清單":"Install List",exact:true}).click()
+ await page.locator('input[type=file]').setInputFiles({name:"community.zip",mimeType:"application/zip",buffer:community})
  await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
  await page.waitForFunction(()=>document.querySelectorAll(".vp-installed").length===2)
  await dismiss()
@@ -100,19 +115,22 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  assert.equal(await page.locator('input[type=file]').count(),0)
  assert.equal(await page.getByRole("button",{name:zh?"移除":"Remove",exact:true}).count(),0)
  await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-picker.png`})
- await page.locator(".vp-launch-item").filter({hasText:zh?"Session 清單":"Session List"}).click()
- await frame.locator(".item").first().waitFor();assert.equal(await frame.locator(".item").count(),4)
- await frame.getByRole("button",{name:/^Remote Session/}).click()
+ await page.locator(".vp-launch-item").filter({hasText:zh?"社群地圖":"Community Map"}).click()
+ await frame.locator(".node").first().waitFor();assert.equal(await frame.locator(".node").count(),4)
+ await frame.getByRole("button",{name:zh?"清單":"List",exact:true}).click()
+ await frame.locator(".list-item").filter({hasText:"Remote Session"}).click()
+ await frame.getByRole("button",{name:zh?"前往這個 Session":"Open this Session",exact:true}).click()
  await page.locator(".vp-host").waitFor({state:"hidden"})
  await page.waitForFunction(()=>fixture.navigations.length===1)
  assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Equal Session keys navigate to the correct machine")
  await page.getByRole("button",{name:entry,exact:true}).click()
- await page.locator(".vp-launch-item").filter({hasText:zh?"Session 清單":"Session List"}).click()
- await frame.locator(".item").first().waitFor()
+ await page.locator(".vp-launch-item").filter({hasText:zh?"社群地圖":"Community Map"}).click()
+ await frame.locator(".node").first().waitFor()
+ await frame.getByRole("button",{name:zh?"清單":"List",exact:true}).click()
  await page.evaluate(()=>fixture.disconnect())
- await frame.getByRole("button",{name:/^Remote Session/}).getByText(zh?"Demo One · 資料可能過時":"Demo One · May be stale",{exact:true}).waitFor()
+ await frame.locator(".list-item").filter({hasText:"Remote Session"}).getByText(zh?"Demo One · 可能過時":"Demo One · May be stale",{exact:true}).waitFor()
  await page.getByRole("status").filter({hasText:zh?"部分機器":"Some Session"}).waitFor()
- assert.equal(await frame.getByRole("button",{name:/^Updated Session/}).locator("small").textContent(),"Demo One","The healthy machine stays fresh")
+ assert.equal(await frame.locator(".list-item").filter({hasText:"Updated Session"}).locator(".s").textContent(),"Demo One","The healthy machine stays fresh")
  await page.evaluate(()=>fixture.revoke())
  await page.locator("iframe").waitFor({state:"detached"});await page.getByRole("alert").waitFor()
  await dismiss()
@@ -142,105 +160,46 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await dismiss()
  // Registry mutation does not reintroduce a scope or consent screen.
  await page.getByRole("button",{name:entry,exact:true}).click()
- await frame.locator(".item").first().waitFor()
+ await frame.locator(".node").first().waitFor()
  const other=await page.context().newPage()
  await other.goto(origin+"/?lang="+lang);await other.locator("#manager").waitFor()
- await other.evaluate(()=>fixture.disableList())
+ await other.evaluate(()=>fixture.disableCommunity())
  await page.locator("iframe").waitFor({state:"detached"})
  await page.getByRole("heading",{name:zh?"還沒有啟用的視圖":"No views enabled yet",exact:true}).waitFor()
  await other.close()
- // Pop uses the same static-package review and install flow without a native file chooser.
- await dismiss();await manager()
- await page.getByRole("button",{name:zh?"安裝普普風":"Install Pop",exact:true}).click()
- await page.locator(".vp-review").getByRole("heading",{name:zh?"Session 普普風":"Session Pop",exact:true}).waitFor()
- await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
- const pop=page.locator(".vp-installed").filter({has:page.getByRole("heading",{name:zh?"Session 普普風":"Session Pop",exact:true})})
- await pop.getByRole("button",{name:new RegExp("^"+open)}).waitFor()
- await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-pop-installed.png`})
- await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
- await frame.locator(".panel").first().waitFor()
- assert.equal(await frame.locator(".panel").count(),4,"Pop reads every supplied machine through the existing host")
- assert.equal(await frame.locator("img").count(),0,"Pop renders hostile labels as text")
- await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-pop.png`})
- await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
- await frame.locator(".panel",{hasText:"Remote Session"}).click()
- assert.deepEqual(await page.evaluate(()=>fixture.navigations),[],"Selecting a panel does not navigate")
- await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).click()
- await page.locator(".vp-host").waitFor({state:"hidden"})
- await page.waitForFunction(()=>fixture.navigations.length===1)
- assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Pop's explicit action preserves machine routing")
- // New imports cannot use the legacy read exception, even for an already installed ID.
- await manager()
- await page.locator('input[type=file]').setInputFiles({name:"coverless.zip",mimeType:"application/zip",buffer:legacyPop})
- await page.getByRole("alert").filter({hasText:zh?"套件缺少封面圖，請補上專屬封面後再安裝或上架。":"This package has no cover. Add a dedicated cover before installation or publication."}).waitFor()
- await pop.locator(".vp-version").getByText("v0.1.1",{exact:true}).waitFor()
- assert.equal(await page.locator(".vp-review").count(),0)
+ // Old fixed-URL caches must still be bypassed for the retained Galaxy installer.
  await dismiss()
- // Seed a real pre-cover record to model a browser that installed the previous release.
- await page.evaluate(async bytes=>{
-  const archive=Uint8Array.from(bytes).buffer,digest=[...new Uint8Array(await crypto.subtle.digest("SHA-256",archive))].map(n=>n.toString(16).padStart(2,"0")).join("")
-  const db=await new Promise((resolve,reject)=>{const request=indexedDB.open("clawdline-view-plugins",1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})
-  await new Promise((resolve,reject)=>{const tx=db.transaction("packages","readwrite");tx.objectStore("packages").put({id:"com.clawdline.session-pop-art",enabled:true,active:{archive,digest}});tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)})
+ const oldBytes=await page.evaluate(async()=>{const answer=await fetch("/view-plugins/session-galaxy.zip",{cache:"reload",headers:{"X-Fixture-Previous":"1"}});return(await answer.arrayBuffer()).byteLength})
+ assert.equal(oldBytes,oldGalaxy.byteLength)
+ await manager();await page.getByRole("button",{name:zh?"安裝星系":"Install Galaxy",exact:true}).click()
+ await page.locator(".vp-review").getByText("com.clawdline.session-galaxy · 0.1.1",{exact:true}).waitFor()
+ await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
+ await galaxy.locator(".vp-version").getByText("v0.1.1",{exact:true}).waitFor()
+ // Withdrawn IDs refuse any import, while an unrelated community package remains installed.
+ for(const pkg of retired){
+  await page.locator('input[type=file]').setInputFiles({name:"withdrawn.zip",mimeType:"application/zip",buffer:pkg.archive})
+  await page.getByRole("alert").getByText(zh?"此內建視圖已移除，無法再安裝。":"This built-in view has been removed and can no longer be installed.",{exact:true}).waitFor()
+  assert.equal(await page.locator(".vp-review").count(),0)
+ }
+ await dismiss()
+ // Model an existing browser, including stale rollback bytes and a damaged retired record.
+ await page.evaluate(async records=>{
+  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open("clawdline-view-plugins",1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})
+  await new Promise((resolve,reject)=>{const tx=db.transaction("packages","readwrite");for(const r of records){const archive=Uint8Array.from(r.bytes).buffer;tx.objectStore("packages").put({id:r.id,enabled:true,active:{archive,digest:"old"},previous:{archive,digest:"rollback"}})}tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)})
   db.close()
- },[...legacyPop])
- await manager();await pop.locator(".vp-version").getByText("v0.1.0",{exact:true}).waitFor()
- assert.equal(await pop.locator(".vp-art img").count(),1,"The old installed archive receives its real authored cover")
- await page.waitForFunction(()=>[...document.querySelectorAll(".vp-installed .vp-art img")].every(image=>image.complete&&image.naturalWidth>0))
- await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-legacy-covers.png`})
+ },retired.map(pkg=>({id:pkg.id,bytes:[...pkg.archive]})))
+ await page.reload();await manager()
+ await galaxy.locator(".vp-version").getByText("v0.1.1",{exact:true}).waitFor()
+ assert.equal(await page.locator(".vp-example").count(),1)
+ assert.equal(await page.locator(".vp-installed").count(),2,"Galaxy and an unrelated community view survive retirement")
+ const saved=await page.evaluate(async()=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open("clawdline-view-plugins",1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});const rows=await new Promise((resolve,reject)=>{const r=db.transaction("packages").objectStore("packages").getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});db.close();return rows.map(r=>({id:r.id,enabled:r.enabled,digest:r.active.digest,previous:!!r.previous})).sort((a,b)=>a.id.localeCompare(b.id))})
+ assert.deepEqual(saved.map(r=>r.id),["com.clawdline.session-galaxy","org.example.community"])
+ assert.equal(saved[0].enabled,true);assert.equal(saved[1].enabled,false)
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-retired.png`})
  await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
- await frame.locator(".panel").first().waitFor();assert.equal(await frame.locator(".panel").count(),4,"The old installed Pop still opens without replacing its archive")
+ await frame.locator(".node").first().waitFor()
+ assert.equal(await page.locator(".vp-launch-item").count(),0,"A single enabled Galaxy still opens directly")
  await dismiss()
- // Warm the browser HTTP cache with the real previous ZIP, as Pages does for four hours.
- const oldBytes=await page.evaluate(async()=>{const answer=await fetch("/view-plugins/session-absurd.zip",{cache:"reload",headers:{"X-Fixture-Previous":"1"}});return(await answer.arrayBuffer()).byteLength})
- assert.equal(oldBytes,oldDeadpan.byteLength)
- // The manager must bypass that cache and review the newly published painting revision.
- // Deadpan is a fourth independent package installed through the same review.
- await manager()
- await page.getByRole("button",{name:zh?"安裝冷面劇場":"Install Deadpan",exact:true}).click()
- await page.locator(".vp-review").getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true}).waitFor()
- assert.equal(await page.locator(".vp-review").getByText("com.clawdline.session-absurd · 0.2.0",{exact:true}).count(),1,"A cached previous ZIP must not replace the current published painting revision")
- assert.equal(await page.locator('input[type=file]').count(),1,"Only the manager's own import input exists; the example opens no chooser")
- await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
- const deadpan=page.locator(".vp-installed").filter({has:page.getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true})})
- await deadpan.getByRole("button",{name:new RegExp("^"+open)}).waitFor()
- await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-deadpan-installed.png`})
- await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
- await page.locator(".vp-launch-item").filter({hasText:zh?"Session 冷面劇場":"Session Deadpan"}).click()
- await frame.locator(".card").first().waitFor()
- assert.equal(await frame.locator(".card").count(),4,"Deadpan reads every supplied machine through the existing host")
- const painting=frame.locator("#paintingImage")
- await painting.waitFor()
- await painting.evaluate(image=>image.decode())
- assert.deepEqual(await painting.evaluate(image=>[image.naturalWidth,image.naturalHeight]),[900,1200],"The generated painting decodes inside the isolated package")
- assert.equal(await frame.locator("img").count(),1,"Only the authored painting exists; hostile labels cannot create images")
- assert.ok((await painting.getAttribute("src")).startsWith("data:image/jpeg;base64,"),"The painting is embedded rather than loaded from a server")
- assert.equal(await frame.locator("svg").count(),0,"The rejected SVG character scenes are gone")
- assert.ok(await frame.locator("body").evaluate(body=>document.documentElement.scrollWidth<=innerWidth),"The painting layout stays within the viewport")
- await frame.getByRole("button",{name:zh?"清單":"List",exact:true}).click()
- assert.equal(await frame.locator("#painting").isVisible(),false,"List mode gives the same data the full width")
- assert.equal(await frame.locator(".rows button").count(),4)
- await frame.getByRole("button",{name:zh?"畫作":"Painting",exact:true}).click()
- assert.equal(await frame.locator("#painting").isVisible(),true)
- await page.emulateMedia({reducedMotion:"no-preference"})
- await frame.getByRole("button",{name:zh?"動態：開":"Motion on",exact:true}).waitFor()
- assert.equal(await frame.locator(".painting-frame").evaluate(el=>el.getAnimations().some(a=>a.playState==="running")),true)
- await frame.getByRole("button",{name:zh?"動態：開":"Motion on",exact:true}).click()
- assert.equal(await frame.locator(".painting-frame").evaluate(el=>el.getAnimations().length),0,"Manual stillness stops the ornamental frame motion")
- await frame.getByRole("button",{name:zh?"動態：關":"Motion off",exact:true}).click()
- await page.emulateMedia({reducedMotion:"reduce"})
- await frame.getByRole("button",{name:zh?"已減少動態":"Reduced motion",exact:true}).waitFor()
- assert.equal(await frame.locator(".painting-frame").evaluate(el=>el.getAnimations().length),0,"The host reduced-motion preference wins")
- await frame.getByText("<img src=x onerror=alert(1)>",{exact:true}).waitFor()
- await frame.locator(".card",{hasText:"Unassigned work"}).click()
- assert.equal(await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).isDisabled(),true,"Unknown freshness refuses opening")
- await frame.getByText(zh?"無法確認資料是否最新，所以無法開啟。":"Freshness is unknown, so opening is off.",{exact:true}).waitFor()
- await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-deadpan.png`})
- await frame.locator(".card",{hasText:"<img src=x onerror=alert(1)>"}).click()
- assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Selecting a Deadpan card does not navigate")
- await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).click()
- await page.locator(".vp-host").waitFor({state:"hidden"})
- await page.waitForFunction(()=>fixture.navigations.length===2)
- assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first","studio:first"],"Deadpan's explicit action routes the colliding key to its own machine")
  assert.deepEqual(errors,[])
  reports.push({engine,width,lang,passed:true})
  }catch(e){await page.screenshot({path:`${artifacts}/failure.png`});console.error(`${engine}/${width}/${lang}`,e.stack||e);throw e}finally{await browser.close()}

@@ -1,8 +1,7 @@
 # View Plugin v1
 
-Revision 6 describes the **experimental browser-local runtime** implemented in
-`web/console/src/view-plugins`. The supplied packages are Session Galaxy,
-Session List, Session Pop and Session Deadpan. Public Release acceptance is separate from source and Cloud delivery.
+Revision 7 describes the **experimental browser-local runtime** implemented in
+`web/console/src/view-plugins`. The supplied package is Session Galaxy. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -40,6 +39,16 @@ checks the expected active digest and retains one previous archive for rollback.
 A failed import leaves the active package intact. Registry changes, including
 cross-tab hints, revoke running grants before rereading the saved archives.
 
+## Withdrawn built-in views
+
+Galaxy is the only supplied view. List, Pop and Deadpan have been removed from
+Explore views, source assets and public ZIP downloads. Their three exact built-in
+IDs are reserved and rejected on import, including legacy archives. On the next
+registry read in the updated interface, their saved active and rollback archives
+are deleted in the same transaction before any launchable row is returned.
+Galaxy and unrelated community package IDs are preserved. Already open older
+host pages must reload to use this policy; no remote phone storage operation is claimed.
+
 ## Make a package
 
 The first profile contains exactly **two files in a ZIP STORE archive**:
@@ -68,9 +77,6 @@ the HTML and let the repository packer insert that SDK:
 
 ```sh
 python3 tools/pack-view-plugin.py plugins/session-galaxy /tmp/session-galaxy.zip
-python3 tools/pack-view-plugin.py plugins/session-list /tmp/session-list.zip
-python3 tools/pack-view-plugin.py plugins/session-pop-art /tmp/session-pop-art.zip
-python3 tools/pack-view-plugin.py plugins/session-absurd /tmp/session-absurd.zip
 ```
 
 The packer uses Python's standard library and deterministic ZIP timestamps. It
@@ -85,7 +91,7 @@ Curated install buttons fetch their ZIP with `cache: "no-store"`, so a previousl
 fixed download URL cannot silently install an older published revision. The standard package
 review still names the exact downloaded identity and version before registry writes.
 
-The Session Pop and Session Deadpan buttons need no native file chooser. The package remains a separate
+The Galaxy button needs no native file chooser. The package remains a separate
 archive and uses the existing v1 runtime; community ZIP import stays independent
 of this curated example list.
 
@@ -106,18 +112,13 @@ missing cover cannot pass the publication gate. An actual cover must identify
 the view and be reviewed as artwork: a technically valid blank or borrowed image
 is not publication acceptance.
 
-The Galaxy, List and Pop covers have editable `cover.svg` source beside each manifest. They
+The Galaxy cover has editable `cover.svg` source beside each manifest. They
 can be rendered using an already installed local Playwright module, without a
 network request or a new dependency:
 
 ```sh
-PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node tools/render-view-plugin-covers.mjs plugins/session-galaxy plugins/session-list plugins/session-pop-art
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node tools/render-view-plugin-covers.mjs plugins/session-galaxy
 ```
-
-Deadpan 0.2.0 instead uses the generated raster artwork in `painting.jpg`, with a dedicated
-`cover.png`. Run `node plugins/session-absurd/embed-artwork.mjs` before the same public packer;
-the painting is embedded in the HTML and its cover is embedded in the manifest. Its authoring
-assets do not add ZIP entries or network requests.
 
 The SVG renderer embeds the resulting PNG in each manifest; the SVG source is not a
 third ZIP entry. The archive remains the same two-file STORE profile and SDK wire
@@ -125,8 +126,8 @@ v1. A host supporting revision 6 is needed to import the added manifest field;
 refresh an older open page before installing a new package.
 
 The registry has a read-only compatibility path for already stored pre-cover
-archives. It never allows a coverless new install or replacement. The three exact
-previously shipped archive digests receive their corresponding authored cover
+archives. It never allows a coverless new install or replacement. The exact
+previously shipped Galaxy archive digest receives its authored cover
 without replacing executable bytes or requiring reinstall. Unknown older packages
 remain usable with an explicit **Cover required before publication** warning;
 they receive no generic cover and must be updated before being published or
@@ -207,8 +208,7 @@ For a fleet, `connection` is connected when at least one machine is connected;
 per-row freshness still reflects its own source. The host separately warns when
 other machines are unavailable, without treating the remaining rows as a complete fleet.
 Empty lists are valid. Every visual needs a readable list/fallback and text states.
-The supplied Galaxy intentionally retains its dark astronomical palette; List
-honors both host themes. Both honor language and reduced motion.
+The supplied Galaxy intentionally retains its dark astronomical palette and honors language and reduced motion.
 
 The SDK registers its window listener before sending this bootstrap hello:
 
@@ -298,10 +298,10 @@ sync, plugin database or native capabilities are included.
 refusal, event ordering/coalescing, disconnection, flood isolation and Cloud
 revocation during a delayed read. `tools/view-plugins.e2e.mjs` bundles the production
 manager/frame/registry and supplied packages with synthetic Session sources. It
-exercises import, two distinct views, multiple machines/Projects, Back/focus, hostile label
+exercises import, Galaxy plus a synthetic community view, multiple machines/Projects, Back/focus, hostile label
 text, revocation, persisted packages without persisted grants, direct opening
 including after reload, a management-free picker, cross-tab disabling, replacement,
-rollback, failed import, disable and remove. It accepts an existing Playwright
+rollback, failed import, disable, remove, rejection of withdrawn IDs and removal of saved withdrawn archives. It accepts an existing Playwright
 module path; it installs no browser dependencies.
 
 These tests establish the isolated fixture behavior. Local daemon-console startup,
