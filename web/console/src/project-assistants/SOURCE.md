@@ -43,9 +43,28 @@ subscription precedes catch-up and repeated durable facts are replacements.
 The real Node HTTP SSE test exercises the actual source client with a synthetic
 read-only local grant and observes server-side connection closure after caller
 abort. Pure and captured-source tests cover split bytes, hostile rows, limits,
-authority replacement and terminal paths. These checks establish this client
-boundary only. Root owns roster application, reconnect/backoff, browser
-acceptance, integration and release; no Bot/provider/model call is needed.
+authority replacement and terminal paths. `Bots` applies this optional local
+stream through `followLiveRoster`: one serial subscription, absolute row
+replacement and source-owned revisions, with no List polling. Completed
+snapshots and validated change frames alone advance its applied cursor. A
+partial snapshot restarts fresh; disconnection marks retained rows stale and
+uses the existing 3-second refresh interval only to reconnect. Authority denial
+clears rows and stops; older and Cloud sources retain their snapshot route.
+
+The client keeps at most the registered `bots.roster_client_rows` (1,000),
+including removal revisions that prevent stale replay from resurrecting a Bot.
+At capacity it requests a fresh snapshot; a snapshot still exceeding that
+budget stops with a typed capacity error. Hidden rows retain their validated
+management summary, while true deletion leaves a key-only marker. Browser
+occupancy is not visible to the source capacity endpoint and is reported unknown.
+
+The same-store HTTP/browser fixture exercises English desktop and Traditional
+Chinese mobile dimensions without navigation: activity, writing, permission,
+completion, exact replay, independent readers, disconnect/cursor resume,
+hidden-management controls, deletion and revocation. It observes zero List
+requests, at most one connection per source, the original animated line art,
+and reduced motion. It starts no Bot/provider/model. This proves local fixture
+composition; it does not prove encrypted Cloud streaming or a physical phone.
 
 The roster uses the existing approved BR-06 SVG outlines, eye strokes and
 identity palette. Its activity states follow Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`
@@ -57,8 +76,8 @@ static, and off-screen/hidden avatars stop scheduling frames.
 The small thinking orb adapts that commit's actual desktop Canvas implementation
 (`components/ThinkingOrb.tsx` and `lib/theme.ts`). See `third_party/codync` and
 the console's shipped `public/licenses/` copies for Apache-2.0 and MIT attribution.
-This source record does not claim the roster event subscription is already
-connected to the console or encrypted Cloud transport.
+The roster subscription is connected for local API71 sources. The encrypted
+Cloud transport continues to refuse the local-only stream URL.
 
 This removable React module implements the approved BR-01 through BR-06 presentation against `docs/project-assistants-handoff.json` (`project-assistants.v1`). It does not enable the feature, add a router entry, install an adapter, start a model, mount a recorder, or contact upstream services.
 
@@ -66,7 +85,7 @@ This removable React module implements the approved BR-01 through BR-06 presenta
 
 - `Bots(props: BotsProps)` from `Bots.tsx` receives `sources: readonly SourceClient[]`, `onClose: () => void`, and optional `language: string` (English by default), `accountKey: string`, `readerID: string`, `viewState: ViewState`, `returnFocus: HTMLElement | null`, `onOpenWork: (ProjectAssistantWorkLink) => void`, `manageHistory: boolean` (false by default), and `onSelectionChange: (ProjectAssistantBotKey | null) => void`.
 - `BotOrb(props: BotOrbProps)` from `BotOrb.tsx` receives `onOpen: (opener?: HTMLElement) => void` and optional `language`, `unread`, and `pendingPermissions`. The host sums counts only from currently readable sources. The global entry always uses the approved blob and `#e39567`; it never derives appearance from a selected Bot.
-- `SourceClient` is defined only in `client.ts`, with the exact frozen readonly `machineID`, `authorizationRevision`, seventeen methods, generated request/response types and final `AbortSignal` argument. It is injected. No feature HTTP transport or global active-machine fetch is created here.
+- `SourceClient` is defined only in `client.ts`, with readonly `machineID`, `authorizationRevision`, generated request/response types, final `AbortSignal` arguments and optional live-roster support. It is injected. No global active-machine fetch is created here.
 - `createViewState(storage?)` from `view-state.ts` retains staged drafts, reply IDs, reading positions and recovery-required scopes. Supply one host-owned instance to preserve these through host remounts. Drafts use account namespace, machine ID and Bot ID, and flush on leaving or hiding instead of per keystroke. Without an explicit account key the source grant namespace is used, so renewed authorization does not reuse another account's drafts. The host should always supply its authenticated account namespace and reader principal.
 - `words(language)` and the exported `en` / `zhHant` tables from `words.ts` provide English and Taiwan Traditional Chinese together. Register every key as `projectAssistants.<key>` in both shipped catalogs and register this table with the source catalog checker. No shared catalog was edited by PA-04.
 
@@ -104,7 +123,12 @@ PLAYWRIGHT_MODULE=/absolute/path/to/existing/playwright/index.mjs \
 
 No dependency is installed by the harness. Its fixture has no real provider, Cloud account, personal Session, microphone or model. Real native read-only enforcement, native memory isolation and resume remain typed unavailable until independently proved by adapter owners. Actual metadata persistence across daemon restart, cross-device monotonic reads, production Cloud grants, physical iPhone keyboard/gestures, runtime work dispatch and production voice coexistence require the integrated candidate and their owning acceptance steps.
 
-Capacity owner must register `chat-items.ts:ChatSeparatorGapMs` (3,600,000 ms) and `Chat.tsx:EventRefreshMs` (3,000 ms). List/history/view request sizes reuse the frozen100/100/256 limits,16 pending turns and4096 cursor bytes. Polling is serialized, only scheduled for a visible online writable source, aborted on hide/destination/grant change/unmount, and stops on failure until manual refresh.
+The registered chat separator gap is 3,600,000 ms and event refresh interval is
+3,000 ms. List/history/view request sizes reuse the frozen 100/100/256 limits,
+16 pending turns and 4096 cursor bytes. Chat event polling is serialized, only
+scheduled for a visible online writable source, aborted on hide/destination/grant
+change/unmount, and stops on failure until manual refresh. Local roster updates
+use the separate stream lifecycle described above.
 
 Authenticated persisted messages and work links belong to the exact source machine, Bot, full Project (machine, project ID, canonical ID and kind) and conversation. Their original execution binding and generation remain visible after replacement. Both the event envelope and its nested durable payload must match that scope; initial history, earlier history and recovery snapshots apply the same filter. Permission offers, turn control and traces still require the complete current execution fence, including binding and generation. This UI distinction does not relax native callbacks or Broker work ownership, and does not introduce a model-controlled native trust entry point.
 

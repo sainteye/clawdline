@@ -276,3 +276,47 @@ the actual stop receipt and refreshes the bounded conversation. It never retries
 the stop automatically or turns an accepted stop into a claim that an external
 effect is known. Reading and quoting stored history do not start a provider;
 only an explicit message does.
+
+
+## Live local roster at API71
+
+Local sources that expose `canRoster` and `subscribeRoster` now use the existing
+source-owned SSE protocol. The initial snapshot becomes visible only when
+complete. Each fully validated frame replaces absolute facts by machine/Bot
+identity and durable revision; neither hello nor EOF acknowledges progress.
+Disconnect keeps the last complete rows visibly stale, and reconnect uses their
+applied cursor. Incomplete snapshots restart fresh. The existing 3-second
+interval schedules serial reconnection, never a List poll. Source revocation,
+scope denial or unpairing clears retained rows and stops the subscription.
+
+The registered 1,000-row client budget includes removal revisions. Overflow
+requests a fresh snapshot, reclaiming removal history; an oversized fresh
+snapshot stops with a capacity error. Hidden Bots retain their authorized
+metadata for the existing Unhide control. Deleted Bots keep key-only removal
+markers, so an older replay cannot restore them. Capacity diagnostics report
+browser occupancy as unknown rather than inventing a daemon measurement.
+
+The upstream reference remains Codync
+`9f67eb09084db61b3cca9c84a11bc03df9de29b7`: subscribe before catch-up, durable
+replacement and independent working/permission/error/unread facts. The approved
+BR-06 SVG outlines and palette remain; animation and reduced-motion behavior
+are unchanged by this connection work. Cloud and older sources keep snapshot
+listing. The encrypted Cloud recorder still refuses the local SSE URL.
+
+`TestProjectAssistantRosterLiveHTTP` composes the writable Store, its Service
+wake-up bus and query-only ViewStore, and exercises a persistent real HTTP SSE
+connection. Its opt-in Chromium harness mounts the actual SourceClient and Bots
+component. English desktop (1280×900) and Traditional Chinese mobile dimensions
+(390×844) verify all five states, activity/writing/completion, permission priority,
+exact duplicate replay, reader-specific unread, cursor reconnection with stale
+rows, actual Unhide, deletion and revocation. Both runs record one navigation,
+zero List calls, at most one subscription per source and zero page errors.
+No provider or model runs. These are local fixture and browser proofs, not
+production Cloud or physical-phone acceptance.
+
+```sh
+CLAWDLINE_ROSTER_LIVE_E2E_DIR=/absolute/task-owned/evidence-directory \
+PLAYWRIGHT_MODULE=/absolute/path/to/existing/playwright/index.mjs \
+PLAYWRIGHT_BROWSERS_PATH=/absolute/path/to/existing/browser-cache \
+go test ./internal/transport/http -run '^TestProjectAssistantRosterLiveHTTP$' -count=1
+```

@@ -48,10 +48,13 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	return map[string]func() capacity.Reading{
 		capacity.BotsInputBytes: pure, capacity.BotsInputChunkBytes: pure, capacity.BotsInputsPerMessage: pure, capacity.BotsInputsPerBot: unobserved,
-		capacity.BotsRosterSubscribers:     unobserved,
-		capacity.BotsRosterWakeups:         unobserved,
-		capacity.BotsRosterLifetime:        pure,
-		capacity.BotsRosterRecheck:         pure,
+		capacity.BotsRosterSubscribers: unobserved,
+		capacity.BotsRosterWakeups:     unobserved,
+		capacity.BotsRosterLifetime:    pure,
+		capacity.BotsRosterRecheck:     pure,
+		capacity.BotsRosterClientRows: func() capacity.Reading {
+			return capacity.Unmeasured("each browser owns its retained Bot rows and removal revisions; the source does not observe client occupancy")
+		},
 		capacity.BotsArtifactTitleBytes:    pure,
 		capacity.BotsOutputBytes:           pure,
 		capacity.BotsArtifactBytes:         pure,

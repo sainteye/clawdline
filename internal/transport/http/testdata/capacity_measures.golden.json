@@ -411,6 +411,10 @@
     "Note": true
   },
   {
+    "Name": "bots.roster_client_rows",
+    "Err": true
+  },
+  {
     "Name": "bots.roster_seconds",
     "Known": true,
     "Note": true
