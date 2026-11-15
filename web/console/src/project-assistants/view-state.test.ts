@@ -181,3 +181,72 @@ test("send recovery journal: retained history is independent of the source's pen
   assert.equal(restored.length,32)
   assert.deepEqual(restored.map(o=>o.intent.command.idempotency_key),Array.from({length:32},(_,i)=>"k"+i))
 })
+
+test("legacy unverified draft: original text, quote and full scope survive separately from the new draft",()=>{
+  const {disk,store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)
+  disk.set(own,"Legacy uncertain draft")
+  view.unverifiedDrafts.capture(own,scope,"Legacy uncertain draft","quote-1")
+  const active=createViewState(store).unverifiedDrafts.active(own,scope)!
+  assert.equal(active.text,"Legacy uncertain draft");assert.equal(active.quote,"quote-1")
+  assert.equal("intent" in active,false);assert.equal("command" in active,false)
+  assert.equal(view.unverifiedDrafts.writeNew(own,scope),true)
+  view.stage(own,"New manually entered draft");assert.equal(view.flush(own),true)
+  const reloaded=createViewState(store)
+  assert.equal(reloaded.draft(own),"New manually entered draft")
+  assert.equal(reloaded.unverifiedDrafts.active(own,scope),undefined)
+  assert.equal(reloaded.unverifiedDrafts.continuing(own,scope),true)
+  reloaded.unverifiedDrafts.capture(own,scope,"New manually entered draft","")
+  assert.equal(reloaded.unverifiedDrafts.history(own,scope).length,1,"a new draft is never mistaken for the old one on reload")
+  assert.equal(reloaded.unverifiedDrafts.history(own,scope)[0].text,"Legacy uncertain draft")
+  for(const changed of [{key:{...key,machine_id:"other"}},{key:{...key,bot_id:"other"}},{project:{...project,machine_id:"other"}},{project:{...project,project_id:"other"}},{project:{...project,canonical_id:"other"}},{project:{...project,kind:"place" as const}},{conversation_id:"other"}]){
+    assert.equal(reloaded.unverifiedDrafts.history(own,{...scope,...changed}).length,0)
+    assert.equal(reloaded.unverifiedDrafts.continuing(own,{...scope,...changed}),false)
+  }
+  assert.equal(reloaded.unverifiedDrafts.history(draftIdentity("other",key),scope).length,0)
+})
+test("legacy unverified draft: every storage refusal retains the original and the lock",()=>{
+  for(const failAt of [1,2,3]){
+    const {disk,store}=memoryStore(),own=draftIdentity("account",key)
+    disk.set(own,"Legacy uncertain draft")
+    let writes=0,fail=false
+    const refusal=()=>{if(fail&&++writes===failAt)throw new Error("synthetic refusal")}
+    const storage={getItem:store.getItem,setItem:(k:string,v:string)=>{refusal();store.setItem(k,v)},removeItem:(k:string)=>{refusal();store.removeItem(k)}}
+    const view=createViewState(storage)
+    view.unverifiedDrafts.capture(own,scope,"Legacy uncertain draft","quote-1")
+    fail=true
+    assert.equal(view.unverifiedDrafts.writeNew(own,scope),false)
+    assert.equal(view.unverifiedDrafts.active(own,scope)?.text,"Legacy uncertain draft")
+    assert.equal(createViewState(store).unverifiedDrafts.active(own,scope)?.text,"Legacy uncertain draft")
+    assert.equal(view.unverifiedDrafts.continuing(own,scope),false)
+    fail=false
+    assert.equal(view.unverifiedDrafts.writeNew(own,scope),true)
+    assert.equal(createViewState(store).unverifiedDrafts.continuing(own,scope),true)
+  }
+})
+test("legacy unverified draft: a failed initial preservation and unreadable records never unlock or overwrite originals",()=>{
+  const {disk,store}=memoryStore(),own=draftIdentity("account",key)
+  disk.set(own,"Legacy uncertain draft")
+  const view=createViewState({...store,setItem:()=>{throw new Error("blocked")}})
+  view.unverifiedDrafts.capture(own,scope,"Legacy uncertain draft","quote-1")
+  assert.equal(view.unverifiedDrafts.problem(own),"unsaved")
+  assert.equal(view.unverifiedDrafts.writeNew(own,scope),false)
+  assert.equal(disk.get(own),"Legacy uncertain draft")
+  const raw="opaque undecodable original"
+  disk.set(viewStateModule.unverifiedDraftKey(own),raw)
+  const unreadable=createViewState(store)
+  unreadable.unverifiedDrafts.capture(own,scope,"Legacy uncertain draft","")
+  assert.equal(unreadable.unverifiedDrafts.writeNew(own,scope),false)
+  assert.equal(disk.get(viewStateModule.unverifiedDraftKey(own)),raw)
+  assert.equal(disk.get(own),"Legacy uncertain draft")
+})
+
+test("legacy plain draft retention does not borrow the send-size bound",()=>{
+  const {store}=memoryStore(),own=draftIdentity("account",key),text="x".repeat((32<<10)+1)
+  const view=createViewState(store)
+  view.unverifiedDrafts.capture(own,scope,text,"quote-1")
+  const restored=createViewState(store)
+  assert.equal(restored.unverifiedDrafts.active(own,scope)?.text,text)
+  assert.equal(restored.unverifiedDrafts.problem(own),undefined)
+  assert.equal(restored.unverifiedDrafts.writeNew(own,scope),true)
+  assert.equal(createViewState(store).unverifiedDrafts.history(own,scope)[0]?.text,text)
+})

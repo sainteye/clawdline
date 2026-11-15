@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12388,
+  "englishKeys": 12391,
   "counts": {
-    "negation": 3337,
-    "state": 2074,
-    "permission": 732,
+    "negation": 3339,
+    "state": 2075,
+    "permission": 733,
     "deletion": 288,
-    "uncertainty": 470
+    "uncertainty": 471
   },
-  "unionCount": 5375,
+  "unionCount": 5377,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2998,6 +2998,8 @@
       "projectAssistants.traceNoReply",
       "projectAssistants.unknown",
       "projectAssistants.unpaired",
+      "projectAssistants.unverifiedExplanation",
+      "projectAssistants.unverifiedUnsaved",
       "projectTree.sensitiveDetail",
       "projectUnify.applicability",
       "projectUnify.nativeUnreported",
@@ -5190,6 +5192,7 @@
       "projectAssistants.savedMemory",
       "projectAssistants.statusNotUsed",
       "projectAssistants.succeeded",
+      "projectAssistants.unverifiedExplanation",
       "projectAssistants.waiting_for_person",
       "projectTree.sensitiveDetail",
       "projects.editDone",
@@ -6035,6 +6038,7 @@
       "projectAssistants.rulesHint",
       "projectAssistants.setup_cli_not_installed",
       "projectAssistants.unpaired",
+      "projectAssistants.unverifiedUnsaved",
       "projectAssistants.waiting_permission",
       "projectAssistants.writeNewMessage",
       "projectTree.sensitiveDetail",
@@ -6878,6 +6882,7 @@
       "projectAssistants.pictureUnavailable",
       "projectAssistants.unavailable",
       "projectAssistants.unknown",
+      "projectAssistants.unverifiedExplanation",
       "projects.setupUnifyUnreadable",
       "projects.setupUnifyUnsupported",
       "projects.statusBoardUnavailable",
@@ -11693,6 +11698,8 @@
     "projectAssistants.unavailable",
     "projectAssistants.unknown",
     "projectAssistants.unpaired",
+    "projectAssistants.unverifiedExplanation",
+    "projectAssistants.unverifiedUnsaved",
     "projectAssistants.waiting_for_person",
     "projectAssistants.waiting_permission",
     "projectAssistants.writeNewMessage",

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12388,
-  "riskKeys": 5375,
-  "nonRiskCount": 7013,
+  "englishContentKeys": 12391,
+  "riskKeys": 5377,
+  "nonRiskCount": 7014,
   "groups": [
     {
       "name": "acp / other",
@@ -5653,7 +5653,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 161,
+      "count": 162,
       "sources": [
         null
       ],
@@ -5814,6 +5814,7 @@
         "projectAssistants.unread",
         "projectAssistants.unreadCount",
         "projectAssistants.unsupported",
+        "projectAssistants.unverifiedDraft",
         "projectAssistants.uploadingFiles",
         "projectAssistants.version",
         "projectAssistants.work",
