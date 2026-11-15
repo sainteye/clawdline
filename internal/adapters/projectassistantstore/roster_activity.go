@@ -26,14 +26,16 @@ func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 	turn, active := a.Turns[a.Conversation.ActiveTurnID]
 	if !active {
 		// Admission order comes from messages, never map iteration or a
-		// lexicographic turn ID. An older failure cannot color a newer reply.
+		// lexicographic turn ID. Restart continuations and routines enter with
+		// notices. Only a turn's own admission anchor selects it; later log
+		// messages from an older turn cannot change the selected state.
 		for i := len(a.Messages) - 1; i >= 0; i-- {
 			m := a.Messages[i]
-			if m.Kind != pa.UserMessage {
+			if m.Kind != pa.UserMessage && m.Kind != pa.NoticeMessage {
 				continue
 			}
 			candidate, ok := a.Turns[m.TurnID]
-			if !ok || candidate.JoinedTurnID != "" {
+			if !ok || candidate.JoinedTurnID != "" || candidate.MessageID != m.ID {
 				continue
 			}
 			turn = candidate

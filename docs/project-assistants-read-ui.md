@@ -333,3 +333,11 @@ PLAYWRIGHT_MODULE=/absolute/path/to/existing/playwright/index.mjs \
 PLAYWRIGHT_BROWSERS_PATH=/absolute/path/to/existing/browser-cache \
 go test ./internal/transport/http -run '^TestProjectAssistantRosterLiveHTTP$' -count=1
 ```
+
+## Roster state after a restart continuation
+
+A restart continuation is admitted by a notice message with its own turn and message anchor. The roster previously chose only user-message admissions, while the bounded chat read view already selected terminal turns by their actual admission anchors. A completed continuation could therefore appear completed in chat while the roster continued to show the acknowledged unknown failure of the interrupted turn.
+
+The roster now selects the most recent user or notice admission whose ID matches its turn's `MessageID`, excluding joined turns. Active execution still takes priority. Later log notices from an old turn do not become new admissions. A current unknown continuation remains an error; selecting a later completed continuation does not alter earlier turns, unknown receipts, permissions, execution policy or retry behavior. For restart continuations, this follows Codync's current-status roster semantics while retaining Clawdline's explicit uncertainty records. Routine notice admissions follow Clawdline's existing chat projection; Codync routine-lane parity has not been established.
+
+Focused counterexamples exercise the original failed/acknowledged turn followed by a successful notice continuation, later log notices, a current unknown continuation and a newer human turn. A real SQLite commit/read-view/roster case confirms the two projections agree and the original unknown receipt stays unknown. Production-state replay evidence is retained privately; no conversation content is included in this document.

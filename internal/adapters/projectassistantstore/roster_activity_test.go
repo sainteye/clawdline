@@ -108,3 +108,106 @@ func TestRosterFailureUsesAdmissionOrderAndKeepsUnknownDistinct(t *testing.T) {
 		t.Fatal("failure code was lost", got)
 	}
 }
+
+func TestRosterFollowsResumedNoticeAdmissionInsteadOfAcknowledgedFailure(t *testing.T) {
+	old := pa.Turn{ID: "z-old", MessageID: "old-input", State: pa.TurnFailed, Failure: &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acknowledged"}}
+	resumed := pa.Turn{ID: "a-resumed", MessageID: "resume-input", State: pa.TurnSucceeded}
+	a := aggregate{Turns: map[string]pa.Turn{old.ID: old, resumed.ID: resumed}, Messages: []pa.Message{
+		{ID: old.MessageID, Kind: pa.UserMessage, TurnID: old.ID},
+		{ID: resumed.MessageID, Kind: pa.NoticeMessage, TurnID: resumed.ID},
+		{ID: "reply", Kind: pa.AssistantMessage, TurnID: resumed.ID, Text: "Completed after restart"},
+	}}
+	if got := summary(a, ""); got.Status != "idle" || got.Failure != nil || got.LatestMessage != "Completed after restart" {
+		t.Fatalf("a completed continuation still shows the older unknown failure: %+v", got)
+	}
+	// A later log line from an old turn is not another admission.
+	a.Messages = append(a.Messages, pa.Message{ID: "late-old-log", Kind: pa.NoticeMessage, TurnID: old.ID})
+	if got := summary(a, ""); got.Status != "idle" || got.Failure != nil {
+		t.Fatalf("a log line replaced the admitted continuation: %+v", got)
+	}
+	// Unknown in the current continuation must still be shown as unknown.
+	resumed.State = pa.TurnUnknown
+	a.Turns[resumed.ID] = resumed
+	if got := summary(a, ""); got.Status != "error" || got.Failure == nil || got.Failure.Code != pa.ExecutionEffectUnknown {
+		t.Fatalf("current unknown outcome was hidden: %+v", got)
+	}
+	// A newer human turn wins over a notice's older error, independent of IDs.
+	newer := pa.Turn{ID: "0-newest", MessageID: "newest-input", State: pa.TurnSucceeded}
+	a.Turns[newer.ID] = newer
+	a.Messages = append(a.Messages, pa.Message{ID: newer.MessageID, Kind: pa.UserMessage, TurnID: newer.ID})
+	if got := summary(a, ""); got.Status != "idle" || got.Failure != nil {
+		t.Fatalf("old notice failure replaced a newer human turn: %+v", got)
+	}
+}
+
+func TestRosterAndReadViewAgreeAfterDurableContinuation(t *testing.T) {
+	db, s, _ := testDB(t)
+	b := seed(t, s, "continuation")
+	f := populate(t, s, b, pa.EffectUnknown)
+	x, err := s.Export(testContext, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(id string, mutation app.Mutation) {
+		t.Helper()
+		bot, err := s.Bot(testContext, b.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mutation.Command, mutation.ExpectedVersion = command(b.Key, pa.SendOperation, id), bot.Version
+		mutation.Receipt = pa.Receipt{ID: id, State: pa.EffectDelivered}
+		if _, err = s.Commit(testContext, mutation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old, conversation, permission := x.Turns[0], x.Conversation, x.Permissions[0]
+	permission.State, permission.SelectedOptionID = pa.PermissionResolved, "reject"
+	old.State, old.Failure = pa.TurnUnknown, &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "restart"}
+	conversation.ActiveTurnID = ""
+	commit("interrupted", app.Mutation{Turn: &old, Conversation: &conversation, Permissions: []pa.PermissionOffer{permission}})
+	views := newTestViews(t, db)
+	interrupted := rosterRead(t, views, rosterQuery())
+	if len(interrupted.Frame.Changes) != 1 || interrupted.Frame.Changes[0].Summary == nil || interrupted.Frame.Changes[0].Summary.Status != "error" || interrupted.Frame.Changes[0].Summary.Failure == nil || interrupted.Frame.Changes[0].Summary.Failure.Code != pa.ExecutionEffectUnknown {
+		t.Fatal("bounded roster hid the current unknown outcome", interrupted.Frame)
+	}
+	old.State, old.Failure = pa.TurnFailed, &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acknowledged"}
+	commit("acknowledged", app.Mutation{Turn: &old})
+	resume := pa.Turn{ID: "resumed-turn", Fence: f, MessageID: "resume-notice", State: pa.TurnQueued, Instructions: b.Instructions, MemoryRevision: 1, IdempotencyKey: "resume"}
+	notice := pa.Message{ID: resume.MessageID, Fence: f, TurnID: resume.ID, Kind: pa.NoticeMessage, Text: "Continue the interrupted task", At: time.Now()}
+	commit("resume", app.Mutation{Turn: &resume, Messages: []pa.Message{notice}})
+	conversation, err = s.Conversation(testContext, b.Key, b.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resume.State, conversation.ActiveTurnID = pa.TurnRunning, resume.ID
+	commit("resume-start", app.Mutation{Turn: &resume, Conversation: &conversation})
+	resume.State, conversation.ActiveTurnID = pa.TurnSucceeded, ""
+	reply := pa.Message{ID: "resume-reply", Fence: f, TurnID: resume.ID, Kind: pa.AssistantMessage, Text: "Completed continuation", At: time.Now()}
+	commit("resume-finish", app.Mutation{Turn: &resume, Conversation: &conversation, Messages: []pa.Message{reply}})
+	page, err := s.ListForReader(testContext, pa.ListBots{MachineID: b.Key.MachineID, PageSize: 1}, "reader")
+	if err != nil || len(page.Items) != 1 || page.Items[0].Status != "idle" || page.Items[0].Failure != nil || page.Items[0].LatestMessage != reply.Text {
+		t.Fatalf("roster disagrees with completed continuation: %+v %v", page, err)
+	}
+	view := readView(t, newTestViews(t, db), viewQuery(b))
+	if view.Snapshot == nil || view.Snapshot.LastTurn == nil || view.Snapshot.LastTurn.ID != resume.ID || view.Snapshot.LastTurn.State != pa.TurnSucceeded {
+		t.Fatalf("read view selected another turn: %+v", view.Snapshot)
+	}
+	completed := rosterRead(t, views, rosterQuery())
+	if len(completed.Frame.Changes) != 1 || completed.Frame.Changes[0].Summary == nil || completed.Frame.Changes[0].Summary.Status != "idle" || completed.Frame.Changes[0].Summary.Failure != nil || completed.Frame.Changes[0].Summary.LatestMessage != reply.Text {
+		t.Fatal("bounded roster disagrees with completed continuation", completed.Frame)
+	}
+	// Selecting the new state changes no historical uncertainty or receipt.
+	prior, err := s.Receipt(testContext, command(b.Key, pa.SendOperation, "send"))
+	if err != nil || prior == nil || prior.State != pa.EffectUnknown {
+		t.Fatal("historical unknown receipt was changed", prior, err)
+	}
+	final, err := s.Export(testContext, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, turn := range final.Turns {
+		if turn.ID == old.ID && (turn.State != pa.TurnFailed || turn.Failure == nil || turn.Failure.Field != "acknowledged") {
+			t.Fatal("old turn was rewritten", turn)
+		}
+	}
+}

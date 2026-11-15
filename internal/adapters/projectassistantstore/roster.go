@@ -204,7 +204,7 @@ func (s *ViewStore) ReadRoster(ctx context.Context, q app.RosterQuery) (app.Rost
 }
 
 // SQLite projects only the facts needed by projectRosterActivity: at most the
-// active and last eligible user turn, one user message and pending controls.
+// active and last eligible admitted turn, one anchor message and pending controls.
 // Histories, instructions on old turns, trace payloads and permission options
 // never cross into Go. SQL checks bytes BEFORE returning a projected string.
 // JSONB is query-local only. The pinned SQLite supports it; parsing the same
@@ -214,16 +214,16 @@ const rosterProjectionSQL = `WITH a AS MATERIALIZED (
  SELECT jsonb(CAST(data AS TEXT)) j FROM project_assistant_bots WHERE machine=? AND bot=?
 ), turns AS MATERIALIZED (
  SELECT t.key,t.value FROM a,json_each(j,'$.Turns') t
-), users AS MATERIALIZED (
- SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE json_extract(m.value,'$.kind')='user'
+), admissions AS MATERIALIZED (
+ SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE json_extract(m.value,'$.kind') IN ('user','notice')
 ), u AS MATERIALIZED (
- SELECT m.value message,t.key turnid FROM users m JOIN turns t ON t.key=json_extract(m.value,'$.turn_id')
- WHERE coalesce(json_extract(t.value,'$.joined_turn_id'),'')='' ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
+ SELECT m.value message,t.key turnid FROM admissions m JOIN turns t ON t.key=json_extract(m.value,'$.turn_id')
+ WHERE coalesce(json_extract(t.value,'$.joined_turn_id'),'')='' AND json_extract(t.value,'$.message_id')=json_extract(m.value,'$.id') ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
 ), latest_message AS MATERIALIZED (
  SELECT m.value message FROM a,json_each(j,'$.Messages') m ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
 ), projection AS MATERIALIZED (
  SELECT json_object('Bot',json_extract(j,'$.Bot'),'Conversation',json_object('id',json_extract(j,'$.Conversation.id'),'active_turn_id',json_extract(j,'$.Conversation.active_turn_id'),'generation',json_extract(j,'$.Conversation.generation'),'binding_id',json_extract(j,'$.Conversation.binding_id')),
- 'Turns',json((SELECT json_group_object(t.key,json_object('id',json_extract(t.value,'$.id'),'fence',json_extract(t.value,'$.fence'),'state',json_extract(t.value,'$.state'),'failure',json_extract(t.value,'$.failure'))) FROM turns t WHERE t.key=json_extract(j,'$.Conversation.active_turn_id') OR t.key=(SELECT turnid FROM u))),
+ 'Turns',json((SELECT json_group_object(t.key,json_object('id',json_extract(t.value,'$.id'),'message_id',json_extract(t.value,'$.message_id'),'joined_turn_id',json_extract(t.value,'$.joined_turn_id'),'fence',json_extract(t.value,'$.fence'),'state',json_extract(t.value,'$.state'),'failure',json_extract(t.value,'$.failure'))) FROM turns t WHERE t.key=json_extract(j,'$.Conversation.active_turn_id') OR t.key=(SELECT turnid FROM u))),
  'Messages',json((SELECT json_group_array(json(message)) FROM u)),
  'Permissions',json((SELECT json_group_object(p.key,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),'action',json_object('title',json_extract(p.value,'$.action.title')))) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND json_extract(p.value,'$.turn_id')=json_extract(j,'$.Conversation.active_turn_id'))),
  'RosterTrace',json_extract(j,'$.RosterTrace')) projected,
