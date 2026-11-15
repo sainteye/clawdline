@@ -755,6 +755,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/project-assistants"}, s.projectAssistantsRoute},
 		{Route{"*", "/v1/project-assistants/"}, s.projectAssistantsRoute},
 		{Route{"*", "/v1/project-assistants/status"}, s.projectAssistantsRoute},
+		{Route{"GET", "/v1/project-assistants/roster-events"}, s.projectAssistantsRoute},
 		{Route{"*", "/v1/project-assistant-targets"}, s.projectAssistantTargetsRoute},
 		{Route{"*", "/v1/settings/dispatch-policy"}, s.dispatchPolicySettings},
 		{Route{"*", "/v1/notification-rules"}, s.notificationRulesRoute},

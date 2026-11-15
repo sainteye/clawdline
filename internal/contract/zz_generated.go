@@ -5315,6 +5315,54 @@ type ProjectAssistantReceiptResponse struct {
 	Receipt         ProjectAssistantReceipt `json:"receipt"`
 }
 
+// Replace by key/revision; removed is a replayable tombstone. Unread is an
+// absolute reader-specific count, never a delta. Revision is the roster journal
+// sequence, independent of Bot version/message sequence.
+type ProjectAssistantRosterChange struct {
+	Key      ProjectAssistantBotKey      `json:"key"`
+	Removed  bool                        `json:"removed"`
+	Revision int64                       `json:"revision"`
+	Summary  *ProjectAssistantBotSummary `json:"summary,omitempty"`
+}
+
+// Bounded SSE data. Apply all changes before saving its signed cursor. Initial
+// pages pin their first machine frontier; only snapshot-complete establishes a
+// complete initial roster. hello has no cursor. resync/closure/EOF never
+// advance a cursor. Restart, changed scope/grant/reader or invalid cursor
+// requires a new snapshot. Frames reuse 100 snapshot rows, 256 replay rows,
+// 4096 cursor bytes and the 8 MiB plaintext ceiling.
+type ProjectAssistantRosterFrame struct {
+	Changes     []ProjectAssistantRosterChange  `json:"changes,omitempty"`
+	Cursor      string                          `json:"cursor,omitempty"`
+	Failure     *ProjectAssistantFailure        `json:"failure,omitempty"`
+	SourceEpoch string                          `json:"source_epoch,omitempty"`
+	Type        ProjectAssistantRosterFrameType `json:"type"`
+}
+
+type ProjectAssistantRosterFrameType string
+
+const (
+	ProjectAssistantRosterFrameTypeHello            ProjectAssistantRosterFrameType = "hello"
+	ProjectAssistantRosterFrameTypeSnapshot         ProjectAssistantRosterFrameType = "snapshot"
+	ProjectAssistantRosterFrameTypeSnapshotComplete ProjectAssistantRosterFrameType = "snapshot-complete"
+	ProjectAssistantRosterFrameTypeChanges          ProjectAssistantRosterFrameType = "changes"
+	ProjectAssistantRosterFrameTypeResync           ProjectAssistantRosterFrameType = "resync"
+	ProjectAssistantRosterFrameTypeClosure          ProjectAssistantRosterFrameType = "closure"
+)
+
+// ProjectAssistantRosterFrameTypeValues is every value the contract allows, in contract order.
+var ProjectAssistantRosterFrameTypeValues = []ProjectAssistantRosterFrameType{ProjectAssistantRosterFrameTypeHello, ProjectAssistantRosterFrameTypeSnapshot, ProjectAssistantRosterFrameTypeSnapshotComplete, ProjectAssistantRosterFrameTypeChanges, ProjectAssistantRosterFrameTypeResync, ProjectAssistantRosterFrameTypeClosure}
+
+// Local-only authorized machine roster SSE at GET
+// /v1/project-assistants/roster-events, API 70. Cursor or Last-Event-ID resumes
+// an applied frame; project_id optionally limits the Project. Cloud
+// subscription and console consumption are pending.
+type ProjectAssistantRosterRequest struct {
+	Cursor    string `json:"cursor,omitempty"`
+	MachineID string `json:"machine_id"`
+	ProjectID string `json:"project_id,omitempty"`
+}
+
 // Revokes one standing rule for the Bot's Project (API level 66).
 type ProjectAssistantRuleRemoveRequest struct {
 	Command ProjectAssistantCommand        `json:"command"`

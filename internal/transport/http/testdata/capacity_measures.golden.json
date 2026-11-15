@@ -406,6 +406,26 @@
     "Note": true
   },
   {
+    "Name": "bots.roster_check_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.roster_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.roster_subs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.roster_wakes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.rpc_ms",
     "Known": true,
     "Note": true

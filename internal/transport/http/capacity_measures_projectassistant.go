@@ -48,6 +48,10 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	return map[string]func() capacity.Reading{
 		capacity.BotsInputBytes: pure, capacity.BotsInputChunkBytes: pure, capacity.BotsInputsPerMessage: pure, capacity.BotsInputsPerBot: unobserved,
+		capacity.BotsRosterSubscribers:     unobserved,
+		capacity.BotsRosterWakeups:         unobserved,
+		capacity.BotsRosterLifetime:        pure,
+		capacity.BotsRosterRecheck:         pure,
 		capacity.BotsArtifactTitleBytes:    pure,
 		capacity.BotsOutputBytes:           pure,
 		capacity.BotsArtifactBytes:         pure,

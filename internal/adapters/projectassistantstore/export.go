@@ -282,5 +282,5 @@ func (s *Store) Restore(ctx context.Context, in app.Export) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return s.commitRoster(ctx, tx, a.Bot.Key.MachineID)
 }

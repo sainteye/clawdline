@@ -6147,6 +6147,56 @@ export interface ProjectAssistantReceiptResponse {
 }
 
 /**
+ * Replace by key/revision; removed is a replayable tombstone. Unread is an absolute
+ * reader-specific count, never a delta. Revision is the roster journal sequence,
+ * independent of Bot version/message sequence.
+ */
+export interface ProjectAssistantRosterChange {
+  key: ProjectAssistantBotKey
+  removed: boolean
+  revision: number
+  summary?: ProjectAssistantBotSummary
+}
+
+/**
+ * Bounded SSE data. Apply all changes before saving its signed cursor. Initial
+ * pages pin their first machine frontier; only snapshot-complete establishes a
+ * complete initial roster. hello has no cursor. resync/closure/EOF never advance a
+ * cursor. Restart, changed scope/grant/reader or invalid cursor requires a new
+ * snapshot. Frames reuse 100 snapshot rows, 256 replay rows, 4096 cursor bytes and
+ * the 8 MiB plaintext ceiling.
+ */
+export interface ProjectAssistantRosterFrame {
+  changes?: ProjectAssistantRosterChange[]
+  cursor?: string
+  failure?: ProjectAssistantFailure
+  source_epoch?: string
+  type: ProjectAssistantRosterFrameType
+}
+
+export type ProjectAssistantRosterFrameType =
+    "hello"
+  | "snapshot"
+  | "snapshot-complete"
+  | "changes"
+  | "resync"
+  | "closure"
+
+export const ProjectAssistantRosterFrameTypeValues: readonly ProjectAssistantRosterFrameType[] = ["hello", "snapshot", "snapshot-complete", "changes", "resync", "closure"] as const
+
+/**
+ * Local-only authorized machine roster SSE at GET
+ * /v1/project-assistants/roster-events, API 70. Cursor or Last-Event-ID resumes an
+ * applied frame; project_id optionally limits the Project. Cloud subscription and
+ * console consumption are pending.
+ */
+export interface ProjectAssistantRosterRequest {
+  cursor?: string
+  machine_id: string
+  project_id?: string
+}
+
+/**
  * Revokes one standing rule for the Bot's Project (API level 66).
  */
 export interface ProjectAssistantRuleRemoveRequest {

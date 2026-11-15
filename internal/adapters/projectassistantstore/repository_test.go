@@ -246,6 +246,66 @@ func TestReaderIsolationMonotonicCursorsAndPagination(t *testing.T) {
 	}
 }
 
+func TestReadPositionDoesNotInvalidatePreparedTurnCompletion(t *testing.T) {
+	for _, changeInstructions := range []bool{false, true} {
+		t.Run(map[bool]string{false: "read position only", true: "instructions still fence completion"}[changeInstructions], func(t *testing.T) {
+			_, s, _ := testDB(t)
+			b := seed(t, s, "one")
+			fence := populate(t, s, b, pa.EffectDelivered)
+			e, err := s.Export(testContext, b.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared := e.Bot
+			prepared.Version++
+			conversation := e.Conversation
+			conversation.ActiveTurnID = ""
+			conversation.LastMessageSeq++
+			turn := e.Turns[0]
+			turn.State = pa.TurnSucceeded
+			permission := e.Permissions[0]
+			permission.State = pa.PermissionCancelled
+			reply := pa.Message{ID: "reply", Fence: fence, Seq: conversation.LastMessageSeq, TurnID: turn.ID, Kind: pa.AssistantMessage, Text: "Finished", At: b.CreatedAt}
+			completion := app.Mutation{Command: command(b.Key, pa.SendOperation, "finish"), ExpectedVersion: e.Bot.Version, Bot: &prepared, Conversation: &conversation, Turn: &turn, Permissions: []pa.PermissionOffer{permission}, Messages: []pa.Message{reply}, Receipt: pa.Receipt{ID: "finished", State: pa.EffectDelivered}}
+
+			// Interleave the real read writer after execution has prepared its
+			// mutation, rather than relying on thread scheduling or a retry.
+			read := pa.ReadCursor{Key: b.Key, ConversationID: b.ConversationID, ReaderID: "alice", MessageSeq: 1}
+			if _, err = s.MarkRead(testContext, command(b.Key, pa.ReadOperation, "read-while-finishing"), read); err != nil {
+				t.Fatal(err)
+			}
+			if changeInstructions {
+				current, err := s.Bot(testContext, b.Key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := current.Version
+				current.Version++
+				current.Instructions = pa.InstructionSnapshot{Revision: 2, Text: "New instructions"}
+				if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "edit"), ExpectedVersion: expected, Bot: &current, Receipt: pa.Receipt{ID: "edited", State: pa.EffectDelivered}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = s.Commit(testContext, completion)
+			if changeInstructions {
+				requireCode(t, err, pa.StaleVersion)
+				return
+			}
+			if err != nil {
+				t.Fatal("recording a read position invalidated prepared execution", err)
+			}
+			got, err := s.Export(testContext, b.Key)
+			if err != nil || got.Turns[0].State != pa.TurnSucceeded || got.Conversation.ActiveTurnID != "" || got.Bot.Version != prepared.Version || len(got.ReadCursors) != 1 || got.ReadCursors[0] != read {
+				t.Fatalf("completion lost the read position or execution facts: %+v %v", got, err)
+			}
+			page, err := s.ListForReader(testContext, pa.ListBots{MachineID: b.Key.MachineID, PageSize: 1}, "alice")
+			if err != nil || page.Items[0].UnreadCount != 1 {
+				t.Fatalf("the new reply must remain unread: %+v %v", page, err)
+			}
+		})
+	}
+}
+
 func TestObserveIsScopedIdempotentAndHistoryReadable(t *testing.T) {
 	_, s, _ := testDB(t)
 	b := seed(t, s, "one")

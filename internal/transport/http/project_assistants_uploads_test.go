@@ -160,6 +160,11 @@ func waitInputTurn(t *testing.T, f *paServerFixture) app.Export {
 					terminal = false
 				}
 				if turn.State == pa.TurnFailed || turn.State == pa.TurnUnknown {
+					for _, event := range x.Events {
+						if event.Turn != nil && event.Turn.ID == turn.ID {
+							t.Logf("input turn %s: state=%s failure=%+v", turn.ID, event.Turn.State, event.Turn.Failure)
+						}
+					}
 					t.Fatalf("synthetic input turn: %+v", x.Turns)
 				}
 			}

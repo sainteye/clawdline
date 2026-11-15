@@ -37,6 +37,29 @@ await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
 const origin=`http://127.0.0.1:${server.address().port}`,browser=await chromium.launch({headless:true})
 const evidence=[]
 const input=Buffer.from("Explicit input from the real HTTP fixture.\n")
+let afterSeq=0
+const nativeTurns=new Map()
+// A visible attachment proves delivery, not native completion. Observe the
+// real durable event feed before another send can acknowledge an unknown turn.
+async function waitNativeTurns(expected){
+  const deadline=Date.now()+15000
+  while(Date.now()<deadline){
+    const query=new URLSearchParams({machine_id:process.env.BOTS_MACHINE,after_seq:String(afterSeq),page_size:"100"})
+    const response=await fetch(`${upstream}/v1/project-assistants/${encodeURIComponent(process.env.BOTS_BOT)}/events?${query}`,{headers:{Authorization:`Bearer ${token}`}})
+    assert.equal(response.ok,true,`Native event read refused: ${response.status}`)
+    const page=await response.json()
+    for(const event of page.items){
+      if(event.turn)nativeTurns.set(event.turn.id,{id:event.turn.id,state:event.turn.state,failure:event.turn.failure??null})
+    }
+    afterSeq=page.next_seq
+    const turns=[...nativeTurns.values()]
+    await writeFile(path.join(artifacts,"native-turn-evidence.json"),JSON.stringify({modelRequests:0,turns},null,2)+"\n",{mode:0o600})
+    assert.ok(turns.every(turn=>turn.state!=="failed"&&turn.state!=="unknown"),`Native input turn failed: ${JSON.stringify(turns)}`)
+    if(turns.length===expected&&turns.every(turn=>turn.state==="succeeded"))return
+    if(!page.has_more)await new Promise(resolve=>setTimeout(resolve,20))
+  }
+  assert.fail(`Native input turn did not complete: ${JSON.stringify([...nativeTurns.values()])}`)
+}
 try{
   for(const [language,width,height] of [["en",1280,900],["zh-Hant",390,844]]){
     const page=await browser.newPage({viewport:{width,height},acceptDownloads:true}),errors=[]
@@ -62,8 +85,9 @@ try{
     const saved=path.join(artifacts,filename);await(await download).saveAs(saved)
     assert.deepEqual(await readFile(saved),input)
     await dialog.getByRole("button",{name:zh?"關閉":"Close",exact:true}).click()
+    await waitNativeTurns(evidence.length+1)
     assert.deepEqual(errors,[])
-    evidence.push({language,width,height,filename,fileOnly:true,reopened:true,downloadBytes:input.length,sha256:createHash("sha256").update(input).digest("hex"),pageErrors:errors})
+    evidence.push({language,width,height,filename,fileOnly:true,reopened:true,nativeSucceeded:true,downloadBytes:input.length,sha256:createHash("sha256").update(input).digest("hex"),pageErrors:errors})
     await page.close()
   }
   await writeFile(path.join(artifacts,"minimal-browser-evidence.json"),JSON.stringify({surface:"local Chromium with actual HTTP/SQLite/owned synthetic ACP; not production Cloud or a real phone",modelRequests:0,evidence},null,2)+"\n")
@@ -105,6 +129,7 @@ try{
     await dialog.getByRole("button",{name:"Close",exact:true}).click()
   }
   assert.equal(sends,1,"one explicit retry sends the complete selection once")
+  await waitNativeTurns(3)
   await picker.setInputFiles({name:"lost.txt",mimeType:"text/plain",buffer:input});await page.locator("textarea").fill("Keep this draft")
   await page.reload();await page.getByRole("alert").filter({hasText:"selected files are no longer available"}).waitFor()
   assert.equal(await page.locator("textarea").inputValue(),"Keep this draft")
@@ -124,6 +149,7 @@ try{
   assert.equal(await page.locator(".pa-input-chips>span").count(),1)
   await send.click();await page.locator(".pa-input-card").filter({hasText:"cancel.bin"}).waitFor()
   assert.equal(sends,2)
+  await waitNativeTurns(4)
   await page.screenshot({path:path.join(artifacts,"mixed-and-retried-files.png"),fullPage:true})
   await page.close()
   const gates=[]

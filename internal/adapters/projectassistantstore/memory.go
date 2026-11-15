@@ -209,5 +209,5 @@ func (s *Store) changeMemory(ctx context.Context, cmd pa.Command, change func(*a
 	if err = writeReceipt(ctx, tx, r); err != nil {
 		return old, err
 	}
-	return a.Memory, tx.Commit()
+	return a.Memory, s.commitRoster(ctx, tx, cmd.Key.MachineID)
 }

@@ -62,6 +62,7 @@ func TestReadViewHistorySurvivesMarkReadAndNewGeneration(t *testing.T) {
 	q := viewQuery(e.Bot)
 	q.Request.PageSize = 1
 	v := readView(t, views, q)
+	frontier := v.Head.EventFrontier
 	history := q
 	history.Request.Mode, history.Request.SourceEpoch, history.Request.Cursor = pa.ReadViewHistory, v.SourceEpoch, v.Items[0].AfterCursor
 	_, err := store.MarkRead(testContext, command(e.Bot.Key, pa.ReadOperation, "read"), pa.ReadCursor{Key: e.Bot.Key, ConversationID: e.Bot.ConversationID, ReaderID: "synthetic", MessageSeq: 1})
@@ -69,8 +70,20 @@ func TestReadViewHistorySurvivesMarkReadAndNewGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	v = readView(t, views, history)
-	if v.Items[0].ID != "m039" || v.Head.BotVersion <= e.Bot.Version {
+	if v.Items[0].ID != "m039" || v.Head.BotVersion != e.Bot.Version || v.Head.EventFrontier <= frontier {
 		t.Fatalf("MarkRead expired history: %+v", v)
+	}
+	// A read observation now has its own event without moving execution CAS.
+	// Still prove that a real metadata version change cannot expire history.
+	renamed := e.Bot
+	renamed.Name = "Renamed Bot"
+	renamed.Version++
+	if _, err = store.Commit(testContext, app.Mutation{Command: command(e.Bot.Key, pa.EditOperation, "rename"), ExpectedVersion: e.Bot.Version, Bot: &renamed, Receipt: pa.Receipt{ID: "renamed", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	v = readView(t, views, history)
+	if v.Items[0].ID != "m039" || v.Head.BotVersion != renamed.Version {
+		t.Fatalf("metadata version change expired history: %+v", v)
 	}
 	permission := q
 	permission.Request.Mode, permission.Request.SourceEpoch = pa.ReadViewPermissions, v.SourceEpoch

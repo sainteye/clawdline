@@ -71,8 +71,9 @@ type Host struct {
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
 
-// New only reads schema/data. A fresh default-off source creates no feature
-// tables, runtime, provider, actor authority or broker subscription.
+// New migrates an already installed feature on the primary database before
+// exposing its read service. A fresh default-off source still creates no
+// feature tables, runtime, provider, actor authority or broker subscription.
 func New(ctx context.Context, o Options) (*Host, error) {
 	if o.Database == nil || o.MachineID == "" || o.Projects == nil || o.Broker == nil || o.Clock == nil || o.ID == nil || o.Authority == nil || o.Source == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout <= 0 || o.Limits.CleanupTimeout <= 0 {
 		return nil, failure(pa.Invalid, "host_options")
@@ -83,6 +84,11 @@ func New(ctx context.Context, o Options) (*Host, error) {
 		return nil, err
 	}
 	if exists {
+		// Disabled installations retain readable history and may skip Enable.
+		// Run repeatable additive migrations here, never in the read adapter.
+		if err = (featurestore.Installer{}).Install(ctx, o.Database); err != nil {
+			return nil, err
+		}
 		if err = h.makeService(); err != nil {
 			return nil, err
 		}
