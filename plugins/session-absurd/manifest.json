@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "com.clawdline.session-absurd",
+  "version": "0.1.0",
+  "hostApi": 1,
+  "name": {
+    "en": "Session Deadpan",
+    "zh-Hant": "Session 冷面劇場"
+  },
+  "entry": "index.html",
+  "capabilities": [
+    "sessions.read",
+    "sessions.open"
+  ]
+}

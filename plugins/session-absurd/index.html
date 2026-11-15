@@ -1,0 +1,666 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Session Deadpan</title>
+<style>
+/* Session Deadpan: every Session state is a small, absurd scene performed with a straight face.
+ * Flat pastel blocks and one even outline weight carry the drawings; each state also has its own
+ * word, glyph and background pattern, so colour is never the only signal. The scenes are static
+ * markup owned by this package; Session titles and Project labels are only ever set as text. */
+:root{color-scheme:light;--paper:#f2ece3;--grain:rgba(43,42,51,.05);--ink:#2b2a33;--page-ink:#2b2a33;--page-muted:#5b5866;--card:#fffdf8;--muted:#5b5866;--focus:#3b5bdb;
+ --skin:#fde3d2;--shirt:#fffdf8;--tie:#e0616e;--trousers:#4a4857;--kraft:#d9b98c;--duck:#f2b33d;--leaf:#7cc29a;
+ --c-waiting_you:#f5b5c2;--c-working:#b6d3f2;--c-waiting_session:#d4c6f1;--c-holding:#f6cda3;--c-ready:#f4e39b;--c-milestone_complete:#a6dfd6;--c-work_complete:#c0e3b5;--c-unknown:#dad6cf;
+ --display:"Avenir Next","Futura","Trebuchet MS","Gill Sans","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+ --text:system-ui,-apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+body.dark{color-scheme:dark;--paper:#1f1d26;--grain:rgba(255,255,255,.04);--page-ink:#f2ece3;--page-muted:#cbc5d6;--focus:#9db4ff}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--paper);color:var(--page-ink);font:16px/1.45 var(--text);padding:20px 24px 40px;
+ background-image:radial-gradient(var(--grain) 1px,transparent 1.5px);background-size:7px 7px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Drawing vocabulary: one outline weight, flat fills. */
+svg.scene{display:block;width:100%;height:100%;overflow:visible}
+.o{stroke:var(--ink);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.ln{fill:none;stroke:var(--ink);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.thin{stroke-width:1.8}
+.dot{fill:var(--ink)}
+.f-skin{fill:var(--skin)}.f-shirt{fill:var(--shirt)}.f-tie{fill:var(--tie)}.f-trousers{fill:var(--trousers)}
+.f-paper{fill:#fffdf8}.f-butter{fill:#f6e7a8}.f-sky{fill:#9cc4ee}.f-peach{fill:#f4b48e}.f-mint{fill:var(--leaf)}
+.f-grey{fill:#c9c4bb}.f-kraft{fill:var(--kraft)}.f-duck{fill:var(--duck)}.f-red{fill:#e0616e}.f-lilac{fill:#b9a6e6}
+.f-light{fill:#fffbe8;opacity:.75}
+.eyes,.wheel,.bulb,.cord,.snail,.hand,.bird,.duck,.sway,.cf,.bag,.qm,.zz,.recv,.wait-dots circle{transform-box:fill-box;transform-origin:center}
+.sway{transform-origin:50% 0}
+.hand{transform-origin:50% 100%}
+.recv{transform-origin:0 100%}
+
+/* Header: the theatre's own sign. */
+.mast{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;color:var(--ink);background:var(--card);
+ border:2.5px solid var(--ink);border-radius:22px;padding:12px 16px 12px 12px}
+.mast .face{width:76px;height:76px;border-radius:18px;background:var(--c-ready);border:2.5px solid var(--ink);overflow:hidden}
+h1{margin:0;font:700 clamp(26px,4vw,40px)/1.05 var(--display);letter-spacing:-.01em;overflow-wrap:anywhere}
+h1 small{display:block;font:500 15px/1.3 var(--text);color:var(--muted);letter-spacing:0;margin-top:4px}
+.scope{margin:6px 0 0;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:14px;font-weight:600;color:var(--muted)}
+.conn{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--ink);border-radius:999px;background:#fff;color:var(--ink);padding:1px 10px;font-weight:700}
+.conn::before{content:"";width:9px;height:9px;border-radius:50%;background:#46a86f;border:2px solid var(--ink)}
+.conn.off::before{background:#c9c4bb;border-radius:1px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.tool{min-height:44px;min-width:44px;padding:8px 16px;border:2.5px solid var(--ink);border-radius:999px;background:#fff;color:var(--ink);font-weight:700}
+.tool:hover:not(:disabled){background:#f4efe6}
+.tool[aria-pressed=true]{background:var(--ink);color:#fffdf8}
+.tool:disabled{cursor:not-allowed;color:var(--muted);border-style:dashed}
+
+/* Programme line and tallies */
+.programme{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap;margin:22px 2px 6px}
+.programme b{font:700 clamp(22px,3vw,30px)/1.15 var(--display)}
+.programme span{color:var(--page-muted);font-weight:600}
+.tally{list-style:none;display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px;padding:0}
+.tally button{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:6px 14px 6px 6px;border:2px solid var(--ink);border-radius:999px;background:var(--card);color:var(--ink);font-weight:700}
+.glyph{display:inline-grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;border:2px solid var(--ink);font:700 15px/1 var(--display);color:var(--ink);background:var(--st)}
+.banner{margin:14px 0;padding:10px 14px;border:2.5px dashed var(--ink);border-radius:14px;background:#fff6d8;color:var(--ink);font-weight:700}
+.banner:empty{display:none}
+#problem{margin:10px 0;font-weight:700;color:var(--ink)}
+#problem:empty{display:none}
+#problem:not(:empty){background:#fff;border:2.5px solid #c2364a;border-radius:14px;padding:8px 12px}
+
+/* Acts: one stage per state, followed by that state's Sessions. */
+.layout{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start}
+body.selecting .layout{grid-template-columns:minmax(0,1fr) 360px}
+.act{display:grid;grid-template-columns:240px minmax(0,1fr);gap:0;margin:26px 0 12px;background:var(--card);color:var(--ink);border:2.5px solid var(--ink);border-radius:22px;overflow:hidden}
+.act .stage{height:144px;background:var(--st);border-right:2.5px solid var(--ink);padding:6px 10px 0}
+.act .words{padding:14px 18px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}
+.act h2{margin:0;font:700 clamp(21px,2.6vw,28px)/1.15 var(--display);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.act .num{font:600 13px/1 var(--text);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+:lang(zh-Hant) .act .num{letter-spacing:.02em}
+.act .count{display:inline-grid;place-items:center;min-width:34px;height:34px;padding:0 8px;border-radius:999px;background:var(--ink);color:#fffdf8;font:700 17px/1 var(--display)}
+.act p{margin:2px 0 0;font-style:italic;color:var(--muted);overflow-wrap:anywhere}
+.cast{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:14px;margin:0 0 8px}
+.card{position:relative;display:grid;grid-template-rows:auto 1fr;text-align:left;padding:0;border:2.5px solid var(--ink);border-radius:18px;background:var(--card);color:var(--ink);overflow:hidden;min-height:196px;transition:transform .2s ease}
+.card .vig{order:-1;height:96px;background:var(--st);border-bottom:2.5px solid var(--ink);padding:4px 8px 0;position:relative}
+.card .vig svg{transform:scaleX(var(--flip,1))}
+.card .body{display:flex;flex-direction:column;gap:7px;padding:10px 12px 12px}
+.card .t{font-weight:700;font-size:16px;line-height:1.3;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.badge{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:14px}
+.badge .glyph{width:22px;height:22px;font-size:12px;border-width:1.8px}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;font-size:13px;font-weight:600}
+.tag{border:1.8px solid var(--ink);border-radius:999px;padding:0 8px;background:#fff;overflow-wrap:anywhere;max-width:100%}
+.tag.none{border-style:dashed;color:var(--muted)}
+.tag.warn{background:var(--ink);color:#fffdf8}
+.card:hover{transform:translateY(-2px)}
+.card[aria-pressed=true]{outline:3px solid var(--focus);outline-offset:3px}
+.card.old{background:#ece7de;border-style:dashed}
+.card.old .vig{filter:grayscale(.75);border-bottom-style:dashed}
+.card.arrive{animation:enter .5s ease-out both;animation-delay:var(--delay,0ms)}
+.card.changed .vig svg{animation:thud .6s ease-out}
+
+/* State fill, glyph background and a quiet pattern for each state. */
+.s-waiting_you{--st:var(--c-waiting_you)}.s-working{--st:var(--c-working)}.s-waiting_session{--st:var(--c-waiting_session)}.s-holding{--st:var(--c-holding)}
+.s-ready{--st:var(--c-ready)}.s-milestone_complete{--st:var(--c-milestone_complete)}.s-work_complete{--st:var(--c-work_complete)}.s-unknown{--st:var(--c-unknown)}
+.s-waiting_you .vig,.s-waiting_you .stage{background-image:radial-gradient(rgba(43,42,51,.13) 1.6px,transparent 2px);background-size:12px 12px}
+.s-working .vig,.s-working .stage{background-image:repeating-linear-gradient(-30deg,rgba(43,42,51,.09) 0 3px,transparent 3px 14px)}
+.s-waiting_session .vig,.s-waiting_session .stage{background-image:radial-gradient(circle at 50% 120%,transparent 8px,rgba(43,42,51,.1) 9px 10px,transparent 11px);background-size:22px 12px}
+.s-holding .vig,.s-holding .stage{background-image:repeating-linear-gradient(90deg,rgba(43,42,51,.1) 0 3px,transparent 3px 16px)}
+.s-milestone_complete .vig,.s-milestone_complete .stage{background-image:conic-gradient(rgba(43,42,51,.08) 25%,transparent 0 50%,rgba(43,42,51,.08) 0 75%,transparent 0);background-size:18px 18px}
+.s-work_complete .vig,.s-work_complete .stage{background-image:repeating-linear-gradient(0deg,rgba(43,42,51,.08) 0 2px,transparent 2px 12px)}
+.s-unknown .vig,.s-unknown .stage{background-image:repeating-linear-gradient(45deg,rgba(43,42,51,.1) 0 2px,transparent 2px 9px),repeating-linear-gradient(-45deg,rgba(43,42,51,.1) 0 2px,transparent 2px 9px)}
+
+/* Plain list */
+.rows{list-style:none;margin:20px 0 0;padding:0;border:2.5px solid var(--ink);border-radius:18px;overflow:hidden;background:var(--card);color:var(--ink)}
+.rows li+li{border-top:1.8px solid var(--ink)}
+.rows button{display:grid;grid-template-columns:28px minmax(0,1fr);gap:2px 12px;width:100%;min-height:56px;padding:10px 14px;text-align:left;border:0;background:transparent;color:var(--ink)}
+.rows button[aria-pressed=true]{background:#e6ebff}
+.rows .glyph{grid-row:span 2;align-self:center}
+.rows b{overflow-wrap:anywhere}
+.rows .line{font-size:14px;font-weight:600;color:var(--muted);overflow-wrap:anywhere}
+.rows .old .line{font-style:italic}
+
+/* Details: the close-up */
+#detail{position:sticky;top:16px;background:var(--card);color:var(--ink);border:2.5px solid var(--ink);border-radius:22px;overflow:hidden;display:none}
+body.selecting #detail{display:block}
+#dStage{display:block;height:170px;background:var(--st);border-bottom:2.5px solid var(--ink);padding:10px 12px 0}
+.d-body{padding:16px 18px 18px;display:grid;gap:12px}
+.d-body h2{margin:0;font:700 21px/1.3 var(--text);overflow-wrap:anywhere}
+.d-line{margin:0;font-style:italic;color:var(--muted)}
+.d-body dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;font-size:15px}
+.d-body dt{font-weight:700}
+.d-body dd{margin:0;overflow-wrap:anywhere}
+.d-close{position:absolute;right:10px;top:10px;width:44px;height:44px;border:2.5px solid var(--ink);border-radius:50%;background:#fff;color:var(--ink);font-weight:700;font-size:20px;z-index:1}
+.go{min-height:52px;border:2.5px solid var(--ink);border-radius:999px;background:var(--ink);color:#fffdf8;font:700 18px/1 var(--display);padding:12px 18px}
+.go:hover:not(:disabled){background:#43414f}
+.go:disabled{background:#e4dfd6;color:#45424f;border-style:dashed;cursor:not-allowed}
+.why{margin:0;font-size:14px;font-weight:600;color:#45424f}
+.why:empty{display:none}
+
+/* Empty and loading stages */
+.empty{margin-top:24px;display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);align-items:center;gap:8px 20px;padding:18px 22px;border:2.5px solid var(--ink);border-radius:22px;background:var(--card);color:var(--ink)}
+.empty .stage{height:150px}
+.empty b{font:700 clamp(22px,3vw,30px)/1.15 var(--display)}
+.empty p{margin:6px 0 0;color:var(--muted);font-weight:600}
+
+/* Motion is ornamental; the still page keeps every drawing and label. */
+body:not(.still) .eyes{animation:blink 6s infinite;animation-delay:calc(var(--i,0) * -0.7s)}
+body:not(.still) .wheel{animation:spin 2.4s linear infinite}
+body:not(.still) .bulb{animation:glow 3.6s ease-in-out infinite}
+body:not(.still) .cord{animation:wiggle 2.8s ease-in-out infinite}
+body:not(.still) .recv{animation:offer 3.4s ease-in-out infinite}
+body:not(.still) .snail{animation:crawl 14s ease-in-out infinite alternate}
+body:not(.still) .hand{animation:spin 8s steps(8) infinite}
+body:not(.still) .bird{animation:hop 4.2s ease-in-out infinite}
+body:not(.still) .duck{animation:bob 3s ease-in-out infinite}
+body:not(.still) .sway{animation:sway 5s ease-in-out infinite}
+body:not(.still) .zz{animation:rise 4s ease-in-out infinite}
+body:not(.still) .cf{animation:fall 5s linear infinite;animation-delay:var(--d,0s)}
+body:not(.still) .bag{animation:tilt 5.5s ease-in-out infinite}
+body:not(.still) .qm{animation:bob 4s ease-in-out infinite}
+body:not(.still) .wait-dots circle{animation:dots 1.8s ease-in-out infinite}
+body:not(.still) .wait-dots circle:nth-child(2){animation-delay:.3s}
+body:not(.still) .wait-dots circle:nth-child(3){animation-delay:.6s}
+body:not(.still) .stage .eyes{translate:var(--look,0px) 0}
+body.still,body.still *,body.still *::before,body.still *::after{animation:none!important;transition:none!important}
+body.still .card:hover{transform:none}
+@keyframes blink{0%,95%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes glow{50%{opacity:.7}}
+@keyframes wiggle{50%{transform:translateY(2px) scaleY(.9)}}
+@keyframes offer{0%,70%,100%{transform:rotate(0)}80%{transform:rotate(-6deg)}90%{transform:rotate(2deg)}}
+@keyframes crawl{to{transform:translateX(-26px)}}
+@keyframes hop{0%,60%,100%{transform:translateY(0)}68%{transform:translateY(-6px)}76%{transform:translateY(0)}82%{transform:translateY(-3px)}88%{transform:translateY(0)}}
+@keyframes bob{50%{transform:translateY(-3px) rotate(-4deg)}}
+@keyframes sway{50%{transform:rotate(2.5deg)}}
+@keyframes rise{0%{transform:translateY(4px);opacity:0}30%,70%{opacity:1}100%{transform:translateY(-8px);opacity:0}}
+@keyframes fall{0%{transform:translateY(-10px) rotate(0);opacity:0}15%{opacity:1}85%{opacity:1}100%{transform:translateY(40px) rotate(200deg);opacity:0}}
+@keyframes tilt{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(4deg)}}
+@keyframes dots{50%{transform:translateY(-3px)}}
+@keyframes enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes thud{0%{transform:scaleX(var(--flip,1)) translateY(-10px)}60%{transform:scaleX(var(--flip,1)) translateY(2px)}100%{transform:scaleX(var(--flip,1))}}
+
+@media (max-width:860px){
+ body.selecting .layout{grid-template-columns:minmax(0,1fr)}
+ #detail{position:fixed;left:12px;right:12px;bottom:12px;top:auto;max-height:74vh;overflow:auto;z-index:5;box-shadow:0 -6px 0 rgba(43,42,51,.15)}
+ #dStage{height:130px}
+ body.selecting main{padding-bottom:52vh}
+}
+@media (max-width:560px){
+ body{padding:12px 16px 32px}
+ .mast{grid-template-columns:auto minmax(0,1fr);gap:12px;padding:10px;border-radius:18px}
+ .mast .face{width:56px;height:56px;border-radius:14px}
+ h1{font-size:24px} h1 small{font-size:13px}
+ .tools{grid-column:1/-1;justify-content:flex-start;flex-wrap:nowrap;gap:6px}
+ .tool{padding:6px 12px;font-size:14px}#btnMotion{flex:1}
+ .programme{margin-top:16px}
+ .tally{flex-wrap:nowrap;overflow-x:auto;padding:0 4px 8px;margin-right:-16px;scrollbar-width:thin}.tally li{flex:none}
+ .act{grid-template-columns:132px minmax(0,1fr);border-radius:18px;margin-top:20px}
+ .act .stage{height:104px;padding:4px 4px 0}
+ .act .words{padding:10px 12px}
+ .act h2{font-size:19px;gap:8px}.act .count{min-width:28px;height:28px;font-size:15px}
+ .act p{font-size:13px}
+ .cast{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .card{min-height:178px;border-radius:14px}
+ .card .vig{height:74px;padding:2px 4px 0}
+ .card .body{padding:8px 9px 10px;gap:5px}
+ .card .t{font-size:14.5px}
+ .badge{font-size:13px}
+ .empty{grid-template-columns:1fr;text-align:center}.empty .stage{height:120px}
+}
+</style>
+<body class="still">
+<!-- Scenes. Static, package-owned drawings: cloned, never built from Session data. -->
+<template id="sc-waiting_you"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <path class="ln" d="M148 108V90M168 108V90"/><rect class="o f-butter" x="140" y="84" width="36" height="7" rx="2"/>
+ <rect class="o f-red" x="146" y="70" width="24" height="14" rx="5"/><circle class="o f-paper" cx="158" cy="77" r="3.5"/>
+ <path class="ln thin cord" d="M150 72c-6-10-12 8-18-2s-12 6-18-4"/>
+ <path class="ln" d="M68 108V92M80 108V92"/>
+ <rect class="o f-shirt" x="60" y="58" width="28" height="36" rx="9"/><path class="o f-tie" d="M74 60l-3 5 3 14 3-14z"/>
+ <path class="ln" d="M62 66q-6 12-2 22"/>
+ <g class="recv"><path class="ln" d="M86 66q12-2 20-9"/><rect class="o f-red" x="102" y="44" width="9" height="20" rx="4" transform="rotate(28 106 54)"/></g>
+ <circle class="o f-skin" cx="74" cy="42" r="14"/><path class="ln thin" d="M72 28q4-7 9-3"/>
+ <g class="eyes"><circle class="dot" cx="69" cy="41" r="1.9"/><circle class="dot" cx="79" cy="41" r="1.9"/></g><path class="ln" d="M70 50h8"/>
+</svg></template>
+<template id="sc-working"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <path class="ln thin" d="M136 90q22 0 22-30V44"/>
+ <g class="bulb"><circle class="o f-butter" cx="158" cy="30" r="11"/><path class="ln thin" d="M154 30l2 4 2-4 2 4"/></g><rect class="o f-grey" x="152" y="39" width="12" height="7" rx="2"/>
+ <path class="ln" d="M66 108l14-26h34l8 26"/>
+ <g class="wheel"><circle class="o f-paper" cx="120" cy="90" r="16"/><path class="ln thin" d="M120 74v32M104 90h32M109 79l22 22M131 79l-22 22"/></g>
+ <path class="ln" d="M112 84l6-20h9"/>
+ <path class="ln" d="M92 72l16 8-6 14"/>
+ <rect class="o f-trousers" x="80" y="66" width="18" height="10" rx="4"/>
+ <rect class="o f-shirt" x="78" y="40" width="24" height="30" rx="8"/><path class="o f-tie" d="M90 42l-2.5 4 2.5 12 2.5-12z"/>
+ <path class="ln" d="M100 50l22 14"/>
+ <circle class="o f-skin" cx="90" cy="27" r="12"/>
+ <g class="eyes"><circle class="dot" cx="86" cy="26" r="1.7"/><circle class="dot" cx="94" cy="26" r="1.7"/></g><path class="ln" d="M86 33h7"/>
+ <path class="o f-sky" d="M106 16q3 5 0 8q-3-3 0-8z"/>
+</svg></template>
+<template id="sc-waiting_session"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <path class="ln" d="M40 108V82M66 108V82M40 80V50"/><rect class="o f-butter" x="36" y="76" width="34" height="7" rx="2"/>
+ <path class="ln" d="M58 78h16v30M50 80h14v28"/>
+ <rect class="o f-shirt" x="40" y="46" width="24" height="32" rx="8"/><path class="o f-tie" d="M52 48l-2.5 4 2.5 12 2.5-12z"/>
+ <path class="ln" d="M62 58q10 2 16-4"/>
+ <circle class="o f-paper" cx="84" cy="50" r="8"/><path class="ln thin" d="M84 42v-3"/><path class="ln thin hand" d="M84 50v-5"/>
+ <circle class="o f-skin" cx="52" cy="33" r="12"/>
+ <g class="eyes"><circle class="dot" cx="54" cy="34" r="1.7"/><circle class="dot" cx="61" cy="34" r="1.7"/></g><path class="ln" d="M53 41h7"/>
+ <g class="snail"><path class="o f-mint" d="M120 108c0-6 6-8 12-8h26c4 0 6-2 8-6l3 2c-2 6-4 12-12 12z"/><circle class="o f-peach" cx="140" cy="94" r="12"/>
+ <path class="ln thin" d="M140 94a3.5 3.5 0 1 1 3.5 3.5a7.5 7.5 0 1 1-7.5-7.5"/><path class="ln thin" d="M165 94l1-8M168 96l5-6"/></g>
+</svg></template>
+<template id="sc-holding"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <rect class="o f-grey" x="72" y="82" width="56" height="26" rx="2"/><rect class="o f-paper" x="66" y="76" width="68" height="8" rx="2"/>
+ <path class="ln" d="M93 76V64M107 76V64"/>
+ <rect class="o f-shirt" x="86" y="36" width="28" height="30" rx="9"/><path class="o f-tie" d="M100 38l-2.5 4 2.5 12 2.5-12z"/>
+ <path class="ln" d="M88 42q-8 10-6 20"/><path class="ln" d="M112 42l14-16"/>
+ <rect class="o f-paper" x="122" y="6" width="20" height="20" rx="4"/><path class="ln" d="M129 11v10M135 11v10"/>
+ <circle class="o f-skin" cx="100" cy="24" r="12"/>
+ <g class="eyes"><circle class="dot" cx="96" cy="25" r="1.7"/><circle class="dot" cx="104" cy="25" r="1.7"/></g><path class="ln" d="M96 32h8"/>
+ <g class="bird"><path class="o f-sky" d="M92 12q6-9 15 0q-2 4-7.5 4t-7.5-4z"/><circle class="dot" cx="103" cy="9.5" r="1.1"/><path class="o f-duck" d="M107 9l5 1.5-5 1.5z"/></g>
+</svg></template>
+<template id="sc-ready"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M152 30V16h-14"/><path class="o f-grey" d="M132 12h12v8h-12z"/>
+ <circle class="o f-skin" cx="82" cy="50" r="13"/><path class="ln thin" d="M80 36q4-7 9-3"/>
+ <g class="eyes"><circle class="dot" cx="77" cy="49" r="1.8"/><circle class="dot" cx="87" cy="49" r="1.8"/></g><path class="ln" d="M78 57h8"/>
+ <path class="o f-skin" d="M66 74q0-12 16-12t16 12z"/>
+ <circle class="o f-sky" cx="56" cy="66" r="3"/><circle class="o f-sky" cx="114" cy="62" r="2.5"/>
+ <g class="duck"><path class="o f-duck" d="M114 72c0-6 6-8 12-6c2-7 11-6 12 0c0 4-2 6-4 6z"/><circle class="dot" cx="132" cy="63" r="1.1"/><path class="o f-peach" d="M138 62l6 1.5-6 2z"/></g>
+ <path class="o f-paper" d="M38 72h124v12q0 18-22 18H60q-22 0-22-18z"/><path class="ln" d="M60 102l-5 7M140 102l5 7"/>
+</svg></template>
+<template id="sc-milestone_complete"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <rect class="cf f-red" x="40" y="10" width="5" height="5" style="--d:-1s"/><rect class="cf f-sky" x="62" y="4" width="4" height="6" style="--d:-3.2s"/>
+ <rect class="cf f-butter" x="150" y="8" width="5" height="5" style="--d:-2s"/><rect class="cf f-lilac" x="170" y="14" width="4" height="6" style="--d:-4.1s"/><rect class="cf f-peach" x="30" y="30" width="4" height="4" style="--d:-0.4s"/>
+ <rect class="o f-paper" x="70" y="84" width="60" height="24" rx="2"/><path class="ln" d="M97 92l4-3v15"/>
+ <path class="ln" d="M93 84V72M107 84V72"/>
+ <rect class="o f-shirt" x="86" y="44" width="28" height="30" rx="9"/><path class="o f-tie" d="M100 46l-2.5 4 2.5 12 2.5-12z"/>
+ <path class="ln" d="M88 52q-8 8-6 18"/><path class="ln" d="M112 52l16-14"/>
+ <path class="o f-mint" d="M126 34V16q4-6 8 0v18"/><path class="ln thin" d="M126 26h-5v-7M134 23h5v-6"/>
+ <path class="o f-peach" d="M120 34h20l-3 11h-14z"/>
+ <circle class="o f-skin" cx="100" cy="31" r="12"/>
+ <g class="eyes"><circle class="dot" cx="96" cy="31" r="1.7"/><circle class="dot" cx="104" cy="31" r="1.7"/></g><path class="ln" d="M96 38h8"/>
+</svg></template>
+<template id="sc-work_complete"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <path class="ln" d="M28 108V40M172 108V40"/>
+ <path class="o f-paper" d="M172 40l18 6-18 6z"/><path class="ln thin" d="M176 46l3 3 5-6"/>
+ <g class="sway">
+  <path class="o f-peach" d="M28 46q72 56 144 0q-72 32-144 0z"/>
+  <rect class="o f-shirt" x="72" y="60" width="52" height="16" rx="8" transform="rotate(-4 98 68)"/>
+  <path class="ln" d="M124 64l16-6M122 70l18-4"/>
+  <circle class="o f-skin" cx="62" cy="62" r="11"/>
+  <path class="ln thin" d="M56 61h4M65 61h4"/><path class="ln thin" d="M58 67h7"/>
+ </g>
+ <path class="ln thin zz" d="M70 34h6l-6 6h6M82 24h4l-4 4h4"/>
+</svg></template>
+<template id="sc-unknown"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <path class="ln" d="M94 108V82M106 108V82"/>
+ <rect class="o f-shirt" x="86" y="48" width="28" height="36" rx="9"/><path class="o f-tie" d="M100 50l-2.5 4 2.5 12 2.5-12z"/>
+ <path class="ln" d="M88 56q-8 12-4 24M112 56q8 12 4 24"/>
+ <g class="bag"><path class="o f-kraft" d="M84 12h32l2 38H82z"/><path class="ln thin" d="M88 12l-2 6M112 12l2 6"/>
+ <g class="eyes"><circle class="dot" cx="94" cy="28" r="2.4"/><circle class="dot" cx="106" cy="28" r="2.4"/></g></g>
+ <path class="ln qm" d="M134 26q0-9 9-9t9 9q0 6-9 8v5M143 45v.5"/>
+</svg></template>
+<template id="sc-empty"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="f-light" d="M100 0L58 108h84z"/>
+ <path class="ln" d="M10 108H190"/>
+ <path class="ln" d="M86 108V84M114 108V84M86 82V52"/><rect class="o f-butter" x="82" y="78" width="36" height="7" rx="2"/>
+ <ellipse class="o f-paper" cx="100" cy="108" rx="34" ry="3"/>
+</svg></template>
+<template id="sc-loading"><svg class="scene" viewBox="0 0 200 120" aria-hidden="true" focusable="false">
+ <path class="ln" d="M10 108H190"/>
+ <path class="ln" d="M94 108V92M106 108V92"/>
+ <rect class="o f-shirt" x="86" y="58" width="28" height="36" rx="9"/>
+ <rect class="o f-paper" x="112" y="34" width="44" height="30" rx="4"/><g class="wait-dots"><circle class="dot" cx="124" cy="49" r="2.6"/><circle class="dot" cx="134" cy="49" r="2.6"/><circle class="dot" cx="144" cy="49" r="2.6"/></g>
+ <path class="ln" d="M112 66l8-4"/><path class="ln" d="M88 66q-8 12-4 24"/>
+ <circle class="o f-skin" cx="100" cy="42" r="13"/>
+ <g class="eyes"><circle class="dot" cx="96" cy="42" r="1.8"/><circle class="dot" cx="105" cy="42" r="1.8"/></g><path class="ln" d="M96 50h8"/>
+</svg></template>
+
+<header class="mast">
+ <span class="face" id="face" aria-hidden="true"></span>
+ <div><h1><span id="title">Session Deadpan</span><small id="tagline"></small></h1><p class="scope"><span id="scope"></span><span id="conn" class="conn"></span></p></div>
+ <div class="tools" role="toolbar" id="tools">
+  <button class="tool" id="btnScenes" aria-pressed="true"></button>
+  <button class="tool" id="btnList" aria-pressed="false"></button>
+  <button class="tool" id="btnMotion" aria-pressed="true"></button>
+  <button class="tool" id="btnClose"></button>
+ </div>
+</header>
+<p class="banner" id="banner" role="status"></p>
+<section class="programme" aria-live="polite"><b id="headline"></b><span id="subline"></span></section>
+<ul class="tally" id="tally"></ul>
+<p id="problem" role="alert"></p>
+<div class="layout">
+ <main id="board" aria-labelledby="title"></main>
+ <aside id="detail" aria-labelledby="dTitle">
+  <button class="d-close" id="dClose">×</button>
+  <span id="dStage" aria-hidden="true"></span>
+  <div class="d-body">
+   <h2 id="dTitle"></h2>
+   <p class="d-line" id="dLine"></p>
+   <dl><dt id="dtState"></dt><dd id="ddState"></dd><dt id="dtProject"></dt><dd id="ddProject"></dd><dt id="dtFresh"></dt><dd id="ddFresh"></dd></dl>
+   <button class="go" id="dOpen"></button>
+   <p class="why" id="dWhy"></p>
+  </div>
+ </aside>
+</div>
+<!-- CLAWDLINE_SDK -->
+<script>
+(() => {
+  "use strict";
+  // States in reading order: what needs the person first, settled work last.
+  const ORDER = ["waiting_you","waiting_session","working","holding","ready","milestone_complete","work_complete","unknown"];
+  const GLYPH = {waiting_you:"!",waiting_session:"⧗",working:"↻",holding:"Ⅱ",ready:"○",milestone_complete:"◆",work_complete:"✓",unknown:"?"};
+  const WORDS = {
+    en: {
+      title: "Session Deadpan", tagline: "Small absurd scenes. Real Session states.",
+      scenes: "Scenes", list: "List", motionOn: "Motion on", motionOff: "Motion off", motionSystem: "Reduced motion",
+      close: "Close", closeDetail: "Close details", open: "Open Session", opening: "Opening…",
+      connected: "Live", disconnected: "Disconnected", loading: "Reading Sessions…", loadingBody: "The cast is getting ready.",
+      noProject: "No Project", stale: "May be stale", unknownFresh: "Freshness unknown", fresh: "Current",
+      dState: "State", dProject: "Project", dFresh: "Reading",
+      gone: "This Session is no longer in the current reading.",
+      whyDisconnected: "Disconnected: the last reading is shown and opening is off until a new reading arrives.",
+      whyStale: "This reading may be stale, so opening is off.",
+      whyUnknown: "Freshness is unknown, so opening is off.",
+      banner: "Disconnected — showing the last reading. Rows may be stale and cannot be opened.",
+      emptyTitle: "The stage is empty.", emptyBody: "There are no Sessions in this reading.",
+      total: n => `${n} Session${n === 1 ? "" : "s"} in tonight's programme`,
+      lead: (n, word) => `${n} · ${word}`,
+      quiet: "Nobody needs you right now.",
+      act: n => `Scene ${n}`,
+      jump: (word, n) => `${word}: ${n}`,
+      hostDown: "Host connection unavailable.",
+      errors: {
+        permission_denied: "Opening is not permitted for this view.", scope_changed: "Access changed. Reopen the view to read again.",
+        session_unavailable: "That Session is no longer available.", host_unavailable: "Clawdline is not answering this view.",
+        busy: "Clawdline is busy. Wait a moment, then choose again.", request_timeout: "No answer in time; the outcome is uncertain. Check Clawdline before trying again.",
+        too_many_sessions: "The reading has more Sessions than a view may show, so the host refused it.", message_too_large: "The reading is too large for a view.",
+        protocol_mismatch: "This view does not match the host version.", invalid_request: "The host refused the request.", method_not_supported: "The host does not support this action."
+      },
+      failed: code => `Could not complete: ${code}`
+    },
+    zh: {
+      title: "Session 冷面劇場", tagline: "荒謬的小場景，真實的 Session 狀態。",
+      scenes: "場景", list: "清單", motionOn: "動態：開", motionOff: "動態：關", motionSystem: "已減少動態",
+      close: "關閉", closeDetail: "關閉詳情", open: "開啟 Session", opening: "開啟中…",
+      connected: "連線中", disconnected: "已中斷", loading: "正在讀取 Session…", loadingBody: "演員正在就位。",
+      noProject: "未指定 Project", stale: "資料可能過時", unknownFresh: "新鮮度不明", fresh: "最新",
+      dState: "狀態", dProject: "Project", dFresh: "讀取",
+      gone: "這個 Session 已不在目前的讀取結果中。",
+      whyDisconnected: "已中斷連線：顯示的是上一次讀取，收到新的讀取前無法開啟。",
+      whyStale: "這筆資料可能過時，所以無法開啟。",
+      whyUnknown: "無法確認資料是否最新，所以無法開啟。",
+      banner: "已中斷連線——顯示上一次的讀取，資料可能過時，無法開啟。",
+      emptyTitle: "舞台上沒有人。", emptyBody: "這次讀取沒有任何 Session。",
+      total: n => `今晚節目單共有 ${n} 個 Session`,
+      lead: (n, word) => `${n} 個 · ${word}`,
+      quiet: "目前沒有人在等你。",
+      act: n => `第 ${n} 幕`,
+      jump: (word, n) => `${word}：${n}`,
+      hostDown: "無法連線至宿主。",
+      errors: {
+        permission_denied: "這個視圖沒有開啟的權限。", scope_changed: "存取範圍已變更，請重新開啟視圖。",
+        session_unavailable: "這個 Session 已無法使用。", host_unavailable: "Clawdline 沒有回應這個視圖。",
+        busy: "Clawdline 忙碌中，請稍候再選一次。", request_timeout: "逾時未回應，結果不確定。請先到 Clawdline 確認再試。",
+        too_many_sessions: "Session 數量超過視圖上限，宿主拒絕了這次讀取。", message_too_large: "這次讀取太大，視圖無法顯示。",
+        protocol_mismatch: "這個視圖與宿主版本不相容。", invalid_request: "宿主拒絕了這個請求。", method_not_supported: "宿主不支援這個動作。"
+      },
+      failed: code => `無法完成：${code}`
+    }
+  };
+  const STATES = {
+    en: {ready:"Ready",working:"Working",holding:"On hold",waiting_you:"Waiting for you",waiting_session:"Waiting for a Session",unknown:"Unknown",milestone_complete:"Milestone complete",work_complete:"Work complete"},
+    zh: {ready:"待命",working:"工作中",holding:"暫停保留",waiting_you:"等你回覆",waiting_session:"在等另一個 Session",unknown:"狀態不明",milestone_complete:"階段完成",work_complete:"已完成"}
+  };
+  // One deadpan stage direction per scene. They describe the drawing, never the Session's progress.
+  const LINES = {
+    en: {waiting_you:"The phone is for you. It has been for a while.",working:"Pedalling, so the light stays on.",waiting_session:"Timing the snail. The snail is another Session.",
+      holding:"Holding still, as asked. The bird has opinions.",ready:"In the bath, ready when you are.",milestone_complete:"A milestone. The trophy is a cactus.",
+      work_complete:"Finished. Now resting, professionally.",unknown:"Nobody knows what is in the bag."},
+    zh: {waiting_you:"電話是找你的，已經舉很久了。",working:"一直踩，燈才會亮。",waiting_session:"在幫蝸牛計時。蝸牛是另一個 Session。",
+      holding:"照指示保持不動。鳥有意見。",ready:"泡在浴缸裡，隨時可以開始。",milestone_complete:"達成一個階段。獎盃是一盆仙人掌。",
+      work_complete:"做完了，現在專業地休息。",unknown:"沒人知道袋子裡是什麼。"}
+  };
+  const $ = id => document.getElementById(id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+  const scene = name => $("sc-" + name).content.firstElementChild.cloneNode(true);
+
+  let view = null, context = { language: document.documentElement.lang, connection: "connected", visible: true, reducedMotion: true };
+  let snapshot = null, awaitingSnapshot = true, mode = "scenes", userMotion = true, selected = null, opening = false, firstPaint = true;
+  const cards = new Map(), acts = new Map(), lastStates = new Map();
+
+  const zh = () => String(context.language || "").toLowerCase().startsWith("zh");
+  const L = () => zh() ? "zh" : "en";
+  const W = () => WORDS[L()];
+  const stateWord = s => STATES[L()][s] || STATES[L()].unknown;
+  const stateOf = row => ORDER.includes(row.workState) ? row.workState : "unknown";
+  const connected = () => context.connection === "connected" && !awaitingSnapshot;
+  const canOpen = row => connected() && row.freshness === "fresh";
+  const freshWord = row => !connected() || row.freshness === "stale" ? W().stale : row.freshness === "fresh" ? W().fresh : W().unknownFresh;
+  const motionActive = () => userMotion && !context.reducedMotion && context.visible !== false;
+  const glyph = s => { const g = el("span", "glyph s-" + s, GLYPH[s]); g.setAttribute("aria-hidden", "true"); return g; };
+
+  function applyContext() {
+    const w = W();
+    document.documentElement.lang = zh() ? "zh-Hant" : "en";
+    document.title = w.title;
+    document.body.classList.toggle("dark", context.theme === "dark");
+    const still = !motionActive();
+    document.body.classList.toggle("still", still);
+    if (still) document.body.style.removeProperty("--look");
+    $("title").textContent = w.title; $("tagline").textContent = w.tagline;
+    $("scope").textContent = context.scopeLabel || "";
+    $("conn").textContent = context.connection === "connected" ? w.connected : w.disconnected;
+    $("conn").classList.toggle("off", context.connection !== "connected");
+    $("banner").textContent = context.connection === "connected" ? "" : w.banner;
+    $("btnScenes").textContent = w.scenes; $("btnList").textContent = w.list;
+    $("btnScenes").setAttribute("aria-pressed", String(mode === "scenes")); $("btnList").setAttribute("aria-pressed", String(mode === "list"));
+    const motion = $("btnMotion");
+    motion.disabled = !!context.reducedMotion;
+    motion.textContent = context.reducedMotion ? w.motionSystem : userMotion ? w.motionOn : w.motionOff;
+    motion.setAttribute("aria-pressed", String(!context.reducedMotion && userMotion));
+    $("btnClose").textContent = w.close;
+    $("dClose").setAttribute("aria-label", w.closeDetail);
+    $("dtState").textContent = w.dState; $("dtProject").textContent = w.dProject; $("dtFresh").textContent = w.dFresh;
+  }
+
+  function rowsByState() {
+    const groups = new Map(ORDER.map(s => [s, []]));
+    for (const row of snapshot ? snapshot.sessions : []) groups.get(stateOf(row)).push(row);
+    return groups;
+  }
+
+  function renderSummary(groups) {
+    const w = W(), total = snapshot ? snapshot.sessions.length : 0;
+    const tally = $("tally"); tally.replaceChildren();
+    if (!snapshot) { $("headline").textContent = w.loading; $("subline").textContent = ""; return; }
+    const lead = ["waiting_you","waiting_session","working"].find(s => groups.get(s).length);
+    $("headline").textContent = !total ? w.emptyTitle : lead ? w.lead(groups.get(lead).length, stateWord(lead)) : w.quiet;
+    $("subline").textContent = w.total(total);
+    for (const s of ORDER) {
+      const n = groups.get(s).length; if (!n) continue;
+      const b = el("button"); b.type = "button"; b.append(glyph(s), el("span", "", w.jump(stateWord(s), n)));
+      b.onclick = () => {
+        const target = mode === "scenes" ? acts.get(s) : $("board").querySelector(`[data-state="${s}"]`); if (!target) return;
+        target.scrollIntoView({ block: "start", behavior: motionActive() ? "smooth" : "auto" });
+        (target.matches("button") ? target : target.nextElementSibling?.querySelector("button"))?.focus({ preventScroll: true });
+      };
+      const li = el("li"); li.append(b); tally.append(li);
+    }
+  }
+
+  function fillCard(button, row, index) {
+    const s = stateOf(row), old = !canOpen(row);
+    button.className = "card s-" + s + (old ? " old" : "") + (button.classList.contains("arrive") ? " arrive" : "");
+    const prev = lastStates.get(row.ref);
+    const changed = prev && prev !== s;
+    lastStates.set(row.ref, s);
+    button.setAttribute("aria-pressed", String(selected === row.ref));
+    button.style.setProperty("--i", String(index % 9));
+    button.style.setProperty("--flip", index % 2 ? "-1" : "1");
+    let vig = button.querySelector(".vig");
+    if (!vig || vig.dataset.state !== s) { vig = el("span", "vig"); vig.dataset.state = s; vig.setAttribute("aria-hidden", "true"); vig.append(scene(s)); }
+    const body = el("span", "body"), badge = el("span", "badge"), meta = el("span", "meta");
+    badge.append(glyph(s), el("span", "", stateWord(s)));
+    meta.append(el("span", "tag" + (row.project ? "" : " none"), row.project?.label || W().noProject));
+    if (row.freshness !== "fresh" || !connected()) meta.append(el("span", "tag warn", freshWord(row)));
+    body.append(el("span", "t", row.title), badge, meta);
+    button.replaceChildren(body, vig);
+    if (changed && motionActive()) { button.classList.add("changed"); setTimeout(() => button.classList.remove("changed"), 700); }
+  }
+
+  function actHeader(s, n, number) {
+    let act = acts.get(s);
+    if (!act) {
+      act = el("section", "act s-" + s); act.dataset.act = s;
+      const stage = el("div", "stage"); stage.setAttribute("aria-hidden", "true"); stage.append(scene(s));
+      act.append(stage, el("div", "words")); acts.set(s, act);
+    }
+    const words = act.querySelector(".words"), h = el("h2");
+    h.append(glyph(s), el("span", "", stateWord(s)), el("span", "count", String(n)));
+    words.replaceChildren(el("span", "num", W().act(number)), h, el("p", "", LINES[L()][s]));
+    return act;
+  }
+
+  function renderScenes(groups) {
+    const board = $("board"), focusedRef = document.activeElement?.dataset?.ref;
+    if (board.dataset.mode !== "scenes") { board.replaceChildren(); cards.clear(); acts.clear(); board.dataset.mode = "scenes"; }
+    const order = [], seen = new Set(); let index = 0, number = 0;
+    for (const s of ORDER) {
+      const rows = groups.get(s);
+      if (!rows.length) { acts.delete(s); continue; }
+      const act = actHeader(s, rows.length, ++number);
+      let cast = act._cast;
+      if (!cast) { cast = act._cast = el("div", "cast"); cast.setAttribute("role", "group"); }
+      cast.setAttribute("aria-label", stateWord(s));
+      order.push(act, cast);
+      const castOrder = [];
+      for (const row of rows) {
+        seen.add(row.ref);
+        let button = cards.get(row.ref);
+        if (!button) {
+          button = el("button"); button.type = "button"; button.dataset.ref = row.ref; cards.set(row.ref, button);
+          button.classList.add("arrive"); button.style.setProperty("--delay", (firstPaint ? Math.min(index * 30, 600) : 0) + "ms");
+          button.addEventListener("animationend", e => { if (e.animationName === "enter") button.classList.remove("arrive"); });
+          button.addEventListener("click", () => select(button.dataset.ref));
+        }
+        fillCard(button, row, index);
+        castOrder.push(button); index++;
+      }
+      // Move a node only when its position changed, so focus and hover survive updates.
+      castOrder.forEach((node, i) => { if (cast.children[i] !== node) cast.insertBefore(node, cast.children[i] || null); });
+      while (cast.children.length > castOrder.length) cast.lastChild.remove();
+    }
+    if (!snapshot) order.push(stagePanel("loading", W().loading, W().loadingBody));
+    else if (!snapshot.sessions.length) order.push(stagePanel("empty", W().emptyTitle, W().emptyBody));
+    order.forEach((node, i) => { if (board.children[i] !== node) board.insertBefore(node, board.children[i] || null); });
+    while (board.children.length > order.length) board.lastChild.remove();
+    for (const ref of [...cards.keys()]) if (!seen.has(ref)) cards.delete(ref);
+    for (const ref of [...lastStates.keys()]) if (!seen.has(ref)) lastStates.delete(ref);
+    if (focusedRef && cards.has(focusedRef) && document.activeElement !== cards.get(focusedRef)) cards.get(focusedRef).focus({ preventScroll: true });
+    if (snapshot) firstPaint = false;
+  }
+
+  function renderList(groups) {
+    const board = $("board"), focusedRef = document.activeElement?.dataset?.ref;
+    board.dataset.mode = "list"; cards.clear(); acts.clear();
+    if (!snapshot) { board.replaceChildren(stagePanel("loading", W().loading, W().loadingBody)); return; }
+    if (!snapshot.sessions.length) { board.replaceChildren(stagePanel("empty", W().emptyTitle, W().emptyBody)); return; }
+    const list = el("ol", "rows");
+    for (const s of ORDER) for (const row of groups.get(s)) {
+      const b = el("button", canOpen(row) ? "" : "old"); b.type = "button"; b.dataset.ref = row.ref; b.dataset.state = s; b.setAttribute("aria-pressed", String(selected === row.ref));
+      b.append(glyph(s), el("b", "", row.title), el("span", "line", [stateWord(s), row.project?.label || W().noProject, freshWord(row)].join(" · ")));
+      b.onclick = () => select(row.ref);
+      const li = el("li"); li.append(b); list.append(li);
+    }
+    board.replaceChildren(list);
+    if (focusedRef) board.querySelector(`[data-ref="${CSS.escape(focusedRef)}"]`)?.focus({ preventScroll: true });
+  }
+
+  function stagePanel(name, title, body) {
+    const box = el("div", "empty"), stage = el("div", "stage"), words = el("div");
+    box.dataset.stage = name; stage.setAttribute("aria-hidden", "true"); stage.append(scene(name));
+    words.append(el("b", "", title), el("p", "", body)); box.append(stage, words); return box;
+  }
+
+  function renderDetail() {
+    document.body.classList.toggle("selecting", selected !== null);
+    if (selected === null) return;
+    const w = W(), row = snapshot?.sessions.find(r => r.ref === selected);
+    const s = row ? stateOf(row) : "unknown", stage = $("dStage");
+    $("detail").className = "s-" + s;
+    if (stage.dataset.state !== s) { stage.dataset.state = s; stage.replaceChildren(scene(s)); }
+    $("dTitle").textContent = row ? row.title : w.gone;
+    $("dLine").textContent = row ? LINES[L()][s] : "";
+    $("ddState").textContent = row ? stateWord(s) : "—";
+    $("ddProject").textContent = row ? (row.project?.label || w.noProject) : "—";
+    $("ddFresh").textContent = row ? freshWord(row) : "—";
+    const go = $("dOpen"), why = $("dWhy");
+    go.textContent = opening ? w.opening : w.open;
+    go.disabled = opening || !row || !canOpen(row);
+    why.textContent = !row ? "" : !connected() ? w.whyDisconnected : row.freshness === "stale" ? w.whyStale : row.freshness !== "fresh" ? w.whyUnknown : "";
+  }
+
+  function render() {
+    applyContext();
+    const groups = rowsByState();
+    renderSummary(groups);
+    if (mode === "scenes") renderScenes(groups); else renderList(groups);
+    renderDetail();
+  }
+
+  function select(ref) {
+    selected = ref; $("problem").textContent = "";
+    render();
+    $("dOpen").disabled ? $("dClose").focus({ preventScroll: true }) : $("dOpen").focus({ preventScroll: true });
+  }
+  function closeDetail() {
+    const ref = selected; selected = null; render();
+    if (ref !== null) document.querySelector(`#board [data-ref="${CSS.escape(ref)}"]`)?.focus();
+  }
+
+  function showError(e) { const w = W(), code = e && e.code; $("problem").textContent = (code && w.errors[code]) || w.failed(code || "unknown"); }
+
+  async function openSelected() {
+    const row = snapshot?.sessions.find(r => r.ref === selected);
+    if (!view || !row || !canOpen(row) || opening) return;
+    opening = true; renderDetail();
+    // One explicit attempt; a timeout's outcome is uncertain, so nothing retries it.
+    try { await view.sessions.open(row.ref); }
+    catch (e) { showError(e); }
+    finally { opening = false; renderDetail(); }
+  }
+
+  $("face").append(scene("ready"));
+  $("btnScenes").onclick = () => { mode = "scenes"; render(); };
+  $("btnList").onclick = () => { mode = "list"; render(); };
+  $("btnMotion").onclick = () => { userMotion = !userMotion; render(); };
+  $("btnClose").onclick = () => { if (view) view.close().catch(showError); };
+  $("dClose").onclick = closeDetail;
+  $("dOpen").onclick = openSelected;
+  // The stage casts glance toward the pointer, a little. Only while motion is allowed.
+  addEventListener("pointermove", e => {
+    if (!motionActive()) return;
+    document.body.style.setProperty("--look", ((e.clientX / Math.max(innerWidth, 1)) - .5) * 3 + "px");
+  });
+  addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if (selected !== null) { e.preventDefault(); closeDetail(); }
+    else if (view) view.close().catch(showError);
+  });
+
+  render();
+  connectViewPlugin().then(async connectedView => {
+    view = connectedView;
+    view.onContext(next => { if (next.connection !== "connected") awaitingSnapshot = true; context = next; render(); });
+    const accept = next => {
+      if (!next || !Array.isArray(next.sessions)) return false;
+      if (snapshot && next.streamId === snapshot.streamId && !(next.revision > snapshot.revision)) return false;
+      snapshot = next; awaitingSnapshot = context.connection !== "connected"; return true;
+    };
+    try {
+      const initial = await view.sessions.subscribe(next => { if (accept(next)) render(); });
+      accept(initial); render();
+    } catch (e) { showError(e); }
+  }).catch(() => { $("problem").textContent = WORDS.en.hostDown + " / " + WORDS.zh.hostDown; });
+})();
+</script></body></html>

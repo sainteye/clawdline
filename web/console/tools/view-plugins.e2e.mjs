@@ -20,7 +20,7 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  let forbiddenRequests=0
  const files=new Map(result.outputFiles.map(f=>["/"+f.path.split("/").at(-1),f.text]))
  const server=createServer(async(req,res)=>{try{const u=new URL(req.url,"http://test");let body;if(u.pathname==="/")body=`<!doctype html><html lang="${u.searchParams.get("lang")||"en"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script>`;
- else if(/^\/view-plugins\/(session-galaxy|session-list|session-pop-art)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
+ else if(/^\/view-plugins\/(session-galaxy|session-list|session-pop-art|session-absurd)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
  if(u.pathname.startsWith("/v1/"))forbiddenRequests++
  if(body===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",u.pathname.endsWith(".js")?"text/javascript":u.pathname.endsWith(".css")?"text/css":u.pathname.endsWith(".zip")?"application/zip":"text/html");res.end(body)}catch(e){res.writeHead(500);res.end(String(e))}})
  await new Promise(r=>server.listen(0,"127.0.0.1",r));const origin=`http://127.0.0.1:${server.address().port}`
@@ -162,6 +162,31 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await page.locator(".vp-host").waitFor({state:"hidden"})
  await page.waitForFunction(()=>fixture.navigations.length===1)
  assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Pop's explicit action preserves machine routing")
+ // Deadpan is a fourth independent package installed through the same review.
+ await manager()
+ await page.getByRole("button",{name:zh?"安裝冷面劇場":"Install Deadpan",exact:true}).click()
+ await page.locator(".vp-review").getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true}).waitFor()
+ assert.equal(await page.locator('input[type=file]').count(),1,"Only the manager's own import input exists; the example opens no chooser")
+ await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
+ const deadpan=page.locator(".vp-installed").filter({has:page.getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true})})
+ await deadpan.getByRole("button",{name:new RegExp("^"+open)}).waitFor()
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-deadpan-installed.png`})
+ await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
+ await page.locator(".vp-launch-item").filter({hasText:zh?"Session 冷面劇場":"Session Deadpan"}).click()
+ await frame.locator(".card").first().waitFor()
+ assert.equal(await frame.locator(".card").count(),4,"Deadpan reads every supplied machine through the existing host")
+ assert.equal(await frame.locator("img").count(),0,"Deadpan renders hostile labels as text")
+ await frame.getByText("<img src=x onerror=alert(1)>",{exact:true}).waitFor()
+ await frame.locator(".card",{hasText:"Unassigned work"}).click()
+ assert.equal(await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).isDisabled(),true,"Unknown freshness refuses opening")
+ await frame.getByText(zh?"無法確認資料是否最新，所以無法開啟。":"Freshness is unknown, so opening is off.",{exact:true}).waitFor()
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-deadpan.png`})
+ await frame.locator(".card",{hasText:"<img src=x onerror=alert(1)>"}).click()
+ assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Selecting a Deadpan card does not navigate")
+ await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).click()
+ await page.locator(".vp-host").waitFor({state:"hidden"})
+ await page.waitForFunction(()=>fixture.navigations.length===2)
+ assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first","studio:first"],"Deadpan's explicit action routes the colliding key to its own machine")
  assert.deepEqual(errors,[])
  reports.push({engine,width,lang,passed:true})
  }catch(e){await page.screenshot({path:`${artifacts}/failure.png`});console.error(await page.locator("body").innerHTML());throw e}finally{await browser.close()}

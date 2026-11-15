@@ -171,7 +171,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
             </article>)}</div>
           </section>
           <section className="vp-examples"><div className="vp-section-head"><div><h2>{w.preset}</h2><p>{w.examplesHint}</p></div></div><div className="vp-example-grid">
-            {[{id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},{id:"session-list",title:w.list,description:w.listHint,action:w.addList},{id:"session-pop-art",title:w.pop,description:w.popHint,action:w.addPop}].map(example => <article className="vp-example" key={example.id}>
+            {[{id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},{id:"session-list",title:w.list,description:w.listHint,action:w.addList},{id:"session-pop-art",title:w.pop,description:w.popHint,action:w.addPop},{id:"session-absurd",title:w.deadpan,description:w.deadpanHint,action:w.addDeadpan}].map(example => <article className="vp-example" key={example.id}>
               <ViewArtwork id={"com.clawdline." + example.id} /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || rows.some(r => r.id === "com.clawdline." + example.id)} onClick={() => void exampleInstall(example.id)}>{rows.some(r => r.id === "com.clawdline." + example.id) ? w.added : example.action}</button></div>
             </article>)}
           </div></section>
