@@ -219,10 +219,48 @@ async function boundedChecks(page,origin,language,width,shot,log) {
       await noLegacy();await shot("parallel-preflights-"+finish)
     }
   }
+  const workOrder=async()=>{
+    const order=()=>chat.locator('.pa-chat-content > article').evaluateAll(rows=>rows.map(row=>row.dataset.messageId??row.querySelector('small')?.textContent))
+    await fresh();await open();await ready()
+    const card=chat.locator('.pa-chat-content > article.pa-card').filter({hasText:'PA-01'})
+    await card.waitFor()
+    await editor().fill('New instruction after the old work');await editor().press('Enter')
+    const latest=messageText('New instruction after the old work');await latest.waitFor()
+    const latestID=await latest.locator('..').getAttribute('data-message-id')
+    const assertOrder=async()=>{
+      const ids=await order()
+      assert.ok(ids.indexOf('PA-01')<ids.indexOf(latestID),'an old work card stays before the new instruction')
+      assert.ok(ids.indexOf('bot-0-user')<ids.indexOf('PA-01'),'the work stays after its admission message')
+    }
+    await shot('work-order-after-send');await assertOrder()
+    await page.evaluate(async()=>{
+      const a=window.botsFixture.a,bot=a.bots[0],saved=await a.export(bot.key,new AbortController().signal),work=saved.work_links[0]
+      a.push({id:crypto.randomUUID(),seq:0,at:'2026-11-13T00:00:00Z',version:'project-assistants.v1',kind:'work_updated',fence:work.fence,work:{...work,state:'landed',landing_commit:'updated-old-work'}})
+    })
+    await refresh();await workResult('updated-old-work').waitFor();await assertOrder()
+    await latest.click();await latest.locator('..').getByRole('menuitem',{name:w.quote,exact:true}).click()
+    await chat.getByRole('button',{name:w.clear,exact:true}).waitFor()
+    await shot('work-order-after-update')
+
+    await fresh(()=>{window.botsFixture.a.seedHistory(150);window.botsFixture.a.seedWork('accepted');window.botsFixture.a.configureViews({forbidLegacy:true})});await open();await ready()
+    await page.evaluate(()=>window.botsFixture.a.holdHistory())
+    await chat.getByRole('button',{name:w.earlier,exact:true}).click();await waitView('history',0)
+    await page.evaluate(()=>window.botsFixture.a.seedWork('landed'));await refresh();await workResult('newer-work-observation').waitFor()
+    await page.evaluate(()=>window.botsFixture.a.releaseHistory());await messageText('History message 1').waitFor()
+    const ids=await order()
+    assert.ok(ids.indexOf('history-1')<ids.indexOf('item')&&ids.indexOf('item')<ids.indexOf('history-2'),'a late history page restores the work admission position, retaining its new state')
+    assert.equal(await workResult('newer-work-observation').count(),1)
+    await noLegacy();await shot('work-order-after-history')
+  }
+  if(process.env.BOTS_READ_RACE==='order'){
+    await workOrder();all.push(...await log());return ['work admission order after Send, live completion and delayed history; latest message actions']
+  }
   if(process.env.BOTS_READ_RACE){
     if(!["permission","parallel"].includes(process.env.BOTS_READ_RACE))throw new Error("Unknown BOTS_READ_RACE")
     await controlledRaces(process.env.BOTS_READ_RACE);all.push(...await log());return ["controlled "+process.env.BOTS_READ_RACE+" preflight races"]
   }
+
+  await workOrder()
 
   await fresh(()=>window.botsFixture.a.seedHistory(600));await open()
   await messageText("History message 600").waitFor()
@@ -417,7 +455,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await page.getByRole("heading",{name:"Sessions",exact:true}).waitFor()
   await page.waitForFunction(()=>document.activeElement?.classList.contains("pa-orb"))
   await controlledRaces()
-  all.push(...await log());return ["600-event bounded initial100 / frontier602 / events603-604","opaque history and scroll anchor","old-generation work/event versus delayed older page","101 permission and trace summaries via manual more","detail-only answers / typed oversized detail","new generation cancels ignored-abort details","snapshot errors retain window and draft","same-account/Bot recovery latch across return and host remount","validated entry or manual snapshot is the only recovery unlock","new account isolation","queued16 and unknown17","ignored-abort mutation preflight and source revocation","API58 metadata / typed unsupported view / no fallback","IME, quote, draft switch, one send, unknown intent after remount","focus and voice ownership / no horizontal overflow","second permission preflight cursor/generation recovery latch","all parallel mutation controls abort on recovery/unmount and cannot resume after same-fence unlock"]
+  all.push(...await log());return ["work admission order after Send, live completion and delayed history","600-event bounded initial100 / frontier602 / events603-604","opaque history and scroll anchor","old-generation work/event versus delayed older page","101 permission and trace summaries via manual more","detail-only answers / typed oversized detail","new generation cancels ignored-abort details","snapshot errors retain window and draft","same-account/Bot recovery latch across return and host remount","validated entry or manual snapshot is the only recovery unlock","new account isolation","queued16 and unknown17","ignored-abort mutation preflight and source revocation","API58 metadata / typed unsupported view / no fallback","IME, quote, draft switch, one send, unknown intent after remount","focus and voice ownership / no horizontal overflow","second permission preflight cursor/generation recovery latch","all parallel mutation controls abort on recovery/unmount and cannot resume after same-fence unlock"]
 }
 let forbidden=0
 const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":"text/html");res.end(text)})
