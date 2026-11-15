@@ -25,7 +25,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -1254,7 +1254,7 @@ export class RealtimeCopilotClient {
         const usd = liveBackendUSD(event)
         if (usd) { this.liveBackendUsd += usd; this.updateLiveCost() }
         const call = liveFunctionCall(event)
-        if (call) void this.runLiveTool(call.callID, call.name, call.arguments)
+        if (call) void this.runLiveTool(call.callID, call.name, call.arguments, call.delegation)
         return
       }
       case 'error':
@@ -1273,7 +1273,7 @@ export class RealtimeCopilotClient {
   }
 
   /** Runs one backend function call with the same tools a Realtime call has, and lets the backend continue after the last one. */
-  private async runLiveTool(callID: string, name: string, args: string) {
+  private async runLiveTool(callID: string, name: string, args: string, delegation = '') {
     const dc = this.dc, attempt = this.attempt
     const steps: string[] = []
     this.livePending.add(callID)
@@ -1306,6 +1306,8 @@ export class RealtimeCopilotClient {
       this.journal('notice', nextWord(done.key, done.params))
       this.meter.chime()
     }
+    // Each Session read is spoken at once while the backend goes on (`LIVE_BACKEND_FLOW`).
+    for (const note of liveReadNotes(name, output)) dc.send(JSON.stringify({ ...liveNote('commentary', note), delegation_id: delegation || null }))
     for (const reply of liveToolReply(callID, output, this.livePending.size === 0)) dc.send(JSON.stringify(reply))
   }
 

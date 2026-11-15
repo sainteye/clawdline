@@ -1528,6 +1528,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_live_note_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_memory_turns",
     "Known": true,
     "Note": true

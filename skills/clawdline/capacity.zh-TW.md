@@ -315,6 +315,7 @@
 | `console.copilot_idle_fallback_seconds` | 3600 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_kept_recap_seconds` | 1800 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_list_transcript_reads` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_live_note_characters` | 400 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_memory_turns` | 24 | `rows` | `evict_oldest` | `sender, diagnostics` | — |
 | `console.copilot_orb_frames_per_second` | 30 | `rows` | `coalesce` | `diagnostics` | — |
 | `console.copilot_orb_pixel_ratio` | 2 | `multipliers` | `coalesce` | `diagnostics` | — |

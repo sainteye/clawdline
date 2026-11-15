@@ -6164,6 +6164,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_live_note_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 400,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_memory_turns",
     "Class": "user_input",
     "Unit": "rows",

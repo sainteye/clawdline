@@ -12072,6 +12072,8 @@
   "next.browserUserChromeTerminal": "Or prepare from Terminal",
   "next.browserUserChromeUpdates": "App updates include the current extension files. Chrome does not switch to them automatically. After handing control back, prepare again; if the folder changed, remove the old Clawdline extension, load the new folder and run its connection command. Preparing files does not confirm that Chrome loaded them.",
   "next.browserUserChromePrepareFailed": "Extension files could not be prepared: {reason}",
+  "capacityRow.console.copilot_live_note_characters.what": "How much of one Session's summary a GPT-Live call reads out at once while it keeps looking up the others.",
+  "capacityRow.console.copilot_live_note_characters.full": "The rest of a longer summary is left out; ask about that Session for its details.",
   "capacityRow.console.copilot_fresh_recap_seconds.what": "How old a Session summary may be when you ask the voice copilot for the latest one.",
   "capacityRow.console.copilot_fresh_recap_seconds.full": "An older summary is written fresh, which takes several seconds for each Session.",
   "capacityRow.console.copilot_kept_recap_seconds.what": "How old a Session summary already written in the background may be for the voice copilot to read it at once.",

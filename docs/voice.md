@@ -412,6 +412,8 @@ are the same `runCopilotTool` a Realtime call runs.
 
 **Recaps.** With background recaps on, a tool reads a recap the list already carries when it is at most `KEPT_RECAP_SECONDS` (1800) old, with its age; `fresh: true`, set only when the person asks for the latest, lowers that to `FRESH_RECAP_SECONDS` (300) and has an older one written now. Before this a report of four working Sessions waited 20-22 s for four forks written one after another.
 
+**Speaking while reading.** The backend's instructions end with `LIVE_BACKEND_FLOW`, which overrides the Realtime rule that every Session question needs a read: an overview is answered from the snapshot's recaps (with their age), and a read is made only for details, the latest state or a Session without a recap. Each Session a read returns is handed to the live model at once as a `session.commentary.append` (`liveReadNotes`, at most `LIVE_NOTE_CHARS` = 400 characters of recap), so it speaks about one Session while the backend reads the next; the backend's final answer adds only what was not said. Tool calls stay sequential (`parallel_tool_calls: false`), because a continuation must follow every pending result of a response.
+
 **Cost.** OpenAI bills a Live session per second ($0.05 a minute on 2026-11-15) and the backend
 per token ($0.10 in, $0.01 cached, $0.50 out per 1M for `gpt-6-luna`). The call's cost line adds
 `session.usage.updated` seconds and each forwarded `response.completed` usage at those rates.

@@ -176,6 +176,9 @@ func baseConsoleBounds() []Entry {
 		// recap on the Session list may be and still be read without a new fork.
 		// FRESH_RECAP_SECONDS in realtime/copilot-tools.ts: how old a recap may
 		// be when the person asks for the latest one; older ones are written now.
+		// LIVE_NOTE_CHARS in realtime/copilot-live.ts: how much of one Session's
+		// recap a GPT-Live call speaks at once from a read; the rest is cut.
+		{Name: "console.copilot_live_note_characters", Class: Buffer, Unit: Characters, Limit: 400, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_fresh_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 300, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_kept_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_recent_idle_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},

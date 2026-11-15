@@ -12072,6 +12072,8 @@
   "next.browserUserChromeTerminal": "也可以從 Terminal 準備",
   "next.browserUserChromeUpdates": "程式更新會附帶最新版擴充功能，但 Chrome 不會自動切換。請先交回控制，再重新準備；若資料夾已變更，請移除舊的 Clawdline 擴充功能、載入新資料夾，並執行其連接指令。準備好檔案不代表 Chrome 已載入新版。",
   "next.browserUserChromePrepareFailed": "無法準備擴充功能檔案：{reason}",
+  "capacityRow.console.copilot_live_note_characters.what": "GPT-Live 通話邊查邊講時，每個 Session 的摘要最多先念多少字。",
+  "capacityRow.console.copilot_live_note_characters.full": "更長的摘要後面會省略；想知道細節，再問那個 Session。",
   "capacityRow.console.copilot_fresh_recap_seconds.what": "你在電話裡要求最新摘要時，多舊以內的 Session 摘要還算最新。",
   "capacityRow.console.copilot_fresh_recap_seconds.full": "比這更舊的摘要會當場重寫，每個 Session 要多等幾秒。",
   "capacityRow.console.copilot_kept_recap_seconds.what": "背景已經寫好的 Session 摘要，最多多舊時語音副駕駛會直接拿來用。",

@@ -49,8 +49,18 @@ export const LIVE_BACKEND_PREAMBLE = `# 你的角色
 - 沒查到就說沒查到，不要編。`
 
 /** session.update carrying the backend's instructions and tools, sent once the session has started and again when its context changes. */
+/**
+ * Said after the Realtime rules, which it overrides for a Live call. On
+ * 2026-11-15 a Live call asked about every Session and the backend read each
+ * one in turn before anything was said, because the rules demand a read even
+ * when the snapshot has the Session; the person waited the whole time.
+ */
+export const LIVE_BACKEND_FLOW = `# GPT-Live 的做法（優先於上面的規則）
+- 通話開始時的 Session 快照已經帶了每個 Session 背景寫好的 recap 和寫好多久（recap_written）。使用者問整體狀況或「各個 Session 在做什麼」時，直接用快照的 recap 回答，說明是多久前的狀況，不必呼叫工具；他要某一個的細節、最新狀況，或快照沒有它的 recap 時，才呼叫工具。
+- 每查完一個 Session，系統會立刻把它的摘要交給語音模型先講給使用者聽，你同時繼續查下一個。所以你的最後回覆不要把查過的 Session 再逐一重講：只補還沒講到的、要使用者決定的事，或一句整體結論；都講過了就只寫一句簡短收尾。`
+
 export function liveBackendUpdate(memory = '', snapshot = '', options: CallOptions = {}, backendModel = LIVE_BACKEND_MODEL): Record<string, unknown> {
-  const instructions = [LIVE_BACKEND_PREAMBLE, instructionsFor(options.brief !== false, options.language ?? ''), extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+  const instructions = [LIVE_BACKEND_PREAMBLE, instructionsFor(options.brief !== false, options.language ?? ''), LIVE_BACKEND_FLOW, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
     .filter(Boolean).join('\n\n')
   return {
     type: 'session.update',
@@ -99,6 +109,34 @@ export function liveBackendUSD(event: unknown): number {
 export function liveCost(elapsedSeconds: number, billedSeconds: number, backendUSD: number): { seconds: number; usd: number } {
   const seconds = Math.max(elapsedSeconds, billedSeconds)
   return { seconds, usd: seconds * LIVE_USD_PER_SECOND + backendUSD }
+}
+
+/** How much of one Session's recap a spoken note carries; one append takes at most 500 tokens. */
+export const LIVE_NOTE_CHARS = 400
+
+/**
+ * What the live model can say at once from a read tool's result, one note
+ * per Session, while the backend goes on: the Session's name and its recap
+ * (or delivery summary), with how long ago it was written.
+ */
+export function liveReadNotes(tool: string, output: string): string[] {
+  if (tool !== 'get_session_summary' && tool !== 'get_sessions_summary') return []
+  let body: unknown
+  try { body = JSON.parse(output) } catch { return [] }
+  const rows = tool === 'get_sessions_summary' ? (body as { sessions?: unknown })?.sessions : [body]
+  if (!Array.isArray(rows)) return []
+  const notes: string[] = []
+  for (const row of rows) {
+    const r = (row ?? {}) as Record<string, unknown>
+    if (typeof r.error === 'string') continue
+    const label = typeof r.label === 'string' ? r.label : ''
+    const said = [r.recap, r.delivered_summary, r.last_reply].find((v): v is string => typeof v === 'string' && v.trim() !== '')
+    if (!label || !said) continue
+    const age = typeof r.recap_written === 'string' && r.recap === said ? ` (written ${r.recap_written})` : ''
+    const text = said.length > LIVE_NOTE_CHARS ? `${said.slice(0, LIVE_NOTE_CHARS)}…` : said
+    notes.push(`Tell the person about this Session now, in one or two everyday sentences in their language, then continue with the next when it comes. Session "${label}"${age}: ${text}`)
+  }
+  return notes
 }
 
 /** A plain note to the live model, said or kept: commentary is spoken, thinking only informs later replies. */

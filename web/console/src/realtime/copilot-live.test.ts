@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { LiveTranscript, liveBackendUSD, liveCost, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from "./copilot-live.ts"
+import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from "./copilot-live.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { formatDuration } from "./copilot-cost.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
@@ -85,4 +85,30 @@ test("a call's length reads as minutes and seconds", () => {
   assert.equal(formatDuration(42.9), "0:42")
   assert.equal(formatDuration(185), "3:05")
   assert.equal(formatDuration(3730), "1:02:10")
+})
+
+test("each Session a read returns becomes one note the live model says at once", () => {
+  const group = JSON.stringify({ sessions: [
+    { label: "Bots tower", recap: "Mockups are done; wiring floors.", recap_written: "6 分鐘前" },
+    { label: "Keyboard fix", delivered_summary: "Fixed and deployed." },
+    { label: "Unknown", error: "unreadable" },
+    { label: "Empty" },
+  ] })
+  const notes = liveReadNotes("get_sessions_summary", group)
+  assert.equal(notes.length, 2, "only Sessions with something to say")
+  assert.match(notes[0], /Session "Bots tower" \(written 6 分鐘前\): Mockups are done/)
+  assert.match(notes[1], /Session "Keyboard fix": Fixed and deployed\./)
+  const long = liveReadNotes("get_session_summary", JSON.stringify({ label: "Long", recap: "x".repeat(LIVE_NOTE_CHARS + 50) }))
+  assert.ok(long[0].endsWith("…") && long[0].length < LIVE_NOTE_CHARS + 300)
+  assert.deepEqual(liveReadNotes("list_sessions", group), [], "a listing is not spoken this way")
+  assert.deepEqual(liveReadNotes("get_session_summary", "not json"), [])
+})
+
+test("the backend answers an overview from the snapshot's recaps and does not repeat what was already spoken", () => {
+  const event = liveBackendUpdate("", "【通話開始時的 Session 快照】 {}", {}) as { session: { delegation: { responses: { instructions: string } } } }
+  const text = event.session.delegation.responses.instructions
+  assert.match(text, /直接用快照的 recap 回答/)
+  assert.match(text, /不要把查過的 Session 再逐一重講/)
+  // The Live flow comes after the Realtime rules it overrides.
+  assert.ok(text.indexOf("GPT-Live 的做法") > text.indexOf("【工具】"))
 })

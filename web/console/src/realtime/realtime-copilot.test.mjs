@@ -685,6 +685,15 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   assert.equal(result?.item.call_id, 'call_1')
   assert.match(result.item.output, /Prepare screenshots/)
   assert.deepEqual(sent.map(e => e.type), ['response.item.create', 'response.create'])
+
+  // A Session read is spoken at once, before the backend's own answer.
+  sent.length = 0
+  c.toolDeps = () => ({ sleep: async () => {}, fetch: async (path) => path === '/v1/sessions' ? Response.json({ sessions: [{ ...row, recap: { text: 'Six screenshots are captured.', at: Math.floor(Date.now() / 1000), current: true } }] }) : Response.json({}) })
+  c.handleLiveEvent({ type: 'response.event', delegation_id: 'item_2', event: { type: 'response.output_item.done', response_id: 'resp_2', item: { type: 'function_call', call_id: 'call_2', name: 'get_session_summary', arguments: JSON.stringify({ session_id: '%7', said: 'it' }) } } })
+  for (let i = 0; i < 30 && !sent.some(e => e.type === 'response.create'); i++) await tick()
+  assert.deepEqual(sent.map(e => e.type), ['session.commentary.append', 'response.item.create', 'response.create'])
+  assert.equal(sent[0].delegation_id, 'item_2')
+  assert.match(sent[0].content, /Six screenshots are captured/)
   assert.equal(c.pendingTools.size, 0, 'the cue stops once the tool has answered')
   const journaled = c.journalLines.find(l => l.kind === 'tool' && l.text === 'list_sessions')
   assert.match(journaled?.tool?.steps ?? '', /\/v1\/sessions \d+ms/, 'each machine request of a tool is timed in the journal')
