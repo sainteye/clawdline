@@ -251,7 +251,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["answer","create","delete","edit","events","export","forget","get","history","list","memory","observed","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -420,4 +420,49 @@ test("a paired phone may change Bots unless the machine turned Cloud operation o
   assert.equal(grant(null).writable, true)
   assert.equal(grant(true).writable, true)
   assert.equal(grant(false).writable, false)
+})
+
+test("Cloud pictures require the carried API tier and keep picture-only sends on their own word",async()=>{
+  const calls:unknown[]=[]
+  const source=make(async(path,init)=>{calls.push({path,init});return Response.json(sourceStatus())},{...grant(),apiLevel:68}).source
+  assert.equal(source.pictures(),true)
+  assert.equal(make(async()=>Response.json({}),{...grant(),apiLevel:67}).source.pictures(),false)
+  const request={command:command(key,"send","picture-only"),fence:viewWire().head.current_fence,text:"",quote_message_id:"",images:["data:image/png;base64,cG5n"]}
+  const relay=assistantRelayRequest("/v1/project-assistants/same%2Fid/messages",{method:"POST",body:JSON.stringify(request),headers:{"Idempotency-Key":"picture-only"}})
+  assert.equal(relay.word,"project-assistants.send-pictures")
+  assert.deepEqual(relay.fields,request)
+  const read=assistantRelayRequest("/v1/project-assistants/same%2Fid/attachments/"+"a".repeat(64)+"?machine_id=one")
+  assert.equal(read.word,"project-assistants.attachment")
+  assert.deepEqual(read.fields,{machine_id:"one",bot_id:"same/id",id:"a".repeat(64)})
+  assert.equal(calls.length,0)
+})
+
+test("Cloud attachment reads validate the bytes and recheck revocation after hashing",async()=>{
+  const data=Buffer.from("picture"),id=Buffer.from(await crypto.subtle.digest("SHA-256",data)).toString("hex")
+  const good={contract_version:"project-assistants.v1",id,media_type:"image/png",byte_count:data.length,data:data.toString("base64")}
+  const source=make(async()=>Response.json(good),{...grant(),apiLevel:68,writable:false}).source
+  const blob=await source.attachment(key,id,signal());assert.equal(blob.type,"image/png");assert.deepEqual(Buffer.from(await blob.arrayBuffer()),data)
+  for(const changed of [{id:"b".repeat(64)},{media_type:"image/svg+xml"},{byte_count:data.length+1},{data:"not base64"},{data:Buffer.from("changed").toString("base64"),byte_count:7},{contract_version:"wrong"}]){
+    const broken=make(async()=>Response.json({...good,...changed}),{...grant(),apiLevel:68}).source
+    await assert.rejects(broken.attachment(key,id,signal()),e=>errorCode(e)==="pa_invalid")
+  }
+  let release!:(value:Response)=>void
+  const next=make(()=>new Promise(resolve=>{release=resolve}),{...grant(),apiLevel:68})
+  const request=next.source.attachment(key,id,signal())
+  next.setGrant(null);release(Response.json(good))
+  await assert.rejects(request,e=>errorCode(e)==="pa_revoked")
+  const cancelled=new AbortController();cancelled.abort()
+  await assert.rejects(source.attachment(key,id,cancelled.signal),e=>(e as Error).name==="AbortError")
+  await assert.rejects(source.attachment({...key,machine_id:"other"},id,signal()),e=>errorCode(e)==="pa_scope_denied")
+})
+
+test("Cloud refuses oversized picture commands before transport, retaining typed source errors",async()=>{
+  let writes=0
+  const relay=capturedAssistantRelayFetch("one",()=>({machineDescriptor:()=>({machine:{commands:Object.keys(CARRIED)}}),_machineRequestAs:async()=>{writes++;return {}}}),Object.keys(CARRIED))
+  const request={command:command(key,"send","oversize"),fence:viewWire().head.current_fence,text:"",quote_message_id:"",images:["x".repeat(16*1024*1024)]}
+  await assert.rejects(relay("/v1/project-assistants/same%2Fid/messages",{method:"POST",body:JSON.stringify(request),headers:{"Idempotency-Key":"oversize"}}),e=>errorCode(e)==="pa_capacity_full")
+  assert.equal(writes,0)
+  const refusal={contract_version:"project-assistants.v1",error:{code:"pa_not_found",field:"attachment",retry_after_seconds:0}}
+  const source=make(async()=>Response.json(refusal,{status:404}),{...grant(),apiLevel:68}).source
+  await assert.rejects(source.attachment(key,"a".repeat(64),signal()),e=>{assert.deepEqual(e,refusal);return true})
 })

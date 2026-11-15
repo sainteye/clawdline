@@ -97,6 +97,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-antigravity-consent-change": genDecodeProjectAntigravityConsentChange,
 	"project-antigravity-consent-status": genDecodeProjectAntigravityConsentStatus,
 	"project-assistants.answer":          genDecodeProjectAssistantsAnswer,
+	"project-assistants.attachment":      genDecodeProjectAssistantsAttachment,
 	"project-assistants.create":          genDecodeProjectAssistantsCreate,
 	"project-assistants.delete":          genDecodeProjectAssistantsDelete,
 	"project-assistants.edit":            genDecodeProjectAssistantsEdit,
@@ -114,6 +115,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.rules":           genDecodeProjectAssistantsRules,
 	"project-assistants.send":            genDecodeProjectAssistantsSend,
 	"project-assistants.send-now":        genDecodeProjectAssistantsSendNow,
+	"project-assistants.send-pictures":   genDecodeProjectAssistantsSendPictures,
 	"project-assistants.status":          genDecodeProjectAssistantsStatus,
 	"project-assistants.stop":            genDecodeProjectAssistantsStop,
 	"project-assistants.view":            genDecodeProjectAssistantsView,
@@ -2388,6 +2390,36 @@ func genDecodeProjectAssistantsAnswer(b body) (plan, LocalRequest, bool) {
 	return p, req, true
 }
 
+// genDecodeProjectAssistantsAttachment is the `project-assistants.attachment` row's decode.
+func genDecodeProjectAssistantsAttachment(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "bot_id", "id", "machine_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	if v, named := b["id"]; named {
+		p.id = genText(v)
+	}
+	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/attachments/" + segment(genText(b["id"]))
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "machine_id"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
 // genDecodeProjectAssistantsCreate is the `project-assistants.create` row's decode.
 func genDecodeProjectAssistantsCreate(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -2859,6 +2891,42 @@ func genDecodeProjectAssistantsSendNow(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "fence": genValue{from: "fence"}, "turn_id": genValue{from: "turn_id"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsSendPictures is the `project-assistants.send-pictures` row's decode.
+func genDecodeProjectAssistantsSendPictures(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "command", "fence", "images", "quote_message_id", "request", "session", "text"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"send"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("images", genRule{kind: "list", items: &genRule{kind: "string", nonEmpty: true}, minItems: genCount(1), maxItems: genCount(4)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("quote_message_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("text", genRule{kind: "string", maxBytes: 32768}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/messages"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "fence": genValue{from: "fence"}, "images": genValue{from: "images"}, "quote_message_id": genValue{from: "quote_message_id"}, "text": genValue{from: "text"}})
 	return p, req, true
 }
 

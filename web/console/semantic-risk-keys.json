@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12226,
+  "englishKeys": 12228,
   "counts": {
     "negation": 3296,
     "state": 2038,
     "permission": 724,
     "deletion": 276,
-    "uncertainty": 460
+    "uncertainty": 461
   },
-  "unionCount": 5303,
+  "unionCount": 5304,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6772,6 +6772,7 @@
       "playbook.startUnknown",
       "playbook.zeroReviewBody",
       "projectAssistants.memory_unsafe",
+      "projectAssistants.pictureUnavailable",
       "projectAssistants.unavailable",
       "projectAssistants.unknown",
       "projects.setupUnifyUnreadable",
@@ -11511,6 +11512,7 @@
     "projectAssistants.pending",
     "projectAssistants.permission",
     "projectAssistants.permissionDelete",
+    "projectAssistants.pictureUnavailable",
     "projectAssistants.policy",
     "projectAssistants.reject_always",
     "projectAssistants.removePicture",

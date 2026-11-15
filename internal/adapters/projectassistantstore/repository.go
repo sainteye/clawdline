@@ -506,7 +506,7 @@ func validateAggregate(a aggregate) error {
 		default:
 			return failure(pa.Invalid, "message_kind")
 		}
-		if err := pa.ValidateMessage(msg.Text); err != nil {
+		if err := pa.ValidateSend(msg.Text, msg.Attachments); err != nil {
 			return err
 		}
 	}

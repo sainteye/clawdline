@@ -1,6 +1,9 @@
 package cloudops
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"unicode"
@@ -12,11 +15,12 @@ import (
 )
 
 func init() {
+	register(op{name: "project-assistants.attachment", read: true, shape: projectAssistantAttachmentReply, partial: projectAssistantFailure})
 	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "view", "rules"} {
 		register(op{name: "project-assistants." + word, read: true,
 			shape: projectAssistantReply, partial: projectAssistantFailure})
 	}
-	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "rule-remove"} {
+	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "rule-remove", "send-pictures"} {
 		register(op{name: "project-assistants." + word,
 			readLevel: word == "read" || word == "observed",
 			guard:     projectAssistantGuard, shape: projectAssistantReply, partial: projectAssistantFailure})
@@ -143,4 +147,23 @@ func projectAssistantShapedFailure(word string, body json.RawMessage) (int, stri
 		status = 429
 	}
 	return status, string(failure.Error.Code), true
+}
+
+// Stored bytes cross the encrypted read as inert image data, bound to their
+// content digest. The existing complete reply budget includes base64 overhead.
+func projectAssistantAttachmentReply(p plan, res LocalResponse) (json.RawMessage, Refusal) {
+	switch res.ContentType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+	default:
+		return projectAssistantReplyFailure(pa.Invalid, "attachment_type"), Refusal{}
+	}
+	if len(res.Body) == 0 || len(res.Body) > ReadPlaintextBytesLimit {
+		return projectAssistantReplyFailure(pa.CapacityFull, "cloud_reply_bytes"), Refusal{}
+	}
+	digest := sha256.Sum256(res.Body)
+	if hex.EncodeToString(digest[:]) != p.id {
+		return projectAssistantReplyFailure(pa.Invalid, "attachment"), Refusal{}
+	}
+	body, _ := json.Marshal(map[string]any{"contract_version": pa.ContractVersion, "id": p.id, "media_type": res.ContentType, "byte_count": len(res.Body), "data": base64.StdEncoding.EncodeToString(res.Body)})
+	return projectAssistantReply(p, LocalResponse{Status: res.Status, Body: body})
 }

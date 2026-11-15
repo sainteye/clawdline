@@ -3,7 +3,10 @@ package cloudops
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +22,8 @@ import (
 type projectAssistantRouter func(context.Context, LocalRequest) (LocalResponse, error)
 
 func projectAssistantOperationCases() []operationCase {
+	digest := sha256.Sum256([]byte("picture"))
+	id := hex.EncodeToString(digest[:])
 	key := map[string]any{"machine_id": "mac-01", "bot_id": "bot"}
 	project := map[string]any{"machine_id": "mac-01", "project_id": "project", "canonical_id": "canonical", "kind": "repository"}
 	fence := map[string]any{"key": key, "project": project, "conversation_id": "chat", "binding_id": "binding", "generation": 1}
@@ -29,6 +34,8 @@ func projectAssistantOperationCases() []operationCase {
 		query                map[string]string
 	}{
 		{"status", "GET", "/status", nil, nil},
+		{"attachment", "GET", "/bot/attachments/" + id, map[string]any{"machine_id": "mac-01", "bot_id": "bot", "id": id}, map[string]string{"machine_id": "mac-01"}},
+		{"send-pictures", "POST", "/bot/messages", map[string]any{"fence": fence, "text": "", "quote_message_id": "", "images": []any{"data:image/png;base64,cG5n"}}, nil},
 		{"projects", "GET", "/v1/project-assistant-targets", map[string]any{"machine_id": "mac-01", "cursor": "page", "page_size": 100}, map[string]string{"machine_id": "mac-01", "cursor": "page", "page_size": "100"}},
 		{"list", "GET", "", map[string]any{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": 2}, map[string]string{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": "2"}},
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
@@ -61,9 +68,13 @@ func projectAssistantOperationCases() []operationCase {
 		if r.word == "projects" {
 			c.path = r.suffix
 		}
-		c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
+		if r.word == "attachment" {
+			c.answers = &router{body: "picture", media: "image/png"}
+		} else {
+			c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
+		}
 		if r.method != "GET" {
-			op := map[string]string{"observed": "observe", "memory": "memory_save", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
+			op := map[string]string{"observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
 			if op == "" {
 				op = r.word
 			}
@@ -99,7 +110,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 22 {
+	if len(out) != 24 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -356,6 +367,9 @@ func TestProjectAssistantReadLevelAndLiveAuthority(t *testing.T) {
 			requires := []bool{}
 			bridge := open(projectAssistantRouter(func(_ context.Context, _ LocalRequest) (LocalResponse, error) {
 				calls++
+				if row.Op == "project-assistants.attachment" {
+					return LocalResponse{Status: 200, Body: []byte("picture"), ContentType: "image/png"}, nil
+				}
 				return LocalResponse{Status: 200, Body: []byte(`{"contract_version":"project-assistants.v1"}`)}, nil
 			}))
 			bridge.AllowCommands = func() bool { return false }
@@ -565,6 +579,52 @@ func TestProjectAssistantProjectsEscapedCorrelationCapacity(t *testing.T) {
 		answer := open(&router{status: 409, body: string(raw)}).Handle(context.Background(), request(t, ClassCtl, base))
 		if answer.Status != 409 || answer.Code != string(code) || !projectAssistantSame(answerOf(t, answer)["body"], json.RawMessage(raw)) {
 			t.Fatalf("catalog refusal lost: %+v", answer)
+		}
+	}
+}
+
+func TestProjectAssistantAttachmentReplyIntegrityAndCapacity(t *testing.T) {
+	for _, media := range []string{"image/png", "image/jpeg", "image/gif", "image/webp"} {
+		data := []byte("picture")
+		digest := sha256.Sum256(data)
+		p := plan{id: hex.EncodeToString(digest[:]), name: "read:" + strings.Repeat("<", 128)}
+		raw, refusal := projectAssistantAttachmentReply(p, LocalResponse{Status: 200, ContentType: media, Body: data})
+		if refusal.Code != "" || !strings.Contains(string(raw), `"data":"cGljdHVyZQ=="`) {
+			t.Fatalf("%s: %s %+v", media, raw, refusal)
+		}
+		for _, changed := range []LocalResponse{{Status: 200, ContentType: "image/svg+xml", Body: data}, {Status: 200, ContentType: media, Body: []byte("changed")}} {
+			raw, _ = projectAssistantAttachmentReply(p, changed)
+			if !strings.Contains(string(raw), `"code":"pa_invalid"`) {
+				t.Fatal("invalid bytes or media passed", string(raw))
+			}
+		}
+	}
+	// At the exact complete-envelope limit, base64 plus the escaped correlation
+	// name fits; the next source byte must become a typed capacity refusal.
+	name := "read:" + strings.Repeat("<", 128)
+	empty, _ := json.Marshal(map[string]any{"contract_version": pa.ContractVersion, "id": strings.Repeat("a", 64), "media_type": "image/png", "byte_count": 1, "data": ""})
+	// Find the largest fitting source byte count using the production serializer.
+	lo, hi := 0, ReadPlaintextBytesLimit
+	for lo < hi {
+		n := (lo + hi + 1) / 2
+		raw := strings.Replace(string(empty), `"byte_count":1`, fmt.Sprintf(`"byte_count":%d`, n), 1)
+		size := len(payload(name, 200, []byte(raw), nil)) + 4*((n+2)/3)
+		if size <= ReadPlaintextBytesLimit {
+			lo = n
+		} else {
+			hi = n - 1
+		}
+	}
+	for _, n := range []int{lo, lo + 1} {
+		data := []byte(strings.Repeat("x", n))
+		sum := sha256.Sum256(data)
+		raw, _ := projectAssistantAttachmentReply(plan{id: hex.EncodeToString(sum[:]), name: name}, LocalResponse{Status: 200, ContentType: "image/png", Body: data})
+		if n == lo {
+			if strings.Contains(string(raw), `"error"`) {
+				t.Fatal("fitting reply refused", string(raw))
+			}
+		} else if !strings.Contains(string(raw), `"code":"pa_capacity_full"`) {
+			t.Fatal("oversized base64 reply published")
 		}
 	}
 }

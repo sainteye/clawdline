@@ -40,6 +40,7 @@ export interface SourceClient {
   deleteBot?(request: W.ProjectAssistantDeleteRequest, signal: AbortSignal): Promise<unknown>
   canManage?(): boolean
   /** Where the console reads a stored picture, or null when it cannot. */
+  attachment?(key: W.ProjectAssistantBotKey, id: string, signal: AbortSignal): Promise<Blob>
   attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null
 }
 

@@ -241,3 +241,45 @@ controls: after a delayed fresh status, revoking/replacing current authority
 still called create once. The candidate calls create zero times in both
 controlled scenarios. These browser sources remain synthetic; the real local
 Server/registry test above is separate evidence, not a production E2E claim.
+
+## Pictures over Cloud (API 68)
+
+A captured source at API 68 carries pictures in both directions. The existing
+`project-assistants.send` decoder remains unchanged for older clients. A send
+with pictures uses `project-assistants.send-pictures`, with the same command,
+fence, stable idempotency key and local messages route, plus a required nonempty
+`images` list. The existing four-picture limit applies. Text may be empty when
+pictures are present. The source still decodes, normalizes and stores pictures;
+its aggregate validation now accepts a picture-only durable message as the
+Send validator already did. It continues to reject an empty message without a
+picture and validates every stored attachment's digest metadata.
+
+Before publishing an upload, the captured client measures the complete command
+JSON plus the AES-GCM authentication tag against the existing 16 MiB control
+ciphertext limit. Oversized uploads return `pa_capacity_full` with field
+`cloud_command_bytes` before transport. It neither splits nor retries a send.
+
+`project-assistants.attachment` reads the existing per-Bot attachment route with
+machine ID, Bot ID and a lowercase SHA-256 digest. The normal paired-device gate
+and current Bot read authorization apply. Stored PNG, JPEG, GIF and WebP bytes
+are encoded inside the encrypted JSON answer with contract version, digest,
+media type and exact byte count. Its complete answer, including base64 and the
+actual escaped reply correlation name, must fit the existing 8 MiB plaintext
+read ceiling. There is no increase to a transport limit or chunking protocol;
+a larger picture receives `pa_capacity_full` with field `cloud_reply_bytes`.
+
+The browser checks the digest, allowed media type, canonical base64 and byte
+count before rendering. It checks the captured authority again after hashing.
+Each mounted picture owns an abortable read; source replacement and unmount
+prevent late publication. Loading and explicit retry states appear in English
+and Traditional Chinese. The machine's own console retains its direct image
+route; Cloud uses this encrypted source client rather than a local HTTP URL.
+
+Verification is local: Cloud client behavior tests, a real Bridge/Router/Server
+and SQLite attachment/message round trip with a synthetic provider, replay and
+revocation checks, and browser observations of the production chat components
+against synthetic Cloud answers. Decoder recording retains every previous
+input and result, preserving JSON number lexemes during comparison. These
+checks do not establish production relay deployment or physical-phone
+acceptance. Those remain part of Board step 52ac3fa6 and the separate phone
+acceptance step; neither is completed by local success.

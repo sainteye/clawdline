@@ -1,3 +1,5 @@
+import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
+import { RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -16,6 +18,7 @@ export const PROJECT_ASSISTANTS_API_LEVEL = 60
 export const PROJECT_ASSISTANTS_VIEW_API_LEVEL = 61
 // Pictures with a message and their read route arrived at 62.
 export const PROJECT_ASSISTANTS_PICTURES_API_LEVEL = 62
+export const PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL = 68
 // Stopping a queued turn removes that one message, and turns carry started_at, from 63.
 export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
 // Send now (Codync's steer) arrived at 64; this machine's own console only, until the Cloud relay carries it.
@@ -169,11 +172,23 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.access=answer.source.access;this.lastStatus=answer.source
     return answer
   }
-  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.images?.length?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL) }
-  // Pictures travel only to this machine's own console for now: a Cloud relay
-  // frame is not sized for them and does not carry the read route yet.
-  pictures() { return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_PICTURES_API_LEVEL }
-  attachmentURL(key: W.ProjectAssistantBotKey, id: string) { return this.pictures() && key.machine_id === this.machineID ? endpoint(key,`/attachments/${encodeURIComponent(id)}`)+query({machine_id:this.machineID}) : null }
+  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
+  pictures() { return (this.grant.apiLevel ?? 0) >= (this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL) }
+  attachmentURL(key: W.ProjectAssistantBotKey, id: string) { return this.grant.accountKey==="local" && this.pictures() && key.machine_id === this.machineID ? endpoint(key,`/attachments/${encodeURIComponent(id)}`)+query({machine_id:this.machineID}) : null }
+  async attachment(key: W.ProjectAssistantBotKey,id:string,s:AbortSignal):Promise<Blob> {
+    this.key(key)
+    if(!/^[0-9a-f]{64}$/.test(id))throw failure("pa_invalid")
+    const minimum=this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL
+    const answer=await this.request<{contract_version:string;id:string;media_type:string;byte_count:number;data:string}>(endpoint(key,`/attachments/${id}`)+query({machine_id:this.machineID}),s,undefined,"GET",true,minimum)
+    if(answer.contract_version!=="project-assistants.v1"||answer.id!==id||!["image/png","image/jpeg","image/gif","image/webp"].includes(answer.media_type)||!Number.isSafeInteger(answer.byte_count)||answer.byte_count<=0)throw failure("pa_invalid")
+    let bytes:Uint8Array
+    try{bytes=base64Bytes(answer.data,"attachment")}catch{throw failure("pa_invalid")}
+    if(bytes.length!==answer.byte_count)throw failure("pa_invalid")
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new Uint8Array(bytes)))).map(b=>b.toString(16).padStart(2,"0")).join("")
+    this.check(s,false,false,minimum)
+    if(digest!==id)throw failure("pa_invalid")
+    return new Blob([new Uint8Array(bytes)],{type:answer.media_type})
+  }
   stop(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST") }
   unqueue(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST",true,PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL) }
   canUnqueue() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL }
@@ -230,6 +245,8 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
     }
+    const picture=/^\/attachments\/([0-9a-f]{64})$/.exec(tail)
+    if(picture){if(url.searchParams.size!==1||!q.machine_id)throw failure("pa_invalid");return {word:"project-assistants.attachment",kind:"read" as const,fields:{...key,id:picture[1]},id:""}}
     const action = tail === "/messages" ? "history" : tail === "/events" ? "events" : tail === "/export" ? "export" : tail === "/rules" ? "rules" : tail === "" ? "get" : null
     if (!action) throw failure("pa_invalid")
     const fields = action === "history" ? {key,conversation_id:q.conversation_id,before_seq:Number(q.before_seq),page_size:Number(q.page_size)} : action === "events" ? {key,after_seq:Number(q.after_seq),page_size:Number(q.page_size)} : key
@@ -246,7 +263,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
     tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
-  return {word:`project-assistants.${action}`,kind:"action" as const,fields,id:command.idempotency_key}
+  return {word:`project-assistants.${action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }
 
 /** Uses the passed machine and authenticated connection, never install.ts's active reader. */
@@ -258,6 +275,11 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
     if (!client) throw failure("pa_offline")
     if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
     if (!client.machineDescriptor?.(machineID)?.machine?.commands?.includes(request.word)) throw failure("pa_unsupported")
+    if(request.word==="project-assistants.send-pictures"){
+      // AES-GCM adds its 16-byte authentication tag to the complete plaintext.
+      const bytes=new TextEncoder().encode(JSON.stringify({type:request.word,session:"__clawdline_machine__",request:request.id,...request.fields})).byteLength
+      if(bytes+16>RELAY_CTL_MAX_BYTES)throw {...failure("pa_capacity_full"),error:{...failure("pa_capacity_full").error,field:"cloud_command_bytes"}}
+    }
     // The connection's authenticated principal is authoritative; body reader_id is only a hint.
     const answer = request.kind === "read" ? await client._machineRequest?.(machineID,request.word,request.fields,"read",undefined,{signal:init?.signal ?? undefined}) :
       await client._machineRequestAs?.(request.id,machineID,request.word,request.fields,"action")

@@ -10077,6 +10077,8 @@
   "projectAssistants.copyMessage": "複製",
   "projectAssistants.copiedMessage": "已複製",
   "projectAssistants.messageActions": "訊息動作",
+  "projectAssistants.pictureLoading": "正在讀取圖片…",
+  "projectAssistants.pictureUnavailable": "無法讀取圖片",
   "playbook.boardDriveTitle": "看板項目推進",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",

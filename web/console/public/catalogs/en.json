@@ -10077,6 +10077,8 @@
   "projectAssistants.copyMessage": "Copy",
   "projectAssistants.copiedMessage": "Copied",
   "projectAssistants.messageActions": "Message actions",
+  "projectAssistants.pictureLoading": "Loading picture…",
+  "projectAssistants.pictureUnavailable": "Picture unavailable",
   "playbook.boardDriveTitle": "Drive Board Items to Done",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",

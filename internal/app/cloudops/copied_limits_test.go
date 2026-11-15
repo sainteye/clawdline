@@ -23,6 +23,7 @@ import (
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
 	"voicework.MaxAutoContinue":                    voicework.MaxAutoContinue,
+	"projectassistant.MaxAttachmentsPerMessage":    projectassistant.MaxAttachmentsPerMessage,
 	"cloud.MaxSafeInteger":                         cloud.MaxSafeInteger,
 	"projectassistant.MaxMessageBytes":             projectassistant.MaxMessageBytes,
 	"projectassistant.MaxInstructionBytes":         projectassistant.MaxInstructionBytes,
