@@ -52,7 +52,7 @@ async function catalogChecks(page,origin,language,shot,log) {
   assert.equal(created.length,1);assert.equal(created[0].request.settings.target.project_id,"project-100");assert.equal(created[0].request.settings.agent,"codex")
   assert.equal((await log()).filter(row=>row.method==="send").length,0)
   await page.getByRole("searchbox",{name:w.search,exact:true}).fill("Catalog Bot")
-  await page.getByRole("button",{name:/^Catalog Bot, studio,/}).click()
+  await page.getByRole("button",{name:/^Catalog Bot, [^,]+, studio(,|$)/}).click()
   await page.getByRole("textbox",{name:w.message,exact:true}).fill("First send cannot admit a provider")
   await page.getByRole("textbox",{name:w.message,exact:true}).press("Enter")
   await page.locator(".pa-chat").getByRole("alert").filter({hasText:"adapter_not_found"}).waitFor()
@@ -151,13 +151,15 @@ async function catalogChecks(page,origin,language,shot,log) {
 }
 /** The real Chat is mounted against adversarial, bounded synthetic SourceClients. */
 async function boundedChecks(page,origin,language,width,shot,log) {
-  const zh=language!=="en",w=zh?{all:"所有 Bots",message:"訊息",back:"返回 Bots",sessions:"返回 Sessions",earlier:"較早的訊息",refresh:"檢查新訊息",more:"載入更多",details:"查看詳細內容",allow:"允許這次",trace:"查看處理過程",unknown:"結果未知；不會自動重送",quote:"引用回覆",clear:"取消引用",settings:"Bot 設定"}:{all:"All Bots",message:"Message",back:"Back to Bots",sessions:"Back to Sessions",earlier:"Earlier messages",refresh:"Check for updates",more:"Load more",details:"View details",allow:"Allow once",trace:"View processing steps",unknown:"Outcome unknown; no automatic retry",quote:"Reply",clear:"Remove reply",settings:"Bot settings"}
+  const zh=language!=="en",w=zh?{all:"所有 Bots",message:"訊息",back:"返回 Bots",moreActions:"更多動作",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息",more:"載入更多",details:"查看詳細內容",allow:"允許這次",trace:"查看處理過程",unknown:"結果未知；不會自動重送",quote:"引用回覆",clear:"取消引用",settings:"Bot 設定"}:{all:"All Bots",message:"Message",back:"Back to Bots",moreActions:"More actions",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates",more:"Load more",details:"View details",allow:"Allow once",trace:"View processing steps",unknown:"Outcome unknown; no automatic retry",quote:"Reply",clear:"Remove reply",settings:"Bot settings"}
   const chat=page.locator(".pa-chat"),messageRows=chat.locator("[data-message-id]")
   const exactText=value=>new RegExp("^"+value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"$")
-  const messageText=value=>chat.locator(".pa-message > p").filter({hasText:exactText(value)})
+  // A Bot reply renders as Markdown in .pa-markdown; the person's own text stays a paragraph.
+  const messageText=value=>chat.locator(".pa-message > p, .pa-message > .pa-markdown").filter({hasText:exactText(value)})
   const workResult=value=>chat.locator(".pa-chat-content > article.pa-card code").filter({hasText:exactText(value)})
-  const editor=()=>chat.getByRole("textbox",{name:w.message,exact:true}),row=(name="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${name}, ${machine},`)})
-  const refresh=()=>chat.locator(".pa-chat-tools").getByRole("button",{name:w.refresh,exact:true}).click()
+  const editor=()=>chat.getByRole("textbox",{name:w.message,exact:true}),row=(name="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${name}, [^,]+, ${machine}(,|$)`)})
+  // Check for updates lives in the chat header's ··· menu.
+  const refresh=async()=>{await chat.getByRole("button",{name:w.moreActions,exact:true}).click();await chat.getByRole("menuitem",{name:w.refresh,exact:true}).click()}
   const alert=code=>chat.getByRole("alert").filter({hasText:code}).waitFor()
   const all=[];page.boundedRequests=all
   const fresh=async setup=>{
@@ -193,7 +195,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
       await page.evaluate(()=>window.botsFixture.a.holdSnapshots())
       const initial=(await views("snapshot")).length
       await editor().press("Enter");await waitView("snapshot",initial)
-      await chat.getByRole("button",{name:w.settings,exact:true}).click()
+      await chat.getByRole("button",{name:w.moreActions,exact:true}).click();await chat.getByRole("menuitem",{name:w.settings,exact:true}).click()
       const dialog=page.getByRole("dialog")
       await dialog.getByRole("button",{name:zh?"儲存":"Save",exact:true}).click();await waitView("snapshot",initial+1)
       await dialog.getByRole("button",{name:zh?"取消":"Cancel",exact:true}).click();await dialog.waitFor({state:"hidden"})
@@ -321,9 +323,13 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await page.evaluate(()=>window.botsFixture.account("another-account"));await row().click();await ready();assert.equal(await editor().inputValue(),"")
 
   await fresh(()=>{window.botsFixture.a.seedPending(16,17);window.botsFixture.a.configureViews({forbidLegacy:true})});await open()
-  await page.waitForFunction(()=>document.querySelectorAll(".pa-queued").length===16)
-  assert.equal(await editor().isDisabled(),true)
-  assert.equal(await chat.locator(".pa-queued").count(),16)
+  // Queued messages behind a turn that is not running are already part of the conversation
+  // (partitionMessages, as in Codync); the tray holds only those behind a running turn.
+  await page.waitForFunction(()=>Array.from({length:16},(_,i)=>"Pending message "+i).every(text=>[...document.querySelectorAll(".pa-chat .pa-message.pa-mine > p")].some(p=>p.textContent===text)))
+  // Only this tab's own uncertain send holds the composer; unknown turns from
+  // elsewhere stay visible and a new message is a new turn, as in Codync.
+  assert.equal(await editor().isDisabled(),false)
+  assert.equal(await chat.locator(".pa-queued").count(),0)
   assert.equal(await chat.getByText("not copied into summary",{exact:true}).count(),0)
   await chat.locator(".pa-chat-footer").getByText(w.unknown+" · 17",{exact:true}).waitFor();await noLegacy();await shot("queued-16-unknown-17")
 
@@ -359,7 +365,9 @@ async function boundedChecks(page,origin,language,width,shot,log) {
 
   // Preserve the original keyboard, quote, unknown intent, source, focus and voice boundaries.
   await fresh();await open();await ready()
-  await chat.locator('[data-message-id="bot-0-user"]').getByRole("button",{name:w.quote,exact:true}).click()
+  // The person's own message offers Reply once tapped.
+  await chat.locator('[data-message-id="bot-0-user"]').click()
+  await chat.locator('[data-message-id="bot-0-user"]').getByRole("menuitem",{name:w.quote,exact:true}).click()
   await chat.getByRole("button",{name:w.clear,exact:true}).waitFor()
   await editor().fill("first Bot draft")
   if(width<701)await chat.getByRole("button",{name:w.back,exact:true}).click()
@@ -394,14 +402,15 @@ const origin=`http://127.0.0.1:${server.address().port}`,results=[]
 const failures=[]
 try {
   for(const engine of [chromium,webkit].filter(e=>!process.env.BOTS_ENGINE||e.name()===process.env.BOTS_ENGINE))for(const width of (process.env.BOTS_WIDTH?[Number(process.env.BOTS_WIDTH)]:[390,1440]))for(const language of (process.env.BOTS_LANGUAGE?[process.env.BOTS_LANGUAGE]:["zh-Hant","en"])) {
-    const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Back to Sessions",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"返回 Sessions",earlier:"較早的訊息",refresh:"檢查新訊息"}
+    const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",moreActions:"More actions",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",moreActions:"更多動作",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息"}
     const browser=await engine.launch({headless:true}),name=`${engine.name()}-${width}-${language}`
     const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce"})
     const consoleErrors=[];page.on("pageerror",error=>consoleErrors.push(error.message))
     await page.route("**/*",route=>{const url=new URL(route.request().url());if(url.origin!==origin||url.pathname.startsWith("/v1")){forbidden++;return route.abort()}return route.continue()})
     const shot=async code=>page.screenshot({path:path.join(artifacts,`${code}-${name}.png`),fullPage:true})
     const log=()=>page.evaluate(()=>window.botsFixture.log)
-    const row=(bot="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${bot}, ${machine},`)})
+    // A row reads its name, its Project, then its machine when there are several.
+    const row=(bot="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${bot}, [^,]+, ${machine}(,|$)`)})
     try {
       if(process.env.BOTS_CATALOG_ONLY){
         const checks=await catalogChecks(page,origin,language,shot,log)

@@ -320,6 +320,11 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return pa.Receipt{}, err
 	}
+	// The capability read can take seconds; admit against the current Bot
+	// when only its version moved, as a turn's start does.
+	if bot, c, err = r.currentForStart(ctx, a.key, bot, c); err != nil {
+		return pa.Receipt{}, err
+	}
 	var binding *pa.ExecutionBinding
 	if c.BindingID == "" {
 		memory, e := r.o.Memory.Current(ctx, a.key)

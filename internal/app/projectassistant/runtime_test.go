@@ -1174,3 +1174,25 @@ func TestRuntimeStartRefusesChangedInstructions(t *testing.T) {
 		t.Fatalf("changed instructions started a turn: %+v", got.Failure)
 	}
 }
+
+// The same read-position write during admission's capability read no longer
+// refuses the message itself.
+func TestRuntimeAdmissionSurvivesAnUnrelatedBotWrite(t *testing.T) {
+	f := newRuntimeFixture(t)
+	var calls atomic.Int64
+	f.provider.onCapabilities = func() {
+		if calls.Add(1) != 1 {
+			return
+		}
+		f.store.mu.Lock()
+		f.store.bot.Version++
+		f.store.mu.Unlock()
+	}
+	a, err := f.submit(t, "read while admitting", "read-while-admitting")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := receivePrompt(t, f.provider); q.Turn.ID != a.ResourceID {
+		t.Fatal("a different turn started")
+	}
+}

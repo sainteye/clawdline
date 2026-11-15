@@ -7890,6 +7890,226 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.view_plugin_archive_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginArchiveBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_expanded_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 524288,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginExpandedBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_files",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginFiles"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_manifest_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 8192,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginManifestBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_message_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginMessageBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_packages",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginPackages"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginPending"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_request_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 10000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginRequestMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_requests_per_second",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginRequestsPerSecond"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_sessions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginSessions"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_text_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginTextCharacters"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.viewer_health_attempts",
     "Class": "buffer",
     "Unit": "rows",

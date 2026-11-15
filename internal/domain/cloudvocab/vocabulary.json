@@ -2093,6 +2093,121 @@
       }
     },
     {
+      "op": "project-assistants.delete",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/delete",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "delete",
+          "idempotency_key": "stable-delete",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-delete"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/delete",
+          "local_body": [
+            "command"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "delete"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/delete",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-assistants.edit",
       "kind": "command",
       "write_gate": true,
@@ -4192,6 +4307,130 @@
             },
             "cursor": {
               "from": "cursor"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.visibility",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/visibility",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "hidden": true,
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "visibility",
+          "idempotency_key": "stable-visibility",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-visibility"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "hidden",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/visibility",
+          "local_body": [
+            "command",
+            "hidden"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "visibility"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "hidden": {
+            "type": "bool"
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/visibility",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "hidden": {
+                "from": "hidden"
+              }
             }
           }
         }

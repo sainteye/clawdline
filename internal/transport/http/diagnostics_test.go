@@ -67,7 +67,7 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 		}
 		r := m()
 		if e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes ||
-			e.Name == "console.copilot_session_report_batch" || e.Name == "console.copilot_session_report_refs" || e.Name == "console.copilot_session_report_sessions" {
+			strings.HasPrefix(e.Name, "console.view_plugin_") || e.Name == "console.copilot_session_report_batch" || e.Name == "console.copilot_session_report_refs" || e.Name == "console.copilot_session_report_sessions" {
 			if r.Known || r.Err == "" {
 				t.Errorf("%s must explain its unavailable external-surface measurement: %+v", e.Name, r)
 			}

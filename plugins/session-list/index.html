@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Session List</title>
+<style>
+:root{color-scheme:dark;--bg:#0d131b;--fg:#ecf3fc;--line:#34475b;--card:#192534}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;padding:24px}body.light{color-scheme:light;--bg:#f0f4fa;--fg:#14243a;--line:#b7c7dc;--card:#fff}header{display:flex;gap:16px;align-items:center;flex-wrap:wrap}h1{margin:0;font-size:28px}#scope{opacity:.8}#rows{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:12px;margin-top:24px}button{font:inherit;color:inherit;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:16px;cursor:pointer;text-align:left;min-height:48px;overflow-wrap:anywhere}button:hover,button:focus-visible{outline:2px solid #6ea6ed;outline-offset:2px}.item{animation:arrive .3s ease-out}.item b{display:block;margin-bottom:8px}.item small{display:block;opacity:.85}.waiting_you{border-color:#ed986e}.working{border-color:#6ea6ed}.stale{border-style:dashed}#problem{color:#df986f}body.reduced .item{animation:none}@keyframes arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@media(max-width:500px){body{padding:16px}}
+</style><body><header><h1 id="title">Session List</h1><button id="close">Close</button></header><p id="scope"></p><p id="problem" role="status"></p><main id="rows"></main>
+<!-- CLAWDLINE_SDK -->
+<script>
+(async () => {
+  const view = await connectViewPlugin();
+  let context = {}, snapshot = null, awaitingSnapshot = true;
+  const states = {en:{ready:"Ready",working:"Working",holding:"On hold",waiting_you:"Waiting for you",waiting_session:"Waiting for a Session",unknown:"Unknown",milestone_complete:"Milestone complete",work_complete:"Work complete"},zh:{ready:"待命",working:"工作中",holding:"暫停保留",waiting_you:"等你回覆",waiting_session:"在等另一個 Session",unknown:"狀態不明",milestone_complete:"階段完成",work_complete:"已完成"}};
+  function render() {
+    const zh = String(context.language).startsWith("zh"), state = states[zh ? "zh" : "en"];
+    document.documentElement.lang = zh ? "zh-Hant" : "en";
+    document.body.classList.toggle("light", context.theme === "light"); document.body.classList.toggle("reduced", !!context.reducedMotion || !context.visible);
+    document.getElementById("title").textContent = zh ? "Session 清單" : "Session List";
+    document.getElementById("close").textContent = zh ? "關閉" : "Close";
+    document.getElementById("scope").textContent = context.scopeLabel || "";
+    const root = document.getElementById("rows"); root.replaceChildren();
+    if (!snapshot) return;
+    if (!snapshot.sessions.length) root.textContent = zh ? "這個範圍目前沒有 Session。" : "There are no Sessions in this scope.";
+    for (const row of snapshot.sessions) {
+      const stale = awaitingSnapshot || context.connection !== "connected" || row.freshness !== "fresh";
+      const button = document.createElement("button"); button.className = `item ${row.workState}${stale ? " stale" : ""}`;
+      const title = document.createElement("b"), status = document.createElement("span"), project = document.createElement("small");
+      title.textContent = row.title; status.textContent = state[row.workState] || state.unknown;
+      project.textContent = (row.project?.label || (zh ? "未指定 Project" : "No Project")) + (stale ? (zh ? " · 資料可能過時" : " · May be stale") : "");
+      button.append(title,status,project);
+      button.onclick = async () => { button.disabled = true; try { await view.sessions.open(row.ref); } catch(e) { document.getElementById("problem").textContent = (zh ? "無法開啟：" : "Could not open: ") + e.code; } finally { button.disabled = false; } };
+      root.append(button);
+    }
+  }
+  view.onContext(c => { if (c.connection !== "connected") awaitingSnapshot = true; context = c; render(); });
+  snapshot = await view.sessions.subscribe(next => { if (!snapshot || next.streamId !== snapshot.streamId || next.revision > snapshot.revision) { snapshot = next; awaitingSnapshot = context.connection !== "connected"; render(); } }); awaitingSnapshot = context.connection !== "connected"; render();
+  document.getElementById("close").onclick = () => view.close();
+  addEventListener("keydown",e => { if (e.key === "Escape") void view.close(); });
+})().catch(() => { document.getElementById("problem").textContent = "Host connection unavailable / 無法連線至宿主"; });
+</script></body></html>
