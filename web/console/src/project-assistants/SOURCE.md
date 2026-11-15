@@ -1,17 +1,17 @@
 # Bots module integration and source record
 
-The roster character and thinking orb additionally adapt the actual desktop
-Canvas implementation at Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`:
-`components/Avatar.tsx`, `components/ThinkingOrb.tsx`, `lib/dot-grid.ts` and
-`lib/theme.ts`. Geometry, eyes, lighting, waiting ripple, pixel alignment and
-reduced-motion handling come from those sources. The character's prepared
-points are owned by each component effect instead of a process-global cache;
-appearance values use Clawdline's existing shape and color contract. The
-existing dark Bots surface supplies the character's dark-background flag.
-State labels follow upstream `BotRow.tsx` and `host/src/agent/bot/updates.rs`.
-See `third_party/codync` and the console's shipped `public/licenses/` copies
-for Apache-2.0 and MIT attribution. This source record does not
-claim Codync's event subscription is present in Clawdline's existing transport.
+The roster uses the existing approved BR-06 SVG outlines, eye strokes and
+identity palette. Its activity states follow Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`
+(`BotRow.tsx` and `host/src/agent/bot/updates.rs`). `Avatar.tsx` supplies the
+working glance/blink and waiting-ripple timing, adapted to eye transforms and
+contour opacity on the existing line art. Idle/reduced-motion geometry remains
+static, and off-screen/hidden avatars stop scheduling frames.
+
+The small thinking orb adapts that commit's actual desktop Canvas implementation
+(`components/ThinkingOrb.tsx` and `lib/theme.ts`). See `third_party/codync` and
+the console's shipped `public/licenses/` copies for Apache-2.0 and MIT attribution.
+This source record does not claim the roster event subscription is already
+connected to the console or encrypted Cloud transport.
 
 This removable React module implements the approved BR-01 through BR-06 presentation against `docs/project-assistants-handoff.json` (`project-assistants.v1`). It does not enable the feature, add a router entry, install an adapter, start a model, mount a recorder, or contact upstream services.
 

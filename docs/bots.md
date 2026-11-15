@@ -173,11 +173,13 @@ return to the latest message; errors have a separate red caption. Unread counts
 and the machine connection remain independent of these states. A needs-input
 badge takes precedence over the avatar's unread dot without hiding the count.
 
-The Canvas character, physical-pixel dot grid and thinking-orb geometry are
-adapted from Codync commit `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
-The avatar stops moving off screen or when reduced motion is selected. The
-existing dark Bots surface supplies its background; appearance colors retain
-the Bot's identity. License notices ship under `public/licenses/` in the console.
+The avatar retains the approved BR-06 SVG outline, original eye strokes and
+identity palette. Motion timing follows Codync commit
+`9f67eb09084db61b3cca9c84a11bc03df9de29b7`: working eyes glance and blink,
+and a waiting contour pulses at its ripple cadence. Idle and reduced-motion
+avatars use the original static lines. Animation pauses off screen and while
+the page is hidden. The small thinking orb retains its upstream Canvas geometry.
+License notices ship under `public/licenses/` in the console.
 
 This first projection is exercised through the real local Store and HTTP
 boundary with a synthetic event producer, without a provider/model call.

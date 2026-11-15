@@ -46,10 +46,14 @@ try{
     await phase("writing");await page.reload()
     await row("reading").getByText(language==="en"?"Writing a reply…":"正在回覆…",{exact:true}).waitFor({timeout:10000})
     await row("reading").scrollIntoViewIfNeeded()
-    const avatar=row("reading").locator("canvas.pa-avatar")
-    const first=await avatar.evaluate(el=>el.toDataURL())
-    await page.waitForTimeout(100)
-    assert.notEqual(await avatar.evaluate(el=>el.toDataURL()),first,"Codync's working canvas draws moving frames")
+    const avatar=row("reading").locator("svg.pa-avatar")
+    const first=await avatar.screenshot()
+    let changed=false
+    for(let sample=0;sample<6;sample++){
+      await page.waitForTimeout(200)
+      if(!first.equals(await avatar.screenshot())){changed=true;break}
+    }
+    assert.ok(changed,"The existing line avatar animates while working")
     await page.screenshot({path:path.join(artifacts,`${language}-roster-writing.png`),fullPage:true})
     await phase("done");await page.reload()
     await row("reading").waitFor()
@@ -59,13 +63,13 @@ try{
     await row("reading").getByText("Read notes.md",{exact:true}).waitFor({timeout:10000})
     await page.emulateMedia({reducedMotion:"reduce"})
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
-    const still=await row("reading").locator("canvas.pa-avatar").evaluate(el=>el.toDataURL())
+    const still=await row("reading").locator("svg.pa-avatar").screenshot()
     await page.waitForTimeout(100)
-    assert.equal(await row("reading").locator("canvas.pa-avatar").evaluate(el=>el.toDataURL()),still)
+    assert.ok(still.equals(await row("reading").locator("svg.pa-avatar").screenshot()),"Reduced motion keeps the line avatar still")
     await page.screenshot({path:path.join(artifacts,`${language}-roster-reduced-motion.png`),fullPage:true})
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
     assert.deepEqual(errors,[])
-    evidence.push({language,width,height,states:5,toolCaption:true,writingCaption:true,eventUpdates:false,completedReturnsToPreview:true,permissionWinsUnreadDot:true,unreadCountRetained:true,unknownDistinct:true,reducedMotion:true,pageErrors:errors.length})
+    evidence.push({language,width,height,states:5,lineAvatar:true,toolCaption:true,writingCaption:true,eventUpdates:false,completedReturnsToPreview:true,permissionWinsUnreadDot:true,unreadCountRetained:true,unknownDistinct:true,reducedMotion:true,pageErrors:errors.length})
     await page.close()
   }
   await writeFile(path.join(artifacts,"browser-evidence.json"),JSON.stringify({modelRequests:0,evidence},null,2)+"\n")

@@ -1,8 +1,8 @@
 Codync roster rendering adaptation
 
-Adapted files: Avatar.tsx, ThinkingOrb.tsx, dot-grid.ts and theme.ts from
+Adapted sources: Avatar.tsx motion timing, ThinkingOrb.tsx and theme.ts from
 Codync 9f67eb09084db61b3cca9c84a11bc03df9de29b7.
-Clawdline adapts component props, lifetime-owned point preparation and SSR snapshots.
+Clawdline maps motion to its existing outline avatars and uses SSR-safe snapshots.
 
 Codync
 Copyright 2026 Po Kai Lee
