@@ -1,5 +1,52 @@
 # Bots module integration and source record
 
+## Local roster stream boundary
+
+`SourceClient` optionally exposes `canRoster()` and
+`subscribeRoster(request, receive, signal): Promise<void>`. The captured
+`ProjectAssistantSourceClient` admits this route only for a local account and
+API level 71. Cloud and older clients retain their snapshot methods; the
+ordinary Cloud recorder explicitly refuses the local SSE URL.
+
+Each subscription opens one fetch with the normal captured transport and
+credentials, without retry, polling, cursor storage or React application.
+`validateRosterFrame(value, request)` is also exported for injected clients.
+It validates the complete frame, generated metadata enums, safe integers,
+key/Project/conversation/source relationships, read cursors, row budgets and
+control/data invariants before returning; absent changes become an empty array.
+Removed entries may include a fully validated summary. Replay may repeat keys
+and revisions, and unread counts remain absolute values.
+
+The incremental decoder accepts UTF-8 and LF/CRLF across arbitrary chunks,
+including multiline JSON data. It independently enforces the existing 8 MiB
+plaintext and 4096-byte cursor budgets. SSE prefixes and delimiters do not
+reduce the plaintext allowance. Comments and unknown fields are discarded
+incrementally; their incomplete lines never accumulate. Event names are bounded
+by the generated enum, and retained data lines share the plaintext budget.
+No new capacity limit is introduced.
+
+The client rechecks its captured authority after transport, after each read,
+and immediately before each publication, including after JSON parsing. Wire
+readers are opaque source-issued identities, not the host's logical `local` or
+account reader label; authority stays with the captured transport/grant. Read
+cursor key/conversation relationships are validated, and writable flags are
+composed with the live grant. Caller abort rejects with `AbortError`; lifetime revocation retains
+`pa_revoked`. Both release listeners and the stream reader. Failed HTTP retains
+the existing transport/source refusal envelope. `RosterStreamFailure.kind`
+distinguishes malformed framing, capacity refusal, unexpected EOF, resync and
+closure. Explicit terminal controls are delivered once and then reject with
+their typed terminal reason. No terminal path acknowledges a cursor.
+
+The source behavior follows Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`
+(`host/src/api/events.rs` and `apps/desktop/src/renderer/store/bot-sync.ts`):
+subscription precedes catch-up and repeated durable facts are replacements.
+The real Node HTTP SSE test exercises the actual source client with a synthetic
+read-only local grant and observes server-side connection closure after caller
+abort. Pure and captured-source tests cover split bytes, hostile rows, limits,
+authority replacement and terminal paths. These checks establish this client
+boundary only. Root owns roster application, reconnect/backoff, browser
+acceptance, integration and release; no Bot/provider/model call is needed.
+
 The roster uses the existing approved BR-06 SVG outlines, eye strokes and
 identity palette. Its activity states follow Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`
 (`BotRow.tsx` and `host/src/agent/bot/updates.rs`). `Avatar.tsx` supplies the
