@@ -1,0 +1,44 @@
+# Night City source provenance
+
+Upstream: [vib-z/herdr-layouts](https://github.com/vib-z/herdr-layouts/tree/e4619fad4d5dea423fe1ebf2c296de7e6964f52d/night-city), pinned commit `e4619fad4d5dea423fe1ebf2c296de7e6964f52d`.
+License: MIT, Copyright (c) 2026 vib-z. The complete unchanged license is in `upstream/LICENSE` and is also embedded in the executable HTML because the installed ZIP contains only its manifest and HTML. The five embedded SVG data URLs decode to the unchanged files below. This port is source-derived, not original artwork.
+
+## Unchanged upstream files
+
+| Retained file | Path at pinned commit | SHA-256 |
+| --- | --- | --- |
+| `upstream/LICENSE` | `LICENSE` | `d8f4dc6088ebe842cd7a23406f2349bdd0cfdd0ab19da76fad189ff6c0521ec6` |
+| `upstream/main.js` | `night-city/mods/night-city/main.js` | `722de2beff40a1de450edf7dfe272bf0c6d6c253d90f5869b578d6d6fa34f367` |
+| `upstream/model.js` | `night-city/mods/night-city/model.js` | `6dcef653d7275847a054c5c3e5a5c12710c504739dda8301070290af2753f985` |
+| `upstream/moon.svg` | `night-city/mods/night-city/moon.svg` | `12ecd3af52511ba9e96ae3b0d5f8b9f3c3dbd1fd640e2f8ccc827eccb41be51a` |
+| `upstream/neon-sign.svg` | `night-city/mods/night-city/neon-sign.svg` | `dc131f88e774f47e9713cd7605c71f34a8260a329c72ebef1fd50714b4c6ae57` |
+| `upstream/rooftop-sign.svg` | `night-city/mods/night-city/rooftop-sign.svg` | `faf61e8c0f7c1a040d99fca983e2e1aedb831e0dafed289ae73afd67bda2d401` |
+| `upstream/search-beam.svg` | `night-city/mods/night-city/search-beam.svg` | `d37ee2be3725551861846b37e4b71972a6c3bc94c4702b93bdf2b8cce980b8fe` |
+| `upstream/tower-body.svg` | `night-city/mods/night-city/tower-body.svg` | `c878495742c2466760f3b513ecb7fa7d289baa6230875ccc5fb8ee2e5ac03286` |
+| `upstream/layout.json` | `night-city/layouts/night-city.json` | `ffec90959b5e6ec6829eefca8eab681b85fe524fe8838e4aa59e58e675814b1f` |
+| `upstream/theme.json` | `night-city/themes/night-city.json` | `606ab38f51bdfa5af3c1cb20cd34f2512474f618268454797fbe6d8e9e4c88e1` |
+
+`upstream/main.js` and `model.js` are retained for source traceability; the native renderer is **not** executed. It imports native Herdr capabilities including `exec`, terminal access and local history, none of which the port exposes or calls. The acceptance script evaluates only the inspected pure `model.js` for geometry comparisons. Upstream reference code is data, never an installation/setup instruction.
+
+## Rendering translation
+
+- `main.js:7–10`: glass colors are retained exactly for working (`#f1cf83`), blocked (`#b63b50`), idle (`#3b5880`), done (`#c5f4dc`) and unavailable (`#29334b`). Ready, holding and waiting-for-Session share idle glass; both reported completion states share mint glass, with distinct readable text and symbols. Unknown uses unavailable glass. Stale/unknown freshness uses unavailable glass while keeping the work-state symbol and readable freshness.
+- `main.js:83–110`: browser buttons replace native clickable glass. Height is `18 * scale`; glass width uses the original 10–24 base-pixel clamp, 4-pixel gap and 22-pixel allowance. Working cursor, three-pixel blocked lamp and four-pixel mint corner follow the original. As in `model.js:47`, at most three fresh blockers pulse; the port orders them by opaque reference because source status timestamps are absent. Missing program icons are not invented; the eight state symbols are the browser adaptation.
+- `main.js:113–159`: actual beam, body, rooftop and neon SVGs retain their placement: 54-pixel roof allowance, roof top 31 / height 23, neon top 8 / height 20, beam 64 × 92 centered over each affected tower. All dimensions scale together. The original floor-bank interior starts 12 pixels below the body; its 24-pixel band, bottom padding 3 and 18-pixel glass give the same glass top offset of 15 pixels. There is one unpartitioned bank, with no tab/floor labels or invented hierarchy.
+- `model.js:80–99`: each opaque Project maps to one tower. The unpartitioned Session bank uses the native single-bank width `max(104, 14 * count + 18)` and height `max(70, 24 + 22 + min(60, count * 3))`. This is explicitly a projection adaptation, not evidence of one real tab. Source formulas match the native model on representative single-bank inputs in the browser acceptance suite.
+- `model.js:104–114`: `skylineGeometry` preserves 24-pixel gaps, 48-pixel horizontal allowance, fixed 40-pixel HUD and 24-pixel vertical allowance, minimum scale 1, maximum 2.5, and contained scrolling instead of shrinking a crowded city. The river term is absent because no machine identities are supplied. Actual DOM tower/body/roof/window sizes, ground alignment, scene width/height and scale are compared to the pinned model.
+- `main.js:168–194`: centered, ground-aligned skyline, 18 original deterministic stars, horizon at 12 pixels and 24-pixel moon remain. The desktop skyline band is 320 pixels, within the native layout's 180–360 range; mobile uses 260 pixels. The stage appears before the attention rail on mobile.
+- `main.js:195–210`, `layout.json`: attention retains the native 330-pixel desktop left rail, 36-pixel header, named red rows, bottom explanation and independent scrolling. Each row reports Project, work state and freshness. All `waiting_you` rows stay present, including stale ones. No timer-based priority ordering is invented.
+- `theme.json`, `layout.json`: original gradient `#192344` → `#080e20`, canvas, chrome, foreground, muted, border and accents are preserved. Original UI font preference is Geist with system/Unicode fallback; no font file was supplied or downloaded. JetBrains Mono was for native terminal text, which this projection does not contain. Browser controls use a 44-pixel touch/list fallback; the skyline windows retain their original smaller geometry.
+
+## Deliberate differences and missing data
+
+The SDK supplies opaque Project/Session references and labels, title, eight work states and freshness only. There are no native spaces/tabs/panes, child topology, machine boundary, program icons, active native tab, transcripts, status timestamps or confirmed exits. The port therefore has no machine bridge, tab floors, attic children, shell/mod panes, settled blinds, dead X windows, cold history, exit count, death polling, native window controls, terminal pane or fake transcript. `remember`, `confirm`, `ghosts`, native timers and `exec("hc", …)` are never ported or invoked. No live reading or still preference is persisted.
+
+Missing tabs means the native multi-floor height variation cannot be faithfully reconstructed. A Project with one bank is shorter than a native space with several tabs. The comparison must not be presented as a pixel-identical reproduction or visual acceptance. Unassigned Sessions share an explicitly named No Project tower. Selected Session detail and a readable list occupy the area where the original shows live terminals. No terminal appearance is simulated. Upstream direct focus becomes selection plus a separate explicit Open Session button; unknown work state, stale/unknown freshness, disconnected or awaiting-new-snapshot rows cannot navigate. The native 36-pixel titlebar becomes 44 pixels (48 on narrow screens) for browser touch controls, without native drag/traffic-light controls. Neon signs update immediately rather than animating their height through a rebuilt DOM; all labels remain static. Native unseen-done is not mapped: reported completion is explicitly not acceptance.
+
+The package stays dark even under a light host theme, matching the source's authored palette. Motion stops for still mode, hidden context, reduced motion, stale rows and disconnected readings; reconnection needs a new snapshot. Host-controlled return and authorization remain outside this ZIP.
+
+## Evidence boundary
+
+`acceptance.mjs` uses the actual production manager, registry, frame, store/parser, bridge and SDK to import the actual ZIP. Its four-case Chromium/WebKit × 1440-English / 390-Traditional-Chinese matrix covers source-measured geometry and the current v1 safety cases. Screenshots include `original-versus-port.png`, pinned `upstream-original.png`, actual `port-desktop.png`, desktop/mobile views, selected detail and readable lists. The comparison shows different available data: the upstream preview has native tabs, children, confirmed history and terminals; the synthetic v1 fixture has 11 rows across four groups and no such fields. It is a visual comparison, not a claim that unavailable source behavior was reproduced. All browsers/server are closed afterward. No production installation, actual iPhone, deployment, or human visual acceptance is implied.
