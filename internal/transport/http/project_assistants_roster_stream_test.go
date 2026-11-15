@@ -42,6 +42,7 @@ type rosterHTTPFixture struct {
 	views      *store.ViewStore
 	service    *app.Service
 	projects   *rosterProjects
+	handler    http.Handler
 	server     *httptest.Server
 	revoked    atomic.Bool
 	ids        atomic.Int64
@@ -103,12 +104,13 @@ func newRosterHTTPFixture(t *testing.T, beforeSnapshot, beforePublish func(*rost
 			beforePublish(f)
 		}
 	}})
-	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if reader := r.Header.Get("X-Fixture-Reader"); reader != "" {
 			r = r.WithContext(context.WithValue(r.Context(), rosterReaderKey{}, reader))
 		}
 		handler.ServeHTTP(w, r)
-	}))
+	})
+	f.server = httptest.NewServer(f.handler)
 	t.Cleanup(func() {
 		f.server.Close()
 		read.Close()
