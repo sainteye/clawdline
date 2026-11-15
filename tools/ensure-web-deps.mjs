@@ -198,7 +198,7 @@ function isolatedInstall(web, modules, lockHash, rows) {
       copyFileSync(join(row.path, "package.json"), join(destination, "package.json"))
     }
     console.log(`web dependencies: installing an isolated tree for ${lockHash.slice(0, 12)}`)
-    const installed = run(npmCommand(), ["ci", "--ignore-scripts"], { cwd: stage, stdio: "inherit" })
+    const installed = run(npmCommand(), ["ci", "--ignore-scripts"], { cwd: stage, stdio: "inherit", timeout: 180000 })
     if (installed.status !== 0) throw new Error(`npm ci exited ${installed.status}`)
     const stageModules = join(stage, "node_modules")
     if (!existsSync(stageModules)) throw new Error("npm ci did not create node_modules")

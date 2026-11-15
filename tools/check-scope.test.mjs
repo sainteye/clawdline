@@ -55,6 +55,9 @@ test('real TypeScript resolution follows .js imports, keeps filesystem readers a
     let result = await selectWeb(['web/console/src/leaf.ts'], root);
     assert.equal(result.broad, false);
     assert.deepEqual(result.tests, ['web/console/src/related.test.ts', 'web/console/tools/read.test.mjs']);
+    result = await selectWeb(['web/console/public/view-plugins/fixture.zip'], root);
+    assert.equal(result.broad, false);
+    assert.deepEqual(result.tests, ['web/console/tools/read.test.mjs']);
     result = await selectWeb(['web/package-lock.json'], root);
     assert.equal(result.broad, true);
     assert.equal(result.tests.length, 3);

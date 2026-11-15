@@ -8,6 +8,8 @@ import { classify, changedPaths } from './check-plan.mjs';
 
 test('console and documents skip cross-builds, while tooling and unknown files fail closed', () => {
   assert.equal(classify(['web/console/src/App.tsx']).go, false);
+  assert.equal(classify(['plugins/session-absurd/manifest.json']).go, false);
+  assert.equal(classify(['plugins/session-absurd/manifest.json']).web, true);
   assert.equal(classify(['docs/architecture.md']).go, false);
   assert.equal(classify(['docs/example.go']).go, true);
   for (const path of ['tools/check.sh', 'AGENTS.md', '.github/workflows/ci.yml', 'new-input']) {
