@@ -37,6 +37,7 @@ function allRows() {
 let isolatedVersion = "0.4.0"
 let usualHost: { version?: string; folder?: string } | undefined = undefined
 let usualConnected = false
+let connects = 0
 const initialSettings = () => ({ browser_mode:"native", browser_enabled: false, browser_notify_new_site: false, browser_policy: { order:["native","isolated","user_chrome"], automatic:{native:true,isolated:false,user_chrome:false} } })
 let settings = initialSettings()
 let usualReady = false
@@ -66,12 +67,12 @@ function fixture(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
-    if (path === "/__fixture/reset") { isolatedVersion = "0.4.0"; usualHost = undefined; usualConnected = false; settings = initialSettings(); usualReady=false; launches=0; stopped = false; saveFailed = false; stateError = false; empty = false; queries = []; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { isolatedVersion = "0.4.0"; usualHost = undefined; usualConnected = false; connects = 0; settings = initialSettings(); usualReady=false; launches=0; stopped = false; saveFailed = false; stateError = false; empty = false; queries = []; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/ready") {usualReady=true;return json(res,200,{ok:true})}
     if (path === "/__fixture/fail-stop") {saveFailed = true; return json(res,200,{ok:true})}
     if (path === "/__fixture/recover-stop") {saveFailed = false; return json(res,200,{ok:true})}
     if (path === "/__fixture/empty") { empty = true; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { settings, stopped, queries, launches })
+    if (path === "/__fixture/log") return json(res, 200, { connects, settings, stopped, queries, launches })
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { authed: true, version: "fixture", api_level: 99 })
     if (path === "/v1/strings") {
@@ -86,6 +87,7 @@ function fixture(): Server {
     if (path === "/v1/settings/integrations") return json(res,200,{codegraph_enabled:false,workflow_skills_enabled:false,workflow_profile:"clawdline",space_saving_images:false})
     if (path === "/v1/browser/status") return json(res, 200, { ok: true, enabled: settings.browser_enabled, notify_new_site: settings.browser_notify_new_site,
       extension_version: "0.4.0", profiles: { isolated:{ready:true,connected:true,host:{version:isolatedVersion,folder:"stable"}},user_chrome:{ready:usualReady||usualConnected,connected:usualConnected,host:usualHost} }, status: { connected: true, stopped, state_error: stateError, host: { version: "0.1.0", browser: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36", last_poll: now() }, person_tabs: [], pending: 0, tabs: [], muted: [] } })
+    if (req.method === "POST" && path === "/v1/browser/connect") { connects++; return json(res, 200, { ok: true, extension_id: "a".repeat(32) }) }
     if (path === "/v1/browser/prepare") return json(res,200,{ok:true,directory:"/test/Clawdline's data/chrome-extension",platform:"darwin",revision:"revision",open_command:"open '/test/Clawdline'\\''s data/chrome-extension'",connect_command:"clawdline browser install-host --mode user_chrome --extension-id " + "a".repeat(32)})
     if (path === "/v1/browser/setup") return json(res,200,{mode:url.searchParams.get("browser_mode") || settings.browser_mode,chromium_found:true,connected:true})
     if (path === "/v1/browser/launch" && req.method==="POST") {launches++;return json(res,200,{ok:true})}
@@ -239,7 +241,11 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await run(`document.querySelector('[data-browser="user_chrome"] .browser-policy-setup-link').click()`)
       await until(`[...document.querySelectorAll('.browser-setup input')].some(e => e.value === 'chrome://extensions')`)
       await until(`[...document.querySelectorAll('.browser-setup input')].some(e => e.value === "/test/Clawdline's data/chrome-extension")`)
-      assert.ok(await run(`[...document.querySelectorAll('.browser-setup input')].some(e => e.value.includes("install-host --mode user_chrome --extension-id"))`))
+      // Connecting is one button, not a Terminal command.
+      assert.equal(await run(`[...document.querySelectorAll('.browser-setup input')].some(e => e.value.includes("install-host"))`), false, "no command to copy")
+      await run(`document.getElementById('browser-connect-chrome').click()`)
+      await until(`document.getElementById('browser-connect-chrome')?.textContent === ${JSON.stringify(ui === "en" ? "Connected · Chrome links up in a few seconds" : "已連接・Chrome 幾秒內就會連上")}`)
+      assert.equal((await (await fetch(origin + "/__fixture/log")).json()).connects, 1)
       assert.ok(await run(`document.querySelector('.browser-setup').innerText.includes('Command-Shift-G')`), "the mac step names the shortcut")
       assert.ok(await run(`document.querySelector('.browser-setup').scrollWidth <= document.querySelector('.browser-setup').clientWidth`),"guide fits phone width")
       await shot("prepare-guide", ".browser-setup")

@@ -67,3 +67,47 @@ func TestBrowserPrepareRequiresAPersonAndOnlyWritesItsOwnPayload(t *testing.T) {
 		t.Fatalf("preparation incorrectly depends on automatic selection: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// The guide's Connect button registers the usual Chrome's host for the
+// stable folder's ID, only for a person who may send.
+func TestBrowserConnectRegistersTheStableFoldersHostForAPerson(t *testing.T) {
+	dir := t.TempDir()
+	chrome := filepath.Join(t.TempDir(), "Chrome")
+	previous := userChromeDirectory
+	userChromeDirectory = func() (string, error) { return chrome, nil }
+	t.Cleanup(func() { userChromeDirectory = previous })
+	s := &Server{cfg: config.Config{Dir: dir, Port: 7727}}
+	device := func(method, body string, caps ...auth.Capability) *http.Request {
+		return httptest.NewRequest(method, "/v1/browser/connect", strings.NewReader(body)).WithContext(context.WithValue(context.Background(), accessKey{}, access{verdict: auth.Verdict{Allowed: true, Caps: auth.NewCaps(caps...)}}))
+	}
+	call := func(req *http.Request) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		s.browserConnectRoute(rec, req)
+		return rec
+	}
+	manifest := filepath.Join(chrome, "NativeMessagingHosts", browserlaunch.HostName+".json")
+	for _, req := range []*http.Request{device("POST", "{}", auth.Read), device("POST", "{}").WithContext(context.WithValue(context.Background(), accessKey{}, access{machine: true}))} {
+		if rec := call(req); rec.Code != http.StatusForbidden {
+			t.Fatalf("unauthorized: %d %s", rec.Code, rec.Body)
+		}
+	}
+	if _, err := os.Stat(manifest); !os.IsNotExist(err) {
+		t.Fatal("a refused press registered a host")
+	}
+	if rec := call(device("POST", `{"extension_id":"aaaa"}`, auth.Send)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a chosen id was accepted: %d", rec.Code)
+	}
+	rec := call(device("POST", "{}", auth.Send))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("connect: %d %s", rec.Code, rec.Body)
+	}
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stable, _ := filepath.EvalSymlinks(browserlaunch.StableExtensionDir(dir))
+	want := "chrome-extension://" + browserlaunch.UnpackedExtensionID(stable) + "/"
+	if !strings.Contains(string(data), want) {
+		t.Fatalf("host manifest %s does not allow %s", data, want)
+	}
+}

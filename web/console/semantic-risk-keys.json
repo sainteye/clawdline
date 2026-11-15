@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12353,
+  "englishKeys": 12359,
   "counts": {
-    "negation": 3320,
+    "negation": 3321,
     "state": 2065,
     "permission": 730,
     "deletion": 288,
     "uncertainty": 468
   },
-  "unionCount": 5353,
+  "unionCount": 5354,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2225,6 +2225,7 @@
       "next.browserCardDisabledBody",
       "next.browserCardNoTabTitle",
       "next.browserGuideAfter",
+      "next.browserGuideConnectFailed",
       "next.browserOpenFailed",
       "next.browserPanelActFailed",
       "next.browserPanelActivityEmpty",
@@ -10264,6 +10265,7 @@
     "next.browserCardNotConnectedHint",
     "next.browserChipTip",
     "next.browserGuideAfter",
+    "next.browserGuideConnectFailed",
     "next.browserGuideDone",
     "next.browserGuideOpenExtensions",
     "next.browserGuideRemoveOld",

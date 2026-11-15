@@ -869,6 +869,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/browser/connect",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/browser/launch",
       "guide": "connect"
     },

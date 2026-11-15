@@ -128,3 +128,54 @@ func (s *Server) browserPrepareRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, receipt)
 }
+
+// userChromeDirectory finds the person's usual Chrome user-data directory;
+// tests replace it.
+var userChromeDirectory = browserlaunch.UserChromeDir
+
+// browserConnectRoute registers the native host for the person's usual
+// Chrome with the stable folder's extension ID, after the person presses
+// Connect in the setup guide. It is the guide's form of
+// `clawdline browser install-host --mode user_chrome`: the press is the
+// person's consent, an agent's machine token is refused, and Clawdline Cloud
+// does not carry it (the folder is loaded on the computer anyway).
+func (s *Server) browserConnectRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if machineAuthed(r) || !maySend(r) {
+		writeRefusal(w, http.StatusForbidden, "forbidden", "Only a person's device that may send can connect Chrome.")
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, settingsRequestBodyLimit+1))
+	if body := strings.TrimSpace(string(raw)); err != nil || (body != "" && body != "{}") {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "The browser request is not valid JSON for this route.")
+		return
+	}
+	if s.cfg.Dir == "" || s.cfg.Port <= 0 {
+		writeRefusal(w, http.StatusServiceUnavailable, "browser_connect_failed", "Chrome could not be connected on this machine.")
+		return
+	}
+	prepared, err := browserlaunch.PrepareUserChrome(s.cfg.Dir)
+	if err != nil {
+		writeRefusal(w, http.StatusInternalServerError, "browser_prepare_failed", "The extension files could not be prepared.")
+		return
+	}
+	chromeDir, err := userChromeDirectory()
+	if err != nil {
+		writeRefusal(w, http.StatusConflict, "browser_connect_failed", "Chrome could not be connected on this machine.")
+		return
+	}
+	exe, err := browserlaunch.LauncherBinary(s.cfg.Dir)
+	if err != nil {
+		writeRefusal(w, http.StatusInternalServerError, "browser_connect_failed", "Chrome could not be connected on this machine.")
+		return
+	}
+	if _, err := browserlaunch.InstallHostForMode(s.cfg.Dir, s.cfg.Port, exe, prepared.ExtensionID, chromeDir, "user_chrome"); err != nil {
+		writeRefusal(w, http.StatusConflict, "browser_connect_failed", "Chrome could not be connected on this machine.")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{"ok": true, "extension_id": prepared.ExtensionID})
+}

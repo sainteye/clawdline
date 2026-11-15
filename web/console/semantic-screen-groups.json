@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12353,
-  "riskKeys": 5353,
-  "nonRiskCount": 7000,
+  "englishContentKeys": 12359,
+  "riskKeys": 5354,
+  "nonRiskCount": 7005,
   "groups": [
     {
       "name": "acp / other",
@@ -3955,7 +3955,7 @@
     },
     {
       "name": "next / other",
-      "count": 1117,
+      "count": 1122,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4036,7 +4036,12 @@
         "next.browserChip",
         "next.browserGuideApplyIntro",
         "next.browserGuideApplyTitle",
+        "next.browserGuideConnect",
+        "next.browserGuideConnectButton",
+        "next.browserGuideConnectOnComputer",
         "next.browserGuideConnectOnce",
+        "next.browserGuideConnected",
+        "next.browserGuideConnecting",
         "next.browserGuideCurrent",
         "next.browserGuideCurrentTitle",
         "next.browserGuideDeveloperMode",
