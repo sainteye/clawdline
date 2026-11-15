@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -222,7 +223,8 @@ func TestRoutineScheduleIsolationKeepsHealthyQueuedWorkAndMainHistory(t *testing
 	f.idle(t)
 	f.tick(t)
 	x := f.export(t)
-	if len(x.Routines) != 2 || x.Routines[0].Enabled || x.Routines[0].Deleted || !reflect.DeepEqual(x.Routines[0].Triggers, bad.Triggers) || !reflect.DeepEqual(x.Routines[0].NextRuns, bad.NextRuns) || !x.Routines[0].NextDue.Equal(bad.NextDue) {
+	// Persistence may restore another location for the same UTC instant.
+	if len(x.Routines) != 2 || x.Routines[0].Enabled || x.Routines[0].Deleted || !reflect.DeepEqual(x.Routines[0].Triggers, bad.Triggers) || !slices.EqualFunc(x.Routines[0].NextRuns, bad.NextRuns, time.Time.Equal) || !x.Routines[0].NextDue.Equal(bad.NextDue) {
 		t.Fatal("failed definition lost its original due intent", x.Routines)
 	}
 	if !x.Routines[1].Enabled || !x.Routines[1].NextRuns[0].IsZero() || !x.Routines[1].NextDue.Equal(f.now.Add(time.Minute)) {
