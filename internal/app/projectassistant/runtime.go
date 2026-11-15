@@ -26,6 +26,7 @@ type RuntimeOptions struct {
 	Limits    RuntimeLimits
 	// Attachments reads a message's stored pictures for its prompt.
 	Attachments AttachmentReader
+	Inputs      InputReader
 }
 
 // AttachmentReader returns the bytes stored for one attachment of a Bot.
@@ -238,8 +239,39 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if s.Command.Key != s.Message.Fence.Key || s.Source.MachineID != s.Command.Key.MachineID {
 		return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "submission")
 	}
-	if err := pa.ValidateSend(s.Message.Text, s.Message.Attachments); err != nil {
+	if err := pa.ValidateInputSend(s.Message.Text, s.Message.Attachments, s.Message.UploadIDs); err != nil {
 		return pa.Receipt{}, err
+	}
+
+	// Resolve and hash outside the actor. Receipt replay precedes file IO so an
+	// uncertain durable acknowledgement never submits another native effect.
+	var files []pa.InputFile
+	owner := s.InputOwner
+	if len(s.Message.UploadIDs) > 0 {
+		if receipt, e := r.replay(ctx, s.Command, pa.SendOperation); e != nil {
+			return pa.Receipt{}, e
+		} else if receipt != nil {
+			return *receipt, nil
+		}
+		if r.o.Inputs == nil {
+			return pa.Receipt{}, runtimeFailure(pa.Unsupported, "input_files")
+		}
+		if s.InputCheck == nil {
+			return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "input_authority")
+		}
+		config, e := r.o.Repository.Export(ctx, s.Command.Key)
+		if e != nil {
+			return pa.Receipt{}, e
+		}
+		owner.Revision = config.Bot.Instructions.Revision
+		owner.Lifecycle = inputLifecycle(config)
+		for _, id := range s.Message.UploadIDs {
+			file, _, e := r.o.Inputs.Resolve(ctx, s.Message.Fence, id, owner)
+			if e != nil {
+				return pa.Receipt{}, e
+			}
+			files = append(files, file)
+		}
 	}
 	a, err := r.acquire(s.Command.Key)
 	if err != nil {
@@ -267,6 +299,31 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	}
 	if err = pa.CheckSendFence(s.Message.Fence, currentFence(bot, c)); err != nil {
 		return pa.Receipt{}, err
+	}
+
+	if len(files) > 0 {
+		if e := s.InputCheck(ctx); e != nil {
+			return pa.Receipt{}, e
+		}
+		if bot.Instructions.Revision != owner.Revision {
+			return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "upload_configuration")
+		}
+		x, e := r.o.Repository.Export(ctx, a.key)
+		if e != nil {
+			return pa.Receipt{}, e
+		}
+		if inputLifecycle(x) != owner.Lifecycle {
+			return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "upload_stopped")
+		}
+		for _, m := range x.Messages {
+			for _, old := range m.Files {
+				for _, file := range files {
+					if old.ID == file.ID {
+						return pa.Receipt{}, runtimeFailure(pa.IdempotencyConflict, "upload_bound")
+					}
+				}
+			}
+		}
 	}
 	if s.Message.QuoteMessageID != "" {
 		export, e := r.o.Repository.Export(ctx, a.key)
@@ -325,6 +382,9 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if bot, c, err = r.currentForStart(ctx, a.key, bot, c); err != nil {
 		return pa.Receipt{}, err
 	}
+	if len(files) > 0 && bot.Instructions.Revision != owner.Revision {
+		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "upload_configuration")
+	}
 	var binding *pa.ExecutionBinding
 	if c.BindingID == "" {
 		memory, e := r.o.Memory.Current(ctx, a.key)
@@ -347,13 +407,18 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 			return pa.Receipt{}, err
 		}
 	}
+	if len(files) > 0 {
+		if e := s.InputCheck(ctx); e != nil {
+			return pa.Receipt{}, e
+		}
+	}
 	fence := currentFence(bot, c)
 	turn := pa.Turn{ID: r.o.ID(), Fence: fence, MessageID: r.o.ID(), State: pa.TurnQueued, IdempotencyKey: s.Command.IdempotencyKey}
 	kind := pa.UserMessage
 	if s.Notice {
 		kind = pa.NoticeMessage
 	}
-	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments}
+	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: files}
 	receipt, err := r.mutate(ctx, bot, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
 	if err != nil {
 		return pa.Receipt{}, err
@@ -762,6 +827,18 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return err
 	}
+
+	var files []PromptFile
+	for _, file := range input.Files {
+		if r.o.Inputs == nil {
+			return runtimeFailure(pa.Unsupported, "input_files")
+		}
+		path, e := r.o.Inputs.SentPath(ctx, input.Fence, file)
+		if e != nil {
+			return e
+		}
+		files = append(files, PromptFile{File: file, Path: path})
+	}
 	err = r.o.Memory.WithCurrent(ctx, a.key, current.Revision, func(filtered pa.ContextSnapshot) error {
 		if err := pa.CheckContext(filtered, current); err != nil {
 			return err
@@ -784,7 +861,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		if e != nil {
 			return e
 		}
-		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff, Images: images, MemoryChanged: resume && memoryChanged})
+		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged})
 		return e
 	})
 	if err != nil {
@@ -866,10 +943,19 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 	if source.MemoryRevision > memory.Revision {
 		return nil, runtimeFailure(pa.ContextStale, "quote_memory_revision")
 	}
-	if err := pa.ValidateMessage(message.Text); err != nil {
+	text := message.Text
+	if text == "" {
+		for i, file := range message.Files {
+			if i > 0 {
+				text += " · "
+			}
+			text += file.Name
+		}
+	}
+	if err := pa.ValidateMessage(text); err != nil {
 		return nil, err
 	}
-	return &PromptQuote{MessageID: message.ID, Text: message.Text}, nil
+	return &PromptQuote{MessageID: message.ID, Text: text}, nil
 }
 
 func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error) error {
@@ -1231,7 +1317,14 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	return delivered, nil
 }
 
-func (r *Engine) Stop(ctx context.Context, q StopRequest) (pa.Receipt, error) {
+func (r *Engine) Stop(ctx context.Context, q StopRequest) (receipt pa.Receipt, err error) {
+	// Registered before acquire/unlock defers: filesystem cleanup runs only
+	// after every runtime lock is released, including exact receipt replays.
+	defer func() {
+		if err == nil {
+			err = r.discardTakenBackInputs(ctx, q, receipt)
+		}
+	}()
 	a, err := r.acquire(q.Command.Key)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -1291,7 +1384,7 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (pa.Receipt, error) {
 	if a.turnID != "" {
 		state = pa.EffectAccepted
 	}
-	receipt, err := r.mutate(ctx, bot, Mutation{Command: q.Command, Receipt: pa.Receipt{State: state, ResourceID: q.TurnID}})
+	receipt, err = r.mutate(ctx, bot, Mutation{Command: q.Command, Receipt: pa.Receipt{State: state, ResourceID: q.TurnID}})
 	if a.session != nil {
 		_ = a.session.Cancel(ctx)
 	}

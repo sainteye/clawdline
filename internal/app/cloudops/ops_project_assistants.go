@@ -16,11 +16,11 @@ import (
 
 func init() {
 	register(op{name: "project-assistants.attachment", read: true, shape: projectAssistantAttachmentReply, partial: projectAssistantFailure})
-	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "view", "rules", "output"} {
+	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "view", "rules", "output", "input"} {
 		register(op{name: "project-assistants." + word, read: true,
 			shape: projectAssistantReply, partial: projectAssistantFailure})
 	}
-	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "rule-remove", "send-pictures"} {
+	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "rule-remove", "send-pictures", "send-files", "upload"} {
 		register(op{name: "project-assistants." + word,
 			readLevel: word == "read" || word == "observed",
 			guard:     projectAssistantGuard, shape: projectAssistantReply, partial: projectAssistantFailure})

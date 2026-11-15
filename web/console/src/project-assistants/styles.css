@@ -370,3 +370,9 @@
   .project-assistants .pa-skeleton-bubble { width:82%; }
   .project-assistants .pa-skeleton-mine { width:62%; padding:14px 16px; }
 }
+
+.pa-input-chips{display:flex;gap:6px;flex-wrap:wrap;padding:6px 0;max-width:100%}
+.pa-input-chips>span{display:flex;align-items:center;gap:6px;border:1px solid var(--border,#333);border-radius:6px;padding:4px 8px;max-width:100%;font-size:12px}
+.pa-input-chips>span>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pa-input-chips button{border:0;background:none;color:inherit;cursor:pointer}
+.pa-input-card strong{overflow-wrap:anywhere}

@@ -5538,6 +5538,32 @@ export interface ProjectAssistantHistoryResponse {
   next_before_seq: number
 }
 
+export interface ProjectAssistantInputFile {
+  bytes: number
+  id: string
+  name: string
+  sha256: string
+}
+
+export interface ProjectAssistantInputRequest {
+  conversation_id: string
+  id: string
+  key: ProjectAssistantBotKey
+  message_id: string
+  offset: number
+}
+
+export interface ProjectAssistantInputResponse {
+  contract_version: string
+  conversation_id: string
+  data: string
+  file: ProjectAssistantInputFile
+  key: ProjectAssistantBotKey
+  message_id: string
+  offset: number
+  source: ProjectAssistantSourceStatus
+}
+
 /**
  * Captured at the next idle turn; running turn snapshots are immutable.
  */
@@ -5612,6 +5638,7 @@ export interface ProjectAssistantMessage {
   at: string
   attachments?: ProjectAssistantAttachment[]
   fence: ProjectAssistantFence
+  files?: ProjectAssistantInputFile[]
   id: string
   kind: ProjectAssistantMessageKind
   output?: ProjectAssistantOutput
@@ -5662,8 +5689,9 @@ export type ProjectAssistantOperation =
   | "forget"
   | "memory_save"
   | "dispatch"
+  | "upload"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload"] as const
 
 export interface ProjectAssistantOutput {
   artifact_id: string
@@ -6154,6 +6182,11 @@ export interface ProjectAssistantSendRequest {
   images?: string[]
   quote_message_id: string
   text: string
+
+  /**
+   * Finished explicit uploads, separate from picture blocks; requires API 70.
+   */
+  upload_ids?: string[]
 }
 
 /**
@@ -6263,6 +6296,23 @@ export type ProjectAssistantTurnState =
   | "unknown"
 
 export const ProjectAssistantTurnStateValues: readonly ProjectAssistantTurnState[] = ["accepted", "queued", "running", "waiting_permission", "succeeded", "failed", "cancelled", "unknown"] as const
+
+export interface ProjectAssistantUploadRequest {
+  command: ProjectAssistantCommand
+  data: string
+  done: boolean
+  fence: ProjectAssistantFence
+  file: ProjectAssistantInputFile
+  offset: number
+}
+
+export interface ProjectAssistantUploadResponse {
+  contract_version: string
+  done: boolean
+  file: ProjectAssistantInputFile
+  key: ProjectAssistantBotKey
+  offset: number
+}
 
 /**
  * Hides the Bot from the list or brings it back, as Codync's Hide from list (API

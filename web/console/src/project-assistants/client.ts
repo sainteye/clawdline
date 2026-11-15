@@ -2,7 +2,10 @@ import type * as W from "@clawdline/contract"
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
-	current?(): boolean
+	canInputs?(): boolean
+  upload?(request:W.ProjectAssistantUploadRequest,signal:AbortSignal):Promise<W.ProjectAssistantUploadResponse>
+  input?(request:W.ProjectAssistantInputRequest,signal:AbortSignal):Promise<W.ProjectAssistantInputResponse>
+  current?(): boolean
 	canOutputs?(): boolean
 	output?(request:W.ProjectAssistantOutputRequest,signal:AbortSignal):Promise<W.ProjectAssistantOutputResponse>
   readonly machineID: string

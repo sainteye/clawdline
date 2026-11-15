@@ -4764,6 +4764,32 @@ type ProjectAssistantHistoryResponse struct {
 	NextBeforeSeq   int64                        `json:"next_before_seq"`
 }
 
+type ProjectAssistantInputFile struct {
+	Bytes  int64  `json:"bytes"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Sha256 string `json:"sha256"`
+}
+
+type ProjectAssistantInputRequest struct {
+	ConversationID string                 `json:"conversation_id"`
+	ID             string                 `json:"id"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	MessageID      string                 `json:"message_id"`
+	Offset         int64                  `json:"offset"`
+}
+
+type ProjectAssistantInputResponse struct {
+	ContractVersion string                       `json:"contract_version"`
+	ConversationID  string                       `json:"conversation_id"`
+	Data            string                       `json:"data"`
+	File            ProjectAssistantInputFile    `json:"file"`
+	Key             ProjectAssistantBotKey       `json:"key"`
+	MessageID       string                       `json:"message_id"`
+	Offset          int64                        `json:"offset"`
+	Source          ProjectAssistantSourceStatus `json:"source"`
+}
+
 // Captured at the next idle turn; running turn snapshots are immutable.
 type ProjectAssistantInstructions struct {
 	Revision        int64  `json:"revision"`
@@ -4832,6 +4858,7 @@ type ProjectAssistantMessage struct {
 	At             string                       `json:"at"`
 	Attachments    []ProjectAssistantAttachment `json:"attachments,omitempty"`
 	Fence          ProjectAssistantFence        `json:"fence"`
+	Files          []ProjectAssistantInputFile  `json:"files,omitempty"`
 	ID             string                       `json:"id"`
 	Kind           ProjectAssistantMessageKind  `json:"kind"`
 	Output         *ProjectAssistantOutput      `json:"output,omitempty"`
@@ -4890,10 +4917,11 @@ const (
 	ProjectAssistantOperationForget     ProjectAssistantOperation = "forget"
 	ProjectAssistantOperationMemorySave ProjectAssistantOperation = "memory_save"
 	ProjectAssistantOperationDispatch   ProjectAssistantOperation = "dispatch"
+	ProjectAssistantOperationUpload     ProjectAssistantOperation = "upload"
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload}
 
 type ProjectAssistantOutput struct {
 	ArtifactID string `json:"artifact_id"`
@@ -5317,6 +5345,9 @@ type ProjectAssistantSendRequest struct {
 	Images         []string `json:"images,omitempty"`
 	QuoteMessageID string   `json:"quote_message_id"`
 	Text           string   `json:"text"`
+
+	// Finished explicit uploads, separate from picture blocks; requires API 70.
+	UploadIds []string `json:"upload_ids,omitempty"`
 }
 
 // GET/POST /v1/settings/project-assistants. The response reports actual
@@ -5424,6 +5455,23 @@ const (
 
 // ProjectAssistantTurnStateValues is every value the contract allows, in contract order.
 var ProjectAssistantTurnStateValues = []ProjectAssistantTurnState{ProjectAssistantTurnStateAccepted, ProjectAssistantTurnStateQueued, ProjectAssistantTurnStateRunning, ProjectAssistantTurnStateWaitingPermission, ProjectAssistantTurnStateSucceeded, ProjectAssistantTurnStateFailed, ProjectAssistantTurnStateCancelled, ProjectAssistantTurnStateUnknown}
+
+type ProjectAssistantUploadRequest struct {
+	Command ProjectAssistantCommand   `json:"command"`
+	Data    string                    `json:"data"`
+	Done    bool                      `json:"done"`
+	Fence   ProjectAssistantFence     `json:"fence"`
+	File    ProjectAssistantInputFile `json:"file"`
+	Offset  int64                     `json:"offset"`
+}
+
+type ProjectAssistantUploadResponse struct {
+	ContractVersion string                    `json:"contract_version"`
+	Done            bool                      `json:"done"`
+	File            ProjectAssistantInputFile `json:"file"`
+	Key             ProjectAssistantBotKey    `json:"key"`
+	Offset          int64                     `json:"offset"`
+}
 
 // Hides the Bot from the list or brings it back, as Codync's Hide from list
 // (API level 67).

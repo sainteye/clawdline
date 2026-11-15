@@ -30,6 +30,7 @@ type projectAssistantHTTPOptions struct {
 	// Attachments keeps the pictures sent to Bots.
 	Attachments projectassistantstore.Attachments
 	Outputs     projectassistantstore.Outputs
+	Inputs      projectassistantstore.Inputs
 	// Private deterministic fixture barrier; production leaves it nil.
 	BeforeViewPublish func()
 }
@@ -195,7 +196,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view", "rules", "output":
+					case "events", "export", "view", "rules", "output", "input":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -203,7 +204,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -351,6 +352,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 }
 
 func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, error) {
+	if route.action == "input" {
+		return h.readInput(r, route)
+	}
 	if route.action == "output" {
 		return h.readOutput(r, route)
 	}
@@ -558,6 +562,8 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			_ = h.options.Attachments.RemoveBot(command.Key)
 		}
 		return contract.ProjectAssistantRulesResponse{ContractVersion: pa.ContractVersion, Rules: []contract.ProjectAssistantPermissionRule{}}, nil
+	case "upload":
+		return h.uploadInput(w, r, route)
 	case "send":
 		request, err := paDecodeHTTPLimit[contract.ProjectAssistantSendRequest](w, r, capacity.MaximumBotSendBodyBytes)
 		if err != nil {
@@ -575,7 +581,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
-		return paHTTPReceipt(s.Send(ctx, command, pa.SendMessage{Fence: fence, Text: request.Text, QuoteMessageID: request.QuoteMessageID, Attachments: attachments}))
+		return paHTTPReceipt(s.Send(ctx, command, pa.SendMessage{Fence: fence, Text: request.Text, QuoteMessageID: request.QuoteMessageID, Attachments: attachments, UploadIDs: request.UploadIds}))
 	case "stop":
 		request, err := paDecodeHTTP[contract.ProjectAssistantStopRequest](w, r)
 		if err != nil {

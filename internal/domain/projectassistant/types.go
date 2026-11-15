@@ -228,9 +228,11 @@ type Message struct {
 	// Attachments are pictures sent with the message, kept by content
 	// digest; the model receives them as native image blocks.
 	Attachments []Attachment `json:"attachments,omitempty"`
+	Files       []InputFile  `json:"files,omitempty"`
 	Output      *Output      `json:"output,omitempty"`
 }
 type SendMessage struct {
+	UploadIDs      []string     `json:"upload_ids,omitempty"`
 	Fence          Fence        `json:"fence"`
 	Text           string       `json:"text"`
 	QuoteMessageID string       `json:"quote_message_id"`
@@ -499,6 +501,7 @@ type Operation string
 const (
 	CreateOperation     Operation = "create"
 	EditOperation       Operation = "edit"
+	UploadOperation     Operation = "upload"
 	SendOperation       Operation = "send"
 	StopOperation       Operation = "stop"
 	SendNowOperation    Operation = "send_now"

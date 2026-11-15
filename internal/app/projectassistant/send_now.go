@@ -66,7 +66,7 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	var text string
 	for _, m := range export.Messages {
 		if m.ID == t.MessageID {
-			if len(m.Attachments) > 0 {
+			if len(m.Attachments) > 0 || len(m.Files) > 0 {
 				return pa.Receipt{}, runtimeFailure(pa.Unsupported, "send_now_pictures")
 			}
 			text = m.Text

@@ -301,6 +301,26 @@
     "Note": true
   },
   {
+    "Name": "bots.input_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.input_chunk_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.inputs_per_bot",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.inputs_per_message",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.instruction_bytes",
     "Known": true,
     "Note": true

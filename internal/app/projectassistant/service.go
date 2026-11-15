@@ -349,7 +349,7 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 	if c.Key != message.Fence.Key {
 		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "message_key")
 	}
-	if err = pa.ValidateSend(message.Text, message.Attachments); err != nil {
+	if err = pa.ValidateInputSend(message.Text, message.Attachments, message.UploadIDs); err != nil {
 		return pa.Receipt{}, err
 	}
 	c, err = canonicalCommand(c, pa.SendOperation, a.PrincipalID, message)
@@ -360,7 +360,20 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, Feature: a.Feature, Source: a.Source})
+	var inputCheck func(context.Context) error
+	if len(message.UploadIDs) > 0 {
+		inputCheck = func(ctx context.Context) error {
+			current, e := s.authorizeEffect(ctx, c.Key, true, a)
+			if e != nil {
+				return e
+			}
+			if readViewBinding(current) != readViewBinding(a) {
+				return serviceFailure(pa.StaleVersion, "input_authority")
+			}
+			return ctx.Err()
+		}
+	}
+	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)}, InputCheck: inputCheck, Feature: a.Feature, Source: a.Source})
 }
 
 func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, error) {
