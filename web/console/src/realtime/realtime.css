@@ -465,35 +465,29 @@
   opacity: 0.9;
 }
 
-/* Which voice system a call uses, asked before it dials. */
-.realtime-engine-choice {
-  display: grid;
-  gap: 8px;
-  width: 100%;
+/* Which voice system a ringing or live call uses; the other one places it again. */
+.realtime-engine-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.35));
+  border-radius: 999px;
+  overflow: hidden;
 }
 
-.realtime-engine-question {
-  margin: 0 0 2px;
-  font-size: 14px;
-  color: var(--muted, inherit);
-  text-align: center;
-}
-
-.realtime-engine-choice .realtime-start-call-btn {
-  flex-wrap: wrap;
-  padding: 8px 12px;
-  row-gap: 2px;
-}
-
-.realtime-engine-name {
-  font-size: 15px;
-}
-
-.realtime-engine-hint {
-  flex-basis: 100%;
+.realtime-engine-toggle button {
+  border: none;
+  background: transparent;
+  color: inherit;
   font-size: 12px;
-  font-weight: 400;
-  opacity: 0.85;
+  padding: 4px 10px;
+  min-height: 28px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.realtime-engine-toggle button.on {
+  background: #10b981;
+  color: #ffffff;
+  opacity: 1;
 }
 
 .realtime-hangup-btn {

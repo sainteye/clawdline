@@ -82,7 +82,20 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
       <div className={`realtime-modal-sheet${isConnected ? " in-call" : ""}`} style={{ "--copilot-orb-size": `${orbSize}px` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label={nextWord('copilotCallTitle')}>
         <div className="realtime-header">
           <div className="realtime-title-row">
-            <span className="realtime-badge">{copilotState.engine === 'live' ? 'GPT-Live' : copilotState.engine === 'realtime' ? 'Realtime API' : 'Voice copilot'}</span>
+            {(isConnected || isConnecting) && copilotState.engine ? (
+              // A ringing or live call can be placed again on the other voice system.
+              <div className="realtime-engine-toggle" role="group" aria-label={nextWord('copilotEngineLabel')}>
+                {(['live', 'realtime'] as const).map((engine) => (
+                  <button key={engine} type="button" aria-pressed={copilotState.engine === engine}
+                    className={copilotState.engine === engine ? 'on' : undefined}
+                    onClick={() => realtimeCopilot.switchEngine(engine)}>
+                    {nextWord(engine === 'live' ? 'copilotEngineLive' : 'copilotEngineRealtime')}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="realtime-badge">Realtime Copilot</span>
+            )}
             {(isConnected || isConnecting) && onMinimize ? (
               <button
                 type="button"
@@ -266,19 +279,12 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
         {/* Bottom Call Controls */}
         <div className="realtime-actions">
           {!isConnected && !isConnecting ? (
-            // Which voice system this call uses is asked before anything dials (2026-11-15).
-            <div className="realtime-engine-choice" role="group" aria-label={nextWord('copilotChooseEngine')}>
-              <p className="realtime-engine-question">{nextWord('copilotChooseEngine')}</p>
-              {(['live', 'realtime'] as const).map((engine) => (
-                <button key={engine} type="button" className="realtime-start-call-btn" onClick={() => realtimeCopilot.startChosen(engine)}>
-                  <svg viewBox="0 0 24 24" className="call-ico" fill="currentColor" aria-hidden="true">
-                    <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
-                  </svg>
-                  <span className="realtime-engine-name">{nextWord(engine === 'live' ? 'copilotStartLive' : 'copilotStartRealtime')}</span>
-                  <span className="realtime-engine-hint">{nextWord(engine === 'live' ? 'copilotStartLiveHint' : 'copilotStartRealtimeHint')}</span>
-                </button>
-              ))}
-            </div>
+              <button type="button" className="realtime-start-call-btn" onClick={() => { void realtimeCopilot.start() }}>
+                <svg viewBox="0 0 24 24" className="call-ico" fill="currentColor">
+                  <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
+                </svg>
+                {nextWord('copilotStart')}
+              </button>
           ) : (
             <button
               type="button"

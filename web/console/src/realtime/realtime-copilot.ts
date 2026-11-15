@@ -54,8 +54,6 @@ export interface RealtimeCopilotState {
   notice?: { text: string; at: number; warn?: boolean }
   /** The tools used since the person last spoke, in order (`toolTrace`). */
   tools?: ToolTrace[]
-  /** A call button was pressed and the sheet asks which voice system to use (`choose`). */
-  choosing?: boolean
   /** The voice system of the call under way or last placed. */
   engine?: 'realtime' | 'live'
 }
@@ -233,8 +231,7 @@ export class RealtimeCopilotClient {
   private listeners: Set<RealtimeListener> = new Set()
   /** This call runs on GPT-Live (`copilot-live.ts`) rather than the Realtime API. */
   private live = false
-  /** Where the pending choice's call was placed from (`choose`), and the last system chosen. */
-  private chosenOrigin?: CallOrigin
+  /** The voice system of the call under way or last placed (`switchEngine`). */
   private lastEngine?: 'realtime' | 'live'
   private liveHeard = new LiveTranscript()
   private liveSaid = new LiveTranscript()
@@ -449,30 +446,16 @@ export class RealtimeCopilotClient {
    * going (or connecting) is turned to the Session instead of starting again.
    */
   /**
-   * A call button's press: the sheet asks which voice system to use before
-   * anything dials (asked for on 2026-11-15). A press during a call turns the
-   * call to its Session instead, as `start` did.
+   * The sheet's toggle (asked for on 2026-11-15): a call ringing or under way
+   * is placed again on the other voice system, from the same Session. The
+   * press is a tap, so the new call can ask for the microphone in it.
    */
-  choose(origin?: CallOrigin) {
-    if (this.state.status === 'connected' || this.state.status === 'connecting') {
-      if (origin) this.turnTo(origin)
-      return
-    }
-    this.chosenOrigin = origin
-    this.updateState({ choosing: true })
-  }
-
-  /** The choice's press: dials inside that tap, which iOS needs for the microphone. */
-  startChosen(engine: 'realtime' | 'live') {
-    const origin = this.chosenOrigin
-    this.chosenOrigin = undefined
-    this.updateState({ choosing: false })
+  switchEngine(engine: 'realtime' | 'live') {
+    if (engine === this.lastEngine) return
+    if (this.state.status !== 'connected' && this.state.status !== 'connecting') return
+    const origin = this.call.options.origin
+    this.disconnect()
     void this.start(origin, engine)
-  }
-
-  cancelChoice() {
-    this.chosenOrigin = undefined
-    this.updateState({ choosing: false })
   }
 
   async start(origin?: CallOrigin, engine?: 'realtime' | 'live'): Promise<void> {
