@@ -12362,7 +12362,7 @@
   "transparency.card.persistent-bot-routines.title": "Bot 例行排程",
   "transparency.card.persistent-bot-routines.condition": "限開發版本，且 Bots 必須已啟用。已授權的 Bot 執行回合須明確儲存或啟用排程，原生接頭也須回報可續接。現行隨附 Codex 路徑回報不支援續接，因此無法使用本階段功能；腳本測試不代表已驗證安裝版原生對話 A／B／A。",
   "transparency.card.persistent-bot-routines.summary": "Clawdline 提供例行管理工具，之後可在新的例行對話啟動模型回合，將結果發布到同一個 Bot 聊天。",
-  "transparency.card.persistent-bot-routines.how": "Bot 自有 MCP 入口新增 list_routines、save_routine、enable_routine、delete_routine、test_run_routine。儲存並啟用排程後，即使沒有瀏覽器連線，來源計時器也會持久接收通知與指令。最多 20 個 OR 條件保留經過時間間隔、Unix 毫秒的一次性時間，或明確 IANA 時區的標準五欄 cron。修改未變動的排程會保留原期限；已過期的一次性條件不再排入。既有 Bot actor 讓例行工作與真人訊息依序執行。每次例行工作使用新的對話槽；之後的一般聊天會用新的執行世代，載入另外記住的主對話。暫停的排程只有明確試跑才會執行。尚不支援 webhook、事件觸發及進階 cron 修飾語法。",
+  "transparency.card.persistent-bot-routines.how": "Bot 自有 MCP 入口新增 list_routines、save_routine、enable_routine、delete_routine、test_run_routine。儲存並啟用排程後，即使沒有瀏覽器連線，來源計時器也會持久接收通知與指令。最多 20 個 OR 條件保留經過時間間隔、Unix 毫秒的一次性時間，或明確 IANA 時區的標準五欄 cron。修改未變動的排程會保留原期限；已過期的一次性條件不再排入。既有 Bot actor 讓例行工作與真人訊息依序執行。每次例行工作使用新的對話槽；之後的一般聊天會用新的執行世代，載入另外記住的主對話。暫停的排程只有明確試跑才會執行。尚不支援 webhook、事件觸發及進階 cron 修飾語法。若已儲存的 cron 在解析器搜尋範圍內沒有下次日期，只會暫停該定義並在任何原生 prompt 啟動前記錄持久的排程失敗；原始期限保留，其他定義繼續。",
   "transparency.card.persistent-bot-routines.effect": "啟用的排程之後會啟動原生模型回合，使用所選 agent 帳號的額度。儲存不等於立即試跑。授權、Project、記憶與權限檢查仍有效；未知作用不會授權自動重播，中斷的例行工作也不套用一般聊天的重啟續做。終態儲存失敗會保留已完成結果供確認後清理補存，而不再送 prompt；程序當機後仍可能留下未知結果。Bots 在公開 Release 仍隱藏。",
   "capacityRow.bots.routine_triggers.what": "單筆例行定義中，以 OR 組合的觸發條件數。",
   "capacityRow.bots.routine_triggers.full": "接受 1 至 20 個觸發條件；超過時拒絕，不會截斷。同時到期的條件合併為一筆待執行工作。",
