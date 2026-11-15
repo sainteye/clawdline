@@ -2054,6 +2054,10 @@
     "Err": true
   },
   {
+    "Name": "console.view_plugin_cover_side",
+    "Err": true
+  },
+  {
     "Name": "console.view_plugin_expanded_bytes",
     "Err": true
   },

@@ -1,7 +1,7 @@
 # Session Pop (`com.clawdline.session-pop-art`)
 
 An installable View Plugin v1 package that reads every authorized Session as a page of a
-Pop Art comic. Names: **Session Pop** / **Session 普普風**. Version 0.1.0.
+Pop Art comic. Names: **Session Pop** / **Session 普普風**. Version 0.1.1.
 
 ## Concept
 
@@ -44,11 +44,18 @@ and selection survive live updates.
 python3 tools/pack-view-plugin.py plugins/session-pop-art web/console/public/view-plugins/session-pop-art.zip
 ```
 
-The unchanged packer inlines the SDK at `<!-- CLAWDLINE_SDK -->` and writes a deterministic
-two-file STORE ZIP (39247 bytes, under the 262144-byte limit; repeated packing is
+The public packer inlines the SDK at `<!-- CLAWDLINE_SDK -->` and writes a deterministic
+two-file STORE ZIP (42920 bytes, under the 262144-byte limit; repeated packing is
 byte-identical). Import it from **Sidebar → View plugins → Import ZIP**; no host rebuild is
 needed. The curated **Explore views → Install Pop** button fetches this same ZIP
 and opens the existing package review, without a native file chooser.
+
+The manifest includes the dedicated Pop cover as a canonical PNG data URL. Its
+editable source is `cover.svg`; the shared cover renderer regenerates the image.
+The cover stays inside the manifest and does not add a ZIP entry. Coverless or
+invalid new archives are rejected by both the packer and installer. The exact
+previously shipped 0.1.0 archive remains usable without replacement and receives
+the same artwork from the host's legacy-digest mapping.
 
 ## Verification
 

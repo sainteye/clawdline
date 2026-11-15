@@ -4,6 +4,7 @@ export const PLUGIN_LIMITS = {
   archiveBytes: 262144,
   expandedBytes: 524288,
   manifestBytes: 8192,
+  coverSide: 256,
   packages: 8,
   messageBytes: 1048576,
   sessions: 256,

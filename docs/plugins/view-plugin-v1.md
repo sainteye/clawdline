@@ -1,8 +1,8 @@
 # View Plugin v1
 
-Revision 5 describes the **experimental browser-local runtime** implemented in
+Revision 6 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy,
-Session List and Session Pop. Public Release acceptance is separate from source and Cloud delivery.
+Session List, Session Pop and Session Deadpan. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -31,6 +31,9 @@ source/access changes revoke the active frame; reopening reads the current set.
 Installing on Cloud does not install into a local daemon console or another browser profile.
 
 The person reviews the package ID, version and capabilities before activation.
+Every new or replacement package must also include its own valid cover image.
+The same image appears in package review, the installed library and the launcher.
+There is no generic artwork substitute for a newly published view.
 Same ID with different bytes requires explicit replacement. IDs and SHA-256
 hashes are identities, not verified publisher signatures. The registry atomically
 checks the expected active digest and retains one previous archive for rollback.
@@ -55,7 +58,8 @@ CDNs are not supported by this profile. The schema is
   "hostApi": 1,
   "name": { "en": "Session Map", "zh-Hant": "Session 地圖" },
   "entry": "index.html",
-  "capabilities": ["sessions.read", "sessions.open"]
+  "capabilities": ["sessions.read", "sessions.open"],
+  "cover": "data:image/png;base64,<your dedicated square RGBA8 PNG>"
 }
 ```
 
@@ -66,6 +70,7 @@ the HTML and let the repository packer insert that SDK:
 python3 tools/pack-view-plugin.py plugins/session-galaxy /tmp/session-galaxy.zip
 python3 tools/pack-view-plugin.py plugins/session-list /tmp/session-list.zip
 python3 tools/pack-view-plugin.py plugins/session-pop-art /tmp/session-pop-art.zip
+python3 tools/pack-view-plugin.py plugins/session-absurd /tmp/session-absurd.zip
 ```
 
 The packer uses Python's standard library and deterministic ZIP timestamps. It
@@ -76,9 +81,47 @@ Import a replacement ZIP through the manager to test it without rebuilding the h
 
 The supplied examples also have install buttons in **Explore views**. These fetch
 their static ZIP and enter the same validation and package review as file import.
-The Session Pop button needs no native file chooser. The package remains a separate
+The Session Pop and Session Deadpan buttons need no native file chooser. The package remains a separate
 archive and uses the existing v1 runtime; community ZIP import stays independent
 of this curated example list.
+
+### Required cover
+
+Replace the illustrative `cover` placeholder with the actual canonical PNG data
+URL. A cover must be a non-interlaced, 8-bit RGBA PNG, square and at most 256 pixels
+on a side. The complete manifest, including base64 data, still has the existing
+8,192-byte limit. A 128 × 128 image is practical for the current launcher. Remote
+URLs, SVG data, animation, ancillary metadata, invalid CRCs, invalid deflate data, oversized inflated
+scanlines and invalid filter bytes are refused. Image validity is checked from
+bytes, not the filename, MIME label or header alone.
+
+The public packer refuses a missing or invalid cover before touching its output.
+The installer also rejects it before writing browser storage. Repository checks
+parse every supplied ZIP and verify its authored cover and curated listing; a
+missing cover cannot pass the publication gate. An actual cover must identify
+the view and be reviewed as artwork: a technically valid blank or borrowed image
+is not publication acceptance.
+
+The supplied covers have editable `cover.svg` source beside each manifest. They
+can be rendered using an already installed local Playwright module, without a
+network request or a new dependency:
+
+```sh
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node tools/render-view-plugin-covers.mjs plugins/session-galaxy plugins/session-list plugins/session-pop-art plugins/session-absurd
+```
+
+The renderer embeds the resulting PNG in each manifest; the SVG source is not a
+third ZIP entry. The archive remains the same two-file STORE profile and SDK wire
+v1. A host supporting revision 6 is needed to import the added manifest field;
+refresh an older open page before installing a new package.
+
+The registry has a read-only compatibility path for already stored pre-cover
+archives. It never allows a coverless new install or replacement. The three exact
+previously shipped archive digests receive their corresponding authored cover
+without replacing executable bytes or requiring reinstall. Unknown older packages
+remain usable with an explicit **Cover required before publication** warning;
+they receive no generic cover and must be updated before being published or
+imported again. Existing rollback records remain readable by the same path.
 
 ## Consent and data ownership
 
@@ -226,6 +269,7 @@ and matched against the browser and SDK by the parity guard:
 | ZIP bytes | 262144 | Refuse import |
 | Expanded bytes | 524288 | Refuse import |
 | Manifest bytes | 8192 | Refuse import |
+| Cover side | 256 pixels, square | Refuse import or packing |
 | Files | Exactly two | Refuse import |
 | Installed packages | 8, each active + one previous | Remove one first |
 | Snapshot bytes | 1048576 | Stop view, no partial list |
@@ -233,7 +277,7 @@ and matched against the browser and SDK by the parity guard:
 | Pending requests | 16 | SDK refuses; host stops flooding frame |
 | Handshake/request/read deadline | 10000 ms | Refuse/unavailable/uncertain timeout |
 | Requests per frame per second | 32 | Stop flooding frame |
-| Manifest/request/display string | 256 Unicode characters | Refuse, no silent truncation |
+| Names, versions, paths and request/display strings | 256 Unicode characters | Refuse, no silent truncation |
 
 The daemon reports these browser-local capacities as unmeasured, not zero.
 No global UI badges, remote update feed, publisher signing, cross-device package

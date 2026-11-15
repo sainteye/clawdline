@@ -20,11 +20,12 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  let forbiddenRequests=0
  const files=new Map(result.outputFiles.map(f=>["/"+f.path.split("/").at(-1),f.text]))
  const server=createServer(async(req,res)=>{try{const u=new URL(req.url,"http://test");let body;if(u.pathname==="/")body=`<!doctype html><html lang="${u.searchParams.get("lang")||"en"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script>`;
- else if(/^\/view-plugins\/(session-galaxy|session-list|session-pop-art)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
+ else if(/^\/view-plugins\/(session-galaxy|session-list|session-pop-art|session-absurd)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
  if(u.pathname.startsWith("/v1/"))forbiddenRequests++
  if(body===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",u.pathname.endsWith(".js")?"text/javascript":u.pathname.endsWith(".css")?"text/css":u.pathname.endsWith(".zip")?"application/zip":"text/html");res.end(body)}catch(e){res.writeHead(500);res.end(String(e))}})
  await new Promise(r=>server.listen(0,"127.0.0.1",r));const origin=`http://127.0.0.1:${server.address().port}`
  const pw=await import(pathToFileURL(playwrightModule).href),reports=[]
+ const legacyPop=await readFile(new URL("../src/view-plugins/testdata/legacy-session-pop-art.zip",import.meta.url))
  try {for(const engine of engines)for(const width of [390,1440])for(const lang of ["en","zh-Hant"]){
  const browser=await pw[engine].launch({headless:true}),context=await browser.newContext({viewport:{width,height:900},reducedMotion:"reduce"}),page=await context.newPage(),errors=[]
  page.on("pageerror",e=>errors.push(e.message))
@@ -38,6 +39,10 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  assert.equal(await page.locator('input[type=file]').count(),0,"The launcher has no package management")
  assert.equal(await page.getByRole("button",{name:zh?"安裝星系":"Install Galaxy",exact:true}).count(),0)
  await dismiss();await manager()
+ const covers=page.locator(".vp-example .vp-art img")
+ assert.equal(await covers.count(),4,"Every published example has its own real cover")
+ await page.waitForFunction(()=>[...document.querySelectorAll(".vp-example .vp-art img")].every(image=>image.complete&&image.naturalWidth>0))
+ assert.equal(new Set(await covers.evaluateAll(images=>images.map(image=>image.src))).size,4,"Pop no longer borrows List's artwork")
  await page.getByRole("button",{name:zh?"安裝星系":"Install Galaxy",exact:true}).click()
  await page.locator(".vp-review").waitFor()
  assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains("vp-review")),true,"Review is brought into view and keyboard focus")
@@ -117,17 +122,17 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  assert.equal(await page.getByRole("combobox").count(),0,"Even after reload the view opens all machines without consent")
  await dismiss();await manager()
  const updated=Buffer.from(await readFile(new URL("../public/view-plugins/session-galaxy.zip",import.meta.url)))
- const version=updated.indexOf(Buffer.from('"version": "0.1.0"'));assert.ok(version>=0);updated.write('"version": "0.2.0"',version)
+ const version=updated.indexOf(Buffer.from('"version": "0.1.1"'));assert.ok(version>=0);updated.write('"version": "0.2.0"',version)
  const start=30+updated.readUInt16LE(26)+updated.readUInt16LE(28),size=updated.readUInt32LE(22),crc=crc32(updated.subarray(start,start+size))
  updated.writeUInt32LE(crc,14);const central=updated.indexOf(Buffer.from([0x50,0x4b,0x01,0x02]));updated.writeUInt32LE(crc,central+16)
  await page.locator('input[type=file]').setInputFiles({name:"updated.zip",mimeType:"application/zip",buffer:updated})
  await page.getByRole("button",{name:zh?"取代已安裝版本":"Replace installed version",exact:true}).click()
  await galaxy.locator(".vp-version").getByText("v0.2.0",{exact:true}).waitFor()
  await galaxy.locator("summary").click()
- await galaxy.getByRole("button",{name:zh?"回退版本 · 0.1.0":"Roll back · 0.1.0",exact:true}).click()
- await galaxy.locator(".vp-version").getByText("v0.1.0",{exact:true}).waitFor()
+ await galaxy.getByRole("button",{name:zh?"回退版本 · 0.1.1":"Roll back · 0.1.1",exact:true}).click()
+ await galaxy.locator(".vp-version").getByText("v0.1.1",{exact:true}).waitFor()
  await page.locator('input[type=file]').setInputFiles({name:"broken.zip",mimeType:"application/zip",buffer:Buffer.from("invalid")})
- await page.getByRole("alert").waitFor();await galaxy.locator(".vp-version").getByText("v0.1.0",{exact:true}).waitFor()
+ await page.getByRole("alert").waitFor();await galaxy.locator(".vp-version").getByText("v0.1.1",{exact:true}).waitFor()
  await galaxy.getByRole("button",{name:zh?"停用":"Disable",exact:true}).click()
  await galaxy.getByRole("button",{name:zh?"啟用":"Enable",exact:true}).waitFor()
  assert.equal(await galaxy.getByRole("button",{name:new RegExp("^"+open)}).isDisabled(),true)
@@ -162,9 +167,55 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await page.locator(".vp-host").waitFor({state:"hidden"})
  await page.waitForFunction(()=>fixture.navigations.length===1)
  assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Pop's explicit action preserves machine routing")
+ // New imports cannot use the legacy read exception, even for an already installed ID.
+ await manager()
+ await page.locator('input[type=file]').setInputFiles({name:"coverless.zip",mimeType:"application/zip",buffer:legacyPop})
+ await page.getByRole("alert").filter({hasText:zh?"套件缺少封面圖，請補上專屬封面後再安裝或上架。":"This package has no cover. Add a dedicated cover before installation or publication."}).waitFor()
+ await pop.locator(".vp-version").getByText("v0.1.1",{exact:true}).waitFor()
+ assert.equal(await page.locator(".vp-review").count(),0)
+ await dismiss()
+ // Seed a real pre-cover record to model a browser that installed the previous release.
+ await page.evaluate(async bytes=>{
+  const archive=Uint8Array.from(bytes).buffer,digest=[...new Uint8Array(await crypto.subtle.digest("SHA-256",archive))].map(n=>n.toString(16).padStart(2,"0")).join("")
+  const db=await new Promise((resolve,reject)=>{const request=indexedDB.open("clawdline-view-plugins",1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})
+  await new Promise((resolve,reject)=>{const tx=db.transaction("packages","readwrite");tx.objectStore("packages").put({id:"com.clawdline.session-pop-art",enabled:true,active:{archive,digest}});tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)})
+  db.close()
+ },[...legacyPop])
+ await manager();await pop.locator(".vp-version").getByText("v0.1.0",{exact:true}).waitFor()
+ assert.equal(await pop.locator(".vp-art img").count(),1,"The old installed archive receives its real authored cover")
+ await page.waitForFunction(()=>[...document.querySelectorAll(".vp-installed .vp-art img")].every(image=>image.complete&&image.naturalWidth>0))
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-legacy-covers.png`})
+ await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
+ await frame.locator(".panel").first().waitFor();assert.equal(await frame.locator(".panel").count(),4,"The old installed Pop still opens without replacing its archive")
+ await dismiss()
+ // Deadpan is a fourth independent package installed through the same review.
+ await manager()
+ await page.getByRole("button",{name:zh?"安裝冷面劇場":"Install Deadpan",exact:true}).click()
+ await page.locator(".vp-review").getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true}).waitFor()
+ assert.equal(await page.locator('input[type=file]').count(),1,"Only the manager's own import input exists; the example opens no chooser")
+ await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
+ const deadpan=page.locator(".vp-installed").filter({has:page.getByRole("heading",{name:zh?"Session 冷面劇場":"Session Deadpan",exact:true})})
+ await deadpan.getByRole("button",{name:new RegExp("^"+open)}).waitFor()
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-deadpan-installed.png`})
+ await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
+ await page.locator(".vp-launch-item").filter({hasText:zh?"Session 冷面劇場":"Session Deadpan"}).click()
+ await frame.locator(".card").first().waitFor()
+ assert.equal(await frame.locator(".card").count(),4,"Deadpan reads every supplied machine through the existing host")
+ assert.equal(await frame.locator("img").count(),0,"Deadpan renders hostile labels as text")
+ await frame.getByText("<img src=x onerror=alert(1)>",{exact:true}).waitFor()
+ await frame.locator(".card",{hasText:"Unassigned work"}).click()
+ assert.equal(await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).isDisabled(),true,"Unknown freshness refuses opening")
+ await frame.getByText(zh?"無法確認資料是否最新，所以無法開啟。":"Freshness is unknown, so opening is off.",{exact:true}).waitFor()
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-deadpan.png`})
+ await frame.locator(".card",{hasText:"<img src=x onerror=alert(1)>"}).click()
+ assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Selecting a Deadpan card does not navigate")
+ await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).click()
+ await page.locator(".vp-host").waitFor({state:"hidden"})
+ await page.waitForFunction(()=>fixture.navigations.length===2)
+ assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first","studio:first"],"Deadpan's explicit action routes the colliding key to its own machine")
  assert.deepEqual(errors,[])
  reports.push({engine,width,lang,passed:true})
- }catch(e){await page.screenshot({path:`${artifacts}/failure.png`});console.error(await page.locator("body").innerHTML());throw e}finally{await browser.close()}
+ }catch(e){await page.screenshot({path:`${artifacts}/failure.png`});console.error(`${engine}/${width}/${lang}`,e.stack||e);throw e}finally{await browser.close()}
  }}finally{await new Promise(r=>server.close(r))}
  await writeFile(`${artifacts}/results.json`,JSON.stringify(reports,null,2));return reports
 }

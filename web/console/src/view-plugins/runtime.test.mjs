@@ -1,23 +1,100 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { readFile, mkdtemp, rm } from "node:fs/promises"
+import { readFile, writeFile, readdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { build } from "esbuild"
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { pathToFileURL } from "node:url"
+import { deflateSync, crc32 as pngCRC } from "node:zlib"
 
 const scratch = await mkdtemp(join(tmpdir(), "cl-view-unit-"))
 const bundle = join(scratch,"runtime.mjs")
-await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
-const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource} = await import(pathToFileURL(bundle).href)
+await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
+const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover} = await import(pathToFileURL(bundle).href)
 test.after(() => rm(scratch,{recursive:true,force:true}))
 const packageURL = new URL("../../public/view-plugins/session-galaxy.zip",import.meta.url)
 const context = {language:"en",theme:"dark",reducedMotion:true,visible:true,scopeLabel:"Studio",connection:"connected"}
 const row = {key:"private-machine/execution",title:"<img src=x onerror=alert(1)>",project:{key:"/private/project",label:"Demo"},workState:"working",freshness:"fresh"}
 const reading = {sessions:[row],connected:true}
 const tick = () => new Promise(r => setTimeout(r,15))
+function changedManifest(archive, patch) {
+ const script=`import sys,json,io,base64,zipfile
+p=json.load(sys.stdin)
+with zipfile.ZipFile(io.BytesIO(base64.b64decode(p['zip']))) as z:
+ files={n:z.read(n) for n in z.namelist()}
+m=json.loads(files['manifest.json'])
+for k,v in p['patch'].items():
+ if v is None: m.pop(k,None)
+ else: m[k]=v
+files['manifest.json']=json.dumps(m).encode()
+out=io.BytesIO()
+with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_STORED) as z:
+ for n,b in files.items(): z.writestr(n,b)
+sys.stdout.buffer.write(out.getvalue())`
+ const run=spawnSync("python3",["-c",script],{input:JSON.stringify({zip:Buffer.from(archive).toString("base64"),patch})})
+ assert.equal(run.status,0,run.stderr.toString());return run.stdout
+}
+function coverPNG(side=2, height=side, filter=0, options={}) {
+ const chunk=(kind,body)=>{const type=Buffer.from(kind),head=Buffer.alloc(4),tail=Buffer.alloc(4);head.writeUInt32BE(body.length);tail.writeUInt32BE(pngCRC(Buffer.concat([type,body])));return Buffer.concat([head,type,body,tail])}
+ const head=Buffer.alloc(13);head.writeUInt32BE(side);head.writeUInt32BE(height,4);head[8]=8;head[9]=6
+ const scan=Buffer.alloc(height*(side*4+1)+(options.extraBytes||0),255);for(let n=0;n<height;n++)scan[n*(side*4+1)]=filter
+ const compressed=options.badDeflate?Buffer.from("not deflate"):deflateSync(scan)
+ const bytes=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",head),...(options.animated?[chunk("acTL",Buffer.alloc(8))]:[]),chunk("IDAT",compressed),chunk("IEND",Buffer.alloc(0))])
+ if(options.badCRC)bytes[29]^=1
+ return "data:image/png;base64,"+bytes.toString("base64")
+}
+test("New packages require a valid embedded cover before they can be installed",async()=>{
+ const original=await readFile(packageURL),missing=changedManifest(original,{cover:null})
+ await assert.rejects(parsePackage(missing),e=>e.code==="missing_cover")
+ await assert.rejects(installPackage(missing,null),e=>e.code==="missing_cover","Installation refuses before opening browser storage")
+ for(const cover of ["", "https://example.invalid/cover.png", "data:image/svg+xml,<svg/>", "data:image/png;base64,bm90LWFuLWltYWdl",coverPNG(257),coverPNG(2,3),coverPNG(2,2,5),coverPNG(2,2,0,{badCRC:true}),coverPNG(2,2,0,{badDeflate:true}),coverPNG(2,2,0,{extraBytes:1}),coverPNG(2,2,0,{extraBytes:-1}),coverPNG(2,2,0,{animated:true})]) {
+  await assert.rejects(parsePackage(changedManifest(original,{cover})),e=>e.code==="invalid_cover")
+ }
+ const valid=await parsePackage(changedManifest(original,{cover:coverPNG()}))
+ assert.ok(valid.manifest.cover.startsWith("data:image/png;base64,"))
+ const legacy=await parsePackage(missing,{allowLegacy:true})
+ assert.equal(legacy.manifest.cover,undefined,"Reading an existing coverless archive remains possible without permitting new installation")
+})
+test("The packer refuses missing covers and does not overwrite an existing archive",async()=>{
+ const source=await mkdtemp(join(scratch,"author-")),output=join(source,"view.zip")
+ const original=await parsePackage(await readFile(packageURL)),manifest={...original.manifest}
+ delete manifest.cover
+ await writeFile(join(source,"manifest.json"),JSON.stringify(manifest));await writeFile(join(source,manifest.entry),"<!doctype html><title>Example</title>")
+ await writeFile(output,"keep existing archive")
+ const packer=fileURLToPath(new URL("../../../../tools/pack-view-plugin.py",import.meta.url))
+ const rejected=spawnSync("python3",[packer,source,output])
+ assert.notEqual(rejected.status,0);assert.match(rejected.stderr.toString(),/cover/i)
+ assert.equal(await readFile(output,"utf8"),"keep existing archive")
+ for(const cover of ["https://example.invalid/art.png",coverPNG(257),coverPNG(2,2,0,{badCRC:true}),coverPNG(2,2,0,{badDeflate:true}),coverPNG(2,2,0,{extraBytes:1}),coverPNG(2,2,0,{animated:true})]) {
+  manifest.cover=cover;await writeFile(join(source,"manifest.json"),JSON.stringify(manifest))
+  const invalid=spawnSync("python3",[packer,source,output]);assert.notEqual(invalid.status,0);assert.match(invalid.stderr.toString(),/cover/i)
+  assert.equal(await readFile(output,"utf8"),"keep existing archive")
+ }
+ await writeFile(join(source,"manifest.json"),JSON.stringify({...manifest,cover:coverPNG(),name:{en:"x".repeat(8193),"zh-Hant":"Example"}}))
+ const oversized=spawnSync("python3",[packer,source,output]);assert.notEqual(oversized.status,0);assert.match(oversized.stderr.toString(),/manifest/i)
+ assert.equal(await readFile(output,"utf8"),"keep existing archive")
+ manifest.cover=coverPNG();await writeFile(join(source,"manifest.json"),JSON.stringify(manifest))
+ const accepted=spawnSync("python3",[packer,source,output]);assert.equal(accepted.status,0,accepted.stderr.toString())
+ assert.equal((await parsePackage(await readFile(output))).manifest.cover,manifest.cover)
+})
+test("Published examples have real covers and exact legacy archives gain artwork without replacing code",async()=>{
+ const sources=new URL("../../../../plugins/",import.meta.url)
+ for(const entry of await readdir(sources,{withFileTypes:true})) {
+  if(!entry.isDirectory())continue
+  const name=entry.name
+  let manifest
+  try {manifest=JSON.parse(await readFile(new URL(name+"/manifest.json",sources),"utf8"))}catch(e){if(e.code==="ENOENT")continue;throw e}
+  const pkg=await parsePackage(await readFile(new URL("../../public/view-plugins/"+name+".zip",import.meta.url)))
+  assert.equal(pkg.manifest.cover,manifest.cover)
+  assert.equal(exampleCover(manifest.id),manifest.cover,"A published example must not disappear behind an absent cover")
+ }
+ const legacy=await parsePackage(await readFile(new URL("./testdata/legacy-session-pop-art.zip",import.meta.url)),{allowLegacy:true})
+ assert.equal(legacy.manifest.cover,undefined);assert.ok(packageCover(legacy))
+ assert.equal(packageCover({...legacy,digest:"unrecognized archive"}),undefined,"An unknown archive cannot impersonate a built-in's legacy cover")
+ assert.equal(packageCover({...legacy,manifest:{...legacy.manifest,id:"org.example.legacy"}}),undefined)
+})
 function fixture(capabilities=["sessions.read","sessions.open"], initial=reading) {
   const channel = new MessageChannel(), answers=[], opened=[], faults=[]; let closes=0
   channel.port2.onmessage = e => answers.push(e.data)
@@ -107,7 +184,7 @@ test("A second navigation cannot override an in-flight destination",async()=>{
 
 test("Manifest negotiation refuses added capabilities and missing required fields",async()=>{
  const {validateManifest}=await import(pathToFileURL(bundle).href)
- const good={manifestVersion:1,id:"org.example.map",version:"1.0.0",hostApi:1,name:{en:"Map","zh-Hant":"地圖"},entry:"index.html",capabilities:["sessions.read"]}
+ const good={manifestVersion:1,id:"org.example.map",version:"1.0.0",hostApi:1,name:{en:"Map","zh-Hant":"地圖"},entry:"index.html",capabilities:["sessions.read"],cover:coverPNG()}
  assert.deepEqual(validateManifest(good),good)
  for(const bad of [{...good,capabilities:["sessions.read","sessions.send"]},{...good,capabilities:[]},{...good,entry:"../index.html"},{...good,name:{en:"Map"}},{...good,version:"tomorrow"},{...good,extra:"hidden"}])assert.throws(()=>validateManifest(bad),PluginError)
  assert.throws(()=>validateManifest({...good,hostApi:2}),e=>e.code==="protocol_mismatch")
@@ -122,9 +199,9 @@ test("The archive refuses traversal names, aliased entries and symlinks",async()
 })
 
 
-test("The public packer reproduces both shipped ZIPs from author sources and the SDK",async()=>{
+test("The public packer reproduces all supplied ZIPs from author sources and the SDK",async()=>{
  const root=fileURLToPath(new URL("../../../../",import.meta.url))
- for(const id of ["session-galaxy","session-list"]){
+ for(const id of ["session-galaxy","session-list","session-pop-art","session-absurd"]){
   const out=join(scratch,id+".zip"),result=spawnSync("python3",["tools/pack-view-plugin.py","plugins/"+id,out],{cwd:root,encoding:"utf8"})
   assert.equal(result.status,0,result.stderr)
   assert.deepEqual(await readFile(out),await readFile(new URL("../../public/view-plugins/"+id+".zip",import.meta.url)))

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12279,
-  "riskKeys": 5317,
-  "nonRiskCount": 6962,
+  "englishContentKeys": 12287,
+  "riskKeys": 5319,
+  "nonRiskCount": 6968,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 575,
+      "count": 576,
       "sources": [
         null
       ],
@@ -719,6 +719,7 @@
         "capacityRow.console.view_plugin_archive_bytes.what",
         "capacityRow.console.view_plugin_expanded_bytes.what",
         "capacityRow.console.view_plugin_files.what",
+        "capacityRow.console.view_plugin_manifest_bytes.what",
         "capacityRow.console.view_plugin_message_bytes.full",
         "capacityRow.console.view_plugin_pending.what",
         "capacityRow.console.view_plugin_requests_per_second.full",
@@ -7311,11 +7312,12 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 55,
+      "count": 60,
       "sources": [
         null
       ],
       "keys": [
+        "viewPlugins.addDeadpan",
         "viewPlugins.addGalaxy",
         "viewPlugins.addList",
         "viewPlugins.addPop",
@@ -7326,6 +7328,9 @@
         "viewPlugins.cancel",
         "viewPlugins.close",
         "viewPlugins.confirmInstall",
+        "viewPlugins.coverRequired",
+        "viewPlugins.deadpan",
+        "viewPlugins.deadpanHint",
         "viewPlugins.disable",
         "viewPlugins.disabled",
         "viewPlugins.download",
@@ -7333,6 +7338,7 @@
         "viewPlugins.enable",
         "viewPlugins.enabled",
         "viewPlugins.error_already_installed",
+        "viewPlugins.error_invalid_cover",
         "viewPlugins.error_invalid_manifest",
         "viewPlugins.error_message_too_large",
         "viewPlugins.error_package_too_large",
