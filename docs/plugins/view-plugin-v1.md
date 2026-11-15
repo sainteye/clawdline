@@ -2,7 +2,7 @@
 
 Revision 5 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy,
-Session List and Session Pop. Public Release acceptance is separate from source and Cloud delivery.
+Session List, Session Pop and Session Deadpan. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -66,6 +66,7 @@ the HTML and let the repository packer insert that SDK:
 python3 tools/pack-view-plugin.py plugins/session-galaxy /tmp/session-galaxy.zip
 python3 tools/pack-view-plugin.py plugins/session-list /tmp/session-list.zip
 python3 tools/pack-view-plugin.py plugins/session-pop-art /tmp/session-pop-art.zip
+python3 tools/pack-view-plugin.py plugins/session-absurd /tmp/session-absurd.zip
 ```
 
 The packer uses Python's standard library and deterministic ZIP timestamps. It
@@ -76,7 +77,7 @@ Import a replacement ZIP through the manager to test it without rebuilding the h
 
 The supplied examples also have install buttons in **Explore views**. These fetch
 their static ZIP and enter the same validation and package review as file import.
-The Session Pop button needs no native file chooser. The package remains a separate
+The Session Pop and Session Deadpan buttons need no native file chooser. The package remains a separate
 archive and uses the existing v1 runtime; community ZIP import stays independent
 of this curated example list.
 

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12245,
+  "englishContentKeys": 12248,
   "riskKeys": 5307,
-  "nonRiskCount": 6938,
+  "nonRiskCount": 6941,
   "groups": [
     {
       "name": "acp / other",
@@ -7287,11 +7287,12 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 55,
+      "count": 58,
       "sources": [
         null
       ],
       "keys": [
+        "viewPlugins.addDeadpan",
         "viewPlugins.addGalaxy",
         "viewPlugins.addList",
         "viewPlugins.addPop",
@@ -7302,6 +7303,8 @@
         "viewPlugins.cancel",
         "viewPlugins.close",
         "viewPlugins.confirmInstall",
+        "viewPlugins.deadpan",
+        "viewPlugins.deadpanHint",
         "viewPlugins.disable",
         "viewPlugins.disabled",
         "viewPlugins.download",

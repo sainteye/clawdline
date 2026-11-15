@@ -65,15 +65,15 @@ h1 small{display:block;font:500 15px/1.3 var(--text);color:var(--muted);letter-s
 /* Acts: one stage per state, followed by that state's Sessions. */
 .layout{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start}
 body.selecting .layout{grid-template-columns:minmax(0,1fr) 360px}
-.act{display:grid;grid-template-columns:240px minmax(0,1fr);gap:0;margin:26px 0 12px;background:var(--card);color:var(--ink);border:2.5px solid var(--ink);border-radius:22px;overflow:hidden}
-.act .stage{height:144px;background:var(--st);border-right:2.5px solid var(--ink);padding:6px 10px 0}
+.act{grid-column:span 2;display:grid;grid-template-columns:minmax(0,46%) minmax(0,1fr);min-height:196px;background:var(--card);color:var(--ink);border:2.5px solid var(--ink);border-radius:22px;overflow:hidden}
+.act .stage{background:var(--st);border-right:2.5px solid var(--ink);padding:10px 8px 0;display:flex;align-items:flex-end}
 .act .words{padding:14px 18px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}
 .act h2{margin:0;font:700 clamp(21px,2.6vw,28px)/1.15 var(--display);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .act .num{font:600 13px/1 var(--text);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 :lang(zh-Hant) .act .num{letter-spacing:.02em}
 .act .count{display:inline-grid;place-items:center;min-width:34px;height:34px;padding:0 8px;border-radius:999px;background:var(--ink);color:#fffdf8;font:700 17px/1 var(--display)}
 .act p{margin:2px 0 0;font-style:italic;color:var(--muted);overflow-wrap:anywhere}
-.cast{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:14px;margin:0 0 8px}
+.cast{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:14px;margin:22px 0 0;scroll-margin-top:12px}
 .card{position:relative;display:grid;grid-template-rows:auto 1fr;text-align:left;padding:0;border:2.5px solid var(--ink);border-radius:18px;background:var(--card);color:var(--ink);overflow:hidden;min-height:196px;transition:transform .2s ease}
 .card .vig{order:-1;height:96px;background:var(--st);border-bottom:2.5px solid var(--ink);padding:4px 8px 0;position:relative}
 .card .vig svg{transform:scaleX(var(--flip,1))}
@@ -82,7 +82,7 @@ body.selecting .layout{grid-template-columns:minmax(0,1fr) 360px}
 .badge{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:14px}
 .badge .glyph{width:22px;height:22px;font-size:12px;border-width:1.8px}
 .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;font-size:13px;font-weight:600}
-.tag{border:1.8px solid var(--ink);border-radius:999px;padding:0 8px;background:#fff;overflow-wrap:anywhere;max-width:100%}
+.tag{border:1.8px solid var(--ink);border-radius:9px;padding:1px 8px;background:#fff;overflow-wrap:anywhere;max-width:100%}
 .tag.none{border-style:dashed;color:var(--muted)}
 .tag.warn{background:var(--ink);color:#fffdf8}
 .card:hover{transform:translateY(-2px)}
@@ -188,8 +188,9 @@ body.still .card:hover{transform:none}
  .tool{padding:6px 12px;font-size:14px}#btnMotion{flex:1}
  .programme{margin-top:16px}
  .tally{flex-wrap:nowrap;overflow-x:auto;padding:0 4px 8px;margin-right:-16px;scrollbar-width:thin}.tally li{flex:none}
- .act{grid-template-columns:132px minmax(0,1fr);border-radius:18px;margin-top:20px}
- .act .stage{height:104px;padding:4px 4px 0}
+ .act{grid-template-columns:132px minmax(0,1fr);border-radius:18px;min-height:0}
+ .act .stage{height:auto;min-height:104px;padding:4px 4px 0}
+ .cast{margin-top:16px}
  .act .words{padding:10px 12px}
  .act h2{font-size:19px;gap:8px}.act .count{min-width:28px;height:28px;font-size:15px}
  .act p{font-size:13px}
@@ -482,7 +483,7 @@ body.still .card:hover{transform:none}
       b.onclick = () => {
         const target = mode === "scenes" ? acts.get(s) : $("board").querySelector(`[data-state="${s}"]`); if (!target) return;
         target.scrollIntoView({ block: "start", behavior: motionActive() ? "smooth" : "auto" });
-        (target.matches("button") ? target : target.nextElementSibling?.querySelector("button"))?.focus({ preventScroll: true });
+        (target.matches("button") ? target : target.parentElement?.querySelector(".card"))?.focus({ preventScroll: true });
       };
       const li = el("li"); li.append(b); tally.append(li);
     }
@@ -496,7 +497,8 @@ body.still .card:hover{transform:none}
     lastStates.set(row.ref, s);
     button.setAttribute("aria-pressed", String(selected === row.ref));
     button.style.setProperty("--i", String(index % 9));
-    button.style.setProperty("--flip", index % 2 ? "-1" : "1");
+    // Alternate mirrored staging, except scenes whose props carry a direction (a question mark, a tick).
+    button.style.setProperty("--flip", index % 2 && s !== "unknown" && s !== "work_complete" ? "-1" : "1");
     let vig = button.querySelector(".vig");
     if (!vig || vig.dataset.state !== s) { vig = el("span", "vig"); vig.dataset.state = s; vig.setAttribute("aria-hidden", "true"); vig.append(scene(s)); }
     const body = el("span", "body"), badge = el("span", "badge"), meta = el("span", "meta");
@@ -529,11 +531,12 @@ body.still .card:hover{transform:none}
       const rows = groups.get(s);
       if (!rows.length) { acts.delete(s); continue; }
       const act = actHeader(s, rows.length, ++number);
+      // Each state is one grid: its stage tile first, then a card per Session.
       let cast = act._cast;
       if (!cast) { cast = act._cast = el("div", "cast"); cast.setAttribute("role", "group"); }
       cast.setAttribute("aria-label", stateWord(s));
-      order.push(act, cast);
-      const castOrder = [];
+      order.push(cast);
+      const castOrder = [act];
       for (const row of rows) {
         seen.add(row.ref);
         let button = cards.get(row.ref);
