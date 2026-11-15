@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12275,
-  "riskKeys": 5318,
-  "nonRiskCount": 6957,
+  "englishContentKeys": 12284,
+  "riskKeys": 5319,
+  "nonRiskCount": 6965,
   "groups": [
     {
       "name": "acp / other",
@@ -3934,7 +3934,7 @@
     },
     {
       "name": "next / other",
-      "count": 1112,
+      "count": 1117,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4818,6 +4818,11 @@
         "next.toolLibraryCommand",
         "next.toolLibraryConflict",
         "next.toolLibraryDescription",
+        "next.toolLibraryDesktopApp",
+        "next.toolLibraryDesktopProject",
+        "next.toolLibraryDesktopProjectDescription",
+        "next.toolLibraryDesktopScope",
+        "next.toolLibraryDesktopTaskDescription",
         "next.toolLibraryDetails",
         "next.toolLibraryDiscover",
         "next.toolLibraryEntry",
@@ -5625,7 +5630,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 142,
+      "count": 145,
       "sources": [
         null
       ],
@@ -5643,6 +5648,7 @@
         "projectAssistants.back",
         "projectAssistants.bots",
         "projectAssistants.cancel",
+        "projectAssistants.chatLoading",
         "projectAssistants.chooseProject",
         "projectAssistants.close",
         "projectAssistants.collapse",
@@ -5656,6 +5662,7 @@
         "projectAssistants.details",
         "projectAssistants.downloadFile",
         "projectAssistants.earlier",
+        "projectAssistants.earlierLoading",
         "projectAssistants.executing",
         "projectAssistants.export",
         "projectAssistants.failBotsOff",
@@ -5679,6 +5686,7 @@
         "projectAssistants.loading",
         "projectAssistants.machine",
         "projectAssistants.memory",
+        "projectAssistants.memoryLoading",
         "projectAssistants.memoryNote",
         "projectAssistants.memoryRevision",
         "projectAssistants.memory_disabled",

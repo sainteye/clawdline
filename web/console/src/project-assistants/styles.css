@@ -346,3 +346,21 @@
 .pa-output-overlay>button{align-self:flex-start}
 .pa-artifact-frame{flex:1;min-height:50vh;width:100%;border:0;background:white}
 .pa-output-overlay a{overflow-wrap:anywhere}
+/* Loading placeholders. Bots time their own 150ms wait (PaLoading.tsx), so the shared
+   CSS arrival delay is turned off here; the bars use the dark Bots surfaces. */
+.project-assistants .loading-skeleton,.project-assistants .pa-skeleton { --line:var(--pa-line); --card-hi:#232326; }
+.project-assistants .page-skeleton { animation:none; }
+.project-assistants .pa-roster-scroll .loading-skeleton { padding:4px 0; }
+.project-assistants .pa-roster-scroll .loading-skeleton-row { min-height:64px; padding:12px 6px; border-bottom:0; }
+.project-assistants .pa-roster-scroll .loading-skeleton-mark { width:40px; height:40px; flex-basis:40px; border-radius:50%; }
+.project-assistants .pa-memory .loading-skeleton { padding:4px 0 0; }
+.project-assistants .pa-memory .loading-skeleton-row { padding:6px 0; }
+.project-assistants .pa-chat-skeleton > div { display:flex; flex-direction:column; gap:26px; padding:28px 0; }
+.project-assistants .pa-skeleton-bubble { display:grid; gap:12px; width:min(72%,520px); box-sizing:border-box; }
+.project-assistants .pa-skeleton-bubble .page-skeleton-line { height:12px; }
+.project-assistants .pa-skeleton-mine { width:min(46%,320px); margin-left:auto; padding:16px 18px; border-radius:23px; background:var(--pa-card); border:1px solid var(--pa-line); }
+.project-assistants .pa-skeleton-mine .page-skeleton-line { margin-left:auto; }
+@media (max-width:600px) {
+  .project-assistants .pa-skeleton-bubble { width:82%; }
+  .project-assistants .pa-skeleton-mine { width:62%; padding:14px 16px; }
+}

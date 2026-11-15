@@ -119,7 +119,7 @@ export async function selectWeb(paths, root) {
   const tests = files.filter(p => p.startsWith('web/console/') && /\.test\.(ts|mjs)$/.test(p));
   // Catalogs, configuration and fixtures can be read without an import. Keep
   // their runtime coverage broad rather than guess about those dependencies.
-  if (paths.some(p => p.startsWith('web/') && !/^web\/console\/public\/(catalogs|strings)\//.test(p) && !['web/console/semantic-risk-keys.json','web/console/semantic-screen-groups.json'].includes(p) && (!/\.(ts|tsx|js|mjs|css)$/.test(p) || !files.includes(p)))) return { tests, broad: true };
+  if (paths.some(p => p.startsWith('web/') && !/^web\/console\/public\/(catalogs|strings|view-plugins)\//.test(p) && !['web/console/semantic-risk-keys.json','web/console/semantic-screen-groups.json'].includes(p) && (!/\.(ts|tsx|js|mjs|css)$/.test(p) || !files.includes(p)))) return { tests, broad: true };
   const configFile = ts.readConfigFile(join(root, 'web/console/tsconfig.json'), ts.sys.readFile);
   if (configFile.error) throw new Error('unreadable TypeScript configuration');
   const config = ts.parseJsonConfigFileContent(configFile.config, ts.sys, join(root, 'web/console'));
@@ -162,7 +162,7 @@ async function plan(full) {
   const root = process.cwd();
   const { paths, known } = changedPaths();
   const base = known && !paths.length && !full ? { go: false, web: false } : classify(paths, full, known);
-  const broad = full || !known || paths.some(p => !/^(web\/|docs\/|README(?:\.[\w-]+)?\.md$|CHANGELOG\.md$|internal\/|cmd\/|skills\/|api\/v1\/)/.test(p));
+  const broad = full || !known || paths.some(p => !/^(web\/|docs\/|plugins\/|README(?:\.[\w-]+)?\.md$|CHANGELOG\.md$|internal\/|cmd\/|skills\/|api\/v1\/)/.test(p));
   const result = { paths, full: broad, reason: broad ? 'full integration or unclassified infrastructure inputs' : 'changed-package tests; caller and full runtime coverage stay in integration/CI', go: { tests: [], compile: [], runs: [] }, guards: guardPlan(paths,broad), web: base.web, webTests: [], webBroad: false };
   if (broad) { result.web = true; return result; }
   try {

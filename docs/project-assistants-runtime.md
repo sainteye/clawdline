@@ -153,13 +153,13 @@ measurement wiring, translated notices and its selected integration values.
 | Limits.OwnedDescendants | 256 | Stop and surface typed capacity/unknown if the owned process census exceeds its budget. |
 | Limits.WriteTimeout | 2 seconds | A lock/deadline/partial-write failure is typed unknown; do not retry the frame. |
 | Limits.CleanupTimeout | 5 seconds | Bound native child cleanup and inventory commands. |
-| Limits.RPCTimeout | 120 seconds | Expire RPC wait and native permission offer; unknown external effects remain inspectable. |
+| Limits.RPCTimeout | 120 seconds | Expire control RPC waits and native permission offers; unknown external effects remain inspectable. A prompt response instead waits on the runtime turn context, whose existing `RuntimeLimits.PromptTimeout` is 10 minutes. Stop, shutdown and revocation still cancel that context without replay. |
 | Limits.DescendantPoll | 50 milliseconds | Periodically capture descendant ownership; it is not a guarantee against unobserved fast reparenting. |
 
 Pending turns and person-visible message size use the existing domain limits
 (`MaxPendingTurns`, `MaxMessageBytes`), not a second local definition. Durations
-are standard `time.Duration`. The host must choose compatible bounds: a native
-prompt's RPC deadline can expire before its outer turn deadline.
+are standard `time.Duration`. Prompt completion uses the runtime turn context
+directly, so the shorter control RPC deadline cannot end a still-running turn.
 `Engine.Usage` and `Client.Usage` expose counts for host measurements without
 contents. A busy actor returns `Known=false` instead of delaying diagnostics.
 Process census output shares the CaptureBytes bound.

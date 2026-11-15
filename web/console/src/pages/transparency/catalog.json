@@ -3131,7 +3131,8 @@
         "Inspect the current environment and reuse matching installed tools.",
         "Distinguish prepared, installed, loaded and applied; a prompt being delivered proves none of the latter.",
         "This source is a library, with no Skill entry required.",
-        "Prepare and use the selected agent evaluation framework. No Skill entry is required."
+        "Prepare and use the selected agent evaluation framework. No Skill entry is required.",
+        "Prepare and use the selected desktop application. No Skill entry is required."
       ],
       "locations": [
         "Session → Actions → Tool library → Prepare and use",
@@ -3724,7 +3725,7 @@
     "internal/adapters/planner/recap.go": "20242775791a8bbc1eb9a2d06f95294431148aafe2ad97bb5e26ffecf38d4be1",
     "internal/adapters/planner/voice_work.go": "479cc577226c6bb28ec84d56246d206618369a76c3613461013bc9efb1d906a6",
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
-    "internal/adapters/projectassistantacp/client.go": "6ae77ad5120b8cfdeeb2cae61114e4dc4bd0801ec85489bab1df1a39a0842064",
+    "internal/adapters/projectassistantacp/client.go": "c5218a7b1a55b6b64efa6013dae5b28c0f76268bf8bfa1a1068cd635edab6281",
     "internal/adapters/projectassistantacp/installation.go": "d57c9bdd536317a208c28790ab21beace0c18228f8b32c44d8ef3bb539e7f62c",
     "internal/adapters/projectassistantacp/installation_isolation.go": "37c100aba270c2e9c9b4ea9f3bc73cef5dbc611f9db7143471e8a903a227f54e",
     "internal/adapters/projectassistantacp/mcp.go": "0d7761fe38e4da7efc693f75ad88248663dc55a30ebc1573e284220a8676997c",
@@ -3771,7 +3772,7 @@
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "e8c0b1df907ff7844f92ac202050da8d0f04af4335cc04e6ef4cac38a4ae40a1",
-    "internal/domain/toollibrary/library.go": "5fa9cd8bcd54553fce879eca8ca1314fd77d4fee4fbed6e586449df7dcebecb9",
+    "internal/domain/toollibrary/library.go": "230190e585bc8973983be00cf23194d46750e3db49be80e256f061f9e5f36a20",
     "internal/domain/voicework/batch.go": "62c9771f6c00b60c8daf602595dd2777d9eaf750f2c1045d40de13690f520f71",
     "internal/domain/workflow/browser_use.go": "fffb2937243841094ad36a5e0e3875f6853dcb50174ec87329b8e6fee66ede24",
     "internal/domain/workflow/image_review.go": "3dcf0e33dd7616f432923692871f2730b9d959b47fd83842de7ba1d0771deeac",
@@ -3821,7 +3822,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "46e1e824e7fb8006dc9a89e7069f8210129c1a217d0bf7c8d1e823303b126011",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "3a354cde3dc18fa6d4659202d7074f9c4c556a833e36ced6e9f7935a7ad48987",
+    "web/console/src/next-strings.ts": "5fbf7cef151a21451fc56ce611bdfbc69bbb2609f61431f81339c64e8b094a5c",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/project-assistants/OutputCard.tsx": "41bf8737de8d646a2175e2aeb0b7ffbaebc68e5a66cbd955c01da5f36928d724",
     "web/console/src/project-assistants/outputs.ts": "e524a558f00101342032767f0f77d21fd9dc787fb4112a4e689e0e262b3ad9a7",
@@ -3829,8 +3830,8 @@
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
     "web/console/src/realtime/copilot-reports.ts": "03670b0f8aceb6c500203b5d14b96063e845bbb4ad040da0ca377f46dbfc3a7d",
     "web/console/src/realtime/copilot-speech.ts": "693365864fd8f309d396aa5d9878e550e9de8d55811288779bb76aa70f5b312b",
-    "web/console/src/realtime/copilot-tools.ts": "d27e6b7982069ecaf9519719bc551ef91ca3fe7f1bcea9a6903befa0652b3d97",
-    "web/console/src/realtime/realtime-copilot.ts": "b181724b5cce3046b81e2f67fed593de98086855d3e8261e1f302655d02b7f1b",
+    "web/console/src/realtime/copilot-tools.ts": "770ae6dc2c2b9cd4bfb80f7838d2d4a9a2d96769c47acd012934f28851a459ff",
+    "web/console/src/realtime/realtime-copilot.ts": "5fc4a20b1a71d0749aaa8f9b0670306e171d33f00eee582605dce4292450d555",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "b9d9ff8fbdc78af0e53a9cf47f3246f47c813066a93ea4c12e44da5e5cfc5039",
@@ -3846,7 +3847,7 @@
     "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704"
   },
   "copyChecks": {
-    "en": "ebf196a7263e1483e9dce42d26b64390f2988e0d276c57cfd14a1aac046ba034",
-    "zh-Hant": "4ef6f3ddc107c922327aa3e4359b7010112ece851c7c66409462382a76028b5b"
+    "en": "057745ef1fbbd3ebe5b1d582ef93160f8a10bc7f652ae957069daa517b10432c",
+    "zh-Hant": "f8e607c26bdcc376f08df905ff38e3185a0a0033d5903d168ca519f8141596ab"
   }
 }

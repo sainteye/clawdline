@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "researched_at": "2026-10-31T08:55:17.717876+00:00",
+  "researched_at": "2026-11-15",
   "categories": [
     {
       "id": "architecture",
@@ -4036,6 +4036,120 @@
         {
           "en": "An upstream step deploys the deck to a public Vercel URL. Publishing needs the person's explicit approval; preparation never authorizes it.",
           "zh-Hant": "上游有一步會把簡報部署到公開的 Vercel 網址；發布須取得使用者明確同意，準備任務不代表已授權。"
+        }
+      ]
+    },
+    {
+      "id": "webadderallorg--recordly",
+      "repo_url": "https://github.com/webadderallorg/Recordly",
+      "owner": "webadderallorg",
+      "repo": "Recordly",
+      "name": {
+        "en": "Recordly",
+        "zh-Hant": "Recordly 螢幕錄影與剪輯"
+      },
+      "summary": {
+        "en": "Record real product workflows and edit demo videos with zooms, cursor effects, styled frames and MP4/GIF export.",
+        "zh-Hant": "錄製真實產品操作，加入縮放、游標效果與背景外框，剪輯並匯出 MP4／GIF 示範影片。"
+      },
+      "category_id": "media",
+      "category": {
+        "en": "Video & motion production",
+        "zh-Hant": "影片與動態製作"
+      },
+      "recommendation": {
+        "en": "Use for walkthroughs, tutorials and product demos based on real screen recordings; complements code-based animation.",
+        "zh-Hant": "適合以實際錄影製作操作導覽、教學與產品展示，可搭配程式動畫工具。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/webadderallorg.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/webadderallorg",
+        "asset": "/tool-library/webadderallorg--recordly.png"
+      },
+      "source_commit": "abddb7c766a9ba58659af9bea9b059c984139711",
+      "license": "AGPL-3.0",
+      "license_evidence": [
+        {
+          "path": "LICENSE.md",
+          "source_url": "https://github.com/webadderallorg/Recordly/blob/abddb7c766a9ba58659af9bea9b059c984139711/LICENSE.md",
+          "sha256": "d8a6cc31abc16b6748c7a21f21611f5a1ec33f67d22ca23d7da1c19b95496bee",
+          "license": "AGPL-3.0"
+        }
+      ],
+      "skills": [],
+      "integration_kind": "desktop_app",
+      "status": "recommended",
+      "requirements": [
+        {
+          "en": "A compatible desktop: macOS 14+, Windows 10 build 19041+, or modern Linux. Screen, microphone and camera permissions depend on the task.",
+          "zh-Hant": "需要相容的桌面環境：macOS 14 以上、Windows 10 build 19041 以上或現代 Linux；依任務取得螢幕、麥克風與相機權限。"
+        },
+        {
+          "en": "Prefer official stable releases. At review, v1.4.0 was the latest release while the reviewed source was 2.0.0-beta.1; record the installed version separately.",
+          "zh-Hant": "優先使用官方正式版。檢閱時最新正式版為 v1.4.0，來源主線為 2.0.0-beta.1；須另外記錄實際安裝版本。"
+        },
+        {
+          "en": "Keep original media with .recordly projects: project files reference external media. Back up originals before beta upgrades; beta timing may not reopen correctly in v1.4.",
+          "zh-Hant": "保留 .recordly 專案參照的原始素材；專案檔不包含素材。升級 beta 前備份原檔，beta 的時間軸可能無法在 v1.4 正確開啟。"
+        },
+        {
+          "en": "Use as an independent AGPL-3.0 application. Review applicable obligations separately before copying its code or redistributing binaries.",
+          "zh-Hant": "以獨立的 AGPL-3.0 應用程式使用；複製程式碼或重新散布執行檔前，另行確認適用授權義務。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "No SKILL.md was present in the reviewed tree. The reviewed entry points did not establish a supported CLI or MCP; internal smoke-export switches are not a headless automation contract.",
+          "zh-Hant": "檢閱的來源樹沒有 SKILL.md，已讀取的入口未建立正式 CLI 或 MCP 用法；內部匯出測試開關不能當成無介面自動化契約。"
+        },
+        {
+          "en": "Use local recording/editing and file export by default. Optional cloud publishing uploads video and needs separate authorization; catalog inclusion does not enable it.",
+          "zh-Hant": "預設使用本機錄製、剪輯與檔案匯出；可選的雲端發布會上傳影片，須另行取得授權，收錄不代表已啟用。"
+        },
+        {
+          "en": "Linux cannot hide the real cursor in the documented capture path; system audio generally requires PipeWire. Verify cursor and audio behavior on the chosen host.",
+          "zh-Hant": "文件中的 Linux 錄製路徑無法隱藏真實游標，系統音訊通常需要 PipeWire；須在實際主機驗證游標與聲音。"
+        },
+        {
+          "en": "Pinned documentation and selected source were reviewed and hashed. Dependency closure, installer integrity and real recording/export behavior have not been verified.",
+          "zh-Hant": "已檢閱並雜湊固定版本文件及選用原始碼；相依檔案完整性、安裝檔完整性與實際錄製／匯出行為尚未驗證。"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/webadderallorg/Recordly/blob/abddb7c766a9ba58659af9bea9b059c984139711/README.md",
+          "observed_at": "2026-11-15",
+          "scope": "desktop_application",
+          "sha256": "d23a6c5c5e59239c1a318b5da577be298cd160b0081670418a474c36a20fe481",
+          "note": {
+            "en": "Reviewed recording, editing, platform requirements and export documentation; no installation or runtime success is claimed.",
+            "zh-Hant": "已檢閱錄製、剪輯、平台需求與匯出文件；不宣稱已安裝或執行成功。"
+          }
+        },
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/webadderallorg/Recordly/blob/abddb7c766a9ba58659af9bea9b059c984139711/package.json",
+          "observed_at": "2026-11-15",
+          "scope": "source_version",
+          "sha256": "84294aa9486fa2d0c52c8e5ede7c949a8f81a412ec3a424feacaef8dcd734a59",
+          "note": {
+            "en": "The reviewed source identifies 2.0.0-beta.1; this is not the installed app version.",
+            "zh-Hant": "檢閱來源標示為 2.0.0-beta.1，並非實際安裝版本。"
+          }
+        },
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/webadderallorg/Recordly/blob/abddb7c766a9ba58659af9bea9b059c984139711/docs/cloud-sharing.md",
+          "observed_at": "2026-11-15",
+          "scope": "optional_upload",
+          "sha256": "3cee4ac692085e5bb1e120d8cd93e15b53e7c939ba9cc8b87223ee691c137aa9",
+          "note": {
+            "en": "Optional cloud publishing uploads the rendered MP4; it is separate from local file export.",
+            "zh-Hant": "可選的雲端發布會上傳渲染後的 MP4，與本機檔案匯出分開。"
+          }
         }
       ]
     }

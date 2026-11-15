@@ -9,12 +9,12 @@ export function classify(paths, full = false, known = true) {
   let go = false, web = false;
   for (const path of paths) {
     if (/\.go$|(^|\/)go\.(mod|sum)$/.test(path)) go = true;
-    if (path.startsWith('web/')) web = true;
+    if (path.startsWith('web/') || path.startsWith('plugins/')) web = true;
     else if (path.startsWith('docs/') && /\.(md|png|jpg|jpeg|svg|webp)$/.test(path)) continue;
     else if (/^(README(?:\.[\w-]+)?\.md|CHANGELOG\.md)$/.test(path)) continue;
     else { go = true; if (path.startsWith('docs/')) web = true; }
     // Generator, tooling, policy and unknown paths can affect both products.
-    if (!path.startsWith('web/') && !path.startsWith('docs/') &&
+    if (!path.startsWith('web/') && !path.startsWith('docs/') && !path.startsWith('plugins/') &&
         !/^(internal\/|cmd\/|skills\/|api\/v1\/|go\.(mod|sum)$|README(?:\.[\w-]+)?\.md$|CHANGELOG\.md$)/.test(path)) web = true;
   }
   return { go, web, reason: go ? 'Go, tooling, policy or unclassified inputs changed' : 'only console/documentation inputs changed' };

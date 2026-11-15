@@ -9,7 +9,7 @@ import (
 
 func TestToolLibrarySourcesAndPinnedPreparation(t *testing.T) {
 	c := Recommendations()
-	if len(c.Projects) != 37 || len(c.Categories) != 14 {
+	if len(c.Projects) != 38 || len(c.Categories) != 14 {
 		t.Fatalf("catalog: %d projects, %d categories", len(c.Projects), len(c.Categories))
 	}
 	skills := 0
@@ -253,5 +253,46 @@ func TestToolLibraryCustomSourceMustResolveBeforeSetup(t *testing.T) {
 	}
 	if out.Skill != nil || out.Project.Commit != "" || !strings.Contains(out.Prompt, "resolve and record one before proceeding") {
 		t.Fatal("unresolved source presented as ready")
+	}
+}
+
+func TestToolLibraryPreparesDesktopApplication(t *testing.T) {
+	var p Project
+	for _, candidate := range Recommendations().Projects {
+		if candidate.ID == "webadderallorg--recordly" {
+			p = candidate
+		}
+	}
+	if p.IntegrationKind != "desktop_app" || p.CategoryID != "media" || len(p.Skills) != 0 || p.License == nil || *p.License != "AGPL-3.0" || !commit.MatchString(p.Commit) || len(p.Requirements) == 0 {
+		t.Fatal("Recordly must be a pinned desktop application with prerequisites and a license")
+	}
+	for _, mode := range []string{"task", "project"} {
+		for _, locale := range []string{"en", "zh-Hant-TW"} {
+			out, err := Prepare(p, Preparation{Task: "Make a local product demo", Mode: mode, Locale: locale})
+			if err != nil || out.Skill != nil || out.Mode != mode || out.Project.IntegrationKind != "desktop_app" {
+				t.Fatalf("desktop preparation: %v", err)
+			}
+			for _, want := range []string{p.Commit, *p.License, p.Requirements[0]["en"], p.Requirements[0]["zh-Hant"]} {
+				if !strings.Contains(out.Prompt, want) {
+					t.Fatalf("desktop preparation lost source or prerequisites: %q", want)
+				}
+			}
+			wants := []string{"No Skill entry is required", "installed application version", "Project package dependency", "human must grant", "file export by default", "save and reopen", "inspect the output", "internal smoke-test"}
+			if locale != "en" {
+				wants = []string{"無須 Skill 入口", "實際安裝版本", "Project 套件相依", "寫明確切動作並等待", "預設採本機", "儲存並重新開啟", "檢查影片與聲音", "內部 smoke test"}
+			}
+			for _, want := range wants {
+				if !strings.Contains(out.Prompt, want) {
+					t.Fatalf("desktop preparation lost %q", want)
+				}
+			}
+			if strings.Contains(out.Prompt, "discover the real SKILL.md entries") || strings.Contains(out.Prompt, "Integrate the selected effect") {
+				t.Fatal("desktop application was given Skill or web-library setup")
+			}
+		}
+	}
+	p.Skills = Recommendations().Projects[0].Skills[:1]
+	if _, err := Normalize(p); err == nil {
+		t.Fatal("desktop application accepted a fabricated Skill")
 	}
 }

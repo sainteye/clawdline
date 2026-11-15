@@ -60,8 +60,10 @@ facts from older executions. Page heads do not move replay past unseen events.
 An expired cursor or changed execution fence latches account/Bot recovery,
 clears current actions and attempts a fresh bounded snapshot. Snapshot failure
 preserves the existing window and draft and stops background recovery. Returning
-to the Bot or remounting the same host does not release that latch: only an
-explicit retry that publishes a validated bounded snapshot can do so. A fresh
+to the Bot, remounting the same host or making the page visible retries one
+bounded snapshot read. The latch stays set until a validated snapshot is
+published; a failed read retains its source error and never becomes a synthetic
+read-only refusal. The refresh action also retries the read. A fresh
 mutation preflight uses this same bounded snapshot port, checks current source,
 epoch and full fence after the await, and never advances the displayed replay
 cursor. A snapshot with no receipt information cannot resolve an unknown effect.

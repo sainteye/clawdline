@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12275,
+  "englishKeys": 12284,
   "counts": {
-    "negation": 3303,
+    "negation": 3304,
     "state": 2045,
     "permission": 726,
     "deletion": 277,
     "uncertainty": 463
   },
-  "unionCount": 5318,
+  "unionCount": 5319,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2820,6 +2820,7 @@
       "next.terminalUnavailableWindows",
       "next.todosReadFailed",
       "next.toolLibraryCustomNote",
+      "next.toolLibraryDesktopAppNote",
       "next.toolLibraryEmpty",
       "next.toolLibraryEvaluationFrameworkNote",
       "next.toolLibraryFailed",
@@ -11288,6 +11289,7 @@
     "next.todosRefreshFailed",
     "next.todosRetryTip",
     "next.toolLibraryCustomNote",
+    "next.toolLibraryDesktopAppNote",
     "next.toolLibraryEmpty",
     "next.toolLibraryEvaluationFrameworkNote",
     "next.toolLibraryFailed",
