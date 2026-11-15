@@ -1,6 +1,6 @@
 # Session Night City
 
-A source-faithful browser port of [Night City](https://github.com/vib-z/herdr-layouts/tree/e4619fad4d5dea423fe1ebf2c296de7e6964f52d/night-city), `com.clawdline.session-night-city` version `0.2.0`. The five original SVG assets, glass palette, compact skyline geometry, ground alignment, moon and named attention rail replace the earlier independently drawn city. See [PROVENANCE.md](PROVENANCE.md) for the pinned source, unchanged files, MIT notice, formulas and every real divergence.
+A source-faithful browser port of [Night City](https://github.com/vib-z/herdr-layouts/tree/e4619fad4d5dea423fe1ebf2c296de7e6964f52d/night-city), `com.clawdline.session-night-city` version `0.3.0`. The five original SVG assets, glass palette, compact skyline geometry, ground alignment, moon and named attention rail replace the earlier independently drawn city. See [PROVENANCE.md](PROVENANCE.md) for the pinned source, unchanged files, MIT notice, formulas and every real divergence.
 
 Projects stand for source spaces; Sessions are windows in one explicitly unpartitioned bank per Project. The v1 projection has no tabs, so the port does not invent floors. Native multi-tab tower heights, child windows, dead history, machine bridges and terminals cannot be reproduced. A readable Session detail/list replaces the original terminal area. This is a documented data-boundary adaptation, not a pixel-identical reproduction or an accepted visual design.
 
@@ -33,3 +33,16 @@ tools/check.sh
 The test imports the actual ZIP through the production manager, registry, store/parser, frame, bridge and SDK against a loopback-only synthetic source. Chromium and WebKit run at 1440 px in English and 390 px in Traditional Chinese. It compares actual rendered skyline dimensions against the inspected pinned pure source model, checks ground alignment and the early mobile stage, and saves original-versus-port, desktop/mobile, detail and list screenshots plus geometry JSON and results. Native upstream code is never run.
 
 Checks also cover eight states, null Project, all named fresh/stale blockers, hostile Unicode/title/Project text, stable selected identity and ordering, same-data list, touch fallback, unknown/stale navigation refusal, still/reduced/hidden/disconnected motion, 80 Sessions with every blocker retained and contained overflow, empty snapshots, and explicit navigation. Visibility is a synthetic host event, not an actual OS background transition. Browsers and the local server are closed. This does not verify production installation, Cloud, actual mobile hardware or human visual acceptance. Full language/width cross products are not claimed.
+
+## Motion in 0.3.0
+
+The original cursor glyphs alternate at 600ms, attention lamps pulse at 1800ms,
+and beams breathe at 3200ms. The attention sign opens and closes with the original
+300ms height transition. Selection and unchanged snapshots preserve existing
+animation phase; still/reduced/hidden/disconnected context cancels transitions.
+
+Opening the view plays a one-time entrance when fresh data is visible and motion
+is allowed. This is an explicit Clawdline presentation adaptation, not a claim
+that upstream has this entrance: planets glide into place, city windows light
+in sequence, and the board fills through its normal half-flap engine. Controls
+remain available during the entrance; later snapshots do not replay it.

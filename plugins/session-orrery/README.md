@@ -1,6 +1,6 @@
 # Session Orrery
 
-Version **0.2.0**, package ID `com.clawdline.session-orrery`, is a source-derived
+Version **0.3.0**, package ID `com.clawdline.session-orrery`, is a source-derived
 browser port of the Herdr Orrery at commit
 `73bf616382d6b5c0ae5f73edf3cd122c4f51cda9`. This replaces the earlier independent
 interpretation. See [PROVENANCE.md](PROVENANCE.md) for licenses, exact source
@@ -75,3 +75,18 @@ path, not claimed as an operating-system background-tab test. An optional
 Screenshots use visibly labeled synthetic data and establish fixture behavior.
 Passing checks is not visual approval, a physical-phone test, a live Session test,
 Cloud deployment or public Release acceptance.
+
+Version 0.3.0 fits the desktop instrument to the visible iframe height and keeps
+the eyepiece scroll inside its frame. The original 900ms state-change glide
+remains; the dial never spins continuously. Work-age growth still requires a
+trusted work-start input that v1 does not supply.
+
+The instrument almanac uses the original four-row composition: awaiting you,
+reported completion, working, and other states. The full eight-state counts
+remain available in readable-list mode, and each Session keeps its exact state.
+
+Opening the view plays a one-time entrance when fresh data is visible and motion
+is allowed. This is an explicit Clawdline presentation adaptation, not a claim
+that upstream has this entrance: planets glide into place, city windows light
+in sequence, and the board fills through its normal half-flap engine. Controls
+remain available during the entrance; later snapshots do not replay it.
