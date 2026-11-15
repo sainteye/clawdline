@@ -450,6 +450,10 @@ func TestHostRetainsLateOpenAndUnknownCleanupAcrossReenable(t *testing.T) {
 	for _, late := range []bool{true, false} {
 		t.Run(fmt.Sprint("late=", late), func(t *testing.T) {
 			f := newHostFixture(t)
+			// The retained real database needs the fixture's normal barrier
+			// budget. Only the deliberately blocked first stop has a short
+			// deadline; disk scheduling is not the behavior under test.
+			f.o.Limits.CleanupTimeout = 3 * time.Second
 			if late {
 				f.p.openStarted = make(chan struct{})
 				f.p.openRelease = make(chan struct{})
@@ -467,7 +471,10 @@ func TestHostRetainsLateOpenAndUnknownCleanupAcrossReenable(t *testing.T) {
 			} else {
 				fixtureReceive(t, f.p.sent)
 			}
-			if e := f.h.Disable(context.Background()); pa.Code(e) != pa.ExecutionEffectUnknown {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			e := f.h.Disable(stopCtx)
+			cancel()
+			if pa.Code(e) != pa.ExecutionEffectUnknown {
 				t.Fatal(e)
 			}
 			u := f.h.Usage()
@@ -479,6 +486,14 @@ func TestHostRetainsLateOpenAndUnknownCleanupAcrossReenable(t *testing.T) {
 			}
 			if late {
 				close(f.p.openRelease)
+				// Releasing Open does not mean its execution owner has closed
+				// the returned session and persisted the interrupted turn. Wait
+				// for that observable completion before testing reenable; the
+				// first Disable above already exercises the cleanup deadline.
+				fixtureEventually(t, func() bool {
+					u := f.h.engine.Usage()
+					return u.Known && u.ActiveActors == 0 && u.Processes == 0
+				})
 			} else {
 				f.p.unknown.Store(false)
 			}
