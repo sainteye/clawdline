@@ -26,3 +26,21 @@ type ProviderFailure struct {
 
 func (f *ProviderFailure) Error() string { return f.Cause.Error() }
 func (f *ProviderFailure) Unwrap() error { return f.Cause }
+
+// PreSendRefusal is a provider's authoritative guarantee that Open refused
+// before any prompt or external action. It must return a cleanup handle too.
+// Native adapters do not construct this until separately qualified. A typed
+// ProviderFailure, including usage_limit, does not implement this guarantee.
+type PreSendRefusal struct{ Failure *ProviderFailure }
+
+func (f *PreSendRefusal) Error() string { return f.Failure.Error() }
+func (f *PreSendRefusal) Unwrap() error { return f.Failure }
+
+// OpenNotStarted is a trusted host-only fact: provider Open was never entered
+// and setup registrations have been reclaimed. It does not prove no effects
+// and never permits fallback. It only distinguishes no process to clean up
+// from an unknown Open that returned no cleanup handle.
+type OpenNotStarted struct{ Cause error }
+
+func (f *OpenNotStarted) Error() string { return f.Cause.Error() }
+func (f *OpenNotStarted) Unwrap() error { return f.Cause }

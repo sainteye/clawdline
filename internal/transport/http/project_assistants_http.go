@@ -525,7 +525,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if settings.Target.MachineID != command.Key.MachineID {
 			return nil, paHTTPFailure(pa.ScopeDenied, "target_machine")
 		}
-		bot, receipt, err := s.Create(ctx, command, pa.CreateBot{Target: paDomainProjectSelection(settings.Target), Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Agent: pa.Agent(settings.Agent), PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Instructions: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef})
+		bot, receipt, err := s.Create(ctx, command, pa.CreateBot{Target: paDomainProjectSelection(settings.Target), Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Agent: pa.Agent(settings.Agent), FallbackAgents: paDomainAgents(settings.FallbackAgents), PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Instructions: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef})
 		return paHTTPBot(bot, receipt, err)
 	case "edit":
 		request, err := paDecodeHTTP[contract.ProjectAssistantEditRequest](w, r)
@@ -537,7 +537,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		settings := request.Settings
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)
@@ -771,6 +771,19 @@ func paDecodeHTTPLimit[T any](w http.ResponseWriter, r *http.Request, limit int6
 	var expected any
 	if err = json.Unmarshal(normalized, &expected); err != nil {
 		return value, err
+	}
+	// An explicit empty fallback array clears saved configuration. omitempty
+	// drops that array while normalizing; restore only this declared field for
+	// create/edit shape comparison. Unknown, null and duplicate keys still fail.
+	switch any(value).(type) {
+	case contract.ProjectAssistantCreateRequest, contract.ProjectAssistantEditRequest:
+		inObject, _ := input.(map[string]any)
+		outObject, _ := expected.(map[string]any)
+		inSettings, _ := inObject["settings"].(map[string]any)
+		outSettings, _ := outObject["settings"].(map[string]any)
+		if agents, ok := inSettings["fallback_agents"].([]any); ok && len(agents) == 0 && outSettings != nil {
+			outSettings["fallback_agents"] = []any{}
+		}
 	}
 	if _, object := input.(map[string]any); !object || !paJSONShape(input, expected) {
 		return value, paHTTPFailure(pa.Invalid, "body")

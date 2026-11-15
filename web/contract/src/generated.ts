@@ -5166,11 +5166,28 @@ export interface ProjectAssistantAttachment {
   media_type: string
 }
 
+export interface ProjectAssistantAttemptFact {
+  agent: ProjectAssistantAgent
+  cleanup_confirmed: boolean
+  effect: string
+  fence: ProjectAssistantFence
+  ordinal: number
+  reason?: string
+  send_started: boolean
+  stage: string
+}
+
 export interface ProjectAssistantBot {
   agent: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
   conversation_id: string
   created_at: string
+
+  /**
+   * Ordered unique default login identities. Omitted edits preserve saved settings;
+   * an explicit empty array clears them.
+   */
+  fallback_agents?: ProjectAssistantAgent[]
 
   /**
    * Kept out of the Bot list and its badge (API level 67).
@@ -5286,6 +5303,12 @@ export interface ProjectAssistantCreateRequest {
 export interface ProjectAssistantCreateSettings {
   agent: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
+
+  /**
+   * Ordered unique default login identities. Omitted edits preserve saved settings;
+   * an explicit empty array clears them.
+   */
+  fallback_agents?: ProjectAssistantAgent[]
   instructions: string
 
   /**
@@ -5313,12 +5336,18 @@ export interface ProjectAssistantEditRequest {
 }
 
 /**
- * Complete editable settings replacement. Agent/model/Project/policy changes,
- * archive and deletion are outside v1.
+ * Editable settings; omitted fallback_agents preserves the saved chain, while an
+ * empty array clears it. Primary Agent and Project remain immutable.
  */
 export interface ProjectAssistantEditSettings {
   appearance: ProjectAssistantAppearance
   expected_version: number
+
+  /**
+   * Ordered unique default login identities. Omitted edits preserve saved settings;
+   * an explicit empty array clears them.
+   */
+  fallback_agents?: ProjectAssistantAgent[]
   instructions: string
 
   /**
@@ -6314,6 +6343,7 @@ export interface ProjectAssistantTrace {
 }
 
 export interface ProjectAssistantTurn {
+  attempts?: ProjectAssistantAttemptFact[]
   failure?: ProjectAssistantFailure
   fence: ProjectAssistantFence
   id: string

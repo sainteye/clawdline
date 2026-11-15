@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12373,
-  "riskKeys": 5366,
-  "nonRiskCount": 7007,
+  "englishContentKeys": 12382,
+  "riskKeys": 5371,
+  "nonRiskCount": 7011,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 594,
+      "count": 596,
       "sources": [
         null
       ],
@@ -453,6 +453,7 @@
         "capacityRow.bots.actors.what",
         "capacityRow.bots.adapter_install_seconds.full",
         "capacityRow.bots.adapter_install_seconds.what",
+        "capacityRow.bots.agent_rest_seconds.what",
         "capacityRow.bots.artifact_bytes.what",
         "capacityRow.bots.artifact_title_bytes.what",
         "capacityRow.bots.attachment_bytes.what",
@@ -461,6 +462,7 @@
         "capacityRow.bots.cleanup_ms.what",
         "capacityRow.bots.dispatch_seconds.what",
         "capacityRow.bots.event_rows.what",
+        "capacityRow.bots.fallback_agents.what",
         "capacityRow.bots.feature_probe_bytes.what",
         "capacityRow.bots.input_bytes.what",
         "capacityRow.bots.input_chunk_bytes.full",
@@ -7092,7 +7094,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 177,
+      "count": 179,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7196,6 +7198,8 @@
         "transparency.card.notice.effect",
         "transparency.card.notice.summary",
         "transparency.card.notice.title",
+        "transparency.card.persistent-bot-fallback.summary",
+        "transparency.card.persistent-bot-fallback.title",
         "transparency.card.persistent-bot-inputs.condition",
         "transparency.card.persistent-bot-inputs.summary",
         "transparency.card.persistent-bot-inputs.title",

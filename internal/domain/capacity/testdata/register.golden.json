@@ -1033,6 +1033,31 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.agent_rest_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 21600,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxFallbackCreditsRestSeconds",
+      "internal/domain/projectassistant.MaxFallbackUsageRestSeconds",
+      "internal/domain/projectassistant.MaxFallbackSignedOutRestSeconds",
+      "internal/domain/projectassistant.MaxFallbackBackoffOneSeconds",
+      "internal/domain/projectassistant.MaxFallbackBackoffTwoSeconds",
+      "internal/domain/projectassistant.MaxFallbackBackoffThreeSeconds",
+      "internal/domain/projectassistant.MaxFallbackBackoffMaxSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.artifact_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1208,6 +1233,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxEventPageRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.fallback_agents",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxFallbackAgents"
     ]
   },
   {

@@ -462,6 +462,9 @@ func (r *Engine) Recover(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	for _, t := range resumable {
+		if len(t.Attempts) > 0 {
+			continue
+		}
 		_ = r.resumeInterrupted(ctx, key, t)
 	}
 	return nil
@@ -653,7 +656,11 @@ func (r *Engine) work(a *runtimeActor) {
 	}
 }
 
-func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resultErr error) {
+func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) error {
+	return r.executeAttempt(ctx, a, t, nil)
+}
+
+func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn, original *pa.Bot) (resultErr error) {
 	a.mu.Lock()
 	if a.stopped || ctx.Err() != nil {
 		a.mu.Unlock()
@@ -668,6 +675,11 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		a.mu.Unlock()
 		return err
 	}
+	preparedBot := bot
+	if original != nil && !sameExecutionConfig(bot, *original) {
+		a.mu.Unlock()
+		return runtimeFailure(pa.StaleVersion, "fallback_configuration")
+	}
 	c, err := r.o.Repository.Conversation(ctx, a.key, bot.ConversationID)
 	if err != nil {
 		a.mu.Unlock()
@@ -680,7 +692,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "queued_fence")
 	}
-	if c.ActiveTurnID != "" {
+	if c.ActiveTurnID != "" && !(c.ActiveTurnID == t.ID && t.State == pa.TurnRunning && pa.SafeAttemptClosed(t)) {
 		a.mu.Unlock()
 		return runtimeFailure(pa.OutcomeUnknown, "active_turn")
 	}
@@ -695,7 +707,14 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		a.mu.Unlock()
 		return err
 	}
-	caps, err := r.o.Provider.Capabilities(ctx, bot)
+	effectiveAgent, err := r.selectAgent(ctx, bot, t)
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	effectiveBot := bot
+	effectiveBot.Agent = effectiveAgent
+	caps, err := r.o.Provider.Capabilities(ctx, effectiveBot)
 	if err == nil {
 		err = pa.CheckExecutionCapabilities(caps, t.Fence)
 	}
@@ -768,6 +787,15 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		run.TimeoutSeconds = d.TimeoutSeconds
 		routineRun = &run
 	}
+	if t.RoutineRunID != "" && (binding.Agent != effectiveAgent || binding.Revoked) {
+		a.mu.Unlock()
+		return runtimeFailure(pa.Unsupported, "routine_effective_agent")
+	}
+	if binding.Agent != effectiveAgent || binding.Revoked {
+		binding.Agent = effectiveAgent
+		binding.NativeSessionID = ""
+		binding.Revoked = false
+	}
 	decision, err := pa.DecideResume(binding, current, snapshot, caps)
 	if err != nil {
 		a.mu.Unlock()
@@ -775,7 +803,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	}
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
-	resume := t.RoutineRunID == "" && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	resume := len(t.Attempts) == 0 && t.RoutineRunID == "" && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
 	// Preparation can block on capability, memory or history reads. Authority
 	// checked before those reads does not authorize a later execution start.
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
@@ -814,12 +842,21 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	binding.InstructionRevision = bot.Instructions.Revision
 	t.State = pa.TurnRunning
 	started := r.o.Clock().UTC()
-	t.StartedAt = &started
+	if t.StartedAt == nil {
+		t.StartedAt = &started
+	}
 	t.MemoryRevision = current.Revision
 	t.Instructions = bot.Instructions
 	c.ActiveTurnID = t.ID
 	c.MemoryRevision = current.Revision
-	cmd := r.command(a.key, pa.SendOperation, "runtime-start-"+t.ID, t)
+	ordinal := 1
+	if len(t.Attempts) > 0 {
+		ordinal = t.Attempts[len(t.Attempts)-1].Ordinal + 1
+	}
+	if len(bot.FallbackAgents.Agents()) > 0 {
+		t.Attempts = append(slices.Clone(t.Attempts), pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown"})
+	}
+	cmd := r.command(a.key, pa.SendOperation, "runtime-start-"+t.ID+"-"+binding.Fence.BindingID, t)
 	if routineRun != nil {
 		routineRun.State = pa.TurnRunning
 		routineRun.BindingID = binding.Fence.BindingID
@@ -832,14 +869,26 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	a.mu.Lock()
 	a.opening = true
 	a.mu.Unlock()
-	session, err := r.o.Provider.Open(ctx, OpenRequest{Bot: bot, Binding: binding, Directory: resolution.Directory, Resume: resume}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
+	if err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true); err != nil {
+		a.mu.Lock()
+		a.opening = false
+		a.mu.Unlock()
+		return err
+	}
+	session, err := r.o.Provider.Open(ctx, OpenRequest{PrimaryAgent: bot.Agent, Bot: effectiveBot, Binding: binding, Directory: resolution.Directory, Resume: resume}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
 	if session == nil && resume && t.RoutineRunID == "" && pa.Code(err) == pa.ResumeUnsupported {
 		// As in Codync, a native session that cannot be loaded is replaced by
 		// a new one that receives the filtered history and memory; nothing
 		// was sent to the old one, so nothing is repeated.
 		resume = false
 		binding.NativeSessionID = ""
-		session, err = r.o.Provider.Open(ctx, OpenRequest{Bot: bot, Binding: binding, Directory: resolution.Directory, Resume: false}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
+		if e := r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true); e != nil {
+			a.mu.Lock()
+			a.opening = false
+			a.mu.Unlock()
+			return e
+		}
+		session, err = r.o.Provider.Open(ctx, OpenRequest{PrimaryAgent: bot.Agent, Bot: effectiveBot, Binding: binding, Directory: resolution.Directory, Resume: false}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
 	}
 	a.mu.Lock()
 	a.opening = false
@@ -849,19 +898,53 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		if err == nil {
 			err = runtimeFailure(pa.ExecutionEffectUnknown, "missing_session")
 		}
-		if pa.Code(err) == pa.ExecutionEffectUnknown || pa.Code(err) == pa.OutcomeUnknown {
+		// Unknown native Open without a handle retains ownership, even for
+		// quota. The host can separately prove Open was never entered; that fact
+		// permits releasing an unused slot but never entering fallback.
+		var notStarted *OpenNotStarted
+		if !errors.As(err, &notStarted) {
 			r.retain(a, err)
 		}
 		return err
 	}
 	cleaned := false
+	cleanupConfirmed := false
 	defer func() {
 		if !cleaned {
-			resultErr = errors.Join(resultErr, r.closeSession(a, session))
+			closeErr := r.closeSession(a, session)
+			resultErr = errors.Join(resultErr, closeErr)
+			cleaned = true
+			cleanupConfirmed = closeErr == nil
+		}
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, r.holdAttempt(a, t, resultErr, cleanupConfirmed))
 		}
 	}()
 	if err != nil {
-		return err
+		safe, e := r.refuseBeforeSend(ctx, a, &t, binding, err)
+		if e != nil {
+			return e
+		}
+		if !safe {
+			return err
+		}
+		// ownedSession.Close seals tools before waiting for native cleanup.
+		e = r.closeSession(a, session)
+		cleaned = true
+		cleanupConfirmed = e == nil
+		if e != nil {
+			return e
+		}
+		rest, e := r.attemptRest(ctx, bot, t)
+		if e != nil {
+			return e
+		}
+		if e = r.appendAttempt(ctx, a, &t, pa.AttemptClosed, nil, rest); e != nil {
+			return e
+		}
+		// Recursion is bounded by the validated unique configured identities, never
+		// a same-agent retry; ctx and the process slot belong to the logical turn.
+		return r.executeAttempt(ctx, a, t, &preparedBot)
 	}
 	a.mu.Lock()
 	if a.stopped || ctx.Err() != nil {
@@ -874,7 +957,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	}
 	if err == nil {
 		binding.NativeSessionID = session.SessionID()
-		cmd = r.command(a.key, pa.SendOperation, "runtime-bound-"+t.ID, binding)
+		cmd = r.command(a.key, pa.SendOperation, "runtime-bound-"+t.ID+"-"+binding.Fence.BindingID, binding)
 		_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Binding: &binding, Receipt: pa.Receipt{State: pa.EffectExecuting, ResourceID: t.ID}})
 	}
 	a.mu.Unlock()
@@ -897,6 +980,9 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		}
 		files = append(files, PromptFile{File: file, Path: path})
 	}
+	if err = r.appendAttempt(ctx, a, &t, pa.AttemptSending, nil, nil); err != nil {
+		return err
+	}
 	err = r.o.Memory.WithCurrent(ctx, a.key, current.Revision, func(filtered pa.ContextSnapshot) error {
 		if err := pa.CheckContext(filtered, current); err != nil {
 			return err
@@ -904,7 +990,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		var handoff *SessionHandoff
 		if !resume && t.RoutineRunID == "" {
 			var err error
-			handoff, err = newSessionHandoff(export, t, filtered)
+			handoff, err = newSessionHandoffForAgent(export, t, filtered, effectiveAgent)
 			if err != nil {
 				return err
 			}
@@ -919,11 +1005,19 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 		if e != nil {
 			return e
 		}
+		// The sending fact was persisted before acquiring the memory lock.
+		// Recheck the exact authority at the external write boundary.
+		if e = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, false); e != nil {
+			return e
+		}
 		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged})
 		return e
 	})
 	if err != nil {
 		return err
+	}
+	if pending == nil {
+		return runtimeFailure(pa.ExecutionEffectUnknown, "missing_pending_prompt")
 	}
 	result, err := pending.Wait(ctx)
 	if err != nil {
@@ -931,7 +1025,11 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) (resul
 	}
 	err = r.closeSession(a, session)
 	cleaned = true
+	cleanupConfirmed = err == nil
 	if err != nil {
+		return err
+	}
+	if err = r.appendAttempt(ctx, a, &t, pa.AttemptClosed, nil, nil); err != nil {
 		return err
 	}
 	a.mu.Lock()
@@ -1077,6 +1175,11 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 			messages = append(messages, pa.Message{ID: "reply-" + t.ID, Fence: t.Fence, TurnID: t.ID, Kind: pa.AssistantMessage, Text: final, At: r.o.Clock()})
 		}
 	}
+	if state == pa.TurnSucceeded {
+		if notice := attemptSwitchNotice(export, t, bot.Agent); notice != "" {
+			messages = append(messages, pa.Message{ID: "switch-" + t.ID, Fence: t.Fence, TurnID: t.ID, Kind: pa.NoticeMessage, Text: notice, At: r.o.Clock()})
+		}
+	}
 	events := []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}
 	var permissions []pa.PermissionOffer
 	for _, offer := range export.Permissions {
@@ -1134,7 +1237,11 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 			return runtimeFailure(pa.NotFound, "routine_run")
 		}
 	}
-	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events})
+	clearRest := pa.Agent("")
+	if state == pa.TurnSucceeded && len(t.Attempts) > 0 {
+		clearRest = t.Attempts[len(t.Attempts)-1].Agent
+	}
+	_, err = r.mutate(ctx, bot, Mutation{ClearAgentRest: clearRest, Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events})
 	return err
 }
 
@@ -1545,7 +1652,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	t := pending[0]
-	if t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+	if len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
 		return nil
 	}
 	x, err := r.o.Repository.Export(ctx, key)
@@ -1573,11 +1680,14 @@ func (r *Engine) currentForStart(ctx context.Context, key pa.BotKey, prepared pa
 	if err != nil {
 		return pa.Bot{}, pa.Conversation{}, err
 	}
-	if bot.Project != prepared.Project || bot.Agent != prepared.Agent || bot.PermissionPolicy != prepared.PermissionPolicy || bot.Mode != prepared.Mode ||
-		bot.Instructions.Revision != prepared.Instructions.Revision || bot.ConversationID != prepared.ConversationID ||
+	if !sameExecutionConfig(bot, prepared) ||
 		c.ID != preparedConversation.ID || c.Generation != preparedConversation.Generation ||
 		c.BindingID != preparedConversation.BindingID || c.ActiveTurnID != preparedConversation.ActiveTurnID {
 		return pa.Bot{}, pa.Conversation{}, runtimeFailure(pa.StaleVersion, "start_changed")
 	}
 	return bot, c, nil
+}
+
+func sameExecutionConfig(a, b pa.Bot) bool {
+	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.Instructions == b.Instructions && a.ConversationID == b.ConversationID
 }

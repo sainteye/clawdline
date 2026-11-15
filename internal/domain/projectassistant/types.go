@@ -111,6 +111,7 @@ type Bot struct {
 	Name             string           `json:"name"`
 	Appearance       Appearance       `json:"appearance"`
 	Agent            Agent            `json:"agent"`
+	FallbackAgents   FallbackConfig   `json:"fallback_agents,omitempty"`
 	PermissionPolicy PermissionPolicy `json:"permission_policy"`
 	// Mode is the agent mode the Bot works in, as in Codync: AutoMode (or
 	// empty) is the agent's own Auto mode, otherwise one of AgentModes.
@@ -129,6 +130,7 @@ type CreateBot struct {
 	Name             string           `json:"name"`
 	Appearance       Appearance       `json:"appearance"`
 	Agent            Agent            `json:"agent"`
+	FallbackAgents   []Agent          `json:"fallback_agents,omitempty"`
 	PermissionPolicy PermissionPolicy `json:"permission_policy"`
 	Mode             string           `json:"mode,omitempty"`
 	Instructions     string           `json:"instructions"`
@@ -138,6 +140,7 @@ type CreateBot struct {
 // EditBot is a complete replacement of the three editable settings; Agent,
 // model, Project and permission policy are intentionally not patchable in v1.
 type EditBot struct {
+	FallbackAgents  *[]Agent   `json:"fallback_agents,omitempty"`
 	ExpectedVersion int64      `json:"expected_version"`
 	Name            string     `json:"name"`
 	Appearance      Appearance `json:"appearance"`
@@ -183,6 +186,7 @@ type Fence struct {
 	Generation     int64        `json:"generation"`
 }
 type Turn struct {
+	Attempts       []AttemptFact       `json:"attempts,omitempty"`
 	RoutineRunID   string              `json:"routine_run_id,omitempty"`
 	ID             string              `json:"id"`
 	Fence          Fence               `json:"fence"`

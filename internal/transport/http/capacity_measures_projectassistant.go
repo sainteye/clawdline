@@ -1,8 +1,10 @@
 package http
 
 import (
+	"context"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"time"
 )
 
 func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.Reading {
@@ -47,6 +49,31 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		return capacity.Reading{Known: !installed, Note: "no allocation before installation; installed durable queues, native descendants and IO duration are not exposed by Host.Usage"}
 	}
 	return map[string]func() capacity.Reading{
+		capacity.BotsFallbacks: pure,
+		capacity.BotsAgentRestSeconds: func() capacity.Reading {
+			p := &s.projectAssistants
+			p.mu.RLock()
+			h, failed, clock := p.host, p.inspectionFailed, p.clock
+			p.mu.RUnlock()
+			if h == nil {
+				return capacity.Reading{Known: !failed, Note: "no installed Bot store; no machine rest allocated"}
+			}
+			rests, err := h.AgentRests(context.Background())
+			if err != nil {
+				return capacity.Unmeasured("machine rest read failed")
+			}
+			now := time.Now()
+			if clock != nil {
+				now = clock()
+			}
+			var seconds int64
+			for _, rest := range rests {
+				if left := int64(rest.Until.Sub(now).Seconds()); left > seconds {
+					seconds = left
+				}
+			}
+			return capacity.Reading{Known: true, Used: seconds, Note: "largest remaining durable default-login rest on this machine, read without provider IO"}
+		},
 		capacity.BotsErrorKindBytes:          pure,
 		capacity.BotsRoutineDefinitions:      unobserved,
 		capacity.BotsRoutineTriggers:         pure,

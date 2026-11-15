@@ -675,3 +675,18 @@ func (h *Host) routineTick(ctx context.Context, done chan struct{}) {
 		}
 	}
 }
+
+// AgentRests reads the machine-owned default identities without starting a provider.
+func (h *Host) AgentRests(ctx context.Context) ([]pa.AgentRest, error) {
+	rests := []pa.AgentRest{}
+	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex} {
+		rest, err := h.store.AgentRest(ctx, h.o.MachineID, agent)
+		if err != nil {
+			return nil, err
+		}
+		if rest != nil {
+			rests = append(rests, *rest)
+		}
+	}
+	return rests, nil
+}

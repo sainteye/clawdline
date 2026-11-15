@@ -56,6 +56,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `bots.actors` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.adapter_install_seconds` | 300 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.agent_rest_seconds` | 21600 | `seconds` | `expire` | `diagnostics` | — |
 | `bots.artifact_bytes` | 5242880 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.artifact_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -65,6 +66,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.fallback_agents` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |

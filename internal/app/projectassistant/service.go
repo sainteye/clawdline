@@ -182,7 +182,7 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 	}
 	now := s.opts.Clock().UTC()
 	bot := pa.Bot{Key: c.Key, Project: resolved.Scope, ConversationID: s.opts.ID(), Name: settings.Name,
-		Appearance: settings.Appearance, Agent: settings.Agent, PermissionPolicy: settings.PermissionPolicy, Mode: settings.Mode,
+		Appearance: settings.Appearance, Agent: settings.Agent, FallbackAgents: pa.FallbackConfigOf(settings.FallbackAgents), PermissionPolicy: settings.PermissionPolicy, Mode: settings.Mode,
 		Instructions: pa.InstructionSnapshot{Revision: 1, Text: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef},
 		Version:      1, CreatedAt: now, UpdatedAt: now}
 	conversation := pa.Conversation{Key: c.Key, ID: bot.ConversationID, MemoryRevision: 1, Version: 1}

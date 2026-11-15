@@ -406,6 +406,13 @@
         "hidden": {
           "type": "boolean",
           "description": "Kept out of the Bot list and its badge (API level 67)."
+        },
+        "fallback_agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantAgent"
+          },
+          "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
         }
       },
       "required": [
@@ -451,6 +458,13 @@
         "mode": {
           "type": "string",
           "description": "The agent mode the Bot works in: auto (or empty) for the agent's Auto mode, otherwise one the agent offers (API level 65)."
+        },
+        "fallback_agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantAgent"
+          },
+          "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
         }
       },
       "required": [
@@ -466,7 +480,7 @@
     "ProjectAssistantEditSettings": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Complete editable settings replacement. Agent/model/Project/policy changes, archive and deletion are outside v1.",
+      "description": "Editable settings; omitted fallback_agents preserves the saved chain, while an empty array clears it. Primary Agent and Project remain immutable.",
       "properties": {
         "expected_version": {
           "type": "integer"
@@ -487,6 +501,13 @@
         "permission_policy": {
           "$ref": "#/$defs/ProjectAssistantPermissionPolicy",
           "description": "Empty leaves the permission setting unchanged (API level 65)."
+        },
+        "fallback_agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantAgent"
+          },
+          "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
         }
       },
       "required": [
@@ -623,6 +644,12 @@
         "joined_turn_id": {
           "type": "string",
           "description": "The running turn this queued message was sent into with Send now; absent otherwise."
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantAttemptFact"
+          }
         }
       },
       "required": [
@@ -2805,6 +2832,45 @@
         "offset",
         "data",
         "source"
+      ]
+    },
+    "ProjectAssistantAttemptFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {
+          "type": "integer"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "send_started": {
+          "type": "boolean"
+        },
+        "effect": {
+          "type": "string"
+        },
+        "cleanup_confirmed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ordinal",
+        "agent",
+        "fence",
+        "stage",
+        "send_started",
+        "effect",
+        "cleanup_confirmed"
       ]
     }
   }

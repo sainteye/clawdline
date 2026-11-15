@@ -26,6 +26,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS project_assistant_schema (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)`,
 		`INSERT OR IGNORE INTO project_assistant_schema(id,version) VALUES(1,1)`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_agent_rests (machine TEXT NOT NULL, agent TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,agent))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_bots (machine TEXT NOT NULL, bot TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0), data BLOB NOT NULL, PRIMARY KEY(machine,bot))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, machine TEXT NOT NULL, bot TEXT NOT NULL, event_id TEXT NOT NULL, data BLOB NOT NULL, UNIQUE(machine,event_id))`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_event_bot ON project_assistant_events(machine,bot,seq)`,

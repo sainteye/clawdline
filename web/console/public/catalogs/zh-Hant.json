@@ -12373,5 +12373,14 @@
   "capacityRow.bots.error_kind_bytes.what": "原生 Agent 錯誤分類可接受的最長類別識別碼，僅用於結構化失敗分類。",
   "capacityRow.bots.error_kind_bytes.full": "過長或格式錯誤的類別維持未分類；額度分類不代表可以重新執行已送出的提示。",
   "capacityRow.bots.process_census_bytes.what": "原有程序身分列舉的清理預算，不限制 Agent 輸入、輸出或 ACP 通知。",
-  "capacityRow.bots.process_census_bytes.full": "程序列舉不完整時不能確認清理完成；保留尚未釐清的資源持有者，不終止未經核對的程序。"
+  "capacityRow.bots.process_census_bytes.full": "程序列舉不完整時不能確認清理完成；保留尚未釐清的資源持有者，不終止未經核對的程序。",
+  "transparency.card.persistent-bot-fallback.title": "Bot 在送出前切換 Agent",
+  "transparency.card.persistent-bot-fallback.condition": "必須啟用開發版 Bots，並明確設定替代 Agent。只有 Open 明確保證尚未送出提示或產生外部效果、保留清理控制代碼且確認關閉，才可切換。本次尚未驗證已安裝原生 Agent 可提供這項保證。",
+  "transparency.card.persistent-bot-fallback.summary": "主要 Agent 在 Send 前安全拒絕後，已設定的替代 Agent 可用新的執行授權完成同一 Bot 訊息；原本設定的主要 Agent 保持不變。",
+  "transparency.card.persistent-bot-fallback.how": "來源持久保存不可覆寫的嘗試事實與整台機器共用的 Agent 休息時間，撤銷舊綁定和工具、確認 Close，再重新檢查權限、Project、設定與記憶後開啟下一個 Agent。既有的過濾交接內容會明確標示實際 Agent。用量百分比不會觸發切換，全部嘗試共用同一回合期限與程序名額。所有身分都在休息或尚無已驗證的替代模式時，新輸入仍會嘗試主要 Agent；休息狀態不會禁止未設定替代方案的主要 Agent 接收新輸入。",
+  "transparency.card.persistent-bot-fallback.effect": "提示送到替代 Agent 時可能消耗該帳號額度。Send／Wait 錯誤、部分寫入、缺少清理控制代碼、工具活動，以及不確定的權限或 Broker 回覆，都不能授權自動重送。中斷的 fallback 回合保持結果未知。原生驗證、進度與副作用紀錄、停放 Session、摘要追補及 fallback 介面仍待完成；Codex 仍不支援恢復原生 Session。",
+  "capacityRow.bots.fallback_agents.what": "單一 Bot 除主要 Agent 之外所設定的預設登入身分。上游上限為三個，目前只接受不重複的 Claude 與 Codex 身分。",
+  "capacityRow.bots.fallback_agents.full": "超額、重複或未知身分會在儲存設定前遭拒絕。空陣列會清除設定；省略欄位則保留原設定。",
+  "capacityRow.bots.agent_rest_seconds.what": "這台機器目前最長的 Agent 持久休息剩餘時間。額度與登出等待一小時、餘額不足六小時，暫時性失敗依序等待一、五、二十五與六十分鐘。",
+  "capacityRow.bots.agent_rest_seconds.full": "休息到期後，該身分只在下一則訊息重新成為候選；不會切換或重送正在執行的提示。所有 Agent 都在休息時，新訊息仍會嘗試主要 Agent。"
 }

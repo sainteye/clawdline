@@ -63,6 +63,9 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 	out.Appearance = paWireAppearance(value.Appearance)
 	out.Agent = contract.ProjectAssistantAgent(value.Agent)
 	out.PermissionPolicy = contract.ProjectAssistantPermissionPolicy(value.PermissionPolicy)
+	for _, a := range value.FallbackAgents.Agents() {
+		out.FallbackAgents = append(out.FallbackAgents, contract.ProjectAssistantAgent(a))
+	}
 	out.Mode = value.Mode
 	out.Hidden = value.Hidden
 	out.Instructions = paWireInstructionSnapshot(value.Instructions)
@@ -105,6 +108,9 @@ func paWireFence(value pa.Fence) contract.ProjectAssistantFence {
 
 func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 	var out contract.ProjectAssistantTurn
+	for _, f := range value.Attempts {
+		out.Attempts = append(out.Attempts, contract.ProjectAssistantAttemptFact{Ordinal: int64(f.Ordinal), Agent: contract.ProjectAssistantAgent(f.Agent), Fence: paWireFence(f.Fence), Stage: string(f.Stage), SendStarted: f.SendStarted, Effect: f.Effect, CleanupConfirmed: f.CleanupConfirmed, Reason: f.Reason})
+	}
 	out.ID = value.ID
 	out.Fence = paWireFence(value.Fence)
 	out.MessageID = value.MessageID
@@ -589,4 +595,22 @@ func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 
 func paWireOutput(o pa.Output) contract.ProjectAssistantOutput {
 	return contract.ProjectAssistantOutput{ID: o.ID, Name: o.Name, Bytes: o.Bytes, Sha256: o.SHA256, ArtifactID: o.ArtifactID}
+}
+
+func paDomainAgents(agents []contract.ProjectAssistantAgent) []pa.Agent {
+	if agents == nil {
+		return nil
+	}
+	out := make([]pa.Agent, len(agents))
+	for i, a := range agents {
+		out[i] = pa.Agent(a)
+	}
+	return out
+}
+func paDomainOptionalAgents(agents []contract.ProjectAssistantAgent) *[]pa.Agent {
+	if agents == nil {
+		return nil
+	}
+	out := paDomainAgents(agents)
+	return &out
 }

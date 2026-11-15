@@ -4419,11 +4419,26 @@ type ProjectAssistantAttachment struct {
 	MediaType string `json:"media_type"`
 }
 
+type ProjectAssistantAttemptFact struct {
+	Agent            ProjectAssistantAgent `json:"agent"`
+	CleanupConfirmed bool                  `json:"cleanup_confirmed"`
+	Effect           string                `json:"effect"`
+	Fence            ProjectAssistantFence `json:"fence"`
+	Ordinal          int64                 `json:"ordinal"`
+	Reason           string                `json:"reason,omitempty"`
+	SendStarted      bool                  `json:"send_started"`
+	Stage            string                `json:"stage"`
+}
+
 type ProjectAssistantBot struct {
 	Agent          ProjectAssistantAgent      `json:"agent"`
 	Appearance     ProjectAssistantAppearance `json:"appearance"`
 	ConversationID string                     `json:"conversation_id"`
 	CreatedAt      string                     `json:"created_at"`
+
+	// Ordered unique default login identities. Omitted edits preserve saved settings;
+	// an explicit empty array clears them.
+	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
 
 	// Kept out of the Bot list and its badge (API level 67).
 	Hidden       bool                         `json:"hidden,omitempty"`
@@ -4523,9 +4538,13 @@ type ProjectAssistantCreateRequest struct {
 // Six settings. Creating, cancelling, reading, selecting and searching start no
 // process or model. Only first send binds execution.
 type ProjectAssistantCreateSettings struct {
-	Agent        ProjectAssistantAgent      `json:"agent"`
-	Appearance   ProjectAssistantAppearance `json:"appearance"`
-	Instructions string                     `json:"instructions"`
+	Agent      ProjectAssistantAgent      `json:"agent"`
+	Appearance ProjectAssistantAppearance `json:"appearance"`
+
+	// Ordered unique default login identities. Omitted edits preserve saved settings;
+	// an explicit empty array clears them.
+	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
+	Instructions   string                  `json:"instructions"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -4547,12 +4566,16 @@ type ProjectAssistantEditRequest struct {
 	Settings ProjectAssistantEditSettings `json:"settings"`
 }
 
-// Complete editable settings replacement. Agent/model/Project/policy changes,
-// archive and deletion are outside v1.
+// Editable settings; omitted fallback_agents preserves the saved chain, while
+// an empty array clears it. Primary Agent and Project remain immutable.
 type ProjectAssistantEditSettings struct {
 	Appearance      ProjectAssistantAppearance `json:"appearance"`
 	ExpectedVersion int64                      `json:"expected_version"`
-	Instructions    string                     `json:"instructions"`
+
+	// Ordered unique default login identities. Omitted edits preserve saved settings;
+	// an explicit empty array clears them.
+	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
+	Instructions   string                  `json:"instructions"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -5471,11 +5494,12 @@ type ProjectAssistantTrace struct {
 }
 
 type ProjectAssistantTurn struct {
-	Failure        *ProjectAssistantFailure     `json:"failure,omitempty"`
-	Fence          ProjectAssistantFence        `json:"fence"`
-	ID             string                       `json:"id"`
-	IdempotencyKey string                       `json:"idempotency_key"`
-	Instructions   ProjectAssistantInstructions `json:"instructions"`
+	Attempts       []ProjectAssistantAttemptFact `json:"attempts,omitempty"`
+	Failure        *ProjectAssistantFailure      `json:"failure,omitempty"`
+	Fence          ProjectAssistantFence         `json:"fence"`
+	ID             string                        `json:"id"`
+	IdempotencyKey string                        `json:"idempotency_key"`
+	Instructions   ProjectAssistantInstructions  `json:"instructions"`
 
 	// The running turn this queued message was sent into with Send now; absent
 	// otherwise.
