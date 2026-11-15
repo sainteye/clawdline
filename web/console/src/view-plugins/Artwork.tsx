@@ -1,14 +1,8 @@
 import galaxy from "../../../../plugins/session-galaxy/manifest.json"
-import list from "../../../../plugins/session-list/manifest.json"
-import pop from "../../../../plugins/session-pop-art/manifest.json"
-import deadpan from "../../../../plugins/session-absurd/manifest.json"
 import type { ViewPackage } from "./package.js"
 
 const covers = [
   { manifest: galaxy, legacy: "51770c8f3604165cf352682dbc06b4cfd9c2e8a838a58a1941972478ad887f10" },
-  { manifest: list, legacy: "4ededb8ad055fdb6ba76852cfada856feb7ff0da66b5c315cdcf92b2984bac1d" },
-  { manifest: pop, legacy: "ccdda46ec99e8715148005d53c7ecb7dd28346f346c67f6eebebf3b044c5270a" },
-  { manifest: deadpan },
 ]
 export const exampleCover = (id: string) => covers.find(row => row.manifest.id === id)?.manifest.cover
 export function packageCover(pkg: ViewPackage): string | undefined {

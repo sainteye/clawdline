@@ -19,11 +19,16 @@ export function exact(v: Record<string, unknown>, keys: string[]): boolean {
 }
 const version = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/
 export const text = (v: unknown): v is string => typeof v === "string" && v.length > 0 && [...v].length <= B.textCharacters
+// These withdrawn built-in identities stay reserved so old ZIPs cannot restore them.
+export const RETIRED_PACKAGES: readonly string[] = [
+  "com.clawdline.session-list", "com.clawdline.session-pop-art", "com.clawdline.session-absurd",
+]
 export function validateManifest(raw: unknown, allowLegacy = false): Manifest {
   if (!plain(raw) || !exact(raw, ["manifestVersion", "id", "version", "hostApi", "name", "entry", "capabilities", "cover"])) fail("invalid_manifest")
   if (raw.manifestVersion !== 1 || raw.hostApi !== 1) fail("protocol_mismatch")
   if (!text(raw.id) || !/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/.test(raw.id) ||
       !text(raw.version) || !version.test(raw.version) || !text(raw.entry) || !safePath(raw.entry) || !raw.entry.endsWith(".html")) fail("invalid_manifest")
+  if (RETIRED_PACKAGES.includes(raw.id)) fail("retired_package")
   if (!plain(raw.name) || !text(raw.name.en) || !text(raw.name["zh-Hant"]) || !Object.values(raw.name).every(text)) fail("invalid_manifest")
   if (!Array.isArray(raw.capabilities) || !raw.capabilities.includes("sessions.read") ||
       new Set(raw.capabilities).size !== raw.capabilities.length ||

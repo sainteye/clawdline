@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12310,
+  "englishKeys": 12302,
   "counts": {
-    "negation": 3310,
+    "negation": 3311,
     "state": 2049,
     "permission": 727,
-    "deletion": 282,
+    "deletion": 283,
     "uncertainty": 464
   },
-  "unionCount": 5329,
+  "unionCount": 5330,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3243,6 +3243,7 @@
       "viewPlugins.error_invalid_package",
       "viewPlugins.error_missing_cover",
       "viewPlugins.error_permission_denied",
+      "viewPlugins.error_retired_package",
       "viewPlugins.error_session_unavailable",
       "viewPlugins.launchEmpty",
       "viewPlugins.noSource",
@@ -6382,6 +6383,7 @@
       "verify.removeAskOpen",
       "verify.removeYes",
       "viewPlugins.error_package_capacity",
+      "viewPlugins.error_retired_package",
       "viewPlugins.remove",
       "work.opDiscard",
       "workflowSettings.session_auto_discoveryScope"
@@ -12035,6 +12037,7 @@
     "viewPlugins.error_missing_entry",
     "viewPlugins.error_package_capacity",
     "viewPlugins.error_permission_denied",
+    "viewPlugins.error_retired_package",
     "viewPlugins.error_scope_changed",
     "viewPlugins.error_session_unavailable",
     "viewPlugins.error_storage_unavailable",
