@@ -61,6 +61,20 @@ export function errorCode(error: unknown): W.ProjectAssistantErrorCode | "unavai
   return value?.error?.code ?? "unavailable"
 }
 
+/**
+ * A write failure that provably never left this client: the request was
+ * refused before any byte reached a transport. Only this marker lets a caller
+ * release an uncertain effect; every other write failure may have crossed.
+ * The mark is not enumerable, so the error's own envelope is unchanged.
+ */
+export function notSent<T>(error: T): T {
+  if (typeof error === "object" && error !== null && Object.isExtensible(error)) Object.defineProperty(error, "clawdline_delivery", { value: "not_sent", configurable: true })
+  return error
+}
+export function provablyNotSent(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { clawdline_delivery?: unknown }).clawdline_delivery === "not_sent"
+}
+
 /** Validate metadata before publishing choices, including injected host clients. */
 export function projectChoices(answer: W.ProjectAssistantProjectsResponse, request: W.ProjectAssistantProjectsRequest): W.ProjectAssistantProjectsResponse {
   if (!answer || answer.contract_version !== "project-assistants.v1" || !answer.source ||
@@ -91,7 +105,7 @@ export async function authorized<T>(source: SourceClient, current: () => readonl
     if (signal.aborted) throw new DOMException("Aborted", "AbortError")
     if (!current().some(s => s === source && s.machineID === source.machineID && s.authorizationRevision === revision)) throw failure("pa_revoked")
   }
-  check()
+  try { check() } catch (error) { throw notSent(error) }
   const result = await run(signal)
   check()
   return result

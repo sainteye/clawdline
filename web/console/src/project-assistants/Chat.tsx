@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import "../session/jump.css"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
-import { authorized, command, errorCode, failure } from "./client"
-import { botIdentity, canRead, canWrite, draftIdentity, sameConversation, sameFence, type ViewState } from "./view-state"
+import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
+import { botIdentity, canRead, canWrite, draftIdentity, inspectHeldSend, sameConversation, sameFence, type HeldInspection, type ViewState } from "./view-state"
 import { partitionMessages } from "./chat-items"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import { BotAvatar } from "./BotAvatar"
@@ -62,6 +62,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
   const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
+  // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
+  const [inspection,setInspection]=useState<{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}|null>(null),inspecting=useRef<AbortController|null>(null)
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
   const stopping=useRef(false)
   const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
@@ -258,7 +260,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const send=async()=>{
     if(busy||unknown||view.heldOutcomes.has(draftKey)||filesLost||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
     const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
-    let attempted=false;setBusy(true);setSending(submitted)
+    let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setInspection(null)
     // The message leaves the box at once and shows above as sending, as in a
     // messaging app. A send that failed outright gives it back to the box.
     const quoted=quote
@@ -285,7 +287,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         // uncertain send is held.
         if(view.heldOutcomes.has(draftKey))throw failure("pa_read_only")
         attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
-        return source.send(intent,s)
+        answered=await source.send(intent,s)
+        return answered
       })
       if(result.receipt.state==="unknown")view.heldOutcomes.set(draftKey,{intent,receipt:result.receipt})
       else view.heldOutcomes.delete(draftKey)
@@ -295,11 +298,45 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed"){setFiles([]);rememberFiles(false);flush()}
       await refresh()
     }catch(e){
-      const code=errorCode(e),unresolved=attempted&&(code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
+      // The source's own receipt outlives a later authority or abort check.
+      const kept=answered as W.ProjectAssistantReceiptResponse|null
+      if(kept&&kept.receipt.state!=="unknown"&&kept.receipt.state!=="failed"){view.heldOutcomes.delete(draftKey);rememberFiles(false);view.flush(draftKey);if(valid()){setReceipt(kept.receipt);setUnknown(false);setFiles([]);setError("")}return}
+      // Only a refusal that provably sent nothing releases the hold; anything
+      // that may have crossed the transport stays unknown and is never resent.
+      const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
       if(attempted&&!unresolved)view.heldOutcomes.delete(draftKey)
+      else if(unresolved&&kept)view.heldOutcomes.set(draftKey,{intent,receipt:kept.receipt})
       restore()
-      if(valid()){if(!attempted&&(e as Error)?.name==="AbortError")setError("");else fail(e);if(unresolved)setUnknown(true)}
+      if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(unresolved||view.heldOutcomes.has(draftKey))}
     }finally{if(valid()){setBusy(false);setSending(null)}}
+  }
+
+  // Reads the source's durable receipts once, on the person's request. A
+  // matching admitted receipt reattaches to its turn; only a recorded failure
+  // returns the draft to editing; anything else keeps the hold unchanged.
+  const inspect=async()=>{
+    const held=view.heldOutcomes.get(draftKey)
+    if(!held||held.intent.command.operation!=="send"||inspecting.current||!valid())return
+    const control=new AbortController();inspecting.current=control;reads.current.add(control);setInspection({state:"checking"})
+    try{
+      const value=await authorized(source,current,s=>source.export(key,s),control.signal)
+      if(!valid()||control.signal.aborted)return
+      if(view.heldOutcomes.get(draftKey)!==held)return setInspection(null)
+      const result=inspectHeldSend(value,held,scope)
+      if(result.state==="delivered"){
+        view.heldOutcomes.delete(draftKey)
+        const intent=held.intent as W.ProjectAssistantSendRequest
+        // The restored copy is the delivered message, not a new draft.
+        if(view.draft(draftKey)===intent.text){view.stage(draftKey,"");setText("")}
+        if((view.quotes.get(draftKey)??"")===intent.quote_message_id){view.quotes.delete(draftKey);setQuote("")}
+        setImages([]);setFiles([]);rememberFiles(false);flush()
+        setReceipt(result.receipt);setUnknown(false);setError("");setInspection({state:"delivered"})
+        void refresh(true)
+      }else if(result.state==="failed"){
+        view.heldOutcomes.delete(draftKey);setReceipt(result.receipt);setUnknown(false);setInspection({state:"failed"})
+      }else setInspection({state:result.state==="invalid"?"unavailable":result.state,code:result.state==="invalid"?"pa_invalid":undefined})
+    }catch(e){if(valid())setInspection({state:"unavailable",code:control.signal.aborted?"aborted":errorCode(e)})}
+    finally{reads.current.delete(control);if(inspecting.current===control)inspecting.current=null}
   }
 
   const stop=async()=>{
@@ -479,7 +516,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         </button>
       </div>
     </div>
-    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text||m.files?.map(f=>f.name).join(" · ")}</span>{queuedTurn&&!m.files?.length&&!m.attachments?.length&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
+    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text||m.files?.map(f=>f.name).join(" · ")}</span>{queuedTurn&&!m.files?.length&&!m.attachments?.length&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button></div>}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
       {fileError&&<p role="alert">{fileError}</p>}<Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} sendBlocked={filesLost} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>

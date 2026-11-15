@@ -3,7 +3,7 @@ import { RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
-import { failure, projectChoices } from "../project-assistants/client.ts"
+import { failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { readViewRequest, readView } from "../project-assistants/read-views.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -100,24 +100,41 @@ export class ProjectAssistantSourceClient implements SourceClient {
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
   private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand }, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL): Promise<T> {
     const write = method !== "GET"
-    this.check(signal,write,content,minimum)
-    if (body) this.key(body.command.key)
+    // Refusals here precede the transport, so they prove the write never left.
+    try { this.check(signal,write,content,minimum); if (body) this.key(body.command.key) } catch (error) { throw notSent(error) }
     const control = new AbortController(), abort = () => control.abort()
     signal.addEventListener("abort",abort,{once:true}); this.lifetime.signal.addEventListener("abort",abort,{once:true})
+    let answered = false
     try {
       const response = await this.transport(path,{method,signal:control.signal,cache:"no-store",
         ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":body.command.idempotency_key}} : {})})
-      this.check(signal,write,content,minimum)
+      this.recheck(signal,write,content,minimum,response)
       const answer: unknown = await response.json()
-      this.check(signal,write,content,minimum)
+      this.recheck(signal,write,content,minimum,answer)
+      answered = true
       if (sourceFailure(answer)) throw answer
       if (!response.ok) throw new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : write ? "pa_outcome_unknown" : "pa_offline",answer)
       return answer as T
     } catch (error) {
-      this.check(signal,write,content,minimum)
+      if (answered || error instanceof AssistantTransportFailure) throw error
+      // A transport that refused before sending says so; nothing crossed.
+      if (provablyNotSent(error)) {
+        try { this.check(signal,write,content,minimum) } catch (current) { throw notSent(current) }
+        throw sourceFailure(error) ? error : notSent(new AssistantTransportFailure("pa_offline",error))
+      }
+      this.recheck(signal,write,content,minimum,error)
       if (sourceFailure(error)) throw error
       throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : "pa_offline",error)
     } finally { signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
+  }
+  /**
+   * After a write reached the transport, a changed grant or an abort cannot
+   * prove that nothing happened. Reads keep their typed refusal; writes become
+   * outcome unknown and retain what the transport returned as evidence.
+   */
+  private recheck(signal: AbortSignal, write: boolean, content: boolean, minimum: number, evidence: unknown) {
+    try { this.check(signal,write,content,minimum) }
+    catch (error) { if (!write) throw error; throw new AssistantTransportFailure("pa_outcome_unknown",{evidence,authority:error}) }
   }
   async status(s: AbortSignal): Promise<W.ProjectAssistantSourcesResponse> {
     // An unavailable source is a typed status, never an authoritative empty roster.
@@ -346,19 +363,25 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
 export type AssistantRelayConnection = Pick<CloudClientHandle,"_machineRequest" | "_machineRequestAs" | "machineDescriptor">
 export function capturedAssistantRelayFetch(machineID: string, current: () => AssistantRelayConnection | null, carried: readonly string[]): AssistantFetch {
   return async (input,init) => {
-    const request = assistantRelayRequest(input,init), client = current()
-    if (!carried.includes(request.word)) return Response.json({error:{code:"cloud_not_carried"}},{status:501})
-    if (!client) throw failure("pa_offline")
-    if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
-    if (!client.machineDescriptor?.(machineID)?.machine?.commands?.includes(request.word)) throw failure("pa_unsupported")
-    if(request.word==="project-assistants.send-pictures"){
-      // AES-GCM adds its 16-byte authentication tag to the complete plaintext.
-      const bytes=new TextEncoder().encode(JSON.stringify({type:request.word,session:"__clawdline_machine__",request:request.id,...request.fields})).byteLength
-      if(bytes+16>RELAY_CTL_MAX_BYTES)throw {...failure("pa_capacity_full"),error:{...failure("pa_capacity_full").error,field:"cloud_command_bytes"}}
-    }
+    let request: ReturnType<typeof assistantRelayRequest>, client: AssistantRelayConnection | null
+    // Everything before the encrypted request is a refusal that sent nothing.
+    try {
+      request = assistantRelayRequest(input,init); client = current()
+      if (!carried.includes(request.word)) return Response.json({error:{code:"cloud_not_carried"}},{status:501})
+      if (!client) throw failure("pa_offline")
+      if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
+      if (!client.machineDescriptor?.(machineID)?.machine?.commands?.includes(request.word)) throw failure("pa_unsupported")
+      if(request.word==="project-assistants.send-pictures"){
+        // AES-GCM adds its 16-byte authentication tag to the complete plaintext.
+        const bytes=new TextEncoder().encode(JSON.stringify({type:request.word,session:"__clawdline_machine__",request:request.id,...request.fields})).byteLength
+        if(bytes+16>RELAY_CTL_MAX_BYTES)throw {...failure("pa_capacity_full"),error:{...failure("pa_capacity_full").error,field:"cloud_command_bytes"}}
+      }
+    } catch (error) { throw notSent(error) }
     // The connection's authenticated principal is authoritative; body reader_id is only a hint.
-    const answer = request.kind === "read" ? await client._machineRequest?.(machineID,request.word,request.fields,"read",undefined,{signal:init?.signal ?? undefined}) :
-      await client._machineRequestAs?.(request.id,machineID,request.word,request.fields,"action")
+    const connection = client!, read = request.kind === "read"
+    if (!(read ? connection._machineRequest : connection._machineRequestAs)) throw notSent(failure("pa_unsupported"))
+    const answer = read ? await connection._machineRequest?.(machineID,request.word,request.fields,"read",undefined,{signal:init?.signal ?? undefined}) :
+      await connection._machineRequestAs?.(request.id,machineID,request.word,request.fields,"action")
     if (answer === undefined) throw failure("pa_unsupported")
     if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
     return Response.json(answer)
