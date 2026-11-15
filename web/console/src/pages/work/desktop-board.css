@@ -7,7 +7,7 @@
     /* One row: title, Project, column switches, detail mode, search, create, refresh. */
     .work-page[data-board-layout="columns"] .board-head {
         width: 100%; min-width: 0; flex: none; margin-bottom: 12px;
-        flex-wrap: wrap; justify-content: flex-start; gap: 10px 12px;
+        flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 10px 12px;
     }
     .work-page[data-board-layout="columns"] .board-head h1 { font-size: 24px; letter-spacing: -.02em; }
     .work-page[data-board-layout="columns"] .board-head .board-button { min-height: 38px; }
@@ -19,9 +19,11 @@
     .work-page[data-board-layout="columns"] .work-filter-bar {
         display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 520px; margin: 0;
     }
-    .work-page[data-board-layout="columns"] .work-filter-bar > :first-child { flex: 0 1 220px; min-width: 0; }
-    .work-page[data-board-layout="columns"] .work-search { flex: 1 1 160px; max-width: 300px; margin-left: auto; }
-    .work-desktop-switches { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+    .work-page[data-board-layout="columns"] .work-filter-bar > .project-picker { flex: 0 1 200px; width: 200px; min-width: 140px; }
+    .work-page[data-board-layout="columns"] .work-filter-controls { flex-wrap: nowrap; }
+    .work-page[data-board-layout="columns"] .work-search { flex: 1 1 140px; min-width: 120px; max-width: 280px; margin-left: auto; }
+    .work-desktop-switches { display: flex; flex-wrap: nowrap; gap: 8px; min-width: 0; }
+    .work-desktop-switch, .work-page[data-board-layout="columns"] .work-detail-switch { white-space: nowrap; }
     .work-desktop-switch {
         display: flex; align-items: center; gap: 7px; padding: 8px 10px;
         border: 1px solid var(--line); border-radius: 8px; color: var(--dim);
