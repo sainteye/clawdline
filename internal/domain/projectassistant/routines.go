@@ -14,23 +14,26 @@ const (
 	MaxRoutineIntervalSeconds      = 31536000
 	MaxRoutineTimeoutSeconds       = 86400
 	MaxRoutineFinishedRuns         = 1000
+	MaxRoutineTriggers             = 20
 )
 
 // Routine belongs to one source Bot, canonical Project and conversation.
-// Only elapsed intervals are supported; calendar intent must not be approximated.
+// Legacy interval rows keep their cadence when read or edited.
 type Routine struct {
-	ID              string       `json:"id"`
-	Key             BotKey       `json:"key"`
-	Project         ProjectScope `json:"project"`
-	ConversationID  string       `json:"conversation_id"`
-	Name            string       `json:"name"`
-	Instruction     string       `json:"instruction"`
-	IntervalSeconds int64        `json:"interval_seconds"`
-	TimeoutSeconds  int64        `json:"timeout_seconds"`
-	Enabled         bool         `json:"enabled"`
-	Deleted         bool         `json:"deleted"`
-	NextDue         time.Time    `json:"next_due"`
-	Version         int64        `json:"version"`
+	ID              string           `json:"id"`
+	Key             BotKey           `json:"key"`
+	Project         ProjectScope     `json:"project"`
+	ConversationID  string           `json:"conversation_id"`
+	Name            string           `json:"name"`
+	Instruction     string           `json:"instruction"`
+	IntervalSeconds int64            `json:"interval_seconds"`
+	Triggers        []RoutineTrigger `json:"triggers,omitempty"`
+	NextRuns        []time.Time      `json:"next_runs,omitempty"`
+	TimeoutSeconds  int64            `json:"timeout_seconds"`
+	Enabled         bool             `json:"enabled"`
+	Deleted         bool             `json:"deleted"`
+	NextDue         time.Time        `json:"next_due"`
+	Version         int64            `json:"version"`
 }
 
 type RoutineRun struct {
@@ -57,13 +60,37 @@ func ValidateRoutine(r Routine) error {
 	if strings.TrimSpace(r.Name) == "" || len(r.Name) > MaxRoutineNameBytes || strings.TrimSpace(r.Instruction) == "" || len(r.Instruction) > MaxRoutineInstructionBytes {
 		return &Failure{Code: Invalid, Field: "routine_text"}
 	}
-	if r.IntervalSeconds < 1 || r.IntervalSeconds > MaxRoutineIntervalSeconds || r.TimeoutSeconds < 1 || r.TimeoutSeconds > MaxRoutineTimeoutSeconds || r.NextDue.IsZero() {
+	if r.TimeoutSeconds < 1 || r.TimeoutSeconds > MaxRoutineTimeoutSeconds {
 		return &Failure{Code: Invalid, Field: "routine_interval_timeout"}
+	}
+	if len(r.Triggers) == 0 {
+		if r.IntervalSeconds < 1 || r.IntervalSeconds > MaxRoutineIntervalSeconds || r.NextDue.IsZero() || len(r.NextRuns) != 0 {
+			return &Failure{Code: Invalid, Field: "routine_interval_timeout"}
+		}
+	} else {
+		if r.IntervalSeconds != 0 || len(r.Triggers) > MaxRoutineTriggers || len(r.NextRuns) != len(r.Triggers) {
+			return &Failure{Code: Invalid, Field: "routine_triggers"}
+		}
+		for i, trigger := range r.Triggers {
+			if err := trigger.Validate(); err != nil {
+				return err
+			}
+			// Only an exhausted once trigger can have no next occurrence.
+			if r.NextRuns[i].IsZero() && trigger.Type != "once" {
+				return &Failure{Code: Invalid, Field: "routine_next_run"}
+			}
+			if trigger.Type == "once" && !r.NextRuns[i].IsZero() && !r.NextRuns[i].Equal(time.UnixMilli(trigger.At)) {
+				return &Failure{Code: Invalid, Field: "routine_next_run"}
+			}
+		}
+		if !r.NextDue.Equal(earliestRoutineRun(r.NextRuns)) {
+			return &Failure{Code: Invalid, Field: "routine_next_due"}
+		}
 	}
 	return nil
 }
 
-// AdvanceRoutine skips missed occurrences while preserving the original cadence.
+// AdvanceRoutine advances a legacy elapsed interval, preserving its cadence.
 func AdvanceRoutine(r Routine, now time.Time) time.Time {
 	if now.Before(r.NextDue) {
 		return r.NextDue

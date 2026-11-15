@@ -88,19 +88,31 @@ func (r *Engine) Routine(ctx context.Context, f pa.Fence, turnID string, q Routi
 		if !found {
 			d = pa.Routine{ID: r.o.ID(), Key: f.Key, Project: f.Project, ConversationID: f.ConversationID, Enabled: true}
 		}
-		oldInterval := d.IntervalSeconds
+		old := d
 		d.Name = q.Name
 		d.Instruction = q.Instruction
-		d.IntervalSeconds = q.IntervalSeconds
-		d.TimeoutSeconds = q.TimeoutSeconds
+		if q.TimeoutSeconds != 0 {
+			d.TimeoutSeconds = q.TimeoutSeconds
+		}
 		if d.TimeoutSeconds == 0 {
 			d.TimeoutSeconds = 3600
 		}
 		if q.Enabled != nil {
 			d.Enabled = *q.Enabled
 		}
-		if !found || oldInterval != d.IntervalSeconds {
-			d.NextDue = r.o.Clock().Add(time.Duration(d.IntervalSeconds) * time.Second)
+		triggers := q.Triggers
+		if triggers != nil && q.IntervalSeconds != 0 {
+			return RoutineResult{}, runtimeFailure(pa.Invalid, "routine_schedule_conflict")
+		}
+		if triggers == nil {
+			triggers = []pa.RoutineTrigger{{Type: "interval", Seconds: q.IntervalSeconds}}
+		}
+		if !found {
+			old = pa.Routine{}
+		}
+		d, err = pa.SetRoutineSchedule(d, old, triggers, r.o.Clock())
+		if err != nil {
+			return RoutineResult{}, err
 		}
 		d.Version++
 		if err = pa.ValidateRoutine(d); err != nil {
@@ -119,9 +131,13 @@ func (r *Engine) Routine(ctx context.Context, f pa.Fence, turnID string, q Routi
 			if q.Enabled == nil {
 				return RoutineResult{}, runtimeFailure(pa.Invalid, "routine_enabled")
 			}
+			old := d
 			d.Enabled = *q.Enabled
-			if d.Enabled {
-				d.NextDue = r.o.Clock().Add(time.Duration(d.IntervalSeconds) * time.Second)
+			if d.Enabled && !old.Enabled {
+				d, err = pa.SetRoutineSchedule(d, old, d.ScheduleTriggers(), r.o.Clock())
+				if err != nil {
+					return RoutineResult{}, err
+				}
 			}
 		}
 		d.Version++
@@ -181,7 +197,7 @@ func (r *Engine) TickRoutines(ctx context.Context, key pa.BotKey) error {
 	}
 	now := r.o.Clock()
 	for _, d := range x.Routines {
-		if d.Deleted || !d.Enabled || now.Before(d.NextDue) {
+		if d.Deleted || !d.Enabled || d.NextDue.IsZero() || now.Before(d.NextDue) {
 			continue
 		}
 		exists := false
@@ -191,7 +207,10 @@ func (r *Engine) TickRoutines(ctx context.Context, key pa.BotKey) error {
 			}
 		}
 		cmd := r.command(key, pa.EditOperation, "routine-due-"+d.ID+"-"+d.NextDue.UTC().Format(time.RFC3339Nano), d.NextDue)
-		d.NextDue = pa.AdvanceRoutine(d, now)
+		d, err = pa.AdvanceRoutineSchedule(d, now)
+		if err != nil {
+			return err
+		}
 		d.Version++
 		m := Mutation{Command: cmd, Routine: &d, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: d.ID}}
 		if !exists {

@@ -1936,6 +1936,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.routine_triggers",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineTriggers"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.rpc_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

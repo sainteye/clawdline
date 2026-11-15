@@ -389,7 +389,7 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		}
 		var q app.RoutineRequest
 		if mcpDecode(mcpEmpty(arguments), &q) != nil {
-			return nil, refusal(pa.Unsupported, "routine_interval_only")
+			return nil, refusal(pa.Invalid, "routine_arguments")
 		}
 		switch name {
 		case "list_routines":
@@ -510,8 +510,8 @@ func mcpTools() []any {
 	}
 	text := func() any { return map[string]any{"type": "string", "minLength": 1} }
 	return []any{
-		tool("list_routines", "List this Bot's elapsed-interval routines. Calendar, once, cron, webhook and event schedules are unsupported.", map[string]any{}),
-		tool("save_routine", "Save an explicitly requested elapsed interval in seconds. Saving never executes the instruction. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "id": text(), "name": text(), "instruction": text(), "interval_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineIntervalSeconds}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineTimeoutSeconds}, "enabled": map[string]any{"type": "boolean"}}, "idempotency_key", "name", "instruction", "interval_seconds"),
+		tool("list_routines", "List this Bot's routines, their saved triggers and next due times. Webhook and event schedules are unsupported.", map[string]any{}),
+		tool("save_routine", "Save an explicitly requested schedule. Supply either legacy interval_seconds or triggers (OR). Triggers use type interval with seconds, once with at (Unix milliseconds), or cron with expression (five fields) and timeZone (explicit IANA name). Ask for missing calendar intent or timezone; never approximate it as an interval. Preserve unchanged triggers when editing name/instruction. Saving never test-runs. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "id": text(), "name": text(), "instruction": text(), "interval_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineIntervalSeconds}, "triggers": routineTriggerSchema(), "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineTimeoutSeconds}, "enabled": map[string]any{"type": "boolean"}}, "idempotency_key", "name", "instruction"),
 		tool("enable_routine", "Enable or pause this Bot's routine. A paused pending wake cannot send a prompt.", map[string]any{"idempotency_key": text(), "id": text(), "enabled": map[string]any{"type": "boolean"}}, "idempotency_key", "id", "enabled"),
 		tool("delete_routine", "Delete this Bot's routine and cancel its pending wake; an already running task may finish.", map[string]any{"idempotency_key": text(), "id": text()}, "idempotency_key", "id"),
 		tool("test_run_routine", "Explicitly enqueue one test run of an enabled routine. It runs in a separate session and returns its result to this chat.", map[string]any{"idempotency_key": text(), "id": text()}, "idempotency_key", "id"),

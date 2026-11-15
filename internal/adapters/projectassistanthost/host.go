@@ -651,7 +651,7 @@ func (h *Host) routineTick(ctx context.Context, done chan struct{}) {
 					}
 					needed := false
 					for _, d := range defs {
-						if d.Enabled && !d.Deleted && !h.o.Clock().Before(d.NextDue) {
+						if d.Enabled && !d.Deleted && !d.NextDue.IsZero() && !h.o.Clock().Before(d.NextDue) {
 							needed = true
 						}
 					}
