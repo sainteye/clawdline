@@ -2559,7 +2559,11 @@ export class RelayWriter {
     // The voice copilot acting on a Session other than the opened one
     // (`unopened-read.ts`): that Session's current execution, resolved and
     // admitted exactly as a newly started Session's is, never the opened one's.
-    const exact = unopened ? await this.unopenedMutationTarget(session, machine ?? this.host.machine) : this.fleetTarget(session)
+    // The same applies to messages sent to a background Session while another
+    // is open, e.g. when voice dictation finishes transcribing after switching away.
+    const opened = this.host.exactTarget?.() ?? null
+    const useUnopened = unopened || (opened !== null && opened.sessionID !== session && word === "send" && !!this.host.resolveSession)
+    const exact = useUnopened ? await this.unopenedMutationTarget(session, machine ?? this.host.machine) : this.fleetTarget(session)
     // The opened fleet detail is pinned to an exact execution. Its current
     // status projection is checked below. The legacy rich-row replay is a
     // separate stream and can temporarily omit that Session during recovery;
