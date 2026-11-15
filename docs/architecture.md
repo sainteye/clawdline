@@ -387,7 +387,7 @@ Update deep links continue to open the status pane.
 [View Plugin v1](plugins/view-plugin-v1.md) defines the browser-local runtime in
 `web/console/src/view-plugins`: an IndexedDB archive registry, a fixed fleet projection covering all
 authorized machines and Projects, an opaque srcdoc iframe and a dedicated MessagePort SDK.
-Galaxy and List are independent static ZIP packages, not compiled page modules.
+Galaxy, List and Pop are independent static ZIP packages, not compiled page modules.
 Local uses the existing fleet snapshot; Cloud uses the authorized pinned Session
 projection source. Neither grants generic API calls or changes the classifier or
 broker. The sidebar owns management. The bottom status-bar entry opens

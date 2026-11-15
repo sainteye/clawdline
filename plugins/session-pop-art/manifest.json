@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "com.clawdline.session-pop-art",
+  "version": "0.1.0",
+  "hostApi": 1,
+  "name": {
+    "en": "Session Pop",
+    "zh-Hant": "Session 普普風"
+  },
+  "entry": "index.html",
+  "capabilities": [
+    "sessions.read",
+    "sessions.open"
+  ]
+}
