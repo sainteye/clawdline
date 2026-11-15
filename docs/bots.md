@@ -164,6 +164,30 @@ For its optional real-browser run, supply `PLAYWRIGHT_MODULE`,
 `PLAYWRIGHT_BROWSERS_PATH` and a task-owned `CLAWDLINE_OUTPUT_E2E_DIR`, then run
 `go test ./internal/transport/http -run '^TestProjectAssistantOutputOwnedMCPHTTP$' -count=1`.
 
+## Roster activity
+
+The roster follows Codync's four presentation states: `idle`, `working`,
+`needsInput` and `error`. Working rows show the current tool title, writing or
+thinking activity. A permission request uses its actual action title. Idle rows
+return to the latest message; errors have a separate red caption. Unread counts
+and the machine connection remain independent of these states. A needs-input
+badge takes precedence over the avatar's unread dot without hiding the count.
+
+The Canvas character, physical-pixel dot grid and thinking-orb geometry are
+adapted from Codync commit `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
+The avatar stops moving off screen or when reduced motion is selected. The
+existing dark Bots surface supplies its background; appearance colors retain
+the Bot's identity. License notices ship under `public/licenses/` in the console.
+
+This first projection is exercised through the real local Store and HTTP
+boundary with a synthetic event producer, without a provider/model call.
+Set task-owned `CLAWDLINE_ROSTER_E2E_DIR`, `PLAYWRIGHT_MODULE` and
+`PLAYWRIGHT_BROWSERS_PATH`, then run
+`go test ./internal/transport/http -run '^TestProjectAssistantRosterStatusHTTP$' -count=1`.
+Its current browser evidence explicitly records `eventUpdates: false`:
+event subscription and automatic roster updates are a following unit, not a
+claim made by the snapshot presentation.
+
 ## If something is missing
 
 - *This Bot needs Claude Code 2.1.323 or newer and Node 22 or newer*:

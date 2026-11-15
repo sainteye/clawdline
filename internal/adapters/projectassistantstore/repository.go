@@ -41,6 +41,7 @@ type aggregate struct {
 	Memory       pa.MemoryRevision
 	Entries      map[string]pa.MemoryEntry
 	ReadCursors  map[string]pa.ReadCursor
+	RosterTrace  *pa.Event `json:",omitempty"`
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -279,6 +280,7 @@ func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 			return pa.Receipt{}, e
 		}
 		result.EventSeq = seq
+		rememberRosterTrace(&a, event)
 	}
 	if err = persist(ctx, tx, a, m.ExpectedVersion); err != nil {
 		return pa.Receipt{}, err
@@ -692,9 +694,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 			out.PendingPermissions++
 		}
 	}
-	if a.Conversation.ActiveTurnID != "" {
-		out.Activity = string(a.Turns[a.Conversation.ActiveTurnID].State)
-	}
+	projectRosterActivity(a, &out)
 	return out
 }
 

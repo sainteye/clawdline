@@ -1,4 +1,6 @@
 import type * as W from "@clawdline/contract"
+// @ts-expect-error Node executes source extensions.
+import { botFailureText } from "./source-errors.ts"
 
 /**
  * What a running Bot is doing, from the latest trace event of its turn, as
@@ -24,6 +26,27 @@ export function elapsed(startedAt: string | undefined, now: number): string {
 /** The roster's activity is the running turn's state word; it is shown in
  *  the person's language, and anything else as it came. */
 export function rowActivity(activity: string, w: Record<string, string>): string {
+  if (activity === "writing") return w.writingReply
+  if (activity === "thinking") return w.thinking
   if (activity === "running" || activity === "waiting_permission" || activity === "queued" || activity === "accepted") return w[activity] ?? activity
   return activity
+}
+
+/** Source connection and unread are independent of the Bot's working state.
+ * Older daemons retain their state-word fallback. Cached activity never animates. */
+export function rosterActivity(item: W.ProjectAssistantBotSummary, w: Record<string,string>) {
+  const live = item.source.fresh && item.source.state === "online" && item.source.readable && item.source.access !== "hidden"
+  const state = item.status || (item.pending_permissions > 0 || item.activity === "waiting_permission" ? "needsInput"
+    : ["running","accepted","queued"].includes(item.activity) ? "working" : "idle")
+  const shown = live ? state : "idle"
+  let caption = item.latest_message
+  if (shown === "needsInput") {
+    const activity=item.activity
+    caption=activity.startsWith("Needs approval: ")?w.approvalActivity.replace("{action}",activity.slice("Needs approval: ".length))
+      : activity.startsWith("Asks: ")?w.decisionActivity.replace("{question}",activity.slice("Asks: ".length))
+      : activity && !["waiting_permission","running","accepted","queued"].includes(activity)?activity:w.pending
+  }
+  else if (shown === "working") caption = rowActivity(item.activity,w) || w.running
+  else if (shown === "error") caption = item.failure ? botFailureText(item.failure.code,w) : w.failed
+  return {state:shown,caption,live}
 }

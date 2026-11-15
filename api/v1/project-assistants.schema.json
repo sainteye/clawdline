@@ -991,6 +991,19 @@
         },
         "source": {
           "$ref": "#/$defs/ProjectAssistantSourceStatus"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "working",
+            "needsInput",
+            "error"
+          ],
+          "description": "Roster activity; unread count and source connection are independent. Optional for older daemons."
+        },
+        "failure": {
+          "$ref": "#/$defs/ProjectAssistantFailure"
         }
       },
       "required": [

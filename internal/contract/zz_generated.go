@@ -4455,12 +4455,17 @@ type ProjectAssistantBotSummary struct {
 	Activity           string                       `json:"activity"`
 	ActivityAt         string                       `json:"activity_at"`
 	Bot                ProjectAssistantBot          `json:"bot"`
+	Failure            *ProjectAssistantFailure     `json:"failure,omitempty"`
 	LatestMessage      string                       `json:"latest_message"`
 	PendingPermissions int64                        `json:"pending_permissions"`
 	ReadCursor         ProjectAssistantReadCursor   `json:"read_cursor"`
 	Source             ProjectAssistantSourceStatus `json:"source"`
-	UnreadCount        int64                        `json:"unread_count"`
-	Version            int64                        `json:"version"`
+
+	// Roster activity; unread count and source connection are independent. Optional
+	// for older daemons.
+	Status      string `json:"status,omitempty"`
+	UnreadCount int64  `json:"unread_count"`
+	Version     int64  `json:"version"`
 }
 
 // Unknown version/capability is unavailable. Provider probes must supply actual

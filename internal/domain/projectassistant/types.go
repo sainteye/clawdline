@@ -402,7 +402,11 @@ type ReadCursor struct {
 	MessageSeq     int64  `json:"message_seq"`
 }
 type BotSummary struct {
-	Bot                Bot          `json:"bot"`
+	Bot Bot `json:"bot"`
+	// Status is the current roster presentation; unread and source connection
+	// are independent. Activity carries a live tool title or a localized key.
+	Status             string       `json:"status,omitempty"`
+	Failure            *Failure     `json:"failure,omitempty"`
 	LatestMessage      string       `json:"latest_message"`
 	Activity           string       `json:"activity"`
 	ActivityAt         time.Time    `json:"activity_at"`

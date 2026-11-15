@@ -1,5 +1,18 @@
 # Bots module integration and source record
 
+The roster character and thinking orb additionally adapt the actual desktop
+Canvas implementation at Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`:
+`components/Avatar.tsx`, `components/ThinkingOrb.tsx`, `lib/dot-grid.ts` and
+`lib/theme.ts`. Geometry, eyes, lighting, waiting ripple, pixel alignment and
+reduced-motion handling come from those sources. The character's prepared
+points are owned by each component effect instead of a process-global cache;
+appearance values use Clawdline's existing shape and color contract. The
+existing dark Bots surface supplies the character's dark-background flag.
+State labels follow upstream `BotRow.tsx` and `host/src/agent/bot/updates.rs`.
+See `third_party/codync` and the console's shipped `public/licenses/` copies
+for Apache-2.0 and MIT attribution. This source record does not
+claim Codync's event subscription is present in Clawdline's existing transport.
+
 This removable React module implements the approved BR-01 through BR-06 presentation against `docs/project-assistants-handoff.json` (`project-assistants.v1`). It does not enable the feature, add a router entry, install an adapter, start a model, mount a recorder, or contact upstream services.
 
 ## Public entry points

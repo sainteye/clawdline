@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12276,
+  "englishContentKeys": 12279,
   "riskKeys": 5317,
-  "nonRiskCount": 6959,
+  "nonRiskCount": 6962,
   "groups": [
     {
       "name": "acp / other",
@@ -5629,7 +5629,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 145,
+      "count": 148,
       "sources": [
         null
       ],
@@ -5640,6 +5640,7 @@
         "projectAssistants.allMachines",
         "projectAssistants.answered",
         "projectAssistants.appearance",
+        "projectAssistants.approvalActivity",
         "projectAssistants.approveAutomatically",
         "projectAssistants.artifact",
         "projectAssistants.ask",
@@ -5657,6 +5658,7 @@
         "projectAssistants.create",
         "projectAssistants.createHint",
         "projectAssistants.createSubmit",
+        "projectAssistants.decisionActivity",
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.downloadFile",
@@ -5762,6 +5764,7 @@
         "projectAssistants.statusOneOk",
         "projectAssistants.statusShow",
         "projectAssistants.stop",
+        "projectAssistants.thinking",
         "projectAssistants.thisMachine",
         "projectAssistants.total",
         "projectAssistants.trace",

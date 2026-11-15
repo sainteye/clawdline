@@ -295,6 +295,11 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 		return out, err
 	}
 	out.Bot = convertedBot
+	out.Status = value.Status
+	if value.Failure != nil {
+		converted := paWireFailure(*value.Failure)
+		out.Failure = &converted
+	}
 	out.LatestMessage = value.LatestMessage
 	out.Activity = value.Activity
 	convertedActivityAt, err := paWireTime(value.ActivityAt)

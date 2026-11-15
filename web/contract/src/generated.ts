@@ -5206,10 +5206,17 @@ export interface ProjectAssistantBotSummary {
   activity: string
   activity_at: string
   bot: ProjectAssistantBot
+  failure?: ProjectAssistantFailure
   latest_message: string
   pending_permissions: number
   read_cursor: ProjectAssistantReadCursor
   source: ProjectAssistantSourceStatus
+
+  /**
+   * Roster activity; unread count and source connection are independent. Optional
+   * for older daemons.
+   */
+  status?: string
   unread_count: number
   version: number
 }

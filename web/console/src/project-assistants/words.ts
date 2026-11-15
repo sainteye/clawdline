@@ -1,5 +1,8 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "thinking": "Thinking…",
+  "approvalActivity": "Needs approval: {action}",
+  "decisionActivity": "Asks: {question}",
   "library": "Library",
   "artifact": "Artifact",
   "sharedFile": "Shared file",
@@ -217,6 +220,9 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "thinking": "思考中…",
+  "approvalActivity": "需要允許：{action}",
+  "decisionActivity": "詢問：{question}",
   "library": "檔案庫",
   "artifact": "互動文件",
   "sharedFile": "分享的檔案",
