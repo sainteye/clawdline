@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12314,
-  "riskKeys": 5335,
-  "nonRiskCount": 6979,
+  "englishContentKeys": 12326,
+  "riskKeys": 5338,
+  "nonRiskCount": 6988,
   "groups": [
     {
       "name": "acp / other",
@@ -7332,12 +7332,16 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 51,
+      "count": 60,
       "sources": [
         null
       ],
       "keys": [
+        "viewPlugins.addDepartures",
         "viewPlugins.addGalaxy",
+        "viewPlugins.addNightCity",
+        "viewPlugins.addOrrery",
+        "viewPlugins.addTerritory",
         "viewPlugins.added",
         "viewPlugins.all",
         "viewPlugins.author",
@@ -7346,6 +7350,7 @@
         "viewPlugins.close",
         "viewPlugins.confirmInstall",
         "viewPlugins.coverRequired",
+        "viewPlugins.departures",
         "viewPlugins.disable",
         "viewPlugins.disabled",
         "viewPlugins.download",
@@ -7372,6 +7377,9 @@
         "viewPlugins.loading",
         "viewPlugins.manage",
         "viewPlugins.manageHeading",
+        "viewPlugins.nightCity",
+        "viewPlugins.orrery",
+        "viewPlugins.orreryHint",
         "viewPlugins.personalize",
         "viewPlugins.preset",
         "viewPlugins.previous",
@@ -7385,6 +7393,7 @@
         "viewPlugins.scope",
         "viewPlugins.selected",
         "viewPlugins.source",
+        "viewPlugins.territory",
         "viewPlugins.title",
         "viewPlugins.version",
         "viewPlugins.viewClose"

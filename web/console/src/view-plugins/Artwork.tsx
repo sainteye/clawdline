@@ -1,7 +1,15 @@
 import galaxy from "../../../../plugins/session-galaxy/manifest.json"
+import orrery from "../../../../plugins/session-orrery/manifest.json"
+import nightCity from "../../../../plugins/session-night-city/manifest.json"
+import departures from "../../../../plugins/session-departures/manifest.json"
+import territory from "../../../../plugins/session-territory/manifest.json"
 import type { ViewPackage } from "./package.js"
 
 const covers = [
+  { manifest: orrery },
+  { manifest: nightCity },
+  { manifest: departures },
+  { manifest: territory },
   { manifest: galaxy, legacy: "51770c8f3604165cf352682dbc06b4cfd9c2e8a838a58a1941972478ad887f10" },
 ]
 export const curatedPackageIDs: readonly string[] = covers.map(row => row.manifest.id)

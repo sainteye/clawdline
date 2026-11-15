@@ -2,8 +2,9 @@
 
 An independently installable View Plugin v1 candidate, ID
 `com.clawdline.session-departures`, version `0.1.0`. The package owns its header;
-the production host retains its trusted return control. This candidate is not a
-curated host entry, production installation, or public release.
+the production host retains its trusted return control. The host offers this package in **View plugins → Explore views**. The normal
+package review is required and installation remains local to each browser or
+device. Source or Cloud publication does not establish public Release acceptance.
 
 ## Presentation and data
 

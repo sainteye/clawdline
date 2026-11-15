@@ -1,6 +1,6 @@
 # Session Night City
 
-An independently installable View Plugin v1 candidate, `com.clawdline.session-night-city` version `0.1.0`. English and Taiwan Traditional Chinese follow the host language. This candidate does not add a curated host card or enable itself in any production browser.
+An independently installable View Plugin v1 candidate, `com.clawdline.session-night-city` version `0.1.0`. English and Taiwan Traditional Chinese follow the host language. The host offers this package in **View plugins → Explore views**; the normal package review is required and installation remains local to each browser or device.
 
 Each Project is a building and each Session is a selectable window. Sessions without a Project share an explicitly named unassigned building. The permanent **Needs you / 需要你** rail names every `waiting_you` Session, including stale readings. A readable list shows exactly the same Sessions and preserves selection. On narrow screens selecting a Session brings its detail into view; only the separate **Open Session / 開啟 Session** button requests navigation.
 
