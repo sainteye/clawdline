@@ -40,8 +40,9 @@ message-like tip and/or a sound.
   first snapshot.
 - **No tip while Bots is open.** The count updates inside Bots instead. Today the host already
   stops polling the badge while Bots is open.
-- **Dismissing a tip removes only the tip.** Unread and pending counts stay until the person
-  opens and reads the Bot. "Quiet tips" pauses tips for the rest of the preview without
+- **Dismissing a tip removes only the tip.** Opening and reading the Bot clears its unread
+  reply and failure attention, while permission counts remain pending until answered. The
+  preview does not answer permission requests. "Quiet tips" pauses tips for the rest of the preview without
   clearing anything; sound obeys the same pause.
 - **Sound is throttled per Bot and kind for 5 s**, as Codync throttles push alerts.
 - **No focus steal and no audio routing changes.** Tips announce through a polite live region;
@@ -104,3 +105,7 @@ Codync at `9f67eb09084db61b3cca9c84a11bc03df9de29b7` (read-only reference):
 - The copy in English and Taiwan Traditional Chinese.
 - Whether replies should alert at all, or only permission requests and failures.
 - Whether the chime should be offered, and whether its default stays off.
+
+## Cloud delivery
+
+The hosted document viewer removes scripts, so the delivered Cloud document uses rendered desktop and phone-size screenshots rather than claiming that the prototype runs there. The same synthesized chime is supplied in a short H.264/AAC MP4 that the Cloud document player supports. The original self-contained HTML remains the locally verified interaction prototype. Opening a Bot in that prototype clears unread reply/failure attention while leaving its permission count pending.

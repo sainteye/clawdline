@@ -299,7 +299,7 @@ function chime(){
 function audioState(){$("audioState").textContent=S.ctx?w().audioOn(S.ctx.state):w().audioIdle}
 function openBots(id){
   S.botsOpen=true;S.focusBot=id||null;S.shown=[];
-  if(id){const u=S.unread[id];u.done=u.needs=u.failed=0;log(w().lgOpened(bot(id).name[S.lang]))}
+  if(id){const u=S.unread[id];u.done=u.failed=0;log(w().lgOpened(bot(id).name[S.lang]))}
   render();$("closeBots").focus();
 }
 function closeBots(){S.botsOpen=false;S.focusBot=null;render();$("orb").focus()}

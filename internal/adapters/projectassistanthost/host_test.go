@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -320,6 +321,9 @@ func TestHostDefaultOffAndMetadataNeverInitializeProvider(t *testing.T) {
 
 func TestHostLazySendDisablePreservesUnknownAndExistingHostWork(t *testing.T) {
 	f := newHostFixture(t)
+	// This checks real SQLite lifecycle/data preservation, not timeout refusal.
+	// Use the production cleanup budget; dedicated fault cases keep short limits.
+	f.o.Limits.CleanupTimeout = time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond
 	f.start(t)
 	f.enable(t)
 	b := f.create(t, "bot")
