@@ -110,8 +110,7 @@ func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Du
 				return nil, ctx.Err()
 			case <-timer.C:
 			}
-			reader := &Process{limits: p.limits, inventoryCtx: ctx}
-			return reader.identities()
+			return fixtureCensusDuring(p, ctx)
 		}
 		p.mu.Unlock()
 	}
@@ -132,7 +131,11 @@ func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Du
 func fixtureCensus(p *Process) ([]processIdentity, error) {
 	// Test assertions happen after Close has cancelled its cleanup context.
 	// Use an independent bounded read-only census, never the expired budget.
-	reader := &Process{limits: p.limits}
+	return fixtureCensusDuring(p, context.Background())
+}
+
+func fixtureCensusDuring(p *Process, ctx context.Context) ([]processIdentity, error) {
+	reader := &Process{limits: p.limits, inventoryCtx: ctx}
 	if census, ok := any(reader).(interface {
 		identities() ([]processIdentity, error)
 	}); ok {
