@@ -60,13 +60,13 @@
 | `bots.artifact_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachments_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `bots.capture_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `bots.frame_bytes` | 1048576 | `bytes` | `disconnect` | `diagnostics, sender` | — |
+| `bots.frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.inputs_per_bot` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -76,7 +76,6 @@
 | `bots.memory_search_results` | 30 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |
-| `bots.notice_rows` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.output_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.output_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
@@ -84,6 +83,7 @@
 | `bots.pending_turns` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.perm_rows` | 8 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.prompt_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |

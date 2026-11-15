@@ -3,14 +3,16 @@ package capacity
 import pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 
 const (
-	MaximumBotOwnedDescendants    = 256
-	MaximumBotActors              = 64
-	MaximumBotProcesses           = 4
-	MaximumBotRPCPending          = 32
-	MaximumBotPermissions         = 8
-	MaximumBotNotifications       = 256
-	MaximumBotFrameBytes          = 1048576
-	MaximumBotCaptureBytes        = 1048576
+	// Trusted ACP category identifiers; reject longer or non-ASCII metadata.
+	MaximumBotErrorKindBytes   = 40
+	MaximumBotOwnedDescendants = 256
+	MaximumBotActors           = 64
+	MaximumBotProcesses        = 4
+	MaximumBotRPCPending       = 32
+	MaximumBotPermissions      = 8
+	MaximumBotFrameBytes       = 1048576
+	// Existing process-identity inventory budget; never limits native ACP text.
+	MaximumBotProcessCensusBytes  = 1048576
 	MaximumBotStderrBytes         = 65536
 	MaximumBotWriteMilliseconds   = 2000
 	MaximumBotCleanupMilliseconds = 5000
@@ -49,6 +51,7 @@ const (
 func projectAssistantBounds() []Entry {
 	return []Entry{
 		{Name: BotsRoutineTriggers, Class: Buffer, Unit: Rows, Limit: pa.MaxRoutineTriggers, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutineTriggers"}},
+		{Name: BotsErrorKindBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotErrorKindBytes, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotErrorKindBytes"}},
 		{Name: BotsRoutineTickMilliseconds, Class: Buffer, Unit: Milliseconds, Limit: pa.MaxRoutineTickMilliseconds, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutineTickMilliseconds"}},
 		{Name: BotsRoutinePending, Class: Buffer, Unit: Rows, Limit: pa.MaxRoutinePendingPerDefinition, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutinePendingPerDefinition"}},
 		{Name: BotsRoutineDefinitions, Class: Evidence, Unit: Rows, Limit: pa.MaxRoutineDefinitions, AtLimit: Refuse, Told: []Channel{Diagnostics, Health, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxRoutineDefinitions"}},
@@ -103,15 +106,11 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsPermissions, Class: Buffer, Unit: Rows, Limit: MaximumBotPermissions, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotPermissions"}},
-		{Name: BotsNotifications, Class: Buffer, Unit: Rows, Limit: MaximumBotNotifications, AtLimit: Disconnect,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/capacity.MaximumBotNotifications", "internal/adapters/projectassistantacp.NewClient:chan(l.Notifications)"}},
-		{Name: BotsFrames, Class: Buffer, Unit: Bytes, Limit: MaximumBotFrameBytes, AtLimit: Disconnect,
+		// This still bounds owned MCP HTTP/manifest IO, not native ACP lines.
+		{Name: BotsFrames, Class: Buffer, Unit: Bytes, Limit: MaximumBotFrameBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotFrameBytes"}},
-		{Name: BotsCapture, Class: Buffer, Unit: Bytes, Limit: MaximumBotCaptureBytes, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/capacity.MaximumBotCaptureBytes"}},
+		{Name: BotsProcessCensusBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotProcessCensusBytes, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotProcessCensusBytes"}},
 		{Name: BotsStderr, Class: Buffer, Unit: Bytes, Limit: MaximumBotStderrBytes, AtLimit: Coalesce,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotStderrBytes"}},

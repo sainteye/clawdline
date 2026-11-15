@@ -1113,26 +1113,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "bots.capture_bytes",
-    "Class": "buffer",
-    "Unit": "bytes",
-    "Limit": 1048576,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/capacity.MaximumBotCaptureBytes"
-    ]
-  },
-  {
-    "Register": "daemon",
     "Name": "bots.chat_gap_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
@@ -1193,6 +1173,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.error_kind_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 40,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotErrorKindBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.event_rows",
     "Class": "buffer",
     "Unit": "rows",
@@ -1238,7 +1237,7 @@
     "Unit": "bytes",
     "Limit": 1048576,
     "WarnAt": 0,
-    "AtLimit": "disconnect",
+    "AtLimit": "refuse",
     "Deviation": "",
     "Told": [
       "diagnostics",
@@ -1433,27 +1432,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "bots.notice_rows",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 256,
-    "WarnAt": 0,
-    "AtLimit": "disconnect",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/capacity.MaximumBotNotifications",
-      "internal/adapters/projectassistantacp.NewClient:chan(l.Notifications)"
-    ]
-  },
-  {
-    "Register": "daemon",
     "Name": "bots.output_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1590,6 +1568,25 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotPermissionActionBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.process_census_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotProcessCensusBytes"
     ]
   },
   {

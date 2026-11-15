@@ -278,7 +278,7 @@ func ensureAdapter(ctx context.Context, state string, spec adapterSpec) (ClaudeI
 var claudeResumeQualified = true
 
 func nativeLimits() Limits {
-	return Limits{RPCPending: capacity.MaximumBotRPCPending, IncomingPermissions: capacity.MaximumBotPermissions, Notifications: capacity.MaximumBotNotifications, FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotCaptureBytes, StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants, WriteTimeout: time.Duration(capacity.MaximumBotWriteMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: time.Duration(capacity.MaximumBotRPCMilliseconds) * time.Millisecond, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond}
+	return Limits{RPCPending: capacity.MaximumBotRPCPending, IncomingPermissions: capacity.MaximumBotPermissions, FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotProcessCensusBytes, StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants, WriteTimeout: time.Duration(capacity.MaximumBotWriteMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: time.Duration(capacity.MaximumBotRPCMilliseconds) * time.Millisecond, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond}
 }
 
 // InstalledClaudeProvider is the production factory. Its construction and all

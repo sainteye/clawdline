@@ -266,11 +266,6 @@
     "Note": true
   },
   {
-    "Name": "bots.capture_bytes",
-    "Known": true,
-    "Note": true
-  },
-  {
     "Name": "bots.chat_gap_ms",
     "Known": true,
     "Note": true
@@ -282,6 +277,11 @@
   },
   {
     "Name": "bots.dispatch_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.error_kind_bytes",
     "Known": true,
     "Note": true
   },
@@ -346,11 +346,6 @@
     "Note": true
   },
   {
-    "Name": "bots.notice_rows",
-    "Known": true,
-    "Note": true
-  },
-  {
     "Name": "bots.output_bytes",
     "Known": true,
     "Note": true
@@ -382,6 +377,11 @@
   },
   {
     "Name": "bots.permission_action_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.process_census_bytes",
     "Known": true,
     "Note": true
   },

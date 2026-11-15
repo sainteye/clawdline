@@ -146,9 +146,9 @@ measurement wiring, translated notices and its selected integration values.
 | RuntimeLimits.CleanupTimeout | 5 seconds | Bound cleanup; surface unknown if ownership/termination cannot be established. |
 | Limits.RPCPending | 32 | Refuse additional outgoing RPCs with typed capacity. |
 | Limits.IncomingPermissions | 8 | Fail the transport on overload; retain unknown effect. |
-| Limits.Notifications | 256 | Fail closed on incoming overload, never silently drop a frame. |
-| Limits.FrameBytes | 1 MiB | Reject oversized stdin or stdout frames. |
-| Limits.CaptureBytes | 1 MiB | Refuse excess partial/final reply capture. |
+| Native ACP notifications | No fixed local count ceiling | Ordered delivery follows Codync; load replay and prompt completion retain ordering barriers. |
+| Limits.FrameBytes | 1 MiB | Owned MCP HTTP inputs and adapter metadata only; native ACP input/output lines have no local byte ceiling. |
+| Limits.CaptureBytes | 1 MiB | Existing process-identity census budget only; native reply capture has no local byte ceiling. |
 | Limits.StderrBytes | 64 KiB | Retain the first bounded bytes; continue draining without unbounded memory. |
 | Limits.OwnedDescendants | 256 | Stop and surface typed capacity/unknown if the owned process census exceeds its budget. |
 | Limits.WriteTimeout | 2 seconds | A lock/deadline/partial-write failure is typed unknown; do not retry the frame. |
@@ -162,7 +162,7 @@ are standard `time.Duration`. Prompt completion uses the runtime turn context
 directly, so the shorter control RPC deadline cannot end a still-running turn.
 `Engine.Usage` and `Client.Usage` expose counts for host measurements without
 contents. A busy actor returns `Known=false` instead of delaying diagnostics.
-Process census output shares the CaptureBytes bound.
+Process census output alone uses CaptureBytes (registered as process_census_bytes). Native ACP text and notification handling do not use that budget.
 
 ## Process containment and honest limits
 

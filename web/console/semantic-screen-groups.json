@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 12373,
-  "riskKeys": 5362,
-  "nonRiskCount": 7011,
+  "riskKeys": 5366,
+  "nonRiskCount": 7007,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 598,
+      "count": 594,
       "sources": [
         null
       ],
@@ -457,14 +457,11 @@
         "capacityRow.bots.artifact_title_bytes.what",
         "capacityRow.bots.attachment_bytes.what",
         "capacityRow.bots.attachments_per_message.what",
-        "capacityRow.bots.capture_bytes.what",
         "capacityRow.bots.chat_gap_ms.what",
         "capacityRow.bots.cleanup_ms.what",
         "capacityRow.bots.dispatch_seconds.what",
         "capacityRow.bots.event_rows.what",
         "capacityRow.bots.feature_probe_bytes.what",
-        "capacityRow.bots.frame_bytes.full",
-        "capacityRow.bots.frame_bytes.what",
         "capacityRow.bots.input_bytes.what",
         "capacityRow.bots.input_chunk_bytes.full",
         "capacityRow.bots.input_chunk_bytes.what",
@@ -475,7 +472,6 @@
         "capacityRow.bots.memory_search_results.full",
         "capacityRow.bots.memory_search_results.what",
         "capacityRow.bots.name_runes.what",
-        "capacityRow.bots.notice_rows.what",
         "capacityRow.bots.output_bytes.what",
         "capacityRow.bots.output_chunk_bytes.full",
         "capacityRow.bots.output_chunk_bytes.what",

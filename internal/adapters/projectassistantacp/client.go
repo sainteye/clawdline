@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -28,16 +29,21 @@ type frame struct {
 	Error   *rpcError       `json:"error,omitempty"`
 }
 type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 type response struct {
 	value json.RawMessage
 	err   error
 }
 type incoming struct {
-	f          frame
-	completion chan response
+	f   frame
+	err error
+}
+type pendingResponse struct {
+	ch      chan response
+	ordered bool
 }
 type nativePermission struct {
 	turnID  string
@@ -53,9 +59,10 @@ type Client struct {
 	readOnly    func([]byte) bool
 	mu          sync.Mutex
 	next        uint64
-	pending     map[string]chan response
+	pending     map[string]pendingResponse
 	permissions map[string]nativePermission
-	queue       chan incoming
+	queue       []incoming
+	queueReady  *sync.Cond
 	done        chan struct{}
 	workerDone  chan struct{}
 	stop        sync.Once
@@ -94,7 +101,8 @@ func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, 
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Client{p: p, l: l, fence: fence, sink: sink, readOnly: readOnly, pending: make(map[string]chan response), permissions: make(map[string]nativePermission), queue: make(chan incoming, l.Notifications), done: make(chan struct{}), workerDone: make(chan struct{}), ctx: ctx, cancel: cancel, rpcSlots: make(chan struct{}, l.RPCPending)}
+	c := &Client{p: p, l: l, fence: fence, sink: sink, readOnly: readOnly, pending: make(map[string]pendingResponse), permissions: make(map[string]nativePermission), done: make(chan struct{}), workerDone: make(chan struct{}), ctx: ctx, cancel: cancel, rpcSlots: make(chan struct{}, l.RPCPending)}
+	c.queueReady = sync.NewCond(&c.mu)
 	go c.consume()
 	go c.read()
 	return c, nil
@@ -254,9 +262,11 @@ func (c *Client) fail(err error) {
 		c.permissionsSealed = true
 		c.permissions = make(map[string]nativePermission)
 		for key, ch := range c.pending {
-			ch <- response{err: err}
+			ch.ch <- response{err: err}
 			c.removePending(key)
 		}
+		c.queue = nil
+		c.queueReady.Broadcast()
 		c.mu.Unlock()
 		c.cancel()
 		close(c.done)
@@ -269,9 +279,6 @@ func (c *Client) write(ctx context.Context, f frame) error {
 		return err
 	}
 	b = append(b, '\n')
-	if len(b) > c.l.FrameBytes {
-		return refusal(pa.CapacityFull, "frame_bytes")
-	}
 	err = c.p.Write(ctx, b)
 	if err != nil {
 		c.fail(err)
@@ -296,7 +303,10 @@ func (c *Client) begin(ctx context.Context, method string, params any) (*pending
 	c.next++
 	id := strconv.FormatUint(c.next, 10)
 	ch := make(chan response, 1)
-	c.pending[id] = ch
+	// Control replies bypass the event sink, as Codync's reader resolves RPC
+	// waiters directly. Prompt completion and load replay retain a barrier so
+	// prior messages cannot race final text or become a new turn's history.
+	c.pending[id] = pendingResponse{ch: ch, ordered: method == "session/prompt" || method == "session/load"}
 	if method == "session/prompt" {
 		c.promptID = id
 	}
@@ -345,6 +355,13 @@ func (p *pendingRPC) waitResult(ctx context.Context) (json.RawMessage, error) {
 		p.c.fail(err)
 		return nil, err
 	case <-p.c.done:
+		// A terminal reply already received before EOF/Close wins over the
+		// later transport failure. No request is ever sent again here.
+		select {
+		case x := <-p.ch:
+			return x.value, x.err
+		default:
+		}
 		return nil, p.c.err()
 	}
 }
@@ -464,89 +481,119 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	if result.Text == "" {
 		result.Text = partial
 	}
-	if len(result.Text) > p.rpc.c.l.CaptureBytes {
-		return app.PromptResult{}, refusal(pa.CapacityFull, "reply_capture")
-	}
 	if cancelled || result.StopReason == "cancelled" || result.StopReason == "refusal" {
 		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_stopped")
+	}
+	if result.StopReason == "max_tokens" || result.StopReason == "max_turn_requests" {
+		return app.PromptResult{}, refusal(pa.Unsupported, "prompt_"+result.StopReason)
 	}
 	return app.PromptResult{FinalText: result.Text}, nil
 }
 
 func (c *Client) read() {
-	scanner := bufio.NewScanner(c.p.stdout)
-	scanner.Buffer(make([]byte, 0, c.l.FrameBytes), c.l.FrameBytes)
-	for scanner.Scan() {
+	// Codync reads complete ACP lines and deliberately has no incoming count
+	// ceiling: session/load may replay history before its response. Host-owned
+	// RPC slots, native permissions, write deadlines and cleanup still apply.
+	reader := bufio.NewReader(c.p.stdout)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if len(line) == 0 && readErr != nil {
+			field := "acp_read"
+			if errors.Is(readErr, io.EOF) {
+				field = "acp_eof"
+			}
+			c.enqueue(incoming{err: refusal(pa.ExecutionEffectUnknown, field)})
+			return
+		}
 		var f frame
-		if err := json.Unmarshal(scanner.Bytes(), &f); err != nil || f.JSONRPC != "2.0" {
-			c.fail(refusal(pa.ExecutionEffectUnknown, "acp_frame"))
+		if err := json.Unmarshal(line, &f); err != nil || f.JSONRPC != "2.0" {
+			c.enqueue(incoming{err: refusal(pa.ExecutionEffectUnknown, "acp_frame")})
 			return
 		}
 		if f.Method != "" {
-			select {
-			case c.queue <- incoming{f: f}:
-			case <-c.done:
-				return
-			default:
-				c.fail(refusal(pa.CapacityFull, "incoming_queue"))
+			if !c.enqueue(incoming{f: f}) {
 				return
 			}
 			continue
 		}
 		if len(f.ID) == 0 {
-			c.fail(refusal(pa.ExecutionEffectUnknown, "response_id"))
+			c.enqueue(incoming{err: refusal(pa.ExecutionEffectUnknown, "response_id")})
 			return
 		}
-		// Responses enter the same ordered consumer after prior notifications.
-		// This prevents final-text fallback racing a queued explicit message.
-		select {
-		case c.queue <- incoming{f: f}:
-		case <-c.done:
-			return
-		default:
-			c.fail(refusal(pa.CapacityFull, "incoming_queue"))
-			return
+		c.mu.Lock()
+		ordered := c.pending[string(f.ID)].ordered
+		c.mu.Unlock()
+		if ordered {
+			if !c.enqueue(incoming{f: f}) {
+				return
+			}
+		} else {
+			c.resolve(f)
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		c.fail(refusal(pa.CapacityFull, "frame_bytes"))
-	} else {
-		c.fail(refusal(pa.ExecutionEffectUnknown, "acp_eof"))
+}
+
+func (c *Client) enqueue(item incoming) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failure != nil {
+		return false
 	}
+	c.queue = append(c.queue, item)
+	c.queueReady.Signal()
+	return true
+}
+
+func (c *Client) resolve(f frame) {
+	c.mu.Lock()
+	p := c.pending[string(f.ID)]
+	if string(f.ID) == c.promptID {
+		c.permissionsSealed = true
+		c.permissions = make(map[string]nativePermission)
+	}
+	c.removePending(string(f.ID))
+	if p.ch != nil {
+		x := response{value: f.Result}
+		if f.Error != nil {
+			x.err = providerFailure(f.Error)
+		}
+		p.ch <- x
+	}
+	c.mu.Unlock()
 }
 func (c *Client) consume() {
 	defer close(c.workerDone)
 	for {
-		select {
-		case <-c.done:
+		c.mu.Lock()
+		for len(c.queue) == 0 && c.failure == nil {
+			c.queueReady.Wait()
+		}
+		if c.failure != nil {
+			c.mu.Unlock()
 			return
-		case item := <-c.queue:
-			f := item.f
-			if f.Method == "" {
-				c.mu.Lock()
-				ch := c.pending[string(f.ID)]
-				if string(f.ID) == c.promptID {
-					c.permissionsSealed = true
-					c.permissions = make(map[string]nativePermission)
-				}
-				c.removePending(string(f.ID))
-				c.mu.Unlock()
-				if ch != nil {
-					x := response{value: f.Result}
-					if f.Error != nil {
-						x.err = refusal(pa.Unsupported, "rpc_"+strconv.Itoa(f.Error.Code))
-					}
-					ch <- x
-				}
-				continue
+		}
+		item := c.queue[0]
+		c.queue[0] = incoming{}
+		c.queue = c.queue[1:]
+		if len(c.queue) == 0 {
+			c.queue = nil
+		}
+		c.mu.Unlock()
+		if item.err != nil {
+			c.fail(item.err)
+			return
+		}
+		f := item.f
+		if f.Method == "" {
+			c.resolve(f)
+			continue
+		}
+		if err := c.handle(f); err != nil {
+			if len(f.ID) > 0 {
+				_ = c.write(c.ctx, frame{ID: f.ID, Error: &rpcError{Code: -32603, Message: string(pa.Code(err))}})
 			}
-			if err := c.handle(f); err != nil {
-				if len(f.ID) > 0 {
-					_ = c.write(c.ctx, frame{ID: f.ID, Error: &rpcError{Code: -32603, Message: string(pa.Code(err))}})
-				}
-				c.fail(err)
-				return
-			}
+			c.fail(err)
+			return
 		}
 	}
 }
@@ -614,10 +661,6 @@ func (c *Client) handle(f frame) error {
 		}
 		if content.Type == "text" {
 			c.mu.Lock()
-			if len(c.partial)+len(content.Text) > c.l.CaptureBytes {
-				c.mu.Unlock()
-				return refusal(pa.CapacityFull, "partial_capture")
-			}
 			if p.Update.MessageID != "" && c.messageID != "" && p.Update.MessageID != c.messageID {
 				c.segmentClosed = true
 			}
