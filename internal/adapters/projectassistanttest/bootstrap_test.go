@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 type installer struct {
@@ -22,12 +24,12 @@ func (i installer) Install(ctx context.Context, db *sql.DB) error {
 }
 func TestBootstrapIsIsolatedAndInstallerOwned(t *testing.T) {
 	ctx := context.Background()
-	a, err := Bootstrap(ctx, installer{version: 1})
+	a, err := Bootstrap(ctx, installer{version: pa.SchemaVersion})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	b, err := Bootstrap(ctx, installer{version: 1})
+	b, err := Bootstrap(ctx, installer{version: pa.SchemaVersion})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +41,7 @@ func TestBootstrapIsIsolatedAndInstallerOwned(t *testing.T) {
 	if err = b.QueryRow("SELECT count(*) FROM pa_test").Scan(&n); err != nil || n != 0 {
 		t.Fatalf("cross-test leak: %d, %v", n, err)
 	}
-	if err = (installer{version: 1}).Install(ctx, a); err != nil {
+	if err = (installer{version: pa.SchemaVersion}).Install(ctx, a); err != nil {
 		t.Fatal(err)
 	}
 	if err = a.QueryRow("SELECT count(*) FROM pa_test").Scan(&n); err != nil || n != 1 {
@@ -50,7 +52,7 @@ func TestBootstrapIsIsolatedAndInstallerOwned(t *testing.T) {
 	}
 }
 func TestBootstrapRejectsUnknownVersionAndFailure(t *testing.T) {
-	for _, i := range []installer{{version: 2}, {version: 1, fail: true}} {
+	for _, i := range []installer{{version: 0}, {version: pa.SchemaVersion - 1}, {version: pa.SchemaVersion + 1}, {version: pa.SchemaVersion, fail: true}} {
 		if db, err := Bootstrap(context.Background(), i); err == nil || db != nil {
 			t.Fatalf("accepted bad installer: %v %v", db, err)
 		}
