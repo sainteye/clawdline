@@ -20,8 +20,9 @@ import (
 // Store neither opens a database nor installs schema implicitly. Share a Store
 // per database so WithCurrent and all memory writers share the same Bot lock.
 type Store struct {
-	db    *sql.DB
-	locks sync.Map
+	db     *sql.DB
+	locks  sync.Map
+	roster rosterBus
 }
 
 func New(db *sql.DB) *Store { return &Store{db: db} }
@@ -207,7 +208,10 @@ func persist(ctx context.Context, tx *sql.Tx, a aggregate, expected int64) error
 	}
 	if expected == 0 {
 		_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_bots(machine,bot,version,data) VALUES(?,?,?,?)`, a.Bot.Key.MachineID, a.Bot.Key.BotID, a.Bot.Version, data)
-		return err
+		if err != nil {
+			return err
+		}
+		return appendRosterChange(ctx, tx, a, false)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE project_assistant_bots SET version=?,data=? WHERE machine=? AND bot=? AND version=?`, a.Bot.Version, data, a.Bot.Key.MachineID, a.Bot.Key.BotID, expected)
 	if err != nil {
@@ -217,7 +221,10 @@ func persist(ctx context.Context, tx *sql.Tx, a aggregate, expected int64) error
 	if err == nil && n != 1 {
 		return failure(pa.StaleVersion, "bot")
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return appendRosterChange(ctx, tx, a, false)
 }
 func (s *Store) Commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) {
 	unlock := s.lock(m.Command.Key)
@@ -288,7 +295,7 @@ func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 	if err = writeReceipt(ctx, tx, result); err != nil {
 		return pa.Receipt{}, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = s.commitRoster(ctx, tx, m.Command.Key.MachineID); err != nil {
 		return pa.Receipt{}, err
 	}
 	return result, nil
@@ -753,7 +760,7 @@ func (s *Store) MarkRead(ctx context.Context, cmd pa.Command, in pa.ReadCursor) 
 	if err = writeReceipt(ctx, tx, pa.Receipt{Command: cmd, ID: "read/" + cmd.IdempotencyKey, State: pa.EffectRead, ResourceID: in.ReaderID, EventSeq: seq}); err != nil {
 		return old, err
 	}
-	return next, tx.Commit()
+	return next, s.commitRoster(ctx, tx, cmd.Key.MachineID)
 }
 func (s *Store) Observe(ctx context.Context, cmd pa.Command, receiptID string, seq int64) (pa.Receipt, error) {
 	unlock := s.lock(cmd.Key)
@@ -823,11 +830,18 @@ func (s *Store) Observe(ctx context.Context, cmd pa.Command, receiptID string, s
 	if err = writeReceipt(ctx, tx, r); err != nil {
 		return r, err
 	}
-	return r, tx.Commit()
+	a, err := load(ctx, tx, cmd.Key)
+	if err != nil {
+		return r, err
+	}
+	if err = appendRosterChange(ctx, tx, a, false); err != nil {
+		return r, err
+	}
+	return r, s.commitRoster(ctx, tx, cmd.Key.MachineID)
 }
 
-// DeleteBot removes one Bot's aggregate, events and receipts in one
-// transaction; a Bot that does not exist answers not found.
+// DeleteBot removes one Bot's aggregate, rich events and receipts, retaining
+// a minimal roster tombstone in the same transaction; missing Bots refuse.
 func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	unlock := s.lock(key)
 	defer unlock()
@@ -836,6 +850,13 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	defer tx.Rollback()
+	a, err := load(ctx, tx, key)
+	if err != nil {
+		return err
+	}
+	if err = appendRosterChange(ctx, tx, a, true); err != nil {
+		return err
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_bots WHERE machine=? AND bot=?`, key.MachineID, key.BotID)
 	if err != nil {
 		return err
@@ -848,5 +869,5 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return s.commitRoster(ctx, tx, key.MachineID)
 }

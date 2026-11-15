@@ -46,6 +46,10 @@ const (
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
 	return []Entry{
+		{Name: BotsRosterSubscribers, Class: Buffer, Unit: Rows, Limit: pa.MaxRosterSubscribers, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRosterSubscribers"}},
+		{Name: BotsRosterWakeups, Class: Buffer, Unit: Rows, Limit: pa.MaxRosterWakeups, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRosterWakeups", "internal/adapters/projectassistantstore.(*Store).SubscribeRoster:chan(pa.MaxRosterWakeups)"}},
+		{Name: BotsRosterLifetime, Class: Buffer, Unit: Seconds, Limit: pa.MaxRosterLifetimeSeconds, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRosterLifetimeSeconds"}},
+		{Name: BotsRosterRecheck, Class: Buffer, Unit: Milliseconds, Limit: pa.MaxRosterRecheckMilliseconds, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRosterRecheckMilliseconds"}},
 		{Name: BotsArtifactTitleBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxArtifactTitleBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxArtifactTitleBytes"}},
 		{Name: BotsOutputBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxOutputBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxOutputBytes"}},
 		{Name: BotsArtifactBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxArtifactBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxArtifactBytes"}},

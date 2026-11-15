@@ -12287,5 +12287,13 @@
   "capacityRow.console.view_plugin_cover_side.what": "限制視圖正方形封面解碼後的寬高，避免小套件占用過大的圖片空間。",
   "projectAssistants.thinking": "思考中…",
   "projectAssistants.approvalActivity": "需要允許：{action}",
-  "projectAssistants.decisionActivity": "詢問：{question}"
+  "projectAssistants.decisionActivity": "詢問：{question}",
+  "capacityRow.bots.roster_subs.what": "同一個來源儲存區保留的 Bot 清單即時訂閱數。",
+  "capacityRow.bots.roster_subs.full": "達 64 個訂閱時拒絕新訂閱，保留既有連線；關閉連線會釋放名額。",
+  "capacityRow.bots.roster_wakes.what": "每個訂閱等待處理的 Bot 清單更新通知數；通知不含對話內容。",
+  "capacityRow.bots.roster_wakes.full": "最多保留一則通知。較慢的訂閱會標為落後並關閉；重新連線時，須從最後已套用的游標重新同步。",
+  "capacityRow.bots.roster_seconds.what": "單次 Bot 清單即時連線的最長總時間，單位為秒。",
+  "capacityRow.bots.roster_seconds.full": "達 3,600 秒時關閉連線；重新連線時，使用最後完整套用的游標補齊已保存的變更。",
+  "capacityRow.bots.roster_check_ms.what": "重新檢查 Bot 清單即時連線授權與落後狀態的間隔，單位為毫秒。",
+  "capacityRow.bots.roster_check_ms.full": "每 250 毫秒檢查一次，撤權或落後時關閉連線；這是訂閱安全檢查，不會定時重新讀取 Bot 清單。"
 }

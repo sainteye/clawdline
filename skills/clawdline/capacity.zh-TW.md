@@ -84,6 +84,10 @@
 | `bots.prompt_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.roster_check_ms` | 250 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.roster_seconds` | 3600 | `seconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.roster_subs` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.roster_wakes` | 1 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_ms` | 120000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.rules_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |

@@ -702,6 +702,10 @@ func Register() []Entry {
 }
 
 const (
+	BotsRosterSubscribers   = "bots.roster_subs"
+	BotsRosterWakeups       = "bots.roster_wakes"
+	BotsRosterLifetime      = "bots.roster_seconds"
+	BotsRosterRecheck       = "bots.roster_check_ms"
 	BotsReadViewCursorBytes = "bots.read_view_cursor_bytes"
 	BotsNameRunes           = "bots.name_runes"
 	BotsInstructionBytes    = "bots.instruction_bytes"

@@ -5,6 +5,43 @@
   "description": "Version 1 additive contract. No router or server is installed by this schema. All timestamps are RFC3339 UTC strings. Arrays are always arrays, never null.",
   "$comment": "Source machine authority and feature opt-in are mandatory.",
   "$defs": {
+    "ProjectAssistantRosterRequest": {
+      "description": "Local-only authorized machine roster SSE at GET /v1/project-assistants/roster-events, API 70. Cursor or Last-Event-ID resumes an applied frame; project_id optionally limits the Project. Cloud subscription and console consumption are pending.",
+      "type": "object",
+      "properties": {
+        "machine_id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "cursor": { "type": "string" }
+      },
+      "required": ["machine_id"]
+    },
+    "ProjectAssistantRosterFrameType": {
+      "type": "string",
+      "enum": ["hello", "snapshot", "snapshot-complete", "changes", "resync", "closure"]
+    },
+    "ProjectAssistantRosterChange": {
+      "description": "Replace by key/revision; removed is a replayable tombstone. Unread is an absolute reader-specific count, never a delta. Revision is the roster journal sequence, independent of Bot version/message sequence.",
+      "type": "object",
+      "properties": {
+        "revision": { "type": "integer" },
+        "key": { "$ref": "#/$defs/ProjectAssistantBotKey" },
+        "removed": { "type": "boolean" },
+        "summary": { "$ref": "#/$defs/ProjectAssistantBotSummary" }
+      },
+      "required": ["revision", "key", "removed"]
+    },
+    "ProjectAssistantRosterFrame": {
+      "description": "Bounded SSE data. Apply all changes before saving its signed cursor. Initial pages pin their first machine frontier; only snapshot-complete establishes a complete initial roster. hello has no cursor. resync/closure/EOF never advance a cursor. Restart, changed scope/grant/reader or invalid cursor requires a new snapshot. Frames reuse 100 snapshot rows, 256 replay rows, 4096 cursor bytes and the 8 MiB plaintext ceiling.",
+      "type": "object",
+      "properties": {
+        "type": { "$ref": "#/$defs/ProjectAssistantRosterFrameType" },
+        "source_epoch": { "type": "string" },
+        "cursor": { "type": "string" },
+        "changes": { "type": "array", "items": { "$ref": "#/$defs/ProjectAssistantRosterChange" } },
+        "failure": { "$ref": "#/$defs/ProjectAssistantFailure" }
+      },
+      "required": ["type"]
+    },
     "ProjectAssistantAgent": {
       "type": "string",
       "enum": [

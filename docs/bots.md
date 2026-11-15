@@ -185,8 +185,65 @@ Set task-owned `CLAWDLINE_ROSTER_E2E_DIR`, `PLAYWRIGHT_MODULE` and
 `PLAYWRIGHT_BROWSERS_PATH`, then run
 `go test ./internal/transport/http -run '^TestProjectAssistantRosterStatusHTTP$' -count=1`.
 Its current browser evidence explicitly records `eventUpdates: false`:
-event subscription and automatic roster updates are a following unit, not a
-claim made by the snapshot presentation.
+the console still consumes snapshots. Automatic console updates and encrypted
+Cloud subscriptions remain pending; the local feed below does not establish
+either destination's acceptance.
+
+### Local roster event feed
+
+API 71 adds local `GET /v1/project-assistants/roster-events?machine_id=…`.
+Optional `project_id` narrows the Project; `cursor` or `Last-Event-ID` resumes
+the last fully applied frame. The normal human read gate, current source,
+reader, grant and registered Project are required. Read-only viewers can
+subscribe. Ordinary Cloud request recorders explicitly refuse this route.
+
+The application subscribes to the production writer Store's content-free
+post-commit wake-ups before reading SQLite. Its ViewStore borrows the existing
+query-only pool. No polling, provider startup, conversation Export or second
+runtime authority is involved. Query-local SQLite JSONB parses a large stored
+aggregate once; JSON projections return only current summary facts and reuse
+the roster's existing status logic. Read transactions end before network IO.
+
+Frames are `hello`, `snapshot`, `snapshot-complete`, `changes`, `resync` and
+`closure`. Apply an entire data frame before saving its signed cursor. Initial
+pages retain their first machine journal frontier while enumerating by Bot key;
+changes during enumeration replay afterward, even when the changed key sorts
+before the next page. Only `snapshot-complete` establishes a complete roster.
+Upserts and hide/delete removals carry a durable roster revision. Unread is an
+absolute reader-specific count, so duplicate replay cannot add unread messages.
+The minimal roster journal survives rich event/aggregate deletion. It is
+retained without automatic pruning; future retention must explicitly expire
+old cursors. Recreated Bots use the latest journal revision.
+
+Cursors bind machine, optional Project, principal, reader, grant/source access
+and a process-local signing epoch. Restart, tampering, changed scope or grants
+refuse with `pa_cursor_expired`; epochs never grant authority. Each serialized
+publication rechecks authority, Project and conversation/generation identity.
+An unavailable Project conservatively refuses the batch rather than exposing
+any of its rows. The feed does not grant Project access that the resolver lacks.
+
+The new registered bounds are 64 subscriptions per writer Store, one pending
+content-free wake-up per subscription, a 3,600-second connection lifetime and
+250 ms authority rechecks. Snapshots reuse 100 rows, replay 256 journal entries,
+cursors 4 KiB, frames the 8 MiB plaintext budget, and writes the existing
+2,000 ms Bot write deadline. A full wake-up slot latches lag and requires
+resync. A blocked writer is interrupted on cancellation/revocation without
+holding storage or actor locks. When possible, the response ends with a typed
+SSE control or `X-Clawdline-Roster-Error: pa_cursor_expired` trailer. A broken
+socket can lose both: EOF never advances a cursor. Reconnect from the last
+applied cursor; start a fresh snapshot if refused.
+
+Focused acceptance uses real SQLite, Service and `httptest.NewServer` SSE bytes:
+`go test ./internal/adapters/projectassistantstore ./internal/transport/http
+-run 'TestRoster' -count=1`. Set task-owned `CLAWDLINE_ROSTER_SSE_EVIDENCE` to
+an existing directory to retain synthetic SSE transcripts. Coverage includes
+subscribe/snapshot interleaving, concurrent paginated snapshots, offline
+permission/idle/error/read/hide/removal replay, cursor and generation fences,
+large histories that cannot aggregate-decode, read-only viewing, overflow,
+blocked-write revocation, independent reads and production Store composition.
+These checks make zero provider/model requests. They verify the local feed;
+browser UI consumption, recipient-isolated Cloud delivery and public release
+enablement remain separate work owned by integration.
 
 ## If something is missing
 
@@ -197,3 +254,9 @@ claim made by the snapshot presentation.
 
 Technical details are in [project-assistants-native-entry.md](project-assistants-native-entry.md)
 and [project-assistants-server.md](project-assistants-server.md).
+
+An existing, disabled Bot installation receives repeatable additive schema
+migrations during Host composition before its history read service is exposed.
+This seeds the roster journal from existing Bot identities without enabling
+execution or constructing a provider. Fresh default-off installs keep no Bot
+schema until opt-in; the borrowed read pool remains query-only.

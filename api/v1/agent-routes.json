@@ -5,6 +5,7 @@
     { "method": "*", "pattern": "/v1/project-assistants", "guide": "project" },
     { "method": "*", "pattern": "/v1/project-assistants/", "guide": "project" },
     { "method": "*", "pattern": "/v1/project-assistants/status", "guide": "project" },
+    { "method": "GET", "pattern": "/v1/project-assistants/roster-events", "guide": "project" },
     { "method": "*", "pattern": "/v1/settings/project-assistants", "guide": "project" },
     {
       "method": "*",

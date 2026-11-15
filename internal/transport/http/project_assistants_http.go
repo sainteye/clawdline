@@ -31,7 +31,8 @@ type projectAssistantHTTPOptions struct {
 	Attachments projectassistantstore.Attachments
 	Outputs     projectassistantstore.Outputs
 	// Private deterministic fixture barrier; production leaves it nil.
-	BeforeViewPublish func()
+	BeforeViewPublish    func()
+	BeforeRosterSnapshot func()
 }
 
 type projectAssistantHTTP struct{ options projectAssistantHTTPOptions }
@@ -70,6 +71,10 @@ func (h *projectAssistantHTTP) status(ctx context.Context, content bool) (pa.Sou
 
 func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Path == "/v1/project-assistants/roster-events" {
+		h.rosterEvents(w, r)
+		return
+	}
 	payload, err := h.handle(w, r)
 	if err != nil {
 		paWriteHTTPFailure(w, err)
@@ -156,7 +161,7 @@ type paAttachmentBytes struct {
 func paHTTPSafeBotID(id string) bool {
 	// IDs occupy exactly one URL path segment. The display name is separate.
 	// Reserve the fixed status endpoint and reject path normalization syntax.
-	if id == "" || id == "status" || id == "." || id == ".." || !utf8.ValidString(id) || strings.ContainsAny(id, `/\`) {
+	if id == "" || id == "status" || id == "roster-events" || id == "." || id == ".." || !utf8.ValidString(id) || strings.ContainsAny(id, `/\`) {
 		return false
 	}
 	return !strings.ContainsFunc(id, unicode.IsControl)

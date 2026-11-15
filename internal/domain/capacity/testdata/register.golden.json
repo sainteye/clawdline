@@ -1595,6 +1595,87 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.roster_check_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 250,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRosterRecheckMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.roster_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3600,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRosterLifetimeSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.roster_subs",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRosterSubscribers"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.roster_wakes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRosterWakeups",
+      "internal/adapters/projectassistantstore.(*Store).SubscribeRoster:chan(pa.MaxRosterWakeups)"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.rpc_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

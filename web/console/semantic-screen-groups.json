@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12287,
-  "riskKeys": 5319,
-  "nonRiskCount": 6968,
+  "englishContentKeys": 12295,
+  "riskKeys": 5324,
+  "nonRiskCount": 6971,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 576,
+      "count": 579,
       "sources": [
         null
       ],
@@ -479,6 +479,9 @@
         "capacityRow.bots.processes.what",
         "capacityRow.bots.prompt_ms.what",
         "capacityRow.bots.refresh_ms.what",
+        "capacityRow.bots.roster_check_ms.what",
+        "capacityRow.bots.roster_seconds.what",
+        "capacityRow.bots.roster_subs.what",
         "capacityRow.bots.rpc_ms.what",
         "capacityRow.bots.rules_file_bytes.what",
         "capacityRow.bots.send_body_bytes.what",
