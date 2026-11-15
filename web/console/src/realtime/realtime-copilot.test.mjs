@@ -692,7 +692,10 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   c.handleLiveEvent({ type: 'response.event', delegation_id: 'item_2', event: { type: 'response.output_item.done', response_id: 'resp_2', item: { type: 'function_call', call_id: 'call_2', name: 'get_session_summary', arguments: JSON.stringify({ session_id: '%7', said: 'it' }) } } })
   for (let i = 0; i < 30 && !sent.some(e => e.type === 'response.create'); i++) await tick()
   assert.deepEqual(sent.map(e => e.type), ['session.commentary.append', 'response.item.create', 'response.create'])
-  assert.equal(sent[0].delegation_id, 'item_2')
+  // Live accepts a delegation id only for client delegations; a Responses
+  // delegation's id is refused ("Unknown client or Decision delegation"), so
+  // the note goes session-wide, as the delegation guide steers a live call.
+  assert.equal(sent[0].delegation_id, null)
   assert.match(sent[0].content, /Six screenshots are captured/)
   assert.equal(c.pendingTools.size, 0, 'the cue stops once the tool has answered')
   const journaled = c.journalLines.find(l => l.kind === 'tool' && l.text === 'list_sessions')

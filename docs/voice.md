@@ -418,7 +418,7 @@ are the same `runCopilotTool` a Realtime call runs.
 
 **Opening on its Session.** A Live call placed from one Session does not greet: at `session.started` it says the recap the list already carries for that Session (`liveOpeningNote`, with its age), and at the same time asks for the latest one (`forkedRecap` with `fresh`, so a recap at most five minutes old counts). When the latest arrives and differs, the call goes on with what is new (`liveLatestNote`); an unchanged one is not said again. A Session without a recap opens by saying it is reading the latest.
 
-**Speaking while reading.** The backend's instructions end with `LIVE_BACKEND_FLOW`, which overrides the Realtime rule that every Session question needs a read: an overview is answered from the snapshot's recaps (with their age), and a read is made only for details, the latest state or a Session without a recap. Each Session a read returns is handed to the live model at once as a `session.commentary.append` (`liveReadNotes`, at most `LIVE_NOTE_CHARS` = 400 characters of recap), so it speaks about one Session while the backend reads the next; the backend's final answer adds only what was not said. Tool calls stay sequential (`parallel_tool_calls: false`), because a continuation must follow every pending result of a response.
+**Speaking while reading.** The backend's instructions end with `LIVE_BACKEND_FLOW`, which overrides the Realtime rule that every Session question needs a read: an overview is answered from the snapshot's recaps (with their age), and a read is made only for details, the latest state or a Session without a recap. Each Session a read returns is handed to the live model at once as a session-wide `session.commentary.append` (`delegation_id: null`; `liveReadNotes`, at most `LIVE_NOTE_CHARS` = 400 characters of recap), so it speaks about one Session while the backend reads the next; the backend's final answer adds only what was not said. Tool calls stay sequential (`parallel_tool_calls: false`), because a continuation must follow every pending result of a response. Live accepts a specific `delegation_id` only for a client delegation: a call on 2026-11-15 that passed the Responses delegation's id was refused with "Unknown client or Decision delegation", and the fresh summary the person asked for was never spoken. A request for a Session's latest state is one `get_session_summary` with `fresh: true`; the same call first read `get_session_updates`, which is not spoken, and the person waited over 40 s.
 
 **Cost.** OpenAI bills a Live session per second ($0.05 a minute on 2026-11-15) and the backend
 per token ($0.10 in, $0.01 cached, $0.50 out per 1M for `gpt-6-luna`). The call's cost line adds
@@ -426,7 +426,8 @@ per token ($0.10 in, $0.01 cached, $0.50 out per 1M for `gpt-6-luna`). The call'
 
 **Not yet verified.** The event names and shapes follow OpenAI's GPT-Live guides
 (`live-delegation`, `live-conversations`, `voice-webrtc`) as read on 2026-11-15; the tests drive
-them with a stand-in, and no call has run against OpenAI.
+them with a stand-in. Real calls since then have corrected the delegation type, the origin
+and the note's delegation id; the call journals are the evidence.
 
 ### Connection and processing acknowledgement
 

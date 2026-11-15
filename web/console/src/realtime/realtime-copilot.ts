@@ -1286,7 +1286,7 @@ export class RealtimeCopilotClient {
         const usd = liveBackendUSD(event)
         if (usd) { this.liveBackendUsd += usd; this.updateLiveCost() }
         const call = liveFunctionCall(event)
-        if (call) void this.runLiveTool(call.callID, call.name, call.arguments, call.delegation)
+        if (call) void this.runLiveTool(call.callID, call.name, call.arguments)
         return
       }
       case 'error':
@@ -1305,7 +1305,7 @@ export class RealtimeCopilotClient {
   }
 
   /** Runs one backend function call with the same tools a Realtime call has, and lets the backend continue after the last one. */
-  private async runLiveTool(callID: string, name: string, args: string, delegation = '') {
+  private async runLiveTool(callID: string, name: string, args: string) {
     const dc = this.dc, attempt = this.attempt
     const steps: string[] = []
     this.livePending.add(callID)
@@ -1339,7 +1339,10 @@ export class RealtimeCopilotClient {
       this.meter.chime()
     }
     // Each Session read is spoken at once while the backend goes on (`LIVE_BACKEND_FLOW`).
-    for (const note of liveReadNotes(name, output)) dc.send(JSON.stringify({ ...liveNote('commentary', note), delegation_id: delegation || null }))
+    // The note is session-wide: Live takes a delegation id only for a client
+    // delegation and refused this Responses one ("Unknown client or Decision
+    // delegation", call of 2026-11-15), so the summary was never spoken.
+    for (const note of liveReadNotes(name, output)) dc.send(JSON.stringify(liveNote('commentary', note)))
     for (const reply of liveToolReply(callID, output, this.livePending.size === 0)) dc.send(JSON.stringify(reply))
   }
 
