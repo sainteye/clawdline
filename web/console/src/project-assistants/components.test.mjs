@@ -9,10 +9,10 @@ import { renderToStaticMarkup } from "react-dom/server"
 // module chain looks up a few elements when it loads; a page always has a
 // document, this test environment needs a stand-in.
 globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{},createElement:()=>({style:{},setAttribute(){},appendChild(){},addEventListener(){}}),documentElement:{style:{},setAttribute(){},lang:"en"},body:{appendChild(){},classList:{add(){},remove(){},toggle(){},contains:()=>false}}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotRow,PaSelect,BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words}=compiled.exports
+const {BotRow,PaSelect,BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
   let opened=0
@@ -170,4 +170,23 @@ test("a Bot's reply keeps a visible Reply button",()=>{
   const html=render(ChatRows,{messages,w:words("en"),onQuote:()=>{}})
   assert.match(html,/class="pa-quote"[^>]*>.*Reply<\/button>/)
   assert.ok(!html.includes("aria-haspopup"),"a Bot reply opened a menu instead")
+})
+test("the roster's first read draws nothing inside its first 150ms, not even the empty line",()=>{
+  const w=words("en"),html=render(BotRoster,{items:[],machines:["one"],selected:null,query:"",onQuery:()=>{},machine:"",onMachine:()=>{},onSelect:()=>{},onClose:()=>{},w,language:"en",loading:true,errors:[],projectNames:new Map()})
+  assert.doesNotMatch(html,/loading-skeleton|role="status"/);assert.ok(!html.includes(w.empty))
+})
+test("conversation placeholders say what is loading and show no readable message or control",()=>{
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language),html=render(ChatSkeleton,{label:w.chatLoading})
+    assert.ok(html.includes(w.chatLoading));assert.notEqual(w.chatLoading,w.loading)
+    assert.match(html,/role="status"/);assert.match(html,/aria-hidden="true"/);assert.doesNotMatch(html,/<(button|input|textarea|a|p)\b/)
+    assert.equal((html.match(/pa-skeleton-bubble/g)||[]).length,4);assert.equal((html.match(/pa-skeleton-mine/g)||[]).length,2)
+  }
+})
+test("memory opens with placeholders and a close button before its read answers",()=>{
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language),html=render(MemoryPanel,{value:null,enabled:true,w,onSave:async()=>{},onForget:async()=>{},onRefresh:async()=>{},onClose:()=>{}})
+    assert.ok(html.includes(w.memoryLoading));assert.ok(html.includes(`>${w.close}</button>`));assert.match(html,/aria-busy="true"/)
+    assert.doesNotMatch(html,/<(textarea|input|fieldset)\b/);assert.ok(!html.includes(w.emptyMemory))
+  }
 })

@@ -2,12 +2,29 @@ import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import { errorCode } from "./client"
 import type { Words } from "./words"
+import { LoadingSkeleton } from "../LoadingSkeleton"
 
-export function MemoryPanel({value,pendingText,pendingSources,enabled,onSave,onForget,onRefresh,onClose,w}:{
-  value:W.ProjectAssistantExport;pendingText?:string;pendingSources?:string[];enabled:boolean;w:Words;
+type MemoryProps={
+  pendingText?:string;pendingSources?:string[];enabled:boolean;w:Words;
   onSave:(text:string)=>Promise<void>;onForget:(ids:string[])=>Promise<void>;
   onRefresh:()=>Promise<void>;onClose:()=>void
-}) {
+}
+
+/** Open as soon as it is asked for: placeholders stand where the memory will be until its read answers. */
+export function MemoryPanel({value,...props}:MemoryProps&{value:W.ProjectAssistantExport|null}) {
+  return value?<MemoryContent value={value} {...props}/>:<MemoryLoading w={props.w} onClose={props.onClose}/>
+}
+
+function MemoryLoading({w,onClose}:{w:Words;onClose:()=>void}) {
+  const panel=useRef<HTMLElement>(null)
+  useEffect(()=>{panel.current?.scrollIntoView({block:"nearest"});panel.current?.querySelector<HTMLElement>("h3")?.focus({preventScroll:true})},[])
+  return <section ref={panel} className="pa-card pa-memory" aria-label={w.memory} aria-busy="true">
+    <header className="pa-toolbar"><h3 tabIndex={-1}>{w.memory}</h3><button type="button" onClick={onClose}>{w.close}</button></header>
+    <LoadingSkeleton kind="text" id="bots-memory" label={w.memoryLoading}/>
+  </section>
+}
+
+function MemoryContent({value,pendingText,pendingSources,enabled,onSave,onForget,onRefresh,onClose,w}:MemoryProps&{value:W.ProjectAssistantExport}) {
   const [text,setText]=useState(pendingText??""),[selected,setSelected]=useState<string[]>(()=>value.memory_entries.filter(entry=>entry.sources.some(source=>pendingSources?.includes(source.id))).map(entry=>entry.id))
   const [busy,setBusy]=useState(false),[error,setError]=useState("")
   const pending=useRef(false),panel=useRef<HTMLElement>(null)
