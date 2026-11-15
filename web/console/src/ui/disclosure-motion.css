@@ -5,6 +5,14 @@
 .project-picker-chevron { transition: transform 180ms var(--ease); }
 .project-picker-trigger[aria-expanded="true"] .project-picker-chevron { transform: rotate(180deg); }
 
+/* Let each menu level own its height; the longer More commands list scrolls
+   within the viewport without leaving empty space on the main level. */
+.session-action-stage { display: block; position: relative; }
+.session-action-level { max-height: calc(100dvh - 160px); overflow-y: auto; }
+.session-action-level[data-place="left"], .session-action-level[data-place="right"] {
+  position: absolute; top: 0; width: 100%;
+}
+
 @supports (transition-behavior: allow-discrete) {
   .session-actions, .project-picker-menu, .composer .skill-menu {
     display: block; opacity: 1; transform: none;

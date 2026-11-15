@@ -995,42 +995,9 @@ function Tools({
               >
                 {nextWord(row?.backend === "claude_remote" ? "claudeRemoteStop" : "sessionStop")}
               </button>
-              <button
-                id="session-focus"
-                hidden={!menuVisibility.focus}
-                type="button"
-                role="menuitem"
-                disabled={!row || ending}
-                onClick={() => {
-                  closeMenu(false)
-                  focusMac()
-                }}
-              >
-                {T.webShowOnMac}
-              </button>
               <button type="button" role="menuitem" id="session-tool-library" disabled={!row || ending} onClick={() => {closeMenu(false); onTools()}}>{nextWord("toolLibraryTitle")}</button>
               {/* Placed inside the press, which iOS needs before it lets the call's audio start. */}
               <button type="button" role="menuitem" id="session-voice-copilot" disabled={!row || ending} onClick={() => {closeMenu(false); if (row) callCopilotAbout(row)}}>{nextWord("sessionVoiceCopilot")}</button>
-              <button
-                id="session-info"
-                type="button"
-                role="menuitem"
-                disabled={!row || ending}
-                onClick={() => {
-                  closeMenu(false)
-                  requestInfo()
-                }}
-              >
-                {T.webSessionInfo}
-              </button>
-              {/* The original writes no `disabled` on this row and neither does
-                  this: reading a screen needs no send capability, and the menu
-                  it sits in cannot be opened without a session. */}
-              <button type="button" role="menuitem" id="session-native-terminal"
-                hidden={!terminalPanelAvailable(row?.assistant,row?.backend)} disabled={!row||ending}
-                onClick={()=>{closeMenu(false);onNativeTerminal()}}>
-                {catalogWord("nativeTerminal","title")}
-              </button>
               <button
                 id="session-screen"
                 hidden={!menuVisibility.screen}
@@ -1043,19 +1010,6 @@ function Tools({
                 }}
               >
                 {T.webSessionScreen}
-              </button>
-              <button
-                id="session-browser"
-                hidden={!row?.sessionId}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  if (!row) return
-                  closeMenu(false)
-                  onBrowser()
-                }}
-              >
-                {nextWord("browserPanelMenu")}
               </button>
               <button
                 id="session-more"
@@ -1104,6 +1058,52 @@ function Tools({
                 }}
               >
                 ‹ {T.webSessionActions}
+              </button>
+              <button
+                id="session-focus"
+                hidden={!menuVisibility.focus}
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  closeMenu(false)
+                  focusMac()
+                }}
+              >
+                {T.webShowOnMac}
+              </button>
+              <button
+                id="session-info"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  closeMenu(false)
+                  requestInfo()
+                }}
+              >
+                {T.webSessionInfo}
+              </button>
+              {/* The original writes no `disabled` on this row and neither does
+                  this: reading a screen needs no send capability, and the menu
+                  it sits in cannot be opened without a session. */}
+              <button type="button" role="menuitem" id="session-native-terminal"
+                hidden={!terminalPanelAvailable(row?.assistant,row?.backend)} disabled={!row||ending}
+                onClick={()=>{closeMenu(false);onNativeTerminal()}}>
+                {catalogWord("nativeTerminal","title")}
+              </button>
+              <button
+                id="session-browser"
+                hidden={!row?.sessionId}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  onBrowser()
+                }}
+              >
+                {nextWord("browserPanelMenu")}
               </button>
               <button
                 id="session-open-terminal"

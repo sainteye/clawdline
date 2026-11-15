@@ -557,9 +557,27 @@ test("More commands groups the reads and opens the same archive confirmation", (
       ids: [...document.querySelectorAll("#session-actions-main > button")].map((b) => b.id),
       more: document.getElementById("session-more")?.textContent?.trim(),
     }))()`)
-    assert.deepEqual(main.ids, ["session-interrupt", "session-focus", "session-tool-library", "session-info", "session-native-terminal", "session-screen", "session-browser", "session-more", "session-end"])
+    assert.deepEqual(main.ids, ["session-interrupt", "session-tool-library", "session-voice-copilot", "session-screen", "session-more", "session-end"])
     assert.match(main.more, /更多指令/)
 
+    await new Promise((r) => setTimeout(r, 250))
+    for (const id of ["session-focus", "session-info", "session-native-terminal", "session-browser"]) {
+      assert.equal(await tab.run(`document.getElementById(${JSON.stringify(id)}).checkVisibility({ visibilityProperty: true })`), false, id + " waits in More commands")
+    }
+    const mainHeight = await tab.run(`document.getElementById("session-actions").getBoundingClientRect().height`)
+    await tab.shot("session-actions-main")
+    await tab.press("#session-more")
+    await new Promise((r) => setTimeout(r, 250))
+    for (const id of ["session-focus", "session-info", "session-native-terminal", "session-browser"]) {
+      assert.equal(await tab.run(`document.getElementById(${JSON.stringify(id)}).checkVisibility({ visibilityProperty: true })`), true, id + " is reachable in More commands")
+    }
+    assert.equal(await tab.run(`document.activeElement?.id`), "session-actions-back")
+    const moreBounds = await tab.run(`(() => {const r = document.getElementById("session-actions").getBoundingClientRect(); return {height: r.height, bottom: r.bottom, viewport: innerHeight}})()`)
+    assert.ok(moreBounds.height > mainHeight, "the main menu does not reserve the submenu's empty space")
+    assert.ok(moreBounds.bottom <= moreBounds.viewport, "More commands stays within the phone screen")
+    await tab.shot("session-actions-more")
+    await tab.run(`document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}))`)
+    assert.equal(await tab.run(`document.activeElement?.id`), "session-more", "Escape returns focus to More commands")
     await tab.press("#session-more")
     const submenu = await tab.run(`(() => ({
       ids: [...document.querySelectorAll("#session-actions-more > button")].map((b) => b.id),
@@ -567,7 +585,7 @@ test("More commands groups the reads and opens the same archive confirmation", (
       archive: document.getElementById("session-archive")?.textContent?.trim(),
       disabled: document.getElementById("session-archive")?.hasAttribute("disabled"),
     }))()`)
-    assert.deepEqual(submenu.ids, ["session-actions-back", "session-open-terminal", "session-documents", "session-user-messages", "session-snippets", "session-git", "session-archive"])
+    assert.deepEqual(submenu.ids, ["session-actions-back", "session-focus", "session-info", "session-native-terminal", "session-browser", "session-open-terminal", "session-documents", "session-user-messages", "session-snippets", "session-git", "session-archive"])
     assert.equal(submenu.git, "Git 變更")
     assert.equal(submenu.archive, "封存 Session")
     assert.equal(submenu.disabled, false)
