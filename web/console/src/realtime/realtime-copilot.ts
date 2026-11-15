@@ -287,6 +287,7 @@ export class RealtimeCopilotClient {
     return {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      tasks: () => fetch('/v1/orchestrator/tasks'),
       briefing: () => this.briefing,
       recapMode: () => this.recapMode,
       openSession: (id, machine) => openOnThisPage(id, machine),

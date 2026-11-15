@@ -378,6 +378,10 @@ A demo film of a call, recorded from the built console in English and Traditiona
 [the voice copilot demo](copilot-demo.md).
 
 
+### Dispatched children
+
+A Session list carries dispatched children beside their roots. The copilot's tools tell them apart the way the console's list nests them: from the machine's dispatch records (`/v1/orchestrator/tasks`, `child.terminalId` and `root.terminalId`, read through `ToolDeps.tasks`) and from `parent_session_id` on a Cloud status row. `list_sessions` counts children separately (`children`, with the main Session each helps, and `children_note`), every group report leaves them out, and the copilot reads one only when the person asks about it. Without readable records every row is a Session, as before.
+
 ### GPT-Live calls
 
 Voice assistant › Settings › **Voice system** (`engine` in `copilot.json`: `realtime` by default,
