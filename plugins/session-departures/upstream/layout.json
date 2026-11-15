@@ -1,0 +1,241 @@
+{
+  "id": "root",
+  "cloned_from": {
+    "name": "main",
+    "version": "0.1.12"
+  },
+  "type": "column",
+  "titlebar": "none",
+  "traffic_lights": [
+    12,
+    16
+  ],
+  "preview": "mods/departures/preview.svg",
+  "theme": "graphite",
+  "colors": {
+    "background": "#0b0b0a",
+    "canvas": "#050505",
+    "chrome": "#0e0e0c",
+    "surface": "#141412",
+    "popover": "#191917",
+    "raised": "#23221d",
+    "hover": "#2a2406",
+    "selected": "#3a3208",
+    "border": "#2b2a24",
+    "input": "#4a4326",
+    "foreground": "#f4efd9",
+    "muted": "#b9b08a",
+    "dim": "#857012",
+    "accent": "#ffd21f",
+    "accent_foreground": "#050505",
+    "solid": "#ffd21f",
+    "solid_foreground": "#050505",
+    "selection": "#5a4c0c",
+    "working": "#ffd21f",
+    "blocked": "#ffd21f",
+    "done": "#c9a214",
+    "idle": "#857012"
+  },
+  "font": "JetBrains Mono",
+  "font_size": 13,
+  "ui_font": "JetBrains Mono",
+  "background": "canvas",
+  "terminal_padding": [
+    14,
+    12
+  ],
+  "divider": {
+    "width": 1,
+    "color": "border"
+  },
+  "children": [
+    {
+      "id": "board",
+      "type": "block",
+      "size": {
+        "px": 400
+      },
+      "min": 100,
+      "max": 760,
+      "window_drag": true,
+      "background": "#050505",
+      "content": {
+        "mod": "departures"
+      }
+    },
+    {
+      "id": "body",
+      "type": "row",
+      "divider": {
+        "width": 1,
+        "color": "border"
+      },
+      "children": [
+        {
+          "id": "sidebar",
+          "type": "column",
+          "size": {
+            "px": 268
+          },
+          "min": 44,
+          "max": 480,
+          "background": "chrome",
+          "resizable": false,
+          "children": [
+            {
+              "id": "brand",
+              "type": "block",
+              "size": {
+                "px": 46
+              },
+              "window_drag": true,
+              "content": {
+                "mod": "workspace-chrome"
+              }
+            },
+            {
+              "id": "sidebar-lists",
+              "type": "column",
+              "children": [
+                {
+                  "id": "spaces",
+                  "type": "block",
+                  "size": {
+                    "weight": 1
+                  },
+                  "min": 90,
+                  "content": {
+                    "mod": "spaces"
+                  }
+                },
+                {
+                  "id": "agents",
+                  "type": "block",
+                  "size": {
+                    "weight": 1
+                  },
+                  "min": 90,
+                  "content": {
+                    "mod": "agents"
+                  },
+                  "hidden": true
+                }
+              ]
+            },
+            {
+              "id": "sidebar-footer",
+              "type": "block",
+              "size": {
+                "px": 69
+              },
+              "content": {
+                "mod": "workspace-chrome",
+                "props": {
+                  "footer": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "work",
+          "type": "column",
+          "resizable": false,
+          "children": [
+            {
+              "id": "tabs",
+              "type": "block",
+              "size": {
+                "px": 42
+              },
+              "window_drag": true,
+              "content": {
+                "mod": "tabs"
+              }
+            },
+            {
+              "id": "work-body",
+              "type": "row",
+              "padding": 8,
+              "gap": 8,
+              "children": [
+                {
+                  "id": "main",
+                  "type": "block",
+                  "content": {
+                    "tab": "active",
+                    "pane": {
+                      "gap": 8,
+                      "radius": 10,
+                      "background": "background",
+                      "lone": true,
+                      "border": {
+                        "width": 1,
+                        "color": "border"
+                      },
+                      "focus": {
+                        "width": 1,
+                        "color": "accent"
+                      },
+                      "header": {
+                        "content": {
+                          "mod": "pane"
+                        },
+                        "height": 30,
+                        "position": "top",
+                        "reveal": "always"
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "panel",
+                  "type": "column",
+                  "hidden": true,
+                  "size": {
+                    "px": 368
+                  },
+                  "min": 280,
+                  "max": 900,
+                  "children": [
+                    {
+                      "id": "panel-body",
+                      "type": "stack",
+                      "active": "files",
+                      "children": [
+                        {
+                          "id": "files",
+                          "type": "block",
+                          "content": {
+                            "mod": "files"
+                          }
+                        },
+                        {
+                          "id": "changes",
+                          "type": "block",
+                          "content": {
+                            "mod": "changes"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "status",
+              "type": "block",
+              "size": {
+                "px": 28
+              },
+              "content": {
+                "mod": "workspace-status"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
