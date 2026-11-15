@@ -32,6 +32,7 @@ import { build } from "esbuild"
 const here = path.dirname(fileURLToPath(import.meta.url))
 const src = path.resolve(process.env.SEND_RECOVERY_SOURCE ?? path.join(here, "..", "src"))
 const artifacts = process.env.SEND_RECOVERY_ARTIFACTS
+const legacy = process.argv.includes("--legacy")
 const serveOnly = process.argv.includes("--serve-only")
 if (!artifacts && !serveOnly) throw new Error("Set SEND_RECOVERY_ARTIFACTS to a task-owned evidence directory")
 if (artifacts) await mkdir(artifacts, { recursive: true })
@@ -42,13 +43,15 @@ import { createRoot } from "react-dom/client"
 import { Chat } from "./project-assistants/Chat"
 import { fixtureSource } from "./project-assistants/fixtures"
 import { words } from "./project-assistants/words"
-import { createViewState } from "./project-assistants/view-state"
+import { createViewState, draftIdentity } from "./project-assistants/view-state"
 import { ProjectAssistantSourceClient } from "./cloud/project-assistants"
 import "./project-assistants/styles.css"
 
 export function mountFixture() {
   const language = new URLSearchParams(location.search).get("lang") ?? "en"
   const fixture = fixtureSource("studio")
+  const legacy = new URLSearchParams(location.search).has("legacy")
+  if (legacy) fixture.seedPending(0, 1)
   const turns = []
   const persisted = (() => { try { return JSON.parse(sessionStorage.getItem("send-recovery.synthetic-source") ?? "null") } catch { return null } })()
   const state = { mode: "normal", sends: 0, transported: [], exports: 0, revokeSend: false, admitted: [], failed: null, ...(persisted ?? {}) }
@@ -112,7 +115,15 @@ export function mountFixture() {
   const source = new ProjectAssistantSourceClient(live, exportTransport, grant)
   let sources = [source]
   const current = () => sources
-  const view = createViewState(window.sessionStorage)
+  const legacyKey = draftIdentity("fixture-account", { machine_id: "studio", bot_id: "bot-0" })
+  const seedLegacy = legacy && !sessionStorage.getItem("send-recovery.legacy-seeded")
+  if (seedLegacy) {
+    sessionStorage.setItem(legacyKey, "Legacy uncertain draft")
+    sessionStorage.setItem("send-recovery.legacy-seeded", "yes")
+  }
+  let refuseStorage = false
+  const view = createViewState({ getItem: key => sessionStorage.getItem(key), setItem: (key, value) => { if (refuseStorage) throw new Error("synthetic storage refusal"); sessionStorage.setItem(key, value) }, removeItem: key => { if (refuseStorage) throw new Error("synthetic storage refusal"); sessionStorage.removeItem(key) } })
+  if (seedLegacy) view.quotes.set(legacyKey, "bot-0-reply")
   const root = createRoot(document.getElementById("fixture"))
   let summary = null, generation = 0, shown = true, account = "fixture-account"
   const w = words(language)
@@ -120,6 +131,8 @@ export function mountFixture() {
   const mode = next => () => { state.mode = next; paint() }
   const paint = () => root.render(React.createElement("div", { className: "project-assistants", style: { display: "grid", gridTemplateRows: "auto 1fr", height: "100dvh" } },
     React.createElement("nav", { "aria-label": "Synthetic test controls", style: { display: "flex", flexWrap: "wrap", gap: 6, padding: 8, fontSize: 12 } },
+      button("Test: refuse storage", () => { refuseStorage = true; paint() }),
+      button("Test: allow storage", () => { refuseStorage = false; paint() }),
       button("Test: lose next response", mode("lose")),
       button("Test: refuse next send before transport", () => { state.revokeSend = true; paint() }),
       button("Test: next send leaves no receipt", mode("missing")),
@@ -133,6 +146,14 @@ export function mountFixture() {
       // The composer's value is not page text; report it for the reader.
       React.createElement("output", { "aria-label": "Composer state" }, (() => { const box = document.querySelector(".pa-composer textarea"); return box ? "composer=" + (box.disabled ? "locked" : "editable") + " draft=[" + box.value + "]" : "composer=absent" })())),
     React.createElement("main", { className: "pa-main" }, shown && summary ? React.createElement(Chat, { key: account + generation, summary, source, current, accountKey: account, readerID: "fixture-reader", view, w, language, onBack: () => {}, onBotChanged: () => {} }) : React.createElement("p", null, "Chat closed"))))
+  // Observe every DOM publication, including the first validated snapshot.
+  const observation = document.createElement("output"); observation.id = "legacy-observation"; document.body.append(observation)
+  let unsafeLegacyFrames = 0
+  new MutationObserver(() => {
+    const box = document.querySelector(".pa-composer textarea")
+    if (legacy && box && !box.disabled && box.value === "Legacy uncertain draft") unsafeLegacyFrames++
+    document.querySelector("#legacy-observation")?.replaceChildren(document.createTextNode("unsafe-legacy-frames=" + unsafeLegacyFrames))
+  }).observe(document.getElementById("fixture"), { childList: true, subtree: true, attributes: true })
   window.sendRecovery = { state, view, turns }
   // The source's own records outlive the page; the console's do not, except what it journaled.
   const replay = async () => { for (const request of state.admitted) await admit(request, new AbortController().signal) }
@@ -153,13 +174,13 @@ const server = createServer((request, response) => {
 const external = process.env.SEND_RECOVERY_URL
 if (!external) await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
 const origin = external ? new URL(external).origin : `http://127.0.0.1:${server.address().port}`
-if (serveOnly) { console.log(origin + "/?lang=en"); await new Promise(() => {}) }
+if (serveOnly) { console.log(origin + "/?lang=en" + (legacy ? "&legacy=1" : "")); await new Promise(() => {}) }
 
 // --- Clawdline browser driving --------------------------------------------
 const steps = []
 const browser = (...args) => {
   const out = execFileSync("clawdline", ["browser", ...args], { encoding: "utf8", timeout: 60000, stdio: ["inherit", "pipe", "pipe"] })
-  steps.push({ args, out: out.slice(0, 4000) })
+  steps.push({ args, out })
   return out
 }
 let tab = null
@@ -178,7 +199,7 @@ const record = (name, detail) => { results.push({ name, ...detail }); console.lo
 
 try {
   // An open that timed out may still have run: find it by URL, never open twice.
-  const url = origin + "/?lang=en"
+  const url = origin + "/?lang=en" + (legacy ? "&legacy=1" : "")
   if (process.env.SEND_RECOVERY_TAB) tab = Number(process.env.SEND_RECOVERY_TAB)
   else try { tab = JSON.parse(browser("open", url)).value.tab }
   catch (error) {
@@ -190,6 +211,46 @@ try {
   await until(page => page.includes("I split the work into five tasks"), "the synthetic chat")
   shot("01-opened")
 
+  if (legacy) {
+    let page = read()
+    shot("legacy-initial")
+    assert.equal(page.includes("composer=locked draft=[Legacy uncertain draft]"), true, "an old plain draft beside a validated unknown source must be locked")
+    assert.match(page, /unsafe-legacy-frames=0/)
+    assert.match(page, /Unverified draft/)
+    assert.equal(page.includes("Check with the machine"), false, "no invented command identity")
+    assert.equal(log(page)?.[1], "0"); assert.equal(log(page)?.[2], "0")
+    click("Test: refuse storage"); click("Write a new message"); await settle()
+    page = read(); shot("legacy-storage-refused")
+    assert.match(page, /composer=locked draft=\[Legacy uncertain draft\]/)
+    assert.match(page, /could not preserve/)
+    assert.equal(log(page)?.[1], "0"); assert.equal(log(page)?.[2], "0")
+    click("Test: allow storage"); click("Write a new message")
+    page = await until(p => p.includes("composer=editable draft=[]"), "the empty new legacy composer")
+    shot("legacy-new-empty")
+    assert.match(page, /Unverified draft: .?Legacy uncertain draft/)
+    assert.equal(log(page)?.[1], "0"); assert.equal(log(page)?.[2], "0")
+    await typeDraft("A new legacy follow-up")
+    click("Test: reload page")
+    page = await until(p => p.includes("composer=editable draft=[A new legacy follow-up]"), "distinct old and new drafts after reload", 20)
+    assert.match(page, /Unverified draft: .?Legacy uncertain draft/)
+    shot("legacy-distinct-reloaded")
+    assert.equal(log(page)?.[1], "0"); assert.equal(log(page)?.[2], "0")
+    click("Send message")
+    page = await until(p => log(p)?.[1] === "1" && p.includes("composer=editable draft=[]"), "one explicit new legacy send")
+    const keys = log(page)?.[3].split(",") ?? []
+    assert.equal(keys.length, 1); assert.match(keys[0], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    assert.match(page, /Unverified draft: .?Legacy uncertain draft/)
+    assert.match(page, /unsafe-legacy-frames=0/)
+    assert.match(page, /Outcome unknown; no automatic retry/)
+    assert.equal(log(page)?.[2], "0")
+    shot("legacy-new-sent")
+    click("Test: switch account")
+    page = await until(p => p.includes("account=other-account") && p.includes("I split the work"), "legacy other account")
+    assert.equal(page.includes("Legacy uncertain draft"), false)
+    click("Test: switch account")
+    page = await until(p => p.includes("account=fixture-account") && p.includes("Legacy uncertain draft"), "legacy original account")
+    record("legacy draft retained; explicit empty new composer; storage refusal; reload; new UUID; account scope", { sends: Number(log(page)?.[1]), exports: Number(log(page)?.[2]), keys })
+  } else {
   // 1. A pre-transport refusal leaves an editable draft, not a permanent lock.
   click("Test: refuse next send before transport"); await settle(300)
   await typeDraft("Synthetic refused draft")
@@ -320,6 +381,7 @@ try {
   shot("13-revoked")
   assert.equal(log(page)?.[1], beforeRevoke[1]); assert.equal(log(page)?.[2], beforeRevoke[2], "a revoked grant reads no receipts")
   record("revoked grant never reads or sends", { sends: Number(log(page)?.[1]), exports: Number(log(page)?.[2]) })
+  }
 } finally {
   if (artifacts) await writeFile(path.join(artifacts, "send-recovery-browser-steps.json"), JSON.stringify({ origin, source: src, results, steps }, null, 2))
   try { if (tab !== null && !process.env.SEND_RECOVERY_TAB) browser("close", "--tab", String(tab)) } catch (error) { console.error("close failed:", error.message) }

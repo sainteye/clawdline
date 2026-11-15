@@ -187,12 +187,75 @@ export function inspectHeldSend(value: W.ProjectAssistantExport, held: HeldOutco
   }
   return { state: "invalid" }
 }
+/** A plain draft has no command identity and cannot establish any delivery fact. */
+export interface UnverifiedDraft {
+  scope: Pick<W.ProjectAssistantFence, "key" | "project" | "conversation_id">
+  text: string
+  quote: string
+  continued: boolean
+}
+export const unverifiedDraftKey = (draftKey: string) => "clawdline.bot-unverified." + draftKey
+/** Local migration evidence only: never inspected, replayed or converted into a command. */
+export class UnverifiedDrafts {
+  private readonly records = new Map<string, UnverifiedDraft[]>()
+  private readonly problems = new Map<string, HeldJournalProblem>()
+  private readonly storage?: Store
+  constructor(storage?: Store) { this.storage = storage }
+  private load(key: string): UnverifiedDraft[] {
+    const cached = this.records.get(key)
+    if (cached) return cached
+    let rows: UnverifiedDraft[] = []
+    try {
+      const raw = this.storage?.getItem(unverifiedDraftKey(key))
+      if (raw) {
+        const value = JSON.parse(raw), owner = JSON.parse(key)
+        if (value?.v !== 1 || !Array.isArray(value.drafts)) throw new Error("shape")
+        for (const d of value.drafts) {
+          const f = d?.scope, p = f?.project
+          if (!f?.key || f.key.machine_id !== owner[2] || f.key.bot_id !== owner[3]
+            || !p || ![p.machine_id,p.project_id,p.canonical_id,p.kind,f.conversation_id,d.text,d.quote].every(str)
+            || typeof d.continued !== "boolean") throw new Error("draft")
+        }
+        rows = value.drafts
+      }
+    } catch { this.problems.set(key, "unreadable") }
+    this.records.set(key, rows); return rows
+  }
+  private save(key: string, rows: UnverifiedDraft[]) {
+    if (this.problems.get(key) === "unreadable") return false
+    try {
+      if (!this.storage) throw new Error("storage")
+      this.storage.setItem(unverifiedDraftKey(key), JSON.stringify({ v: 1, drafts: rows }))
+      this.problems.delete(key); return true
+    } catch { this.problems.set(key, "unsaved"); return false }
+  }
+  history(key: string, scope: UnverifiedDraft["scope"]) { return this.load(key).filter(d => sameConversation(d.scope, scope)) }
+  active(key: string, scope: UnverifiedDraft["scope"]) { return this.history(key, scope).find(d => !d.continued) }
+  continuing(key: string, scope: UnverifiedDraft["scope"]) { const rows = this.history(key, scope); return rows.some(d => d.continued) && !rows.some(d => !d.continued) }
+  problem(key: string) { this.load(key); return this.problems.get(key) }
+  capture(key: string, scope: UnverifiedDraft["scope"], text: string, quote: string) {
+    if (!text || this.active(key, scope) || this.continuing(key, scope)) return
+    const draft: UnverifiedDraft = { scope: { key: { ...scope.key }, project: { ...scope.project }, conversation_id: scope.conversation_id }, text, quote, continued: false }
+    const rows = [...this.load(key), draft]; this.records.set(key, rows); this.save(key, rows)
+  }
+  /** Preserve first, clear the old plain slot, then publish permission to start empty. */
+  writeNew(key: string, scope: UnverifiedDraft["scope"]) {
+    const rows = this.load(key), active = this.active(key, scope)
+    if (!active || !this.save(key, rows)) return false
+    try { this.storage!.removeItem(key) } catch { this.problems.set(key, "unsaved"); return false }
+    const next = rows.map(d => d === active ? { ...d, continued: true } : d)
+    // A failed final write leaves the durable active record and lock intact.
+    if (!this.save(key, next)) return false
+    this.records.set(key, next); return true
+  }
+}
 /** Owned by the feature host so destination remounts keep drafts and reading positions. */
 export function createViewState(storage?: Store) {
   const drafts = new Map<string, string>(), positions = new Map<string, ReadingPosition>()
   const quotes = new Map<string, string>()
   const recoveryRequired = new Set<string>()
   const heldOutcomes = new HeldOutcomes(storage)
+  const unverifiedDrafts = new UnverifiedDrafts(storage)
   return {
     draft(key: string) {
       if (!drafts.has(key)) { try { drafts.set(key, storage?.getItem(key) ?? "") } catch { drafts.set(key, "") } }
@@ -206,6 +269,7 @@ export function createViewState(storage?: Store) {
     quotes,
     recoveryRequired,
     heldOutcomes,
+    unverifiedDrafts,
   }
 }
 export type ViewState = ReturnType<typeof createViewState>
