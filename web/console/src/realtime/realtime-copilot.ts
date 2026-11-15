@@ -214,6 +214,8 @@ export class RealtimeCopilotClient {
   private cueTimer?:ReturnType<typeof setInterval>
   private responseInputs = new Map<string,string>()
   private openingRevision = 0
+  /** Moves with each Session a GPT-Live call opens on, so a slower read for the previous one is not said. */
+  private liveFocusRevision = 0
   private personSpoke = false
   private releaseWork?: () => void
   private narrator = new WorkNarrator(event => {
@@ -285,7 +287,12 @@ export class RealtimeCopilotClient {
     this.cancelOpening()
     this.focus = row.id
     if (this.dc && this.dc.readyState === 'open') {
-      if (this.live) { this.sendLiveContext(); this.dc.send(JSON.stringify(liveNote('thinking', `The person now has the Session "${row.label || row.id}" open on screen; "it" and "this" now mean that one.`))) }
+      if (this.live) {
+        this.sendLiveContext()
+        this.dc.send(JSON.stringify(liveNote('thinking', `The person now has the Session "${row.label || row.id}" open on screen; "it" and "this" now mean that one.`)))
+        // It is told about that Session from its summary, not from its name alone.
+        void this.openFromOrigin(true)
+      }
       else this.dc.send(JSON.stringify(screenFocusEvent(row)))
       this.addLog('info', nextWord('copilotLogFocus', { name: row.label || row.id }))
     }
@@ -771,6 +778,7 @@ export class RealtimeCopilotClient {
       // GPT-Live keeps talking; it is told which Session is meant now and asked about it on the next turn.
       this.sendLiveContext()
       this.dc.send(JSON.stringify(liveNote('thinking', `The person turned the call to the Session "${origin.label || origin.id}"; "it" and "this" now mean that one.`)))
+      void this.openFromOrigin(true)
       return
     }
     this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
@@ -1228,21 +1236,26 @@ export class RealtimeCopilotClient {
    * 2026-11-15): the recap the list already carries is said at once, while the
    * latest one is asked for (`forkedRecap` with fresh, five minutes); when it
    * arrives and says something new, the call goes on with it.
+   *
+   * `switched`: the person moved the call to another Session (on screen or
+   * by turning it). The same happens for that Session at once, even after the
+   * person has spoken; before 2026-11-16 the live model was only told its
+   * name and talked about it in generalities.
    */
-  private async openFromOrigin() {
-    const dc = this.dc, attempt = this.attempt
-    const current = () => this.dc === dc && attempt === this.attempt && dc?.readyState === 'open'
+  private async openFromOrigin(switched = false) {
+    const dc = this.dc, attempt = this.attempt, revision = ++this.liveFocusRevision
+    const current = () => this.dc === dc && attempt === this.attempt && revision === this.liveFocusRevision && dc?.readyState === 'open'
     const deps = this.toolDeps()
     const read = await readRows(deps).catch(() => ({ error: 'unreadable' }))
     if (!current() || !dc) return
     const row = 'rows' in read ? read.rows.find((r) => r.id === this.focus) : undefined
-    if (!row) { dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING))); return }
+    if (!row) { if (!switched) dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING))); return }
     const now = nowSeconds()
     const kept = row.recap?.text || row.delivered || ''
     const written = row.recap?.text ? String(recapFields(row.recap, now).recap_written ?? '') : ''
-    const opened = !this.personSpoke
+    const opened = switched || !this.personSpoke
     const noteAt = Date.now()
-    if (opened) dc.send(JSON.stringify(liveNote('commentary', liveOpeningNote(row.label, kept, written))))
+    if (opened) dc.send(JSON.stringify(liveNote('commentary', liveOpeningNote(row.label, kept, written, switched))))
     this.journal('tool', 'opening_summary', { args: JSON.stringify({ session_id: row.id }), answer: kept.slice(0, 1500) })
     // A recap at most FRESH_RECAP_SECONDS old is already the latest: nothing more is read.
     if (row.recap?.text && row.recap.at > 0 && now - row.recap.at <= FRESH_RECAP_SECONDS) return
