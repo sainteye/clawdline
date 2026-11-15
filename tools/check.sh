@@ -30,6 +30,14 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
+# Keep machine responsive: use at most 2/3 of available CPU cores
+num_cpu=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+max_cores=$(( num_cpu * 2 / 3 ))
+[ "$max_cores" -ge 1 ] || max_cores=1
+if [ -z "${GOMAXPROCS:-}" ] || [ "${GOMAXPROCS}" -gt "$max_cores" ]; then
+  export GOMAXPROCS=$max_cores
+fi
+
 web=auto
 full=no
 quick=no
