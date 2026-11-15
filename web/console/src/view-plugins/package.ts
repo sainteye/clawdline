@@ -1,3 +1,5 @@
+import { RETIRED_PACKAGES } from "./retired.js"
+export { RETIRED_PACKAGES } from "./retired.js"
 import { PLUGIN_LIMITS as B } from "./limits.js"
 
 export type Capability = "sessions.read" | "sessions.open"
@@ -19,10 +21,6 @@ export function exact(v: Record<string, unknown>, keys: string[]): boolean {
 }
 const version = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/
 export const text = (v: unknown): v is string => typeof v === "string" && v.length > 0 && [...v].length <= B.textCharacters
-// These withdrawn built-in identities stay reserved so old ZIPs cannot restore them.
-export const RETIRED_PACKAGES: readonly string[] = [
-  "com.clawdline.session-list", "com.clawdline.session-pop-art", "com.clawdline.session-absurd",
-]
 export function validateManifest(raw: unknown, allowLegacy = false): Manifest {
   if (!plain(raw) || !exact(raw, ["manifestVersion", "id", "version", "hostApi", "name", "entry", "capabilities", "cover"])) fail("invalid_manifest")
   if (raw.manifestVersion !== 1 || raw.hostApi !== 1) fail("protocol_mismatch")

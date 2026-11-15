@@ -59,3 +59,24 @@ test("preview images follow supported language and keep an English fallback",()=
  assert.equal(shareMetadata("/community/questions","ja").image,SHARE_IMAGES.en)
  assert.equal(shareMetadata(path,"zh-Hant",{title:"English topic",body:"Original text",locale:"en"}).image,SHARE_IMAGES.en)
 })
+
+test("withdrawn plugin downloads override a stale asset with an uncached Gone response", async () => {
+ const {default:worker}=await import("../../edge/worker.mjs")
+ let assets=0
+ const env={ASSETS:{async fetch(){assets++;return new Response("PK stale archive",{headers:{"content-type":"application/zip"}})}}}
+ for(const id of ["session-list","session-pop-art","session-absurd"]){
+  for(const method of ["GET","HEAD"]){
+   const response=await worker.fetch(new Request("https://app.clawdline.com/view-plugins/"+id+".zip?old=1",{method}),env)
+   assert.equal(response.status,410)
+   assert.equal(response.headers.get("cache-control"),"no-store")
+   assert.ok(!response.headers.get("content-type")?.includes("zip"))
+   const body=await response.text()
+   if(method==="HEAD")assert.equal(body,"")
+   else assert.match(body,/removed/)
+  }
+ }
+ assert.equal(assets,0,"The withdrawn URLs never read the stale asset binding")
+ const galaxy=await worker.fetch(new Request("https://app.clawdline.com/view-plugins/session-galaxy.zip"),env)
+ assert.equal(galaxy.status,200);assert.equal(await galaxy.text(),"PK stale archive")
+ assert.equal(assets,1,"Galaxy keeps the ordinary static-asset path")
+})

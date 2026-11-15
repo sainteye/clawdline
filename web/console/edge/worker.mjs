@@ -1,3 +1,4 @@
+import { RETIRED_DOWNLOADS } from "../src/view-plugins/retired.ts"
 import { SHARE_LIMITS, shareMetadata, metadataHTML } from "../src/community/share-metadata.ts"
 const API = "https://api.clawdline.com"
 export function publicResource(path, locale) {
@@ -40,6 +41,12 @@ export async function resolveMetadata(request, get = fetch) {
 export default {
   async fetch(request, env) {
     const url=new URL(request.url)
+    if (RETIRED_DOWNLOADS.includes(url.pathname)) {
+      const zh = requestLocale(request.headers.get("accept-language") ?? "") === "zh-Hant"
+      return new Response(request.method === "HEAD" ? null : zh ? "此內建視圖已移除。" : "This built-in view has been removed.", {
+        status: 410, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
+      })
+    }
     if (!/^(GET|HEAD)$/.test(request.method) || !/^\/(community|help)(\/|$)/.test(url.pathname)) return env.ASSETS.fetch(request)
     const [response,metadata]=await Promise.all([env.ASSETS.fetch(request),resolveMetadata(request)])
     if(!response.ok || !response.headers.get("content-type")?.includes("text/html"))return response

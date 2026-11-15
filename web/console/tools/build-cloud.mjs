@@ -1,3 +1,4 @@
+import { RETIRED_DOWNLOADS } from "../src/view-plugins/retired.ts"
 import { execFileSync } from "node:child_process"
 import { readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -20,7 +21,7 @@ await build({ root, configFile: join(root, "vite.config.ts") })
 await build({ root, configFile: false, build: { outDir: "dist", emptyOutDir: false, minify: true,
   lib: { entry: join(root, "edge/worker.mjs"), formats: ["es"], fileName: () => "_worker.js" },
   rollupOptions: { output: { inlineDynamicImports: true } } } })
-writeFileSync(join(root, "dist", "_routes.json"), JSON.stringify({ version: 1, include: ["/community", "/community/*", "/help", "/help/*"], exclude: [] }) + "\n")
+writeFileSync(join(root, "dist", "_routes.json"), JSON.stringify({ version: 1, include: ["/community", "/community/*", "/help", "/help/*", ...RETIRED_DOWNLOADS], exclude: [] }) + "\n")
 const shareImage = readFileSync(join(root, "dist", "community-share-v1.png"))
 if (shareImage.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" || shareImage.readUInt32BE(16) !== 1200 || shareImage.readUInt32BE(20) !== 630) throw new Error("The share image must be a 1200×630 PNG.")
 const index = join(root, "dist", "index.html")

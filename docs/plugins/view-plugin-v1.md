@@ -42,7 +42,10 @@ cross-tab hints, revoke running grants before rereading the saved archives.
 ## Withdrawn built-in views
 
 Galaxy is the only supplied view. List, Pop and Deadpan have been removed from
-Explore views, source assets and public ZIP downloads. Their three exact built-in
+Explore views, source assets and public ZIP downloads. The hosted edge returns
+HTTP 410 with `Cache-Control: no-store` for their exact old download URLs, before
+reading the static asset binding, so cached archives cannot remain downloadable
+on those routes. Galaxy stays a static download. Their three exact built-in
 IDs are reserved and rejected on import, including legacy archives. On the next
 registry read in the updated interface, their saved active and rollback archives
 are deleted in the same transaction before any launchable row is returned.
