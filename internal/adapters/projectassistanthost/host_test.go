@@ -169,7 +169,9 @@ func newHostFixture(t *testing.T) *hostFixture {
 	dir := t.TempDir()
 	f.launcher = &fixtureLauncher{}
 	broker := f.broker(t, dir)
-	f.o = Options{Database: f.st.ProjectAssistantDatabase(), MachineID: "source", Projects: fixtureResolver{f}, Broker: broker, Clock: time.Now, ID: func() string { return fmt.Sprintf("host-%d", f.seq.Add(1)) }, Limits: app.RuntimeLimits{MaxBots: 4, MaxProcesses: 1, PromptTimeout: 5 * time.Second, CleanupTimeout: 100 * time.Millisecond},
+	// Functional SQLite cleanup uses the product budget; deadline faults opt in
+	// to a short limit in their own test instead of imposing it on every stop.
+	f.o = Options{Database: f.st.ProjectAssistantDatabase(), MachineID: "source", Projects: fixtureResolver{f}, Broker: broker, Clock: time.Now, ID: func() string { return fmt.Sprintf("host-%d", f.seq.Add(1)) }, Limits: app.RuntimeLimits{MaxBots: 4, MaxProcesses: 1, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond},
 		Source: func(context.Context, pa.BotKey, bool) (pa.SourceStatus, error) {
 			s := pa.SourceStatus{MachineID: "source", State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive}
 			if f.revoked.Load() {
