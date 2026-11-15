@@ -15,11 +15,18 @@ import "./plugins.css"
 const code = (e: unknown) => e instanceof PluginError ? e.code : "storage_unavailable"
 const name = (p: ViewPackage, language: string) => p.manifest.name[language.startsWith("zh") ? "zh-Hant" : "en"]
 
+type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null }
+
 export function useViewPlugins(sources: readonly ViewSource[], language: string) {
   const [opened, setOpened] = useState(false), openedRef = useRef(false), dock = useStatusDockAvailable()
   const [mode, setMode] = useState<"manage" | "launch">("launch")
   const [rows, setRows] = useState<Installed[]>([]), [error, setError] = useState("")
-  const [busy, setBusy] = useState(false), [review, setReview] = useState<{ archive: ArrayBuffer; pkg: ViewPackage; expected: string | null } | null>(null)
+  const [busy, setBusy] = useState(false), [review, setReview] = useState<PackageReview | null>(null)
+  // Keep the reviewed card visible while the registry hint revokes stale grants.
+  const [installing, setInstalling] = useState<PackageReview | null>(null), [completed, setCompleted] = useState<ViewPackage | null>(null)
+  const installingRef = useRef(false), reviewOpener = useRef<HTMLElement | null>(null)
+  const attention = useRef<{ target: () => HTMLElement | null; anchor: HTMLElement | null; top: number } | null>(null)
+  const isBusy = busy || installing !== null, panel = review?.pkg ?? installing?.pkg ?? completed
   const [grant, setGrant] = useState<ViewGrant | null>(null)
   const modal = useRef<HTMLDivElement>(null), opener = useRef<HTMLElement | null>(null)
   const owned = useRef<string | null>(null), navigate = useRef<(() => void) | null>(null)
@@ -29,7 +36,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const liveSource = useRef(source); liveSource.current = source
   const finish = () => {
     openedRef.current = false; owned.current = null; closing.current = false; operations.current++
-    setOpened(false); setGrant(null); setReview(null); setBusy(false)
+    setOpened(false); setGrant(null); setReview(null); setInstalling(null); setCompleted(null); setBusy(false); attention.current = null
     const next = navigate.current; navigate.current = null
     requestAnimationFrame(() => { (opener.current?.isConnected ? opener.current : document.querySelector<HTMLButtonElement>(".vp-dock,#nav-view-plugins"))?.focus({ preventScroll: true });
       try { next?.() } catch { /* A source revoked during Back never receives navigation. */ }
@@ -47,19 +54,35 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const refresh = async () => { try { setRows(await installedPackages()) } catch (e) { setRows([]); setError(code(e)) } }
   useEffect(() => subscribePackages(() => {
     // A hint revokes the running grant immediately, before asynchronous storage verification.
-    operations.current++; setGrant(null); setReview(null); setBusy(false)
+    operations.current++; setGrant(null); setReview(null); setCompleted(null); setBusy(false)
     void refresh()
   }), [])
   useEffect(() => {
     if (!grant || source.key === grant.sourceKey) return
     operations.current++; setGrant(null); setBusy(false); setError("scope_changed")
   }, [source.key, grant])
+  const queueAttention = (target: () => HTMLElement | null, anchor: HTMLElement | null = null) => {
+    attention.current = { target, anchor, top: anchor?.getBoundingClientRect().top ?? 0 }
+  }
+  const reveal = (target: HTMLElement, context?: HTMLElement) => {
+    const scroller = modal.current?.querySelector<HTMLElement>(".vp-manager")
+    if (!scroller) return
+    target.focus({ preventScroll: true })
+    const inset = parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0
+    const destination = context && target.getBoundingClientRect().bottom - context.getBoundingClientRect().top <= scroller.clientHeight - 2 * inset ? context : target
+    scroller.scrollTo({ top: scroller.scrollTop + destination.getBoundingClientRect().top - scroller.getBoundingClientRect().top - inset,
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" })
+  }
   useLayoutEffect(() => {
-    if (!review) return
-    const panel = modal.current?.querySelector<HTMLElement>(".vp-review")
-    panel?.scrollIntoView({ block: "nearest" })
-    panel?.focus({ preventScroll: true })
-  }, [review?.pkg.digest])
+    const next = attention.current
+    if (!next) return
+    attention.current = null
+    const scroller = modal.current?.querySelector<HTMLElement>(".vp-manager"), target = next.target()
+    if (!scroller || !target) return
+    // Rebase before paint so inserting a review never teleports the gallery first.
+    if (next.anchor?.isConnected) scroller.scrollTop += next.anchor.getBoundingClientRect().top - next.top
+    reveal(target)
+  })
   useLayoutEffect(() => {
     if (!opened) return
     const node = modal.current!, siblings = [...document.body.children].filter(el => el !== node && el instanceof HTMLElement) as HTMLElement[]
@@ -104,29 +127,56 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     }, e => { if (openedRef.current && generation === operations.current) { setError(code(e)); setBusy(false) } })
   }
   const act = async (operation: () => Promise<void>) => {
-    if (busy) return
+    if (isBusy || installingRef.current) return
     setBusy(true); setError("")
-    try { await operation(); await refresh() } catch (e) { setError(code(e)) }
+    try { await operation(); await refresh() } catch (e) {
+      queueAttention(() => modal.current?.querySelector<HTMLElement>(".vp-error") ?? null, reviewOpener.current)
+      setError(code(e))
+    }
     finally { setBusy(false) }
   }
   const inspect = async (archive: ArrayBuffer) => {
     const generation = operations.current
     const pkg = await parsePackage(archive), current = (await installedPackages()).find(r => r.id === pkg.manifest.id)
     if (!openedRef.current || generation !== operations.current) return
-    setReview({ archive, pkg, expected: current?.active.digest ?? null })
+    queueAttention(() => modal.current?.querySelector<HTMLElement>(".vp-review") ?? null, reviewOpener.current)
+    setCompleted(null); setReview({ archive, pkg, expected: current?.active.digest ?? null })
   }
-  const exampleInstall = (id: string) => act(async () => {
-    let answer: Response
-    try { answer = await fetch(`/view-plugins/${id}.zip`, { credentials: "same-origin", cache: "no-store" }) }
-    catch { throw new PluginError("package_download_failed") }
-    if (!answer.ok || !answer.body) throw new PluginError("package_download_failed")
-    const reader = answer.body.getReader(), chunks: Uint8Array[] = []; let size = 0
-    try { while (true) { const part = await reader.read(); if (part.done) break; size += part.value.length
-      if (size > B.archiveBytes) throw new PluginError("package_too_large"); chunks.push(part.value) }
-    } finally { await reader.cancel() }
-    const bytes = new Uint8Array(size); let at = 0; for (const part of chunks) { bytes.set(part, at); at += part.length }
-    await inspect(bytes.buffer)
-  })
+  const confirmInstall = async () => {
+    if (!review || isBusy || installingRef.current) return
+    const selected = review, opening = owned.current
+    installingRef.current = true; setInstalling(selected); setError("")
+    try {
+      await installPackage(selected.archive, selected.expected)
+      const installed = await installedPackages()
+      if (!openedRef.current || owned.current !== opening) return
+      setRows(installed); setReview(null); setCompleted(selected.pkg)
+      // The success action replaces the confirmation in the same stable card.
+      requestAnimationFrame(() => modal.current?.querySelector<HTMLButtonElement>(".vp-review .vp-primary")?.focus({ preventScroll: true }))
+    } catch (e) { if (openedRef.current && owned.current === opening) setError(code(e)) }
+    finally { installingRef.current = false; if (owned.current === opening) setInstalling(null) }
+  }
+  const cancelReview = () => {
+    const origin = reviewOpener.current
+    queueAttention(() => origin?.isConnected ? origin : modal.current?.querySelector<HTMLElement>(".vp-examples") ?? null, origin)
+    setReview(null); setError("")
+  }
+  const exampleInstall = (id: string, button: HTMLElement) => {
+    if (isBusy || installingRef.current) return
+    reviewOpener.current = button
+    return act(async () => {
+      let answer: Response
+      try { answer = await fetch(`/view-plugins/${id}.zip`, { credentials: "same-origin", cache: "no-store" }) }
+      catch { throw new PluginError("package_download_failed") }
+      if (!answer.ok || !answer.body) throw new PluginError("package_download_failed")
+      const reader = answer.body.getReader(), chunks: Uint8Array[] = []; let size = 0
+      try { while (true) { const part = await reader.read(); if (part.done) break; size += part.value.length
+        if (size > B.archiveBytes) throw new PluginError("package_too_large"); chunks.push(part.value) }
+      } finally { await reader.cancel() }
+      const bytes = new Uint8Array(size); let at = 0; for (const part of chunks) { bytes.set(part, at); at += part.length }
+      await inspect(bytes.buffer)
+    })
+  }
   const choose = (pkg: ViewPackage) => {
     setReview(null)
     void act(async () => {
@@ -144,31 +194,40 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const content = opened ? createPortal(<div className="vp-host" ref={modal} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
     {grant ? <PluginFrame key={grant.instanceId} grant={grant} source={source} language={language} onClose={close}
       onNavigate={fn => { navigate.current = fn }} onFault={error => { setGrant(null); setError(error) }} /> : <>
-      <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div><button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
-      <main className={`vp-manager${mode === "launch" ? " vp-launcher" : ""}`} aria-busy={busy}>
-        {error && <p className="vp-error" role="alert">{w.errors[error] || w.unavailable}</p>}
-        {busy && <p className="vp-loading" role="status">{w.loading}</p>}
+      <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div><span className="vp-progress" role="status">{isBusy ? w.loading : ""}</span><button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
+      <main className={`vp-manager${mode === "launch" ? " vp-launcher" : ""}`} aria-busy={isBusy}>
+        {error && !review && !installing && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
         {mode === "launch" ? <>
-          {!busy && !enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2><p>{w.launchEmptyHint}</p></div> : <div className="vp-launch-list">{enabled.map(row => <button key={row.id} type="button" className="vp-launch-item" disabled={busy} onClick={() => choose(row.active)}>
+          {!isBusy && !enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2><p>{w.launchEmptyHint}</p></div> : <div className="vp-launch-list">{enabled.map(row => <button key={row.id} type="button" className="vp-launch-item" disabled={isBusy} onClick={() => choose(row.active)}>
             <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
           </button>)}</div>}
         </> : <>
-          <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div><label className="vp-import">+ {w.install}<input className="vp-file" type="file" accept=".zip,application/zip" aria-label={w.install} disabled={busy} onChange={e => {
+          <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div><label className="vp-import">+ {w.install}<input className="vp-file" type="file" accept=".zip,application/zip" aria-label={w.install} disabled={isBusy} onChange={e => {
             const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""
-            if (file) void act(async () => { if (file.size > B.archiveBytes) throw new PluginError("package_too_large"); await inspect(await file.arrayBuffer()) })
+            if (file) { reviewOpener.current = e.currentTarget.closest<HTMLElement>(".vp-import"); void act(async () => { if (file.size > B.archiveBytes) throw new PluginError("package_too_large"); await inspect(await file.arrayBuffer()) }) }
           }} /></label></div>
-          {review && <section className="vp-review vp-card" tabIndex={-1} aria-label={w.review}><ViewArtwork cover={review.pkg.manifest.cover} missing={w.coverRequired} small /><p className="vp-eyebrow">{w.review}</p><h2>{name(review.pkg, language)}</h2><p className="vp-package-id">{review.pkg.manifest.id} · {review.pkg.manifest.version}</p>
-            <p>{w.permissions}: {w.read}{review.pkg.manifest.capabilities.includes("sessions.open") ? ` · ${w.navigate}` : ""}</p><p className="vp-muted">{w.trust}</p>
-            <div className="vp-actions"><button className="vp-primary" disabled={busy} onClick={() => void act(async () => { await installPackage(review.archive, review.expected); setReview(null) })}>{review.expected ? w.replace : w.confirmInstall}</button>
-            <button disabled={busy} onClick={() => setReview(null)}>{w.cancel}</button></div></section>}
+          {panel && <section className="vp-review vp-card" data-package-id={panel.manifest.id} data-phase={installing ? "installing" : review ? "review" : "installed"} tabIndex={-1} aria-label={completed && !review && !installing ? w.added : w.review}>
+            <ViewArtwork cover={panel.manifest.cover} missing={w.coverRequired} small /><p className="vp-eyebrow" data-install-result={completed && !review && !installing ? true : undefined}>{completed && !review && !installing ? w.added : w.review}</p><h2>{name(panel, language)}</h2><p className="vp-package-id">{panel.manifest.id} · {panel.manifest.version}</p>
+            <p>{w.permissions}: {w.read}{panel.manifest.capabilities.includes("sessions.open") ? ` · ${w.navigate}` : ""}</p><p className="vp-muted">{w.trust}</p>
+            {error && (review || installing) && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
+            <div className="vp-actions">{completed && !review && !installing ? <>
+              <button className="vp-primary" disabled={isBusy || !rows.find(row => row.id === completed.manifest.id)?.enabled} onClick={() => choose(completed)}>{w.open} <span aria-hidden="true">↗</span></button>
+              <button disabled={isBusy} onClick={() => {
+                const card = [...(modal.current?.querySelectorAll<HTMLElement>(".vp-installed") ?? [])].find(el => el.dataset.packageId === completed.manifest.id)
+                if (card) { reveal(card, card.closest(".vp-library")?.querySelector<HTMLElement>(".vp-section-head") ?? undefined); card.querySelector<HTMLButtonElement>(".vp-primary")?.focus({ preventScroll: true }) }
+              }}>{w.installed}</button>
+            </> : <>
+              <button className="vp-primary" disabled={isBusy} onClick={() => void confirmInstall()}>{review?.expected || installing?.expected ? w.replace : w.confirmInstall}</button>
+              <button disabled={isBusy} onClick={cancelReview}>{w.cancel}</button>
+            </>}</div></section>}
           <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span></div>
             {!rows.length && <div className="vp-empty"><ViewPluginIcon /><h3>{w.empty}</h3><p>{w.emptyHint}</p></div>}
-            <div className="vp-library-grid">{rows.map(row => <article className="vp-card vp-installed" key={row.id} data-enabled={row.enabled}>
+            <div className="vp-library-grid">{rows.map(row => <article className="vp-card vp-installed" key={row.id} data-enabled={row.enabled} data-package-id={row.id} tabIndex={-1}>
               <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><div className="vp-installed-body"><div className="vp-card-heading"><h3>{name(row.active, language)}</h3><span className="vp-version">v{row.active.manifest.version}</span></div>
                 <span className="vp-status"><i />{row.enabled ? w.enabled : w.disabled}</span>
                 {!packageCover(row.active) && <span className="vp-muted">{w.coverRequired}</span>}
-                <div className="vp-card-footer"><button className="vp-primary" disabled={busy || !row.enabled} onClick={() => choose(row.active)}>{w.open} <span aria-hidden="true">↗</span></button>
-                  <ManageMenu label={w.manage} busy={busy} packageId={row.id} items={[
+                <div className="vp-card-footer"><button className="vp-primary" disabled={isBusy || !row.enabled} onClick={() => choose(row.active)}>{w.open} <span aria-hidden="true">↗</span></button>
+                  <ManageMenu label={w.manage} busy={isBusy} packageId={row.id} items={[
                     { label: row.enabled ? w.disable : w.enable, onSelect: () => void act(() => enablePackage(row, !row.enabled)) },
                     ...(row.previous ? [{ label: `${w.rollback} · ${row.previous.manifest.version}`, onSelect: () => void act(() => rollbackPackage(row)) }] : []),
                   ]} remove={{ label: w.remove, cancel: w.cancel, confirm: w.remove,
@@ -188,7 +247,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
             ].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => {
               const installed = rows.find(r => r.id === "com.clawdline." + example.id), update = installed && hasCuratedUpdate(installed.active)
               return <article className="vp-example" key={example.id}>
-              <ViewArtwork cover={examplePreview("com.clawdline." + example.id, language)} missing={w.coverRequired} preview /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || !!installed && !update} onClick={() => void exampleInstall(example.id)}>{installed ? update ? w.update : w.added : example.action}</button></div>
+              <ViewArtwork cover={examplePreview("com.clawdline." + example.id, language)} missing={w.coverRequired} preview /><div><h3>{example.title}</h3><p>{example.description}</p><button data-unavailable={!!installed && !update} disabled={isBusy || !!installed && !update} onClick={e => void exampleInstall(example.id, e.currentTarget)}>{installed ? update ? w.update : w.added : example.action}</button></div>
             </article>})}
           </div></section>
           <footer className="vp-local-note"><span aria-hidden="true">◌</span><p>{w.local}</p></footer>

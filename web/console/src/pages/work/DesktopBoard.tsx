@@ -52,7 +52,25 @@ export function DesktopBoard({ items, decisions, visibility, proposalCount, prop
   loadingLabel: string
 }) {
   const scroller = useRef<HTMLDivElement>(null)
+  const [overflow, setOverflow] = useState({ left: false, right: false })
   const groups = desktopBoardItems(items, decisions)
+  // The arrows appear only on the side that has hidden columns, so a board that
+  // fits shows no scrolling controls at all.
+  useEffect(() => {
+    const node = scroller.current
+    if (!node) return
+    const measure = () => {
+      const left = node.scrollLeft > 1
+      const right = node.scrollLeft + node.clientWidth < node.scrollWidth - 1
+      setOverflow((current) => current.left === left && current.right === right ? current : { left, right })
+    }
+    measure()
+    node.addEventListener("scroll", measure, { passive: true })
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure)
+    resize?.observe(node)
+    for (const child of Array.from(node.children)) resize?.observe(child)
+    return () => { node.removeEventListener("scroll", measure); resize?.disconnect() }
+  }, [visibility.proposals, visibility.plans, visibility.done, loading, items.length])
   const move = (direction: number) => {
     const node = scroller.current
     if (node) node.scrollBy({ left: direction * node.clientWidth, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" })
@@ -62,6 +80,8 @@ export function DesktopBoard({ items, decisions, visibility, proposalCount, prop
     <div className="work-desktop-lane-body">{loading ? <LoadingSkeleton label={loadingLabel} id={`work-desktop-${key}`} /> : groups[key].length ? groups[key].map(renderCard) : <p className="work-desktop-empty">{catalogWord("work", "desktopEmptyLane")}</p>}</div>
   </section>
   return <div className="work-desktop-board">
+    {overflow.left && <button className="work-desktop-scroll" data-side="left" type="button" aria-label={catalogWord("work", "desktopScrollLeft")} onClick={() => move(-1)}><WorkIcon name="open" /></button>}
+    {overflow.right && <button className="work-desktop-scroll" data-side="right" type="button" aria-label={catalogWord("work", "desktopScrollRight")} onClick={() => move(1)}><WorkIcon name="open" /></button>}
     <div ref={scroller} className="work-desktop-lanes" tabIndex={0} role="region" aria-label={catalogWord("work", "desktopColumns")} aria-busy={loading}>
       {visibility.proposals && <section className="work-desktop-lane" data-lane="proposals">
         <header className="work-desktop-lane-head"><h2>{catalogWord("inline", "90b290a48f82")}</h2><span className="work-count">{proposalCount}</span></header>
@@ -72,10 +92,6 @@ export function DesktopBoard({ items, decisions, visibility, proposalCount, prop
       {lane("active", catalogWord("work", "sectionActive"))}
       {lane("attention", catalogWord("work", "desktopAttention"))}
       {visibility.done && lane("done", catalogWord("inline", "f28461bb49c8"))}
-    </div>
-    <div className="work-desktop-scroll-tools"><span>{catalogWord("work", "desktopScrollHint")}</span>
-      <button type="button" aria-label={catalogWord("work", "desktopScrollLeft")} onClick={() => move(-1)}><WorkIcon name="open" /></button>
-      <button type="button" aria-label={catalogWord("work", "desktopScrollRight")} onClick={() => move(1)}><WorkIcon name="open" /></button>
     </div>
   </div>
 }

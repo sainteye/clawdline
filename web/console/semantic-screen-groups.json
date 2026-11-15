@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12369,
-  "riskKeys": 5361,
-  "nonRiskCount": 7008,
+  "englishContentKeys": 12373,
+  "riskKeys": 5362,
+  "nonRiskCount": 7011,
   "groups": [
     {
       "name": "acp / other",
@@ -7646,7 +7646,7 @@
     },
     {
       "name": "work / other",
-      "count": 77,
+      "count": 80,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -7686,6 +7686,8 @@
         "work.desktopScrollRight",
         "work.desktopShowPlans",
         "work.desktopShowProposals",
+        "work.detailMode",
+        "work.detailModeHint",
         "work.handoverTo",
         "work.lastEvidence",
         "work.launchModelDefault",
@@ -7706,6 +7708,7 @@
         "work.phaseImplementing",
         "work.phaseMerging",
         "work.phaseVerifying",
+        "work.phoneFilters",
         "work.rank",
         "work.rankNone",
         "work.reasonRedispatched",
