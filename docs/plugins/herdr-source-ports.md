@@ -81,3 +81,30 @@ glide, a 600ms window reveal staggered across 300ms, and the board's initial
 half-flap fill. These are explicitly browser-opening adaptations. They do not
 loop, block controls or assert missing work history; paused/reduced/hidden/stale
 inputs do not trigger them, and ordinary updates do not replay them.
+
+## Curated gallery previews
+
+The installation gallery uses complete 1600×1000 screenshots from the actual
+published packages, with separate English and Taiwan Traditional Chinese samples.
+Its 16:10 image area preserves the entire composition at desktop and mobile sizes.
+Small validated PNG package icons remain separate; enlarging those icons into a
+wide strip neither establishes visual fidelity nor supplies enough image pixels.
+
+`plugins/curated-previews.mjs` opens each real ZIP in the production package host
+with generic synthetic Session summaries, captures its original-resolution iframe,
+and encodes WebP without upscaling. No personal data or generated illustration is
+used. `previews.json` records the package version, archive digest, dimensions and
+image digest; content-hashed URLs prevent a replaced image retaining an old cache
+identity. Territory shows its available Project/Session map, not the separate
+file-activity study. Regenerate previews whenever their package changes:
+
+```sh
+PREVIEW_OUTPUT=/path/to/output PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node plugins/curated-previews.mjs
+PLUGIN_ARTIFACTS=/path/to/evidence PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node plugins/curated-previews.acceptance.mjs
+```
+
+Copy the generated WebP files into `web/console/public/view-plugins/previews` and
+the generated manifest into `web/console/src/view-plugins/previews.json`. The
+browser acceptance measures decoded pixels, reserved aspect ratio and image/area
+geometry in Chromium and WebKit at 390, 1440 and 1920 pixels in both languages.
+It rejects the previous low-resolution, square image clipped inside a short strip.

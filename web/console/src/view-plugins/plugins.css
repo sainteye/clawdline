@@ -88,3 +88,7 @@
 @media(max-width:380px) { .vp-intro { flex-wrap:wrap }.vp-intro>div { flex-basis:100% }.vp-import { width:100% }.vp-example-grid { grid-template-columns:1fr }.vp-example p { min-height:0 }.vp-card-heading { gap:6px }.vp-card-heading h3 { font-size:15px } }
 .vp-version { display:inline-block;max-width:100%;overflow-wrap:anywhere }
 .vp-review:focus { outline:none }
+
+/* Curated screenshots have their own composition; package icons stay compact. */
+.vp-art-preview { display:block;aspect-ratio:8/5;height:auto;min-width:0;min-height:0 }
+.vp-art-preview img { min-width:0;min-height:0;width:100%;height:100%;object-fit:contain }
