@@ -102,15 +102,20 @@ missing cover cannot pass the publication gate. An actual cover must identify
 the view and be reviewed as artwork: a technically valid blank or borrowed image
 is not publication acceptance.
 
-The supplied covers have editable `cover.svg` source beside each manifest. They
+The Galaxy, List and Pop covers have editable `cover.svg` source beside each manifest. They
 can be rendered using an already installed local Playwright module, without a
 network request or a new dependency:
 
 ```sh
-PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node tools/render-view-plugin-covers.mjs plugins/session-galaxy plugins/session-list plugins/session-pop-art plugins/session-absurd
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node tools/render-view-plugin-covers.mjs plugins/session-galaxy plugins/session-list plugins/session-pop-art
 ```
 
-The renderer embeds the resulting PNG in each manifest; the SVG source is not a
+Deadpan 0.2.0 instead uses the generated raster artwork in `painting.jpg`, with a dedicated
+`cover.png`. Run `node plugins/session-absurd/embed-artwork.mjs` before the same public packer;
+the painting is embedded in the HTML and its cover is embedded in the manifest. Its authoring
+assets do not add ZIP entries or network requests.
+
+The SVG renderer embeds the resulting PNG in each manifest; the SVG source is not a
 third ZIP entry. The archive remains the same two-file STORE profile and SDK wire
 v1. A host supporting revision 6 is needed to import the added manifest field;
 refresh an older open page before installing a new package.

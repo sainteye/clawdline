@@ -12235,7 +12235,7 @@
   "viewPlugins.popHint": "A moving Pop Art comic with clear Session states and a readable list.",
   "viewPlugins.deadpan": "Session Deadpan",
   "viewPlugins.addDeadpan": "Install Deadpan",
-  "viewPlugins.deadpanHint": "Each Session state becomes a quiet, absurd cartoon scene, with a plain list beside it.",
+  "viewPlugins.deadpanHint": "An original painting beside clear live Session states and a readable list.",
   "capacityRow.console.view_plugin_archive_bytes.what": "Bounds the ZIP bytes read for one imported view package.",
   "capacityRow.console.view_plugin_archive_bytes.full": "Oversized ZIPs are refused before they can replace an installed package.",
   "capacityRow.console.view_plugin_expanded_bytes.what": "Bounds the combined extracted contents of a view package.",
