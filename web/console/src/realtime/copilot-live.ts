@@ -144,6 +144,25 @@ export function liveNote(kind: 'commentary' | 'thinking', content: string): Reco
   return { type: `session.${kind}.append`, event_id: `${kind}_${crypto.randomUUID()}`, delegation_id: null, content }
 }
 
+/**
+ * The opening of a call placed from one Session (asked for on 2026-11-15):
+ * what the list already has about it is said at once, and the latest recap
+ * follows when it arrives (`liveLatestNote`).
+ */
+export function liveOpeningNote(label: string, summary: string, written = ''): string {
+  const clipped = summary.length > LIVE_NOTE_CHARS ? `${summary.slice(0, LIVE_NOTE_CHARS)}…` : summary
+  if (!clipped) return `The call was placed from Session "${label}". In one short sentence in the person's language, say you are reading its latest summary. Do not guess its work.`
+  return `The call was placed from Session "${label}". Open the call by telling the person, in two or three everyday sentences in their language and without a greeting, what this Session is doing${written ? ` (this summary was written ${written}; say so briefly)` : ''}: ${clipped}`
+}
+
+/** The latest recap of the Session the call was placed from, said after the opening. */
+export function liveLatestNote(label: string, summary: string, hadOpening: boolean): string {
+  const clipped = summary.length > LIVE_NOTE_CHARS ? `${summary.slice(0, LIVE_NOTE_CHARS)}…` : summary
+  return hadOpening
+    ? `Newer information about Session "${label}" just arrived. Continue with only what changed or is new, in one or two everyday sentences; do not repeat what you already said: ${clipped}`
+    : `Here is the latest summary of Session "${label}". Tell the person in two or three everyday sentences in their language: ${clipped}`
+}
+
 /** The greeting the call opens with, as OpenAI's guide asks: once, after `session.started`. */
 export const LIVE_GREETING = 'Greet the person now in one short, warm sentence in their language and say you are ready to help. Do not report Sessions or list options. Then pause and listen.'
 

@@ -51,6 +51,11 @@ export interface ToolLog {
 }
 
 export interface ToolDeps {
+  /**
+   * The machine's dispatch records, read to tell dispatched children from
+   * main Sessions (`dispatchedChildren`). Absent, every row is a Session.
+   */
+  tasks?: () => Promise<Response>
   /** Call-local read identity. It is never authority for a mutation. */
   spokenReference?: (text:string)=>SpokenReference|undefined
   onRead?: (ref:SessionReference)=>void
@@ -829,6 +834,11 @@ export interface CopilotSessionRow {
   session?: string
   machine?: string
   machineName?: string
+  /**
+   * A dispatched child's root: the Session that asked for it, as this list
+   * names it. Reports leave children out and say how many there are.
+   */
+  parent?: string
 }
 
 function str(value: unknown): string {
@@ -855,6 +865,7 @@ export function fleetRowsOf(fleet: readonly CopilotFleetRow[]): CopilotSessionRo
       ...row,
       id: `fleet:${encodeURIComponent(f.machine)}:${encodeURIComponent(row.id)}`,
       session: row.id,
+      ...(row.parent ? { parent: `fleet:${encodeURIComponent(f.machine)}:${encodeURIComponent(row.parent)}` } : {}),
       machine: f.machine,
       machineName: name,
       // The machine in full-width parentheses, written as escapes.
@@ -876,6 +887,8 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
         assistant: str(s.assistant),
         state: str(s.state),
         work_state: str(s.work_state),
+        // A Cloud status projection names a child's root on the row itself.
+        ...(str(s.parent_session_id) && str(s.parent_session_id) !== str(s.id) ? { parent: str(s.parent_session_id) } : {}),
       }
       const project = projectName(str(s.project_key) || str(s.cwd))
       if (project) row.project = project
@@ -943,12 +956,47 @@ export async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRo
   // only, because /v1/sessions there is the one reading machine's list.
   const fleet = deps.fleet ? await deps.fleet().catch(() => null) : null
   if (fleet && fleet.length) return { rows: fleetRowsOf(fleet) }
-  const res = await deps.fetch('/v1/sessions')
+  const [res, tasks] = await Promise.all([deps.fetch('/v1/sessions'), dispatchedChildren(deps)])
   if (!res.ok) {
     const why = await refusalText(res)
     return { error: `查詢 Sessions 失敗 (HTTP ${res.status})${why ? `：${why}` : ''}` }
   }
-  return { rows: rowsOf(await res.json()) }
+  const rows = rowsOf(await res.json())
+  // The local list does not name children; the dispatch records do, as the
+  // console's own list nests them (`groupUnderRoots`, session/order.ts).
+  const here = new Set(rows.map((r) => r.id))
+  for (const row of rows) {
+    const root = tasks.get(row.id)
+    if (!row.parent && root && root !== row.id && here.has(root)) row.parent = root
+  }
+  return { rows }
+}
+
+/**
+ * Each dispatched child's terminal and its root's, from the machine's task
+ * records. Unreadable records leave every row a Session of its own.
+ */
+async function dispatchedChildren(deps: ToolDeps): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  try {
+    if (!deps.tasks) return out
+    const res = await deps.tasks()
+    if (!res.ok) return out
+    const body = (await res.json()) as { tasks?: unknown }
+    for (const t of Array.isArray(body?.tasks) ? body.tasks : []) {
+      const task = (t ?? {}) as { child?: { terminalId?: unknown }; root?: { terminalId?: unknown } }
+      const kid = str(task.child?.terminalId), root = str(task.root?.terminalId)
+      if (kid && root) out.set(kid, root)
+    }
+  } catch {
+    // refusal-ok: without the task records children are listed as ordinary Sessions, as before.
+  }
+  return out
+}
+
+/** A dispatched child whose root is in the same list. */
+function isChild(row: CopilotSessionRow, rows: readonly CopilotSessionRow[]): boolean {
+  return !!row.parent && rows.some((r) => r.id === row.parent)
 }
 
 /** Even a model-selected ID must identify exactly one row. */
@@ -1249,7 +1297,8 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   }
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
   const busy = (r: CopilotSessionRow) => waits(r) || r.state === 'working'
-  let group = read.rows
+  // Children are left out of every group report; list_sessions counts them.
+  let group = read.rows.filter((r) => !isChild(r, read.rows))
     .filter((r) => which === 'all' || (which === 'working' ? busy(r) : !busy(r)))
     .sort((a, b) => lastMoved(b) - lastMoved(a))
   let idleWindow=RECENT_IDLE_SECONDS,expanded=false,unknownIdle=0
@@ -1309,7 +1358,10 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     return { error: read.error }
   }
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
-  const rows = read.rows
+  // Dispatched children are their roots' helpers: counted once, never reported
+  // one by one (asked for on 2026-11-15).
+  const children = read.rows.filter((r) => isChild(r, read.rows))
+  const rows = read.rows.filter((r) => !children.includes(r))
   const needs = rows.filter(waits)
   const working = rows.filter((r) => !waits(r) && r.state === 'working')
   const done = rows.filter((r) => !waits(r) && r.state !== 'working' && r.work_state === 'milestone_complete')
@@ -1336,6 +1388,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     // Read live with gpt-realtime-mini on 2026-11-12: asked what an idle
     // Session was doing, the copilot once invented its work from the name
     // alone. The warning sits beside the names it is about.
+    ...(children.length ? { children: children.map((r) => ({ id: r.id, label: r.label, state: r.state, for: read.rows.find((p) => p.id === r.parent)?.label ?? '' })), children_note: CHILDREN_NOTE } : {}),
     content_not_read: CONTENT_NOT_READ,
   }
   // `summary` is what the model reads; the screen's English line counts the same groups.
@@ -1344,6 +1397,9 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   logs.push({ level: 'info', text: say(`Read the Session list: ${rows.length} Sessions${english ? `, ${english}` : ''}`, `成功讀取 Sessions 清單：${out.summary}`) })
   return out
 }
+
+/** How the copilot treats dispatched children: helpers of a main Session, not Sessions to report. */
+export const CHILDREN_NOTE = 'children 是主 Session 派出去做子任務的 Child Session（for 是它在幫的主 Session）。不要逐一回報、不要讀它們的摘要；最多用一句話說有幾個 Child 在幫哪個主 Session 做事。使用者明確問到某個 Child 才讀它'
 
 /** Every directory row is metadata; content requires an explicit read. */
 export const CONTENT_NOT_READ = '清單只有狀態、名稱、時間、既有交付摘要，以及有 recap 的 Session 自己寫的白話摘要，未讀取逐字稿內容。有 recap 的可以直接照 recap 講它在做什麼、做到哪、輪到誰；沒有 recap 的被問到在做什麼、做到哪、結果如何，一定先呼叫 get_sessions_summary 或 get_session_summary，不可以從名稱猜'

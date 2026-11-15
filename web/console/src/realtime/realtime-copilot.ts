@@ -18,14 +18,14 @@ import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence,
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { COPILOT_TOOLS, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
+import { COPILOT_TOOLS, forkedRecap, recapFields, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, titleSavedOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -287,6 +287,7 @@ export class RealtimeCopilotClient {
     return {
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      tasks: () => fetch('/v1/orchestrator/tasks'),
       briefing: () => this.briefing,
       recapMode: () => this.recapMode,
       openSession: (id, machine) => openOnThisPage(id, machine),
@@ -1210,8 +1211,39 @@ export class RealtimeCopilotClient {
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.sendLiveContext()
     this.updateState({ connectionReady: true })
-    if (!this.personSpoke) dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING)))
+    if (this.call.options.origin && !this.personSpoke) void this.openFromOrigin()
+    else if (!this.personSpoke) dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING)))
     if (!this.call.options.origin) void this.followScreen()
+  }
+
+  /**
+   * A Live call placed from one Session opens on it (asked for on
+   * 2026-11-15): the recap the list already carries is said at once, while the
+   * latest one is asked for (`forkedRecap` with fresh, five minutes); when it
+   * arrives and says something new, the call goes on with it.
+   */
+  private async openFromOrigin() {
+    const dc = this.dc, attempt = this.attempt
+    const current = () => this.dc === dc && attempt === this.attempt && dc?.readyState === 'open'
+    const deps = this.toolDeps()
+    const read = await readRows(deps).catch(() => ({ error: 'unreadable' }))
+    if (!current() || !dc) return
+    const row = 'rows' in read ? read.rows.find((r) => r.id === this.focus) : undefined
+    if (!row) { dc.send(JSON.stringify(liveNote('commentary', LIVE_GREETING))); return }
+    const now = nowSeconds()
+    const kept = row.recap?.text || row.delivered || ''
+    const written = row.recap?.text ? String(recapFields(row.recap, now).recap_written ?? '') : ''
+    const opened = !this.personSpoke
+    if (opened) dc.send(JSON.stringify(liveNote('commentary', liveOpeningNote(row.label, kept, written))))
+    this.journal('tool', 'opening_summary', { args: JSON.stringify({ session_id: row.id }), answer: kept.slice(0, 1500) })
+    const logs: { level: 'info' | 'tool' | 'error'; text: string }[] = []
+    const latest = await forkedRecap(deps, logs, row, true).catch(() => undefined)
+    if (!current() || !dc) return
+    for (const log of logs) this.addLog(log.level, log.text)
+    const text = latest?.text?.trim() ?? ''
+    if (!text || text === row.recap?.text) return
+    dc.send(JSON.stringify(liveNote('commentary', liveLatestNote(row.label, text, opened && !!kept))))
+    this.journal('tool', 'opening_latest_summary', { args: JSON.stringify({ session_id: row.id }), answer: text.slice(0, 1500) })
   }
 
   /** What a GPT-Live session says on its data channel (`copilot-live.ts`). */

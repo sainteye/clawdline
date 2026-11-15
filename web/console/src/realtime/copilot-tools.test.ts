@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { withMark, UPDATE_MARKS } from "./copilot-marks.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+import { CHILDREN_NOTE, ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -1775,4 +1775,42 @@ test("the instructions tell the copilot to report from a recap first", () => {
   assert.match(COPILOT_INSTRUCTIONS, /有 recap 就照 recap 講/)
   assert.match(COPILOT_INSTRUCTIONS, /目前為止完成了哪些事情、有哪些事情需要我決定/)
   assert.match(COPILOT_INSTRUCTIONS, /有 recap_detail 就以它為主回答/)
+})
+
+// Dispatched children (asked for on 2026-11-15): reports cover main Sessions only.
+test("dispatched children are counted under their root, not reported as Sessions of their own", async () => {
+  const rows = [
+    { id: "%1", label: "Voice realism", assistant: "claude", state: "working", work_state: "working", recap: { text: "Main work.", at: 2_000_000, current: true } },
+    { id: "%2", label: "Child: fix tests", assistant: "codex", state: "working", work_state: "working", recap: { text: "Child work.", at: 2_000_000, current: true } },
+    { id: "%3", label: "Bots", assistant: "claude", state: "idle", work_state: "idle" },
+  ]
+  const deps: ToolDeps = {
+    async fetch(path) {
+      if (path === "/v1/sessions") return Response.json({ sessions: rows })
+      if (path === "/v1/orchestrator/tasks") return Response.json({ tasks: [{ child: { terminalId: "%2" }, root: { terminalId: "%1" } }] })
+      if (path.startsWith("/v1/transcript?")) return Response.json({ entries: [] })
+      return new Response("", { status: 404 })
+    },
+    async sleep() {},
+    now: () => 2_000_000,
+    tasks: async () => Response.json({ tasks: [{ child: { terminalId: "%2" }, root: { terminalId: "%1" } }] }),
+  }
+  const list = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
+  assert.deepEqual(list.working.map((r: { id: string }) => r.id), ["%1"], "the child is not a working Session of its own")
+  assert.deepEqual(list.children, [{ id: "%2", label: "Child: fix tests", state: "working", for: "Voice realism" }])
+  assert.equal(list.children_note, CHILDREN_NOTE)
+  assert.match(list.summary, /^2 個 Session/)
+  const group = JSON.parse((await runCopilotTool("get_sessions_summary", JSON.stringify({ which: "all" }), deps)).output)
+  assert.deepEqual(group.sessions.map((r: { label: string }) => r.label).sort(), ["Bots", "Voice realism"])
+  // A Cloud projection names the root on the row itself.
+  const cloud: ToolDeps = { ...deps, async fetch(path) {
+    if (path === "/v1/sessions") return Response.json({ sessions: [rows[0], { ...rows[1], parent_session_id: "%1" }, rows[2]] })
+    return deps.fetch(path)
+  } }
+  const viaCloud = JSON.parse((await runCopilotTool("list_sessions", "{}", { ...cloud, tasks: async () => new Response("", { status: 501 }) })).output)
+  assert.deepEqual(viaCloud.children.map((r: { id: string }) => r.id), ["%2"])
+  // Without task records every row is a Session, as before.
+  const plain = JSON.parse((await runCopilotTool("list_sessions", "{}", { ...deps, tasks: async () => new Response("", { status: 403 }) })).output)
+  assert.equal(plain.children, undefined)
+  assert.equal(plain.working.length, 2)
 })

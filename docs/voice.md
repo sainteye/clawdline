@@ -378,6 +378,10 @@ A demo film of a call, recorded from the built console in English and Traditiona
 [the voice copilot demo](copilot-demo.md).
 
 
+### Dispatched children
+
+A Session list carries dispatched children beside their roots. The copilot's tools tell them apart the way the console's list nests them: from the machine's dispatch records (`/v1/orchestrator/tasks`, `child.terminalId` and `root.terminalId`, read through `ToolDeps.tasks`) and from `parent_session_id` on a Cloud status row. `list_sessions` counts children separately (`children`, with the main Session each helps, and `children_note`), every group report leaves them out, and the copilot reads one only when the person asks about it. Without readable records every row is a Session, as before.
+
 ### GPT-Live calls
 
 Voice assistant › Settings › **Voice system** (`engine` in `copilot.json`: `realtime` by default,
@@ -411,6 +415,8 @@ are the same `runCopilotTool` a Realtime call runs.
 **Origin and cue.** At `session.started` a Live call resolves the Session it was placed from to the row the tools list (`fleet:<machine>:…` on every machine's list) and uses it as the focus, as a Realtime call's opening handover does; unresolved, every send was refused as "not the Session under discussion". Each backend tool call joins `pendingTools` while it runs, so the progress cue plays when it starts and every `PROGRESS_CUE_REPEAT_MS` until it answers.
 
 **Recaps.** With background recaps on, a tool reads a recap the list already carries when it is at most `KEPT_RECAP_SECONDS` (1800) old, with its age; `fresh: true`, set only when the person asks for the latest, lowers that to `FRESH_RECAP_SECONDS` (300) and has an older one written now. Before this a report of four working Sessions waited 20-22 s for four forks written one after another.
+
+**Opening on its Session.** A Live call placed from one Session does not greet: at `session.started` it says the recap the list already carries for that Session (`liveOpeningNote`, with its age), and at the same time asks for the latest one (`forkedRecap` with `fresh`, so a recap at most five minutes old counts). When the latest arrives and differs, the call goes on with what is new (`liveLatestNote`); an unchanged one is not said again. A Session without a recap opens by saying it is reading the latest.
 
 **Speaking while reading.** The backend's instructions end with `LIVE_BACKEND_FLOW`, which overrides the Realtime rule that every Session question needs a read: an overview is answered from the snapshot's recaps (with their age), and a read is made only for details, the latest state or a Session without a recap. Each Session a read returns is handed to the live model at once as a `session.commentary.append` (`liveReadNotes`, at most `LIVE_NOTE_CHARS` = 400 characters of recap), so it speaks about one Session while the backend reads the next; the backend's final answer adds only what was not said. Tool calls stay sequential (`parallel_tool_calls: false`), because a continuation must follow every pending result of a response.
 
