@@ -1,0 +1,35 @@
+{
+  "id": "night-city-root",
+  "type": "column",
+  "titlebar": "none",
+  "traffic_lights": [18, 18],
+  "theme": "night-city",
+  "font": "JetBrains Mono",
+  "font_size": 13,
+  "ui_font": "Geist",
+  "terminal_padding": [10, 12],
+  "terminal_opacity": 0.92,
+  "background": { "gradient": ["#192344", "#080e20"], "angle": 90 },
+  "preview": "layouts/night-city.svg",
+  "resizable": false,
+  "children": [
+    { "id": "night-city-title", "type": "block", "size": { "px": 36 }, "window_drag": true,
+      "content": { "mod": "night-city", "props": { "role": "rail", "part": "title" } } },
+    { "id": "night-city-skyline", "type": "block", "size": { "weight": 0.8 }, "min": 180, "max": 360,
+      "content": { "mod": "night-city" } },
+    { "id": "night-city-street", "type": "block", "size": { "px": 30 },
+      "content": { "mod": "night-city", "props": { "role": "rail" } } },
+    { "id": "night-city-apartments", "type": "row", "size": { "weight": 1 }, "min": 240, "gap": 10,
+      "padding": [8, 12], "resizable": false,
+      "children": [
+        { "id": "night-city-attention", "type": "block", "size": { "px": 330 },
+          "content": { "mod": "night-city", "props": { "role": "rail", "part": "attention" } } },
+        { "id": "night-city-terminals", "type": "block", "size": { "weight": 1 }, "min": 220,
+          "content": { "tab": "active", "pane": { "gap": 8, "radius": 6, "lone": true,
+            "background": "#10192b", "border": { "width": 1, "color": "#334468" },
+            "focus": { "width": 2, "color": "#d7c889" },
+            "header": { "content": { "mod": "night-city", "props": { "role": "pane" } },
+              "height": 30, "position": "top", "reveal": "always" } } } }
+      ] }
+  ]
+}

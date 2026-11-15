@@ -1,0 +1,70 @@
+{
+  "id": "root",
+  "type": "row",
+  "titlebar": "none",
+  "traffic_lights": [16, 16],
+  "theme": "orrery",
+  "preview": "layouts/orrery.svg",
+  "background": { "gradient": ["#141d30", "#070a12"], "angle": 160 },
+  "font": "JetBrains Mono",
+  "font_size": 13,
+  "ui_font": "IM FELL English",
+  "terminal_padding": [10, 12],
+  "children": [
+    {
+      "id": "dome",
+      "type": "block",
+      "size": { "weight": 1.1 },
+      "min": 520,
+      "window_drag": true,
+      "content": { "mod": "orrery", "props": { "role": "orrery" } }
+    },
+    {
+      "id": "eyepiece-mount",
+      "type": "column",
+      "size": { "weight": 1 },
+      "min": 420,
+      "padding": [18, 18],
+      "children": [
+        {
+          "id": "eyepiece",
+          "type": "column",
+          "background": "#120d08",
+          "border": { "width": 2, "color": "#a8823f" },
+          "radius": 14,
+          "shadow": "lg",
+          "children": [
+            {
+              "id": "eyepiece-rail",
+              "type": "block",
+              "size": { "px": 44 },
+              "content": { "mod": "orrery", "props": { "role": "eyepiece" } }
+            },
+            {
+              "id": "main",
+              "type": "block",
+              "padding": 10,
+              "content": {
+                "tab": "active",
+                "pane": {
+                  "gap": 10,
+                  "radius": 6,
+                  "background": "#0c1220",
+                  "lone": true,
+                  "border": { "width": 1, "color": "#6b5530" },
+                  "focus": { "width": 1, "color": "#d9b56a" },
+                  "header": {
+                    "content": { "mod": "orrery", "props": { "role": "plaque" } },
+                    "height": 28,
+                    "position": "top",
+                    "reveal": "always"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

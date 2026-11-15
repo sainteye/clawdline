@@ -1,97 +1,88 @@
 # Session Departures
 
-An independently installable View Plugin v1 candidate, ID
-`com.clawdline.session-departures`, version `0.1.0`. The package owns its header;
-the production host retains its trusted return control. The host offers this package in **View plugins → Explore views**. The normal
-package review is required and installation remains local to each browser or
-device. Source or Cloud publication does not establish public Release acceptance.
+Source-faithful browser port of [Herdr Departures](https://github.com/adamentwistle/herdr-departures/tree/b63bf21671ad50d081cb624ec750cf6482508667),
+MIT, copyright 2026 Adam Entwistle. Package ID
+`com.clawdline.session-departures`, version `0.2.0`, View Plugin v1 revision 8.
+This corrects the earlier green card interpretation using the original source,
+not its recipe alone. See [PROVENANCE.md](PROVENANCE.md) for retained source,
+licenses, hashes, adaptations and explicit gaps.
 
-## Presentation and data
+The original DEPARTURES header, plane, five column proportions, sizing formulas,
+black/yellow palette, rounded individual cells, column sheen, one-pixel seam,
+inverted DELAYED letters and forward half-flap wave are retained. The original
+JetBrains Mono bold is embedded under its SIL OFL 1.1 license. CJK and other
+non-drum graphemes stay static in the same cells; no transliteration removes
+Unicode names. Platform fallback fonts supply glyphs absent from JetBrains Mono.
 
-The original airport board uses warm yellow signwork, dark green flap rows, an
-authored aircraft mark and a dedicated cover. Taiwan Traditional Chinese and
-English follow the host language. Names remain Unicode text: there is no Latin
-character drum, uppercase conversion, name clipping, generated flight code, or
-substitution of identity during motion. Every row includes its complete title,
-Project (or an explicit unassigned label), readable state and freshness. At phone
-widths, Project moves below the title and the state moves onto its own line.
+TIME and FLIGHT show an em dash because this projection has neither Session
+timing nor actual flight IDs. GATE carries the supplied Project label. Names and
+Projects are shortened visually to the original column capacity; the readable
+list and selected detail always contain the exact complete values. The board
+scrolls inside its own region at phone width, with an obvious readable-list
+button and at least 44-pixel list targets. There is no whole-page horizontal
+overflow. The host retains its trusted return control outside the package.
 
-`waiting_you` rows are pinned first; the host order is preserved within the two
-groups. All eight reported work states are individually named. No row is removed
-because it reports completion, and no automatic paging hides rows. The selected
-detail retains the complete title and Project across updates, reordering and the
-optional readable list. Only the explicit detail button calls `sessions.open`.
-Stale or unknown-freshness rows cannot open. Disconnection immediately makes all
-retained rows stale, and reconnect awaits a new snapshot before enabling them.
-Titles and Project labels are inserted through `textContent`, never HTML.
+## Honest status and navigation
 
-Only a changed, fresh row has a brief flap-light transition. Text never blanks or
-cycles through random glyphs. Motion stops for hidden context, reduced motion,
-disconnection, stale readings, or the explicit still-mode control. A resting
-board has no animation loop, clock, sound, auto-paging, or periodic timer.
+The upstream urgent/completion/working/connecting/idle ordering is adapted to
+the eight reported states. Waiting-for-you rows come first, followed by reported
+completion, working, waiting-for-Session, ready/on-hold, and unknown. Original
+host order is stable inside each group; no unavailable activity time breaks ties.
+No row expires and no pagination hides authorized Sessions.
 
-The v1 projection supplies no machine identity, actual start time, ETA, transcript,
-blocked reason, dependencies or progress percentage. This package invents none.
-Completion remains a reported state, with an explicit acceptance caveat. It uses
-every Session in the current authorized host snapshot, without private APIs or
-external requests. Packages and preferences are browser-local; this view does not
-persist Session data or remember a selection after closing.
+| Reported state | English board | Taiwan Traditional Chinese board |
+| --- | --- | --- |
+| ready | AT GATE | 就緒 |
+| working | BOARDING | 工作中 |
+| holding | ON HOLD | 暫停中 |
+| waiting_you | DELAYED | 等待你 |
+| waiting_session | CONNECTING | 等待其他工作 |
+| unknown | UNKNOWN | 狀態未知 |
+| milestone_complete | MILESTONE | 回報階段完成 |
+| work_complete | REPORTED | 回報工作完成 |
 
-## Build
+The list and detail spell out the complete localized reported state. CONNECTING
+does not assert a parent/child relationship; REPORTED does not assert acceptance.
+No machine, hierarchy, blocked reason, transcript, ETA or elapsed time is invented.
+The separate header clock is real local browser time, labelled as such. Its
+refresh pauses with hidden/reduced/still/disconnected context.
 
-From the repository root, use the existing local browser installation to render
-the authored SVG into a validated embedded RGBA8 PNG, then run the public packer:
+Selecting a row only selects. Only the explicit Open Session detail button calls
+the SDK. Unknown-state, stale, unknown-freshness and disconnected rows cannot
+open. Reconnect waits for a new snapshot. Changed fresh ASCII cells use the
+original drum; stale and unknown rows do not animate. Still mode, hidden context,
+reduced motion and disconnect settle and stop the wave. There is no audio,
+external runtime request, Session/history persistence or host modification.
+All untrusted labels use text nodes. English and Taiwan Traditional Chinese
+follow the host language together.
+
+## Build and verify
+
+Use installed dependencies and the existing local Playwright module:
 
 ```sh
 node tools/ensure-web-deps.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node tools/render-view-plugin-covers.mjs plugins/session-departures
 python3 tools/pack-view-plugin.py plugins/session-departures web/console/public/view-plugins/session-departures.zip
-```
-
-The deterministic archive contains exactly `manifest.json` and `index.html`,
-stored without compression. The packer inserts the current repository SDK at
-the HTML marker. `cover.svg` is editable source, not an extra archive entry.
-Import the ZIP through the host's file input and review its identity and access.
-No host source or catalog change is required.
-
-## Acceptance
-
-```sh
-PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs PLUGIN_ARTIFACTS=/absolute/evidence/directory node plugins/session-departures/acceptance.mjs
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs PLUGIN_ARTIFACTS=/absolute/evidence node plugins/session-departures/acceptance.mjs
 tools/check.sh
 ```
 
-`acceptance.mjs` bundles the real production React manager, registry, frame and
-bridge with esbuild and imports this ZIP through the production file input. Its
-own loopback-only server and isolated browser processes close after the run.
-All Session data is explicitly synthetic. No daemon, real Cloud account, usual
-Chrome profile or production Session is used. No new dependency or paid API is
-needed; use the repository dependency preparation command rather than installing
-into shared dependencies manually.
+The public packer produces a deterministic two-entry STORE ZIP containing only
+manifest.json and index.html. SDK, artwork, font and license text are inline;
+the retained upstream references are not extra runtime archive entries.
 
-The compact matrix covers Chromium and WebKit at 390 and 1440 pixels, changing
-between English and Traditional Chinese inside each run. It checks all eight
-states, initial snapshot and update, waiting-first order, full Unicode detail,
-hostile text, null Project, stale/unknown freshness, list/selection parity,
-deliberate navigation, active and stopped motion, disconnect/reconnect, empty
-data, horizontal overflow and the trusted return control. Each case saves board,
-detail and empty screenshots; `results.json` lists completed cases. The hidden
-context case changes the synthetic host's visibility property and emits the
-normal visibility event through the production frame. It is a deterministic
-context test, not an operating-system background-tab measurement.
+Acceptance imports the actual ZIP through the production manager, registry,
+frame, bridge and SDK with synthetic loopback data. Chromium and WebKit run at
+390 and 1440 pixels. Checks include both languages, all eight states, ordering,
+full Unicode/list detail, hostile labels, null Project, stale and unknown safety,
+snapshot changes, selection, explicit navigation, reconnect, empty readings,
+trusted return and stopped motion. Sizing, columns, drum and Flaps are compared
+against retained upstream functions on representative fixtures; browser checks
+measure actual cell widths/heights, seam position and heading alignment.
 
-Browser layout acceptance does not establish native iPhone behavior, real fleet
-authorization, Cloud deployment, public publication, or artistic approval.
-
-The repository gate validates every authored package and its dedicated cover
-independently from the curated catalog. Curated entries have a separate coverage
-check; adding this candidate does not add it to the host's recommended list.
-A browser pass alone does not replace the required repository commit gate.
-
-## Reference
-
-The airport departures metaphor was informed by the public
-[Herdr Departures recipe](https://raw.githubusercontent.com/adamentwistle/herdr-departures/main/RECIPE.md).
-Its source, artwork, sound and Latin-only drum are not incorporated. This view's
-HTML, SVG, layout, copy and interaction logic are original local work adapted to
-the narrower Clawdline v1 data projection.
+`PLUGIN_FIDELITY_MUTATION=cell-width` deliberately changes rendered cell width
+inside the isolated acceptance page; the geometry check must reject it. This
+does not edit the authored package. Screenshots and geometry JSON accompany
+each matrix case. Passing these checks is not artistic approval, native phone
+acceptance, production authorization or deployment evidence.
