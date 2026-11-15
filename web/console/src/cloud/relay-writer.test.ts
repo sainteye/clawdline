@@ -443,6 +443,46 @@ test("an opened exact Session is not sent after its execution changes", async ()
   assert.deepEqual(client.calls, [])
 })
 
+test("a send to a background Session delivers to that Session's execution when another Session is open", async () => {
+  const client = new FakeClient()
+  const opened = "s2", background = "s1"
+  const reader = new RelayReader("mac-a", {
+    fleetTarget: () => ({ machineID: "mac-a", sessionID: opened, executionGeneration: "2".repeat(32) }),
+    admitFleetMutation: async () => {},
+    resolveSession: async (machine, session) => {
+      return machine === "mac-a" && session === background
+        ? { machineID: "mac-a", sessionID: background, executionGeneration: "1".repeat(32) } : null
+    },
+  })
+  const writer = new RelayWriter(reader.writeHost)
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const res = await reader.fetch(`/v1/sessions/${background}/send`, post({ text: "from voice" }, { "Idempotency-Key": "send-bg-1" }))
+  assert.equal(res.status, 200)
+  const call = client.calls.find(call => call[0] === "_read" && call[2] === "send")
+  assert.ok(call)
+  assert.deepEqual(call.slice(1, 4), [{ machine: "mac-a", session: background }, "send", {
+    request: "send-bg-1", execution_generation: "1".repeat(32), text: "from voice", images: []
+  }])
+})
+
+test("a send to a background Session is refused when the background Session cannot be verified", async () => {
+  const client = new FakeClient()
+  const opened = "s2", background = "s1"
+  const reader = new RelayReader("mac-a", {
+    fleetTarget: () => ({ machineID: "mac-a", sessionID: opened, executionGeneration: "2".repeat(32) }),
+    admitFleetMutation: async () => {},
+    resolveSession: async () => null,
+  })
+  const writer = new RelayWriter(reader.writeHost)
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const res = await reader.fetch(`/v1/sessions/${background}/send`, post({ text: "from voice" }, { "Idempotency-Key": "send-bg-2" }))
+  assert.equal(res.status, 409)
+  assert.equal((await json(res)).error, "execution_target_required")
+  assert.deepEqual(client.calls, [])
+})
+
 test("archive reaches machine admission when the browser projection cannot verify it", async () => {
   const client = new FakeClient()
   const reader = new RelayReader("mac-a", {

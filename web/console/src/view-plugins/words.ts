@@ -1,6 +1,6 @@
 const en = {
-  title: "View plugins", close: "Close", entry: "Open view plugins", install: "Import ZIP", preset: "Examples",
-  installed: "Installed here", empty: "No view plugins installed.", local: "Packages are saved in this interface. Install separately on each browser or device.",
+  title: "View plugins", close: "Close", entry: "Open installed views", install: "Import ZIP", preset: "Explore views",
+  installed: "Installed views", empty: "No view plugins installed.", local: "Packages are saved in this interface. Install separately on each browser or device.",
   galaxy: "Session Galaxy", list: "Session List", addGalaxy: "Install Galaxy", addList: "Install List", download: "Download package",
   open: "Open", enable: "Enable", disable: "Disable", remove: "Remove", rollback: "Roll back", version: "Version",
   review: "Review package", confirmInstall: "Install package", replace: "Replace installed version", cancel: "Cancel",
@@ -9,6 +9,11 @@ const en = {
   noSource: "No authorized machine is available.", loading: "Reading…", retry: "Try again", unavailable: "The view is unavailable.",
   back: "Back to plugin list", viewClose: "Close view and return", permissions: "Requested access", read: "Read Session summaries", navigate: "Open a Session",
   offline: "The machine is disconnected. Retained states may be stale.", selected: "Selected package", author: "Package identity", previous: "Previous version",
+  launcher: "Your views", launchEmpty: "No views enabled yet", launchEmptyHint: "Add a view from Sidebar → View plugins.", openView: "Open this view",
+  personalize: "A different perspective", manageHeading: "Make room for your views", manageHint: "Add a view here. Open it anytime from the status bar.",
+  manage: "Manage", enabled: "Enabled", disabled: "Disabled", emptyHint: "Start with a view below, or import a community package.",
+  examplesHint: "Different ways to see the same Sessions.", galaxyHint: "Sessions become stars, with work states mapped to orbits.", listHint: "A focused overview of Session names, Projects and states.", added: "Installed",
+  scopeHint: "Allow this scope for this interface visit. Refreshing or changing access requires approval again.",
   errors: {
     invalid_package: "This is not a supported plugin package.", invalid_manifest: "The package manifest is invalid.",
     missing_entry: "The package entry is missing.", unsupported_zip: "Use the supplied packer to create a two-file, uncompressed ZIP.",
@@ -23,8 +28,8 @@ const en = {
   } as Record<string, string>,
 }
 const zh: typeof en = {
-  title: "視圖擴充", close: "關閉", entry: "開啟視圖擴充", install: "匯入 ZIP", preset: "範例套件",
-  installed: "此介面已安裝", empty: "尚未安裝視圖擴充。", local: "套件保存在目前介面。不同瀏覽器或裝置需各自安裝。",
+  title: "視圖擴充", close: "關閉", entry: "開啟已安裝視圖", install: "匯入 ZIP", preset: "探索視圖",
+  installed: "已安裝視圖", empty: "尚未安裝視圖擴充。", local: "套件保存在目前介面。不同瀏覽器或裝置需各自安裝。",
   galaxy: "Session 星系", list: "Session 清單", addGalaxy: "安裝星系", addList: "安裝清單", download: "下載套件",
   open: "開啟", enable: "啟用", disable: "停用", remove: "移除", rollback: "回退版本", version: "版本",
   review: "檢查套件", confirmInstall: "安裝套件", replace: "取代已安裝版本", cancel: "取消",
@@ -33,6 +38,11 @@ const zh: typeof en = {
   noSource: "目前沒有已獲授權的機器。", loading: "讀取中…", retry: "再試一次", unavailable: "目前無法開啟此視圖。",
   back: "返回擴充清單", viewClose: "關閉視圖並返回", permissions: "要求的權限", read: "讀取 Session 摘要", navigate: "開啟 Session",
   offline: "機器連線已中斷，保留的狀態可能過時。", selected: "選取的套件", author: "套件識別", previous: "前一版本",
+  launcher: "已安裝視圖", launchEmpty: "還沒有啟用的視圖", launchEmptyHint: "從側邊欄的「視圖擴充」新增視圖。", openView: "開啟這個視圖",
+  personalize: "換個角度看工作", manageHeading: "你的工作，不同視角", manageHint: "在這裡新增視圖，隨時從狀態列打開。",
+  manage: "管理", enabled: "已啟用", disabled: "已停用", emptyHint: "從下方挑一個視圖，或匯入社群套件。",
+  examplesHint: "同一組 Session，不同的呈現方式。", galaxyHint: "以星體與軌道呈現 Session 和工作狀態。", listHint: "用清楚的卡片查看 Session、Project 與狀態。", added: "已安裝",
+  scopeHint: "授權僅保留在這次介面使用期間；重新整理或授權變更後，會重新確認。",
   errors: {
     invalid_package: "這不是支援的 plugin 套件。", invalid_manifest: "套件的 manifest 格式不正確。",
     missing_entry: "找不到套件的入口檔案。", unsupported_zip: "請使用附帶的打包工具，建立未壓縮的雙檔 ZIP。",

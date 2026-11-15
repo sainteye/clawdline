@@ -385,10 +385,12 @@ Update deep links continue to open the status pane.
 ### Experimental community view plugins
 
 [View Plugin v1](plugins/view-plugin-v1.md) defines the browser-local runtime in
-`web/console/src/view-plugins`: an IndexedDB archive registry, explicit per-opening
-machine/Project grants, an opaque srcdoc iframe and a dedicated MessagePort SDK.
+`web/console/src/view-plugins`: an IndexedDB archive registry, explicit visit-scoped
+machine/Project approvals, an opaque srcdoc iframe and a dedicated MessagePort SDK.
 Galaxy and List are independent static ZIP packages, not compiled page modules.
 Local uses the existing fleet snapshot; Cloud uses the authorized pinned Session
 projection source. Neither grants generic API calls or changes the classifier or
-broker. The bottom status bar and fallback entry open a host-owned full-app surface.
+broker. The sidebar owns management. The bottom status bar and fallback entry open
+installed views directly (or a compact picker), with a fresh authorized read per
+opening and no persisted approval.
 Machine-owned installation and cross-device package distribution are deferred.
