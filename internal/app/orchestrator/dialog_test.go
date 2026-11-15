@@ -21,6 +21,43 @@ const bypassScreen = stallRule + "\n  WARNING: Claude Code running in Bypass Per
 
 const dialogSecret = "d1a10900d1a10900d1a10900d1a10900"
 
+// A briefed child can need approval before its acceptance command runs. That
+// menu is not evidence that its briefing was never delivered.
+func TestApprovalAfterBriefingSurvivesTheSpawnClock(t *testing.T) {
+	x := newStallRig(t, "d1a10006-0000-4000-8000-000000000006")
+	x.show("Bash command\n  clawdline task accept\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No\nEnter to confirm · Esc to cancel\n")
+	x.run(readyLimit + time.Minute)
+	if r := x.record(); r.State != StateSpawning || !r.FinishedAt.IsZero() {
+		t.Fatalf("approval after briefing became %s: %s; want the live child retained", r.State, r.Verdict)
+	}
+	if x.events("task.child.closed") != 0 || len(x.nudges()) != 0 {
+		t.Fatal("the broker closed or typed into the child's approval menu")
+	}
+	// Only the child's signed acceptance advances it; no approval is answered
+	// and the briefing is never replayed by the broker.
+	x.show(readingScreen)
+	if _, err := x.b.Accept(x.ctx, x.id, "s"); err != nil {
+		t.Fatal(err)
+	}
+	x.run(time.Minute)
+	if r := x.record(); r.State != StateBriefed {
+		t.Fatalf("signed acceptance became %s, want briefed", r.State)
+	}
+}
+
+func TestAnUnsignedApprovalStillHasItsTaskDeadline(t *testing.T) {
+	x := newStallRig(t, "d1a10007-0000-4000-8000-000000000007")
+	x.show(bypassScreen)
+	x.now = x.now.Add(241 * time.Minute)
+	x.b.Pass(x.ctx)
+	if r := x.record(); r.State != StateTimeout {
+		t.Fatalf("unanswered approval became %s, want the task deadline", r.State)
+	}
+	if len(x.nudges()) != 0 {
+		t.Fatal("the broker typed into an unanswered menu")
+	}
+}
+
 // newDialogRig is the stall rig's child, left at a dialog with its secret
 // still held, the way Dispatch leaves one.
 func newDialogRig(t *testing.T, id string) *stallRig {

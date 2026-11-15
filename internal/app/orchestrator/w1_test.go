@@ -196,8 +196,8 @@ func (f *fakeLauncher) CloseTmuxSession(_ context.Context, pane, name string) (b
 
 // ③ The four-minute verdict asks the tab's own source. A tmux listing that
 // failed decides nothing — whatever else the reading saw — and a complete one
-// without the pane decides spawn_failed; a pane holding a dialog is closed,
-// and only because its pane proves it is the task's own.
+// without the pane decides spawn_failed. A present pane at a dialog is not
+// evidence that the briefing was never delivered, and is left open.
 func TestTheSpawnClockAsksTheTabsOwnSource(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	now := time.Date(2026, 9, 18, 9, 0, 0, 0, time.UTC)
@@ -260,7 +260,7 @@ func TestTheSpawnClockAsksTheTabsOwnSource(t *testing.T) {
 		t.Fatalf("a tab that is gone left nothing provably ours, and %v was closed", launcher.closed)
 	}
 
-	// A pane that is there and holding a dialog: spawn_failed, and closed.
+	// A pane that is there and holding a dialog: retain it for the person.
 	stuck := "d2222222-2222-4222-8222-222222222222"
 	spawning(stuck, "%8")
 	trust := screen(t, "claude-trust")
@@ -268,14 +268,14 @@ func TestTheSpawnClockAsksTheTabsOwnSource(t *testing.T) {
 	inv = session.Inventory{Complete: false, Sources: map[string]bool{"tmux": true, "iterm": false},
 		Sessions: []session.Session{iterm, {ID: "%8", Backend: session.BackendTmux, Assistant: session.AssistantClaude}}}
 	p = b.Pass(ctx)
-	if got := state(stuck); got != StateSpawnFailed || p.Closed != 1 {
+	if got := state(stuck); got != StateSpawning || p.Closed != 0 {
 		t.Fatalf("a pane holding a dialog left %q (pulse %+v)", got, p)
 	}
-	if len(launcher.closed) != 1 || launcher.closed[0] != [2]string{"%8", ChildSessionName(stuck)} {
-		t.Fatalf("closed %v, want the dialog pane's own session", launcher.closed)
+	if len(launcher.closed) != 0 {
+		t.Fatalf("closed %v while its pane was waiting for a person", launcher.closed)
 	}
-	if n, _ := b.Store.EventCount(ctx, "task.child.closed"); n != 1 {
-		t.Errorf("task.child.closed events = %d, want 1", n)
+	if n, _ := b.Store.EventCount(ctx, "task.child.closed"); n != 0 {
+		t.Errorf("task.child.closed events = %d, want 0", n)
 	}
 }
 

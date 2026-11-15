@@ -212,18 +212,17 @@ func TestAnUnnamedAssistantIsReadForAFrame(t *testing.T) {
 // gone" is evidence only from the source that owns the tab (D11).
 func TestSilenceFromALiveChildIsNotASpawnFailure(t *testing.T) {
 	for _, c := range []struct {
-		name                              string
-		present, sourceComplete, choosing bool
-		want                              State
-		decided                           bool
+		name                    string
+		present, sourceComplete bool
+		want                    State
+		decided                 bool
 	}{
-		{"the tab is gone from a complete listing of its terminal", false, true, false, StateSpawnFailed, true},
-		{"the tab is missing but its terminal could not be listed", false, false, false, "", false},
-		{"the tab is holding a dialog", true, true, true, StateSpawnFailed, true},
-		{"the tab is holding a dialog, listing incomplete elsewhere", true, false, true, StateSpawnFailed, true},
-		{"the tab is alive and quiet", true, true, false, "", false},
+		{"the tab is gone from a complete listing of its terminal", false, true, StateSpawnFailed, true},
+		{"the tab is missing but its terminal could not be listed", false, false, "", false},
+		{"the tab is alive", true, true, "", false},
+		{"the tab is alive, listing incomplete elsewhere", true, false, "", false},
 	} {
-		state, why, decided := spawnVerdict(c.present, c.sourceComplete, c.choosing, Record{})
+		state, why, decided := spawnVerdict(c.present, c.sourceComplete, Record{})
 		if decided != c.decided || state != c.want {
 			t.Errorf("%s: got %q/%v, want %q/%v", c.name, state, decided, c.want, c.decided)
 		}

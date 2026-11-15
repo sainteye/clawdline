@@ -13,7 +13,6 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
-	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The beat: what the broker does when nobody asked it anything.
@@ -435,30 +434,28 @@ func (b *Broker) authentic(ctx context.Context, r Record, result taskdir.Result)
 //
 //   - the tab is absent, **and the source that owns it** — tmux for a tmux
 //     child — answered completely: spawn_failed;
-//   - the tab is there and holding a dialog: spawn_failed. The briefing could
-//     not be typed at it, and a keystroke would have answered the dialog;
 //   - the broker never typed the briefing (Record.Unbriefed): spawn_failed,
 //     whatever the reading says. That is not a reading at all — the secret
 //     never left the broker and is not kept, so no child can ever sign. The
 //     dispatch settles such a task itself; this is the case where that
 //     settlement was not written;
-//   - anything else — a source that failed, a tab that is there and quiet, a
-//     tab showing a shell — decides nothing. The task's own timeout is the
+//   - anything else — a source that failed, a tab that is there and quiet,
+//     a dialog, or a shell — decides nothing. A dialog can be a tool approval
+//     after the child read its briefing, even before its acceptance command
+//     runs. It does not prove the briefing was never typed. Initial dialogs
+//     are handled separately by leftAtDialog. The task's own timeout is the
 //     backstop. Wrongly calling a live child dead costs somebody's work; a
 //     missed verdict costs a wait.
 //
 // Measured on a Mac whose iTerm2 listing never completes: an iTerm2 child the
 // broker could not brief fell through every case above but the last, and
 // ended twelve minutes later as `timeout`, saying nothing of why.
-func spawnVerdict(present, sourceComplete, choosing bool, r Record) (State, string, bool) {
+func spawnVerdict(present, sourceComplete bool, r Record) (State, string, bool) {
 	switch {
 	case !present && sourceComplete:
 		return StateSpawnFailed, "The child session did not reach a prompt within 4 minutes, and its terminal " +
 			"answered completely that the tab is gone. If several sessions were starting at once, they were " +
 			"competing for this machine.", true
-	case present && choosing:
-		return StateSpawnFailed, "The child session is holding a dialog four minutes after it opened, " +
-			"so the briefing was never typed: answering that dialog is a person's decision, not this broker's.", true
 	case r.Unbriefed:
 		return StateSpawnFailed, unbriefedVerdict(r), true
 	}
@@ -481,18 +478,12 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 		if r.ChildTerminalID == "" {
 			present = false
 		}
-		choosing := false
-		if present && r.ChildBackend != "owned" && b.Screen != nil {
-			if screen, ok := b.Screen(ctx, r.ChildTerminalID); ok {
-				choosing = Choosing(screen, session.Assistant(r.Assistant))
-			}
-		}
 		// Completeness is asked of the tab's own source, not of the whole
 		// reading (D05 ③). The whole reading is never complete on a Mac whose
 		// iTerm2 cannot be asked, and "the reading saw something" says nothing
 		// about the one source that could have seen this tab.
 		complete := r.ChildTerminalID != "" && rd.sourceComplete(r.ChildBackend)
-		if state, why, decided := spawnVerdict(present, complete, choosing, r); decided {
+		if state, why, decided := spawnVerdict(present, complete, r); decided {
 			// The session it opened is closed after the verdict is durable,
 			// and the verdict records that it is owed (closeChild).
 			if _, ids, err := b.settle(ctx, r.ID, state, why, nil, b.closeChild(r, present)...); err == nil {

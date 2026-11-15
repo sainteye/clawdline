@@ -1,7 +1,9 @@
 # Session Territory 0.1.0
 
 An independently importable View Plugin v1 candidate, ID
-`com.clawdline.session-territory`. Original cartographic SVG/CSS artwork and binary
+`com.clawdline.session-territory`. The host offers it in **View plugins → Explore
+views** with the normal package review; installation remains local to each browser
+or device. Original cartographic SVG/CSS artwork and binary
 space partitioning show Project groups and labeled Session cells. Equal Session
 cells carry **no effort, elapsed time, file touch, dependency or progress meaning**.
 All eight host work states are readable text. Completion is a report, not acceptance.
@@ -36,8 +38,8 @@ python3 tools/pack-view-plugin.py plugins/session-territory web/console/public/v
 
 The public packer injects the unmodified v1 SDK at `CLAWDLINE_SDK` and writes exactly
 two deterministic ZIP STORE entries: manifest and self-contained HTML. The cover
-is a validated square RGBA8 PNG rendered from the authored `cover.svg`. No new
-host catalog/card, SDK method, native command or capacity is introduced.
+is a validated square RGBA8 PNG rendered from the authored `cover.svg`. The host catalog points to this unchanged package. No new SDK method, native
+command, file access or capacity is introduced.
 
 ## Local acceptance
 

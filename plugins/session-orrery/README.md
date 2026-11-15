@@ -2,8 +2,8 @@
 
 An independently importable View Plugin v1 candidate: a brass astronomical instrument
 for the host's authorized Session summaries. ID `com.clawdline.session-orrery`, version
-`0.1.0`, names **Session Orrery** / **Session 星象儀**. This directory does not add a
-curated host card, publish a package, or install anything into a production browser.
+`0.1.0`, names **Session Orrery** / **Session 星象儀**. The host offers this package in **View plugins → Explore views**. Installation
+requires the normal package review and remains local to each browser or device.
 
 ## Reading the instrument
 

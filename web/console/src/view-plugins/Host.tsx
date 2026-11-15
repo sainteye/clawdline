@@ -172,7 +172,13 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
             </article>)}</div>
           </section>
           <section className="vp-examples"><div className="vp-section-head"><div><h2>{w.preset}</h2><p>{w.examplesHint}</p></div></div><div className="vp-example-grid">
-            {[{id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy}].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => <article className="vp-example" key={example.id}>
+            {[
+              {id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},
+              {id:"session-orrery", title:w.orrery, description:w.orreryHint, action:w.addOrrery},
+              {id:"session-night-city", title:w.nightCity, description:w.nightCityHint, action:w.addNightCity},
+              {id:"session-departures", title:w.departures, description:w.departuresHint, action:w.addDepartures},
+              {id:"session-territory", title:w.territory, description:w.territoryHint, action:w.addTerritory},
+            ].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => <article className="vp-example" key={example.id}>
               <ViewArtwork cover={exampleCover("com.clawdline." + example.id)} missing={w.coverRequired} /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || rows.some(r => r.id === "com.clawdline." + example.id)} onClick={() => void exampleInstall(example.id)}>{rows.some(r => r.id === "com.clawdline." + example.id) ? w.added : example.action}</button></div>
             </article>)}
           </div></section>

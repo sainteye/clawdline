@@ -1,7 +1,8 @@
 # View Plugin v1
 
-Revision 7 describes the **experimental browser-local runtime** implemented in
-`web/console/src/view-plugins`. The supplied package is Session Galaxy. Public Release acceptance is separate from source and Cloud delivery.
+Revision 8 describes the **experimental browser-local runtime** implemented in
+`web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
+Session Departures and Session Territory. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -39,9 +40,25 @@ checks the expected active digest and retains one previous archive for rollback.
 A failed import leaves the active package intact. Registry changes, including
 cross-tab hints, revoke running grants before rereading the saved archives.
 
+## Supplied Session views
+
+Explore views offers Galaxy, Orrery, Night City, Departures and Territory. Each
+install button opens the standard identity and permission review before saving
+that package in this browser. Open installed views from the bottom status bar;
+multiple enabled packages appear in its picker. A phone must install packages in
+its own browser or PWA, even when another browser already has them.
+
+Orrery puts attention states on rings, Night City groups Sessions into Project
+buildings, and Departures keeps waiting-for-you rows first with full Unicode
+names. Territory is a Project/Session map and explicitly says that file activity
+is unavailable. Its separate synthetic file renderer is not in the published ZIP;
+publication does not add file access, transcript access or a new runtime capability.
+The packages follow host language and keep their text-state and readable-list
+alternatives. User artwork acceptance and public Release acceptance remain separate.
+
 ## Withdrawn built-in views
 
-Galaxy is the only supplied view. List, Pop and Deadpan have been removed from
+Galaxy and four new Session views are supplied. List, Pop and Deadpan remain removed from
 Explore views, source assets and public ZIP downloads. The hosted edge returns
 HTTP 410 with `Cache-Control: no-store` for their exact old download URLs, before
 reading the static asset binding, so cached archives cannot remain downloadable
@@ -97,8 +114,8 @@ Curated install buttons fetch their ZIP with `cache: "no-store"`, so a previousl
 fixed download URL cannot silently install an older published revision. The standard package
 review still names the exact downloaded identity and version before registry writes.
 
-The Galaxy button needs no native file chooser. The package remains a separate
-archive and uses the existing v1 runtime; community ZIP import stays independent
+Each supplied view has an install button that needs no native file chooser.
+The packages remain separate archives using the existing v1 runtime; community ZIP import stays independent
 of this curated example list.
 
 ### Required cover
@@ -118,7 +135,7 @@ missing cover cannot pass the publication gate. An actual cover must identify
 the view and be reviewed as artwork: a technically valid blank or borrowed image
 is not publication acceptance.
 
-The Galaxy cover has editable `cover.svg` source beside each manifest. They
+Each supplied cover has editable `cover.svg` source beside its manifest. They
 can be rendered using an already installed local Playwright module, without a
 network request or a new dependency:
 

@@ -311,6 +311,21 @@ Now the briefing stops on a dialog (two readings in a row) and leaves it:
 
 Nothing in this path ever answers a dialog: that stays the person's decision.
 
+**A dialog after delivery is not an undelivered briefing (2026-11-15).** Two
+unsigned children were closed by the four-minute spawn clock with a verdict
+claiming their briefing had never been typed. Their native transcripts instead
+contained the briefing, the child's opening response and a completed read of
+`CHILD.md`; one had requested its acceptance shell command without receiving a
+tool result. A menu before signed acceptance can therefore be a tool approval,
+not an initial workspace dialog. The spawn clock now uses only positive terminal
+absence or the broker's recorded `unbriefed` fact. A live unsigned child at a menu
+keeps its original permissions and tab until the person answers, it exits, or its
+existing task deadline expires. Nothing is approved, retyped or redispatched.
+The exact historical menu text was not preserved, so it is not identified as a
+specific permission request. Regression coverage advances the actual broker
+clock past four minutes, then verifies signed acceptance, as well as the
+unchanged task deadline and initial-dialog protections.
+
 ## What the protocol costs a child and a root (2026-09-26)
 
 Measured on 2026-09-26 over a week of transcripts, cost-weighted with cache re-reads: a child spent
