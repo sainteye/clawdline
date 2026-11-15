@@ -1243,6 +1243,11 @@ export class RealtimeCopilotClient {
     const dc = this.dc, attempt = this.attempt
     const steps: string[] = []
     this.livePending.add(callID)
+    // The progress cue plays the moment the backend calls a tool, and again
+    // every PROGRESS_CUE_REPEAT_MS while it runs (`ProgressCue`, the same
+    // sound and setting as a Realtime call's lookups). A Live call has no
+    // turn to wait for, so the cue is tied to the tool call itself.
+    this.pendingTools.add(callID)
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: name }), speakingState: 'thinking' })
     const started = performance.now()
     let output: string
@@ -1254,7 +1259,8 @@ export class RealtimeCopilotClient {
       output = JSON.stringify({ error: String(error) })
     }
     this.livePending.delete(callID)
-    if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
+    this.pendingTools.delete(callID)
+    if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') { this.updateState({}); return }
     const trace = toolTrace(name, output, performance.now() - started)
     this.updateState({ tools: [...(this.state.tools ?? []), trace], toolCallLog: undefined })
     this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })

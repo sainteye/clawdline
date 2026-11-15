@@ -634,11 +634,12 @@ test('a cleared Session introduction exposes resume and reuses prepared content 
  })
 })
 
-test('a GPT-Live call configures its backend after start, greets once, and answers the backend with the same tools', async () => {
+test('a GPT-Live call configures its backend after start, greets once, and answers the backend with the same tools', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
   const sent = [], reads = []
   const c = new RealtimeCopilotClient()
+  t.after(() => clearInterval(c.liveTicker))
   c.live = true
   c.attempt = 1
   c.state = { ...c.state, status: 'connected' }
@@ -674,13 +675,17 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: '哪些 Session？' })
   assert.equal(c.state.lastTranscript, '現在有哪些 Session？')
   c.handleLiveEvent({ type: 'session.delegation.created', delegation: { id: 'item_1', target: 'responses' } })
+  let cues = 0
+  c.meter.pending = () => { cues++ }
   c.handleLiveEvent({ type: 'response.event', delegation_id: 'item_1', event: { type: 'response.output_item.done', response_id: 'resp_1', item: { type: 'function_call', call_id: 'call_1', name: 'list_sessions', arguments: '{}' } } })
+  assert.equal(cues, 1, 'the progress cue plays the moment the backend calls a tool')
   for (let i = 0; i < 20 && !sent.some(e => e.type === 'response.create'); i++) await tick()
   assert.ok(reads.includes('/v1/sessions'), 'the tool ran in this browser')
   const result = sent.find(e => e.type === 'response.item.create')
   assert.equal(result?.item.call_id, 'call_1')
   assert.match(result.item.output, /Prepare screenshots/)
   assert.deepEqual(sent.map(e => e.type), ['response.item.create', 'response.create'])
+  assert.equal(c.pendingTools.size, 0, 'the cue stops once the tool has answered')
   const journaled = c.journalLines.find(l => l.kind === 'tool' && l.text === 'list_sessions')
   assert.match(journaled?.tool?.steps ?? '', /\/v1\/sessions \d+ms/, 'each machine request of a tool is timed in the journal')
 
