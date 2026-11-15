@@ -5,6 +5,7 @@ import { showModalWithoutChoice } from "../modal-focus.js"
 import { nextWord, type NextWord } from "../next-strings.js"
 import { readChromeSettings, writeChromeSettings } from "../pages/settings/api.js"
 import { browserCall } from "./browser-call.js"
+import { followsRelay } from "../client.js"
 import "../setup/setup.css"
 import "./browser-setup.css"
 
@@ -182,13 +183,37 @@ function UserChromeGuide({ onClose }: { onClose: () => void }) {
         {moving && <li><p>{nextWord("browserGuideRemoveOld")}</p></li>}
         <li><p>{nextWord(mac ? "browserGuideLoadMac" : "browserGuideLoad")}</p>
           {prepared ? <CopyLine text={prepared.directory} /> : error ? <p className="setup-said" role="alert">{error}</p> : <p>{nextWord("browserSettingsLoading")}</p>}</li>
-        <li><p>{nextWord("browserGuideConnectOnce")}</p>{prepared && <CopyLine text={prepared.connect_command} />}</li>
+        <li><p>{nextWord("browserGuideConnect")}</p><ConnectChrome /></li>
       </ol>
       <p className="browser-guide-wait" role="status">{nextWord("browserGuideWaiting")}</p>
     </>}
     <p className="browser-setup-plain">{nextWord("browserGuideAfter")}</p>
     <div className="setup-actions"><button type="button" className="setup-primary" onClick={onClose}>{nextWord(current ? "browserGuideDone" : "browserSetupClose")}</button></div>
   </div>
+}
+
+/**
+ * The guide's Connect button (POST /v1/browser/connect): registers the usual
+ * Chrome's native host for the stable folder, the step that used to be a
+ * command typed into Terminal. Clawdline Cloud does not carry it, so a phone
+ * is told to press it on the computer.
+ */
+function ConnectChrome() {
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle")
+  const [error, setError] = useState("")
+  if (followsRelay()) return <p className="browser-guide-wait">{nextWord("browserGuideConnectOnComputer")}</p>
+  const connect = async () => {
+    if (state === "busy") return
+    setState("busy"); setError("")
+    try { await browserCall("POST", "/v1/browser/connect", {}); setState("done") }
+    catch (e) { setState("idle"); setError(nextWord("browserGuideConnectFailed", { reason: L.failureSentence(e, { fallback: (e as Error)?.message || "" }) })) }
+  }
+  return <>
+    <button type="button" id="browser-connect-chrome" className="setup-secondary" disabled={state !== "idle"} onClick={() => void connect()}>
+      {nextWord(state === "busy" ? "browserGuideConnecting" : state === "done" ? "browserGuideConnected" : "browserGuideConnectButton")}
+    </button>
+    {error && <p className="setup-said" role="alert">{error}</p>}
+  </>
 }
 
 function Benefits({ onLater, onNext }: { onLater: () => void; onNext: () => void }) {

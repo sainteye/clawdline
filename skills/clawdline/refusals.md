@@ -30,6 +30,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `broker_unavailable` | `internal/transport/http/cloud_agent.go` |
 | `browser_bad_request` | `internal/transport/http/browser.go`, `internal/transport/http/browser_launch.go`, `internal/transport/http/settings.go` |
 | `browser_chromium_missing` | `internal/transport/http/browser_launch.go` |
+| `browser_connect_failed` | `internal/transport/http/browser_launch.go` |
 | `browser_launch_failed` | `internal/transport/http/browser_launch.go` |
 | `browser_page_error` | `internal/transport/http/browser.go` |
 | `browser_prepare_failed` | `internal/transport/http/browser_launch.go` |

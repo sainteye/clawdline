@@ -425,13 +425,17 @@ Chrome's own start:
   established: Chrome kept an older registered service worker across restarts in the test
   profile (below), and a Load-unpacked install could not be restarted in the test harness. A Chrome still on an older one-off folder shows **Switch to
   self-updating** instead: the same guide, with removing the old extension, loading the stable
-  folder and running the connection command once (the ID changes once, with the path).
+  folder and running Connect once (the ID changes once, with the path).
 - **The test Chrome** is relaunched by the daemon when it runs another release, once per release,
   and only when its channel is quiet: nothing queued or in flight, no tab taken over by the person,
   no close awaiting a receipt, and no recorded action for two minutes. Before deciding, it asks the extension which tabs its agent window still has and forgets the rest (`ForgetClosedTabs`), so a takeover of a tab an earlier restart already closed does not block it. Closing it closes only its
   own tabs, which the bridge then forgets. The settings row says it restarts by itself when idle.
 - **The guide** lists the real steps (open `chrome://extensions`, Developer mode, Load unpacked with
-  Command-Shift-G on a Mac and the stable path, the connection command once) and follows the
+  Command-Shift-G on a Mac and the stable path, then **Connect**). Connect is
+  `POST /v1/browser/connect` (2026-11-16): it registers the usual Chrome's native host for the
+  stable folder's ID, the guide's form of `clawdline browser install-host --mode user_chrome`. The
+  person's press is the consent; an agent's machine token is refused, and Clawdline Cloud does not
+  carry it, so a phone is told to press it on the computer. and follows the
   status every two seconds until Chrome runs the current release.
 
 **Chrome keeps registered service workers.** On 2026-11-15 the test Chrome reported manifest

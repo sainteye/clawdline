@@ -18,7 +18,7 @@ import (
 // knows the level can say "this machine needs an update" before it asks.
 // Explicit Bot input uploads and authenticated readback arrive at level 70.
 // Live Bot roster streams are available from level 71.
-const APILevel = 71
+const APILevel = 72
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

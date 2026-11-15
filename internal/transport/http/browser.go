@@ -35,6 +35,7 @@ import (
 //   - GET/POST /v1/browser/settings   ordered automatic selection and new-site notifications; writing needs a person who may send
 //   - GET  /v1/browser/setup          the setup guide's read (browser_launch.go)
 //   - POST /v1/browser/launch         start Clawdline's own Chromium; a person who may send
+//   - POST /v1/browser/connect        register the usual Chrome's native host for the stable folder; a person who may send
 func (s *Server) browserRoutes() []route {
 	return []route{
 		{Route{"*", "/v1/browser/reminder"}, s.browserReminderRoute},
@@ -53,6 +54,7 @@ func (s *Server) browserRoutes() []route {
 		{Route{"*", "/v1/browser/settings"}, s.browserSettingsRoute},
 		{Route{"*", "/v1/browser/setup"}, s.browserSetupRoute},
 		{Route{"*", "/v1/browser/prepare"}, s.browserPrepareRoute},
+		{Route{"*", "/v1/browser/connect"}, s.browserConnectRoute},
 		{Route{"*", "/v1/browser/launch"}, s.browserLaunchRoute},
 	}
 }

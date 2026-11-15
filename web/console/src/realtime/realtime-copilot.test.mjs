@@ -756,6 +756,49 @@ test('the sheet\'s toggle places a ringing or live call again on the other voice
   assert.deepEqual(events, [])
 })
 
+test('a GPT-Live call switched to another Session says its summary at once and goes on with the latest one', async (t) => {
+  globalThis.document = { documentElement: { lang: 'zh-Hant' } }
+  globalThis.location = { hash: '' }
+  const now = Math.floor(Date.now() / 1000)
+  const sent = [], forks = []
+  const c = new RealtimeCopilotClient()
+  t.after(() => { clearInterval(c.liveTicker); c.dc.readyState = 'closed' })
+  c.live = true
+  c.attempt = 1
+  c.liveQuietMs = 0
+  c.livePollMs = 1
+  c.personSpoke = true
+  c.state = { ...c.state, status: 'connected', speakingState: 'idle' }
+  c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
+  c.call = { memory: '', snapshot: '', options: {} }
+  c.snapshot = Promise.resolve('')
+  c.memory = []
+  c.addLog = () => {}
+  c.recapMode = 'background'
+  const other = { ...row, id: '%8', label: 'Keyboard fix', recap: { text: 'The keyboard fix is being written.', at: now - 1200, current: false } }
+  c.toolDeps = () => ({ ...c.constructor.prototype.toolDeps.call(c), sleep: async () => {}, tasks: undefined, fleet: undefined,
+    fetch: async (path, init) => {
+      if (path === '/v1/sessions') return Response.json({ sessions: [row, other] })
+      if (path === '/v1/voice/copilot-recap') { forks.push(JSON.parse(String(init.body))); return Response.json({ recap: 'The keyboard fix is deployed and waits for your check.', at: now, current: true }) }
+      return Response.json({})
+    } })
+  const notes = () => sent.filter(e => e.type === 'session.commentary.append').map(e => e.content)
+  const realNow = Date.now, at = realNow()
+  Date.now = () => at
+  try {
+    // The person has already been talking; switching still tells them about the new Session from its summary.
+    c.turnTo({ id: '%8', label: 'Keyboard fix' })
+    for (let i = 0; i < 40 && notes().length === 0; i++) await tick()
+    assert.equal(notes().length, 1)
+    assert.match(notes()[0], /switched the call to Session "Keyboard fix".*The keyboard fix is being written/)
+    for (let i = 0; i < 40 && forks.length === 0; i++) await tick()
+    assert.equal(forks.length, 1, 'the latest summary is asked for at the same time')
+    c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'The keyboard fix is being written.' })
+    for (let i = 0; i < 400 && notes().length < 2; i++) await new Promise(r => setTimeout(r, 5))
+    assert.match(notes()[1], /latest state .*deployed and waits for your check/)
+  } finally { Date.now = realNow }
+})
+
 test('a GPT-Live call placed from a Session opens on its summary at once and goes on with the latest one', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }

@@ -181,10 +181,12 @@ export function liveNote(kind: 'commentary' | 'thinking', content: string): Reco
  * what the list already has about it is said at once, and the latest recap
  * follows when it arrives (`liveLatestNote`).
  */
-export function liveOpeningNote(label: string, summary: string, written = ''): string {
+export function liveOpeningNote(label: string, summary: string, written = '', switched = false): string {
   const clipped = clipRecap(summary)
-  if (!clipped) return `The call was placed from Session "${label}". In one short sentence in the person's language, say you are reading its latest summary. Do not guess its work.`
-  return `The call was placed from Session "${label}". Open the call by telling the person, in two or three everyday sentences in their language and without a greeting, what this Session is doing${written ? ` (this summary was written ${written}; say so briefly)` : ''}: ${clipped}`
+  const where = switched ? `The person switched the call to Session "${label}".` : `The call was placed from Session "${label}".`
+  if (!clipped) return `${where} In one short sentence in the person's language, say you are reading its latest summary. Do not guess its work.`
+  const how = switched ? 'Tell the person now, in two or three everyday sentences in their language, what this Session is doing, from this summary and nothing vaguer' : 'Open the call by telling the person, in two or three everyday sentences in their language and without a greeting, what this Session is doing'
+  return `${where} ${how}${written ? ` (this summary was written ${written}; say so briefly)` : ''}: ${clipped}`
 }
 
 /**
