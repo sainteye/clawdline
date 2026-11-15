@@ -52,6 +52,11 @@ func TestProcessStderrIsCapped(t *testing.T) {
 }
 
 func TestProcessCleansObservedSetsidDescendant(t *testing.T) {
+	t.Run("native census", func(t *testing.T) { testProcessCleansObservedSetsidDescendant(t, 0) })
+	t.Run("slow census", func(t *testing.T) { testProcessCleansObservedSetsidDescendant(t, 300*time.Millisecond) })
+}
+
+func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Duration) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix setsid")
 	}
@@ -64,7 +69,10 @@ func TestProcessCleansObservedSetsidDescendant(t *testing.T) {
 	file := t.TempDir() + "/owned-pid"
 	config := peerConfiguration(t, "descendant")
 	config.Environment = append(config.Environment, "CLAWDLINE_ACP_PID_FILE="+file)
-	p, err := StartProcess(context.Background(), ProcessOptions{Configuration: config, Directory: t.TempDir(), Limits: testLimits()})
+	// This real-OS cleanup checks ownership, not the shortened unit-test budget.
+	// Use the installed supervisor's budget and survey cadence; the controlled
+	// deadline/failed-census tests below still require an unknown result.
+	p, err := StartProcess(context.Background(), ProcessOptions{Configuration: config, Directory: t.TempDir(), Limits: nativeLimits()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +100,21 @@ func TestProcessCleansObservedSetsidDescendant(t *testing.T) {
 		t.Fatal("escaped child not owned")
 	}
 	defer cleanupFixtureIdentity(t, p, pid, birth)
+	if censusDelay > 0 {
+		p.mu.Lock()
+		p.censusOverride = func(ctx context.Context) ([]processIdentity, error) {
+			timer := time.NewTimer(censusDelay)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+			reader := &Process{limits: p.limits, inventoryCtx: ctx}
+			return reader.identities()
+		}
+		p.mu.Unlock()
+	}
 	if err = p.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
