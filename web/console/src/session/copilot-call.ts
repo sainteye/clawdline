@@ -18,7 +18,8 @@ function originOf(row: SessionRow): CallOrigin {
  */
 export function callCopilotAbout(row: SessionRow) {
   copilotDock.open()
-  void realtimeCopilot.start(originOf(row))
+  // The sheet asks which voice system before it dials; the call keeps this Session as its origin.
+  realtimeCopilot.choose(originOf(row))
 }
 
 /** The hold's lift: wakes a call started from its timer (`RealtimeCopilotClient.wake`). */

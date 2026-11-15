@@ -634,11 +634,12 @@ test('a cleared Session introduction exposes resume and reuses prepared content 
  })
 })
 
-test('a GPT-Live call configures its backend after start, greets once, and answers the backend with the same tools', async () => {
+test('a GPT-Live call configures its backend after start, greets once, and answers the backend with the same tools', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
   const sent = [], reads = []
   const c = new RealtimeCopilotClient()
+  t.after(() => clearInterval(c.liveTicker))
   c.live = true
   c.attempt = 1
   c.state = { ...c.state, status: 'connected' }
@@ -674,13 +675,17 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: '哪些 Session？' })
   assert.equal(c.state.lastTranscript, '現在有哪些 Session？')
   c.handleLiveEvent({ type: 'session.delegation.created', delegation: { id: 'item_1', target: 'responses' } })
+  let cues = 0
+  c.meter.pending = () => { cues++ }
   c.handleLiveEvent({ type: 'response.event', delegation_id: 'item_1', event: { type: 'response.output_item.done', response_id: 'resp_1', item: { type: 'function_call', call_id: 'call_1', name: 'list_sessions', arguments: '{}' } } })
+  assert.equal(cues, 1, 'the progress cue plays the moment the backend calls a tool')
   for (let i = 0; i < 20 && !sent.some(e => e.type === 'response.create'); i++) await tick()
   assert.ok(reads.includes('/v1/sessions'), 'the tool ran in this browser')
   const result = sent.find(e => e.type === 'response.item.create')
   assert.equal(result?.item.call_id, 'call_1')
   assert.match(result.item.output, /Prepare screenshots/)
   assert.deepEqual(sent.map(e => e.type), ['response.item.create', 'response.create'])
+  assert.equal(c.pendingTools.size, 0, 'the cue stops once the tool has answered')
   const journaled = c.journalLines.find(l => l.kind === 'tool' && l.text === 'list_sessions')
   assert.match(journaled?.tool?.steps ?? '', /\/v1\/sessions \d+ms/, 'each machine request of a tool is timed in the journal')
 
@@ -690,4 +695,47 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   assert.equal(c.state.cost.priced, true)
   assert.ok(c.state.cost.live.seconds >= 60)
   clearInterval(c.liveTicker)
+})
+
+test('a GPT-Live call placed from a Session on every machine\'s list talks about that Session as the tools list it', async (t) => {
+  globalThis.document = { documentElement: { lang: 'zh-Hant' } }
+  globalThis.location = { hash: '' }
+  const sent = []
+  const c = new RealtimeCopilotClient()
+  t.after(() => clearInterval(c.liveTicker))
+  c.live = true
+  c.attempt = 1
+  c.state = { ...c.state, status: 'connected' }
+  c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
+  // 2026-11-15: placed from %7 on 所有機器; the tools list it as fleet:<machine>:%257.
+  c.call = { memory: '', snapshot: '', options: { origin: { id: '%7', label: 'Voice realism', machine: 'mac_a' } } }
+  c.focus = '%7'
+  c.snapshot = Promise.resolve('')
+  c.memory = []
+  c.addLog = () => {}
+  const fleetRow = { machine: 'mac_a', machineName: 'studio-mac', row: { id: '%7', label: 'Voice realism', assistant: 'claude', state: 'working', sessionId: 'conv-547' } }
+  c.toolDeps = () => ({ sleep: async () => {}, fleet: async () => [fleetRow, { ...fleetRow, machine: 'linux_b', machineName: 'linux' }], fetch: async () => Response.json({}) })
+  c.handleLiveEvent({ type: 'session.started' })
+  for (let i = 0; i < 20 && !c.state.connectionReady; i++) await tick()
+  assert.equal(c.state.connectionReady, true)
+  assert.match(c.focus, /^fleet:mac_a:/, `the call is about the listed row, not the page's raw id (${c.focus})`)
+  assert.equal(c.call.options.origin.id, c.focus)
+  const update = sent.find(e => e.type === 'session.update')
+  assert.ok(update.session.delegation.responses.instructions.includes(c.focus), 'the backend is told the listed id')
+})
+
+test('a call button asks GPT-Live or Realtime API before it dials, and dials the chosen one from the same Session', () => {
+  const c = new RealtimeCopilotClient()
+  const started = []
+  c.start = (origin, engine) => { started.push({ origin, engine }) }
+  const origin = { id: '%7', label: 'Voice realism' }
+  c.choose(origin)
+  assert.equal(c.state.choosing, true, 'the sheet asks first')
+  assert.equal(started.length, 0, 'nothing dials before the choice')
+  c.startChosen('live')
+  assert.deepEqual(started, [{ origin, engine: 'live' }])
+  assert.equal(c.state.choosing, false)
+  // A cancelled choice forgets its Session.
+  c.choose(origin); c.cancelChoice(); c.startChosen('realtime')
+  assert.deepEqual(started[1], { origin: undefined, engine: 'realtime' })
 })

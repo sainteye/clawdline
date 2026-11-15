@@ -54,6 +54,10 @@ export interface RealtimeCopilotState {
   notice?: { text: string; at: number; warn?: boolean }
   /** The tools used since the person last spoke, in order (`toolTrace`). */
   tools?: ToolTrace[]
+  /** A call button was pressed and the sheet asks which voice system to use (`choose`). */
+  choosing?: boolean
+  /** The voice system of the call under way or last placed. */
+  engine?: 'realtime' | 'live'
 }
 
 export type RealtimeListener = (state: RealtimeCopilotState) => void
@@ -229,6 +233,9 @@ export class RealtimeCopilotClient {
   private listeners: Set<RealtimeListener> = new Set()
   /** This call runs on GPT-Live (`copilot-live.ts`) rather than the Realtime API. */
   private live = false
+  /** Where the pending choice's call was placed from (`choose`), and the last system chosen. */
+  private chosenOrigin?: CallOrigin
+  private lastEngine?: 'realtime' | 'live'
   private liveHeard = new LiveTranscript()
   private liveSaid = new LiveTranscript()
   /** The backend's function calls still running in this browser. */
@@ -441,7 +448,34 @@ export class RealtimeCopilotClient {
    * single opening hands that Session over after reading its records. A call already
    * going (or connecting) is turned to the Session instead of starting again.
    */
-  async start(origin?: CallOrigin): Promise<void> {
+  /**
+   * A call button's press: the sheet asks which voice system to use before
+   * anything dials (asked for on 2026-11-15). A press during a call turns the
+   * call to its Session instead, as `start` did.
+   */
+  choose(origin?: CallOrigin) {
+    if (this.state.status === 'connected' || this.state.status === 'connecting') {
+      if (origin) this.turnTo(origin)
+      return
+    }
+    this.chosenOrigin = origin
+    this.updateState({ choosing: true })
+  }
+
+  /** The choice's press: dials inside that tap, which iOS needs for the microphone. */
+  startChosen(engine: 'realtime' | 'live') {
+    const origin = this.chosenOrigin
+    this.chosenOrigin = undefined
+    this.updateState({ choosing: false })
+    void this.start(origin, engine)
+  }
+
+  cancelChoice() {
+    this.chosenOrigin = undefined
+    this.updateState({ choosing: false })
+  }
+
+  async start(origin?: CallOrigin, engine?: 'realtime' | 'live'): Promise<void> {
     if (this.state.status === 'connected' || this.state.status === 'connecting') {
       if (origin) this.turnTo(origin)
       return
@@ -496,8 +530,11 @@ export class RealtimeCopilotClient {
       check()
       if (!configured) throw new Error(nextWord('voiceWorkModeUnknown'))
       // GPT-Live calls use the direct tools only: the background work list is built on Realtime's turns.
-      const live = configured.engine === 'live'
+      // The system chosen for this call, or the machine's default when none was.
+      const live = engine ? engine === 'live' : configured.engine === 'live'
       this.live = live
+      this.lastEngine = live ? 'live' : 'realtime'
+      this.updateState({ engine: this.lastEngine })
       const managed = !live && configured.work_enabled === true
       if (live && configured.work_enabled === true) this.addLog('info', nextWord('copilotLogLiveNoWork'))
       let messageActions=false
@@ -1173,6 +1210,20 @@ export class RealtimeCopilotClient {
     if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
     this.addLog(snapshot ? 'info' : 'error', nextWord(snapshot ? 'copilotLogSnapshot' : 'copilotLogNoSnapshot'))
     const section = memorySection(this.memory, nowSeconds())
+    // The Session the call was placed from, as the tools list it. On 所有機器
+    // the page names it by its raw id ("%7") while the tools list
+    // "fleet:<machine>:%257"; a Realtime call resolves it in its opening
+    // handover, which a Live call does not have. Unresolved, every send was
+    // refused as "not the Session under discussion" (2026-11-15).
+    const origin = this.call.options.origin
+    if (origin) {
+      const listed = await this.captureFocus(origin.id, origin.machine)
+      if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
+      if (listed) {
+        this.focus = listed.id
+        this.call.options = { ...this.call.options, origin: { ...origin, id: listed.id } }
+      }
+    }
     this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.sendLiveContext()
     this.updateState({ connectionReady: true })
@@ -1243,6 +1294,11 @@ export class RealtimeCopilotClient {
     const dc = this.dc, attempt = this.attempt
     const steps: string[] = []
     this.livePending.add(callID)
+    // The progress cue plays the moment the backend calls a tool, and again
+    // every PROGRESS_CUE_REPEAT_MS while it runs (`ProgressCue`, the same
+    // sound and setting as a Realtime call's lookups). A Live call has no
+    // turn to wait for, so the cue is tied to the tool call itself.
+    this.pendingTools.add(callID)
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: name }), speakingState: 'thinking' })
     const started = performance.now()
     let output: string
@@ -1254,7 +1310,8 @@ export class RealtimeCopilotClient {
       output = JSON.stringify({ error: String(error) })
     }
     this.livePending.delete(callID)
-    if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
+    this.pendingTools.delete(callID)
+    if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') { this.updateState({}); return }
     const trace = toolTrace(name, output, performance.now() - started)
     this.updateState({ tools: [...(this.state.tools ?? []), trace], toolCallLog: undefined })
     this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
@@ -1282,7 +1339,7 @@ export class RealtimeCopilotClient {
     if (this.state.status === 'error' && this.micRefused) {
       this.micRefused = false
       this.addLog('info', nextWord('copilotLogMicRetry'))
-      void this.start(origin)
+      void this.start(origin, this.lastEngine)
     }
   }
 

@@ -309,6 +309,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.community_share_fetch_seconds` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `console.community_share_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
+| `console.copilot_fresh_recap_seconds` | 300 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_help_section_characters` | 2500 | `characters` | `coalesce` | `diagnostics` | — |
 | `console.copilot_help_sections` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_idle_fallback_seconds` | 3600 | `seconds` | `coalesce` | `sender, diagnostics` | — |

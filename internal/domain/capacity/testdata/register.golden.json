@@ -6057,6 +6057,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_fresh_recap_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_help_section_characters",
     "Class": "buffer",
     "Unit": "characters",

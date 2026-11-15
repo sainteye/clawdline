@@ -308,6 +308,7 @@ export const COPILOT_TOOLS = [
       required: ['which'],
       properties: {
         which: { type: 'string', enum: ['working', 'idle', 'all'], description: 'working：工作中與等使用者回應的；idle：近期閒置；all：全部' },
+        fresh:{type:'boolean',description:'只有使用者明確要「最新」「即時」「強制更新」的摘要時才設 true：5 分鐘內寫好的摘要照用，更舊的會當場重寫（每個要多等幾秒）。平常不填，用背景已寫好的摘要並說明是多久前寫的。'},
         continue_report:{type:'boolean',description:'通話中使用者要繼續剛才被打斷的 Session 介紹時設為 true，沿用已保存的批次，不重查清單或重排順序。這是介紹接續，不是自動工作額度的同意。'},
         idle_scope:{type:'string',enum:['recent','all'],description:'idle 預設只查最近30分鐘，沒有才擴到1小時；只有使用者明確要全部閒置時才用all。逐一說明閒置約多久，最近閒置的先報。時間依最後確認活動估計，不能當作精確停止時間。'},
       },
@@ -344,6 +345,7 @@ export const COPILOT_TOOLS = [
           type: 'string',
           description: 'list_sessions 回傳的 id；也可以填 Session 名稱或助理種類（例如 codex），會自動對應。',
         },
+        fresh:{type:'boolean',description:'只有使用者明確要「最新」「即時」「強制更新」的摘要時才設 true：5 分鐘內寫好的摘要照用，更舊的會當場重寫（每個要多等幾秒）。平常不填，用背景已寫好的摘要並說明是多久前寫的。'},
       },
       required: ['session_id', 'said'],
     },
@@ -1239,7 +1241,7 @@ function lastMoved(r: CopilotSessionRow): number {
  * Non-call summaries read the newest LIST_LATEST_READS and count the rest.
  * Calls provide a smaller batch and captured identities for later pages.
  */
-async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working' | 'idle' | 'all',idleScope='recent'): Promise<unknown> {
+async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working' | 'idle' | 'all',idleScope='recent',fresh=false): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -1272,7 +1274,7 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   const remaining=deps.summaryLimit?group.slice(shown.length,SESSION_REPORT_SESSIONS).map(ref):[]
   const recaps = new Map<string, SpokenRecap | undefined>()
   const progress = await Promise.all(shown.map(async (r) => {
-    const [words, recap]=await Promise.all([latestWords(deps,r), forkedRecap(deps,logs,r)])
+    const [words, recap]=await Promise.all([latestWords(deps,r), forkedRecap(deps,logs,r,fresh)])
     recaps.set(r.id, recap)
     if(deps.progress) await deps.progress(JSON.stringify({label:r.label,...progressFields(words)}))
     return words
@@ -1715,19 +1717,28 @@ export const FORKED_RECAP_MS = 50_000
 export const KEPT_RECAP_SECONDS = 1800
 
 /**
+ * How old a recap may be when the person asks for the latest one ("最新",
+ * "強制更新"): the person set five minutes on 2026-11-15. Older ones are
+ * written now.
+ */
+export const FRESH_RECAP_SECONDS = 300
+
+/**
  * A Session's recap for a tool (docs/session-recaps.md). A current one on the
  * row is used as it is. Otherwise, when the machine writes recaps, it is asked
  * for one: it forks the Session's conversation now, or answers with the one it
  * kept when nothing was said since. A stale recap on the row is better than
  * none when the machine cannot write a new one in time.
  */
-export async function forkedRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<SpokenRecap | undefined> {
+export async function forkedRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow, fresh = false): Promise<SpokenRecap | undefined> {
   if (row.recap?.current) return row.recap
   const mode = deps.recapMode?.() ?? 'off'
   if (mode !== 'on_demand' && mode !== 'background') return row.recap
   // A recent background recap is read at once; its age goes with it (`recapFields`).
+  // Asked for the latest, only one at most FRESH_RECAP_SECONDS old is.
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
-  if (mode === 'background' && row.recap && row.recap.at > 0 && now - row.recap.at <= KEPT_RECAP_SECONDS) return row.recap
+  const keep = fresh ? FRESH_RECAP_SECONDS : mode === 'background' ? KEPT_RECAP_SECONDS : 0
+  if (row.recap && row.recap.at > 0 && now - row.recap.at <= keep) return row.recap
   let res: Response
   try {
     res = await rowFetch(deps, row)('/v1/voice/copilot-recap', {
@@ -1908,7 +1919,7 @@ export function snapshotSection(list: Record<string, unknown>): string {
   ].join('\n')
 }
 
-async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string, fresh = false): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -1936,7 +1947,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string): 
   } catch {
     // refusal-ok: the summary still carries the Session's own delivery words and state without its transcript.
   }
-  const [progress, recap] = await Promise.all([boardProgress(deps, row), forkedRecap(deps, logs, row)])
+  const [progress, recap] = await Promise.all([boardProgress(deps, row), forkedRecap(deps, logs, row, fresh)])
   const out = {
     session_id: row.id,
     label: row.label,
@@ -2811,9 +2822,9 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'list_sessions') result = await listSessions(deps, logs)
     else if (name === 'clawdline_help') result = await clawdlineHelp(deps, logs, str(args.question), Array.isArray(args.sections) ? args.sections.map(str) : [])
     else if (name === 'get_devstack_links') result = await devstackLinks(deps, logs, str(args.project), args.open === true)
-    else if (name === 'get_sessions_summary') result = await sessionsSummary(deps, logs, args.which === 'working' || args.which === 'idle' ? args.which : 'all',args.idle_scope==='all'?'all':'recent')
+    else if (name === 'get_sessions_summary') result = await sessionsSummary(deps, logs, args.which === 'working' || args.which === 'idle' ? args.which : 'all',args.idle_scope==='all'?'all':'recent',args.fresh===true)
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
-    else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id))
+    else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id), args.fresh === true)
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
     else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))

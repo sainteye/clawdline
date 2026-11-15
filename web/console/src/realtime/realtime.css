@@ -465,6 +465,37 @@
   opacity: 0.9;
 }
 
+/* Which voice system a call uses, asked before it dials. */
+.realtime-engine-choice {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.realtime-engine-question {
+  margin: 0 0 2px;
+  font-size: 14px;
+  color: var(--muted, inherit);
+  text-align: center;
+}
+
+.realtime-engine-choice .realtime-start-call-btn {
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  row-gap: 2px;
+}
+
+.realtime-engine-name {
+  font-size: 15px;
+}
+
+.realtime-engine-hint {
+  flex-basis: 100%;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
 .realtime-hangup-btn {
   background: #ef4444;
   color: #ffffff;

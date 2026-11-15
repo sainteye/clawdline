@@ -10,11 +10,13 @@ On the machine, open **Settings** → **Voice copilot** and paste an OpenAI API 
 sets the **Voice** (with **Listen** to hear it), the speaking speed, **Short answers**, **Waiting for
 you to finish**, **Prepare a briefing when a call starts**, and **Extra instructions**.
 
+Each call button first asks which voice system to use (**Call with GPT-Live** or **Call with Realtime API**) and dials only after you choose; the choice applies to that call. **Voice system** in Settings is the default for calls started any other way.
+
 **Voice system** chooses how a call talks. **Realtime API** (the default) takes turns and uses
 the model you pick. **GPT-Live** listens while it speaks, makes short listening sounds and stops
 when you cut in, so it sounds more like a person on the phone. It costs about $0.05 a minute plus
 a small amount each time it looks something up, and it does not keep the background work list
-yet. The choice applies from the next call.
+yet. The choice applies from the next call. Ask for "the latest" summary and the copilot uses one written within five minutes or has a new one written; otherwise it uses the one written in the background and says how long ago.
 
 No key yet? Press the call button anyway: the call says no key is set and offers **Go to Settings ›
 Voice copilot** and **Watch the demo**, a film of a call in the console's language.

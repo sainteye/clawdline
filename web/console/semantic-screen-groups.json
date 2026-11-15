@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12228,
+  "englishContentKeys": 12235,
   "riskKeys": 5304,
-  "nonRiskCount": 6924,
+  "nonRiskCount": 6931,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 566,
+      "count": 568,
       "sources": [
         null
       ],
@@ -608,6 +608,8 @@
         "capacityRow.console.community_share_response_bytes.what",
         "capacityRow.console.community_share_text_characters.full",
         "capacityRow.console.community_share_text_characters.what",
+        "capacityRow.console.copilot_fresh_recap_seconds.full",
+        "capacityRow.console.copilot_fresh_recap_seconds.what",
         "capacityRow.console.copilot_help_section_characters.full",
         "capacityRow.console.copilot_help_section_characters.what",
         "capacityRow.console.copilot_help_sections.full",
@@ -3924,7 +3926,7 @@
     },
     {
       "name": "next / other",
-      "count": 1106,
+      "count": 1111,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4171,6 +4173,7 @@
         "next.copilotCall",
         "next.copilotCallFromSession",
         "next.copilotCallTitle",
+        "next.copilotChooseEngine",
         "next.copilotClose",
         "next.copilotConfiguring",
         "next.copilotConnectedReady",
@@ -4259,6 +4262,10 @@
         "next.copilotSpeedQuick",
         "next.copilotSpeedSlow",
         "next.copilotStart",
+        "next.copilotStartLive",
+        "next.copilotStartLiveHint",
+        "next.copilotStartRealtime",
+        "next.copilotStartRealtimeHint",
         "next.copilotThinking",
         "next.copilotToolAsked",
         "next.copilotToolMany",
