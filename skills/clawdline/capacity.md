@@ -421,6 +421,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.video_preview_reads` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.video_preview_side` | 640 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_archive_bytes` | 262144 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_cover_side` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_expanded_bytes` | 524288 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_files` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_manifest_bytes` | 8192 | `bytes` | `refuse` | `sender, diagnostics` | — |

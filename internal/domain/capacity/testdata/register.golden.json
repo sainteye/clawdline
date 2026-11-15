@@ -8026,6 +8026,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.view_plugin_cover_side",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginCoverSide"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.view_plugin_expanded_bytes",
     "Class": "buffer",
     "Unit": "bytes",

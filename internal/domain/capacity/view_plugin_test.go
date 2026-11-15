@@ -18,6 +18,7 @@ func TestViewPluginBoundsAreRegistered(t *testing.T) {
 	for _, c := range []struct{ field, row string }{
 		{"archiveBytes", "archive_bytes"}, {"expandedBytes", "expanded_bytes"},
 		{"manifestBytes", "manifest_bytes"}, {"packages", "packages"},
+		{"coverSide", "cover_side"},
 		{"files", "files"},
 		{"messageBytes", "message_bytes"}, {"sessions", "sessions"},
 		{"pending", "pending"}, {"requestMilliseconds", "request_milliseconds"},

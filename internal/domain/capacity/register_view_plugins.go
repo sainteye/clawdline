@@ -5,6 +5,7 @@ const (
 	MaximumViewPluginArchiveBytes        = 262144
 	MaximumViewPluginExpandedBytes       = 524288
 	MaximumViewPluginManifestBytes       = 8192
+	MaximumViewPluginCoverSide           = 256
 	MaximumViewPluginPackages            = 8
 	MaximumViewPluginFiles               = 2
 	MaximumViewPluginMessageBytes        = 1048576
@@ -23,6 +24,7 @@ func viewPluginBounds() []Entry {
 		{Name: "console.view_plugin_archive_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginArchiveBytes, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginArchiveBytes"}},
 		{Name: "console.view_plugin_expanded_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginExpandedBytes, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginExpandedBytes"}},
 		{Name: "console.view_plugin_manifest_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginManifestBytes, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginManifestBytes"}},
+		{Name: "console.view_plugin_cover_side", Class: Buffer, Unit: Rows, Limit: MaximumViewPluginCoverSide, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginCoverSide"}},
 		{Name: "console.view_plugin_packages", Class: Buffer, Unit: Rows, Limit: MaximumViewPluginPackages, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginPackages"}},
 		{Name: "console.view_plugin_message_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginMessageBytes, AtLimit: Disconnect, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginMessageBytes"}},
 		{Name: "console.view_plugin_sessions", Class: Buffer, Unit: Rows, Limit: MaximumViewPluginSessions, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginSessions"}},

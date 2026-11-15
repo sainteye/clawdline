@@ -32,7 +32,8 @@ function db(): Promise<IDBDatabase> {
 const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(new Error("storage_unavailable")) })
 async function unpack(r: Revision): Promise<ViewPackage> {
   if (!r || !(r.archive instanceof ArrayBuffer)) fail("storage_unavailable")
-  const result = await parsePackage(r.archive)
+  // Existing archives stay readable; every new installation still uses the strict parser.
+  const result = await parsePackage(r.archive, { allowLegacy: true })
   if (result.digest !== r.digest) fail("storage_unavailable")
   return result
 }

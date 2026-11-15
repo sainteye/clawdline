@@ -12224,11 +12224,14 @@
   "viewPlugins.pop": "Session 普普風",
   "viewPlugins.addPop": "安裝普普風",
   "viewPlugins.popHint": "以動態普普漫畫呈現 Session 狀態，也能切換清楚易讀的清單。",
+  "viewPlugins.deadpan": "Session 冷面劇場",
+  "viewPlugins.addDeadpan": "安裝冷面劇場",
+  "viewPlugins.deadpanHint": "每種 Session 狀態都是一幕面無表情的荒謬卡通，也能切換成清單。",
   "capacityRow.console.view_plugin_archive_bytes.what": "限制匯入單一視圖套件時讀取的 ZIP 大小。",
   "capacityRow.console.view_plugin_archive_bytes.full": "ZIP 過大時會拒絕匯入，保留原本已安裝的版本。",
   "capacityRow.console.view_plugin_expanded_bytes.what": "限制視圖套件解開後的內容總大小。",
   "capacityRow.console.view_plugin_expanded_bytes.full": "解開後內容超過限制時會拒絕套件。",
-  "capacityRow.console.view_plugin_manifest_bytes.what": "限制視圖套件識別與權限清單的大小。",
+  "capacityRow.console.view_plugin_manifest_bytes.what": "限制視圖套件識別、權限與內嵌封面資料的大小。",
   "capacityRow.console.view_plugin_manifest_bytes.full": "清單過大時會在執行套件程式前拒絕匯入。",
   "capacityRow.console.view_plugin_packages.what": "限制目前瀏覽器介面儲存的套件數，每個套件最多保留一個前版。",
   "capacityRow.console.view_plugin_packages.full": "請先移除套件再新增；取代既有套件不多占名額。",
@@ -12267,5 +12270,10 @@
   "transparency.card.persistent-bot-outputs.summary": "Bot 可明確將 Project 中的檔案或獨立 HTML 發布為持久聊天卡片，並用同一 artifact ID 更新文件。",
   "transparency.card.persistent-bot-outputs.condition": "持續助理必須已啟用，原生工具呼叫仍須屬於目前已授權的 Bot 回合。瀏覽檔案庫或開啟卡片不啟動模型。",
   "transparency.card.persistent-bot-outputs.how": "Clawdline 在 Bot 自有 MCP 入口提供 send_file、publish_artifact、list_artifacts。發布時，將 Project 內的一般檔案複製到各 Bot 的私有儲存，驗證大小與 SHA-256，持久保存卡片後才回覆成功。檔案上限為 100 MiB，HTML artifact 為 5 MiB；每次讀取最多 384 KiB。重用工具的冪等鍵不會重複發布。更新文件保留穩定的 artifact ID，另存新的不可變快照。配對檢視端只能讀取所選 Bot 與對話的輸出，下載或顯示前核對完整大小與摘要。",
-  "transparency.card.persistent-bot-outputs.effect": "原始檔修改或刪除後，已發布位元組仍保留。停止、重新設定與授權撤銷會取消尚未發布的複製；失敗不會發布半張卡片。HTML 檢視器在不透明來源的隔離框架中允許內嵌腳本互動，阻擋應用程式儲存、網路請求、彈出視窗與自動導向。文件連結由應用程式另外列出，供明確點擊。此功能只新增輸出發布，不會自動上傳全部 Project 檔案，也不代表已加入一般輸入檔案上傳。"
+  "transparency.card.persistent-bot-outputs.effect": "原始檔修改或刪除後，已發布位元組仍保留。停止、重新設定與授權撤銷會取消尚未發布的複製；失敗不會發布半張卡片。HTML 檢視器在不透明來源的隔離框架中允許內嵌腳本互動，阻擋應用程式儲存、網路請求、彈出視窗與自動導向。文件連結由應用程式另外列出，供明確點擊。此功能只新增輸出發布，不會自動上傳全部 Project 檔案，也不代表已加入一般輸入檔案上傳。",
+  "viewPlugins.error_invalid_cover": "封面圖無效。請使用不超過 256 × 256 像素的內嵌正方形 RGBA8 PNG，並符合 manifest 大小限制。",
+  "viewPlugins.coverRequired": "需補封面才能上架",
+  "viewPlugins.error_missing_cover": "套件缺少封面圖，請補上專屬封面後再安裝或上架。",
+  "capacityRow.console.view_plugin_cover_side.full": "封面過大時會在安裝前拒絕，請另存較小的專屬 PNG 封面。",
+  "capacityRow.console.view_plugin_cover_side.what": "限制視圖正方形封面解碼後的寬高，避免小套件占用過大的圖片空間。"
 }

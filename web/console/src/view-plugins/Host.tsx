@@ -7,7 +7,7 @@ import { installedPackages, subscribePackages, installPackage, enablePackage, re
 import { PLUGIN_LIMITS as B } from "./limits.js"
 import { PluginFrame, readPluginSource, type ViewGrant } from "./Frame.js"
 import { pluginWords } from "./words.js"
-import { ViewArtwork, ViewPluginIcon } from "./Artwork.js"
+import { ViewArtwork, ViewPluginIcon, exampleCover, packageCover } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import "./plugins.css"
 
@@ -143,22 +143,23 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
         {busy && <p className="vp-loading" role="status">{w.loading}</p>}
         {mode === "launch" ? <>
           {!busy && !enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2><p>{w.launchEmptyHint}</p></div> : <div className="vp-launch-list">{enabled.map(row => <button key={row.id} type="button" className="vp-launch-item" disabled={busy} onClick={() => choose(row.active)}>
-            <ViewArtwork id={row.id} small /><span><b>{name(row.active, language)}</b><small>{w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
+            <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
           </button>)}</div>}
         </> : <>
           <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div><label className="vp-import">+ {w.install}<input className="vp-file" type="file" accept=".zip,application/zip" aria-label={w.install} disabled={busy} onChange={e => {
             const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""
             if (file) void act(async () => { if (file.size > B.archiveBytes) throw new PluginError("package_too_large"); await inspect(await file.arrayBuffer()) })
           }} /></label></div>
-          {review && <section className="vp-review vp-card" tabIndex={-1} aria-label={w.review}><p className="vp-eyebrow">{w.review}</p><h2>{name(review.pkg, language)}</h2><p className="vp-package-id">{review.pkg.manifest.id} · {review.pkg.manifest.version}</p>
+          {review && <section className="vp-review vp-card" tabIndex={-1} aria-label={w.review}><ViewArtwork cover={review.pkg.manifest.cover} missing={w.coverRequired} small /><p className="vp-eyebrow">{w.review}</p><h2>{name(review.pkg, language)}</h2><p className="vp-package-id">{review.pkg.manifest.id} · {review.pkg.manifest.version}</p>
             <p>{w.permissions}: {w.read}{review.pkg.manifest.capabilities.includes("sessions.open") ? ` · ${w.navigate}` : ""}</p><p className="vp-muted">{w.trust}</p>
             <div className="vp-actions"><button className="vp-primary" disabled={busy} onClick={() => void act(async () => { await installPackage(review.archive, review.expected); setReview(null) })}>{review.expected ? w.replace : w.confirmInstall}</button>
             <button disabled={busy} onClick={() => setReview(null)}>{w.cancel}</button></div></section>}
           <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span></div>
             {!rows.length && <div className="vp-empty"><ViewPluginIcon /><h3>{w.empty}</h3><p>{w.emptyHint}</p></div>}
             <div className="vp-library-grid">{rows.map(row => <article className="vp-card vp-installed" key={row.id} data-enabled={row.enabled}>
-              <ViewArtwork id={row.id} small /><div className="vp-installed-body"><div className="vp-card-heading"><h3>{name(row.active, language)}</h3><span className="vp-version">v{row.active.manifest.version}</span></div>
+              <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><div className="vp-installed-body"><div className="vp-card-heading"><h3>{name(row.active, language)}</h3><span className="vp-version">v{row.active.manifest.version}</span></div>
                 <span className="vp-status"><i />{row.enabled ? w.enabled : w.disabled}</span>
+                {!packageCover(row.active) && <span className="vp-muted">{w.coverRequired}</span>}
                 <div className="vp-card-footer"><button className="vp-primary" disabled={busy || !row.enabled} onClick={() => choose(row.active)}>{w.open} <span aria-hidden="true">↗</span></button>
                   <details className="vp-options"><summary>{w.manage} <span aria-hidden="true">⌄</span></summary><div className="vp-option-list">
                     <button disabled={busy} onClick={() => void act(() => enablePackage(row, !row.enabled))}>{row.enabled ? w.disable : w.enable}</button>
@@ -171,8 +172,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
             </article>)}</div>
           </section>
           <section className="vp-examples"><div className="vp-section-head"><div><h2>{w.preset}</h2><p>{w.examplesHint}</p></div></div><div className="vp-example-grid">
-            {[{id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},{id:"session-list",title:w.list,description:w.listHint,action:w.addList},{id:"session-pop-art",title:w.pop,description:w.popHint,action:w.addPop}].map(example => <article className="vp-example" key={example.id}>
-              <ViewArtwork id={"com.clawdline." + example.id} /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || rows.some(r => r.id === "com.clawdline." + example.id)} onClick={() => void exampleInstall(example.id)}>{rows.some(r => r.id === "com.clawdline." + example.id) ? w.added : example.action}</button></div>
+            {[{id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},{id:"session-list",title:w.list,description:w.listHint,action:w.addList},{id:"session-pop-art",title:w.pop,description:w.popHint,action:w.addPop},{id:"session-absurd",title:w.deadpan,description:w.deadpanHint,action:w.addDeadpan}].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => <article className="vp-example" key={example.id}>
+              <ViewArtwork cover={exampleCover("com.clawdline." + example.id)} missing={w.coverRequired} /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || rows.some(r => r.id === "com.clawdline." + example.id)} onClick={() => void exampleInstall(example.id)}>{rows.some(r => r.id === "com.clawdline." + example.id) ? w.added : example.action}</button></div>
             </article>)}
           </div></section>
           <footer className="vp-local-note"><span aria-hidden="true">◌</span><p>{w.local}</p></footer>

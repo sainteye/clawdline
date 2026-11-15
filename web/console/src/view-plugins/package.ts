@@ -3,7 +3,7 @@ import { PLUGIN_LIMITS as B } from "./limits.js"
 export type Capability = "sessions.read" | "sessions.open"
 export interface Manifest {
   manifestVersion: 1; id: string; version: string; hostApi: 1
-  name: Record<string, string>; entry: string; capabilities: Capability[]
+  name: Record<string, string>; entry: string; capabilities: Capability[]; cover?: string
 }
 export interface ViewPackage { manifest: Manifest; html: string; digest: string }
 export class PluginError extends Error {
@@ -19,8 +19,8 @@ export function exact(v: Record<string, unknown>, keys: string[]): boolean {
 }
 const version = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/
 export const text = (v: unknown): v is string => typeof v === "string" && v.length > 0 && [...v].length <= B.textCharacters
-export function validateManifest(raw: unknown): Manifest {
-  if (!plain(raw) || !exact(raw, ["manifestVersion", "id", "version", "hostApi", "name", "entry", "capabilities"])) fail("invalid_manifest")
+export function validateManifest(raw: unknown, allowLegacy = false): Manifest {
+  if (!plain(raw) || !exact(raw, ["manifestVersion", "id", "version", "hostApi", "name", "entry", "capabilities", "cover"])) fail("invalid_manifest")
   if (raw.manifestVersion !== 1 || raw.hostApi !== 1) fail("protocol_mismatch")
   if (!text(raw.id) || !/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/.test(raw.id) ||
       !text(raw.version) || !version.test(raw.version) || !text(raw.entry) || !safePath(raw.entry) || !raw.entry.endsWith(".html")) fail("invalid_manifest")
@@ -28,6 +28,8 @@ export function validateManifest(raw: unknown): Manifest {
   if (!Array.isArray(raw.capabilities) || !raw.capabilities.includes("sessions.read") ||
       new Set(raw.capabilities).size !== raw.capabilities.length ||
       !raw.capabilities.every(c => c === "sessions.read" || c === "sessions.open")) fail("invalid_manifest")
+  if (raw.cover === undefined && !allowLegacy) fail("missing_cover")
+  if (raw.cover !== undefined && (typeof raw.cover !== "string" || !raw.cover.startsWith("data:image/png;base64,"))) fail("invalid_cover")
   return raw as unknown as Manifest
 }
 function safePath(name: string): boolean {
@@ -44,9 +46,55 @@ export function crc32(bytes: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0
 }
 
+/** Covers are bounded, square, non-interlaced RGBA8 PNGs, never remote resources.
+ * Check the actual chunk CRCs and inflated scanlines rather than trusting MIME/IHDR alone. */
+async function validateCover(cover: string): Promise<void> {
+  const encoded = cover.slice("data:image/png;base64,".length)
+  if (!encoded || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) fail("invalid_cover")
+  let raw: string
+  try { raw = atob(encoded); if (btoa(raw) !== encoded) fail("invalid_cover") } catch { fail("invalid_cover") }
+  const png = Uint8Array.from(raw!, c => c.charCodeAt(0)), data = new DataView(png.buffer)
+  if (png.length < 57 || ![137,80,78,71,13,10,26,10].every((n,i) => png[i] === n)) fail("invalid_cover")
+  let at = 8, side = 0, ended = false, seenData = false
+  const compressed: Uint8Array[] = []
+  while (at < png.length) {
+    if (ended || at + 12 > png.length) fail("invalid_cover")
+    const size = data.getUint32(at), end = at + 12 + size
+    if (end > png.length || crc32(png.subarray(at + 4, end - 4)) !== data.getUint32(end - 4)) fail("invalid_cover")
+    const kind = String.fromCharCode(...png.subarray(at + 4, at + 8))
+    if (at === 8) {
+      if (kind !== "IHDR" || size !== 13) fail("invalid_cover")
+      side = data.getUint32(at + 8)
+      if (!side || side > B.coverSide || data.getUint32(at + 12) !== side || png[at + 16] !== 8 || png[at + 17] !== 6 ||
+          png[at + 18] !== 0 || png[at + 19] !== 0 || png[at + 20] !== 0) fail("invalid_cover")
+    } else if (kind === "IDAT") {
+      seenData = true; compressed.push(png.slice(at + 8, end - 4))
+    } else if (kind === "IEND") {
+      if (size !== 0 || !seenData || end !== png.length) fail("invalid_cover")
+      ended = true
+    } else fail("invalid_cover") // No animation or ancillary metadata decompression.
+    at = end
+  }
+  if (!ended) fail("invalid_cover")
+  const stride = side * 4 + 1, expected = side * stride
+  let total = 0
+  try {
+    const stream = new Blob(compressed as BlobPart[]).stream().pipeThrough(new DecompressionStream("deflate")), reader = stream.getReader()
+    try {
+      while (true) {
+        const part = await reader.read(); if (part.done) break
+        if (total + part.value.length > expected) fail("invalid_cover")
+        for (let n = (stride - total % stride) % stride; n < part.value.length; n += stride) if (part.value[n] > 4) fail("invalid_cover")
+        total += part.value.length
+      }
+    } finally { await reader.cancel() }
+    if (total !== expected) fail("invalid_cover")
+  } catch { fail("invalid_cover") }
+}
+
 /** The first profile is a portable two-file ZIP STORE, generated by the public packer.
  * Central/local headers, lengths and CRCs are checked before any script can run. */
-export async function parsePackage(input: ArrayBuffer | Uint8Array): Promise<ViewPackage> {
+export async function parsePackage(input: ArrayBuffer | Uint8Array, { allowLegacy = false } = {}): Promise<ViewPackage> {
   const bytes = input instanceof Uint8Array ? new Uint8Array(input) : new Uint8Array(input.slice(0))
   if (bytes.length > B.archiveBytes) fail("package_too_large")
   if (bytes.length < 22) fail("invalid_package")
@@ -90,8 +138,9 @@ export async function parsePackage(input: ArrayBuffer | Uint8Array): Promise<Vie
   if (!manifestFile || manifestFile.length > B.manifestBytes) fail("invalid_manifest")
   let raw: unknown
   try { raw = JSON.parse(decode(manifestFile)) } catch { fail("invalid_manifest") }
-  const manifest = validateManifest(raw), entry = files.get(manifest.entry)
+  const manifest = validateManifest(raw, allowLegacy), entry = files.get(manifest.entry)
   if (!entry || manifest.entry === "manifest.json") fail("missing_entry")
+  if (manifest.cover !== undefined) await validateCover(manifest.cover)
   const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(b => b.toString(16).padStart(2, "0")).join("")
   return { manifest, html: decode(entry), digest }
 }

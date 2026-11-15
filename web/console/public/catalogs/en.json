@@ -12224,11 +12224,14 @@
   "viewPlugins.pop": "Session Pop",
   "viewPlugins.addPop": "Install Pop",
   "viewPlugins.popHint": "A moving Pop Art comic with clear Session states and a readable list.",
+  "viewPlugins.deadpan": "Session Deadpan",
+  "viewPlugins.addDeadpan": "Install Deadpan",
+  "viewPlugins.deadpanHint": "Each Session state becomes a quiet, absurd cartoon scene, with a plain list beside it.",
   "capacityRow.console.view_plugin_archive_bytes.what": "Bounds the ZIP bytes read for one imported view package.",
   "capacityRow.console.view_plugin_archive_bytes.full": "Oversized ZIPs are refused before they can replace an installed package.",
   "capacityRow.console.view_plugin_expanded_bytes.what": "Bounds the combined extracted contents of a view package.",
   "capacityRow.console.view_plugin_expanded_bytes.full": "Packages whose extracted contents exceed the limit are refused.",
-  "capacityRow.console.view_plugin_manifest_bytes.what": "Bounds the identity and permission manifest parsed for a view package.",
+  "capacityRow.console.view_plugin_manifest_bytes.what": "Bounds the package identity, permissions and embedded cover parsed for a view package.",
   "capacityRow.console.view_plugin_manifest_bytes.full": "An oversized manifest is refused before any package script runs.",
   "capacityRow.console.view_plugin_packages.what": "Bounds packages saved in this browser interface, each with one previous revision.",
   "capacityRow.console.view_plugin_packages.full": "Remove an installed package before adding another; replacements keep the same slot.",
@@ -12267,5 +12270,10 @@
   "transparency.card.persistent-bot-outputs.summary": "The Bot can explicitly publish a file or self-contained HTML from its Project as a durable chat card, and update an existing artifact by its ID.",
   "transparency.card.persistent-bot-outputs.condition": "Persistent Bots must be enabled and the native tool call must still belong to the current authorized Bot turn. Browsing the library or opening a card starts no model.",
   "transparency.card.persistent-bot-outputs.how": "Clawdline supplies send_file, publish_artifact and list_artifacts on the Bot-owned MCP endpoint. A publication copies a regular file inside the Project into private per-Bot storage, verifies size and SHA-256 and persists the card before returning success. Files are limited to 100 MiB and HTML artifacts to 5 MiB; reads use chunks of at most 384 KiB. Reusing a tool idempotency key does not publish twice. Updating an artifact keeps its stable artifact ID and saves a new immutable snapshot. Paired viewers read only the output belonging to the selected Bot and conversation, and verify the complete size and digest before download or display.",
-  "transparency.card.persistent-bot-outputs.effect": "Published bytes remain after the original changes or is removed. Stop, reconfiguration and revoked authority cancel unpublished copies; failures do not publish a partial card. The HTML viewer permits inline script interaction in an opaque sandbox, with app storage, network requests, popups and automatic navigation blocked. Explicit document links are offered separately by the app. This adds output publication; it does not upload every Project file automatically or add general input-file uploads."
+  "transparency.card.persistent-bot-outputs.effect": "Published bytes remain after the original changes or is removed. Stop, reconfiguration and revoked authority cancel unpublished copies; failures do not publish a partial card. The HTML viewer permits inline script interaction in an opaque sandbox, with app storage, network requests, popups and automatic navigation blocked. Explicit document links are offered separately by the app. This adds output publication; it does not upload every Project file automatically or add general input-file uploads.",
+  "viewPlugins.error_invalid_cover": "The cover is invalid. Use an embedded square RGBA8 PNG, up to 256 × 256 pixels, within the manifest size limit.",
+  "viewPlugins.coverRequired": "Cover required before publication",
+  "viewPlugins.error_missing_cover": "This package has no cover. Add a dedicated cover before installation or publication.",
+  "capacityRow.console.view_plugin_cover_side.full": "An oversized cover is refused before installation; export a smaller dedicated PNG cover.",
+  "capacityRow.console.view_plugin_cover_side.what": "Bounds the decoded width and height of a square view cover so a small package cannot allocate an oversized image."
 }
