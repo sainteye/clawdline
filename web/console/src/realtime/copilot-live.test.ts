@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from "./copilot-live.ts"
+import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from "./copilot-live.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { formatDuration } from "./copilot-cost.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
@@ -98,8 +98,14 @@ test("each Session a read returns becomes one note the live model says at once",
   assert.equal(notes.length, 2, "only Sessions with something to say")
   assert.match(notes[0], /Session "Bots tower" \(written 6 分鐘前\): Mockups are done/)
   assert.match(notes[1], /Session "Keyboard fix": Fixed and deployed\./)
-  const long = liveReadNotes("get_session_summary", JSON.stringify({ label: "Long", recap: "x".repeat(LIVE_NOTE_CHARS + 50) }))
-  assert.ok(long[0].endsWith("…") && long[0].length < LIVE_NOTE_CHARS + 300)
+  // A recap runs from how the work began to where it stands now; a long one keeps its first sentence and its end.
+  const long = liveReadNotes("get_session_summary", JSON.stringify({ label: "Long", recap: "It prepares screenshots. " + "x".repeat(LIVE_NOTE_CHARS + 50) + " Now all six wait for approval." }))
+  assert.match(long[0], /It prepares screenshots\.…x+ Now all six wait for approval\.$/)
+  assert.ok(long[0].length < LIVE_NOTE_CHARS + 300)
+  assert.equal(clipRecap("short"), "short")
+  assert.equal(clipRecap("y".repeat(LIVE_NOTE_CHARS + 10)).length, LIVE_NOTE_CHARS, "without an early sentence end, only the end is kept")
+  assert.equal(liveUpdatesText(JSON.stringify({ updates: [{ role: "tool", text: "ls" }, { role: "assistant", text: "First." }, { role: "user", text: "go" }, { role: "assistant", text: "Second." }, { role: "assistant", text: "Done and deployed." }] })), "Second. Done and deployed.", "only the Session's own last two reports")
+  assert.equal(liveUpdatesText("not json"), "")
   assert.deepEqual(liveReadNotes("list_sessions", group), [], "a listing is not spoken this way")
   assert.deepEqual(liveReadNotes("get_session_summary", "not json"), [])
 })

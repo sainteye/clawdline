@@ -293,6 +293,12 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.copilot_live_note_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-note cut on a spoken Session recap; enforced in the console"}
 		},
+		"console.copilot_live_update_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-note cut on a Session's newest reports; enforced in the console"}
+		},
+		"console.copilot_live_opening_wait_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call wait for the opening to be said; enforced in the console"}
+		},
 		"console.copilot_fresh_recap_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read age limit when the latest recap is asked for; enforced in the console"}
 		},

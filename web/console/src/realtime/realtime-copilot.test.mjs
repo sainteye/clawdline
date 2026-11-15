@@ -760,12 +760,14 @@ test('a GPT-Live call placed from a Session opens on its summary at once and goe
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
   const now = Math.floor(Date.now() / 1000)
-  const run = async (latest) => {
-    const sent = [], forks = []
+  const history = '這個 Session 在準備截圖。一開始你交代我拍四張，後來改成六張，中間重拍了兩次，' + '又調整了好幾次版面與文字，'.repeat(40)
+  const run = async ({ latest, keptAge = 1200, reports = [] }) => {
+    const sent = [], forks = [], reads = []
     const c = new RealtimeCopilotClient()
     t.after(() => clearInterval(c.liveTicker))
     c.live = true
     c.attempt = 1
+    c.liveQuietMs = 0
     c.state = { ...c.state, status: 'connected' }
     c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
     c.call = { memory: '', snapshot: '', options: { origin: { id: '%7', label: 'Prepare screenshots' } } }
@@ -774,24 +776,39 @@ test('a GPT-Live call placed from a Session opens on its summary at once and goe
     c.memory = []
     c.addLog = () => {}
     c.recapMode = 'background'
-    const listed = { ...row, recap: { text: 'Four screenshots were taken.', at: now - 1200, current: false } }
+    const listed = { ...row, recap: { text: 'Four screenshots were taken.', at: now - keptAge, current: false } }
     c.toolDeps = () => ({ ...c.constructor.prototype.toolDeps.call(c), sleep: async () => {}, tasks: undefined, fleet: undefined,
       fetch: async (path, init) => {
+        reads.push(path)
         if (path === '/v1/sessions') return Response.json({ sessions: [listed] })
         if (path === '/v1/voice/copilot-recap') { forks.push(JSON.parse(String(init.body))); return Response.json({ recap: latest, at: now, current: true }) }
+        if (String(path).startsWith('/v1/transcript')) return Response.json({ items: reports.map((text, i) => ({ id: `m${i}`, role: 'assistant', text })) })
         return Response.json({})
       } })
+    const notes = () => sent.filter(e => e.type === 'session.commentary.append').map(e => e.content)
     c.handleLiveEvent({ type: 'session.started' })
-    for (let i = 0; i < 40 && forks.length === 0; i++) await tick()
-    for (let i = 0; i < 10; i++) await tick()
-    return { sent: sent.filter(e => e.type === 'session.commentary.append').map(e => e.content), forks }
+    for (let i = 0; i < 40 && notes().length === 0; i++) await tick()
+    for (let i = 0; i < 20; i++) await tick()
+    const beforeSpeech = notes().length
+    // The opening is spoken; the latest state follows only once it has been said.
+    c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'Four screenshots were taken.' })
+    for (let i = 0; i < 10; i++) await new Promise(r => setTimeout(r, 25))
+    return { sent: notes(), beforeSpeech, forks, reads }
   }
-  const changed = await run('All six screenshots are done; it waits for your approval.')
+  const changed = await run({ latest: 'All six screenshots are done; it waits for your approval.' })
   assert.equal(changed.forks.length, 1, 'the latest summary is asked for, the kept one being 20 minutes old')
+  assert.ok(changed.reads.some(p => String(p).startsWith('/v1/transcript')), 'the newest reports are read at the same time')
+  assert.equal(changed.beforeSpeech, 1, 'the latest state waits while the opening is spoken')
   assert.equal(changed.sent.length, 2)
   assert.match(changed.sent[0], /Open the call .*Four screenshots were taken/, 'the kept summary is said at once')
   assert.doesNotMatch(changed.sent[0], /Greet/)
-  assert.match(changed.sent[1], /Newer information .*All six screenshots are done/)
-  const same = await run('Four screenshots were taken.')
-  assert.equal(same.sent.length, 1, 'an unchanged latest summary is not said again')
+  assert.match(changed.sent[1], /latest state .*All six screenshots are done/)
+  const long = await run({ latest: history + '現在六張都拍好了，等你核准。' })
+  assert.match(long.sent[1], /現在六張都拍好了，等你核准。/, 'a long recap keeps its end, where it stands now')
+  assert.match(long.sent[1], /這個 Session 在準備截圖。/, 'and its first sentence')
+  const same = await run({ latest: 'Four screenshots were taken.' })
+  assert.equal(same.sent.length, 1, 'an unchanged latest summary with no new reports is not said again')
+  const fresh = await run({ latest: 'unused', keptAge: 60 })
+  assert.equal(fresh.forks.length, 0, 'a summary at most five minutes old is the latest; nothing more is read')
+  assert.equal(fresh.sent.length, 1)
 })
