@@ -81,7 +81,7 @@ func New(ctx context.Context, o Options) (*Host, error) {
 		return nil, failure(pa.Invalid, "host_options")
 	}
 	h := &Host{o: o}
-	exists, _, err := h.inspect(ctx)
+	exists, _, err := h.installedSchema(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -98,23 +98,31 @@ func New(ctx context.Context, o Options) (*Host, error) {
 	return h, nil
 }
 
-func (h *Host) inspect(ctx context.Context) (bool, bool, error) {
+func (h *Host) installedSchema(ctx context.Context) (bool, int, error) {
 	var exists int
 	if err := h.o.Database.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_schema'`).Scan(&exists); err != nil {
-		return false, false, err
+		return false, 0, err
 	}
 	if exists == 0 {
-		return false, false, nil
+		return false, 0, nil
 	}
 	var version int
 	if err := h.o.Database.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
-		return true, false, failure(pa.Unsupported, "schema_version")
+		return true, 0, failure(pa.Unsupported, "schema_version")
+	}
+	return true, version, nil
+}
+
+func (h *Host) inspect(ctx context.Context) (bool, bool, error) {
+	exists, version, err := h.installedSchema(ctx)
+	if err != nil || !exists {
+		return exists, false, err
 	}
 	if version != pa.SchemaVersion {
 		return true, false, failure(pa.Unsupported, "schema_version")
 	}
 	var has bool
-	err := h.o.Database.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?)`, h.o.MachineID).Scan(&has)
+	err = h.o.Database.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?)`, h.o.MachineID).Scan(&has)
 	return true, has, err
 }
 

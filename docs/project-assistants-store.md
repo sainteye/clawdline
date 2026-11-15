@@ -22,6 +22,23 @@ store or delete existing data. Repeated installation preserves the feature's
 facts; unknown schema versions are rejected. The caller owns and closes `db`.
 The SQLite driver is supplied by the host, rather than registered by this module.
 
+The current feature schema is **2**. The HTTP contract remains
+`project-assistants.v1`, with the existing integer `schema_version` field. An
+installed schema 1 upgrades to 2 in the same transaction as additive feature
+DDL and roster backfill. The migration changes the feature version marker;
+it does not decode or rewrite aggregate JSON, messages, events, receipts,
+memory/tombstones, permissions, work links, read cursors or routine records.
+Existing host tables and `PRAGMA user_version` remain unchanged. Version 0 and
+unknown newer versions are refused before DDL or backfill. Failure to update or
+verify the version marker rolls back the entire transaction, including DDL.
+
+Host construction migrates an already installed source on its primary database
+before exposing the read service, even when the source is disabled. It does not
+construct a provider, start a runtime, resume a turn or enable routines. A fresh
+default-off source creates no feature tables. After construction, status and
+authorized reads still require the current schema; legacy or future metadata
+cannot silently bypass that check.
+
 `New(db *sql.DB) *Store` has no options or implicit migrations. Share one Store
 per database. Its Bot mutex serializes Commit, Save, Forget, MarkRead and Restore
 against `WithCurrent`. Separate Store instances or processes do not share this
@@ -160,6 +177,28 @@ an existing Bot. Sequence collisions reject the entire restore. The supported
 recovery target is an empty, compatible feature database; this is not a merge or
 conflict-resolution tool for independently edited databases.
 
+New exports and integrity manifests both declare schema 2. Restore accepts
+schema 1 and 2 through the same relationship, complete-context, command-hash and
+receipt validations. An archive's manifest and data schema versions must agree;
+its contract and integrity hash must also pass. Unknown versions, damaged
+hashes, overwritten Bots and sequence collisions refuse the entire restore.
+Restoring a valid v1 export preserves fact and receipt identities, including
+unknown effects and principal read state; the next export declares v2. It does
+not infer command identities from old plain drafts or grant replay permission.
+
+Schema 2 is a forward-data boundary for additive Bot fallback configuration,
+attempt ledgers and bindings for different Agents. Schema-1 daemons use equality
+checks and intentionally refuse schema-2 feature tables and archives rather
+than misread those facts. Never change the marker back to 1 or clear attempts
+to make an old binary accept them. Recovery uses a compatible version with a
+preserved archive or installer snapshot. Returning to a pre-upgrade snapshot
+must also account for any later facts; this migration provides no automatic
+format downgrade. The historical lifecycle rehearsal below describes its named
+v1 revision and does not establish v2 downgrade compatibility.
+
+This version/migration design belongs to Clawdline. It is not a claim that
+Codync uses the same SQLite schema or migration mechanism.
+
 ## Upstream derivation and deliberate differences
 
 The reference revision is Codync
@@ -194,6 +233,16 @@ These are module tests. A specified older executable doing original Session,
 Board and schedule work on an isolated copy, actual feature source removal and
 rebuild, UI/Cloud acceptance and native provider behavior remain integration
 responsibilities. Simulated host-table operations do not establish those claims.
+
+The schema-2 compatibility tests additionally compare actual SQLite values,
+opaque aggregate bytes, schema objects and sequence allocation across v1
+migration and database close/reopen. Metadata `ABORT` and `IGNORE` trigger
+injections verify that failed upgrades leave v1 facts and missing indexes
+unchanged. Legacy archive tests retain unknown receipts, forgetting and read
+state while emitting v2, and check matching versions, corruption and existing
+relationship/collision refusals for both accepted versions. Disabled Host tests
+verify readable history with no provider construction and strict later status
+checks. These do not qualify the fallback runtime or native continuation.
 
 ## Local rollback, removal and reinstall rehearsal
 

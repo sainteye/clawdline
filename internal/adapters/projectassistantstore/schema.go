@@ -23,9 +23,30 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Inspect before any feature DDL or backfill. A future (or invalid) source
+	// must remain untouched even when it is missing one of our known tables.
+	var exists int
+	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_schema'`).Scan(&exists); err != nil {
+		return err
+	}
+	version := pa.SchemaVersion
+	if exists != 0 {
+		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
+			return err
+		}
+		if version != 1 && version != pa.SchemaVersion {
+			return failure(pa.Unsupported, "schema_version")
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS project_assistant_schema (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)`); err != nil {
+		return err
+	}
+	if exists == 0 {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_schema(id,version) VALUES(1,?)`, pa.SchemaVersion); err != nil {
+			return err
+		}
+	}
 	for _, statement := range []string{
-		`CREATE TABLE IF NOT EXISTS project_assistant_schema (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)`,
-		`INSERT OR IGNORE INTO project_assistant_schema(id,version) VALUES(1,1)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_bots (machine TEXT NOT NULL, bot TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0), data BLOB NOT NULL, PRIMARY KEY(machine,bot))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, machine TEXT NOT NULL, bot TEXT NOT NULL, event_id TEXT NOT NULL, data BLOB NOT NULL, UNIQUE(machine,event_id))`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_event_bot ON project_assistant_events(machine,bot,seq)`,
@@ -42,7 +63,14 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
-	var version int
+	// V2 protects aggregate fields and recovery semantics that v1 readers do
+	// not understand. No historical JSON, event or receipt is decoded/rebuilt.
+	// Keep the metadata update last so failure rolls back the additive DDL too.
+	if version == 1 {
+		if _, err = tx.ExecContext(ctx, `UPDATE project_assistant_schema SET version=? WHERE id=1 AND version=1`, pa.SchemaVersion); err != nil {
+			return err
+		}
+	}
 	if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 		return err
 	}
