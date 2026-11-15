@@ -104,6 +104,8 @@ curl -fsSL https://clawdline.com/install.sh | sh
 
 使用指南目前只有英文版。
 
+[實驗性視圖 Plugin](docs/plugins/view-plugin-v1.md)可動態載入獨立 ZIP 視圖。套件依瀏覽器／介面儲存；內附星系與清單，讀取明確授權範圍內的 Session 摘要。公開 Release 是否提供此功能，取決於已安裝的宿主版本。
+
 ## 授權
 
 [MIT](LICENSE)

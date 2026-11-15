@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Session 星系</title>
+<meta name="description" content="Clawdline community plugin design prototype: a galaxy that shows which Sessions need you. Demo data only.">
+<style>
+/* Session Galaxy — design prototype for a Clawdline community plugin.
+   Self-contained: no external fonts, scripts or images. Demo data only; nothing here
+   talks to a daemon. The data seam is DEMO_HOST (snapshot + navigate), see bottom script. */
+:root {
+  --ink: #04050b;
+  --ink-2: #0b0e1c;
+  --glass: rgba(14, 18, 36, 0.72);
+  --glass-line: rgba(160, 180, 255, 0.16);
+  --text: #eef1ff;
+  --text-2: #aab2d6;
+  --text-3: #7780a8;
+  --you: #ff7a59;        /* waiting_you: ember */
+  --work: #7fe3ff;       /* working: ion */
+  --wait: #b9a4ff;       /* waiting_session: lilac */
+  --done: #f2cd72;       /* work_complete: gold */
+  --unknown: #8a90a6;    /* unknown: ash */
+  --shell-bg: #f6f7fb;
+  --shell-panel: #ffffff;
+  --shell-line: #e3e6ef;
+  --shell-text: #1c2033;
+  --shell-text-2: #5d6481;
+  --shell-accent: #2f7d55;
+  --font: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --shell-bg: #111319; --shell-panel: #171a22; --shell-line: #262a36;
+    --shell-text: #e7e9f2; --shell-text-2: #9aa0b8; --shell-accent: #5fcf8c;
+  }
+}
+:root[data-theme="dark"] {
+  --shell-bg: #111319; --shell-panel: #171a22; --shell-line: #262a36;
+  --shell-text: #e7e9f2; --shell-text-2: #9aa0b8; --shell-accent: #5fcf8c;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--shell-bg); color: var(--shell-text); font: 14px/1.5 var(--font); overflow: hidden; }
+button { font: inherit; color: inherit; }
+
+/* ───────────── Demo host shell (stands in for the Clawdline app) ───────────── */
+.shell { position: fixed; inset: 0; display: grid; grid-template-rows: 44px 1fr 32px; grid-template-columns: 280px 1fr; }
+.shell-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--shell-line); background: var(--shell-panel); }
+.shell-top b { font-weight: 650; letter-spacing: .01em; }
+.demo-pill { font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px dashed var(--shell-text-2); color: var(--shell-text-2); }
+.side { border-right: 1px solid var(--shell-line); background: var(--shell-panel); overflow-y: auto; padding: 8px; }
+.side h2 { font-size: 12px; color: var(--shell-text-2); font-weight: 600; margin: 8px 8px 6px; }
+.row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; cursor: pointer; min-height: 44px; }
+.row:hover { background: color-mix(in srgb, var(--shell-text) 6%, transparent); }
+.row[aria-current="true"] { background: color-mix(in srgb, var(--shell-accent) 14%, transparent); }
+.row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .s { font-size: 11px; color: var(--shell-text-2); white-space: nowrap; }
+.main { overflow: auto; padding: 18px 22px; }
+.main h1 { font-size: 18px; margin: 0 0 4px; }
+.main .meta { color: var(--shell-text-2); font-size: 13px; margin-bottom: 14px; }
+.term { background: #0c0e14; color: #cfd6e6; font: 13px/1.6 var(--mono); border-radius: 10px; padding: 14px 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .p { color: #6fd39a; }
+.statusbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; padding: 0 8px; border-top: 1px solid var(--shell-line); background: var(--shell-panel); font-size: 12px; color: var(--shell-text-2); min-width: 0; }
+.statusbar .item { padding: 0 8px; white-space: nowrap; }
+.statusbar .spacer { flex: 1; }
+.statusbar .diag { font-family: var(--mono); font-size: 11px; opacity: .8; overflow: hidden; text-overflow: ellipsis; }
+.dot-ok { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--shell-accent); margin-right: 6px; vertical-align: 1px; }
+
+/* The plugin's collapsed entry */
+.galaxy-entry { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 6px; border-radius: 7px; border: 1px solid transparent; background: linear-gradient(120deg, #141833, #221a3a); color: #e9ecff; cursor: pointer; font-size: 12px; white-space: nowrap; position: relative; }
+.galaxy-entry:hover { border-color: rgba(185,164,255,.55); }
+.galaxy-entry:focus-visible, .row:focus-visible, .ui-btn:focus-visible, .node:focus-visible, .chip:focus-visible { outline: 2px solid #9fd8ff; outline-offset: 2px; }
+.galaxy-entry::before { content: ""; position: absolute; inset: -9px -4px; } /* 44px touch target inside a 32px bar */
+.entry-badge { font-size: 11px; padding: 0 6px; border-radius: 99px; background: rgba(255,122,89,.18); color: #ffb9a6; border: 1px solid rgba(255,122,89,.45); }
+.mini { width: 22px; height: 16px; }
+.mini .m-you { transform-origin: 15px 6px; animation: miniPulse 2.4s ease-in-out infinite; }
+@keyframes miniPulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+/* ───────────── Galaxy overlay ───────────── */
+.galaxy { position: fixed; inset: 0; z-index: 10; background: var(--ink); color: var(--text); visibility: hidden; clip-path: circle(0px at var(--ox, 50%) var(--oy, 100%)); transition: clip-path .75s cubic-bezier(.7,0,.2,1), visibility 0s linear .75s; overflow: clip; }
+.galaxy.open { visibility: visible; clip-path: circle(150vmax at var(--ox, 50%) var(--oy, 100%)); transition: clip-path .8s cubic-bezier(.65,0,.25,1), visibility 0s; }
+.reduced .galaxy, .reduced .galaxy.open { clip-path: none; opacity: 0; transition: opacity .18s, visibility 0s linear .18s; }
+.reduced .galaxy.open { opacity: 1; transition: opacity .18s, visibility 0s; }
+.reduced .mini .m-you, .reduced .node .spin { animation: none !important; }
+canvas.scene { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas.scene.dragging { cursor: grabbing; }
+.nodes { position: absolute; inset: 0; pointer-events: none; overflow: clip; z-index: 1; }
+.open-panel .chips { display: none; }
+.node.nolabel .lbl { visibility: hidden; }
+
+.g-head { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; pointer-events: none; z-index: 3; }
+.g-head > * { pointer-events: auto; }
+.g-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.g-title h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .04em; text-shadow: 0 0 18px rgba(127,227,255,.35); }
+.g-title .sub { font-size: 12px; color: var(--text-2); }
+.g-title .sub b { color: #ffd6ca; font-weight: 600; }
+.g-spacer { flex: 1; }
+.ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--glass-line); background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--text); cursor: pointer; white-space: nowrap; }
+.ui-btn:hover { border-color: rgba(185,200,255,.4); }
+.ui-btn[aria-pressed="true"] { border-color: rgba(127,227,255,.6); background: rgba(40,70,110,.55); }
+.ui-btn.close { font-weight: 600; }
+.g-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.chips { position: absolute; left: 18px; top: 84px; display: flex; flex-direction: column; gap: 6px; z-index: 3; }
+.chip { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 8px; border-radius: 10px; border: 1px solid var(--glass-line); background: rgba(10,13,28,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--text); cursor: pointer; text-align: left; font-size: 13px; }
+.chip .n { font-family: var(--mono); font-weight: 600; min-width: 1.4em; text-align: right; }
+.chip .why { color: var(--text-3); font-size: 11px; }
+.chip[disabled] { opacity: .45; cursor: default; }
+
+/* Session bodies: HTML buttons over the canvas give crisp labels and real touch targets */
+.node { position: absolute; left: 0; top: 0; pointer-events: auto; border: 0; background: none; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; transform-origin: 0 50%; will-change: transform; min-height: 44px; }
+.node .hit { width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; flex: none; }
+.node svg { width: 26px; height: 26px; overflow: visible; filter: drop-shadow(0 0 6px currentColor); }
+.node .lbl { display: flex; flex-direction: column; margin-left: -8px; padding: 3px 9px; border-radius: 8px; background: rgba(6,8,18,.58); border: 1px solid rgba(255,255,255,.07); white-space: nowrap; text-align: left; max-width: 230px; }
+.node .lbl .t { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.node .lbl .s { font-size: 11px; color: var(--text-2); display: none; }
+.node.s-waiting_you .lbl .s, .node[aria-pressed="true"] .lbl .s, .node:hover .lbl .s, .node:focus-visible .lbl .s { display: block; }
+.node.s-waiting_you .lbl { border-color: rgba(255,122,89,.45); background: rgba(40,14,10,.62); }
+.node[aria-pressed="true"] .lbl { border-color: rgba(255,255,255,.55); background: rgba(16,20,44,.85); }
+.node.s-unknown .lbl .t { color: #c5c9d8; }
+.node.dim { opacity: .28; }
+.s-waiting_you { color: var(--you); } .s-working { color: var(--work); } .s-waiting_session { color: var(--wait); }
+.s-work_complete { color: var(--done); } .s-unknown { color: var(--unknown); }
+.node .spin { transform-origin: 13px 13px; animation: spin 2.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.proj-label { position: absolute; left: 0; top: 0; pointer-events: none; font-size: 12px; letter-spacing: .14em; color: var(--text-2); white-space: nowrap; text-transform: uppercase; transform-origin: 50% 50%; }
+.proj-label b { display: block; font-size: 15px; letter-spacing: .06em; color: var(--text); font-weight: 600; text-transform: none; }
+.core-label { position: absolute; left: 0; top: 0; pointer-events: none; font-size: 12px; color: #fff4e6; letter-spacing: .3em; text-shadow: 0 0 10px #ffb07a; }
+
+/* Detail panel (desktop) / bottom sheet (phone) */
+.panel { position: absolute; z-index: 4; top: 84px; right: 18px; bottom: 56px; width: 360px; display: flex; flex-direction: column; border-radius: 18px; border: 1px solid var(--glass-line); background: var(--glass); backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 30px 80px rgba(0,0,0,.45); overflow: hidden; transform: translateX(calc(100% + 30px)); transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+.panel:not(.show) { visibility: hidden; transition: transform .45s cubic-bezier(.2,.8,.2,1), visibility 0s linear .45s; }
+.panel.show { transform: none; }
+.reduced .panel { transition: none; }
+.panel-scroll { overflow-y: auto; padding: 18px 20px 20px; flex: 1; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 10px 0 20px; }
+.panel-head .kicker { font-size: 11px; letter-spacing: .14em; color: var(--text-3); }
+.state-tag { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 8px; border-radius: 99px; border: 1px solid currentColor; font-size: 13px; font-weight: 600; background: color-mix(in srgb, currentColor 10%, transparent); }
+.state-tag svg { width: 18px; height: 18px; }
+.panel h3 { font-size: 20px; line-height: 1.35; margin: 14px 0 4px; color: var(--text); }
+.panel .proj { color: var(--text-2); font-size: 13px; }
+.facts { margin: 16px 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: 13px; }
+.facts dt { color: var(--text-3); }
+.facts dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.facts dd.na { color: var(--text-2); font-style: italic; }
+.callout { border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.6; margin: 12px 0; border: 1px solid; }
+.callout.you { border-color: rgba(255,122,89,.5); background: rgba(255,122,89,.09); }
+.callout.unknown { border-color: rgba(138,144,166,.5); background: rgba(138,144,166,.08); border-style: dashed; }
+.callout.wait { border-color: rgba(185,164,255,.45); background: rgba(185,164,255,.07); }
+.callout .k { display: block; font-size: 11px; letter-spacing: .1em; color: var(--text-3); margin-bottom: 3px; }
+.link-btn { border: 0; background: none; padding: 0; color: #d6c9ff; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 32px; text-align: left; }
+.why-here { font-size: 12px; color: var(--text-3); line-height: 1.6; margin-top: 14px; }
+.panel-foot { padding: 14px 20px 18px; border-top: 1px solid var(--glass-line); display: flex; gap: 8px; }
+.go { flex: 1; min-height: 46px; border-radius: 12px; border: 0; cursor: pointer; font-weight: 650; color: #081018; background: linear-gradient(120deg, #9fe9ff, #d8ccff); }
+.list-group h4 { margin: 14px 0 6px; font-size: 12px; color: var(--text-3); letter-spacing: .1em; display: flex; align-items: center; gap: 6px; }
+.list-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; border: 0; border-radius: 10px; background: rgba(255,255,255,.03); margin-bottom: 4px; padding: 6px 10px; cursor: pointer; text-align: left; }
+.list-item:hover { background: rgba(255,255,255,.07); }
+.list-item svg { width: 18px; height: 18px; flex: none; }
+.list-item .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.list-item .s { font-size: 11px; color: var(--text-2); white-space: nowrap; }
+
+.g-foot { position: absolute; left: 18px; right: 18px; bottom: 14px; z-index: 3; display: flex; gap: 14px; align-items: center; font-size: 11px; color: var(--text-3); pointer-events: none; }
+.g-foot .diag { font-family: var(--mono); }
+.hint { margin-left: auto; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ───────────── Phone ───────────── */
+@media (max-width: 720px) {
+  .shell { grid-template-columns: 1fr; }
+  .side { display: none; }
+  .main { padding: 14px; }
+  .statusbar .hide-phone { display: none; }
+  .g-head { padding: 12px; gap: 8px; }
+  .g-title { flex: 1; }
+  .g-title .sub { font-size: 11px; overflow-wrap: anywhere; }
+  .g-spacer { display: none; }
+  .g-title h2 { font-size: 17px; }
+  .g-actions { flex-wrap: nowrap; flex: none; gap: 4px; }
+  .g-actions .ui-btn { padding: 0 8px; font-size: 12px; }
+  .g-actions .opt { display: none; }
+  .chips { top: auto; bottom: 50px; left: 12px; right: 12px; flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .chip { flex: none; min-height: 44px; }
+  .chip .why { display: none; }
+  .panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 58vh; border-radius: 20px 20px 0 0; transform: translateY(105%); }
+  .panel.show { transform: none; }
+  .node .lbl { max-width: 150px; }
+  .node .lbl .t { font-size: 12px; }
+  .node.minor .lbl { display: none; }
+  .g-foot .hint { display: none; }
+  .g-foot { bottom: 8px; }
+  .open-panel .chips { display: none; }
+}
+/* ── Added for View Plugin v1 alignment ── */
+.s-holding { color: #f59ac4; } .s-ready { color: #8ee6b5; } .s-milestone_complete { color: #e8d9a8; }
+.node.stale svg, .list-item.stale svg { filter: grayscale(.75) brightness(.8); }
+.node.stale .lbl { border-style: dashed; border-color: rgba(200,205,220,.35); }
+.fresh-tag { display: inline-block; margin-left: 6px; font-size: 10px; padding: 0 6px; border-radius: 99px; border: 1px dashed rgba(200,205,220,.6); color: #d3d7e4; vertical-align: 1px; }
+.banner { position: absolute; z-index: 5; left: 50%; top: 82px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 12px; border: 1px dashed rgba(255,210,150,.6); background: rgba(40,28,12,.82); color: #ffe3bf; font-size: 13px; display: none; text-align: center; }
+.banner.show { display: block; }
+.err { margin-top: 10px; font-size: 13px; color: #ffc2b3; }
+.fallback { position: absolute; inset: 120px 20px 60px; z-index: 2; display: none; color: var(--text-2); }
+.fallback.show { display: block; }
+/* Mock host dock: belongs to the demo host, not to the plugin */
+.host-dock { position: fixed; z-index: 30; left: 12px; bottom: 40px; display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 6px; font-size: 12px; }
+.host-dock > button, .host-dock .dock-body button { min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px dashed #c9a8ff; background: #1a1430; color: #eadfff; cursor: pointer; white-space: nowrap; }
+.host-dock .dock-body { display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 12px; background: rgba(16,12,32,.94); border: 1px dashed #c9a8ff; color: #d9ccf5; max-width: 260px; }
+.host-dock.expanded .dock-body { display: flex; }
+.host-dock .dock-body p { margin: 0 0 4px; line-height: 1.5; }
+@media (max-width: 720px) {
+  .host-dock { left: auto; right: 8px; bottom: 108px; align-items: flex-end; }
+  .host-dock > button { min-height: 44px; }
+  body:has(.galaxy.open-panel) .host-dock { display: none; }
+  .banner { top: 70px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════ DEMO HOST (mock) — stands in for a future Clawdline host. Not production UI. ════════ -->
+<div class="shell" id="shell">
+  <header class="shell-top"><b>Clawdline</b><span class="demo-pill">示範宿主 · 示範資料</span></header>
+  <nav class="side" id="sideList" aria-label="Session 清單"></nav>
+  <main class="main" id="mainView"></main>
+  <footer class="statusbar" aria-label="狀態列">
+    <span class="item"><span class="dot-ok" id="connDot"></span><span id="connText">本機已連線</span></span>
+    <span class="item hide-phone" id="sbCount"></span>
+    <span class="spacer"></span>
+    <span class="item diag hide-phone" id="diagShell"></span>
+    <button class="galaxy-entry" id="entry" aria-haspopup="dialog" aria-controls="galaxy">
+      <svg class="mini" viewBox="0 0 22 16" aria-hidden="true">
+        <ellipse cx="11" cy="8" rx="9.5" ry="4.6" fill="none" stroke="#8d93c9" stroke-width="1"/>
+        <circle cx="11" cy="8" r="1.8" fill="#ffe2c4"/>
+        <circle cx="4" cy="9" r="1.2" fill="#7fe3ff"/>
+        <circle cx="18" cy="9.5" r="1.1" fill="#f2cd72"/>
+        <circle class="m-you" cx="15" cy="6" r="1.9" fill="#ff7a59"/>
+      </svg>
+      <span>星系</span><span class="entry-badge" id="entryBadge"></span>
+    </button>
+  </footer>
+</div>
+<div class="host-dock" id="hostDock">
+  <button id="dockToggle" aria-expanded="false" aria-controls="dockBody">示範宿主控制</button>
+  <div class="dock-body" id="dockBody">
+    <p>這些按鈕屬於示範宿主，用來模擬宿主送給插件的快照與情境。</p>
+    <button id="dockSnap">送出新快照（rev +1）</button>
+    <button id="dockConn">中斷連線</button>
+    <button id="dockMotion" aria-pressed="false">減少動態：關</button>
+  </div>
+</div>
+
+<!-- ════════ PLUGIN VIEW — the community plugin's own DOM. A real host would load this in a sandboxed iframe. ════════ -->
+<section class="galaxy" id="galaxy" role="dialog" aria-modal="true" aria-labelledby="gTitle" aria-hidden="true">
+  <canvas class="scene" id="scene" aria-hidden="true"></canvas>
+  <div class="nodes" id="nodes"></div>
+  <div class="fallback" id="fallback"></div>
+  <div class="g-head">
+    <div class="g-title">
+      <h2 id="gTitle">Session 星系</h2>
+      <div class="sub" id="gSub"></div>
+    </div>
+    <div class="g-spacer"></div>
+    <div class="g-actions">
+      <button class="ui-btn" id="btnList" aria-pressed="false">清單</button>
+      <button class="ui-btn close" id="btnClose" aria-label="關閉星系，返回 Session">✕ 返回 Session</button>
+    </div>
+  </div>
+  <div class="banner" id="banner" role="status"></div>
+  <div class="chips" id="chips" aria-label="依狀態查看"></div>
+  <aside class="panel" id="panel" aria-live="polite">
+    <div class="panel-head"><span class="kicker" id="panelKicker">SESSION</span><button class="ui-btn" id="btnPanelClose" aria-label="收起詳細資料">✕</button></div>
+    <div class="panel-scroll" id="panelBody"></div>
+    <div class="panel-foot" id="panelFoot"></div>
+  </aside>
+  <div class="g-foot">
+    <span id="gScope"></span>
+    <span class="diag" id="diagScene"></span>
+    <span class="hint">拖曳旋轉 · 滾輪縮放 · Esc 返回</span>
+  </div>
+</section>
+
+<script>
+"use strict";
+/* ════════════════════════════════════════════════════════════════════════
+   PART A — MOCK HOST + MOCK ADAPTER (demo only; replaceable)
+   Implements the author-facing shape of View Plugin v1 revision 1:
+     connectViewPlugin() → view
+     view.sessions.subscribe(onLaterSnapshot) → Promise<initial complete snapshot>
+     view.sessions.open(ref) → Promise<{opened:true}> | rejects {code}
+     view.onContext(handler), view.close(), view.dispose()
+   It is NOT the specified MessagePort/iframe host, installer or SDK. The host owns
+   the status-bar entry, its badge, navigation, Escape/Back restoration and context.
+   ════════════════════════════════════════════════════════════════════════ */
+const MockHost = (() => {
+  const PROJECTS = { core: "clawdline", cloud: "hosted-console", site: "官網", study: "設計研究" };
+  /* Host-side rows can carry more than the plugin may see (assistant, branch). The adapter
+     projects them to {ref,title,project,workState,freshness}; nothing else crosses. */
+  const rows = [
+    { id: "h1", project: "core", title: "手機配對碼過期提示", workState: "waiting_you", freshness: "fresh", assistant: "Claude Code" },
+    { id: "h2", project: "cloud", title: "正式環境部署前檢查", workState: "waiting_you", freshness: "fresh", assistant: "Codex" },
+    { id: "h3", project: "core", title: "看板欄寬自適應", workState: "working", freshness: "fresh", assistant: "Claude Code" },
+    { id: "h4", project: "core", title: "SSE 重連後補送事件", workState: "working", freshness: "fresh", assistant: "Codex" },
+    { id: "h5", project: "cloud", title: "問答搜尋框重新設計", workState: "working", freshness: "stale", assistant: "Claude Code" },
+    { id: "h6", project: "core", title: "多機派工整合測試", workState: "waiting_session", freshness: "fresh", assistant: "Claude Code" },
+    { id: "h7", project: "site", title: "首頁 Logo 光流動畫", workState: "work_complete", freshness: "fresh", assistant: "Claude Code" },
+    { id: "h8", project: "cloud", title: "FAQ 多語言發布", workState: "milestone_complete", freshness: "fresh", assistant: "Codex" },
+    { id: "h9", project: "site", title: "下載頁版本號", workState: "holding", freshness: "fresh", assistant: "Codex" },
+    { id: "h10", project: "study", title: "舊的字型評估", workState: "unknown", freshness: "unknown", assistant: "Claude Code" },
+    { id: "h11", project: "study", title: "Session 星系原型", workState: "working", freshness: "fresh", assistant: "Claude Code" },
+    { id: "h12", project: "study", title: "終端配色研究", workState: "work_complete", freshness: "fresh", assistant: "Claude Code" },
+    { id: "h13", project: "core", title: "Linux 安裝腳本", workState: "unknown", freshness: "unknown", assistant: "Codex" },
+    { id: "h14", project: null, title: "<b>標題是純文字</b> 沒有 Project", workState: "ready", freshness: "fresh", assistant: "Codex" },
+  ];
+  let revision = 1, connection = "connected", reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let instance = null, instanceSeq = 0, scripted = 0;
+  const SCRIPT = [ // successive demo snapshots
+    () => { rows.find((r) => r.id === "h3").workState = "waiting_you"; },
+    () => { rows.find((r) => r.id === "h6").workState = "working"; },
+    () => { rows.find((r) => r.id === "h3").workState = "work_complete"; },
+  ];
+  const listeners = new Set();
+  const emitHost = () => listeners.forEach((f) => f());
+  const opaque = () => Math.random().toString(36).slice(2, 10);
+
+  function snapshotFor(inst) {
+    return {
+      streamId: inst.streamId, revision,
+      sessions: rows.map((r) => ({
+        ref: inst.refOf(r.id), title: r.title,
+        project: r.project ? { ref: inst.projRefOf(r.project), label: PROJECTS[r.project] } : null,
+        workState: r.workState, freshness: r.freshness,
+      })),
+    };
+  }
+  function context(inst) {
+    return { language: "zh-Hant", theme: "dark", reducedMotion, visible: inst.visible, scopeLabel: "這台機器 · 全部 Project", connection };
+  }
+  /* One instance per opening of the view: new refs, new stream, fresh snapshot. */
+  function createInstance(onNavigate, onClose) {
+    if (instance) instance.dispose();
+    const refs = new Map(), back = new Map(), projRefs = new Map();
+    const inst = {
+      id: `demo-instance-${++instanceSeq}`, streamId: `demo-stream-${opaque()}`, visible: true, alive: true,
+      sub: null, ctx: new Set(),
+      refOf: (id) => { if (!refs.has(id)) { const r = `ref-${opaque()}`; refs.set(id, r); back.set(r, id); } return refs.get(id); },
+      projRefOf: (p) => { if (!projRefs.has(p)) projRefs.set(p, `proj-${opaque()}`); return projRefs.get(p); },
+      dispose() { this.alive = false; this.sub = null; this.ctx.clear(); if (instance === this) instance = null; },
+    };
+    instance = inst;
+    const fail = (code, message) => Promise.reject(Object.assign(new Error(message), { code }));
+    const view = {
+      demo: true,
+      sessions: {
+        subscribe(onLater) {
+          if (!inst.alive) return fail("host_unavailable", "這個檢視已關閉");
+          inst.sub = onLater; // at most one logical subscription; repeat returns current snapshot
+          return Promise.resolve(snapshotFor(inst));
+        },
+        open(ref) {
+          if (!inst.alive || connection !== "connected") return fail("host_unavailable", "宿主目前無法開啟 Session");
+          const id = back.get(ref);
+          if (!id || !rows.some((r) => r.id === id)) return fail("session_unavailable", "這個 Session 已不在目前範圍");
+          onNavigate(id); // host navigation; the host may close the view
+          return Promise.resolve({ opened: true });
+        },
+      },
+      onContext(handler) { inst.ctx.add(handler); handler(context(inst)); return () => inst.ctx.delete(handler); },
+      close() { if (!inst.alive) return fail("host_unavailable", "已關閉"); onClose(); return Promise.resolve({ closed: true }); },
+      dispose() { inst.dispose(); },
+    };
+    return view;
+  }
+  function pushSnapshot() {
+    const step = SCRIPT[scripted % SCRIPT.length]; step(); scripted++; revision++;
+    if (instance && instance.sub && connection === "connected") instance.sub(snapshotFor(instance));
+    emitHost();
+  }
+  function pushContext() { if (instance) instance.ctx.forEach((h) => h(context(instance))); }
+  function setVisible(v) { if (instance) { instance.visible = v; pushContext(); } }
+  function toggleConnection() {
+    connection = connection === "connected" ? "disconnected" : "connected";
+    pushContext();
+    // Restoration needs a new authoritative snapshot before showing live status.
+    if (connection === "connected" && instance && instance.sub) { revision++; instance.sub(snapshotFor(instance)); }
+    emitHost();
+  }
+  function setReduced(on) { reducedMotion = on; pushContext(); emitHost(); }
+  return { rows, PROJECTS, createInstance, pushSnapshot, toggleConnection, setReduced, setVisible,
+    get connection() { return connection; }, get reducedMotion() { return reducedMotion; }, onChange: (f) => listeners.add(f) };
+})();
+
+/* ════════════════════════════════════════════════════════════════════════
+   PART B — THE PLUGIN (scene). Depends only on a `connect` function with the
+   View Plugin v1 adapter shape and on its own root element. It never sees the
+   fixture, the host shell, a daemon URL or credentials. Titles/labels are untrusted
+   text: they are only ever written with textContent.
+   ════════════════════════════════════════════════════════════════════════ */
+const GalaxyPlugin = (() => {
+  const STATE = {
+    waiting_you:        { label: "等你回覆", short: "等你", ring: 0.26, order: 0, why: "越靠近中心越需要你", rgb: [255,122,89] },
+    waiting_session:    { label: "在等另一個 Session", short: "在等別人", ring: 0.42, order: 1, why: "被別的 Session 擋住", rgb: [185,164,255] },
+    holding:            { label: "暫停保留", short: "暫停", ring: 0.55, order: 2, why: "先擱著，沒有在跑", rgb: [245,154,196] },
+    working:            { label: "工作中", short: "工作中", ring: 0.69, order: 3, why: "正在做事", rgb: [127,227,255] },
+    ready:              { label: "待命", short: "待命", ring: 0.81, order: 4, why: "可以接新工作", rgb: [142,230,181] },
+    milestone_complete: { label: "階段完成", short: "階段完成", ring: 0.91, order: 5, why: "一個階段做完了", rgb: [232,217,168] },
+    work_complete:      { label: "已完成", short: "已完成", ring: 1.0, order: 6, why: "做完了，等你檢視", rgb: [242,205,114] },
+    unknown:            { label: "狀態不明", short: "不明", ring: 1.14, order: 7, why: "讀不到，不代表在動", rgb: [138,144,166] },
+  };
+  const FRESH = { fresh: "資料是最新的", stale: "可能過時", unknown: "新鮮度不明" };
+  const MEANING = {
+    waiting_you: "這個 Session 停下來等你回覆或決定。",
+    waiting_session: "這個 Session 在等另一個 Session 先完成。",
+    holding: "這個 Session 被暫時擱置，目前沒有在進行。",
+    working: "這個 Session 正在工作。星系不估計完成百分比。",
+    ready: "這個 Session 閒置待命，可以交給它新工作。",
+    milestone_complete: "這個 Session 回報完成了一個階段，可能還有後續。",
+    work_complete: "這個 Session 回報這輪工作已結束，內容還沒經過你檢視。",
+    unknown: "讀不到這個 Session 的狀態。這不代表它還在工作，也不代表已經完成。",
+  };
+  const st = (k) => STATE[k] || STATE.unknown;
+  function glyph(state, stale) {
+    const dash = stale ? `<circle cx="13" cy="13" r="12.5" fill="none" stroke="#d3d7e4" stroke-width="1" stroke-dasharray="2 2.6"/>` : "";
+    const g = {
+      waiting_you: `<circle cx="13" cy="13" r="12" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/><circle cx="13" cy="13" r="8.5" fill="currentColor"/><rect x="11.8" y="7.6" width="2.4" height="6.6" rx="1.2" fill="#2a0c05"/><circle cx="13" cy="17.4" r="1.4" fill="#2a0c05"/>`,
+      working: `<circle cx="13" cy="13" r="7" fill="currentColor"/>${stale ? "" : `<g class="spin"><path d="M13 2.2 A10.8 10.8 0 0 1 23.8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g>`}`,
+      waiting_session: `<circle cx="13" cy="13" r="9" fill="currentColor" opacity=".9"/><path d="M9.2 8h7.6M9.2 18h7.6M9.8 8.2c0 3 6.4 2.6 6.4 4.8s-6.4 1.8-6.4 4.8" fill="none" stroke="#160f2e" stroke-width="1.6" stroke-linecap="round"/>`,
+      holding: `<circle cx="13" cy="13" r="9" fill="currentColor"/><rect x="9.4" y="8.5" width="2.6" height="9" rx="1" fill="#2d0f1e"/><rect x="14" y="8.5" width="2.6" height="9" rx="1" fill="#2d0f1e"/>`,
+      ready: `<circle cx="13" cy="13" r="8.5" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="13" cy="13" r="3.2" fill="currentColor"/>`,
+      milestone_complete: `<path d="M13 2.5 23.5 13 13 23.5 2.5 13Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M13 2.5 23.5 13H2.5Z" fill="currentColor"/>`,
+      work_complete: `<path d="M13 2.5 23.5 13 13 23.5 2.5 13Z" fill="currentColor"/><path d="M8.6 13.2l3 3 5.8-6.2" fill="none" stroke="#2b2006" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
+      unknown: `<circle cx="13" cy="13" r="9" fill="rgba(20,22,32,.6)" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/><text x="13" y="17.4" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor" font-family="system-ui">?</text>`,
+    }[STATE[state] ? state : "unknown"];
+    return `<svg viewBox="0 0 26 26" aria-hidden="true">${g}${dash}</svg>`;
+  }
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+  /* ── Pure mapping: snapshot → bodies. Project → sector, workState → orbit. ── */
+  function layout(sessions) {
+    const groups = new Map();
+    for (const s of sessions) { const k = s.project ? s.project.ref : "∅"; if (!groups.has(k)) groups.set(k, { ref: k, label: s.project ? s.project.label : "未指定 Project", list: [] }); groups.get(k).list.push(s); }
+    const projects = [...groups.values()], P = Math.max(1, projects.length), sector = (Math.PI * 2) / P, bodies = [];
+    projects.forEach((p, pi) => {
+      p.angle = pi * sector + sector / 2 + 0.35;
+      const byRing = new Map();
+      p.list.forEach((s) => { const k = STATE[s.workState] ? s.workState : "unknown"; if (!byRing.has(k)) byRing.set(k, []); byRing.get(k).push(s); });
+      byRing.forEach((list, k) => list.forEach((s, i) => {
+        const spread = list.length === 1 ? 0 : (i / (list.length - 1) - 0.5) * sector * 0.6;
+        bodies.push({ s, state: k, p, angle: p.angle + spread, r: st(k).ring, phase: i * 1.7 + pi * 0.9 });
+      }));
+    });
+    return { projects, bodies };
+  }
+
+  function mount(root, connect) {
+    const q = (sel) => root.querySelector(sel);
+    const canvas = q("#scene"), ctx = canvas.getContext("2d");
+    const glowCanvas = document.createElement("canvas"), gctx = glowCanvas.getContext("2d");
+    const nodesEl = q("#nodes"), panel = q("#panel");
+    let view = null, snap = null, model = { projects: [], bodies: [] }, context = { reducedMotion: false, visible: false, connection: "connected" };
+    let awaitingSnapshot = true, startGeneration = 0, focusTimer = 0;
+    let W = 0, H = 0, DPR = 1, phone = false, running = false, frames = 0, raf = 0, needsDraw = true, t0 = performance.now(), tNow = 0, last = 0;
+    let selectedRef = null, listMode = false, filterState = null, canDraw = !!ctx;
+    const cam = { yaw: -0.6, tilt: 1.02, dist: 3.25, targetYaw: null, intro: 1 };
+    const reduced = () => !!context.reducedMotion;
+    const effFresh = (s) => (context.connection !== "connected" || awaitingSnapshot ? "stale" : s.freshness);
+    const live = (s) => effFresh(s) === "fresh";
+
+    // Starfield (deterministic)
+    let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const gauss = () => (rnd() + rnd() + rnd() - 1.5) / 1.5;
+    function makeStars(n) { seed = 7; const a = []; for (let i = 0; i < n; i++) { const arm = i % 3, r = Math.pow(rnd(), 0.62) * 1.34 + 0.03; const th = arm * (Math.PI * 2 / 3) + r * 3.1 + gauss() * 0.32 / (0.4 + r); const warm = Math.max(0, 1 - r * 1.3); a.push({ x: Math.cos(th) * r, y: gauss() * 0.05 * (1.2 - Math.min(r, 1.1)), z: Math.sin(th) * r, c: [Math.round(160 + 95 * warm), Math.round(180 + 50 * warm), Math.round(255 - 70 * warm)], a: 0.25 + rnd() * 0.75, s: rnd() < 0.06 ? 1.8 : 0.9 + rnd() * 0.6, tw: rnd() * 6 }); } return a; }
+    let STARS = makeStars(2200);
+    const FAR = Array.from({ length: 260 }, () => ({ x: rnd(), y: rnd(), a: 0.15 + rnd() * 0.5, s: rnd() < 0.1 ? 1.4 : 0.8 }));
+    const HUES = [186, 262, 34, 320, 140, 210];
+    let DUST = [];
+    function makeDust() { DUST = []; model.projects.forEach((p, pi) => { for (let i = 0; i < 16; i++) { const r = 0.25 + rnd() * 1.0, a = p.angle + gauss() * 0.5; DUST.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, hue: HUES[pi % HUES.length], size: 0.16 + rnd() * 0.22, a: 0.05 + rnd() * 0.07 }); } }); }
+
+    const leftRail = () => (phone || W < 1000 || panelShown() ? 0 : 350), rightRail = () => (panelShown() && !phone ? 390 : 0);
+    const focal = () => (phone ? Math.min(W * 1.25, H * 0.95) : Math.min((W - leftRail() - rightRail()) * 0.95, H * 1.2));
+    const panelShown = () => panel.classList.contains("show");
+    const centerX = () => (phone ? W / 2 : leftRail() + (W - leftRail() - rightRail()) / 2);
+    const centerY = () => (phone ? (panelShown() ? H * 0.27 : H * 0.46) : H * 0.54);
+    function project(x, y, z) {
+      const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+      const ct = Math.cos(cam.tilt), s2 = Math.sin(cam.tilt), up = y * ct + z1 * s2, d = cam.dist * cam.intro + z1 * ct - y * s2, f = focal();
+      return { x: centerX() + (x1 * f) / d, y: centerY() - (up * f) / d, d, k: f / d };
+    }
+    function resize() {
+      phone = innerWidth <= 720; W = root.clientWidth || innerWidth; H = root.clientHeight || innerHeight;
+      DPR = Math.min(devicePixelRatio || 1, phone ? 2 : 1.5);
+      canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+      glowCanvas.width = Math.max(1, Math.round(W * 0.33)); glowCanvas.height = Math.max(1, Math.round(H * 0.33));
+      const want = phone ? 1200 : 2200; if (STARS.length !== want) STARS = makeStars(want);
+      updateMinor(); needsDraw = true;
+    }
+
+    /* ── DOM for the current snapshot (textContent only) ── */
+    const nodeEls = new Map();
+    function buildNodes() {
+      nodesEl.replaceChildren(); nodeEls.clear();
+      for (const b of model.bodies) {
+        const s = b.s, S = st(b.state), stale = !live(s);
+        const btn = el("button", `node s-${b.state}${stale ? " stale" : ""}`);
+        btn.setAttribute("aria-pressed", String(s.ref === selectedRef));
+        btn.setAttribute("aria-label", `${s.title}，${s.project ? s.project.label : "未指定 Project"}，${S.label}，${FRESH[effFresh(s)]}`);
+        const hit = el("span", "hit"); hit.innerHTML = glyph(b.state, stale); // static markup, no untrusted text
+        const lbl = el("span", "lbl"); const t = el("span", "t", s.title);
+        const sub = el("span", "s", S.label + (stale ? ` · ${FRESH[effFresh(s)]}` : ""));
+        lbl.append(t, sub); btn.append(hit, lbl);
+        btn.dataset.ref = s.ref;
+        btn.addEventListener("click", (e) => { e.stopPropagation(); select(s.ref); });
+        nodesEl.append(btn); nodeEls.set(s.ref, btn);
+      }
+      for (const p of model.projects) { const d = el("div", "proj-label"); d.setAttribute("aria-hidden", "true"); d.append("Project", el("b", null, p.label)); d.dataset.key = p.ref; nodesEl.append(d); p.el = d; }
+      const core = el("div", "core-label", "你"); core.id = "coreLabel"; core.setAttribute("aria-hidden", "true"); nodesEl.append(core);
+      updateMinor();
+    }
+    function updateMinor() { nodeEls.forEach((b, ref) => { const body = model.bodies.find((x) => x.s.ref === ref); b.classList.toggle("minor", phone && body && body.state !== "waiting_you" && ref !== selectedRef); }); }
+
+    function applySnapshot(next) {
+      if (snap && next.streamId === snap.streamId && next.revision <= snap.revision) return; // ignore equal/older
+      awaitingSnapshot = context.connection !== "connected";
+      snap = next; model = layout(snap.sessions); makeDust(); buildNodes(); renderChips();
+      if (selectedRef && !snap.sessions.some((s) => s.ref === selectedRef)) { selectedRef = null; showPanel(false); }
+      if (listMode) renderList(); else if (selectedRef) renderDetail(selectedRef);
+      renderFallback(); needsDraw = true;
+    }
+    function applyContext(c) {
+      const wasConn = context.connection; context = { ...context, ...c };
+      if (context.connection !== "connected") awaitingSnapshot = true;
+      root.ownerDocument.documentElement.classList.toggle("reduced", reduced());
+      q("#banner").textContent = context.connection === "connected" ? "" : "已與宿主中斷：以下是最後收到的狀態，全部視為可能過時。";
+      q("#banner").classList.toggle("show", context.connection !== "connected");
+      q("#gScope").textContent = `${context.scopeLabel || ""} · 示範資料，不會變更任何 Session`;
+      if (snap && wasConn !== context.connection) { buildNodes(); renderChips(); if (selectedRef && !listMode) renderDetail(selectedRef); }
+      setRunning(); needsDraw = true;
+    }
+
+    function draw(t) {
+      frames++;
+      const c = ctx; c.setTransform(DPR, 0, 0, DPR, 0, 0);
+      const bg = c.createRadialGradient(centerX(), centerY(), 0, centerX(), centerY(), Math.max(W, H) * 0.8);
+      bg.addColorStop(0, "#151127"); bg.addColorStop(0.45, "#080a17"); bg.addColorStop(1, "#030409");
+      c.globalCompositeOperation = "source-over"; c.fillStyle = bg; c.fillRect(0, 0, W, H);
+      c.globalCompositeOperation = "lighter";
+      for (const s of FAR) { const x = ((s.x * W + cam.yaw * 30) % W + W) % W; c.fillStyle = `rgba(200,210,255,${s.a * 0.6})`; c.fillRect(x, s.y * H, s.s, s.s); }
+      for (const d of DUST) { const p = project(d.x, 0, d.z), R = d.size * p.k; const g = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, R); g.addColorStop(0, `hsla(${d.hue},80%,60%,${d.a})`); g.addColorStop(1, `hsla(${d.hue},80%,40%,0)`); c.fillStyle = g; c.beginPath(); c.ellipse(p.x, p.y, R, R * 0.55, 0, 0, Math.PI * 2); c.fill(); }
+      const gw = glowCanvas.width, gs = gw / W; gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.clearRect(0, 0, gw, glowCanvas.height); gctx.globalCompositeOperation = "lighter";
+      for (const s of STARS) { const p = project(s.x, s.y, s.z); if (p.d <= 0.2) continue; const tw = reduced() ? 1 : 0.75 + 0.25 * Math.sin(t * 1.3 + s.tw); const a = s.a * tw * Math.min(1, 1.6 / p.d), sz = s.s * Math.min(1.6, p.k / 260); c.fillStyle = `rgba(${s.c},${a})`; c.fillRect(p.x, p.y, sz, sz); if (s.s > 1.5) { gctx.fillStyle = `rgba(${s.c},${a})`; gctx.fillRect(p.x * gs - 1, p.y * gs - 1, 2, 2); } }
+      const core = project(0, 0.03, 0);
+      for (const [r, a] of [[0.34, 0.12], [0.16, 0.3], [0.06, 0.9]]) { const R = r * core.k, g = c.createRadialGradient(core.x, core.y, 0, core.x, core.y, R); g.addColorStop(0, `rgba(255,236,214,${a})`); g.addColorStop(0.4, `rgba(255,170,120,${a * 0.5})`); g.addColorStop(1, "rgba(255,120,80,0)"); c.fillStyle = g; c.beginPath(); c.arc(core.x, core.y, R, 0, Math.PI * 2); c.fill(); }
+      gctx.fillStyle = "rgba(255,200,160,.9)"; gctx.beginPath(); gctx.arc(core.x * gs, core.y * gs, 0.09 * core.k * gs, 0, Math.PI * 2); gctx.fill();
+      // Orbits: only states that are present get a ring and a name
+      const present = new Set(model.bodies.map((b) => b.state));
+      c.globalCompositeOperation = "source-over";
+      const font = getComputedStyle(root).fontFamily;
+      for (const [key, S] of Object.entries(STATE)) {
+        if (!present.has(key)) continue;
+        const dim = filterState && filterState !== key ? 0.3 : 1;
+        c.beginPath(); for (let i = 0; i <= 120; i++) { const a = (i / 120) * Math.PI * 2, p = project(Math.cos(a) * S.ring, 0, Math.sin(a) * S.ring); i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y); }
+        c.setLineDash(key === "unknown" ? [3, 7] : key === "waiting_session" || key === "holding" ? [10, 6] : []);
+        c.lineWidth = key === "waiting_you" ? 1.4 : 1; c.strokeStyle = `rgba(${S.rgb},${(key === "waiting_you" ? 0.45 : 0.2) * dim})`; c.stroke(); c.setLineDash([]);
+        const na = -cam.yaw - Math.PI / 2 + 0.22, lp = project(Math.cos(na) * S.ring, 0, Math.sin(na) * S.ring);
+        c.font = `600 ${phone ? 10 : 11}px ${font}`; c.fillStyle = `rgba(${S.rgb},${0.75 * dim})`; c.textAlign = "left"; c.fillText(S.short, lp.x + 6, lp.y + 14);
+      }
+      if (present.has("unknown")) { c.globalCompositeOperation = "lighter"; for (let i = 0; i < 36; i++) { const a = (i / 36) * Math.PI * 2, p = project(Math.cos(a) * 1.14, 0, Math.sin(a) * 1.14), R = 0.09 * p.k, g = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, R); g.addColorStop(0, "rgba(120,128,150,.05)"); g.addColorStop(1, "rgba(120,128,150,0)"); c.fillStyle = g; c.fillRect(p.x - R, p.y - R, R * 2, R * 2); } }
+      // Bodies
+      const P = new Map();
+      for (const b of model.bodies) { let a = b.angle; if (b.state === "working" && live(b.s) && !reduced()) a += Math.sin(t * 0.35 + b.phase) * 0.09; P.set(b.s.ref, { ...project(Math.cos(a) * b.r, 0.02, Math.sin(a) * b.r), a, b }); }
+      for (const b of model.bodies) {
+        const s = b.s, p = P.get(s.ref), rgb = st(b.state).rgb, sel = selectedRef === s.ref, isLive = live(s);
+        const dim = (filterState && filterState !== b.state ? 0.25 : 1) * (isLive ? 1 : 0.45);
+        c.globalCompositeOperation = "lighter";
+        if (b.state === "waiting_you") {
+          const grd = c.createLinearGradient(p.x, p.y, core.x, core.y); grd.addColorStop(0, `rgba(255,122,89,${0.55 * dim})`); grd.addColorStop(1, "rgba(255,200,160,0.05)");
+          c.strokeStyle = grd; c.lineWidth = sel ? 2 : 1.2; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(core.x, core.y); c.stroke();
+          if (!reduced() && isLive) for (let k = 0; k < 3; k++) { const u = (t * 0.35 + k / 3 + b.phase) % 1; c.fillStyle = `rgba(255,190,150,${(1 - u) * 0.9 * dim})`; c.beginPath(); c.arc(p.x + (core.x - p.x) * u, p.y + (core.y - p.y) * u, 1.8, 0, Math.PI * 2); c.fill(); }
+        }
+        if (b.state !== "unknown") {
+          const R = (b.state === "waiting_you" ? 0.11 : 0.065) * p.k * (sel ? 1.4 : 1), g = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, R);
+          g.addColorStop(0, `rgba(${rgb},${0.55 * dim})`); g.addColorStop(1, `rgba(${rgb},0)`); c.fillStyle = g; c.beginPath(); c.arc(p.x, p.y, R, 0, Math.PI * 2); c.fill();
+          if (isLive) { gctx.fillStyle = `rgba(${rgb},${0.8 * dim})`; gctx.beginPath(); gctx.arc(p.x * gs, p.y * gs, Math.max(2, R * gs * 0.5), 0, Math.PI * 2); gctx.fill(); }
+        }
+        if (b.state === "working" && isLive) { const dir = reduced() ? 1 : Math.sign(Math.cos(t * 0.35 + b.phase)) || 1; for (let k = 1; k <= 14; k++) { const a = p.a - dir * k * 0.012, q2 = project(Math.cos(a) * b.r, 0.02, Math.sin(a) * b.r); c.fillStyle = `rgba(${rgb},${(1 - k / 15) * 0.35 * dim})`; c.beginPath(); c.arc(q2.x, q2.y, 3.2 * (1 - k / 16), 0, Math.PI * 2); c.fill(); } }
+        if (b.state === "waiting_you") { c.globalCompositeOperation = "source-over"; const rings = reduced() || !isLive ? [0.35, 0.7] : [(t * 0.6 + b.phase) % 1, (t * 0.6 + b.phase + 0.5) % 1]; for (const u of rings) { c.strokeStyle = `rgba(255,140,100,${(1 - u) * 0.8 * dim})`; c.lineWidth = 1.4; c.beginPath(); c.ellipse(p.x, p.y, 12 + u * 34, (12 + u * 34) * 0.62, 0, 0, Math.PI * 2); c.stroke(); } }
+        if (b.state === "work_complete" || b.state === "milestone_complete") { c.globalCompositeOperation = "lighter"; c.strokeStyle = `rgba(${rgb},${0.35 * dim})`; c.lineWidth = 1; const n = b.state === "work_complete" ? 4 : 2; for (let k = 0; k < n; k++) { const a = k * Math.PI / 4; c.beginPath(); c.moveTo(p.x - Math.cos(a) * 20, p.y - Math.sin(a) * 20); c.lineTo(p.x + Math.cos(a) * 20, p.y + Math.sin(a) * 20); c.stroke(); } }
+        if (sel) { c.globalCompositeOperation = "source-over"; c.strokeStyle = "rgba(255,255,255,.85)"; c.lineWidth = 1.2; c.beginPath(); for (let k = 0; k < 4; k++) { const a0 = k * Math.PI / 2 + 0.3 + (reduced() ? 0 : t * 0.4); c.moveTo(p.x + Math.cos(a0) * 24, p.y + Math.sin(a0) * 24); c.arc(p.x, p.y, 24, a0, a0 + 0.9); } c.stroke(); }
+      }
+      c.globalCompositeOperation = "lighter"; c.setTransform(1, 0, 0, 1, 0, 0); c.filter = "blur(6px)"; c.globalAlpha = 0.9; c.drawImage(glowCanvas, 0, 0, canvas.width, canvas.height); c.filter = "none"; c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+      // HTML layer follows the projection
+      const base = focal() / cam.dist;
+      for (const [ref, p] of P) { const b = nodeEls.get(ref); if (!b) continue; const sc = Math.max(0.78, Math.min(1.12, p.k / base)); b.style.transform = `translate3d(${p.x.toFixed(1)}px,${(p.y - 22).toFixed(1)}px,0) scale(${sc.toFixed(3)})`; b.style.zIndex = String(1000 - Math.round(p.d * 100) + (selectedRef === ref ? 500 : 0) + (p.b.state === "waiting_you" ? 200 : 0)); b.classList.toggle("dim", !!filterState && filterState !== p.b.state); }
+      placeLabels(P);
+      for (const pr of model.projects) {
+        const p = project(Math.cos(pr.angle) * 1.34, 0, Math.sin(pr.angle) * 1.34);
+        const halfWidth = pr.el.offsetWidth / 2, halfHeight = pr.el.offsetHeight / 2;
+        const x = Math.max(12 + halfWidth, Math.min(W - 12 - halfWidth, p.x));
+        const top = phone ? q(".g-head").offsetHeight + halfHeight + 12 : 100;
+        const bottom = H - (phone ? 112 : 56) - halfHeight;
+        const y = Math.max(top, Math.min(bottom, p.y));
+        pr.el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-50%)`;
+        pr.el.style.opacity = String(Math.max(0.35, Math.min(1, 1.9 - p.d / cam.dist)));
+        pr.el.style.visibility = phone && panelShown() ? "hidden" : "visible";
+      }
+      const cl = q("#coreLabel"); if (cl) cl.style.transform = `translate3d(${core.x}px,${core.y + 0.1 * core.k}px,0) translate(-50%,0)`;
+      writeDiag();
+    }
+    /* Keep labels legible: place by priority, hide a label that would collide. The node and
+       its accessible name stay; the list and the detail panel always carry every title. */
+    function placeLabels(P) {
+      const items = [];
+      for (const [ref, p] of P) { const b = nodeEls.get(ref); if (!b) continue; if (!b._w) { const l = b.querySelector(".lbl"); b._w = l ? l.offsetWidth : 120; } const pri = (selectedRef === ref ? 0 : 10) + (p.b.state === "waiting_you" ? 0 : 5) + (live(p.b.s) ? 0 : 2) + p.d * 0.1; items.push({ b, p, pri }); }
+      items.sort((a, c) => a.pri - c.pri);
+      const placed = [];
+      for (const it of items) {
+        if (it.b.classList.contains("minor")) { it.b.classList.remove("nolabel"); continue; }
+        const r = { x0: it.p.x + 10, x1: it.p.x + 18 + it.b._w, y0: it.p.y - 16, y1: it.p.y + 16 };
+        const hit = placed.some((o) => r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0);
+        const force = selectedRef === it.b.dataset.ref;
+        it.b.classList.toggle("nolabel", hit && !force && !it.b.classList.contains("minor"));
+        if (!hit || force) placed.push(r);
+      }
+    }
+    function writeDiag() { const txt = `示範診斷：場景${running ? "繪製中" : "已暫停"} · ${frames} 幀`; q("#diagScene").textContent = txt; }
+
+    function loop(now) {
+      if (!running) return;
+      const dt = Math.min(0.05, (now - (last || now)) / 1000); last = now; tNow = (now - t0) / 1000;
+      if (cam.intro > 1.0005) { cam.intro = 1 + (cam.intro - 1) * Math.pow(0.04, dt); needsDraw = true; } else cam.intro = 1;
+      if (cam.targetYaw != null) { let d = cam.targetYaw - cam.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); cam.yaw += d * Math.min(1, dt * 3.2); if (Math.abs(d) < 0.002) cam.targetYaw = null; needsDraw = true; }
+      else if (!reduced() && !drag.on) cam.yaw += dt * 0.025;
+      if (!reduced() || needsDraw) { draw(tNow); needsDraw = false; }
+      raf = requestAnimationFrame(loop);
+    }
+    /* Render only while the host says the view is visible and the page is not hidden. */
+    function setRunning() {
+      const on = canDraw && !!view && context.visible && !document.hidden;
+      if (on === running) return; running = on; last = 0;
+      if (on) raf = requestAnimationFrame(loop); else cancelAnimationFrame(raf);
+      writeDiag();
+    }
+    const onVis = () => setRunning();
+    document.addEventListener("visibilitychange", onVis);
+
+    const drag = { on: false, x: 0, y: 0 };
+    canvas.addEventListener("pointerdown", (e) => { drag.on = true; drag.x = e.clientX; drag.y = e.clientY; canvas.setPointerCapture(e.pointerId); canvas.classList.add("dragging"); cam.targetYaw = null; });
+    canvas.addEventListener("pointermove", (e) => { if (!drag.on) return; cam.yaw -= (e.clientX - drag.x) * 0.006; cam.tilt = Math.max(0.55, Math.min(1.35, cam.tilt - (e.clientY - drag.y) * 0.004)); drag.x = e.clientX; drag.y = e.clientY; needsDraw = true; });
+    const endDrag = () => { drag.on = false; canvas.classList.remove("dragging"); };
+    canvas.addEventListener("pointerup", endDrag); canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("wheel", (e) => { e.preventDefault(); cam.dist = Math.max(2.2, Math.min(4.6, cam.dist * (1 + e.deltaY * 0.001))); needsDraw = true; }, { passive: false });
+
+    /* ── Selection, details, list ── */
+    const find = (ref) => snap && snap.sessions.find((s) => s.ref === ref);
+    function select(ref) {
+      const s = find(ref); if (!s) return;
+      selectedRef = ref; listMode = false; q("#btnList").setAttribute("aria-pressed", "false");
+      nodeEls.forEach((b, k) => b.setAttribute("aria-pressed", String(k === ref))); updateMinor();
+      const body = model.bodies.find((b) => b.s.ref === ref); if (body) cam.targetYaw = -body.angle - Math.PI / 2 + (phone ? 0 : 0.35);
+      renderDetail(ref); showPanel(true);
+    }
+    function showPanel(on) { panel.classList.toggle("show", on); root.classList.toggle("open-panel", on); needsDraw = true; }
+    function deselect() { selectedRef = null; listMode = false; q("#btnList").setAttribute("aria-pressed", "false"); nodeEls.forEach((b) => b.setAttribute("aria-pressed", "false")); updateMinor(); showPanel(false); }
+    function renderDetail(ref) {
+      const s = find(ref); if (!s) return; const k = STATE[s.workState] ? s.workState : "unknown", S = st(k), fr = effFresh(s);
+      q("#panelKicker").textContent = "SESSION · 示範資料";
+      const body = q("#panelBody"); body.replaceChildren();
+      const tag = el("span", `state-tag s-${k}`); tag.innerHTML = glyph(k, fr !== "fresh"); tag.append(S.label); body.append(tag);
+      if (fr !== "fresh") body.append(el("span", "fresh-tag", FRESH[fr]));
+      body.append(el("h3", null, s.title), el("div", "proj", `Project · ${s.project ? s.project.label : "未指定 Project"}`));
+      const call = el("div", `callout ${k === "waiting_you" ? "you" : k === "unknown" ? "unknown" : k === "waiting_session" ? "wait" : ""}`);
+      call.append(el("span", "k", "這代表什麼"), MEANING[k]); body.append(call);
+      if (fr !== "fresh") { const c2 = el("div", "callout unknown"); c2.append(el("span", "k", "資料新鮮度"), fr === "stale" ? "這是較早讀到的狀態，現在可能已經不同；星系不會替它播放工作中的動態。" : "宿主無法判斷這筆資料有多新。"); body.append(c2); }
+      const dl = el("dl", "facts"); dl.append(el("dt", null, "狀態"), el("dd", null, S.label), el("dt", null, "新鮮度"), el("dd", fr === "fresh" ? null : "na", FRESH[fr])); body.append(dl);
+      body.append(el("p", "why-here", `它在「${S.short}」軌道：${S.why}。星系只呈現宿主提供的狀態，不估計完成百分比，也看不到對話內容。`));
+      const foot = q("#panelFoot"); foot.replaceChildren();
+      const go = el("button", "go", "前往這個 Session"); const err = el("div", "err"); err.setAttribute("role", "alert");
+      go.onclick = async () => { err.textContent = ""; go.disabled = true; try { await view.sessions.open(s.ref); } catch (e) { err.textContent = `沒有開啟：${e.message}（${e.code}）`; } finally { go.disabled = false; } };
+      const wrap = el("div"); wrap.style.flex = "1"; wrap.append(go, err); go.style.width = "100%"; foot.append(wrap);
+    }
+    function renderList() {
+      q("#panelKicker").textContent = "全部 SESSION · 依需要你的程度";
+      const body = q("#panelBody"); body.replaceChildren();
+      for (const [k, S] of Object.entries(STATE)) {
+        const list = snap.sessions.filter((s) => (STATE[s.workState] ? s.workState : "unknown") === k); if (!list.length) continue;
+        const g = el("div", "list-group"); g.append(el("h4", `s-${k}`, `${S.label}（${list.length}）`));
+        for (const s of list) { const fr = effFresh(s); const it = el("button", `list-item${fr !== "fresh" ? " stale" : ""}`); const ic = el("span", `s-${k}`); ic.innerHTML = glyph(k, fr !== "fresh"); it.append(ic, el("span", "t", s.title), el("span", "s", (s.project ? s.project.label : "未指定 Project") + (fr !== "fresh" ? ` · ${FRESH[fr]}` : ""))); it.onclick = () => select(s.ref); g.append(it); }
+        body.append(g);
+      }
+      if (!snap.sessions.length) body.append(el("p", "why-here", "這個範圍目前沒有 Session。"));
+      q("#panelFoot").replaceChildren();
+    }
+    function renderChips() {
+      const chips = q("#chips"); chips.replaceChildren();
+      const counts = {}; for (const b of model.bodies) counts[b.state] = (counts[b.state] || 0) + 1;
+      for (const [k, S] of Object.entries(STATE)) {
+        if (!counts[k]) continue;
+        const c = el("button", `chip s-${k}`); c.dataset.state = k; c.setAttribute("aria-pressed", String(filterState === k));
+        const ic = el("span"); ic.style.cssText = "width:18px;height:18px;display:grid"; ic.innerHTML = glyph(k, false).replace("<svg", '<svg width="18" height="18"');
+        const lbl = el("span", null, S.label); lbl.style.color = "var(--text)";
+        c.append(ic, el("span", "n", String(counts[k])), lbl, el("span", "why", S.why));
+        c.onclick = () => { filterState = filterState === k ? null : k; chips.querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.state === filterState))); if (filterState) { const f = model.bodies.find((b) => b.state === k); if (f) select(f.s.ref); } needsDraw = true; };
+        chips.append(c);
+      }
+      const n = counts.waiting_you || 0, sub = q("#gSub"); sub.replaceChildren();
+      if (n) sub.append(el("b", null, `${n} 個 Session 等你`), " · "); else sub.append("沒有 Session 在等你 · ");
+      sub.append(`${snap.sessions.length} 個 Session · ${model.projects.length} 個 Project · rev ${snap.revision}`);
+    }
+    /* Readable fallback if canvas is unavailable: the list carries every title and state. */
+    function renderFallback() { const f = q("#fallback"); f.classList.toggle("show", !canDraw); if (!canDraw) { listMode = true; renderList(); showPanel(true); } }
+
+    q("#btnPanelClose").onclick = deselect;
+    q("#btnList").onclick = () => { listMode = !listMode; q("#btnList").setAttribute("aria-pressed", String(listMode)); if (listMode) { renderList(); showPanel(true); } else if (selectedRef) renderDetail(selectedRef); else showPanel(false); };
+    q("#btnClose").onclick = () => view && view.close();
+    const onKey = (e) => { if (e.key === "Escape" && panelShown() && view) { e.stopImmediatePropagation(); deselect(); } };
+    document.addEventListener("keydown", onKey, true);
+    const onResize = () => resize(); addEventListener("resize", onResize);
+
+    async function start() {
+      const generation = ++startGeneration;
+      const connected = await connect();
+      if (generation !== startGeneration) { connected.dispose(); return; }
+      view = connected;
+      const initial = await connected.sessions.subscribe((later) => { if (generation === startGeneration) applySnapshot(later); });
+      if (generation !== startGeneration) { connected.dispose(); return; }
+      snap = null; selectedRef = null; filterState = null; deselect();
+      view.onContext(applyContext);
+      cam.intro = reduced() ? 1 : 2.6; cam.yaw = -0.6 - (reduced() ? 0 : 0.9); cam.dist = 3.25;
+      resize(); applySnapshot(initial); setRunning(); if (canDraw) draw(tNow);
+      clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => { if (generation !== startGeneration) return; const first = nodesEl.querySelector(".node.s-waiting_you") || q("#btnClose"); first.focus({ preventScroll: true }); }, reduced() ? 50 : 500);
+    }
+    /* Closing disposes the adapter and drops the scene DOM; reopening starts from a new snapshot. */
+    function stop() { startGeneration++; clearTimeout(focusTimer); awaitingSnapshot = true; if (view) view.dispose(); view = null; context = { ...context, visible: false }; setRunning(); snap = null; model = { projects: [], bodies: [] }; nodesEl.replaceChildren(); nodeEls.clear(); deselect(); writeDiag(); }
+    return { start, stop };
+  }
+  return { mount };
+})();
+
+/* ════════════════════════════════════════════════════════════════════════
+   PART C — DEMO HOST SHELL: status-bar entry, badge, navigation, restoration.
+   ════════════════════════════════════════════════════════════════════════ */
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const LABEL = { waiting_you: "等你", waiting_session: "在等別人", holding: "暫停", working: "工作中", ready: "待命", milestone_complete: "階段完成", work_complete: "已完成", unknown: "不明" };
+  const ORDER = Object.keys(LABEL);
+  const FILLER = ["整理 README 截圖", "README 對照表", "修正 tmux 分隔字元", "Windows 路徑大小寫", "設定頁拖移排序", "Chrome 分頁面板", "提示字串翻譯", "快速鍵說明頁", "清理舊 worktree", "附件拖放路徑", "看板進度勾選", "Cloud 流量量測", "通知去重", "瀏覽器優先順序", "工作中提示角色", "Bot 記憶工具", "大樓場景", "登入頁拉皮"];
+  let current = "h3", isOpen = false, saved = null;
+  const text = (tag, cls, t) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = t; return e; };
+  function render() {
+    const side = $("sideList"); const keep = side.scrollTop; side.replaceChildren(text("h2", null, "進行中"));
+    MockHost.rows.slice().sort((a, b) => ORDER.indexOf(a.workState) - ORDER.indexOf(b.workState)).forEach((r) => { const b = document.createElement("button"); b.className = "row"; b.dataset.id = r.id; b.setAttribute("aria-current", String(r.id === current)); b.append(text("span", `s-${r.workState}`, "●"), text("span", "t", r.title), text("span", "s", LABEL[r.workState])); b.onclick = () => { current = r.id; render(); }; side.append(b); });
+    side.append(text("h2", null, "較早"));
+    FILLER.forEach((t, i) => { const b = document.createElement("button"); b.className = "row"; b.append(text("span", "s", "·"), text("span", "t", t), text("span", "s", `${i + 2} 天前`)); side.append(b); });
+    side.scrollTop = keep;
+    const r = MockHost.rows.find((x) => x.id === current); const m = $("mainView"); m.replaceChildren();
+    m.append(text("h1", null, r.title), text("div", "meta", `${r.project ? MockHost.PROJECTS[r.project] : "未指定 Project"} · ${r.assistant} · ${LABEL[r.workState]}`));
+    const term = text("div", "term", `❯ 示範畫面：這裡是宿主的 Session 終端。\n\n  星系關閉後回到這裡，捲動位置與焦點保持原樣。\n${"\n  … 示範輸出 …".repeat(16)}`); m.append(term);
+    const n = MockHost.rows.filter((x) => x.workState === "waiting_you").length;
+    $("entryBadge").textContent = `${n} 等你`; // host-owned attention badge
+    $("entry").setAttribute("aria-label", `開啟 Session 星系，${n} 個 Session 等你`);
+    $("sbCount").textContent = `${MockHost.rows.length} 個 Session`;
+    $("connText").textContent = MockHost.connection === "connected" ? "本機已連線" : "連線中斷（示範）";
+    $("connDot").style.background = MockHost.connection === "connected" ? "" : "#d9822b";
+    $("dockConn").textContent = MockHost.connection === "connected" ? "中斷連線" : "恢復連線";
+    $("dockMotion").textContent = `減少動態：${MockHost.reducedMotion ? "開" : "關"}`; $("dockMotion").setAttribute("aria-pressed", String(MockHost.reducedMotion));
+    document.documentElement.classList.toggle("reduced", MockHost.reducedMotion);
+  }
+  const galaxy = $("galaxy");
+  const plugin = GalaxyPlugin.mount(galaxy, async () => MockHost.createInstance(navigate, () => closeView(true)));
+  function openView() {
+    if (isOpen) return; isOpen = true;
+    saved = { side: $("sideList").scrollTop, main: $("mainView").scrollTop };
+    const r = $("entry").getBoundingClientRect(); galaxy.style.setProperty("--ox", `${r.left + r.width / 2}px`); galaxy.style.setProperty("--oy", `${r.top + r.height / 2}px`);
+    $("shell").inert = true; galaxy.setAttribute("aria-hidden", "false"); galaxy.classList.add("open");
+    plugin.start();
+  }
+  function closeView(restore) {
+    if (!isOpen) return; isOpen = false;
+    plugin.stop(); galaxy.classList.remove("open"); galaxy.setAttribute("aria-hidden", "true"); $("shell").inert = false;
+    if (restore && saved) { $("sideList").scrollTop = saved.side; $("mainView").scrollTop = saved.main; }
+    $("entry").focus({ preventScroll: true });
+  }
+  function navigate(id) { current = id; render(); closeView(false); const row = document.querySelector(`.row[data-id="${id}"]`); if (row) row.scrollIntoView({ block: "nearest" }); $("mainView").scrollTop = 0; }
+  $("entry").onclick = openView;
+  document.addEventListener("keydown", (e) => { if (isOpen && e.key === "Escape") closeView(true); });
+  $("dockToggle").onclick = () => { const x = $("hostDock").classList.toggle("expanded"); $("dockToggle").setAttribute("aria-expanded", String(x)); };
+  $("dockSnap").onclick = () => MockHost.pushSnapshot();
+  $("dockConn").onclick = () => MockHost.toggleConnection();
+  $("dockMotion").onclick = () => MockHost.setReduced(!MockHost.reducedMotion);
+  matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => MockHost.setReduced(e.matches));
+  if (location.hash.includes("reduced")) MockHost.setReduced(true); // review switch
+  MockHost.onChange(render);
+  render();
+  $("diagShell").textContent = "示範宿主 · 不會操作真實 Session";
+})();
+</script>
+</body>
+</html>

@@ -1,3 +1,6 @@
+import { useViewPlugins } from "./view-plugins/Host.js"
+import { useLocalPluginSource } from "./view-plugins/local.js"
+import type { ViewSource } from "./view-plugins/bridge.js"
 import { supportWord } from "./support/words.js"
 import { useProjectAssistantsHost } from "./pages/project-assistants.js"
 import type { ProjectAssistantRegistry, AssistantWorkIntent } from "./cloud/project-assistants.js"
@@ -243,7 +246,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   cloudStartedRow = null, onCloudStartedObserved, cloudMachineOffline = null,
   fleetDetailProblem = null, onFleetDetailPending, onFleetClose, fleetActionIntent = null, onFleetActionIntentHandled,
   fleetCloseIntent = null, onFleetCloseIntentHandled,
-  quotaMachineName, hideSessionCounts = false, onChooseDashboardMachine, dashboardSource, dashboardRequested = false, onDashboardClosed, focusCloudSessions = false, onLeaveCloudSessions, onTitleSaved, confirmedTitle, projectAssistants, onOpenAssistantWork, assistantWorkIntent, onAssistantWorkOpened }: {
+  quotaMachineName, hideSessionCounts = false, onChooseDashboardMachine, dashboardSource, dashboardRequested = false, onDashboardClosed, focusCloudSessions = false, onLeaveCloudSessions, onTitleSaved, confirmedTitle, projectAssistants, viewPluginSources, onOpenAssistantWork, assistantWorkIntent, onAssistantWorkOpened }: {
+  viewPluginSources?: readonly ViewSource[]
   projectAssistants?: ProjectAssistantRegistry | null
   onOpenAssistantWork?: (work: ProjectAssistantWorkLink) => void
   assistantWorkIntent?: AssistantWorkIntent | null
@@ -596,6 +600,9 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     if (!keepFocus && !phone() && !videoAddress) rowNode(id)?.focus({ preventScroll: true })
   }
 
+  const localViewSource = useLocalPluginSource(rows, fleet.live, fleet.loaded, openSession)
+  const plugins = useViewPlugins(viewPluginSources ?? [localViewSource], document.documentElement.lang || "en")
+
   const openStarted = (answer: StartAnswer, place: StartPlaceRow | null, finish: () => boolean): boolean => {
     if (followsRelay() || import.meta.env.VITE_HOSTED_CONSOLE) return false
     const row = startedRow(answer, place)
@@ -841,7 +848,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   }, [])
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
-      if (assistants.openedRef.current) return
+      if (assistants.openedRef.current || plugins.openedRef.current) return
       if (!phone()) return
       // A fragment navigation fires popstate before hashchange. The address
       // already names the document while pageRef still names the Session;
@@ -880,7 +887,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   // to reverse here. The session menu answers its own Escape before this sees
   // it, as `detail-actions.js` does.
   const onKey = (ev: KeyboardEvent) => {
-    if (assistants.openedRef.current) return
+    if (assistants.openedRef.current || plugins.openedRef.current) return
     if (ev.defaultPrevented || ev.isComposing || ev.keyCode === 229) return
     if (document.querySelector("#session-state-filter[open]")) return
     const key = ev.key
@@ -1312,8 +1319,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         readingSource={fleet.snapshot?.scan.source}
         scanNotes={fleet.snapshot?.scan.notes}
         scanSources={fleet.snapshot?.scan.sources}
-        shown={page === "sessions" && !assistants.opened}
-        assistantEntry={assistants.entry}
+        shown={page === "sessions" && !assistants.opened && !plugins.opened}
+        assistantEntry={<>{assistants.entry}{plugins.entry}</>}
         view={view}
         paneOpen={paneOpen}
         filter={filter}
@@ -1346,7 +1353,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         </ModuleLoadBoundary>
       ))}
       {!surveyAccount ? <SurveyCoordinator /> : null}
-      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} accessory={assistants.opened ? null : assistants.dock} />
+      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} accessory={assistants.opened || plugins.opened ? null : <>{assistants.dock}{plugins.dock}</>} />
       <Overlays />
       {machine ? <MachineDashboard
         key={dashboardSource?.ownerScope ?? "local"}
@@ -1365,6 +1372,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       <NewBuild />
       <CopilotDockView />
       {assistants.content}
+      {plugins.content}
     </>
   )
 }

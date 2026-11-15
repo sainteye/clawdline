@@ -133,3 +133,27 @@ func RunningPID(dir string) int {
 	}
 	return pid
 }
+
+// launchedRevisionFile records which extension release the test Chrome
+// profile last started with.
+func launchedRevisionFile(dir string) string {
+	return filepath.Join(ProfileDir(dir), ".clawdline-extension-revision")
+}
+
+// forgetStaleServiceWorkers removes the test profile's cached service
+// workers when the extension release differs from the one it last started
+// with, then records the new release. Sites in that profile register theirs
+// again on their next visit.
+func forgetStaleServiceWorkers(dir string) error {
+	revision := extensionRevision()
+	if data, err := os.ReadFile(launchedRevisionFile(dir)); err == nil && string(data) == revision {
+		return nil
+	}
+	if err := os.RemoveAll(filepath.Join(ProfileDir(dir), "Default", "Service Worker")); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(ProfileDir(dir), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(launchedRevisionFile(dir), []byte(revision), 0o600)
+}

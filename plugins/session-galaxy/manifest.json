@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "com.clawdline.session-galaxy",
+  "version": "0.1.0",
+  "hostApi": 1,
+  "name": {
+    "en": "Session Galaxy",
+    "zh-Hant": "Session 星系"
+  },
+  "entry": "index.html",
+  "capabilities": [
+    "sessions.read",
+    "sessions.open"
+  ]
+}

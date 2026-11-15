@@ -69,7 +69,10 @@ const projectAssistants = table("src/project-assistants/words.ts", "export { en 
 // copy (settings carries Chinese, the bar one word for both), so only the key
 // is required there, never the value.
 const survey = table("src/onboarding/words.ts", "export { surveyEn as en, surveyZh as zh }", "en", ["surveyEn", "surveyZh"])
+const viewPlugins = table("src/view-plugins/words.ts", "export { en as sourceEn, zh as sourceZh }", "en", ["en", "zh"])
+const pluginTable = words => Object.fromEntries(Object.entries(words).flatMap(([key,value]) => typeof value === "string" ? [[key,value]] : Object.entries(value).map(([code,text]) => [`error_${code}`,text])))
 const domains = [
+  { name: "viewPlugins", en: pluginTable(viewPlugins.sourceEn), zh: pluginTable(viewPlugins.sourceZh), english: true },
   { name: "projectAssistants", en: projectAssistants.sourceEn, zh: projectAssistants.sourceZh, english: true },
   { name: "survey", en: survey.en, zh: survey.zh, english: true },
   { name: "promo", en: promo.en, zh: promo["zh-Hant"], english: true },

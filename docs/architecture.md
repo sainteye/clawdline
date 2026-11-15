@@ -381,3 +381,14 @@ Cloud browsers expose browser, work, status and workflow settings. The standalon
 `settings.html` document and macOS settings window have been removed; the local
 browser console embeds the machine-authorized controls in its Settings tabs.
 Update deep links continue to open the status pane.
+
+### Experimental community view plugins
+
+[View Plugin v1](plugins/view-plugin-v1.md) defines the browser-local runtime in
+`web/console/src/view-plugins`: an IndexedDB archive registry, explicit per-opening
+machine/Project grants, an opaque srcdoc iframe and a dedicated MessagePort SDK.
+Galaxy and List are independent static ZIP packages, not compiled page modules.
+Local uses the existing fleet snapshot; Cloud uses the authorized pinned Session
+projection source. Neither grants generic API calls or changes the classifier or
+broker. The bottom status bar and fallback entry open a host-owned full-app surface.
+Machine-owned installation and cross-device package distribution are deferred.

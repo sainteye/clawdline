@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12124,
-  "riskKeys": 5263,
-  "nonRiskCount": 6861,
+  "englishContentKeys": 12208,
+  "riskKeys": 5298,
+  "nonRiskCount": 6910,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 557,
+      "count": 565,
       "sources": [
         null
       ],
@@ -706,6 +706,14 @@
         "capacityRow.console.video_preview_reads.what",
         "capacityRow.console.video_preview_side.full",
         "capacityRow.console.video_preview_side.what",
+        "capacityRow.console.view_plugin_archive_bytes.what",
+        "capacityRow.console.view_plugin_expanded_bytes.what",
+        "capacityRow.console.view_plugin_files.what",
+        "capacityRow.console.view_plugin_message_bytes.full",
+        "capacityRow.console.view_plugin_pending.what",
+        "capacityRow.console.view_plugin_requests_per_second.full",
+        "capacityRow.console.view_plugin_sessions.what",
+        "capacityRow.console.view_plugin_text_characters.what",
         "capacityRow.console.viewer_health_attempts.what",
         "capacityRow.console.viewer_health_backoff_seconds.full",
         "capacityRow.console.viewer_health_backoff_seconds.what",
@@ -3915,7 +3923,7 @@
     },
     {
       "name": "next / other",
-      "count": 1104,
+      "count": 1106,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4194,6 +4202,8 @@
         "next.copilotKeySave",
         "next.copilotKeySet",
         "next.copilotListening",
+        "next.copilotLiveCost",
+        "next.copilotLiveCostNote",
         "next.copilotLogBriefingSent",
         "next.copilotLogConfigured",
         "next.copilotLogConfiguring",
@@ -7261,6 +7271,54 @@
         "verify.unset",
         "verify.verdict",
         "verify.why"
+      ]
+    },
+    {
+      "name": "viewPlugins / other",
+      "count": 39,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "viewPlugins.addGalaxy",
+        "viewPlugins.addList",
+        "viewPlugins.all",
+        "viewPlugins.author",
+        "viewPlugins.back",
+        "viewPlugins.cancel",
+        "viewPlugins.close",
+        "viewPlugins.confirmInstall",
+        "viewPlugins.disable",
+        "viewPlugins.download",
+        "viewPlugins.enable",
+        "viewPlugins.error_already_installed",
+        "viewPlugins.error_invalid_manifest",
+        "viewPlugins.error_message_too_large",
+        "viewPlugins.error_package_too_large",
+        "viewPlugins.error_protocol_mismatch",
+        "viewPlugins.error_registry_changed",
+        "viewPlugins.error_too_many_sessions",
+        "viewPlugins.error_unsupported_zip",
+        "viewPlugins.galaxy",
+        "viewPlugins.install",
+        "viewPlugins.installed",
+        "viewPlugins.list",
+        "viewPlugins.loading",
+        "viewPlugins.offline",
+        "viewPlugins.preset",
+        "viewPlugins.previous",
+        "viewPlugins.project",
+        "viewPlugins.read",
+        "viewPlugins.replace",
+        "viewPlugins.retry",
+        "viewPlugins.review",
+        "viewPlugins.rollback",
+        "viewPlugins.scope",
+        "viewPlugins.selected",
+        "viewPlugins.source",
+        "viewPlugins.title",
+        "viewPlugins.version",
+        "viewPlugins.viewClose"
       ]
     },
     {

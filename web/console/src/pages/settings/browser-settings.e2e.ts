@@ -253,7 +253,7 @@ for (const [name, width, height, ui] of [["desktop", 1280, 900, "zh-Hant"], ["ph
       await until(`!document.querySelector('.browser-setup')`)
       // A stable folder behind the build only needs Chrome's next start, or the reload arrow now.
       usualHost = { version: "0.3.0", folder: "stable" }
-      await until(`document.querySelector('[data-browser="user_chrome"] .browser-policy-setup-link')?.textContent === ${JSON.stringify(ui === "en" ? "New version on next Chrome restart · Apply now ›" : "新版在 Chrome 重新啟動時生效・立即套用 ›")}`)
+      await until(`document.querySelector('[data-browser="user_chrome"] .browser-policy-setup-link')?.textContent === ${JSON.stringify(ui === "en" ? "New version ready · Apply with ↻ ›" : "有新版・按 ↻ 套用 ›")}`)
       await run(`document.querySelector('[data-browser="user_chrome"] .browser-policy-setup-link').click()`)
       await until(`document.querySelector('.browser-setup')?.innerText.includes('↻')`)
       await run(`document.querySelector('.browser-setup .setup-x').click()`)

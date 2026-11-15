@@ -642,6 +642,7 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   c.live = true
   c.attempt = 1
   c.state = { ...c.state, status: 'connected' }
+  c.journalCall = 'call-live-test'
   c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
   c.call = { memory: '', snapshot: '', options: {} }
   c.snapshot = Promise.resolve('【通話開始時的 Session 快照】 one Session')
@@ -659,6 +660,8 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
 
   c.handleLiveEvent({ type: 'session.started' })
   await tick(); await tick()
+  assert.ok(c.state.cost?.live, 'the GPT-Live length and cost show from the start')
+  assert.equal(c.state.cost.live.billedSeconds, 0)
   const update = sent.find(e => e.type === 'session.update')
   assert.ok(update, 'the backend is configured once the session has started')
   assert.match(update.session.delegation.responses.instructions, /one Session/)
@@ -678,9 +681,13 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   assert.equal(result?.item.call_id, 'call_1')
   assert.match(result.item.output, /Prepare screenshots/)
   assert.deepEqual(sent.map(e => e.type), ['response.item.create', 'response.create'])
+  const journaled = c.journalLines.find(l => l.kind === 'tool' && l.text === 'list_sessions')
+  assert.match(journaled?.tool?.steps ?? '', /\/v1\/sessions \d+ms/, 'each machine request of a tool is timed in the journal')
 
   c.handleLiveEvent({ type: 'session.usage.updated', usage: { seconds: 60 } })
   c.handleLiveEvent({ type: 'response.event', event: { type: 'response.completed', response: { usage: { input_tokens: 10000, output_tokens: 0 } } } })
   assert.ok(Math.abs(c.state.cost.usd - (0.05 + 0.001)) < 1e-9, String(c.state.cost.usd))
   assert.equal(c.state.cost.priced, true)
+  assert.ok(c.state.cost.live.seconds >= 60)
+  clearInterval(c.liveTicker)
 })
