@@ -406,6 +406,12 @@ are the same `runCopilotTool` a Realtime call runs.
   a GPT-Live call greets once (`session.commentary.append`) and tells the live model when the
   focus moves (`session.thinking.append`).
 
+**Choosing per call.** A call button (toolbar, Session menu, hold) opens the sheet with `choose(origin)`; the sheet asks GPT-Live or Realtime API and `startChosen(engine)` dials inside that tap, which iOS needs for the microphone. The settings' engine is only the default for other starts.
+
+**Origin and cue.** At `session.started` a Live call resolves the Session it was placed from to the row the tools list (`fleet:<machine>:…` on every machine's list) and uses it as the focus, as a Realtime call's opening handover does; unresolved, every send was refused as "not the Session under discussion". Each backend tool call joins `pendingTools` while it runs, so the progress cue plays when it starts and every `PROGRESS_CUE_REPEAT_MS` until it answers.
+
+**Recaps.** With background recaps on, a tool reads a recap the list already carries when it is at most `KEPT_RECAP_SECONDS` (1800) old, with its age; `fresh: true`, set only when the person asks for the latest, lowers that to `FRESH_RECAP_SECONDS` (300) and has an older one written now. Before this a report of four working Sessions waited 20-22 s for four forks written one after another.
+
 **Cost.** OpenAI bills a Live session per second ($0.05 a minute on 2026-11-15) and the backend
 per token ($0.10 in, $0.01 cached, $0.50 out per 1M for `gpt-6-luna`). The call's cost line adds
 `session.usage.updated` seconds and each forwarded `response.completed` usage at those rates.

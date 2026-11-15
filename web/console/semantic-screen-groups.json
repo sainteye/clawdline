@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12212,
+  "englishContentKeys": 12217,
   "riskKeys": 5299,
-  "nonRiskCount": 6913,
+  "nonRiskCount": 6918,
   "groups": [
     {
       "name": "acp / other",
@@ -3926,7 +3926,7 @@
     },
     {
       "name": "next / other",
-      "count": 1106,
+      "count": 1111,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4173,6 +4173,7 @@
         "next.copilotCall",
         "next.copilotCallFromSession",
         "next.copilotCallTitle",
+        "next.copilotChooseEngine",
         "next.copilotClose",
         "next.copilotConfiguring",
         "next.copilotConnectedReady",
@@ -4261,6 +4262,10 @@
         "next.copilotSpeedQuick",
         "next.copilotSpeedSlow",
         "next.copilotStart",
+        "next.copilotStartLive",
+        "next.copilotStartLiveHint",
+        "next.copilotStartRealtime",
+        "next.copilotStartRealtimeHint",
         "next.copilotThinking",
         "next.copilotToolAsked",
         "next.copilotToolMany",

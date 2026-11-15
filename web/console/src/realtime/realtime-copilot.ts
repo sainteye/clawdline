@@ -54,6 +54,10 @@ export interface RealtimeCopilotState {
   notice?: { text: string; at: number; warn?: boolean }
   /** The tools used since the person last spoke, in order (`toolTrace`). */
   tools?: ToolTrace[]
+  /** A call button was pressed and the sheet asks which voice system to use (`choose`). */
+  choosing?: boolean
+  /** The voice system of the call under way or last placed. */
+  engine?: 'realtime' | 'live'
 }
 
 export type RealtimeListener = (state: RealtimeCopilotState) => void
@@ -229,6 +233,9 @@ export class RealtimeCopilotClient {
   private listeners: Set<RealtimeListener> = new Set()
   /** This call runs on GPT-Live (`copilot-live.ts`) rather than the Realtime API. */
   private live = false
+  /** Where the pending choice's call was placed from (`choose`), and the last system chosen. */
+  private chosenOrigin?: CallOrigin
+  private lastEngine?: 'realtime' | 'live'
   private liveHeard = new LiveTranscript()
   private liveSaid = new LiveTranscript()
   /** The backend's function calls still running in this browser. */
@@ -441,7 +448,34 @@ export class RealtimeCopilotClient {
    * single opening hands that Session over after reading its records. A call already
    * going (or connecting) is turned to the Session instead of starting again.
    */
-  async start(origin?: CallOrigin): Promise<void> {
+  /**
+   * A call button's press: the sheet asks which voice system to use before
+   * anything dials (asked for on 2026-11-15). A press during a call turns the
+   * call to its Session instead, as `start` did.
+   */
+  choose(origin?: CallOrigin) {
+    if (this.state.status === 'connected' || this.state.status === 'connecting') {
+      if (origin) this.turnTo(origin)
+      return
+    }
+    this.chosenOrigin = origin
+    this.updateState({ choosing: true })
+  }
+
+  /** The choice's press: dials inside that tap, which iOS needs for the microphone. */
+  startChosen(engine: 'realtime' | 'live') {
+    const origin = this.chosenOrigin
+    this.chosenOrigin = undefined
+    this.updateState({ choosing: false })
+    void this.start(origin, engine)
+  }
+
+  cancelChoice() {
+    this.chosenOrigin = undefined
+    this.updateState({ choosing: false })
+  }
+
+  async start(origin?: CallOrigin, engine?: 'realtime' | 'live'): Promise<void> {
     if (this.state.status === 'connected' || this.state.status === 'connecting') {
       if (origin) this.turnTo(origin)
       return
@@ -496,8 +530,11 @@ export class RealtimeCopilotClient {
       check()
       if (!configured) throw new Error(nextWord('voiceWorkModeUnknown'))
       // GPT-Live calls use the direct tools only: the background work list is built on Realtime's turns.
-      const live = configured.engine === 'live'
+      // The system chosen for this call, or the machine's default when none was.
+      const live = engine ? engine === 'live' : configured.engine === 'live'
       this.live = live
+      this.lastEngine = live ? 'live' : 'realtime'
+      this.updateState({ engine: this.lastEngine })
       const managed = !live && configured.work_enabled === true
       if (live && configured.work_enabled === true) this.addLog('info', nextWord('copilotLogLiveNoWork'))
       let messageActions=false
@@ -1302,7 +1339,7 @@ export class RealtimeCopilotClient {
     if (this.state.status === 'error' && this.micRefused) {
       this.micRefused = false
       this.addLog('info', nextWord('copilotLogMicRetry'))
-      void this.start(origin)
+      void this.start(origin, this.lastEngine)
     }
   }
 

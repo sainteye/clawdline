@@ -723,3 +723,19 @@ test('a GPT-Live call placed from a Session on every machine\'s list talks about
   const update = sent.find(e => e.type === 'session.update')
   assert.ok(update.session.delegation.responses.instructions.includes(c.focus), 'the backend is told the listed id')
 })
+
+test('a call button asks GPT-Live or Realtime API before it dials, and dials the chosen one from the same Session', () => {
+  const c = new RealtimeCopilotClient()
+  const started = []
+  c.start = (origin, engine) => { started.push({ origin, engine }) }
+  const origin = { id: '%7', label: 'Voice realism' }
+  c.choose(origin)
+  assert.equal(c.state.choosing, true, 'the sheet asks first')
+  assert.equal(started.length, 0, 'nothing dials before the choice')
+  c.startChosen('live')
+  assert.deepEqual(started, [{ origin, engine: 'live' }])
+  assert.equal(c.state.choosing, false)
+  // A cancelled choice forgets its Session.
+  c.choose(origin); c.cancelChoice(); c.startChosen('realtime')
+  assert.deepEqual(started[1], { origin: undefined, engine: 'realtime' })
+})
