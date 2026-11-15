@@ -93,6 +93,14 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.roster_seconds` | 3600 | `seconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_subs` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.roster_wakes` | 1 | `rows` | `disconnect` | `diagnostics, sender` | — |
+| `bots.routine_definitions` | 1000 | `rows` | `refuse` | `diagnostics, health, sender` | — |
+| `bots.routine_finished_runs` | 1000 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `bots.routine_instruction_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_interval_seconds` | 31536000 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_name_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_pending` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_tick_ms` | 1000 | `milliseconds` | `coalesce` | `diagnostics` | — |
+| `bots.routine_timeout_seconds` | 86400 | `seconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_ms` | 120000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.rules_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |

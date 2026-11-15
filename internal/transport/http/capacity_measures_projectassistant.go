@@ -47,6 +47,15 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		return capacity.Reading{Known: !installed, Note: "no allocation before installation; installed durable queues, native descendants and IO duration are not exposed by Host.Usage"}
 	}
 	return map[string]func() capacity.Reading{
+		capacity.BotsRoutineDefinitions:      unobserved,
+		capacity.BotsRoutineTickMilliseconds: pure,
+		capacity.BotsRoutinePending:          unobserved,
+		capacity.BotsRoutineNameBytes:        pure,
+		capacity.BotsRoutineInstructionBytes: pure,
+		capacity.BotsRoutineIntervalSeconds:  pure,
+		capacity.BotsRoutineTimeoutSeconds:   unobserved,
+		capacity.BotsRoutineFinishedRuns:     unobserved,
+
 		capacity.BotsInputBytes: pure, capacity.BotsInputChunkBytes: pure, capacity.BotsInputsPerMessage: pure, capacity.BotsInputsPerBot: unobserved,
 		capacity.BotsRosterSubscribers: unobserved,
 		capacity.BotsRosterWakeups:     unobserved,

@@ -1,0 +1,73 @@
+package projectassistant
+
+import (
+	"strings"
+	"time"
+)
+
+const (
+	MaxRoutineDefinitions          = 1000
+	MaxRoutineTickMilliseconds     = 1000
+	MaxRoutinePendingPerDefinition = 1
+	MaxRoutineNameBytes            = 200
+	MaxRoutineInstructionBytes     = 32000
+	MaxRoutineIntervalSeconds      = 31536000
+	MaxRoutineTimeoutSeconds       = 86400
+	MaxRoutineFinishedRuns         = 1000
+)
+
+// Routine belongs to one source Bot, canonical Project and conversation.
+// Only elapsed intervals are supported; calendar intent must not be approximated.
+type Routine struct {
+	ID              string       `json:"id"`
+	Key             BotKey       `json:"key"`
+	Project         ProjectScope `json:"project"`
+	ConversationID  string       `json:"conversation_id"`
+	Name            string       `json:"name"`
+	Instruction     string       `json:"instruction"`
+	IntervalSeconds int64        `json:"interval_seconds"`
+	TimeoutSeconds  int64        `json:"timeout_seconds"`
+	Enabled         bool         `json:"enabled"`
+	Deleted         bool         `json:"deleted"`
+	NextDue         time.Time    `json:"next_due"`
+	Version         int64        `json:"version"`
+}
+
+type RoutineRun struct {
+	ID             string       `json:"id"`
+	RoutineID      string       `json:"routine_id"`
+	Source         string       `json:"source"`
+	Key            BotKey       `json:"key"`
+	Project        ProjectScope `json:"project"`
+	ConversationID string       `json:"conversation_id"`
+	TurnID         string       `json:"turn_id,omitempty"`
+	BindingID      string       `json:"binding_id,omitempty"`
+	State          TurnState    `json:"state"`
+	Instruction    string       `json:"instruction,omitempty"`
+	TimeoutSeconds int64        `json:"timeout_seconds"`
+	CreatedAt      time.Time    `json:"created_at"`
+	FinishedAt     *time.Time   `json:"finished_at,omitempty"`
+	Published      bool         `json:"published"`
+}
+
+func ValidateRoutine(r Routine) error {
+	if r.ID == "" || r.Key.MachineID == "" || r.Key.BotID == "" || r.Project.MachineID != r.Key.MachineID || r.Project.ProjectID == "" || r.Project.CanonicalID == "" || r.ConversationID == "" || r.Version < 1 {
+		return &Failure{Code: Invalid, Field: "routine_owner"}
+	}
+	if strings.TrimSpace(r.Name) == "" || len(r.Name) > MaxRoutineNameBytes || strings.TrimSpace(r.Instruction) == "" || len(r.Instruction) > MaxRoutineInstructionBytes {
+		return &Failure{Code: Invalid, Field: "routine_text"}
+	}
+	if r.IntervalSeconds < 1 || r.IntervalSeconds > MaxRoutineIntervalSeconds || r.TimeoutSeconds < 1 || r.TimeoutSeconds > MaxRoutineTimeoutSeconds || r.NextDue.IsZero() {
+		return &Failure{Code: Invalid, Field: "routine_interval_timeout"}
+	}
+	return nil
+}
+
+// AdvanceRoutine skips missed occurrences while preserving the original cadence.
+func AdvanceRoutine(r Routine, now time.Time) time.Time {
+	if now.Before(r.NextDue) {
+		return r.NextDue
+	}
+	step := time.Duration(r.IntervalSeconds) * time.Second
+	return r.NextDue.Add((now.Sub(r.NextDue)/step + 1) * step)
+}

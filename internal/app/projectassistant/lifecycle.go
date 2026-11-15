@@ -139,7 +139,21 @@ func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.T
 		if state == pa.TurnUnknown {
 			effect = pa.EffectUnknown
 		}
-		_, err = repo.Commit(ctx, Mutation{Command: command, ExpectedVersion: expected, Bot: &bot, Conversation: &conversation, Turn: &t, Permissions: permissions, Receipt: pa.Receipt{ID: id(), Command: command, State: effect, ResourceID: t.ID}, Events: events})
+		var run *pa.RoutineRun
+		if t.RoutineRunID != "" {
+			for _, v := range x.RoutineRuns {
+				if v.ID == t.RoutineRunID {
+					copy := v
+					copy.State = state
+					at := clock()
+					copy.FinishedAt = &at
+					copy.Published = state != pa.TurnUnknown
+					run = &copy
+					break
+				}
+			}
+		}
+		_, err = repo.Commit(ctx, Mutation{RoutineRun: run, Command: command, ExpectedVersion: expected, Bot: &bot, Conversation: &conversation, Turn: &t, Permissions: permissions, Receipt: pa.Receipt{ID: id(), Command: command, State: effect, ResourceID: t.ID}, Events: events})
 		if err != nil {
 			return err
 		}
@@ -229,13 +243,14 @@ func (r *Engine) retryCleanup(a *runtimeActor) {
 	defer r.release(a)
 	a.mu.Lock()
 	session := a.session
+	completion := a.completion != nil
 	a.mu.Unlock()
 	// A provider reported an unknown Open without a cleanup handle. Keep the
 	// owner/slot; inventing a successful close would discard that uncertainty.
 	r.mu.Lock()
 	slot := a.slot
 	r.mu.Unlock()
-	if session == nil && slot {
+	if session == nil && slot && !completion {
 		return
 	}
 	if session != nil {
@@ -245,7 +260,15 @@ func (r *Engine) retryCleanup(a *runtimeActor) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.o.Limits.CleanupTimeout)
 	a.mu.Lock()
-	err := r.stopPendingLocked(ctx, a)
+	var err error
+	if a.completion != nil {
+		err = r.finishLocked(ctx, a, a.completion.turn, pa.TurnSucceeded, a.completion.text, nil)
+		if err == nil {
+			a.completion = nil
+		}
+	} else {
+		err = r.stopPendingLocked(ctx, a)
+	}
 	a.mu.Unlock()
 	cancel()
 	if err != nil {

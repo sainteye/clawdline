@@ -57,6 +57,8 @@ type Options struct {
 }
 
 type Host struct {
+	routineStop     context.CancelFunc
+	routineDone     chan struct{}
 	o               Options
 	mu              sync.Mutex
 	transition      sync.Mutex
@@ -311,7 +313,19 @@ func (h *Host) Enable(ctx context.Context) error {
 	}
 	r := h.engine
 	pending := h.cleanupPending
+	tickDone := h.routineDone
 	h.mu.Unlock()
+	if tickDone != nil {
+		select {
+		case <-tickDone:
+			h.mu.Lock()
+			h.routineDone = nil
+			h.routineStop = nil
+			h.mu.Unlock()
+		default:
+			return failure(pa.ExecutionEffectUnknown, "routine_tick_cleanup")
+		}
+	}
 	if r != nil {
 		u := r.Usage()
 		if !u.Known || u.ActiveActors != 0 || u.Processes != 0 {
@@ -348,6 +362,10 @@ func (h *Host) Enable(ctx context.Context) error {
 		h.engine = nil
 	}
 	h.enabled = true
+	tickCtx, stop := context.WithCancel(context.Background())
+	h.routineStop = stop
+	h.routineDone = make(chan struct{})
+	go h.routineTick(tickCtx, h.routineDone)
 	go h.resumeInterrupted()
 	return nil
 }
@@ -412,14 +430,27 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	h.enabled = false
 	h.closed = h.closed || closeHost
 	r := h.engine
+	stop, done := h.routineStop, h.routineDone
 	h.cleanupPending = h.store != nil
 	h.mu.Unlock()
 	var result error
+	if stop != nil {
+		stop()
+		select {
+		case <-done:
+			h.mu.Lock()
+			h.routineStop = nil
+			h.routineDone = nil
+			h.mu.Unlock()
+		case <-ctx.Done():
+			result = failure(pa.ExecutionEffectUnknown, "routine_tick_cleanup")
+		}
+	}
 	if r != nil {
 		if closeHost {
-			result = r.CloseForRestart(ctx)
+			result = errors.Join(result, r.CloseForRestart(ctx))
 		} else {
-			result = r.Close(ctx)
+			result = errors.Join(result, r.Close(ctx))
 		}
 	}
 	field := "execution"
@@ -594,4 +625,53 @@ func (f runtimeFacade) Disable(ctx context.Context, p pa.ProjectSelection) error
 		return nil
 	}
 	return r.Disable(ctx, p)
+}
+
+// The enabled Host owns one tick and stops it before actor teardown. It never
+// constructs a native provider when there are no due or pending definitions.
+func (h *Host) routineTick(ctx context.Context, done chan struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(time.Duration(pa.MaxRoutineTickMilliseconds) * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
+			for {
+				page, err := h.store.List(ctx, query)
+				if err != nil {
+					break
+				}
+				for _, b := range page.Items {
+					defs, runs, e := h.store.Routines(ctx, b.Bot.Key)
+					if e != nil {
+						continue
+					}
+					needed := false
+					for _, d := range defs {
+						if d.Enabled && !d.Deleted && !h.o.Clock().Before(d.NextDue) {
+							needed = true
+						}
+					}
+					for _, run := range runs {
+						if run.State == pa.TurnQueued {
+							needed = true
+						}
+					}
+					if needed {
+						r, e := h.runtime()
+						if e == nil {
+							_ = r.TickRoutines(ctx, b.Bot.Key)
+						}
+					}
+				}
+				if page.NextCursor == "" {
+					break
+				}
+				query.Cursor = page.NextCursor
+			}
+		}
+	}
 }

@@ -267,6 +267,9 @@ func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
+	if err = applyRoutines(ctx, tx, a, m); err != nil {
+		return pa.Receipt{}, err
+	}
 	if err = validateAggregate(a); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -339,7 +342,7 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	}
 	if m.Binding != nil {
 		b := *m.Binding
-		if old, ok := a.Bindings[b.Fence.BindingID]; ok && (old.Fence != b.Fence || old.Agent != b.Agent || old.Revoked && !b.Revoked) {
+		if old, ok := a.Bindings[b.Fence.BindingID]; ok && (old.Fence != b.Fence || old.Agent != b.Agent || old.SessionSlot != b.SessionSlot || old.Revoked && !b.Revoked) {
 			return failure(pa.StaleGeneration, "binding")
 		}
 		a.Bindings[b.Fence.BindingID] = b
@@ -348,7 +351,7 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		t := *m.Turn
 		if old, ok := a.Turns[t.ID]; ok {
 			capture := old.State == pa.TurnQueued && t.State == pa.TurnRunning
-			if old.Fence.Key != t.Fence.Key || old.Fence.Project != t.Fence.Project || old.Fence.ConversationID != t.Fence.ConversationID || old.MessageID != t.MessageID || old.IdempotencyKey != t.IdempotencyKey || !capture && (old.Fence != t.Fence || old.Instructions != t.Instructions || old.MemoryRevision != t.MemoryRevision) {
+			if old.Fence.Key != t.Fence.Key || old.Fence.Project != t.Fence.Project || old.Fence.ConversationID != t.Fence.ConversationID || old.MessageID != t.MessageID || old.RoutineRunID != t.RoutineRunID || old.IdempotencyKey != t.IdempotencyKey || !capture && (old.Fence != t.Fence || old.Instructions != t.Instructions || old.MemoryRevision != t.MemoryRevision) {
 				return failure(pa.ScopeDenied, "turn_snapshot")
 			}
 			if capture && (t.Fence.BindingID != a.Conversation.BindingID || t.Fence.Generation != a.Conversation.Generation || t.Instructions != a.Bot.Instructions || t.MemoryRevision != a.Memory.Revision) {
@@ -447,6 +450,12 @@ func validateAggregate(a aggregate) error {
 			return failure(pa.ScopeDenied, "binding")
 		}
 		return nil
+	}
+	if c.MainBindingID != "" {
+		main, ok := a.Bindings[c.MainBindingID]
+		if !ok || main.SessionSlot != "" {
+			return failure(pa.ScopeDenied, "main_binding")
+		}
 	}
 	if c.BindingID != "" {
 		binding, ok := a.Bindings[c.BindingID]
@@ -885,7 +894,7 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return failure(pa.NotFound, "bot")
 	}
-	for _, table := range []string{"project_assistant_events", "project_assistant_receipts"} {
+	for _, table := range []string{"project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
 			return err
 		}

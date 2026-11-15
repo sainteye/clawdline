@@ -182,3 +182,38 @@ func TestNativeHistoryRefusesLinkedComponents(t *testing.T) {
 		t.Fatal("a linked owner record was admitted")
 	}
 }
+
+func TestRoutineHistorySlotPreservesLegacyMainAndRejectsSiblingOwner(t *testing.T) {
+	q := historyRequest()
+	state, main := preparedHistory(t, q)
+	if e := main.recordID(ownedSessionID); e != nil {
+		t.Fatal(e)
+	}
+	q.Binding.SessionSlot = "routine-run-one"
+	run, e := historyForRequest(state, q)
+	if e != nil || run.Identity == main.Identity {
+		t.Fatal("routine shared main history", e)
+	}
+	if e = privateDirectory(state, run.Owners); e != nil {
+		t.Fatal(e)
+	}
+	if run.verifyID(ownedSessionID) == nil {
+		t.Fatal("routine accepted main native ID")
+	}
+	if e = run.recordID(ownedSessionID); e != nil {
+		t.Fatal(e)
+	}
+	q.Binding.SessionSlot = "routine-run-two"
+	sibling, e := historyForRequest(state, q)
+	if e != nil || sibling.Identity == run.Identity {
+		t.Fatal(e)
+	}
+	if sibling.verifyID(ownedSessionID) == nil {
+		t.Fatal("sibling accepted run native ID")
+	}
+	q.Binding.SessionSlot = ""
+	legacy, e := historyForRequest(state, q)
+	if e != nil || legacy.Identity != main.Identity || legacy.verifyID(ownedSessionID) != nil {
+		t.Fatal("main legacy identity changed", e)
+	}
+}
