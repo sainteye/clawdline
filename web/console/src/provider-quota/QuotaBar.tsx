@@ -77,26 +77,27 @@ function QuotaReading({ machineName, offline, mobile = false, accessory }: { mac
   const opener = useRef<HTMLButtonElement | null>(null)
   const [expanded, setExpanded] = useState(false)
   useLayoutEffect(() => {
-    if (!rows.length || !footer.current) return
+    if (!footer.current) return
     const el = footer.current
     const measure = () => document.documentElement.style.setProperty("--quota-footer-height", `${el.getBoundingClientRect().height}px`)
     measure(); const observer = new ResizeObserver(measure); observer.observe(el)
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--quota-footer-height") }
-  }, [rows.length > 0])
-  // The Bots orb may dock here only while this bar is on screen.
-  useLayoutEffect(() => { if (!rows.length || !accessory) return; setDockAvailable(true); return () => setDockAvailable(false) }, [rows.length > 0, !!accessory])
+  }, [])
+  // Availability belongs to the footer, independently of readings and open overlays.
+  useLayoutEffect(() => { setDockAvailable(true); return () => setDockAvailable(false) }, [])
   useEffect(() => {
     if (expanded && dialog.current && !dialog.current.open) dialog.current.showModal()
     if (!expanded && dialog.current?.open) dialog.current.close()
   }, [expanded])
-  if (!rows.length) return null
   const stale = (row: ProviderQuotaRow) => offline || !!polling.error || quotaStale(row, now)
   const open = (button: HTMLButtonElement) => { opener.current = button; setExpanded(true) }
+  const readingState = offline ? "offline" : polling.error ? "failed" : polling.pending ? "loading" : rows.length ? "ready" : "empty"
   return <>
-    <footer ref={footer} className="provider-quota-bar" aria-label={nextWord("quotaTitle")}>
+    <footer ref={footer} className="provider-quota-bar" data-reading-state={readingState} aria-label={nextWord("quotaTitle")}>
       {accessory}
       {machineName && <span className="quota-machine" title={machineName}>{machineName}</span>}
       <div className="quota-providers">
+        {!rows.length && <span className="quota-empty" role="status">{nextWord(offline ? "quotaOfflineNoReading" : polling.error ? "quotaReadUnavailable" : polling.pending ? "quotaLoading" : "quotaEmpty")}</span>}
         {shown.map((row) => {
           const compact = compactWindow(row)
           const used = compact

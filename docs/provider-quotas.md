@@ -7,6 +7,19 @@ is the fallback for each switch until it is explicitly set. Turning a layout off
 footer and stops its reads; it does not change dispatch policy. Providers without a usable numeric
 window are hidden. A real zero is a usable reading. The footer is available from API level 28.
 
+The footer shell remains visible while its first read is pending, when no provider has a usable
+reading, and after a failed read. It shows the corresponding loading, empty, unavailable or offline
+message, keeps its measured bottom space, and retains the Refresh action. Readings and their
+absence do not own shell visibility. A failed refresh with a previous reading still shows that
+reading as outdated. The footer's `data-reading-state` distinguishes loading, empty, failed,
+offline and ready states for inspection without exposing response content.
+
+Bots saved in the footer and the view launcher follow the footer's visibility. They never fall
+back to floating when the bar is hidden by a browser preference, an unsupported machine or mobile
+navigation. A Bot explicitly dragged out of the footer retains its independent floating placement.
+The view manager remains reachable from the sidebar when the footer is hidden. Dock availability
+is owned by the mounted footer, independently of whether an overlay temporarily removes its icons.
+
 The footer reads the currently selected machine, including in the all-machines view; its detail
 names that source machine. It never adds percentages across machines, projects or Sessions.
 Switching the Cloud reader discards the previous machine's footer state. Desktop windows show a
