@@ -287,3 +287,7 @@ unknown) and runs in the same native session when it can be loaded; the
 prompt tells the agent to finish without repeating a completed action. An
 older interrupted turn, or one with queued messages behind it, waits for the
 person's next message as before.
+
+## Darwin lifecycle preservation acceptance
+
+[CI run 43752755054](https://github.com/sainteye/clawdline/actions/runs/43752755054) failed `TestHostLazySendDisablePreservesUnknownAndExistingHostWork` while the real SQLite cleanup used the fixture's 100 ms deadline. The functional case now uses the registered 5,000 ms production cleanup budget. Its checks still require the interrupted turn to remain unknown, the queued turn to become cancelled, and the existing host work to survive. Dedicated short-deadline and failed-cleanup cases retain their original limits and verify that unresolved resources prevent re-enable. The focused preservation, late-open and failure-injection cases passed locally; the exact repaired main still requires CI acceptance.
