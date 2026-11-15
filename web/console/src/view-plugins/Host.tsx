@@ -9,6 +9,7 @@ import { PluginFrame, readPluginSource, type ViewGrant } from "./Frame.js"
 import { pluginWords } from "./words.js"
 import { ViewArtwork, ViewPluginIcon, exampleCover, packageCover, hasCuratedUpdate } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
+import { ManageMenu } from "./ManageMenu.js"
 import "./plugins.css"
 
 const code = (e: unknown) => e instanceof PluginError ? e.code : "storage_unavailable"
@@ -71,7 +72,11 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
       e.stopImmediatePropagation(); finishRef.current()
     }
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); closeRef.current(); return }
+      if (e.key === "Escape") {
+        // An open Manage menu takes Escape for itself; the next one closes the host.
+        if (node.querySelector(".vp-menu-wrap[data-open=true]")) return
+        e.preventDefault(); e.stopImmediatePropagation(); closeRef.current(); return
+      }
       if (e.key !== "Tab") return
       const all = [...node.querySelectorAll<HTMLElement>("button:not([disabled]),a[href],input,select,summary,iframe")].filter(el => el.getClientRects().length)
       const first = all[0], last = all[all.length - 1]
@@ -161,12 +166,12 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
                 <span className="vp-status"><i />{row.enabled ? w.enabled : w.disabled}</span>
                 {!packageCover(row.active) && <span className="vp-muted">{w.coverRequired}</span>}
                 <div className="vp-card-footer"><button className="vp-primary" disabled={busy || !row.enabled} onClick={() => choose(row.active)}>{w.open} <span aria-hidden="true">↗</span></button>
-                  <details className="vp-options"><summary>{w.manage} <span aria-hidden="true">⌄</span></summary><div className="vp-option-list">
-                    <button disabled={busy} onClick={() => void act(() => enablePackage(row, !row.enabled))}>{row.enabled ? w.disable : w.enable}</button>
-                    {row.previous && <button disabled={busy} onClick={() => void act(() => rollbackPackage(row))}>{w.rollback} · {row.previous.manifest.version}</button>}
-                    <button className="vp-remove" disabled={busy} onClick={() => void act(() => removePackage(row))}>{w.remove}</button>
-                    <small className="vp-package-id">{row.id}</small>
-                  </div></details>
+                  <ManageMenu label={w.manage} busy={busy} packageId={row.id} items={[
+                    { label: row.enabled ? w.disable : w.enable, onSelect: () => void act(() => enablePackage(row, !row.enabled)) },
+                    ...(row.previous ? [{ label: `${w.rollback} · ${row.previous.manifest.version}`, onSelect: () => void act(() => rollbackPackage(row)) }] : []),
+                  ]} remove={{ label: w.remove, cancel: w.cancel, confirm: w.remove,
+                    question: `${w.removeQuestion.replace("{name}", name(row.active, language))}${row.previous ? w.removePrevious : ""}`,
+                    onConfirm: () => void act(() => removePackage(row)) }} />
                 </div>
               </div>
             </article>)}</div>

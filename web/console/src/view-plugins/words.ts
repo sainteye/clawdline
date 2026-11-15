@@ -16,6 +16,7 @@ const en = {
   offline: "Some Session data is stale or unavailable.", selected: "Selected package", author: "Package identity", previous: "Previous version",
   launcher: "Your views", launchEmpty: "No views enabled yet", launchEmptyHint: "Add a view from Sidebar → View plugins.", openView: "Open this view",
   personalize: "A different perspective", manageHeading: "Make room for your views", manageHint: "Add a view here. Open it anytime from the status bar.",
+  removeQuestion: "Remove {name}?", removePrevious: " Its previous version is removed too.",
   manage: "Manage", enabled: "Enabled", disabled: "Disabled", emptyHint: "Start with a view below, or import a community package.",
   examplesHint: "Different ways to see the same Sessions.", galaxyHint: "Sessions become stars, with work states mapped to orbits.", added: "Installed", update: "Review update",
   errors: {
@@ -52,6 +53,7 @@ const zh: typeof en = {
   offline: "部分機器的 Session 資料可能過時或無法讀取。", selected: "選取的套件", author: "套件識別", previous: "前一版本",
   launcher: "已安裝視圖", launchEmpty: "還沒有啟用的視圖", launchEmptyHint: "從側邊欄的「視圖擴充」新增視圖。", openView: "開啟這個視圖",
   personalize: "換個角度看工作", manageHeading: "你的工作，不同視角", manageHint: "在這裡新增視圖，隨時從狀態列打開。",
+  removeQuestion: "要移除「{name}」嗎？", removePrevious: "前一版本也會一併刪除。",
   manage: "管理", enabled: "已啟用", disabled: "已停用", emptyHint: "從下方挑一個視圖，或匯入社群套件。",
   examplesHint: "同一組 Session，不同的呈現方式。", galaxyHint: "以星體與軌道呈現 Session 和工作狀態。", added: "已安裝", update: "檢查更新",
   errors: {

@@ -12245,6 +12245,8 @@
   "viewPlugins.addTerritory": "Install Territory",
   "viewPlugins.territoryHint": "A map of Projects and Sessions. File activity is not available yet.",
   "viewPlugins.update": "Review update",
+  "viewPlugins.removeQuestion": "Remove {name}?",
+  "viewPlugins.removePrevious": " Its previous version is removed too.",
   "capacityRow.console.view_plugin_archive_bytes.what": "Bounds the ZIP bytes read for one imported view package.",
   "capacityRow.console.view_plugin_archive_bytes.full": "Oversized ZIPs are refused before they can replace an installed package.",
   "capacityRow.console.view_plugin_expanded_bytes.what": "Bounds the combined extracted contents of a view package.",
