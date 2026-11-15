@@ -150,6 +150,22 @@ test("account registry retains other machines and drafts through active-machine 
   assert.throws(() => registry.sync([{...grant(),accountKey:"other"}],transport),error => errorCode(error) === "pa_revoked")
 })
 
+test("Bot controls follow the live API level after the source first arrives", () => {
+  const registry = new ProjectAssistantRegistry("account","trusted-reader")
+  const transport = () => async () => Response.json(sourceStatus())
+  const controls = () => {
+    const source = registry.getSnapshot()[0] as ProjectAssistantSourceClient
+    return [source.pictures(), source.canUnqueue(), source.canManage(), source.canRules(), source.canSendNow()]
+  }
+  registry.sync([{...grant(),apiLevel:undefined}],transport)
+  assert.deepEqual(controls(),[false,false,false,false,false])
+  registry.sync([{...grant(),apiLevel:68}],transport)
+  assert.deepEqual(controls(),[true,true,true,true,true])
+  registry.sync([{...grant(),apiLevel:61}],transport)
+  assert.deepEqual(controls(),[false,false,false,false,false])
+  registry.revoke()
+})
+
 test("a source's readable status never grants content writes by itself",async () => {
   let writes=0
   const {source} = make(async (path,init) => {if(init?.method !== "GET")writes++;const answer=sourceStatus();answer.sources[0].writable=false;return Response.json(path.endsWith("/status")?answer:{})})

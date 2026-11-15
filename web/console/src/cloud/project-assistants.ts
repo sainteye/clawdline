@@ -322,7 +322,9 @@ export class ProjectAssistantRegistry {
       return !old || JSON.stringify({...old,authorizationRevision:grant.authorizationRevision}) !== JSON.stringify(grant)
     })
     for (const [id,client] of this.clients) {
-      if (next.get(id)?.authorizationRevision !== this.revisions.get(id)) {client.revoke(); this.clients.delete(id);this.revisions.delete(id); changed = true}
+      // The first roster can precede the signed API descriptor. Capability
+      // controls belong to that descriptor, so replace its captured client.
+      if (next.get(id)?.authorizationRevision !== this.revisions.get(id) || next.get(id)?.apiLevel !== this.grants.get(id)?.apiLevel) {client.revoke(); this.clients.delete(id);this.revisions.delete(id); changed = true}
     }
     const effective = new Map<string,AssistantGrant>()
     for (const grant of grants) {
