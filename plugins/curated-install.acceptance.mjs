@@ -69,7 +69,7 @@ try {
             await page.locator('input[type=file]:not([disabled])').waitFor()
             for (const [slug, en, zh] of mode === 'native' || mode === 'public' ? views : views.slice(0, 1)) {
               await page.getByRole('button', { name: language === 'en' ? en : zh, exact: true }).click()
-              await page.locator('.vp-review,.vp-error').first().waitFor()
+              await page.locator('.vp-review[data-phase=review][data-package-id="com.clawdline.session-' + slug + '"],.vp-error').first().waitFor()
               if (mode === 'denied') {
                 assert.match(await page.locator('.vp-error').innerText(), language === 'en' ? /download/i : /下載/)
                 assert.equal(await page.locator('.vp-installed').count(), 0)
@@ -80,7 +80,7 @@ try {
               assert.match(await page.locator('.vp-review').innerText(), new RegExp('com.clawdline.session-' + slug + ' · ' + manifest.version.replaceAll('.', '\\.')))
               const before = await page.locator('.vp-installed').count()
               await page.getByRole('button', { name: language === 'en' ? 'Install package' : '安裝套件', exact: true }).click()
-              await page.locator('.vp-review').waitFor({ state: 'detached' })
+              await page.locator('.vp-review[data-phase=installed]').waitFor()
               await page.locator('.vp-installed').nth(before).waitFor()
               await page.locator('input[type=file]:not([disabled])').waitFor()
             }

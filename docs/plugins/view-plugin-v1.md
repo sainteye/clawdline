@@ -356,3 +356,25 @@ reload persistence, refuses a download without modifying the registry, and
 checks a cross-origin redirect does not carry the native cookie. Run with
 `PLUGIN_ARTIFACTS` and an existing `PLAYWRIGHT_MODULE`. The former credential-omitting
 host fails the native installation case before reaching package review.
+
+### Keeping installation attention stable
+
+Download progress stays in the host header, outside the scrolling content. Busy
+controls keep their appearance instead of dimming the whole gallery. The manager
+reserves its scrollbar gutter, preserves the originating card before inserting
+package review, and smoothly scrolls only its own content to that review. Focus
+moves with `preventScroll`; reduced-motion users get immediate positioning.
+
+Confirmation keeps the reviewed card mounted while registry notifications revoke
+stale grants and refresh installed packages. Only a successful write and registry
+read replace its actions with Open and Installed views. The result remains in the
+same location; Installed views smoothly reveals and focuses the matching card.
+Cancel returns to the original gallery action. A download error is focused and
+brought into view without changing installed packages.
+
+`plugins/install-flow.acceptance.mjs` uses the production host and delayed local
+downloads in Chromium/WebKit, English/Traditional Chinese, phone/desktop widths,
+and both motion preferences. It measures download and completion positions,
+observes intermediate scroll positions, and exercises cancellation, error
+attention and navigation to the installed card. These are isolated browser
+receipts; they do not establish deployment or native App acceptance.
