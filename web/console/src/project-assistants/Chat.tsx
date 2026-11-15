@@ -23,6 +23,8 @@ import { seenThrough } from "./read-position"
 import { ProjectMark } from "./ProjectMark"
 import { PaMenu } from "./PaSelect"
 import type { Words } from "./words"
+import { ChatSkeleton, useShowAfter } from "./PaLoading"
+import { memoryOpener } from "./loading"
 
 export const EventRefreshMs = 3000
 /** Covers every await of a permission attempt, including the second detail preflight. */
@@ -56,7 +58,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
   const [text,setText]=useState(()=>view.draft(draftKey)),[quote,setQuote]=useState(view.quotes.get(draftKey)??"")
   const [error,setError]=useState(()=>recoveryRequired?"pa_read_only":""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
-  const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null)
+  const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
   const stopping=useRef(false)
@@ -365,6 +367,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(!data||!cursor||!captured||recovery.current||collectionBusy.current.has("history"))return
     const control=new AbortController();reads.current.add(control);collectionBusy.current.set("history",control)
     const el=scroll.current,oldHeight=el?.scrollHeight??0,oldTop=el?.scrollTop??0
+    setEarlierLoading(true)
     try{
       const page=await read(request("history",cursor),control.signal)
       if(!valid()||control.signal.aborted||epoch.current!==capturedEpoch||recovery.current)return
@@ -376,7 +379,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       setMore(page.next_cursor)
       requestAnimationFrame(()=>{if(el&&valid()&&epoch.current===capturedEpoch)el.scrollTop=oldTop+el.scrollHeight-oldHeight})
     }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
-    finally{reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history")}
+    finally{reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history");if(valid())setEarlierLoading(false)}
   }
   const exportBot=()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)
   const loadExport=async()=>{
@@ -384,6 +387,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(!valid()||!sameConversation({key:value.bot.key,project:value.bot.project,conversation_id:value.conversation.id},scope))throw failure("pa_scope_denied")
     if(memoryShown.current)setMemory(previous=>previous&&previous.memory.revision>value.memory.revision?previous:value)
   }
+  // The panel opens at once with placeholders; a failed read closes it onto the chat's error line.
+  const loadExportRef=useRef(loadExport);loadExportRef.current=loadExport
+  const failRef=useRef(fail);failRef.current=fail
+  const memoryPanel=useRef<ReturnType<typeof memoryOpener>|null>(null)
+  memoryPanel.current??=memoryOpener(()=>loadExportRef.current(),{
+    open:open=>{memoryShown.current=open;if(!open)setMemory(null)},
+    loading:setMemoryLoading,
+    fail:error=>failRef.current(error)})
   const memoryOutcomeUnknown=(error:unknown)=>["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(errorCode(error))||(error as Error)?.name==="AbortError"
   const saveMemory=async(text:string)=>{
     if(!memory||!text.trim())return
@@ -419,20 +430,22 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     await loadExport().catch(fail)
     void refresh(true)
   }
+  // Opening a conversation draws chat-shaped placeholders after 150ms, until its first read answers.
+  const chatSkeleton=useShowAfter(!data&&!error)
   const bot=data?.bot??summary.bot,enabled=!recoveryRequired&&!!data&&canWrite(data.source), parts=partitionMessages(messages,turns)
   return <section className="pa-chat" aria-label={bot.name}>
     <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36}/><div><h2 tabIndex={-1}>{bot.name}</h2><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></div><PaMenu label={w.moreActions} items={[
       {id:"settings",label:w.settings,onSelect:()=>setSettings(true)},
-      {id:"memory",label:w.memory,onSelect:()=>{memoryShown.current=true;void loadExport().catch(fail)}},
+      {id:"memory",label:w.memory,onSelect:()=>void memoryPanel.current?.open()},
       {id:"refresh",label:w.refresh,onSelect:()=>void refresh(true)},
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
-      <div className="pa-chat-content">{!data&&!error&&<p role="status">{w.loading}</p>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
-      {!!more&&<button className="pa-pill" onClick={()=>void earlier()}>{w.earlier}</button>}<ChatRows source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
+      <div className="pa-chat-content">{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} messages={parts.chat} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
       {works.map(work=><WorkResultCard key={work.id} work={work} w={w} onOpen={onOpenWork}/>)}<Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
       {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=>t.state==="running"||t.state==="waiting_permission"?<WorkingIndicator key={t.id} turn={t} activity={activity[t.id]??""} w={w}/>:<p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
-      {memory&&<MemoryPanel value={memory} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>{memoryShown.current=false;setMemory(null)}} w={w}/>}
+      {(memory||memoryLoading)&&<MemoryPanel value={memory} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>memoryPanel.current?.close()} w={w}/>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
       <div className="tx-jump pa-jump" data-end="bottom" data-shown={following?"off":"on"} data-fresh="off">

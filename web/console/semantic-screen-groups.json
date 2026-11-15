@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12243,
+  "englishContentKeys": 12246,
   "riskKeys": 5307,
-  "nonRiskCount": 6936,
+  "nonRiskCount": 6939,
   "groups": [
     {
       "name": "acp / other",
@@ -5617,7 +5617,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 136,
+      "count": 139,
       "sources": [
         null
       ],
@@ -5634,6 +5634,7 @@
         "projectAssistants.back",
         "projectAssistants.bots",
         "projectAssistants.cancel",
+        "projectAssistants.chatLoading",
         "projectAssistants.chooseProject",
         "projectAssistants.close",
         "projectAssistants.collapse",
@@ -5646,6 +5647,7 @@
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.earlier",
+        "projectAssistants.earlierLoading",
         "projectAssistants.executing",
         "projectAssistants.export",
         "projectAssistants.failBotsOff",
@@ -5668,6 +5670,7 @@
         "projectAssistants.loading",
         "projectAssistants.machine",
         "projectAssistants.memory",
+        "projectAssistants.memoryLoading",
         "projectAssistants.memoryNote",
         "projectAssistants.memoryRevision",
         "projectAssistants.memory_disabled",
