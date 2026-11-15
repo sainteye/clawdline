@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<rect width="128" height="128" fill="#111c36"/><circle cx="101" cy="23" r="10" fill="#d3dfdf"/><circle cx="96" cy="20" r="10" fill="#111c36"/><path d="M12 18h2m29-7h2m31 21h2m-66 17h2" stroke="#7285b0"/>
+<path d="M0 86V61h17V46h16v40h26V58h18V43h19v43h18V62h14v66H0" fill="#0b1429"/>
+<path d="M17 113V55h32v58m6 0V35h36v78m6 0V69h20v44" fill="#293b57" stroke="#71809a"/>
+<path d="M22 49h22M60 29h26M73 28V17" stroke="#a1b2ce"/>
+<g fill="#f3cf88"><path d="M23 63h7v10h-7zm13 0h7v10h-7zM23 80h7v10h-7zM61 44h8v10h-8zm15 0h8v10h-8zM61 61h8v10h-8zM76 80h8v10h-8zM103 77h8v10h-8z"/></g>
+<path d="M36 80h7v10h-7zM76 61h8v10h-8z" fill="#ff8d9d"/><path d="M61 80h8v10h-8zM103 94h8v10h-8z" fill="#bef1d3"/><path d="M30 101h8v12h-8zm39-3h10v15H69" fill="#d4b980"/><path d="M0 114h128M10 121h20m14 0h20m14 0h20m14 0h16" stroke="#73809b"/>
+</svg>

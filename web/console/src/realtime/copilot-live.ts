@@ -116,6 +116,37 @@ export function liveCost(elapsedSeconds: number, billedSeconds: number, backendU
 export const LIVE_NOTE_CHARS = 400
 
 /**
+ * A recap clipped to `max` characters. A recap is told in order, from how the
+ * work began to where it stands now, so its end is what is current: a call on
+ * 2026-11-15 kept only the first 400 characters of a fresh recap and recounted
+ * the Session's history instead of its latest state. The first sentence (what
+ * the Session is about) and the end are kept.
+ */
+export function clipRecap(text: string, max = LIVE_NOTE_CHARS): string {
+  const t = text.trim()
+  if (t.length <= max) return t
+  const stop = t.search(/[\u3002.!?\uff01\uff1f]/)
+  const head = stop >= 0 && stop < max / 4 ? t.slice(0, stop + 1) : ''
+  return `${head}…${t.slice(t.length - (max - head.length - 1))}`
+}
+
+/** The longest a call's latest state waits for its opening to be said. */
+export const LIVE_OPENING_WAIT_MS = 60000
+
+/** How much of a Session's newest reports a call's latest note carries beside its recap. */
+export const LIVE_UPDATE_CHARS = 150
+
+/** The Session's own newest reports in a `get_session_updates` result, newest last, clipped to `max`. */
+export function liveUpdatesText(output: string, max = LIVE_UPDATE_CHARS): string {
+  let body: { updates?: { role?: string; text?: string }[] }
+  try { body = JSON.parse(output) } catch { return '' }
+  const said = (Array.isArray(body?.updates) ? body.updates : [])
+    .filter(u => u?.role === 'assistant' && typeof u.text === 'string' && u.text.trim() !== '')
+    .slice(-2).map(u => (u.text as string).trim()).join(' ')
+  return said.length > max ? `…${said.slice(said.length - max + 1)}` : said
+}
+
+/**
  * What the live model can say at once from a read tool's result, one note
  * per Session, while the backend goes on: the Session's name and its recap
  * (or delivery summary), with how long ago it was written.
@@ -134,7 +165,7 @@ export function liveReadNotes(tool: string, output: string): string[] {
     const said = [r.recap, r.delivered_summary, r.last_reply].find((v): v is string => typeof v === 'string' && v.trim() !== '')
     if (!label || !said) continue
     const age = typeof r.recap_written === 'string' && r.recap === said ? ` (written ${r.recap_written})` : ''
-    const text = said.length > LIVE_NOTE_CHARS ? `${said.slice(0, LIVE_NOTE_CHARS)}…` : said
+    const text = clipRecap(said)
     notes.push(`Tell the person about this Session now, in one or two everyday sentences in their language, then continue with the next when it comes. Session "${label}"${age}: ${text}`)
   }
   return notes
@@ -151,17 +182,22 @@ export function liveNote(kind: 'commentary' | 'thinking', content: string): Reco
  * follows when it arrives (`liveLatestNote`).
  */
 export function liveOpeningNote(label: string, summary: string, written = ''): string {
-  const clipped = summary.length > LIVE_NOTE_CHARS ? `${summary.slice(0, LIVE_NOTE_CHARS)}…` : summary
+  const clipped = clipRecap(summary)
   if (!clipped) return `The call was placed from Session "${label}". In one short sentence in the person's language, say you are reading its latest summary. Do not guess its work.`
   return `The call was placed from Session "${label}". Open the call by telling the person, in two or three everyday sentences in their language and without a greeting, what this Session is doing${written ? ` (this summary was written ${written}; say so briefly)` : ''}: ${clipped}`
 }
 
-/** The latest recap of the Session the call was placed from, said after the opening. */
-export function liveLatestNote(label: string, summary: string, hadOpening: boolean): string {
-  const clipped = summary.length > LIVE_NOTE_CHARS ? `${summary.slice(0, LIVE_NOTE_CHARS)}…` : summary
+/**
+ * The latest state of the Session the call was placed from: its fresh recap's
+ * current part and its own newest reports, said once the opening has been
+ * spoken (`openFromOrigin`).
+ */
+export function liveLatestNote(label: string, summary: string, hadOpening: boolean, updates = ''): string {
+  const reports = updates ? ` Its newest reports: ${updates}` : ''
+  const clipped = clipRecap(summary, LIVE_NOTE_CHARS - (updates ? updates.length : 0))
   return hadOpening
-    ? `Newer information about Session "${label}" just arrived. Continue with only what changed or is new, in one or two everyday sentences; do not repeat what you already said: ${clipped}`
-    : `Here is the latest summary of Session "${label}". Tell the person in two or three everyday sentences in their language: ${clipped}`
+    ? `The latest state of Session "${label}" just arrived. Go on now with only what is newer than what you said, starting with a short phrase such as "I just got the latest": where it stands now and anything waiting for the person, in one to three everyday sentences in their language. Do not retell its history or repeat what you already said. Latest summary: ${clipped}${reports}`
+    : `Here is the latest state of Session "${label}". Tell the person where it stands now and anything waiting for them, in two or three everyday sentences in their language: ${clipped}${reports}`
 }
 
 /** The greeting the call opens with, as OpenAI's guide asks: once, after `session.started`. */

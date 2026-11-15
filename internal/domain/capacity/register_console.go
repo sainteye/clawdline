@@ -179,6 +179,12 @@ func baseConsoleBounds() []Entry {
 		// LIVE_NOTE_CHARS in realtime/copilot-live.ts: how much of one Session's
 		// recap a GPT-Live call speaks at once from a read; the rest is cut.
 		{Name: "console.copilot_live_note_characters", Class: Buffer, Unit: Characters, Limit: 400, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		// LIVE_UPDATE_CHARS in realtime/copilot-live.ts: how much of a Session's
+		// newest reports a GPT-Live call placed from it says beside its latest
+		// recap; the older part is cut. LIVE_OPENING_WAIT_MS: the longest that
+		// latest state waits for the call's opening to be said before it is sent.
+		{Name: "console.copilot_live_update_characters", Class: Buffer, Unit: Characters, Limit: 150, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		{Name: "console.copilot_live_opening_wait_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 60000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_fresh_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 300, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_kept_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_recent_idle_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},

@@ -88,7 +88,10 @@ validation before installation. The example ZIPs under
 `web/console/public/view-plugins/` are static downloads, never compiled React views.
 Import a replacement ZIP through the manager to test it without rebuilding the host.
 
-The supplied examples also have install buttons in **Explore views**. These fetch
+Only curated examples have install buttons in **Explore views**. Independent
+author candidates can be packed and imported without joining that list; checks
+validate every author ZIP and cover separately from curated-list completeness.
+The supplied examples have install buttons in **Explore views**. These fetch
 their static ZIP and enter the same validation and package review as file import.
 Curated install buttons fetch their ZIP with `cache: "no-store"`, so a previously cached
 fixed download URL cannot silently install an older published revision. The standard package

@@ -18,14 +18,14 @@ import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence,
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { COPILOT_TOOLS, forkedRecap, recapFields, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
+import { COPILOT_TOOLS, FRESH_RECAP_SECONDS, forkedRecap, recapFields, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, titleSavedOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -235,6 +235,13 @@ export class RealtimeCopilotClient {
   private lastEngine?: 'realtime' | 'live'
   private liveHeard = new LiveTranscript()
   private liveSaid = new LiveTranscript()
+  /** When the live model last spoke (`session.output_transcript.delta`); 0 before it has. */
+  private liveSaidAt = 0
+  /** How long the live model is silent before its opening counts as said, and how long its opening may take to start. */
+  liveQuietMs = 1500
+  liveStartGraceMs = 8000
+  /** How often that wait looks again. */
+  livePollMs = 200
   /** The backend's function calls still running in this browser. */
   private livePending = new Set<string>()
   private liveSeconds = 0
@@ -492,7 +499,7 @@ export class RealtimeCopilotClient {
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
     clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0
-    this.live = false;this.liveHeard.take();this.liveSaid.take();this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
+    this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
     // Which build and tools this call has: on 2026-11-13 a call could not be
@@ -1234,16 +1241,51 @@ export class RealtimeCopilotClient {
     const kept = row.recap?.text || row.delivered || ''
     const written = row.recap?.text ? String(recapFields(row.recap, now).recap_written ?? '') : ''
     const opened = !this.personSpoke
+    const noteAt = Date.now()
     if (opened) dc.send(JSON.stringify(liveNote('commentary', liveOpeningNote(row.label, kept, written))))
     this.journal('tool', 'opening_summary', { args: JSON.stringify({ session_id: row.id }), answer: kept.slice(0, 1500) })
+    // A recap at most FRESH_RECAP_SECONDS old is already the latest: nothing more is read.
+    if (row.recap?.text && row.recap.at > 0 && now - row.recap.at <= FRESH_RECAP_SECONDS) return
+    // While the opening is spoken, the latest recap and the Session's newest
+    // reports are read together; the call goes on with them once it is said.
     const logs: { level: 'info' | 'tool' | 'error'; text: string }[] = []
-    const latest = await forkedRecap(deps, logs, row, true).catch(() => undefined)
+    const [latest, updates] = await Promise.all([
+      forkedRecap(deps, logs, row, true).catch(() => undefined),
+      runCopilotTool('get_session_updates', JSON.stringify({ session_id: row.id }), deps).then(r => r.output).catch(() => ''),
+    ])
     if (!current() || !dc) return
     for (const log of logs) this.addLog(log.level, log.text)
     const text = latest?.text?.trim() ?? ''
-    if (!text || text === row.recap?.text) return
-    dc.send(JSON.stringify(liveNote('commentary', liveLatestNote(row.label, text, opened && !!kept))))
-    this.journal('tool', 'opening_latest_summary', { args: JSON.stringify({ session_id: row.id }), answer: text.slice(0, 1500) })
+    const changed = text !== '' && text !== row.recap?.text
+    const reports = liveUpdatesText(updates)
+    this.journal('tool', 'opening_latest_updates', { args: JSON.stringify({ session_id: row.id }), answer: reports || '(none)' })
+    if (!changed && !reports) return
+    const hadOpening = opened && !!kept
+    if (hadOpening) await this.untilOpeningSaid(noteAt, current)
+    if (!current() || !dc) return
+    dc.send(JSON.stringify(liveNote('commentary', liveLatestNote(row.label, changed ? text : kept, hadOpening, reports))))
+    this.journal('tool', 'opening_latest_summary', { args: JSON.stringify({ session_id: row.id }), answer: (changed ? text : kept).slice(0, 1500) })
+  }
+
+  /**
+   * Waits until the opening has been spoken: the live model began speaking
+   * after `since` and has been silent for `liveQuietMs`, and the person is not
+   * speaking. A note sent while the opening was spoken was blended into it
+   * (call of 2026-11-15), so the latest state is said after it. An opening that
+   * never starts is waited for `liveStartGraceMs`, and no wait outlasts
+   * `LIVE_OPENING_WAIT_MS`.
+   */
+  private async untilOpeningSaid(since: number, current: () => boolean) {
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+    for (;;) {
+      if (!current()) return
+      const now = Date.now()
+      // Speech in the very millisecond of the opening note is the opening (CI 43708656326).
+      const spoke = this.liveSaidAt >= since && this.liveSaidAt > 0
+      const quiet = spoke && now - this.liveSaidAt >= this.liveQuietMs && !this.liveHeard.peek()
+      if (quiet || (!spoke && now - since >= this.liveStartGraceMs) || now - since >= LIVE_OPENING_WAIT_MS) return
+      await sleep(this.livePollMs)
+    }
   }
 
   /** What a GPT-Live session says on its data channel (`copilot-live.ts`). */
@@ -1272,6 +1314,7 @@ export class RealtimeCopilotClient {
         const heard = this.liveHeard.take()
         if (heard) { this.journal('heard', heard); this.doneSinceHeard.clear(); this.updateState({ tools: [] }) }
         this.liveSaid.add(event.delta)
+        this.liveSaidAt = Date.now()
         this.updateState({ speakingState: 'speaking', lastAssistantSpeech: this.liveSaid.peek() })
         return
       }

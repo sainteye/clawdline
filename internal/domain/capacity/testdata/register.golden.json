@@ -6423,6 +6423,42 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_live_opening_wait_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 60000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.copilot_live_update_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 150,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_memory_turns",
     "Class": "user_input",
     "Unit": "rows",

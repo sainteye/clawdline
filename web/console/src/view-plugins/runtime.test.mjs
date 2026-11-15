@@ -11,8 +11,8 @@ import { deflateSync, crc32 as pngCRC } from "node:zlib"
 
 const scratch = await mkdtemp(join(tmpdir(), "cl-view-unit-"))
 const bundle = join(scratch,"runtime.mjs")
-await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
-const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover} = await import(pathToFileURL(bundle).href)
+await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover,curatedPackageIDs} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
+const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover,curatedPackageIDs} = await import(pathToFileURL(bundle).href)
 test.after(() => rm(scratch,{recursive:true,force:true}))
 const packageURL = new URL("../../public/view-plugins/session-galaxy.zip",import.meta.url)
 const context = {language:"en",theme:"dark",reducedMotion:true,visible:true,scopeLabel:"Studio",connection:"connected"}
@@ -99,12 +99,21 @@ test("Published examples have real covers and exact legacy archives gain artwork
   try {manifest=JSON.parse(await readFile(new URL(name+"/manifest.json",sources),"utf8"))}catch(e){if(e.code==="ENOENT")continue;throw e}
   const pkg=await parsePackage(await readFile(new URL("../../public/view-plugins/"+name+".zip",import.meta.url)))
   assert.equal(pkg.manifest.cover,manifest.cover)
-  assert.equal(exampleCover(manifest.id),manifest.cover,"A published example must not disappear behind an absent cover")
+  if (curatedPackageIDs.includes(manifest.id)) assert.equal(exampleCover(manifest.id),manifest.cover,"A curated view must not disappear behind an absent cover")
  }
  const legacy=await parsePackage(await readFile(new URL("./testdata/legacy-session-galaxy.zip",import.meta.url)),{allowLegacy:true})
  assert.equal(legacy.manifest.cover,undefined);assert.ok(packageCover(legacy))
  assert.equal(packageCover({...legacy,digest:"unrecognized archive"}),undefined,"An unknown archive cannot impersonate a built-in's legacy cover")
  assert.equal(packageCover({...legacy,manifest:{...legacy.manifest,id:"org.example.legacy"}}),undefined)
+})
+test("Curated views have downloadable packages with their own validated cover",async()=>{
+ assert.ok(curatedPackageIDs.length>0,"The supplied Galaxy view must remain discoverable")
+ for(const id of curatedPackageIDs){
+  const pkg=await parsePackage(await readFile(new URL("../../public/view-plugins/"+id.slice("com.clawdline.".length)+".zip",import.meta.url)))
+  assert.equal(pkg.manifest.id,id)
+  assert.ok(pkg.manifest.cover)
+  assert.equal(exampleCover(id),pkg.manifest.cover)
+ }
 })
 function fixture(capabilities=["sessions.read","sessions.open"], initial=reading) {
   const channel = new MessageChannel(), answers=[], opened=[], faults=[]; let closes=0
