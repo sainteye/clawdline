@@ -85,9 +85,12 @@ it adds no TTL, cache capacity, background retry or payload truncation.
 Cursor expiry or a changed full fence clears execution actions, aborts pending
 effects and enters recovery. A bounded snapshot can reconstruct the state.
 If that attempt fails, the visible window/draft remain and background recovery
-stops. Switching Bots, returning to the same Bot or remounting the same host
-cannot release the failed account/Bot latch. Explicit successful snapshot retry
-is required. Other Bots and new account namespaces do not inherit it.
+stops. Reopening the Bot, remounting the same host or returning to the visible
+page makes one fresh bounded read attempt; the refresh action also retries it.
+The account/Bot latch continues to block effects until a validated snapshot is
+published. A failed read retains its actual error rather than inventing a
+read-only refusal. No recovery read replays a message, work or permission.
+Other Bots and new account namespaces do not inherit the latch.
 
 Mutation preflight uses a fresh bounded snapshot, then checks the still-current
 source, epoch, recovery latch and full fence immediately before the effect.

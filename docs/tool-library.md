@@ -5,8 +5,8 @@ are stored in the machine SQLite database, shared by its paired readers. Writes
 require Send permission or the machine credential. This is a collection of source
 metadata; it never establishes that a tool is installed or enabled.
 
-The compiled recommendation snapshot contains 37 public projects, including three
-web libraries and one evaluation framework, 60 verified Skill entry paths and fourteen categories. English and Taiwan Traditional Chinese
+The compiled recommendation snapshot contains 38 public projects, including three
+web libraries, one evaluation framework and one desktop application, 60 verified Skill entry paths and fourteen categories. English and Taiwan Traditional Chinese
 names, purposes, requirements and limitations accompany commit and entry SHA-256
 metadata. Historical ranking evidence retains its original kind, date and scope.
 Bundled icons distinguish official project assets from owner avatars; custom
@@ -116,6 +116,33 @@ that the library fits a particular product. Applicable terms must be checked for
 the intended use. Only icon assets are bundled; library runtime code is not shipped
 with Clawdline. The bundled React Bits icon retains its upstream notice in
 `web/console/public/tool-library/react-bits-LICENSE.txt`.
+
+## Desktop applications
+
+[Recordly](https://github.com/webadderallorg/Recordly) is listed under Video & motion
+production as `integration_kind: desktop_app`, with no Skill entries. Its reviewed
+source is `abddb7c766a9ba58659af9bea9b059c984139711` (2.0.0-beta.1), while the
+latest stable release observed on 2026-11-15 was v1.4.0. The installed version is
+recorded separately. README, package and license evidence retains pinned hashes;
+no runtime code is bundled. The root license is AGPL-3.0; copying source or
+redistributing binaries requires a separate review of applicable obligations.
+
+Desktop preparation checks host compatibility, a usable desktop, existing tools,
+download provenance and task-specific OS permissions. Task scope keeps temporary
+media in a task directory; Project scope keeps reusable project files and output
+in the Project. Neither scope installs a desktop app as an application dependency
+or grants machine-wide installation or OS permissions. The UI identifies a desktop
+app, omits the optional command field and explains these file scopes.
+
+The receiving agent defaults to local recording/editing and file export. Sign-in,
+cloud upload, extensions and support reports are not enabled by preparation.
+A real availability check opens the app, records or imports non-sensitive media,
+saves and reopens a project, and inspects exported video and audio. A `.recordly`
+file references external media; preserve both and back up before beta changes.
+Linux cursor hiding and system audio have platform limitations. The reviewed tree
+had no SKILL.md; internal smoke-export switches do not establish a supported
+CLI, MCP or headless interface. Catalog inclusion does not prove installation,
+installer integrity, dependency closure or successful desktop use.
 
 ## Evaluation frameworks
 

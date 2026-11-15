@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12270,
-  "riskKeys": 5316,
-  "nonRiskCount": 6954,
+  "englishContentKeys": 12276,
+  "riskKeys": 5317,
+  "nonRiskCount": 6959,
   "groups": [
     {
       "name": "acp / other",
@@ -3933,7 +3933,7 @@
     },
     {
       "name": "next / other",
-      "count": 1112,
+      "count": 1117,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4817,6 +4817,11 @@
         "next.toolLibraryCommand",
         "next.toolLibraryConflict",
         "next.toolLibraryDescription",
+        "next.toolLibraryDesktopApp",
+        "next.toolLibraryDesktopProject",
+        "next.toolLibraryDesktopProjectDescription",
+        "next.toolLibraryDesktopScope",
+        "next.toolLibraryDesktopTaskDescription",
         "next.toolLibraryDetails",
         "next.toolLibraryDiscover",
         "next.toolLibraryEntry",

@@ -309,8 +309,11 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   if(width<701)await chat.getByRole("button",{name:w.back,exact:true}).click()
   const snapshots=(await views("snapshot")).length
   await row().click();await editor().waitFor();assert.equal(await editor().isDisabled(),true)
-  assert.equal((await views("snapshot")).length,snapshots,"returning to a failed Bot requires manual recovery")
+  await waitView("snapshot",snapshots);await alert("pa_revoked")
+  assert.equal(await chat.getByRole("alert").filter({hasText:"pa_read_only"}).count(),0,"a recovery latch is not a read-only source")
+  const remountSnapshots=(await views("snapshot")).length
   await page.evaluate(()=>window.botsFixture.remount());await row().click();await editor().waitFor()
+  await waitView("snapshot",remountSnapshots);await alert("pa_revoked")
   assert.equal(await editor().isDisabled(),true);assert.equal(await editor().inputValue(),"snapshot failure retains this draft")
   await page.evaluate(()=>{window.botsFixture.a.configureViews({failure:null});window.botsFixture.a.expireCursor();window.botsFixture.a.holdView("snapshot")})
   const retrySnapshots=(await views("snapshot")).length
@@ -319,6 +322,27 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   const effects=await effectCount();await chat.locator(".pa-composer").evaluate(form=>form.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));assert.equal(await effectCount(),effects)
   await page.evaluate(()=>window.botsFixture.a.releaseView());await ready()
   await noLegacy();await shot("manual-bounded-recovery")
+  // A later entry can recover through a verified read without replaying any effect.
+  await page.evaluate(()=>{window.botsFixture.a.configureViews({failure:"pa_offline"});window.botsFixture.a.expireCursor()})
+  await refresh();await alert("pa_offline")
+  const effectsBeforeReentry=await effectCount(),snapshotsBeforeReentry=(await views("snapshot")).length
+  await page.evaluate(()=>{window.botsFixture.a.configureViews({failure:null});window.botsFixture.a.holdView("snapshot");window.botsFixture.remount()})
+  await row().click();await waitView("snapshot",snapshotsBeforeReentry)
+  assert.equal(await editor().isDisabled(),true,"reentry remains locked until its snapshot validates")
+  await page.evaluate(()=>window.botsFixture.a.releaseView());await ready()
+  assert.equal(await editor().inputValue(),"snapshot failure retains this draft")
+  assert.equal(await effectCount(),effectsBeforeReentry,"recovery only reads; no message or permission is replayed")
+  assert.equal(await chat.getByRole("alert").count(),0)
+  await shot("reentry-recovers-without-read-only")
+  await page.evaluate(()=>{window.botsFixture.a.configureViews({failure:"pa_offline"});window.botsFixture.a.expireCursor()})
+  await refresh();await alert("pa_offline")
+  const resumeSnapshots=(await views("snapshot")).length,resumeEffects=await effectCount()
+  await page.evaluate(()=>{window.botsFixture.a.configureViews({failure:null});window.botsFixture.a.holdView("snapshot");window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))})
+  await waitView("snapshot",resumeSnapshots);assert.equal(await editor().isDisabled(),true)
+  await page.evaluate(()=>window.botsFixture.a.releaseView());await ready()
+  assert.equal(await editor().inputValue(),"snapshot failure retains this draft")
+  assert.equal(await effectCount(),resumeEffects,"returning from page cache only reads; it never replays an effect")
+  await shot("page-return-recovers-without-read-only")
   // The new account has neither the failed latch nor the prior account's draft.
   await page.evaluate(()=>window.botsFixture.account("another-account"));await row().click();await ready();assert.equal(await editor().inputValue(),"")
 
@@ -393,7 +417,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await page.getByRole("heading",{name:"Sessions",exact:true}).waitFor()
   await page.waitForFunction(()=>document.activeElement?.classList.contains("pa-orb"))
   await controlledRaces()
-  all.push(...await log());return ["600-event bounded initial100 / frontier602 / events603-604","opaque history and scroll anchor","old-generation work/event versus delayed older page","101 permission and trace summaries via manual more","detail-only answers / typed oversized detail","new generation cancels ignored-abort details","snapshot errors retain window and draft","same-account/Bot recovery latch across return and host remount","manual snapshot is the only recovery unlock","new account isolation","queued16 and unknown17","ignored-abort mutation preflight and source revocation","API58 metadata / typed unsupported view / no fallback","IME, quote, draft switch, one send, unknown intent after remount","focus and voice ownership / no horizontal overflow","second permission preflight cursor/generation recovery latch","all parallel mutation controls abort on recovery/unmount and cannot resume after same-fence unlock"]
+  all.push(...await log());return ["600-event bounded initial100 / frontier602 / events603-604","opaque history and scroll anchor","old-generation work/event versus delayed older page","101 permission and trace summaries via manual more","detail-only answers / typed oversized detail","new generation cancels ignored-abort details","snapshot errors retain window and draft","same-account/Bot recovery latch across return and host remount","validated entry or manual snapshot is the only recovery unlock","new account isolation","queued16 and unknown17","ignored-abort mutation preflight and source revocation","API58 metadata / typed unsupported view / no fallback","IME, quote, draft switch, one send, unknown intent after remount","focus and voice ownership / no horizontal overflow","second permission preflight cursor/generation recovery latch","all parallel mutation controls abort on recovery/unmount and cannot resume after same-fence unlock"]
 }
 let forbidden=0
 const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":"text/html");res.end(text)})
