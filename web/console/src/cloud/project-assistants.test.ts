@@ -6,6 +6,8 @@ import type * as W from "@clawdline/contract"
 import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayRequest, cloudAssistantGrants, capturedAssistantRelayFetch, type AssistantGrant, type AssistantFetch } from "./project-assistants.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { command, errorCode } from "../project-assistants/client.ts"
+// @ts-expect-error -- Node executes source extensions.
+import * as clientModule from "../project-assistants/client.ts"
 import { CloudClient } from "../legacy/js/net/cloud-client.js"
 // @ts-expect-error -- Node executes source extensions.
 import { CARRIED } from "./carry-generated.ts"
@@ -681,4 +683,59 @@ test("roster cleans caller and lifetime abort listeners, reader lock and the tra
     await assert.rejects(pending,e=>stop==="caller"?(e as Error).name==="AbortError":errorCode(e)==="pa_revoked")
     assert.equal(adds,1);assert.equal(removes,1);assert.equal(held[0].body!.locked,false);assert.equal(signals[0].aborted,true);assert.equal(cancelled,1)
   }
+})
+
+const notSentEvidence = (e: unknown) => (clientModule as {provablyNotSent?: (e: unknown) => boolean}).provablyNotSent?.(e) === true
+const sendRequest = (id: string) => ({command:command(key,"send",id),fence:viewWire().head.current_fence,text:"synthetic held text",quote_message_id:""}) as W.ProjectAssistantSendRequest
+test("send recovery: a send refused before its transport proves nothing left and never touches the transport",async()=>{
+  let sends = 0
+  const {source,setGrant} = make(async path => {if (path.endsWith("/status")) return Response.json(sourceStatus()); sends++; return Response.json({})})
+  await source.status(signal())
+  setGrant({...grant(),authorizationRevision:"grant-2"})
+  await assert.rejects(source.send(sendRequest("revoked-before"),signal()),e => {assert.equal(errorCode(e),"pa_revoked");assert.equal(notSentEvidence(e),true);return true})
+  setGrant(grant())
+  const cancelled = new AbortController(); cancelled.abort()
+  await assert.rejects(source.send(sendRequest("aborted-before"),cancelled.signal),e => {assert.equal((e as Error).name,"AbortError");assert.equal(notSentEvidence(e),true);return true})
+  assert.equal(sends,0)
+})
+test("send recovery: authority that changes after the transport keeps a write outcome unknown with its evidence",async()=>{
+  for (const change of ["offline","unpaired","revoked","abort"] as const) {
+    let release!: (value: Response) => void, sends = 0
+    const control = new AbortController()
+    const {source,setGrant} = make(async path => {if (path.endsWith("/status")) return Response.json(sourceStatus()); sends++; return new Promise<Response>(resolve => {release=resolve})})
+    await source.status(signal())
+    const pending = source.send(sendRequest("crossed-"+change),control.signal)
+    await new Promise(resolve => setTimeout(resolve,0))
+    if (change === "abort") control.abort()
+    else setGrant(change === "offline" ? {...grant(),online:false} : change === "unpaired" ? {...grant(),paired:false} : {...grant(),authorizationRevision:"grant-2"})
+    release(Response.json({contract_version:"project-assistants.v1",receipt:{id:"r",command:sendRequest("crossed-"+change).command,event_seq:1,resource_id:"turn",state:"accepted"}}))
+    await assert.rejects(pending,e => {assert.equal(errorCode(e),"pa_outcome_unknown",change);assert.equal(notSentEvidence(e),false);return true})
+    assert.equal(sends,1)
+  }
+})
+test("send recovery: a lost send response is outcome unknown, while a source refusal stays definitive",async()=>{
+  const lost = make(async path => {if (path.endsWith("/status")) return Response.json(sourceStatus()); throw new TypeError("network lost after write")}).source
+  await lost.status(signal())
+  await assert.rejects(lost.send(sendRequest("lost"),signal()),e => errorCode(e) === "pa_outcome_unknown" && !notSentEvidence(e))
+  const refusal: W.ProjectAssistantErrorResponse = {contract_version:"project-assistants.v1",error:{code:"pa_stale_generation",field:"fence",retry_after_seconds:0}}
+  const refused = make(async path => path.endsWith("/status") ? Response.json(sourceStatus()) : Response.json(refusal,{status:409})).source
+  await refused.status(signal())
+  await assert.rejects(refused.send(sendRequest("refused"),signal()),e => {assert.deepEqual(e,refusal);return true})
+})
+test("send recovery: Cloud relay refusals before the encrypted request are marked as not sent",async()=>{
+  let sent = 0
+  const connection = {machineDescriptor:() => ({machine:{commands:["project-assistants.send"]}}),async _machineRequestAs(){sent++;throw new TypeError("relay dropped after write")}}
+  const body = JSON.stringify(sendRequest("relay")), init = (signal?: AbortSignal): RequestInit => ({method:"POST",body,headers:{"Idempotency-Key":"relay"},signal})
+  const relay = capturedAssistantRelayFetch("one",() => connection,["project-assistants.send"])
+  await assert.rejects(capturedAssistantRelayFetch("one",() => null,["project-assistants.send"])("/v1/project-assistants/same%2Fid/messages",init()),e => errorCode(e) === "pa_offline" && notSentEvidence(e))
+  const cancelled = new AbortController(); cancelled.abort()
+  await assert.rejects(relay("/v1/project-assistants/same%2Fid/messages",init(cancelled.signal)),e => (e as Error).name === "AbortError" && notSentEvidence(e))
+  await assert.rejects(capturedAssistantRelayFetch("one",() => ({machineDescriptor:() => ({machine:{commands:[]}})}),["project-assistants.send"])("/v1/project-assistants/same%2Fid/messages",init()),e => errorCode(e) === "pa_unsupported" && notSentEvidence(e))
+  assert.equal(sent,0)
+  await assert.rejects(relay("/v1/project-assistants/same%2Fid/messages",init()),e => e instanceof TypeError && !notSentEvidence(e))
+  assert.equal(sent,1)
+  // Through the captured client, a relay that may have written stays unknown.
+  const {source} = make(async (path,requestInit) => path.endsWith("/status") ? Response.json(sourceStatus()) : relay(path,requestInit))
+  await source.status(signal())
+  await assert.rejects(source.send(sendRequest("relay"),signal()),e => errorCode(e) === "pa_outcome_unknown" && !notSentEvidence(e))
 })

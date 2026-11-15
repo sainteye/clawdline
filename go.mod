@@ -9,6 +9,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/pion/ice/v4 v4.4.4
 	github.com/pion/webrtc/v4 v4.2.22
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.48.0
 	golang.org/x/net v0.50.0

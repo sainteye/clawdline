@@ -3,6 +3,7 @@ package projectassistanthost
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -157,5 +158,84 @@ func TestRoutineUnsupportedResumeRefusesSavingWithoutBreakingChat(t *testing.T) 
 	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
 	if f.p.opens.Load() != 1 {
 		t.Fatal("unsupported schedule opened another session")
+	}
+}
+
+func TestRoutineOnceAdmissionRollsBackAndDoesNotReplay(t *testing.T) {
+	f := newHostFixture(t)
+	base := time.Now()
+	var millis atomic.Int64
+	millis.Store(base.UnixMilli())
+	f.o.Clock = func() time.Time { return time.UnixMilli(millis.Load()) }
+	f.start(t)
+	f.enable(t)
+	// Keep admission controlled while still exercising the real Host/store/actor.
+	f.h.routineStop()
+	<-f.h.routineDone
+	b := f.create(t, "once")
+	if _, err := f.send(t, b, "main"); err != nil {
+		t.Fatal(err)
+	}
+	main := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	tools := main.q.Tools.(app.RoutineTools)
+	request := app.RoutineRequest{Action: "save", IdempotencyKey: "once-save", Name: "Once", Instruction: "Return one result", TimeoutSeconds: 7200, Triggers: []pa.RoutineTrigger{{Type: "once", At: base.Add(time.Minute).UnixMilli()}}}
+	saved, err := tools.Routines(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, err := f.h.store.Export(context.Background(), b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	due := x.Routines[0].NextDue
+	// Repeated enable must not reset an already enabled schedule.
+	on := true
+	if _, err = tools.Routines(context.Background(), app.RoutineRequest{Action: "enable", IdempotencyKey: "still-enabled", ID: saved.ID, Enabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.o.Database.Exec(`CREATE TRIGGER fail_once_admission BEFORE INSERT ON project_assistant_receipts WHEN NEW.command_key LIKE 'routine-due-%' BEGIN SELECT RAISE(ABORT,'fixture once failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	millis.Store(base.Add(time.Minute).UnixMilli())
+	if err = f.h.engine.TickRoutines(context.Background(), b.Key); err == nil {
+		t.Fatal("injected admission failure accepted")
+	}
+	x, err = f.h.store.Export(context.Background(), b.Key)
+	if err != nil || len(x.RoutineRuns) != 0 || !x.Routines[0].NextDue.Equal(due) {
+		t.Fatal("failed admission consumed once", x.Routines, x.RoutineRuns, err)
+	}
+	if _, err = f.o.Database.Exec(`DROP TRIGGER fail_once_admission`); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.engine.TickRoutines(context.Background(), b.Key); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.engine.TickRoutines(context.Background(), b.Key); err != nil {
+		t.Fatal(err)
+	}
+	// Editing a now-spent once trigger must preserve it and its saved timeout.
+	request.ID, request.IdempotencyKey, request.Name, request.TimeoutSeconds = saved.ID, "once-edit", "Renamed once", 0
+	if _, err = tools.Routines(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	x, err = f.h.store.Export(context.Background(), b.Key)
+	if err != nil || len(x.RoutineRuns) != 1 || !x.Routines[0].NextDue.IsZero() || x.Routines[0].TimeoutSeconds != 7200 {
+		t.Fatal("edit rearmed or changed timeout", x.Routines, x.RoutineRuns, err)
+	}
+	main.reply <- app.PromptResult{}
+	routine := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	if routine.q.Resume || routine.q.Binding.SessionSlot == "" {
+		t.Fatal("once used main session")
+	}
+	routine.reply <- app.PromptResult{FinalText: "Once completed."}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+	if err = f.h.engine.TickRoutines(context.Background(), b.Key); err != nil {
+		t.Fatal(err)
+	}
+	x, err = f.h.store.Export(context.Background(), b.Key)
+	if err != nil || len(x.RoutineRuns) != 1 || x.RoutineRuns[0].State != pa.TurnSucceeded || f.p.opens.Load() != 2 {
+		t.Fatal("once replayed or never completed", x.RoutineRuns, err)
 	}
 }

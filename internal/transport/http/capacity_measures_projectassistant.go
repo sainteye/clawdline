@@ -48,6 +48,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	return map[string]func() capacity.Reading{
 		capacity.BotsRoutineDefinitions:      unobserved,
+		capacity.BotsRoutineTriggers:         pure,
 		capacity.BotsRoutineTickMilliseconds: pure,
 		capacity.BotsRoutinePending:          unobserved,
 		capacity.BotsRoutineNameBytes:        pure,
