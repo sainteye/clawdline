@@ -11,10 +11,11 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  const result=await build({stdin:{contents:`
  import React,{useState} from "react";import{createRoot}from"react-dom/client";
  import{useViewPlugins}from"./view-plugins/Host";
+ import{setDockAvailable}from"./project-assistants/BotOrb";setDockAvailable(true);
  import{installedPackages,enablePackage}from"./view-plugins/store";
  const rows=[{key:"first",title:"<img src=x onerror=alert(1)>",project:{key:"one",label:"Demo One"},workState:"waiting_you",freshness:"fresh"},{key:"second",title:"Background work",project:{key:"two",label:"Demo Two"},workState:"working",freshness:"fresh"},{key:"third",title:"Unassigned work",project:null,workState:"unknown",freshness:"unknown"}];
- let listeners=new Set(),connected=true,active=true,navigations=[];window.fixture={rows,navigations,async disableList(){const row=(await installedPackages()).find(r=>r.id==="com.clawdline.session-list");await enablePackage(row,false)},change(){for(const fn of listeners)fn()},disconnect(){connected=false;this.change()},revoke(){active=false;window.renderHost()}};
- function Host(){const [,render]=useState(0);window.renderHost=()=>render(n=>n+1);const api=useViewPlugins(active?[{key:"studio",label:"Studio",async read(){return{sessions:[...rows],connected}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>navigations.push(key)}}]:[],document.documentElement.lang);return <><button id="outside">Original interface</button><button id="manager" onClick={e=>api.openManager(e.currentTarget)}>{document.documentElement.lang === "en" ? "View plugins" : "視圖擴充"}</button><div id="dock">{api.dock}{api.entry}</div>{api.content}</>};createRoot(document.getElementById("root")).render(<Host/>);
+ let listeners=new Set(),remoteConnected=true,active=true,navigations=[];window.fixture={rows,navigations,async disableList(){const row=(await installedPackages()).find(r=>r.id==="com.clawdline.session-list");await enablePackage(row,false)},change(){for(const fn of listeners)fn()},disconnect(){remoteConnected=false;this.change()},revoke(){active=false;window.renderHost()}};
+ function Host(){const [,render]=useState(0);window.renderHost=()=>render(n=>n+1);const api=useViewPlugins(active?[{key:"studio",label:"Studio",async read(){return{sessions:[...rows],connected:true}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>navigations.push("studio:"+key)}},{key:"field",label:"Field",async read(){return{sessions:[{...rows[0],title:"Remote Session"}],connected:remoteConnected}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>navigations.push("field:"+key)}}]:[],document.documentElement.lang);return <><button id="outside">Original interface</button><button id="manager" onClick={e=>api.openManager(e.currentTarget)}>{document.documentElement.lang === "en" ? "View plugins" : "視圖擴充"}</button><div id="dock">{api.dock}{api.entry}</div>{api.content}</>};createRoot(document.getElementById("root")).render(<Host/>);
  `,resolveDir:fileURLToPath(new URL("../src",import.meta.url)),loader:"tsx"},bundle:true,write:false,outfile:"host.js",format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
  let forbiddenRequests=0
  const files=new Map(result.outputFiles.map(f=>["/"+f.path.split("/").at(-1),f.text]))
@@ -29,9 +30,9 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  page.on("pageerror",e=>errors.push(e.message))
  try{
  await page.goto(origin+"/?lang="+lang)
- const zh=lang!=="en",entry=zh?"開啟已安裝視圖":"Open installed views",close=zh?"關閉":"Close",open=zh?"開啟":"Open",allow=zh?"允許並開啟":"Allow and open",manage=zh?"管理":"Manage"
+ const zh=lang!=="en",entry=zh?"開啟已安裝視圖":"Open installed views",close=zh?"關閉":"Close",open=zh?"開啟":"Open",manage=zh?"管理":"Manage"
  const manager=()=>page.locator("#manager").click()
- const dismiss=async()=>{await page.getByRole("button",{name:close,exact:true}).click();await page.locator(".vp-host").waitFor({state:"hidden"})}
+ const dismiss=async()=>{await page.locator(".vp-close,.vp-frame-bar button[aria-label]").click();await page.locator(".vp-host").waitFor({state:"hidden"})}
  await page.getByRole("button",{name:entry,exact:true}).click()
  await page.getByRole("heading",{name:zh?"還沒有啟用的視圖":"No views enabled yet",exact:true}).waitFor()
  assert.equal(await page.locator('input[type=file]').count(),0,"The launcher has no package management")
@@ -45,10 +46,10 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await galaxy.getByRole("button",{name:new RegExp("^"+open)}).waitFor()
  await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-manager.png`})
  await galaxy.getByRole("button",{name:new RegExp("^"+open)}).click()
- await page.getByRole("button",{name:new RegExp("^"+allow)}).click()
  const frame=page.frameLocator("iframe")
  await frame.locator(".node").first().waitFor()
- assert.equal(await frame.locator(".node").count(),3)
+ assert.equal(await frame.locator(".node").count(),4)
+ assert.equal(await page.getByRole("combobox").count(),0,"The first opening has no machine, Project or consent screen")
  await frame.getByRole("button",{name:zh?"清單":"List",exact:true}).click()
  await frame.locator(".list-item").first().waitFor()
  assert.equal(await frame.locator("img").count(),0,"Titles are text, never markup")
@@ -64,12 +65,12 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await page.evaluate(()=>history.back());await page.locator(".vp-host").waitFor({state:"hidden"})
  assert.equal(await page.locator("#outside").evaluate(el=>el.inert),false)
  await page.waitForFunction(()=>document.activeElement?.id==="manager")
- // The next press uses the same in-memory consent but reads fresh facts and gets a new frame.
+ // Every press reads all authorized sources and gets a fresh frame without consent.
  await page.evaluate(()=>{fixture.rows[0].title="Updated Session"})
  await page.getByRole("button",{name:entry,exact:true}).click()
  await frame.getByRole("button",{name:/^Updated Session/}).waitFor()
  assert.equal(await page.locator('input[type=file]').count(),0)
- assert.equal(await page.getByRole("combobox").count(),0,"A previously approved single view opens directly")
+ assert.equal(await page.getByRole("combobox").count(),0,"A single installed view opens directly")
  await page.getByRole("button",{name:zh?"關閉視圖並返回":"Close view and return",exact:true}).click()
  await page.locator(".vp-host").waitFor({state:"hidden"})
  await page.waitForFunction(label=>document.activeElement?.getAttribute("aria-label")===label,entry)
@@ -85,11 +86,18 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  assert.equal(await page.getByRole("button",{name:zh?"移除":"Remove",exact:true}).count(),0)
  await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-picker.png`})
  await page.locator(".vp-launch-item").filter({hasText:zh?"Session 清單":"Session List"}).click()
- await page.getByRole("combobox").nth(1).selectOption("one")
- await page.getByRole("button",{name:new RegExp("^"+allow)}).click()
- await frame.locator(".item").waitFor();assert.equal(await frame.locator(".item").count(),1)
+ await frame.locator(".item").first().waitFor();assert.equal(await frame.locator(".item").count(),4)
+ await frame.getByRole("button",{name:/^Remote Session/}).click()
+ await page.locator(".vp-host").waitFor({state:"hidden"})
+ await page.waitForFunction(()=>fixture.navigations.length===1)
+ assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Equal Session keys navigate to the correct machine")
+ await page.getByRole("button",{name:entry,exact:true}).click()
+ await page.locator(".vp-launch-item").filter({hasText:zh?"Session 清單":"Session List"}).click()
+ await frame.locator(".item").first().waitFor()
  await page.evaluate(()=>fixture.disconnect())
- await frame.getByText(zh?"Demo One · 資料可能過時":"Demo One · May be stale",{exact:true}).waitFor()
+ await frame.getByRole("button",{name:/^Remote Session/}).getByText(zh?"Demo One · 資料可能過時":"Demo One · May be stale",{exact:true}).waitFor()
+ await page.getByRole("status").filter({hasText:zh?"部分機器":"Some Session"}).waitFor()
+ assert.equal(await frame.getByRole("button",{name:/^Updated Session/}).locator("small").textContent(),"Demo One","The healthy machine stays fresh")
  await page.evaluate(()=>fixture.revoke())
  await page.locator("iframe").waitFor({state:"detached"});await page.getByRole("alert").waitFor()
  await dismiss()
@@ -97,8 +105,8 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await page.locator(".vp-launch-item").first().waitFor()
  assert.equal(await page.locator(".vp-launch-item").count(),2,"Both packages survive a reload")
  await page.locator(".vp-launch-item").filter({hasText:zh?"Session 星系":"Session Galaxy"}).click()
- await page.getByRole("combobox").first().waitFor()
- assert.equal(await page.locator("iframe").count(),0,"Consent does not survive a page reload")
+ await frame.locator(".node").first().waitFor()
+ assert.equal(await page.getByRole("combobox").count(),0,"Even after reload the view opens all machines without consent")
  await dismiss();await manager()
  const updated=Buffer.from(await readFile(new URL("../public/view-plugins/session-galaxy.zip",import.meta.url)))
  const version=updated.indexOf(Buffer.from('"version": "0.1.0"'));assert.ok(version>=0);updated.write('"version": "0.2.0"',version)
@@ -117,10 +125,8 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  assert.equal(await galaxy.getByRole("button",{name:new RegExp("^"+open)}).isDisabled(),true)
  await galaxy.getByRole("button",{name:zh?"移除":"Remove",exact:true}).click();await galaxy.waitFor({state:"detached"})
  await dismiss()
- // With one enabled view left, fresh consent is required after registry mutation.
+ // Registry mutation does not reintroduce a scope or consent screen.
  await page.getByRole("button",{name:entry,exact:true}).click()
- await page.getByRole("combobox").first().waitFor()
- await page.getByRole("button",{name:new RegExp("^"+allow)}).click()
  await frame.locator(".item").first().waitFor()
  const other=await page.context().newPage()
  await other.goto(origin+"/?lang="+lang);await other.locator("#manager").waitFor()

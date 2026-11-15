@@ -19,7 +19,7 @@ export async function readPluginSource(source: ViewSource, outer: AbortSignal): 
   } finally { clearTimeout(timer!); outer.removeEventListener("abort", cancel) }
 }
 export interface ViewGrant {
-  pkg: ViewPackage; sourceKey: string; projectKey: string | null
+  pkg: ViewPackage; sourceKey: string
   initial: ViewReading; instanceId: string
 }
 export function PluginFrame({ grant, source, language, onClose, onNavigate, onFault }: {
@@ -29,7 +29,7 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
   const frame = useRef<HTMLIFrameElement>(null)
   const live = useRef({ source, language, onClose, onNavigate, onFault })
   live.current = { source, language, onClose, onNavigate, onFault }
-  const [disconnected, setDisconnected] = useState(false)
+  const [disconnected, setDisconnected] = useState(!grant.initial.connected || !!grant.initial.partial)
   const refreshRef = useRef<() => void>(() => {})
   const contextRef = useRef<() => void>(() => {})
   const w = pluginWords(language)
@@ -39,15 +39,13 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
     let alive = true, accepted = false, reading = grant.initial, bridge: ReturnType<typeof pluginBridge> | null = null
     let busy = false, dirty = false
     const abort = new AbortController(), theme = matchMedia("(prefers-color-scheme: dark)"), motion = matchMedia("(prefers-reduced-motion: reduce)")
-    const filtered = (r: ViewReading): ViewReading => ({ ...r,
-      sessions: r.sessions.filter(s => grant.projectKey === null || s.project?.key === grant.projectKey) })
     const context = (): ViewContext => ({
       language: document.documentElement.lang || live.current.language, theme: document.documentElement.dataset.theme === "light" ? "light" :
         document.documentElement.dataset.theme === "dark" ? "dark" : theme.matches ? "dark" : "light",
       reducedMotion: motion.matches, visible: document.visibilityState === "visible",
       scopeLabel: live.current.source.label, connection: reading.connected ? "connected" : "disconnected",
     })
-    const send = () => { if (alive) bridge?.update(filtered(reading), context()) }
+    const send = () => { if (alive) bridge?.update(reading, context()) }
     contextRef.current = send
     const fault = (code: string) => { if (alive) live.current.onFault(code) }
     const boot = (event: MessageEvent) => {
@@ -56,7 +54,7 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
       const channel = new MessageChannel()
       try {
         bridge = pluginBridge({ port: channel.port1, instanceId: grant.instanceId, capabilities: grant.pkg.manifest.capabilities,
-          reading: filtered(reading), context: context(), close: () => live.current.onClose(), fault,
+          reading, context: context(), close: () => live.current.onClose(), fault,
           open: async key => {
             const control = new AbortController()
             let timer: ReturnType<typeof setTimeout> | undefined
@@ -86,11 +84,11 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
       try {
         const value = await readPluginSource(live.current.source, abort.signal)
         if (!alive) return
-        reading = value; setDisconnected(!value.connected); send()
+        reading = value; setDisconnected(!value.connected || !!value.partial); send()
       } catch (e) {
         if (!alive) return
         if (e instanceof PluginError && ["permission_denied", "scope_changed"].includes(e.code)) { fault(e.code); return }
-        reading = { ...reading, connected: false }; setDisconnected(true); send()
+        reading = { ...reading, sessions: reading.sessions.map(row => ({ ...row, connected: false })), connected: false, partial: true }; setDisconnected(true); send()
       } finally { busy = false; if (dirty && alive) { dirty = false; void refresh() } }
     }
     const unsubscribe = source.subscribe(() => { void refresh() })

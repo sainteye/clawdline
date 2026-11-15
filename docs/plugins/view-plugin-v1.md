@@ -1,6 +1,6 @@
 # View Plugin v1
 
-Revision 3 describes the **experimental browser-local runtime** implemented in
+Revision 4 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The first two packages are Session Galaxy and
 Session List. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
@@ -10,8 +10,9 @@ The earlier revision proposed machine-owned installation; that transport is defe
 The sidebar’s **View plugins** entry owns installation and management. The bottom
 status-bar orbit button opens installed, enabled views only: one view opens
 directly, while multiple views use a compact picker. An empty launcher points to
-the sidebar without embedding installation controls. When the status bar is
-absent, the orbit button sits in the Session-list pane. A granted view fills the app.
+the sidebar without embedding installation controls. The orbit entry stays with
+the status bar; sidebar management remains reachable while that bar is hidden.
+An opened view fills the app.
 The host owns installation, consent, current machine identity, history, focus,
 close and Session navigation. The plugin owns its own HTML, CSS, canvas and motion.
 The Session page, classifier and dispatch broker are not plugin extension points.
@@ -20,15 +21,14 @@ After the host update, importing, replacing, disabling, removing and rolling bac
 compatible packages needs no core edit, frontend rebuild, daemon restart or app
 reinstall. Each browser/interface stores its own packages in IndexedDB. They are
 not copied between phones, machines, accounts or browsers. Packages do not start
-automatically. No grant or Session data is persisted by this registry. After a
-person approves a scope, the mounted interface may remember only the exact
-package digest, source identity and Project selection in memory for that visit.
-The status button can reopen it without repeating consent. Every reopening still
-obtains a fresh authorized reading and creates a new iframe, port, stream and refs.
-No Session snapshot is retained across closing. Page reload, registry mutation,
-source/access changes or a plugin fault clear the matching in-memory approval.
-This memory is bounded by the installed package count and never written to storage. Installing
-on Cloud does not install into a local daemon console or another browser profile.
+automatically. Opening an installed view immediately reads **all currently
+confirmed, authorized machines and all their Projects**, without a machine/Project
+picker or a separate opening-consent screen. Installing a package reviews that
+fixed access scope. No scope preference, grant or Session data is persisted.
+Every opening obtains fresh authorized readings and creates a new iframe, port,
+stream and refs. No Session snapshot is retained across closing. Registry or
+source/access changes revoke the active frame; reopening reads the current set.
+Installing on Cloud does not install into a local daemon console or another browser profile.
 
 The person reviews the package ID, version and capabilities before activation.
 Same ID with different bytes requires explicit replacement. IDs and SHA-256
@@ -75,15 +75,22 @@ Import a replacement ZIP through the manager to test it without rebuilding the h
 
 ## Consent and data ownership
 
-The first opening during an interface visit requires consent for a machine and
-either all Projects or a specific Project. The consent panel explains its lifetime.
-An unchanged package and scope may reuse that in-memory approval until invalidated;
-changes require consent again. The host obtains a fresh authorized reading before
-creating every frame. Cloud
-uses its existing `SessionProjectionSource` and exact execution destinations;
-local uses the existing fleet list. A Cloud read never falls back to phone
-localhost. Account, device, client generation, pairing or access changes invalidate
-the source. A source without confirmed operation permission is not offered.
+Every view uses the same fleet source: all currently authorized machines and all
+Projects. The host aggregates the existing `SessionProjectionSource` readings;
+local uses the existing fleet list. There is no machine or Project selector and
+no remembered consent recipe. A Cloud read never falls back to phone localhost.
+Account, device, client generation, pairing or access changes invalidate the
+source. A machine without confirmed operation permission is not included.
+
+The host namespaces Session and Project identities by source, so equal local IDs
+on different machines cannot overwrite one another or route navigation to the
+wrong machine. These identities remain host-private. Individual machine failures
+leave the other readable machines available, with an explicit host warning about
+incomplete or stale data. An offline row stays stale and cannot navigate; online
+rows still use their own source's fresh authorization. No successful machine is
+silently truncated to satisfy the combined existing Session/message limits.
+Permission or identity failures reject the reading rather than exposing a partial
+authorization result.
 
 `sessions.read` grants only this projection:
 
@@ -102,7 +109,7 @@ the source. A source without confirmed operation permission is not offered.
 `fresh`, `stale`, `unknown`. The host generates new opaque references per opening;
 it does not expose raw Session IDs, machine IDs, filesystem project keys,
 transcripts, prompts, tokens, native bridges or a generic API client. Titles may
-contain personal information and are explicitly part of the person's grant.
+contain personal information and are explicitly part of the reviewed package access.
 Treat every title and label as text, never HTML. Do not infer progress percentages,
 dependency edges or accepted completion from these states.
 
@@ -137,6 +144,9 @@ unsubscribe function. Context is `{language, theme, reducedMotion, visible,
 scopeLabel, connection}`, with theme `dark|light` and connection
 `connected|disconnected`. Stop motion when invisible or reduced motion is on.
 Retained disconnected data is stale immediately; reconnect needs a new snapshot.
+For a fleet, `connection` is connected when at least one machine is connected;
+per-row freshness still reflects its own source. The host separately warns when
+other machines are unavailable, without treating the remaining rows as a complete fleet.
 Empty lists are valid. Every visual needs a readable list/fallback and text states.
 The supplied Galaxy intentionally retains its dark astronomical palette; List
 honors both host themes. Both honor language and reduced motion.
@@ -207,8 +217,8 @@ and matched against the browser and SDK by the parity guard:
 | Manifest bytes | 8192 | Refuse import |
 | Files | Exactly two | Refuse import |
 | Installed packages | 8, each active + one previous | Remove one first |
-| Snapshot bytes | 1048576 | Stop view, narrow scope |
-| Sessions per snapshot | 256 | Narrow scope, no silently omitted rows |
+| Snapshot bytes | 1048576 | Stop view, no partial list |
+| Sessions per snapshot | 256 | Refuse the combined list; no silently omitted rows |
 | Pending requests | 16 | SDK refuses; host stops flooding frame |
 | Handshake/request/read deadline | 10000 ms | Refuse/unavailable/uncertain timeout |
 | Requests per frame per second | 32 | Stop flooding frame |
@@ -224,9 +234,9 @@ sync, plugin database or native capabilities are included.
 refusal, event ordering/coalescing, disconnection, flood isolation and Cloud
 revocation during a delayed read. `tools/view-plugins.e2e.mjs` bundles the production
 manager/frame/registry and supplied packages with synthetic Session sources. It
-exercises import, two distinct views, Project filtering, Back/focus, hostile label
-text, revocation, persisted packages without persisted grants, direct reopening after visit-scoped
-consent, a management-free picker, cross-tab disabling, replacement,
+exercises import, two distinct views, multiple machines/Projects, Back/focus, hostile label
+text, revocation, persisted packages without persisted grants, direct opening
+including after reload, a management-free picker, cross-tab disabling, replacement,
 rollback, failed import, disable and remove. It accepts an existing Playwright
 module path; it installs no browser dependencies.
 
