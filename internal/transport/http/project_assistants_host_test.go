@@ -756,7 +756,7 @@ func TestProjectAssistantServerExistingHostInspectionFailureRetainsUnknownUntilF
 			t.Errorf("%s reported known zero after existing Host inspection failed: %+v", name, got)
 		}
 	}
-	if _, err := db.Exec(`UPDATE project_assistant_schema SET version=1 WHERE id=1`); err != nil {
+	if _, err := db.Exec(`UPDATE project_assistant_schema SET version=? WHERE id=1`, pa.SchemaVersion); err != nil {
 		t.Fatal(err)
 	}
 	// A measurement must not query SQL per row or silently clear the observed

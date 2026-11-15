@@ -356,3 +356,60 @@ func TestExistingHostStoreContinuesAcrossFeatureReinstall(t *testing.T) {
 		t.Fatalf("reinstall lost feature %+v %v", got, err)
 	}
 }
+
+// A real v1 installation has no fallback rest table. Check the combined
+// migration, including rollback of that newly created table on metadata failure.
+func TestInstallerAddsFallbackRestTableAtomically(t *testing.T) {
+	for _, blocked := range []bool{false, true} {
+		t.Run(fmt.Sprint("metadata_blocked=", blocked), func(t *testing.T) {
+			db, _, _, _ := legacyStoreFixture(t)
+			if _, err := db.Exec(`DROP TABLE project_assistant_agent_rests`); err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				if _, err := db.Exec(`CREATE TRIGGER block_rest_migration BEFORE UPDATE ON project_assistant_schema BEGIN SELECT RAISE(IGNORE); END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := databaseFacts(t, db)
+			err := (Installer{}).Install(testContext, db)
+			if blocked {
+				if err == nil {
+					t.Fatal("ignored metadata update was accepted")
+				}
+				if !reflect.DeepEqual(before, databaseFacts(t, db)) {
+					t.Fatal("failed migration leaked the rest table or changed v1 facts")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var version, count int
+			if err = db.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != 2 {
+				t.Fatal(version, err)
+			}
+			if err = db.QueryRow(`SELECT count(*) FROM project_assistant_agent_rests`).Scan(&count); err != nil || count != 0 {
+				t.Fatal(count, err)
+			}
+			var definition string
+			if err = db.QueryRow(`SELECT sql FROM sqlite_schema WHERE name='project_assistant_agent_rests'`).Scan(&definition); err != nil {
+				t.Fatal(err)
+			}
+			after := databaseFacts(t, db)
+			delete(before, "project_assistant_schema")
+			delete(after, "project_assistant_schema")
+			delete(after, "project_assistant_agent_rests")
+			var unchanged []string
+			for _, statement := range after["@schema"] {
+				if statement != definition {
+					unchanged = append(unchanged, statement)
+				}
+			}
+			after["@schema"] = unchanged
+			if !reflect.DeepEqual(before, after) {
+				t.Fatal("migration changed facts beyond the new rest table and version marker")
+			}
+		})
+	}
+}

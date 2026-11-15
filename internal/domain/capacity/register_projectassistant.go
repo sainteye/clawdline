@@ -50,6 +50,8 @@ const (
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
 	return []Entry{
+		{Name: BotsFallbacks, Class: Buffer, Unit: Rows, Limit: pa.MaxFallbackAgents, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxFallbackAgents"}},
+		{Name: BotsAgentRestSeconds, Class: Cache, Unit: Seconds, Limit: pa.MaxFallbackCreditsRestSeconds, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxFallbackCreditsRestSeconds", "internal/domain/projectassistant.MaxFallbackUsageRestSeconds", "internal/domain/projectassistant.MaxFallbackSignedOutRestSeconds", "internal/domain/projectassistant.MaxFallbackBackoffOneSeconds", "internal/domain/projectassistant.MaxFallbackBackoffTwoSeconds", "internal/domain/projectassistant.MaxFallbackBackoffThreeSeconds", "internal/domain/projectassistant.MaxFallbackBackoffMaxSeconds"}},
 		{Name: BotsRoutineTriggers, Class: Buffer, Unit: Rows, Limit: pa.MaxRoutineTriggers, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutineTriggers"}},
 		{Name: BotsErrorKindBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotErrorKindBytes, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotErrorKindBytes"}},
 		{Name: BotsRoutineTickMilliseconds, Class: Buffer, Unit: Milliseconds, Limit: pa.MaxRoutineTickMilliseconds, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutineTickMilliseconds"}},

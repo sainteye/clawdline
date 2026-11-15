@@ -177,6 +177,12 @@ an existing Bot. Sequence collisions reject the entire restore. The supported
 recovery target is an empty, compatible feature database; this is not a merge or
 conflict-resolution tool for independently edited databases.
 
+Empty optional fallback configurations are omitted from aggregate JSON,
+including nested event Bot snapshots. A fixture produced by the actual v1
+types, installer and exporter at `7f4f1db83` verifies the original canonical
+archive hash; recreating a v1 fixture with current types would miss this
+compatibility boundary. The fixture contains synthetic facts only.
+
 New exports and integrity manifests both declare schema 2. Restore accepts
 schema 1 and 2 through the same relationship, complete-context, command-hash and
 receipt validations. An archive's manifest and data schema versions must agree;

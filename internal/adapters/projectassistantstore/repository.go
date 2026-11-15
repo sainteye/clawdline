@@ -270,6 +270,9 @@ func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 	if err = applyRoutines(ctx, tx, a, m); err != nil {
 		return pa.Receipt{}, err
 	}
+	if err = applyAgentRest(ctx, tx, a, m); err != nil {
+		return pa.Receipt{}, err
+	}
 	if err = validateAggregate(a); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -350,11 +353,15 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	if m.Turn != nil {
 		t := *m.Turn
 		if old, ok := a.Turns[t.ID]; ok {
+			if err := checkAttemptAppend(old, t); err != nil {
+				return err
+			}
 			capture := old.State == pa.TurnQueued && t.State == pa.TurnRunning
-			if old.Fence.Key != t.Fence.Key || old.Fence.Project != t.Fence.Project || old.Fence.ConversationID != t.Fence.ConversationID || old.MessageID != t.MessageID || old.RoutineRunID != t.RoutineRunID || old.IdempotencyKey != t.IdempotencyKey || !capture && (old.Fence != t.Fence || old.Instructions != t.Instructions || old.MemoryRevision != t.MemoryRevision) {
+			switching := old.State == pa.TurnRunning && t.State == pa.TurnRunning && pa.SafeAttemptClosed(old) && len(t.Attempts) == len(old.Attempts)+1 && t.Attempts[len(t.Attempts)-1].Stage == pa.AttemptOpening
+			if old.Fence.Key != t.Fence.Key || old.Fence.Project != t.Fence.Project || old.Fence.ConversationID != t.Fence.ConversationID || old.MessageID != t.MessageID || old.RoutineRunID != t.RoutineRunID || old.IdempotencyKey != t.IdempotencyKey || !capture && ((!switching && old.Fence != t.Fence) || old.Instructions != t.Instructions || old.MemoryRevision != t.MemoryRevision) {
 				return failure(pa.ScopeDenied, "turn_snapshot")
 			}
-			if capture && (t.Fence.BindingID != a.Conversation.BindingID || t.Fence.Generation != a.Conversation.Generation || t.Instructions != a.Bot.Instructions || t.MemoryRevision != a.Memory.Revision) {
+			if (capture || switching) && (t.Fence.BindingID != a.Conversation.BindingID || t.Fence.Generation != a.Conversation.Generation || t.Instructions != a.Bot.Instructions || t.MemoryRevision != a.Memory.Revision) {
 				return failure(pa.ContextStale, "turn_capture")
 			}
 			if old.State != t.State && !pa.CanTransition(old.State, t.State) {
@@ -419,7 +426,7 @@ func validateAggregate(a aggregate) error {
 	if b.Key.MachineID == "" || b.Key.BotID == "" || b.Project.MachineID != b.Key.MachineID || b.ConversationID == "" || b.Version < 1 {
 		return failure(pa.Invalid, "bot")
 	}
-	if err := pa.ValidateCreate(pa.CreateBot{Target: pa.ProjectSelection{MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID}, Name: b.Name, Appearance: b.Appearance, Agent: b.Agent, PermissionPolicy: b.PermissionPolicy, Mode: b.Mode, Instructions: b.Instructions.Text}, pa.ProjectResolution{Scope: b.Project, Directory: "host-resolved", Current: true, Available: true}); err != nil {
+	if err := pa.ValidateCreate(pa.CreateBot{Target: pa.ProjectSelection{MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID}, Name: b.Name, Appearance: b.Appearance, Agent: b.Agent, PermissionPolicy: b.PermissionPolicy, Mode: b.Mode, FallbackAgents: b.FallbackAgents.Agents(), Instructions: b.Instructions.Text}, pa.ProjectResolution{Scope: b.Project, Directory: "host-resolved", Current: true, Available: true}); err != nil {
 		return err
 	}
 	if b.Instructions.Revision < 1 {
@@ -464,8 +471,21 @@ func validateAggregate(a aggregate) error {
 		}
 	}
 	for id, binding := range a.Bindings {
+		if binding.Agent != b.Agent {
+			qualified := false
+			for _, turn := range a.Turns {
+				for _, fact := range turn.Attempts {
+					if fact.Agent == binding.Agent && fact.Fence == binding.Fence {
+						qualified = true
+					}
+				}
+			}
+			if !qualified {
+				return failure(pa.ScopeDenied, "binding_attempt")
+			}
+		}
 		f := binding.Fence
-		if id == "" || id != f.BindingID || binding.Agent != b.Agent || f.Generation < 1 || binding.MemoryRevision < 1 || binding.MemoryRevision > a.Memory.Revision || binding.InstructionRevision < 1 || binding.InstructionRevision > b.Instructions.Revision || binding.ForgottenThrough < 0 || binding.ForgottenThrough > binding.MemoryRevision {
+		if id == "" || id != f.BindingID || (binding.Agent != pa.ClaudeCode && binding.Agent != pa.Codex) || f.Generation < 1 || binding.MemoryRevision < 1 || binding.MemoryRevision > a.Memory.Revision || binding.InstructionRevision < 1 || binding.InstructionRevision > b.Instructions.Revision || binding.ForgottenThrough < 0 || binding.ForgottenThrough > binding.MemoryRevision {
 			return failure(pa.Invalid, "binding")
 		}
 		if err := check(f); err != nil {
@@ -482,6 +502,19 @@ func validateAggregate(a aggregate) error {
 		if err := check(t.Fence); err != nil {
 			return err
 		}
+		if err := checkAttemptFacts(t); err != nil {
+			return err
+		}
+		for _, fact := range t.Attempts {
+			if err := check(fact.Fence); err != nil {
+				return err
+			}
+			binding := a.Bindings[fact.Fence.BindingID]
+			if binding.Agent != fact.Agent || fact.Fence.Generation > t.Fence.Generation {
+				return failure(pa.ScopeDenied, "attempt_binding")
+			}
+		}
+
 		switch t.State {
 		case pa.TurnAccepted, pa.TurnQueued, pa.TurnRunning, pa.TurnWaitingPermission:
 			pending++

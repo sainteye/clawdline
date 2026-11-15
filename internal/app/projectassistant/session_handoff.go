@@ -37,6 +37,10 @@ func sameSessionOwner(a, b pa.Fence) bool {
 }
 
 func newSessionHandoff(x Export, turn pa.Turn, filtered pa.ContextSnapshot) (*SessionHandoff, error) {
+	return newSessionHandoffForAgent(x, turn, filtered, x.Bot.Agent)
+}
+
+func newSessionHandoffForAgent(x Export, turn pa.Turn, filtered pa.ContextSnapshot, agent pa.Agent) (*SessionHandoff, error) {
 	f := turn.Fence
 	if x.Bot.Key != f.Key || x.Bot.Project != f.Project || x.Bot.ConversationID != f.ConversationID || x.Conversation.Key != f.Key || x.Conversation.ID != f.ConversationID {
 		return nil, runtimeFailure(pa.ScopeDenied, "handoff_identity")
@@ -47,7 +51,7 @@ func newSessionHandoff(x Export, turn pa.Turn, filtered pa.ContextSnapshot) (*Se
 	if err := pa.CheckContext(filtered, filtered.Memory); err != nil {
 		return nil, err
 	}
-	h := &SessionHandoff{Identity: f, Agent: x.Bot.Agent, Instructions: turn.Instructions, Context: filtered, Unfinished: []SessionPending{}}
+	h := &SessionHandoff{Identity: f, Agent: agent, Instructions: turn.Instructions, Context: filtered, Unfinished: []SessionPending{}}
 	h.Context.Sources = slices.Clone(filtered.Sources)
 	h.Context.Memory.ForgottenSourceIDs = slices.Clone(filtered.Memory.ForgottenSourceIDs)
 	for _, m := range x.Messages {

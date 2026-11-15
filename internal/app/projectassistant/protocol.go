@@ -22,10 +22,12 @@ type Provider interface {
 }
 
 type OpenRequest struct {
-	Bot       pa.Bot
-	Binding   pa.ExecutionBinding
-	Directory string
-	Resume    bool
+	// PrimaryAgent remains configured on the Bot; Binding.Agent is the effective identity.
+	PrimaryAgent pa.Agent
+	Bot          pa.Bot
+	Binding      pa.ExecutionBinding
+	Directory    string
+	Resume       bool
 	// PersistNativeSession is set only by the source-owned installed provider.
 	// It never arrives through an HTTP command or model argument.
 	PersistNativeSession bool `json:"-"`

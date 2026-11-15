@@ -246,6 +246,11 @@
     "Note": true
   },
   {
+    "Name": "bots.agent_rest_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.artifact_bytes",
     "Known": true,
     "Note": true
@@ -287,6 +292,11 @@
   },
   {
     "Name": "bots.event_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.fallback_agents",
     "Known": true,
     "Note": true
   },

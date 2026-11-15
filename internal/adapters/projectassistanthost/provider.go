@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -119,6 +120,7 @@ func (w NativeWork) EditMemory(ctx context.Context, id string, edit app.MemoryEd
 
 type workLifetime struct {
 	closed     atomic.Bool
+	used       atomic.Bool
 	mu         sync.Mutex
 	unregister func()
 	stop       func() bool
@@ -175,7 +177,7 @@ func (p *ownedProvider) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabili
 func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
 	life, tools, err := p.h.tools(ctx, q)
 	if err != nil {
-		return nil, err
+		return nil, &app.OpenNotStarted{Cause: err}
 	}
 	q.Tools = tools
 	if p.h.o.NativeWork != nil {
@@ -188,15 +190,27 @@ func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(c
 	}
 	if err != nil {
 		life.invalidate()
-		return nil, err
+		return nil, &app.OpenNotStarted{Cause: err}
 	}
 	if life.closed.Load() || ctx.Err() != nil {
 		life.invalidate()
-		return nil, failure(pa.Revoked, "native_work_lifetime")
+		return nil, &app.OpenNotStarted{Cause: failure(pa.Revoked, "native_work_lifetime")}
 	}
-	session, err := p.p.Open(ctx, q, sink)
+	session, err := p.p.Open(ctx, q, func(ctx context.Context, e app.ProtocolEvent) error {
+		life.used.Store(true)
+		if life.closed.Load() {
+			return failure(pa.Revoked, "native_event_lifetime")
+		}
+		return sink(ctx, e)
+	})
 	if err != nil {
+		// Seal first: a concurrent call either recorded used before this seal, or
+		// sees closed and cannot reach an effect. Checking used before sealing races.
 		life.invalidate()
+		var refusal *app.PreSendRefusal
+		if errors.As(err, &refusal) && life.used.Load() {
+			err = errors.Join(failure(pa.ExecutionEffectUnknown, "open_effects"), err)
+		}
 		if session != nil {
 			return wrapSession(session, life), err
 		}
@@ -277,6 +291,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	life := &workLifetime{}
 	life.watching(context.AfterFunc(openCtx, life.invalidate))
 	bound := func(ctx context.Context) (context.Context, context.CancelFunc, error) {
+		life.used.Store(true)
 		if life.closed.Load() || openCtx.Err() != nil {
 			return nil, nil, failure(pa.Revoked, "native_work_lifetime")
 		}

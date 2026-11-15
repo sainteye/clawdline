@@ -3,6 +3,7 @@ package projectassistantstore
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 
@@ -243,5 +244,39 @@ func TestRestoreLateCollisionRollsBack(t *testing.T) {
 				t.Fatal("late restore collision changed existing facts")
 			}
 		})
+	}
+}
+
+// Produced by the actual schema-1 types, installer and exporter at 7f4f1db83,
+// before fallback fields existed. Recreating v1 under current types misses
+// accidental additions to the canonical bytes covered by the old hash.
+func TestActualSchemaOneArchiveRetainsItsOriginalCanonicalHash(t *testing.T) {
+	raw, err := os.ReadFile("testdata/schema1-archive.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy Archive
+	if err = json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Manifest.SchemaVersion != 1 || legacy.Manifest.SHA256 != "0e5767e04de4a4f35c4fbac30e097d09363d0b03e7380e1c61bb701f5f7d7896" {
+		t.Fatal("baseline archive changed")
+	}
+	_, target, _ := testDB(t)
+	if err = target.RestoreArchive(testContext, legacy); err != nil {
+		t.Fatalf("actual v1 archive rejected: %v", err)
+	}
+	current, err := target.Export(testContext, legacy.Data.Bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := legacy.Data
+	want.SchemaVersion = 2
+	if !reflect.DeepEqual(want, current) {
+		t.Fatal("restoring actual v1 archive changed its facts")
+	}
+	receipt, err := target.Receipt(testContext, command(want.Bot.Key, pa.SendOperation, "send"))
+	if err != nil || receipt.State != pa.EffectUnknown {
+		t.Fatalf("legacy unknown receipt changed: %+v %v", receipt, err)
 	}
 }

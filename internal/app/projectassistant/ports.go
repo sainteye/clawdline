@@ -74,6 +74,8 @@ type MessagePage struct {
 // A failure writes none. Same key/different hash is a conflict; unknown effects
 // retain their receipts. All non-nil facts must belong to Command.Key.
 type Mutation struct {
+	AgentRest       *pa.AgentRest
+	ClearAgentRest  pa.Agent
 	Routine         *pa.Routine
 	RoutineRun      *pa.RoutineRun
 	Command         pa.Command

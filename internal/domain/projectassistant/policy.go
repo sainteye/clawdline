@@ -124,6 +124,9 @@ func ValidateCreate(in CreateBot, resolved ProjectResolution) error {
 	if err := ValidateMode(in.Agent, in.Mode); err != nil {
 		return err
 	}
+	if err := ValidateFallbacks(in.Agent, in.FallbackAgents); err != nil {
+		return err
+	}
 	return validateSettings(in.Name, in.Appearance, in.Instructions)
 }
 func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
@@ -141,6 +144,12 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 			return bot, err
 		}
 		bot.PermissionPolicy, bot.Mode = in.PermissionPolicy, in.Mode
+	}
+	if in.FallbackAgents != nil {
+		if err := ValidateFallbacks(bot.Agent, *in.FallbackAgents); err != nil {
+			return bot, err
+		}
+		bot.FallbackAgents = FallbackConfigOf(*in.FallbackAgents)
 	}
 	bot.Name = in.Name
 	bot.Appearance = in.Appearance
