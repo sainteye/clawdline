@@ -3131,7 +3131,8 @@
         "Inspect the current environment and reuse matching installed tools.",
         "Distinguish prepared, installed, loaded and applied; a prompt being delivered proves none of the latter.",
         "This source is a library, with no Skill entry required.",
-        "Prepare and use the selected agent evaluation framework. No Skill entry is required."
+        "Prepare and use the selected agent evaluation framework. No Skill entry is required.",
+        "Prepare and use the selected desktop application. No Skill entry is required."
       ],
       "locations": [
         "Session → Actions → Tool library → Prepare and use",
@@ -3771,7 +3772,7 @@
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "e8c0b1df907ff7844f92ac202050da8d0f04af4335cc04e6ef4cac38a4ae40a1",
-    "internal/domain/toollibrary/library.go": "5fa9cd8bcd54553fce879eca8ca1314fd77d4fee4fbed6e586449df7dcebecb9",
+    "internal/domain/toollibrary/library.go": "230190e585bc8973983be00cf23194d46750e3db49be80e256f061f9e5f36a20",
     "internal/domain/voicework/batch.go": "62c9771f6c00b60c8daf602595dd2777d9eaf750f2c1045d40de13690f520f71",
     "internal/domain/workflow/browser_use.go": "fffb2937243841094ad36a5e0e3875f6853dcb50174ec87329b8e6fee66ede24",
     "internal/domain/workflow/image_review.go": "3dcf0e33dd7616f432923692871f2730b9d959b47fd83842de7ba1d0771deeac",
@@ -3821,7 +3822,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "46e1e824e7fb8006dc9a89e7069f8210129c1a217d0bf7c8d1e823303b126011",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "3a354cde3dc18fa6d4659202d7074f9c4c556a833e36ced6e9f7935a7ad48987",
+    "web/console/src/next-strings.ts": "5fbf7cef151a21451fc56ce611bdfbc69bbb2609f61431f81339c64e8b094a5c",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/project-assistants/OutputCard.tsx": "41bf8737de8d646a2175e2aeb0b7ffbaebc68e5a66cbd955c01da5f36928d724",
     "web/console/src/project-assistants/outputs.ts": "e524a558f00101342032767f0f77d21fd9dc787fb4112a4e689e0e262b3ad9a7",
@@ -3846,7 +3847,7 @@
     "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704"
   },
   "copyChecks": {
-    "en": "ebf196a7263e1483e9dce42d26b64390f2988e0d276c57cfd14a1aac046ba034",
-    "zh-Hant": "4ef6f3ddc107c922327aa3e4359b7010112ece851c7c66409462382a76028b5b"
+    "en": "057745ef1fbbd3ebe5b1d582ef93160f8a10bc7f652ae957069daa517b10432c",
+    "zh-Hant": "f8e607c26bdcc376f08df905ff38e3185a0a0033d5903d168ca519f8141596ab"
   }
 }
