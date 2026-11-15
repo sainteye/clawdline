@@ -101,6 +101,7 @@
 | `bots.routine_pending` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_tick_ms` | 1000 | `milliseconds` | `coalesce` | `diagnostics` | — |
 | `bots.routine_timeout_seconds` | 86400 | `seconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.routine_triggers` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.rpc_ms` | 120000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.rules_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |

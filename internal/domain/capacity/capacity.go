@@ -773,6 +773,7 @@ const BotsOwnedDescendants = "bots.owned_children"
 
 const (
 	BotsRoutineDefinitions      = "bots.routine_definitions"
+	BotsRoutineTriggers         = "bots.routine_triggers"
 	BotsRoutineTickMilliseconds = "bots.routine_tick_ms"
 	BotsRoutinePending          = "bots.routine_pending"
 	BotsRoutineNameBytes        = "bots.routine_name_bytes"
