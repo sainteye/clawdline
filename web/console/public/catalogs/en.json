@@ -12245,6 +12245,7 @@
   "viewPlugins.addTerritory": "Install Territory",
   "viewPlugins.territoryHint": "A map of Projects and Sessions. File activity is not available yet.",
   "viewPlugins.update": "Review update",
+  "viewPlugins.error_package_download_failed": "The view package could not be downloaded. Try again.",
   "viewPlugins.removeQuestion": "Remove {name}?",
   "viewPlugins.removePrevious": " Its previous version is removed too.",
   "capacityRow.console.view_plugin_archive_bytes.what": "Bounds the ZIP bytes read for one imported view package.",

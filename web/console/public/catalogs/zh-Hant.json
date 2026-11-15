@@ -12245,6 +12245,7 @@
   "viewPlugins.addTerritory": "安裝工作地圖",
   "viewPlugins.territoryHint": "以地圖呈現 Project 與 Session。目前尚未提供檔案活動。",
   "viewPlugins.update": "檢查更新",
+  "viewPlugins.error_package_download_failed": "無法下載視圖套件，請再試一次。",
   "viewPlugins.removeQuestion": "要移除「{name}」嗎？",
   "viewPlugins.removePrevious": "前一版本也會一併刪除。",
   "capacityRow.console.view_plugin_archive_bytes.what": "限制匯入單一視圖套件時讀取的 ZIP 大小。",

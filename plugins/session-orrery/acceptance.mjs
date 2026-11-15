@@ -69,7 +69,7 @@ try{for(const engine of ["chromium","webkit"])for(const width of [390,1440]){
   for(const p of fidelity){const h=sourceHash(p.ref),sector=Math.PI*2/projectRefs.length,expectedLon=-Math.PI/2+projectRefs.indexOf(p.project)*sector+(.14+.72*h)*sector;const expectedOrbit=p.state==="waiting_you"?.3:["milestone_complete","work_complete"].includes(p.state)?.45:p.state==="working"?(h<.5?.6:.71):.84;assert.ok(Math.abs(p.lon-expectedLon)<1e-10);assert.equal(p.orbit,expectedOrbit);assert.ok(Math.abs(p.x-(geo.cx+Math.cos(expectedLon)*expectedOrbit*geo.R))<.01);assert.ok(Math.abs(p.y-(geo.cy+Math.sin(expectedLon)*expectedOrbit*geo.R))<.01)}
   const fonts=await f.locator("body").evaluate(async()=>{await document.fonts.ready;return [...document.fonts].map(f=>({family:f.family,status:f.status}))})
   assert.ok(fonts.every(f=>f.status==="loaded"),JSON.stringify(fonts))
-  assert.equal(await f.locator(".count").count(),8)
+  assert.equal(await f.locator(".summary-count").count(),4);assert.equal(await f.locator(".summary-count strong").allTextContents().then(xs=>xs.reduce((n,x)=>n+Number(x),0)),10);assert.equal(await f.locator(".count").count(),8)
   assert.deepEqual(await f.locator("#counts strong").allTextContents(),["1","1","1","2","1","1","1","2"])
   assert.equal(new Set(await f.locator("#counts .count span").allTextContents()).size,8)
   assert.equal(await f.locator("#counts strong").allTextContents().then(v=>v.reduce((n,s)=>n+Number(s),0)),10)

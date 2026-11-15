@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { createHash } from "node:crypto"
 import { readFile, writeFile, readdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -11,8 +12,8 @@ import { deflateSync, crc32 as pngCRC } from "node:zlib"
 
 const scratch = await mkdtemp(join(tmpdir(), "cl-view-unit-"))
 const bundle = join(scratch,"runtime.mjs")
-await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover,curatedPackageIDs,hasCuratedUpdate} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
-const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover,curatedPackageIDs,hasCuratedUpdate} = await import(pathToFileURL(bundle).href)
+await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover,examplePreview,curatedPackageIDs,hasCuratedUpdate} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
+const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover,examplePreview,curatedPackageIDs,hasCuratedUpdate} = await import(pathToFileURL(bundle).href)
 test.after(() => rm(scratch,{recursive:true,force:true}))
 const packageURL = new URL("../../public/view-plugins/session-galaxy.zip",import.meta.url)
 const context = {language:"en",theme:"dark",reducedMotion:true,visible:true,scopeLabel:"Studio",connection:"connected"}
@@ -114,6 +115,27 @@ test("Curated views have downloadable packages with their own validated cover",a
   assert.ok(pkg.manifest.cover)
   assert.equal(exampleCover(id),pkg.manifest.cover)
  }
+})
+test("Curated screenshots match their published package and keep localized image identities",async()=>{
+ const previews=JSON.parse(await readFile(new URL("./previews.json",import.meta.url),"utf8"))
+ assert.equal(previews.length,curatedPackageIDs.length*2)
+ for(const id of curatedPackageIDs){
+  const slug=id.slice("com.clawdline.".length),bytes=await readFile(new URL("../../public/view-plugins/"+slug+".zip",import.meta.url)),pkg=await parsePackage(bytes)
+  for(const language of ["en","zh-Hant"]){
+   const item=previews.find(row=>row.id===id&&row.language===language);assert.ok(item)
+   assert.equal(item.packageVersion,pkg.manifest.version)
+   assert.equal(item.packageDigest,createHash("sha256").update(bytes).digest("hex"))
+   assert.match(item.src,/^\/view-plugins\/previews\/session-[a-z-]+-(en|zh-Hant)-[a-f0-9]{12}\.webp$/)
+   const image=await readFile(new URL("../../public"+item.src,import.meta.url))
+   assert.equal(item.sha256,createHash("sha256").update(image).digest("hex"))
+   assert.ok(item.src.endsWith(item.sha256.slice(0,12)+".webp"))
+   assert.equal(examplePreview(id,language),item.src)
+  }
+  assert.equal(examplePreview(id,"zh-TW"),examplePreview(id,"zh-Hant"))
+  assert.equal(examplePreview(id,"ja"),examplePreview(id,"en"))
+  assert.notEqual(examplePreview(id,"en"),examplePreview(id,"zh-Hant"))
+ }
+ assert.equal(examplePreview("org.example.custom","en"),undefined)
 })
 test("Curated updates require a newer stable release and never downgrade an installed package",async()=>{
  const pkg=await parsePackage(await readFile(packageURL))

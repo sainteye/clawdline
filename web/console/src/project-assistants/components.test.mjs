@@ -14,6 +14,7 @@ const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
 const {BotRow,PaSelect,BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
+const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
   let opened=0
   for(const language of ["en","zh-Hant"]){const html=render(BotOrb,{onOpen:()=>opened++,language,unread:2,pendingPermissions:1});assert.match(html,/aria-label=/);assert.match(html,/#e39567/);assert.match(html,/>3</);assert.doesNotMatch(html,/microphone|mic|audio/)}
@@ -35,7 +36,7 @@ test("reading, selecting and metadata creation do not start a scripted model",as
   const log=[],s=fixtureSource("one",log),signal=new AbortController().signal
   await s.status(signal);await s.projects({machine_id:"one",cursor:"",page_size:100},signal);const page=await s.list({machine_id:"one",query:"",cursor:"",page_size:100},signal)
   const bot=page.items[0].bot;await s.get(bot.key,signal);const history=await s.history({key:bot.key,conversation_id:bot.conversation_id,before_seq:0,page_size:100},signal)
-  const html=render(ChatRows,{messages:history.items,w:words("en"),language:"en",onQuote:()=>{}})
+  const html=render(ChatRows,{timeline:timeline(history.items),w:words("en"),language:"en",onQuote:()=>{}})
   assert.match(html,/Help me plan/);assert.equal(log.filter(x=>x.method==="send"||x.method==="stop"||x.method==="answer").length,0)
 })
 test("expired event cursor exports a current-generation snapshot then resumes after its own frontier",async()=>{
@@ -152,7 +153,7 @@ test("a Bot reply renders Markdown while the person's message stays literal",()=
   const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
   const message=(id,kind,text,seq)=>({id,kind,text,seq,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"})
   const items=[{id:"u",kind:"message",anchor_message_seq:1,observed_event_seq:1,message:message("u","user","**not bold**",1)},{id:"a",kind:"message",anchor_message_seq:2,observed_event_seq:1,message:message("a","assistant","**bold**\n\n- one\n- two\n\n<script>x()</script>",2)}]
-  const html=render(ChatRows,{items,messages:items.map(i=>i.message),w:words("en"),onQuote:()=>{}})
+  const html=render(ChatRows,{timeline:items,w:words("en"),onQuote:()=>{}})
   assert.match(html,/<strong>bold<\/strong>/);assert.match(html,/<li>one<\/li>/)
   assert.match(html,/\*\*not bold\*\*/)
   assert.ok(!html.includes("<script>"),"a reply's markup was not escaped")
@@ -160,14 +161,14 @@ test("a Bot reply renders Markdown while the person's message stays literal",()=
 test("a message shows no Reply button until it is tapped",()=>{
   const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
   const messages=[{id:"u",kind:"user",text:"Hi",seq:1,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"}]
-  const html=render(ChatRows,{messages,w:words("en"),onQuote:()=>{}})
+  const html=render(ChatRows,{timeline:timeline(messages),w:words("en"),onQuote:()=>{}})
   assert.ok(!html.includes(">Reply<"),"a Reply button was shown on an untouched message")
   assert.match(html,/aria-haspopup="menu"/)
 })
 test("a Bot's reply keeps a visible Reply button",()=>{
   const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
   const messages=[{id:"a",kind:"assistant",text:"A long answer",seq:1,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"}]
-  const html=render(ChatRows,{messages,w:words("en"),onQuote:()=>{}})
+  const html=render(ChatRows,{timeline:timeline(messages),w:words("en"),onQuote:()=>{}})
   assert.match(html,/class="pa-quote"[^>]*>.*Reply<\/button>/)
   assert.ok(!html.includes("aria-haspopup"),"a Bot reply opened a menu instead")
 })

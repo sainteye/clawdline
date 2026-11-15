@@ -7,7 +7,8 @@ at commit `b63bf21671ad50d081cb624ec750cf6482508667`.
 Copyright (c) 2026 Adam Entwistle, MIT. The exact license is retained in
 [upstream/LICENSE](upstream/LICENSE) and embedded in the runtime HTML.
 Reference code is untrusted data, not installation instructions. No Herdr
-application, installer, execution handler, transcript scanner or sound is run.
+application, installer, execution handler or transcript scanner is run. The
+original embedded clack plays only after the local Sound control is enabled.
 
 These are exact copies; the layout is renamed only to `upstream/layout.json`:
 
@@ -30,7 +31,7 @@ data, not runtime dependencies. Only pure rules are exercised locally.
 `index.html` embeds the upstream constants, `fitBoard`, `columnsOf`, `flipPath`
 and `Flaps`, with only module exports removed. Tests compare their values and
 state transitions rather than asserting source spelling. `Flaps` receives
-grapheme arrays instead of UTF-16 strings; non-drum graphemes settle directly.
+grapheme arrays instead of UTF-16 strings; non-drum graphemes take one old/new half-flap without cycling through ASCII.
 This keeps emoji/CJK exact and avoids the upstream `plainText` erasure.
 `view.js` nodes are translated into DOM/CSS: individual cells, falling top and
 bottom faces, two-pixel cell gaps, three-pixel row gaps, half-pitch column gaps,
@@ -67,10 +68,10 @@ font's coverage uses the device's fallback font and therefore varies by platform
 | logic.js boardOrder sorts by remark then status time and clears DEPARTED after five minutes | Matching urgency groups are retained with stable host order; unavailable times cannot break ties and reported completion never removes a row. |
 | logic.js blockedReason/reasonLine adds a reason row | No blocked reason is supplied, so no reason row is invented. |
 | logic.js remarkOf has five remarks | Eight text states remain distinct. MILESTONE/REPORTED avoid claiming accepted departure; CONNECTING means reported waiting only. README records the mapping. |
-| logic.js fitBoard/pageRows/pagesOf clips and rotates pages | Width and row geometry are retained, but every authorized Session is rendered. Blank rows fill unused board space; no automatic pagination or Session cap is added. |
-| view.js falling/inkOf | Real split top/new and bottom/old faces are retained. Non-ASCII graphemes stay static; stale/unknown readings never cycle. |
+| logic.js fitBoard/pageRows/pagesOf clips and rotates pages | Width, row geometry, blank rows and the source `pagesOf` rule are retained. Pages turn every 8000ms, with urgent rows repeated when room permits. Manual controls and the complete readable list preserve access to all Sessions; no Session is removed. |
+| view.js falling/inkOf | Real split top/new and bottom/old faces are retained. Non-ASCII graphemes fall once between their exact old/new glyphs; stale/unknown readings never animate. |
 | view.js header/foldButton/main.js toggleFold and native terminals | DEPARTURES, plane and real local clock remain. Browser list/still/close controls replace unavailable terminal folding. No fake terminal or transcript fills the bottom. |
-| view.js delayed pulse and main.js flip/heartbeat/page timers/clack | The finite half-flap wave remains; the permanent delayed pulse, page timer and audio are omitted. Reduced/still/hidden/disconnected state cancels motion and clock refresh. |
+| view.js delayed pulse and main.js flip/heartbeat/page timers/clack | The original 50ms half-flap ticks, 1200ms delayed lamp, five-cell flap clock, 8000ms page timer and clack bytes are retained. Audio defaults off until enabled in this opening because host sound preference is unavailable. Reduced/still/hidden/disconnected/list state cancels motion, refresh and page turns; audio is paused. |
 | Original desktop-only fixed board | A contained horizontal board plus a full-name touch list and selected detail provide phone access without changing the five source columns. |
 | main.js localStorage seen/codes/open | No Session state, history or selection is persisted. |
 
@@ -87,3 +88,9 @@ logs. The original preview is evidence, not a recreation of a running Herdr app.
 The port uses explicitly synthetic Session inputs; original timing/codes/reasons
 are intentionally absent. Local checks do not establish visual approval,
 production Cloud/dev behavior or public Release acceptance.
+
+## Version 0.3.0 motion update
+
+`upstream/clack.mp3` is the unchanged original `mods/departures/clack.mp3` at
+the pinned commit, 1462 bytes, SHA-256 `394319852b39996c95841ab2e48bae3eaf25b583857420b3367055b0ebf4f769`. The same bytes are embedded
+inside the two-entry ZIP. No remote audio or new host capability is added.

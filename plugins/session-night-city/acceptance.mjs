@@ -105,7 +105,7 @@ try{for(const engine of ['chromium','webkit'])for(const width of [1440,390]){
   await page.evaluate(()=>fixture.reset());await frame.locator('#all-list').getByText('Approve the release notes',{exact:true}).waitFor()
   await page.screenshot({path:artifacts+'/'+prefix+'-list.png',fullPage:true})
   await frame.locator('#list').click()
-  const animated=()=>frame.locator('.window.working.fresh .glyph').first().evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)
+  const animated=()=>frame.locator('.window.working.fresh .glyph').first().evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running').length)
   assert.ok(await animated()>0,'Visible fresh working windows animate')
   for(const b of await frame.locator('.window.working.stale .glyph').all())assert.equal(await b.evaluate(el=>el.getAnimations().length),0)
   await frame.locator('#still').click();assert.equal(await animated(),0,'Still mode removes animation')

@@ -51,8 +51,8 @@ installer, transcript scanner, exec handler or network service is run.
    register and explicit Open Session. Selection never navigates automatically;
    stale/unknown/disconnected states cannot navigate. Native terminal content in
    the original preview remains visible only in the labeled comparison image.
-6. Browser DOM/SVG replaces GPUI. Source 900ms left/top transitions apply only to
-   actual state changes and stop on hidden/reduced/still/stale/disconnected data.
+6. Browser DOM/SVG replaces GPUI. Ordinary source 900ms left/top transitions apply only to
+   actual state changes; the separate one-time opening reveal is documented below and stop on hidden/reduced/still/stale/disconnected data.
    No permanent rotation or history is introduced. Names preserve full original
    Unicode/case instead of upstream `.toLowerCase()`; list titles wrap safely.
 7. The original has desktop minimum widths of 520+420 and no mobile layout.
@@ -192,3 +192,15 @@ if __name__=='__main__':
  for p in Path('plugins/session-orrery/upstream/fonts').glob('*.ttf'):
   result=subset(p); print(p.name,len(result)); (Path(__file__).parent/(p.stem+'.woff.b64')).write_text(base64.b64encode(result).decode())
 ```
+
+## Version 0.3.0 viewport fit
+
+The desktop dial now uses the actual iframe viewport height rather than a 760px
+minimum. The original center/radius formulas and 1.1:1 composition remain. The
+right mount scrolls inside its frame. This keeps the whole instrument visible
+in a short desktop window while retaining the stacked mobile layout. No orbit
+rotation or invented work-age growth is added.
+
+The instrument almanac uses the original four-row composition: awaiting you,
+reported completion, working, and other states. The full eight-state counts
+remain available in readable-list mode, and each Session keeps its exact state.

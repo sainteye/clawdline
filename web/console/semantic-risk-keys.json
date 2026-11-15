@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12352,
+  "englishKeys": 12353,
   "counts": {
-    "negation": 3319,
+    "negation": 3320,
     "state": 2065,
     "permission": 730,
     "deletion": 288,
     "uncertainty": 468
   },
-  "unionCount": 5352,
+  "unionCount": 5353,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3249,6 +3249,7 @@
       "viewPlugins.empty",
       "viewPlugins.error_invalid_package",
       "viewPlugins.error_missing_cover",
+      "viewPlugins.error_package_download_failed",
       "viewPlugins.error_permission_denied",
       "viewPlugins.error_retired_package",
       "viewPlugins.error_session_unavailable",
@@ -12090,6 +12091,7 @@
     "viewPlugins.error_missing_cover",
     "viewPlugins.error_missing_entry",
     "viewPlugins.error_package_capacity",
+    "viewPlugins.error_package_download_failed",
     "viewPlugins.error_permission_denied",
     "viewPlugins.error_retired_package",
     "viewPlugins.error_scope_changed",

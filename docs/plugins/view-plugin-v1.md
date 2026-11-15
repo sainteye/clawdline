@@ -338,3 +338,21 @@ production Cloud startup/current authorization, unchanged package digests, and a
 native wrapper must be verified at their actual destination before claiming that
 destination is ready. A successful source check or bundle is not deployment proof.
 No public Release acceptance is implied by an experimental Cloud/dev delivery.
+
+### Installing curated packages in the local console
+
+Curated downloads use same-origin credentials and `cache: no-store`. The daemon
+protects `/view-plugins/` behind its existing sign-in gate; omitting its HttpOnly
+session cookie produces HTTP 401 even while the person is signed in to the App.
+Cloud hosts the same ZIPs publicly. Keep the daemon gate unchanged, send the
+existing cookie only to its own origin, and never forward it to a different
+origin, including another local port. Network or HTTP download failures have
+their own error and must not be presented as malformed ZIP packages.
+
+`plugins/curated-install.acceptance.mjs` exercises the production host in
+Chromium and WebKit, in English and Taiwan Traditional Chinese. It installs all
+five actual archives behind a cookie gate and from a public origin, verifies
+reload persistence, refuses a download without modifying the registry, and
+checks a cross-origin redirect does not carry the native cookie. Run with
+`PLUGIN_ARTIFACTS` and an existing `PLAYWRIGHT_MODULE`. The former credential-omitting
+host fails the native installation case before reaching package review.

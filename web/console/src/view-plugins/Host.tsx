@@ -7,7 +7,7 @@ import { installedPackages, subscribePackages, installPackage, enablePackage, re
 import { PLUGIN_LIMITS as B } from "./limits.js"
 import { PluginFrame, readPluginSource, type ViewGrant } from "./Frame.js"
 import { pluginWords } from "./words.js"
-import { ViewArtwork, ViewPluginIcon, exampleCover, packageCover, hasCuratedUpdate } from "./Artwork.js"
+import { ViewArtwork, ViewPluginIcon, exampleCover, examplePreview, packageCover, hasCuratedUpdate } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import { ManageMenu } from "./ManageMenu.js"
 import "./plugins.css"
@@ -116,8 +116,10 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     setReview({ archive, pkg, expected: current?.active.digest ?? null })
   }
   const exampleInstall = (id: string) => act(async () => {
-    const answer = await fetch(`/view-plugins/${id}.zip`, { credentials: "omit", cache: "no-store" })
-    if (!answer.ok || !answer.body) throw new PluginError("invalid_package")
+    let answer: Response
+    try { answer = await fetch(`/view-plugins/${id}.zip`, { credentials: "same-origin", cache: "no-store" }) }
+    catch { throw new PluginError("package_download_failed") }
+    if (!answer.ok || !answer.body) throw new PluginError("package_download_failed")
     const reader = answer.body.getReader(), chunks: Uint8Array[] = []; let size = 0
     try { while (true) { const part = await reader.read(); if (part.done) break; size += part.value.length
       if (size > B.archiveBytes) throw new PluginError("package_too_large"); chunks.push(part.value) }
@@ -186,7 +188,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
             ].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => {
               const installed = rows.find(r => r.id === "com.clawdline." + example.id), update = installed && hasCuratedUpdate(installed.active)
               return <article className="vp-example" key={example.id}>
-              <ViewArtwork cover={exampleCover("com.clawdline." + example.id)} missing={w.coverRequired} /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || !!installed && !update} onClick={() => void exampleInstall(example.id)}>{installed ? update ? w.update : w.added : example.action}</button></div>
+              <ViewArtwork cover={examplePreview("com.clawdline." + example.id, language)} missing={w.coverRequired} preview /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || !!installed && !update} onClick={() => void exampleInstall(example.id)}>{installed ? update ? w.update : w.added : example.action}</button></div>
             </article>})}
           </div></section>
           <footer className="vp-local-note"><span aria-hidden="true">◌</span><p>{w.local}</p></footer>
