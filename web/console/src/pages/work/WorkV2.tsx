@@ -45,6 +45,7 @@ import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { DesktopBoard, DesktopBoardSwitches, useDesktopBoard, type DesktopBoardVisibility } from "./DesktopBoard.js"
 import { boardReadStatus } from "./desktop-board.js"
+import { useBoardDetailMode } from "./board-detail-mode.js"
 import { CompleteWorkDialog } from "./CompleteWorkDialog.js"
 import { phaseName } from "./phase-name.js"
 import { confirmDecisionAnswer, decisionsForWorkItem, matchingDecisionAnswer, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait, type DecisionAnswerStatus } from "./board-attention.js"
@@ -141,6 +142,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [phoneStatus, setStatus] = useState<WorkV2Status>("open")
   const desktop = useDesktopBoard()
   const [desktopVisibility, setDesktopVisibility] = useState<DesktopBoardVisibility>({ proposals: false, plans: false, done: false })
+  const [detailed, setDetailed] = useBoardDetailMode()
+  const [phoneSearchOpen, setPhoneSearchOpen] = useState(false)
+  const phoneFilters = useRef<HTMLDetailsElement>(null)
   const status = boardReadStatus(desktop, desktopVisibility.done, phoneStatus)
   const [showPlans, setShowPlans] = useState(false)
   const [searchInput, setSearchInput] = useState("")
@@ -436,12 +440,57 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const visibleProposals = proposalsForProject(proposals, project)
   const familyView = useMemo<EpicFamilyView>(() => ({ rows: family.rows, truncated: family.truncated, open: openWorkItemById }),
     [family, openWorkItemById])
+  const searchShown = desktop || phoneSearchOpen || !!searchInput
+  const searchField = searchShown && <label className="work-search">
+    <WorkIcon name="search" />
+    <input type="search" aria-label={catalogWord("inline", "60005ee63c14")} placeholder={catalogWord("inline", "60005ee63c14")} maxLength={1024} value={searchInput}
+      autoFocus={!desktop && phoneSearchOpen && !searchInput}
+      onChange={(event) => setSearchInput(event.currentTarget.value)} />
+    {searchInput && <button type="button" aria-label={catalogWord("inline", "0c2d1a3aeaff")} onClick={() => setSearchInput("")}><WorkIcon name="close" /></button>}
+  </label>
+  const detailSwitch = <label className="work-detail-switch">
+    <input type="checkbox" checked={detailed} onChange={(event) => setDetailed(event.currentTarget.checked)} />
+    <span className="work-detail-switch-text"><span>{catalogWord("work", "detailMode")}</span>
+      {!desktop && <small>{catalogWord("work", "detailModeHint")}</small>}</span>
+  </label>
+  // The desktop sits these controls in the title row; a phone keeps Project,
+  // search and a Filters sheet on one row under it.
+  const filterBar = <div className="work-filter-bar">
+    <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
+    {desktop ? <div className="work-filter-controls">
+      <DesktopBoardSwitches value={desktopVisibility} onChange={setDesktopVisibility} />
+      {detailSwitch}
+    </div> : <>
+      {!searchShown && <button className="work-phone-tool" type="button" aria-label={catalogWord("inline", "60005ee63c14")}
+        onClick={() => setPhoneSearchOpen(true)}><WorkIcon name="search" /></button>}
+      <details className="work-phone-filters" ref={phoneFilters}>
+        <summary className="work-phone-tool" data-active={phoneStatus !== "open" || showPlans || detailed ? "true" : undefined}>
+          <WorkIcon name="filter" /><span>{catalogWord("work", "phoneFilters")}</span></summary>
+        <div className="work-phone-filter-sheet" role="group" aria-label={catalogWord("work", "phoneFilters")}>
+          <div className="work-filter-controls">
+            <div className="work-status-filter" role="group" aria-label={catalogWord("inline", "ce34a838f587")}>
+              {([['open', catalogWord("literal", "8f643bcd5a10")], ['done', catalogWord("literal", "20df2a7775cd")], ['all', catalogWord("literal", "aa44a36dc811")]] as [WorkV2Status, string][]).map(([value, label]) =>
+                <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
+            </div>
+            <button className="work-plan-toggle" type="button" aria-pressed={showPlans}
+              onClick={() => setShowPlans((current) => !current)}>{catalogWord("inline", "187097a69436")}</button>
+          </div>
+          {detailSwitch}
+          <button className="work-phone-filter-done" type="button" onClick={() => { if (phoneFilters.current) phoneFilters.current.open = false }}>
+            {catalogWord("work", "phoneFiltersDone")}</button>
+        </div>
+      </details>
+    </>}
+    {searchField}
+  </div>
 
   return <EpicFamilyContext.Provider value={familyView}>
+  <BoardDetailContext.Provider value={detailed}>
   <section ref={board} id="work" className="page board-page work-page" data-page-view="work" data-board-layout={desktop ? "columns" : "stacked"} hidden={!shown} aria-labelledby="work-v2-title"
     aria-busy={loading || refreshing || paging ? "true" : undefined}>
     <header className="board-head">
       <div><h1 id="work-v2-title">{catalogWord("inline", "0072da457a09")}</h1></div>
+      {desktop && filterBar}
       <div className="work-head-tools">
         <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreateDraft({}); setCreating(true) }}>{catalogWord("inline", "e5a0a01cc43c")}</button>
         <button className="board-button work-refresh" type="button" disabled={!!busy || loading || refreshing || paging}
@@ -451,26 +500,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       </div>
     </header>
     <div className="work-wrap">
-      <p className="work-lede">{catalogWord("inline", "984a81d05631")}</p>
-      <div className="work-filter-bar">
-        <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
-        <div className="work-filter-controls">
-          {desktop ? <DesktopBoardSwitches value={desktopVisibility} onChange={setDesktopVisibility} /> : <>
-          <div className="work-status-filter" role="group" aria-label={catalogWord("inline", "ce34a838f587")}>
-            {([['open', catalogWord("literal", "8f643bcd5a10")], ['done', catalogWord("literal", "20df2a7775cd")], ['all', catalogWord("literal", "aa44a36dc811")]] as [WorkV2Status, string][]).map(([value, label]) =>
-              <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
-          </div>
-          <button className="work-plan-toggle" type="button" aria-pressed={showPlans}
-            onClick={() => setShowPlans((current) => !current)}>{catalogWord("inline", "187097a69436")}</button>
-          </>}
-        </div>
-        <label className="work-search">
-          <WorkIcon name="search" />
-          <input type="search" aria-label={catalogWord("inline", "60005ee63c14")} placeholder={catalogWord("inline", "60005ee63c14")} maxLength={1024} value={searchInput}
-            onChange={(event) => setSearchInput(event.currentTarget.value)} />
-          {searchInput && <button type="button" aria-label={catalogWord("inline", "0c2d1a3aeaff")} onClick={() => setSearchInput("")}><WorkIcon name="close" /></button>}
-        </label>
-      </div>
+      {!desktop && filterBar}
       <TerminalEntry key={project} project={project} label={places.find((place) => place.id === project)?.label ?? ""} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {desktop ? <DesktopBoard items={items} decisions={decisions} visibility={desktopVisibility}
@@ -547,6 +577,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     {openedItem && <CreatedWorkModal item={openedItem} created={false} key={openedItem.id} back={detailReturn.current} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} decisionAnswers={decisionAnswers} busy={busy} failure={failure}
       detailLoading={detailLoading} detailError={detailError} retryDetail={() => refreshDetail(openedItem.id)}
       clearFailure={() => setFailure("")} run={run} answerWorkDecision={answerWorkDecision} sessionList={sessionList} retrySessions={sessionReader.retry} onClose={() => setOpenedItem(null)} />}
+  </BoardDetailContext.Provider>
   </EpicFamilyContext.Provider>
 }
 
@@ -600,6 +631,8 @@ interface EpicFamilyView {
   open: (id: string) => Promise<string>
 }
 
+/** True when Board cards show their whole summary; false shows the mark and title only. */
+const BoardDetailContext = createContext(false)
 const EpicFamilyContext = createContext<EpicFamilyView>({ rows: [], truncated: false, open: async () => "" })
 
 /** On an Epic: the items created under it, how far they have got, and who has each. */
@@ -699,14 +732,21 @@ function ProposalQueue({ proposals, items, places, busy, run, onAccepted, column
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
   onAccepted?: () => void
 }) {
-  const list = <ul className="work-proposals">{proposals.map((proposal) => {
+  const detailed = useContext(BoardDetailContext)
+  const list = <ul className={detailed ? "work-proposals" : "work-proposals work-proposals-brief"}>{proposals.map((proposal) => {
       const project = places.find((place) => place.id === proposal.project_id)
       const source = proposal.source_work_id ? items.find((item) => item.id === proposal.source_work_id) : undefined
       const sourceLine = source ? catalogFormat("template", "d03a9f051a31", [source.title])
         : proposal.source_work_id ? catalogFormat("template", "029ac348ef8a", [proposal.source_work_id.slice(0, 8)])
           : proposal.source_todo_id ? catalogWord("literal", "89d0cc30dc8b") : catalogWord("literal", "15d308223697")
       return <li key={proposal.id} className="work-proposal" data-proposal-id={proposal.id}>
-        <div className="work-proposal-main">
+        {!detailed ? <div className="work-proposal-main work-proposal-brief">
+          <span className="work-card-brief-mark" title={project?.label ?? proposal.project_id}>{project?.icon != null && <Mark icon={project.icon as SessionRow["icon"]} cellPx={3} />}</span>
+          <span className="work-card-brief-body">
+            <span className="work-state">{catalogWord("inline", "e9dfb2772400")} {KIND_META[proposal.kind].label}</span>
+            <h3>{proposal.title}</h3>
+          </span>
+        </div> : <div className="work-proposal-main">
           <span className="work-state">{catalogWord("inline", "e9dfb2772400")} {KIND_META[proposal.kind].label}</span>
           <h3>{proposal.title}</h3>
           <p className="work-proposal-context">{project?.label ?? proposal.project_id} · {sourceLine}</p>
@@ -716,7 +756,7 @@ function ProposalQueue({ proposals, items, places, busy, run, onAccepted, column
             <dl><div><dt>{catalogWord("inline", "e78cea7271c7")}</dt><dd>{proposal.description}</dd></div>
               <div><dt>{catalogWord("inline", "e2a4b9a60cac")}</dt><dd>{proposal.suggested_acceptance || catalogWord("literal", "865569dfdfe1")}</dd></div></dl>
           </details>
-        </div>
+        </div>}
         <div className="work-actions work-proposal-actions" aria-label={catalogFormat("template", "9e9521d6a3b6", [proposal.title])}>
           <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === proposal.id + ":accept"}
             onClick={() => void run(proposal.id + ":accept", async () => {
@@ -807,6 +847,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
   const attention = needsPerson(item, decisions.length)
   const activePhase = item.phase === "merging" || item.phase === "deploying"
   const family = useContext(EpicFamilyContext)
+  const detailed = useContext(BoardDetailContext)
   const parent = epicParent(item, family.rows)
   // An Agent-made card carries a badge; its sentence is the summary button's
   // description, since the button's own label is explicit.
@@ -825,6 +866,24 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
     item.condition && conditionDescriptionID, nextAction && actionDescriptionID,
     activePhase && progressDescriptionID, item.phase === "done" && deploymentDescriptionID,
     attention && attentionDescriptionID, originSentence && originDescriptionID].filter(Boolean).join(" ") || undefined
+  const summaryLabel = catalogFormat("template", "1640b97725ed", [item.title, attention ? catalogWord("literal", "0ec51d2f1b3c") : catalogWord("literal", "87a8d926d9e7"), phaseName(item.phase)])
+  // Brief cards keep the project's mark and the title; the lane already names
+  // the phase, and the shared detail modal holds everything else.
+  if (!detailed) return <article className={epic ? "work-card work-v2-card work-summary-card work-brief-card work-epic-card" : "work-card work-v2-card work-summary-card work-brief-card"}
+    data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} data-origin={originSentence ? origin : undefined} tabIndex={-1}>
+    <button className="work-card-summary" type="button" aria-haspopup="dialog" title={item.project.label}
+      aria-label={summaryLabel} aria-describedby={attention ? attentionDescriptionID : undefined} onClick={onOpen}>
+      <span className="work-card-brief-mark"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} /></span>
+      <span className="work-card-brief-body">
+        <span className="work-card-summary-title">{item.title}</span>
+        {(epic || attention) && <span className="work-card-brief-tags">
+          {epic && <span className="work-epic-label">{KIND_META.epic.label}</span>}
+          {attention && <span id={attentionDescriptionID} className="work-card-attention">{catalogWord("inline", "c85c228e97c0")}{decisions.length > 1 ? catalogFormat("template", "b6aa195d5775", [decisions.length]) : ""}</span>}
+        </span>}
+      </span>
+    </button>
+    {parent && <CardParentLine parent={parent} />}
+  </article>
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
     data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} data-origin={originSentence ? origin : undefined} tabIndex={-1}>
     <button className="work-card-summary" type="button" aria-haspopup="dialog"

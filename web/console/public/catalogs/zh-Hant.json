@@ -12359,5 +12359,9 @@
   "transparency.card.persistent-bot-routines.condition": "限開發版本，且 Bots 必須已啟用。已授權的 Bot 執行回合須明確儲存或啟用間隔，原生接頭也須回報可續接。現行隨附 Codex 路徑回報不支援續接，因此無法使用本階段功能；腳本測試不代表已驗證安裝版原生對話 A／B／A。",
   "transparency.card.persistent-bot-routines.summary": "Clawdline 提供間隔管理工具，之後可在新的例行對話啟動模型回合，將結果發布到同一個 Bot 聊天。",
   "transparency.card.persistent-bot-routines.how": "Bot 自有 MCP 入口新增 list_routines、save_routine、enable_routine、delete_routine、test_run_routine。儲存並啟用間隔後，即使沒有瀏覽器連線，來源計時器也會持久接收通知與指令，由既有 Bot actor 和真人訊息依序執行。每次例行工作使用新的對話槽；之後的一般聊天會用新的執行世代，載入另外記住的主對話。暫停的排程只有明確試跑才會執行，自動喚醒仍保持暫停。第一階段拒絕日曆、cron、webhook 與事件觸發。",
-  "transparency.card.persistent-bot-routines.effect": "啟用的間隔之後會啟動原生模型回合，使用所選 agent 帳號的額度。儲存不等於立即試跑。授權、Project、記憶與權限檢查仍有效；未知作用不會授權自動重播，中斷的例行工作也不套用一般聊天的重啟續做。終態儲存失敗會保留已完成結果供確認後清理補存，而不再送 prompt；程序當機後仍可能留下未知結果。Bots 在公開 Release 仍隱藏。"
+  "transparency.card.persistent-bot-routines.effect": "啟用的間隔之後會啟動原生模型回合，使用所選 agent 帳號的額度。儲存不等於立即試跑。授權、Project、記憶與權限檢查仍有效；未知作用不會授權自動重播，中斷的例行工作也不套用一般聊天的重啟續做。終態儲存失敗會保留已完成結果供確認後清理補存，而不再送 prompt；程序當機後仍可能留下未知結果。Bots 在公開 Release 仍隱藏。",
+  "work.detailMode": "詳細模式",
+  "work.detailModeHint": "卡片顯示描述、gate 與時間",
+  "work.phoneFilters": "篩選",
+  "work.phoneFiltersDone": "完成"
 }

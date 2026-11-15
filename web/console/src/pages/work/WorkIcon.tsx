@@ -1,4 +1,4 @@
-export type WorkIconName = "add" | "box" | "boxChecked" | "check" | "circle" | "close" | "delete" | "dot" | "edit" | "eye" | "file" | "half" | "open" | "radio" | "reassign" | "refresh" | "remind" | "search" | "send"
+export type WorkIconName = "add" | "box" | "boxChecked" | "check" | "circle" | "close" | "delete" | "dot" | "edit" | "eye" | "file" | "filter" | "half" | "open" | "radio" | "reassign" | "refresh" | "remind" | "search" | "send"
 
 /** Font glyph boxes are not optically centered. Work controls use one geometric icon canvas instead. */
 export function WorkIcon({ name }: { name: WorkIconName }) {
@@ -14,6 +14,7 @@ export function WorkIcon({ name }: { name: WorkIconName }) {
     {name === "edit" && <path d="m5 19 1-4 9.6-9.6 3 3L9 18l-4 1Zm8.7-11.7 3 3" />}
     {name === "eye" && <><path d="M3 12s3.2-5 9-5 9 5 9 5-3.2 5-9 5-9-5-9-5Z" /><circle cx="12" cy="12" r="2.5" /></>}
     {name === "file" && <><path d="M6 3.5h8l4 4V20H6zM14 3.5v4h4M9 12h6M9 15h6" /></>}
+    {name === "filter" && <path d="M4.5 7h15M7.5 12h9M10.5 17h3" />}
     {name === "half" && <><circle cx="12" cy="12" r="7" /><path d="M12 5a7 7 0 0 1 0 14Z" className="work-icon-fill" /></>}
     {name === "open" && <path d="M5 12h14m-5-5 5 5-5 5" />}
     {name === "radio" && <><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="3.25" className="work-icon-fill" /></>}
