@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12373,
-  "riskKeys": 5366,
-  "nonRiskCount": 7007,
+  "englishContentKeys": 12388,
+  "riskKeys": 5375,
+  "nonRiskCount": 7013,
   "groups": [
     {
       "name": "acp / other",
@@ -5653,7 +5653,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 155,
+      "count": 161,
       "sources": [
         null
       ],
@@ -5675,6 +5675,7 @@
         "projectAssistants.bots",
         "projectAssistants.cancel",
         "projectAssistants.chatLoading",
+        "projectAssistants.checkEarlierSend",
         "projectAssistants.checkSend",
         "projectAssistants.checkingSend",
         "projectAssistants.chooseProject",
@@ -5689,6 +5690,7 @@
         "projectAssistants.decisionActivity",
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
+        "projectAssistants.dismissHeldNote",
         "projectAssistants.downloadFile",
         "projectAssistants.earlier",
         "projectAssistants.earlierLoading",
@@ -5705,6 +5707,10 @@
         "projectAssistants.forget",
         "projectAssistants.forgetScope",
         "projectAssistants.forgotten",
+        "projectAssistants.heldEarlierUnreadable",
+        "projectAssistants.heldFiles",
+        "projectAssistants.heldPictures",
+        "projectAssistants.heldQuoted",
         "projectAssistants.hidden",
         "projectAssistants.hiddenBots",
         "projectAssistants.hideBot",

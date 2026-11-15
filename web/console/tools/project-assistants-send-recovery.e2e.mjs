@@ -14,6 +14,11 @@
  *     on that server (after a daemon restart, a tab the script opened was
  *     refused as another Session's while one opened from the shell was not)
  *
+ * The synthetic source keeps its own records (counters, admitted sends, a
+ * recorded failure) in sessionStorage and replays them into a fresh fixture
+ * on load, so a full page reload keeps the source's facts while the console
+ * starts from nothing but what it journaled.
+ *
  * Exit 0 only when every step passed; the tab and server it opened are closed.
  */
 import assert from "node:assert/strict"
@@ -45,7 +50,16 @@ export function mountFixture() {
   const language = new URLSearchParams(location.search).get("lang") ?? "en"
   const fixture = fixtureSource("studio")
   const turns = []
-  const state = { mode: "normal", sends: 0, transported: [], exports: 0, revokeSend: false }
+  const persisted = (() => { try { return JSON.parse(sessionStorage.getItem("send-recovery.synthetic-source") ?? "null") } catch { return null } })()
+  const state = { mode: "normal", sends: 0, transported: [], exports: 0, revokeSend: false, admitted: [], failed: null, ...(persisted ?? {}) }
+  const persist = () => sessionStorage.setItem("send-recovery.synthetic-source", JSON.stringify({ mode: state.mode, sends: state.sends, transported: state.transported, exports: state.exports, admitted: state.admitted, failed: state.failed }))
+  const admit = async (request, signal) => {
+    const answer = await fixture.send(request, signal)
+    const receipt = answer.receipt
+    if (!turns.some(t => t.id === receipt.id)) turns.push({ id: receipt.id, fence: request.fence, idempotency_key: request.command.idempotency_key, message_id: receipt.id, state: "succeeded", memory_revision: 1, instructions: { text: "", revision: 1, role_snapshot_ref: "" } })
+    receipt.resource_id = receipt.id
+    return answer
+  }
   const live = { accountKey: "fixture-account", readerID: "fixture-reader", machineID: "studio", authorizationRevision: "grant-1", apiLevel: 61, paired: true, online: true, writable: true }
   // One grant refusal at the send's own pre-transport check, and nowhere else.
   const grant = () => { if (state.revokeSend && /ProjectAssistantSourceClient\.send\b/.test(new Error().stack ?? "")) { state.revokeSend = false; return { ...live, authorizationRevision: "replaced-grant" } } return live }
@@ -65,20 +79,18 @@ export function mountFixture() {
         return json(answer)
       }
       if (method === "GET" && tail === "/export") {
-        state.exports++
+        state.exports++; persist()
         const value = await fixture.export(key, signal)
         return json({ ...value, turns: [...value.turns, ...turns.filter(t => t.fence.key.bot_id === bot)] })
       }
       if (method === "POST" && tail === "/messages") {
         const request = JSON.parse(init.body)
         state.sends++; state.transported.push(request.command.idempotency_key)
-        const mode = state.mode; state.mode = "normal"
+        const mode = state.mode; state.mode = "normal"; persist()
         if (mode === "missing") lose()
-        if (mode === "failed") { state.failed = { id: "failed-" + request.command.idempotency_key, command: request.command, event_seq: 0, resource_id: "", state: "failed" }; lose() }
-        const answer = await fixture.send(request, signal)
-        const receipt = answer.receipt
-        if (!turns.some(t => t.id === receipt.id)) turns.push({ id: receipt.id, fence: request.fence, idempotency_key: request.command.idempotency_key, message_id: receipt.id, state: "succeeded", memory_revision: 1, instructions: { text: "", revision: 1, role_snapshot_ref: "" } })
-        receipt.resource_id = receipt.id
+        if (mode === "failed") { state.failed = { id: "failed-" + request.command.idempotency_key, command: request.command, event_seq: 0, resource_id: "", state: "failed" }; persist(); lose() }
+        const answer = await admit(request, signal)
+        state.admitted.push(request); persist()
         if (mode === "lose") lose()
         return json(answer)
       }
@@ -98,10 +110,11 @@ export function mountFixture() {
     return Response.json({ ...value, receipts: [...value.receipts, state.failed] })
   }
   const source = new ProjectAssistantSourceClient(live, exportTransport, grant)
-  const sources = [source], current = () => sources
+  let sources = [source]
+  const current = () => sources
   const view = createViewState(window.sessionStorage)
   const root = createRoot(document.getElementById("fixture"))
-  let summary = null, generation = 0, shown = true
+  let summary = null, generation = 0, shown = true, account = "fixture-account"
   const w = words(language)
   const button = (label, onClick) => React.createElement("button", { type: "button", onClick }, label)
   const mode = next => () => { state.mode = next; paint() }
@@ -113,12 +126,17 @@ export function mountFixture() {
       button("Test: next send records failure", mode("failed")),
       button("Test: leave chat", () => { shown = false; paint() }),
       button("Test: reopen chat", () => { shown = true; generation++; paint() }),
-      React.createElement("output", { "aria-label": "Transport log" }, "mode=" + (state.revokeSend ? "revoke-before" : state.mode) + " sends=" + state.sends + " exports=" + state.exports + " keys=" + state.transported.join(",")),
+      button("Test: reload page", () => location.reload()),
+      button("Test: switch account", () => { account = account === "fixture-account" ? "other-account" : "fixture-account"; generation++; paint() }),
+      button("Test: revoke grant", () => { sources = []; paint() }),
+      React.createElement("output", { "aria-label": "Transport log" }, "account=" + account + " grants=" + sources.length + " mode=" + (state.revokeSend ? "revoke-before" : state.mode) + " sends=" + state.sends + " exports=" + state.exports + " keys=" + state.transported.join(",")),
       // The composer's value is not page text; report it for the reader.
       React.createElement("output", { "aria-label": "Composer state" }, (() => { const box = document.querySelector(".pa-composer textarea"); return box ? "composer=" + (box.disabled ? "locked" : "editable") + " draft=[" + box.value + "]" : "composer=absent" })())),
-    React.createElement("main", { className: "pa-main" }, shown && summary ? React.createElement(Chat, { key: generation, summary, source, current, accountKey: "fixture-account", readerID: "fixture-reader", view, w, language, onBack: () => {}, onBotChanged: () => {} }) : React.createElement("p", null, "Chat closed"))))
+    React.createElement("main", { className: "pa-main" }, shown && summary ? React.createElement(Chat, { key: account + generation, summary, source, current, accountKey: account, readerID: "fixture-reader", view, w, language, onBack: () => {}, onBotChanged: () => {} }) : React.createElement("p", null, "Chat closed"))))
   window.sendRecovery = { state, view, turns }
-  source.status(new AbortController().signal).then(() => fixture.list({ machine_id: "studio", query: "", cursor: "", page_size: 100 }, new AbortController().signal)).then(page => { summary = page.items[0]; paint() })
+  // The source's own records outlive the page; the console's do not, except what it journaled.
+  const replay = async () => { for (const request of state.admitted) await admit(request, new AbortController().signal) }
+  replay().then(() => source.status(new AbortController().signal)).then(() => fixture.list({ machine_id: "studio", query: "", cursor: "", page_size: 100 }, new AbortController().signal)).then(page => { summary = page.items[0]; paint() })
   setInterval(paint, 500)
 }
 `
@@ -231,6 +249,77 @@ try {
   await settle(400); page = read()
   assert.equal(log(page)?.[1], "3"); assert.equal(page.includes("draft=[Synthetic message with no receipt]"), true)
   record("held draft cannot be edited or resent", { sends: 3 })
+
+  // 6. A full page reload keeps the held send locked with its check; nothing is resent.
+  const exportsBeforeReload = Number(log(page)?.[2])
+  click("Test: reload page")
+  page = await until(p => p.includes("I split the work into five tasks") && p.includes("Check with the machine") && p.includes("composer=locked"), "the held send after a full reload", 20)
+  shot("07-held-after-reload")
+  assert.equal(log(page)?.[1], "3", "a reload never resends")
+  assert.equal(Number(log(page)?.[2]), exportsBeforeReload, "a reload reads no receipts by itself")
+  assert.equal(page.includes("composer=locked draft=[Synthetic message with no receipt]"), true, "the uncertain intent stays noneditable after reload")
+  click("Check with the machine")
+  page = await until(p => p.includes("The machine has no record of this message yet.") && Number(log(p)?.[2]) === exportsBeforeReload + 1, "the missing receipt after reload")
+  assert.equal(page.includes("composer=locked"), true)
+  record("full reload keeps the uncertain send held", { sends: 3, exports: exportsBeforeReload + 1 })
+
+  // 7. The person explicitly writes a new message: an empty box; the old one stays visible with its own check.
+  click("Write a new message")
+  page = await until(p => p.includes("composer=editable draft=[]") && p.includes("Check this earlier message"), "an empty new draft beside the earlier held send")
+  shot("08-new-draft-beside-held")
+  assert.equal(log(page)?.[1], "3", "setting a send aside sends nothing")
+  assert.match(page, /Earlier message, outcome unknown: .?Synthetic message with no receipt/)
+  assert.equal(page.includes("Check with the machine"), false, "the box itself is no longer held")
+  await typeDraft("A different new message")
+  click("Send message")
+  page = await until(p => log(p)?.[1] === "4" && p.includes("composer=editable draft=[]"), "exactly one new send")
+  shot("09-new-message-sent")
+  const keys = log(page)?.[3].split(",") ?? []
+  assert.equal(keys.length, 4); assert.equal(new Set(keys).size, 4, "the new message is a new command")
+  assert.equal(page.includes("Check this earlier message"), true, "the earlier uncertain message stays visible")
+  assert.equal(page.includes("A different new message"), true)
+  record("explicit new message sends once beside the held one", { sends: 4, keys })
+
+  // 8. A lost response, then a full reload: still held; one exact check reattaches; the earlier one is untouched.
+  click("Test: lose next response"); await settle(300)
+  await typeDraft("Synthetic lost before reload")
+  click("Send message")
+  page = await until(p => p.includes("Check with the machine") && log(p)?.[1] === "5" && p.includes("composer=locked"), "the second held send")
+  const lostKey = log(page)?.[3].split(",").at(-1)
+  click("Test: reload page")
+  page = await until(p => p.includes("I split the work into five tasks") && p.includes("Check with the machine") && p.includes("Check this earlier message") && p.includes("composer=locked"), "both held sends after reload", 20)
+  shot("10-two-held-after-reload")
+  assert.equal(log(page)?.[1], "5"); assert.equal(page.includes("composer=locked draft=[Synthetic lost before reload]"), true)
+  const exportsBefore = Number(log(page)?.[2])
+  click("Check with the machine")
+  page = await until(p => p.includes("The machine has this message. It was not sent again.") && Number(log(p)?.[2]) === exportsBefore + 1 && p.includes("composer=editable"), "reattachment after reload")
+  shot("11-reattached-after-reload")
+  assert.equal(log(page)?.[1], "5", "inspection after reload sent nothing")
+  assert.equal(log(page)?.[3].split(",").at(-1), lostKey)
+  assert.equal(page.includes("composer=editable draft=[]"), true)
+  assert.equal(page.includes("Check this earlier message"), true, "the earlier unknown message is still held")
+  click("Check this earlier message")
+  page = await until(p => p.includes("The machine has no record of the earlier message yet.") && Number(log(p)?.[2]) === exportsBefore + 2, "the earlier message's own check")
+  assert.equal(log(page)?.[1], "5")
+  record("lost response survives reload and reattaches by its exact receipt", { sends: 5, exports: exportsBefore + 2 })
+
+  // 9. Another account never sees this account's held send; switching back restores it.
+  click("Test: switch account")
+  page = await until(p => p.includes("account=other-account") && p.includes("I split the work into five tasks"), "the other account's chat")
+  shot("12-other-account")
+  assert.equal(page.includes("Check this earlier message"), false, "held sends never cross accounts")
+  click("Test: switch account")
+  page = await until(p => p.includes("account=fixture-account") && p.includes("Check this earlier message"), "the original account's held send")
+  record("account fencing", { crossed: false })
+
+  // 10. A revoked grant reads nothing and sends nothing, even on an explicit check.
+  const beforeRevoke = log(page)
+  click("Test: revoke grant"); await settle(400)
+  try { click("Check this earlier message") } catch {}
+  await settle(1200); page = read()
+  shot("13-revoked")
+  assert.equal(log(page)?.[1], beforeRevoke[1]); assert.equal(log(page)?.[2], beforeRevoke[2], "a revoked grant reads no receipts")
+  record("revoked grant never reads or sends", { sends: Number(log(page)?.[1]), exports: Number(log(page)?.[2]) })
 } finally {
   if (artifacts) await writeFile(path.join(artifacts, "send-recovery-browser-steps.json"), JSON.stringify({ origin, source: src, results, steps }, null, 2))
   try { if (tab !== null && !process.env.SEND_RECOVERY_TAB) browser("close", "--tab", String(tab)) } catch (error) { console.error("close failed:", error.message) }

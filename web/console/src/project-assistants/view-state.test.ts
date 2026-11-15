@@ -103,3 +103,81 @@ test("send recovery: a held permission answer is never inspected as a message se
   const answer={intent:{command:{key,operation:"answer",idempotency_key:"held-key",content_hash:""},fence,offer_id:"offer",turn_id:"turn-1",option_id:"allow"},receipt:null} as const
   assert.equal(inspect(exportOf([receiptOf("accepted",{operation:"answer"})]),answer,scope).state,"invalid")
 })
+const memoryStore=()=>{const disk=new Map<string,string>();return {disk,store:{getItem:(k:string)=>disk.get(k)??null,setItem:(k:string,v:string)=>{disk.set(k,v)},removeItem:(k:string)=>{disk.delete(k)}}}}
+const journalSend=(id:string,text="retained draft",extra:Partial<W.ProjectAssistantSendRequest>={}):W.ProjectAssistantSendRequest=>({command:{key,operation:"send",idempotency_key:id,content_hash:""},fence,text,quote_message_id:"quote-1",...extra})
+test("send recovery journal: a held send survives a full reload with its identity, text, quote and references, without picture data",()=>{
+  const {disk,store}=memoryStore(),own=draftIdentity("account",key)
+  createViewState(store).heldOutcomes.set(own,{intent:journalSend("original",undefined,{images:["data:image/png;base64,AAAA"],upload_ids:["up-1"]}),receipt:null,files:["notes.txt"]})
+  const raw=disk.get(viewStateModule.heldJournalKey(own))!
+  assert.equal(raw.includes("data:image"),false,"picture data is never stored")
+  const reloaded=createViewState(store).heldOutcomes.get(own)!
+  assert.equal(reloaded.intent.command.idempotency_key,"original")
+  assert.equal((reloaded.intent as W.ProjectAssistantSendRequest).text,"retained draft")
+  assert.equal((reloaded.intent as W.ProjectAssistantSendRequest).quote_message_id,"quote-1")
+  assert.deepEqual((reloaded.intent as W.ProjectAssistantSendRequest).upload_ids,["up-1"])
+  assert.equal("images" in reloaded.intent,false)
+  assert.equal(reloaded.pictures,1);assert.deepEqual(reloaded.files,["notes.txt"]);assert.equal(reloaded.restored,true)
+  assert.equal(createViewState(store).heldOutcomes.has(draftIdentity("other",key)),false,"another account never sees it")
+  assert.equal(createViewState(store).heldOutcomes.has(draftIdentity("account",{...key,machine_id:"two"})),false,"another source never sees it")
+})
+test("send recovery journal: a permission answer is never journaled and cannot be set aside",()=>{
+  const {disk,store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)
+  const answer:W.ProjectAssistantPermissionAnswerRequest={command:{key,operation:"answer",idempotency_key:"answer-1",content_hash:""},fence,offer_id:"o",turn_id:"t",option_id:"allow"}
+  view.heldOutcomes.set(own,{intent:answer,receipt:null})
+  assert.equal(disk.size,0)
+  assert.equal(view.heldOutcomes.setAside(own),false)
+  assert.equal(view.heldOutcomes.get(own)?.intent,answer)
+})
+test("send recovery journal: setting a send aside keeps it, with its own identity, across a reload; a new send is a different command",()=>{
+  const {store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)
+  view.heldOutcomes.set(own,{intent:journalSend("old"),receipt:null})
+  assert.equal(view.heldOutcomes.setAside(own),true)
+  assert.equal(view.heldOutcomes.has(own),false)
+  view.heldOutcomes.set(own,{intent:journalSend("new","different"),receipt:null})
+  const reloaded=createViewState(store).heldOutcomes
+  assert.equal(reloaded.get(own)?.intent.command.idempotency_key,"new")
+  assert.deepEqual(reloaded.aside(own).map(o=>o.intent.command.idempotency_key),["old"])
+  reloaded.settleAside(own,"old")
+  assert.deepEqual(createViewState(store).heldOutcomes.aside(own),[])
+})
+test("send recovery journal: corruption and storage failure are reported and never make a held send resendable",()=>{
+  const {disk,store}=memoryStore(),own=draftIdentity("account",key)
+  disk.set(viewStateModule.heldJournalKey(own),"{not json")
+  const view=createViewState(store)
+  assert.equal(view.heldOutcomes.problem(own),"unreadable")
+  view.heldOutcomes.delete(own)
+  assert.equal(disk.get(viewStateModule.heldJournalKey(own)),"{not json","an unreadable record is kept until the person acts")
+  assert.equal(view.heldOutcomes.setAside(own),true)
+  assert.equal(view.heldOutcomes.problem(own),null);assert.equal(view.heldOutcomes.unreadable(own),true)
+  assert.equal(createViewState(store).heldOutcomes.unreadable(own),true,"the person is still told after another reload")
+  assert.deepEqual(JSON.parse(disk.get(viewStateModule.heldJournalKey(own))!).preservedRaw,["{not json"],"continuing keeps the original unreadable bytes")
+  view.heldOutcomes.dismissUnreadable(own)
+  assert.deepEqual(JSON.parse(disk.get(viewStateModule.heldJournalKey(own))!).preservedRaw,["{not json"],"dismissing a notice does not erase its original data")
+  // A record for another Bot under this key, or with picture data, is unreadable too.
+  disk.set(viewStateModule.heldJournalKey(own),JSON.stringify({v:1,active:{intent:{...journalSend("x"),command:{key:{...key,bot_id:"other"},operation:"send",idempotency_key:"x",content_hash:""}},receipt:null},aside:[]}))
+  assert.equal(createViewState(store).heldOutcomes.problem(own),"unreadable")
+  disk.set(viewStateModule.heldJournalKey(own),JSON.stringify({v:1,active:{intent:journalSend("x",undefined,{images:["data:"]}),receipt:null},aside:[]}))
+  assert.equal(createViewState(store).heldOutcomes.problem(own),"unreadable")
+  const full=createViewState({getItem:()=>null,setItem:()=>{throw new Error("quota")},removeItem:()=>{}})
+  full.heldOutcomes.set(own,{intent:journalSend("unsaved"),receipt:null})
+  assert.equal(full.heldOutcomes.has(own),true,"this tab still holds it");assert.equal(full.heldOutcomes.problem(own),"unsaved")
+  const huge=createViewState(memoryStore().store)
+  huge.heldOutcomes.set(own,{intent:journalSend("huge","x".repeat(viewStateModule.MAX_HELD_TEXT_BYTES+1)),receipt:null})
+  assert.equal(huge.heldOutcomes.problem(own),"unsaved","a text beyond the source's message bound is not journaled, visibly")
+})
+test("send recovery journal: failed preservation cannot replace unreadable original data",()=>{
+  const original="{retained original",own=draftIdentity("account",key)
+  let raw=original
+  const view=createViewState({getItem:()=>raw,setItem:()=>{throw new Error("storage full")},removeItem:()=>{raw=""}})
+  assert.equal(view.heldOutcomes.problem(own),"unreadable")
+  assert.equal(view.heldOutcomes.setAside(own),false)
+  assert.equal(view.heldOutcomes.problem(own),"unreadable")
+  assert.equal(raw,original)
+})
+test("send recovery journal: retained history is independent of the source's pending execution count",()=>{
+  const {store}=memoryStore(),view=createViewState(store),own=draftIdentity("account",key)
+  for(let i=0;i<32;i++){view.heldOutcomes.set(own,{intent:journalSend("k"+i),receipt:null});assert.equal(view.heldOutcomes.setAside(own),true)}
+  const restored=createViewState(store).heldOutcomes.aside(own)
+  assert.equal(restored.length,32)
+  assert.deepEqual(restored.map(o=>o.intent.command.idempotency_key),Array.from({length:32},(_,i)=>"k"+i))
+})

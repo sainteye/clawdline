@@ -3,7 +3,7 @@ import "../session/jump.css"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
-import { botIdentity, canRead, canWrite, draftIdentity, inspectHeldSend, sameConversation, sameFence, type HeldInspection, type ViewState } from "./view-state"
+import { botIdentity, canRead, canWrite, draftIdentity, inspectHeldSend, sameConversation, sameFence, type HeldInspection, type HeldOutcome, type ViewState } from "./view-state"
 import { partitionMessages } from "./chat-items"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import { BotAvatar } from "./BotAvatar"
@@ -58,12 +58,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const detailRows=useRef(details)
   const [permissionMore,setPermissionMore]=useState(""),[traceMore,setTraceMore]=useState("")
   const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
-  const [text,setText]=useState(()=>view.draft(draftKey)),[quote,setQuote]=useState(view.quotes.get(draftKey)??"")
+  // A held send read back after a reload shows its own text and quote, locked, whatever the draft store says.
+  const heldAtMount=useRef(view.heldOutcomes.get(draftKey)).current,heldSendAtMount=heldAtMount?.intent.command.operation==="send"?heldAtMount.intent as W.ProjectAssistantSendRequest:null
+  const [text,setText]=useState(()=>heldSendAtMount?heldSendAtMount.text:view.draft(draftKey)),[quote,setQuote]=useState(heldSendAtMount?heldSendAtMount.quote_message_id:view.quotes.get(draftKey)??"")
   const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
-  const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
+  const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)||view.heldOutcomes.problem(draftKey)==="unreadable"),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
   const [inspection,setInspection]=useState<{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}|null>(null),inspecting=useRef<AbortController|null>(null)
+  // Sends set aside to write a new message, each with its own explicit check; repainted from the host journal.
+  const [asideChecks,setAsideChecks]=useState<Record<string,{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}>>({}),[,setJournalRevision]=useState(0)
+  const repaintJournal=()=>setJournalRevision(n=>n+1)
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
   const stopping=useRef(false)
   const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
@@ -261,6 +266,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(busy||unknown||view.heldOutcomes.has(draftKey)||filesLost||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
     const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
     let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setInspection(null)
+    const hold=(receipt:W.ProjectAssistantReceipt|null):HeldOutcome=>({intent,receipt,...(pictures.length?{pictures:pictures.length}:{}),...(selected.length?{files:selected.map(f=>f.file.name)}:{})})
     // The message leaves the box at once and shows above as sending, as in a
     // messaging app. A send that failed outright gives it back to the box.
     const quoted=quote
@@ -286,12 +292,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         // message from the person is a new turn. Only this tab's own
         // uncertain send is held.
         if(view.heldOutcomes.has(draftKey))throw failure("pa_read_only")
-        attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
+        // Journaled before the transport, so a full reload still holds it.
+        attempted=true;view.heldOutcomes.set(draftKey,hold(null));repaintJournal()
         answered=await source.send(intent,s)
         return answered
       })
-      if(result.receipt.state==="unknown")view.heldOutcomes.set(draftKey,{intent,receipt:result.receipt})
+      if(result.receipt.state==="unknown")view.heldOutcomes.set(draftKey,hold(result.receipt))
       else view.heldOutcomes.delete(draftKey)
+      repaintJournal()
       if(result.receipt.state==="unknown"||result.receipt.state==="failed")restore()
       if(!valid()||recovery.current)return
       setReceipt(result.receipt);setUnknown(result.receipt.state==="unknown")
@@ -305,7 +313,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       // that may have crossed the transport stays unknown and is never resent.
       const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
       if(attempted&&!unresolved)view.heldOutcomes.delete(draftKey)
-      else if(unresolved&&kept)view.heldOutcomes.set(draftKey,{intent,receipt:kept.receipt})
+      else if(unresolved&&kept)view.heldOutcomes.set(draftKey,hold(kept.receipt))
+      repaintJournal()
       restore()
       if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(unresolved||view.heldOutcomes.has(draftKey))}
     }finally{if(valid()){setBusy(false);setSending(null)}}
@@ -327,16 +336,46 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         view.heldOutcomes.delete(draftKey)
         const intent=held.intent as W.ProjectAssistantSendRequest
         // The restored copy is the delivered message, not a new draft.
-        if(view.draft(draftKey)===intent.text){view.stage(draftKey,"");setText("")}
-        if((view.quotes.get(draftKey)??"")===intent.quote_message_id){view.quotes.delete(draftKey);setQuote("")}
-        setImages([]);setFiles([]);rememberFiles(false);flush()
+        if(view.draft(draftKey)===intent.text){view.stage(draftKey,"")}
+        if(text===intent.text)setText("")
+        if((view.quotes.get(draftKey)??"")===intent.quote_message_id){view.quotes.delete(draftKey)}
+        if(quote===intent.quote_message_id)setQuote("")
+        setImages([]);setFiles([]);rememberFiles(false);setFilesLost(false);flush()
         setReceipt(result.receipt);setUnknown(false);setError("");setInspection({state:"delivered"})
         void refresh(true)
       }else if(result.state==="failed"){
         view.heldOutcomes.delete(draftKey);setReceipt(result.receipt);setUnknown(false);setInspection({state:"failed"})
       }else setInspection({state:result.state==="invalid"?"unavailable":result.state,code:result.state==="invalid"?"pa_invalid":undefined})
     }catch(e){if(valid())setInspection({state:"unavailable",code:control.signal.aborted?"aborted":errorCode(e)})}
-    finally{reads.current.delete(control);if(inspecting.current===control)inspecting.current=null}
+    finally{reads.current.delete(control);if(inspecting.current===control)inspecting.current=null;repaintJournal()}
+  }
+  // The same single read for a send the person set aside; it never touches the new draft.
+  const inspectAside=async(held:HeldOutcome)=>{
+    const id=held.intent.command.idempotency_key
+    if(held.intent.command.operation!=="send"||inspecting.current||!valid())return
+    const control=new AbortController();inspecting.current=control;reads.current.add(control);setAsideChecks(old=>({...old,[id]:{state:"checking"}}))
+    try{
+      const value=await authorized(source,current,s=>source.export(key,s),control.signal)
+      if(!valid()||control.signal.aborted)return
+      if(!view.heldOutcomes.aside(draftKey).includes(held))return
+      const result=inspectHeldSend(value,held,scope)
+      if(result.state==="delivered"||result.state==="failed"){view.heldOutcomes.settleAside(draftKey,id);if(result.state==="delivered")void refresh(true)}
+      setAsideChecks(old=>({...old,[id]:{state:result.state==="invalid"?"unavailable":result.state,code:result.state==="invalid"?"pa_invalid":undefined}}))
+    }catch(e){if(valid())setAsideChecks(old=>({...old,[id]:{state:"unavailable",code:control.signal.aborted?"aborted":errorCode(e)}}))}
+    finally{reads.current.delete(control);if(inspecting.current===control)inspecting.current=null;repaintJournal()}
+  }
+  // The person's explicit choice to continue: the uncertain send leaves the box
+  // and stays visible with its own check; the box starts empty, and the next
+  // send is a new command. Nothing is copied or sent. A permission answer is
+  // not a message and is never released here.
+  const writeNew=()=>{
+    const held=view.heldOutcomes.get(draftKey)
+    if(busy||!valid()||inspecting.current)return
+    if(held&&held.intent.command.operation!=="send")return
+    if(!view.heldOutcomes.setAside(draftKey)){repaintJournal();return}
+    view.stage(draftKey,"");view.quotes.delete(draftKey);flush()
+    setText("");setQuote("");setImages([]);setFiles([]);rememberFiles(false);setFilesLost(false)
+    setReceipt(null);setUnknown(false);setError("");setInspection(null);repaintJournal()
   }
 
   const stop=async()=>{
@@ -516,11 +555,21 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         </button>
       </div>
     </div>
-    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text||m.files?.map(f=>f.name).join(" · ")}</span>{queuedTurn&&!m.files?.length&&!m.attachments?.length&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button></div>}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
+    <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text||m.files?.map(f=>f.name).join(" · ")}</span>{queuedTurn&&!m.files?.length&&!m.attachments?.length&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
       {fileError&&<p role="alert">{fileError}</p>}<Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown} sendBlocked={filesLost} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     {library&&<OutputLibrary source={source} bot={bot} messages={parts.chat} w={w} onClose={()=>setLibrary(false)}/>}
     {settings&&<BotSettings bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>
+}
+
+/** What the held send carried that this page may no longer have. */
+function HeldAttachments({held,w}:{held:HeldOutcome;w:Words}) {
+  const pictures=held.pictures??0,files=held.files??[]
+  if(!pictures&&!files.length)return null
+  return <p className="pa-held-attachments">{files.length>0&&<>{w.heldFiles}: {files.join(" · ")}</>}{files.length>0&&pictures>0&&" · "}{pictures>0&&(held.restored?w.heldPicturesLost:w.heldPictures).replace("{count}",String(pictures))}</p>
+}
+function asideResult(check:{state:string;code?:string},w:Words) {
+  return check.state==="delivered"?w.checkEarlierDelivered:check.state==="failed"?w.checkEarlierFailed:check.state==="unknown"?w.checkUnknown:check.state==="missing"?w.checkEarlierMissing:w.checkUnavailable.replace("{code}",check.code??"unavailable")
 }
