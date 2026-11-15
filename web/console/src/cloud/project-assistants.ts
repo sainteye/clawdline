@@ -7,6 +7,8 @@ import { failure, projectChoices } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { readViewRequest, readView } from "../project-assistants/read-views.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
+import { RosterSSEDecoder, validateRosterRequest, RosterStreamFailure } from "../project-assistants/roster-stream.ts"
+// @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { createViewState, canRead } from "../project-assistants/view-state.ts"
 import type { CloudClientHandle, CloudMachine } from "./copied.js"
 import type { WorkV2Item } from "../pages/work/api.js"
@@ -15,6 +17,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
 export const PROJECT_ASSISTANTS_INPUTS_API_LEVEL = 70
+export const PROJECT_ASSISTANTS_ROSTER_API_LEVEL = 71
 export const PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL = 69
 export const PROJECT_ASSISTANTS_API_LEVEL = 60
 export const PROJECT_ASSISTANTS_VIEW_API_LEVEL = 61
@@ -148,6 +151,55 @@ export class ProjectAssistantSourceClient implements SourceClient {
     return {...answer,source}
   }
   list(r: W.ProjectAssistantListRequest,s: AbortSignal) { this.key({machine_id:r.machine_id,bot_id:""}); return this.request<W.ProjectAssistantListResponse>(base+query({...r}),s) }
+  canRoster() {
+    if (this.grant.accountKey !== "local" || (this.grant.apiLevel ?? 0) < PROJECT_ASSISTANTS_ROSTER_API_LEVEL) return false
+    try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL); return true } catch { return false }
+  }
+  /** One local connection. The caller alone owns application, cursors and retries. */
+  async subscribeRoster(r: W.ProjectAssistantRosterRequest, receive: (frame: W.ProjectAssistantRosterFrame) => void, s: AbortSignal): Promise<void> {
+    this.check(s,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL)
+    if (this.grant.accountKey !== "local" || (this.grant.apiLevel ?? 0) < PROJECT_ASSISTANTS_ROSTER_API_LEVEL) throw failure("pa_unsupported")
+    validateRosterRequest(r); this.key({machine_id:r.machine_id,bot_id:""})
+    // Capture input too: caller mutation must not replace the frame's scope.
+    const request = { ...r }, decoder = new RosterSSEDecoder(request), control = new AbortController()
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    let body: ReadableStream<Uint8Array> | null = null
+    const abort = () => { control.abort(); if (reader) void reader.cancel().catch(() => undefined) }
+    s.addEventListener("abort",abort,{once:true}); this.lifetime.signal.addEventListener("abort",abort,{once:true})
+    try {
+      const response = await this.transport(base+"/roster-events"+query({machine_id:request.machine_id,...(request.project_id !== undefined ? {project_id:request.project_id} : {}),...(request.cursor !== undefined ? {cursor:request.cursor} : {})}),{method:"GET",signal:control.signal,cache:"no-store",headers:{Accept:"text/event-stream"}})
+      body = response.body
+      this.check(s,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL)
+      if (!response.ok) {
+        const answer: unknown = await response.json()
+        this.check(s,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL)
+        if (sourceFailure(answer)) throw answer
+        throw new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : "pa_offline",answer)
+      }
+      if (response.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "text/event-stream" || !response.body) throw new RosterStreamFailure("invalid")
+      reader = response.body.getReader()
+      for (;;) {
+        const chunk = await reader.read()
+        this.check(s,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL)
+        if (chunk.done) return decoder.end()
+        decoder.push(chunk.value, frame => {
+          this.check(s,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL)
+          // Wire read identities are source-issued (including the local owner
+          // digest), not the host's logical "local"/account reader label.
+          receive({...frame,changes:frame.changes?.map(row => row.summary ? {...row,summary:{...row.summary,source:{...row.summary.source,writable:row.summary.source.writable && this.currentGrant()?.writable === true}}} : row)})
+        })
+      }
+    } catch (error) {
+      this.check(s,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL)
+      if (sourceFailure(error)) throw error
+      throw new AssistantTransportFailure("pa_offline",error)
+    } finally {
+      s.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort)
+      control.abort()
+      if (reader) { void reader.cancel().catch(() => undefined); reader.releaseLock() }
+      else if (body) void body.cancel().catch(() => undefined)
+    }
+  }
   create(r: W.ProjectAssistantCreateRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(base,s,r,"POST") }
   async get(r: W.ProjectAssistantBotKey,s: AbortSignal) {
     this.key(r)
@@ -232,6 +284,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
 /** Route metadata used by the captured encrypted transport; never a second UI model. */
 export function assistantRelayRequest(input: string, init?: RequestInit) {
   const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
+  if (url.pathname === base+"/roster-events") throw failure("pa_unsupported")
   if (url.pathname === "/v1/projects" && method === "GET") return {word:"projects",kind:"read" as const,fields:{},id:""}
   if (url.pathname === "/v1/project-assistant-targets" && method === "GET") {
     const q=Object.fromEntries(url.searchParams)

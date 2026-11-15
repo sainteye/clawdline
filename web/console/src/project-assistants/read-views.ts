@@ -46,6 +46,7 @@ function metadata(b:W.ProjectAssistantBot,scope:ReadScope) {
   if(!object(b)||!key(b.key)||!project(b.project)||!text(b.conversation_id)||!text(b.name)||!integer(b.version,1)||!oneOf(b.agent,ProjectAssistantAgentValues)||!oneOf(b.permission_policy,ProjectAssistantPermissionPolicyValues)||!object(b.appearance)||!oneOf(b.appearance.shape,ProjectAssistantShapeValues)||typeof b.appearance.color!=="string"||!object(b.instructions)||!integer(b.instructions.revision,1)||typeof b.instructions.text!=="string"||typeof b.instructions.role_snapshot_ref!=="string"||!date(b.created_at)||!date(b.updated_at))throw failure("pa_invalid")
   if(!sameConversation({key:b.key,project:b.project,conversation_id:b.conversation_id},scope))throw failure("pa_scope_denied")
 }
+export function readBotMetadata(b:W.ProjectAssistantBot,scope:ReadScope) { metadata(b,scope) }
 function work(w:W.ProjectAssistantWorkLink,scope:ReadScope) {
   if(!object(w)||!text(w.id)||!text(w.turn_id)||!oneOf(w.state,ProjectAssistantWorkStateValues)||typeof w.board_item_id!=="string"||typeof w.task_id!=="string"||typeof w.landing_commit!=="string"||typeof w.result_message_id!=="string")throw failure("pa_invalid")
   own(w.fence,scope)
