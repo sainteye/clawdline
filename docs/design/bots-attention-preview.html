@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bots Attention Preview</title>
+<meta name="description" content="Simulated design preview: a small tip and an optional quiet chime when a Bot replies, asks for permission or fails while the person is in a Session.">
+<style>
+:root{
+  --bg:#f4f2ee;--panel:#ffffff;--ink:#22201d;--muted:#6d6862;--line:#e2ddd5;--soft:#f0ece6;
+  --accent:#c9693a;--ok:#2f8a5f;--warn:#b7791f;--bad:#c2413b;--toast:#ffffff;--shadow:0 10px 30px rgba(30,20,10,.16);
+  --focus:#2f6fdb;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17181a;--panel:#212226;--ink:#ecebe8;--muted:#a19d97;--line:#34353a;--soft:#2a2b30;
+  --accent:#e39567;--ok:#5cc292;--warn:#e3bc6b;--bad:#ef7a73;--toast:#2a2b30;--shadow:0 10px 30px rgba(0,0,0,.5);--focus:#7eafff;
+}}
+:root[data-theme="dark"]{
+  --bg:#17181a;--panel:#212226;--ink:#ecebe8;--muted:#a19d97;--line:#34353a;--soft:#2a2b30;
+  --accent:#e39567;--ok:#5cc292;--warn:#e3bc6b;--bad:#ef7a73;--toast:#2a2b30;--shadow:0 10px 30px rgba(0,0,0,.5);--focus:#7eafff;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC",sans-serif}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 40px}
+header h1{font-size:20px;margin:0 0 4px}
+header p{margin:0;color:var(--muted)}
+.sim{display:inline-block;margin-top:8px;padding:3px 9px;border-radius:999px;background:var(--soft);border:1px dashed var(--line);color:var(--muted);font-size:12px}
+.layout{display:grid;grid-template-columns:300px 1fr;gap:18px;margin-top:16px;align-items:start}
+@media (max-width:860px){.layout{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 8px}
+.card+.card{margin-top:12px}
+.seg{display:flex;gap:4px;background:var(--soft);padding:3px;border-radius:9px}
+.seg button{flex:1;border:0;background:transparent;padding:6px 8px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0}
+.row small{display:block;color:var(--muted);font-size:12px}
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 10px;border-radius:8px;cursor:pointer;text-align:left}
+.btn:hover{background:var(--soft)}
+.row .btn{white-space:nowrap;flex:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btns{display:grid;gap:6px}
+.switch{position:relative;width:38px;height:22px;flex:none;border-radius:999px;border:0;background:var(--line);cursor:pointer;padding:0}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"]::after{left:19px}
+.log{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:220px;overflow:auto;margin:0;padding:0;list-style:none}
+.log li{padding:3px 0;border-bottom:1px dashed var(--line)}
+.log .k{font-weight:700}
+.log .ok{color:var(--ok)} .log .skip{color:var(--muted)}
+/* Stage */
+.stage-wrap{display:flex;justify-content:center}
+.stage{position:relative;overflow:hidden;background:var(--bg);border:1px solid var(--line);border-radius:14px;width:100%;height:560px}
+.stage[data-mode="mobile"]{width:390px;max-width:100%;height:720px;border-radius:30px;border-width:8px;border-color:var(--ink)}
+.s-top{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.s-top b{font-size:14px}
+.s-top span{color:var(--muted);font-size:12px}
+.s-body{display:grid;grid-template-columns:220px 1fr;height:calc(100% - 44px - 34px)}
+.stage[data-mode="mobile"] .s-body{grid-template-columns:1fr}
+.s-list{border-right:1px solid var(--line);padding:8px;background:var(--panel);overflow:hidden}
+.stage[data-mode="mobile"] .s-list{display:none}
+.s-item{padding:8px;border-radius:8px;margin-bottom:4px;font-size:13px}
+.s-item[data-on]{background:var(--soft)}
+.s-item small{display:block;color:var(--muted);font-size:11px}
+.s-term{padding:14px;font:12px/1.6 ui-monospace,Menlo,monospace;color:var(--muted);overflow:hidden}
+.s-term .bar{height:9px;border-radius:4px;background:var(--soft);margin:7px 0}
+.s-foot{position:absolute;left:0;right:0;bottom:0;height:34px;border-top:1px solid var(--line);background:var(--panel);display:flex;align-items:center;padding:0 12px;font-size:12px;color:var(--muted)}
+/* Orb */
+.orb{position:absolute;right:18px;bottom:52px;width:60px;height:60px;border-radius:50%;border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;padding:0}
+.orb .badge{position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+.orb[data-ringing]{animation:wiggle .6s ease-in-out 2}
+@keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-10deg)}75%{transform:rotate(10deg)}}
+/* Toast */
+.tips{position:absolute;right:18px;bottom:122px;width:min(320px,calc(100% - 36px));display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.tip{pointer-events:auto;background:var(--toast);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:10px 10px 10px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;animation:rise .22s ease-out}
+.tip[data-kind="needs"]{border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
+.tip[data-kind="failed"]{border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.tip .t1{font-weight:650;font-size:13px}
+.tip .t2{color:var(--muted);font-size:12px;margin-top:1px}
+.tip .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.tip .acts button{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer}
+.tip .acts .open{background:var(--accent);border-color:var(--accent);color:#fff}
+.tip .x{border:0;background:transparent;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px;border-radius:6px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+/* Bots window (simulated) */
+.bots{position:absolute;inset:44px 0 34px 0;background:var(--panel);display:none;flex-direction:column}
+.bots[data-open]{display:flex}
+.bots-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+.bots-list{padding:8px;overflow:auto}
+.bot{display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px}
+.bot[data-focus]{background:var(--soft)}
+.bot .n{font-weight:600}
+.bot .s{color:var(--muted);font-size:12px}
+.bot .c{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+.mood-needs path:first-child{animation:ink 1.25s ease-in-out infinite}
+@keyframes ink{50%{opacity:.6}}
+.note{color:var(--muted);font-size:12px;margin:6px 0 0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[data-reduce] .orb[data-ringing],[data-reduce] .tip,[data-reduce] .mood-needs path:first-child{animation:none}
+@media (prefers-reduced-motion: reduce){.orb[data-ringing],.tip,.mood-needs path:first-child,.switch::after{animation:none;transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap" id="root">
+  <header>
+    <h1 data-i="title"></h1>
+    <p data-i="lede"></p>
+    <span class="sim" data-i="simulated"></span>
+  </header>
+  <div class="layout">
+    <aside>
+      <div class="card">
+        <h2 data-i="view"></h2>
+        <div class="seg" role="group" data-i-label="language" id="lang">
+          <button type="button" data-v="en" aria-pressed="true">English</button>
+          <button type="button" data-v="zh" aria-pressed="false">繁體中文</button>
+        </div>
+        <div class="seg" role="group" style="margin-top:6px" id="mode">
+          <button type="button" data-v="desktop" aria-pressed="true" data-i="desktop"></button>
+          <button type="button" data-v="mobile" aria-pressed="false" data-i="mobile"></button>
+        </div>
+        <div class="row"><div><span data-i="reduce"></span><small data-i="reduceHint"></small></div><button type="button" class="switch" role="switch" id="reduce" aria-checked="false"></button></div>
+      </div>
+      <div class="card">
+        <h2 data-i="simulate"></h2>
+        <div class="btns">
+          <button type="button" class="btn" data-ev="done"></button>
+          <button type="button" class="btn" data-ev="needs"></button>
+          <button type="button" class="btn" data-ev="failed"></button>
+          <button type="button" class="btn" id="replay"></button>
+          <button type="button" class="btn" id="reconnect"></button>
+        </div>
+        <p class="note" data-i="simNote"></p>
+      </div>
+      <div class="card">
+        <h2 data-i="settings"></h2>
+        <div class="row"><div><span data-i="tips"></span><small data-i="tipsHint"></small></div><button type="button" class="switch" role="switch" id="tipsOn" aria-checked="true"></button></div>
+        <div class="row"><div><span data-i="sound"></span><small data-i="soundHint"></small></div><button type="button" class="switch" role="switch" id="soundOn" aria-checked="false"></button></div>
+        <div class="row"><button type="button" class="btn" id="testSound"></button><small id="audioState" aria-live="polite"></small></div>
+        <div class="row" id="quietRow" hidden><small data-i="quietOn"></small><button type="button" class="btn" id="resume"></button></div>
+        <p class="note" data-i="placement"></p>
+      </div>
+      <div class="card">
+        <h2 data-i="decisions"></h2>
+        <ul class="log" id="log" aria-live="off"></ul>
+      </div>
+    </aside>
+    <main class="stage-wrap">
+      <div class="stage" id="stage" data-mode="desktop">
+        <div class="s-top"><b data-i="session"></b><span data-i="sessionSub"></span></div>
+        <div class="s-body">
+          <div class="s-list">
+            <div class="s-item" data-on><span data-i="sessA"></span><small data-i="running"></small></div>
+            <div class="s-item"><span data-i="sessB"></span><small data-i="idle"></small></div>
+            <div class="s-item"><span data-i="sessC"></span><small data-i="idle"></small></div>
+          </div>
+          <div class="s-term" aria-hidden="true">
+            <div>$ tools/check.sh --quick ./internal/…</div>
+            <div class="bar" style="width:72%"></div><div class="bar" style="width:54%"></div><div class="bar" style="width:81%"></div>
+            <div class="bar" style="width:38%"></div><div class="bar" style="width:66%"></div><div class="bar" style="width:47%"></div>
+          </div>
+        </div>
+        <section class="bots" id="bots" aria-labelledby="botsTitle">
+          <div class="bots-head"><b id="botsTitle">Bots</b><button type="button" class="btn" id="closeBots"></button></div>
+          <div class="bots-list" id="botsList"></div>
+        </section>
+        <div class="tips" id="tips" role="region"></div>
+        <div class="sr" id="live" role="status" aria-live="polite"></div>
+        <button type="button" class="orb" id="orb"><span id="orbAvatar"></span><span class="badge" id="badge" aria-hidden="true" hidden>0</span></button>
+        <div class="s-foot" data-i="foot"></div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+"use strict";
+// Outline geometry copied from web/console/src/project-assistants/avatar-paths.ts
+// so the preview keeps the original line avatars; nothing is generated.
+const PATHS={
+  blob:"M97.98 50.00 L98.50 54.78 L98.30 59.61 L97.36 64.37 L95.66 68.91 L93.27 73.13 L90.28 76.92 L86.81 80.21 L82.98 82.98 L78.94 85.26 L74.79 87.10 L70.62 88.58 L66.48 89.79 L62.38 90.80 L58.29 91.68 L54.18 92.46 L50.00 93.11 L45.71 93.60 L41.28 93.84 L36.74 93.73 L32.12 93.16 L27.52 92.05 L23.05 90.33 L18.85 87.96 L15.04 84.96 L11.75 81.39 L9.08 77.34 L7.07 72.95 L5.73 68.34 L5.04 63.64 L4.92 58.97 L5.27 54.41 L5.98 50.00 L6.94 45.76 L8.07 41.66 L9.32 37.66 L10.67 33.71 L12.14 29.76 L13.79 25.80 L15.69 21.84 L17.93 17.93 L20.58 14.15 L23.68 10.61 L27.26 7.45 L31.27 4.79 L35.67 2.77 L40.34 1.45 L45.16 0.90 L50.00 1.11 L54.72 2.04 L59.23 3.61 L63.44 5.69 L67.33 8.17 L70.89 10.92 L74.17 13.83 L77.21 16.84 L80.09 19.91 L82.87 23.03 L85.57 26.23 L88.20 29.58 L90.73 33.13 L93.08 36.93 L95.15 41.02 L96.83 45.39 L97.98 50.00 Z",
+  hex:"M50 1 L92 25 L92 75 L50 99 L8 75 L8 25 Z",
+  cloud:"M18 85 C-7 82 -5 43 22 40 C20 2 72 -5 80 35 C112 36 109 83 83 85 Z",
+  teardrop:"M50 2 C62 20 94 38 94 62 A44 36 0 0 1 6 62 C6 38 38 20 50 2 Z"
+};
+function avatar(shape,color,size,mood){
+  return `<svg class="${mood==="needs"?"mood-needs":""}" width="${size}" height="${size}" viewBox="-5 -5 110 110" aria-hidden="true" focusable="false"><path d="${PATHS[shape]}" fill="none" stroke="${color}" stroke-width="4.4" stroke-linejoin="round"/><path d="M36 40 V55 M63 40 V55" fill="none" stroke="${color}" stroke-width="5.5" stroke-linecap="round"/></svg>`;
+}
+const BOTS=[
+  {id:"b1",shape:"hex",color:"#7eafff",name:{en:"Docs helper",zh:"文件助手"}},
+  {id:"b2",shape:"cloud",color:"#75c6a5",name:{en:"Release checker",zh:"發版檢查"}},
+  {id:"b3",shape:"teardrop",color:"#b39af2",name:{en:"Inbox triage",zh:"收件整理"}}
+];
+const T={
+ en:{title:"Bots attention while in a Session",lede:"A small tip near the Bots entry, and an optional quiet chime, when a Bot replies, asks for permission or fails.",
+  simulated:"Simulated preview · no real Bot is contacted, no notification is delivered",view:"View",language:"Language",desktop:"Desktop Session",mobile:"Phone size",
+  reduce:"Reduce motion",reduceHint:"Also follows the system setting",simulate:"Simulate an event",done:"Bot replied",needs:"Bot needs permission",failed:"Bot failed",
+  replay:"Repeat the last event (same ID)",reconnect:"Reload / reconnect (existing unread)",simNote:"Each button creates one simulated event with its own ID, for a Bot chosen in turn.",
+  settings:"Preview settings",tips:"Visible tips",tipsHint:"Default on",sound:"Sound",soundHint:"Default off · short, quiet, synthesized",testSound:"Test sound",
+  quietOn:"Tips are quiet until you resume.",resume:"Resume tips",placement:"Where these settings live in the product is not decided by this preview.",
+  decisions:"Decisions",session:"Session",sessionSub:"Working in a terminal",sessA:"api-refactor",sessB:"console-tests",sessC:"release-notes",running:"Running",idle:"Idle",
+  foot:"Status bar",openBots:"Open Bots",closeBots:"Close",kDone:"replied",kNeeds:"needs your permission",kFailed:"could not finish",
+  sDone:"A new reply is ready to read.",sNeeds:"Review the request in Bots.",sFailed:"Open the Bot to see what went wrong.",
+  openBot:"Open Bot",quiet:"Quiet tips",dismiss:"Dismiss tip",more:n=>`+${n} more waiting`,forBot:n=>`${n} waiting for this Bot`,waiting:n=>`${n} waiting in Bots`,
+  orbLabel:n=>n?`All Bots, ${n} waiting`:"All Bots",unread:n=>`${n} unread`,pending:n=>`${n} needs permission`,noUnread:"Nothing waiting",
+  audioIdle:"No audio until you turn sound on or test it.",audioOn:s=>`Audio context: ${s}`,
+  lgShown:(b,k)=>`ALERT ${k} · ${b}: tip shown`,lgSound:"chime played",lgNoSound:"sound off",lgThrottle:"chime skipped: same Bot and kind within 5 s",
+  lgDup:id=>`SKIP duplicate ID ${id}: already alerted`,lgReconnect:n=>`SKIP reload: ${n} existing unread marked seen, no tip, no sound`,
+  lgOpen:"SKIP tip: Bots is open; count updates inside Bots",lgQuiet:"SKIP tip: tips are quiet; unread kept",lgTipsOff:"SKIP tip: visible tips off; unread kept",
+  lgDismiss:"tip dismissed; unread kept",lgOpened:b=>`opened ${b}: its unread cleared`,lgNone:"No events yet."},
+ zh:{title:"在 Session 裡也注意到 Bots",lede:"Bot 回覆、需要允許或執行失敗時，在 Bots 入口旁顯示一則小提示，並可選擇播放輕柔提示音。",
+  simulated:"模擬預覽・不會聯絡真正的 Bot，也不會送出任何通知",view:"檢視",language:"語言",desktop:"電腦版 Session",mobile:"手機尺寸",
+  reduce:"減少動態",reduceHint:"也會跟隨系統設定",simulate:"模擬事件",done:"Bot 回覆了",needs:"Bot 需要允許",failed:"Bot 執行失敗",
+  replay:"重送上一個事件（同一 ID）",reconnect:"重新載入／重新連線（既有未讀）",simNote:"每個按鈕產生一筆有自己 ID 的模擬事件，Bot 依序輪流。",
+  settings:"預覽設定",tips:"顯示提示",tipsHint:"預設開啟",sound:"提示音",soundHint:"預設關閉・短、輕、合成音",testSound:"試聽",
+  quietOn:"提示已暫停，按「恢復提示」才會再出現。",resume:"恢復提示",placement:"這些設定在產品中放在哪裡，不由這份預覽決定。",
+  decisions:"判斷紀錄",session:"Session",sessionSub:"正在終端機工作",sessA:"api-refactor",sessB:"console-tests",sessC:"release-notes",running:"執行中",idle:"閒置",
+  foot:"狀態列",openBots:"打開 Bots",closeBots:"關閉",kDone:"回覆了",kNeeds:"需要你允許",kFailed:"沒能完成",
+  sDone:"有一則新回覆可以看。",sNeeds:"請到 Bots 檢視這個請求。",sFailed:"打開 Bot 看看哪裡出錯。",
+  openBot:"打開 Bot",quiet:"暫停提示",dismiss:"關閉提示",more:n=>`另有 ${n} 則等待中`,forBot:n=>`這個 Bot 有 ${n} 則等待中`,waiting:n=>`Bots 裡有 ${n} 則等待中`,
+  orbLabel:n=>n?`所有 Bots，${n} 則等待中`:"所有 Bots",unread:n=>`${n} 則未讀`,pending:n=>`${n} 則需要允許`,noUnread:"沒有等待中的項目",
+  audioIdle:"開啟提示音或按試聽之前不會建立音訊。",audioOn:s=>`音訊狀態：${s}`,
+  lgShown:(b,k)=>`提示 ${k}・${b}：已顯示`,lgSound:"已播放提示音",lgNoSound:"提示音關閉",lgThrottle:"略過提示音：同一 Bot 同一類型 5 秒內",
+  lgDup:id=>`略過重複 ID ${id}：已提示過`,lgReconnect:n=>`略過重新載入：${n} 則既有未讀標為已見，不提示也不出聲`,
+  lgOpen:"略過提示：Bots 已打開，數字在 Bots 裡更新",lgQuiet:"略過提示：提示已暫停，未讀保留",lgTipsOff:"略過提示：已關閉顯示提示，未讀保留",
+  lgDismiss:"已關閉提示，未讀保留",lgOpened:b=>`已打開 ${b}：它的未讀已清除`,lgNone:"還沒有事件。"}
+};
+const S={lang:"en",mode:"desktop",tips:true,sound:false,quiet:false,botsOpen:false,focusBot:null,
+  unread:{},alerted:new Set(),seq:0,turn:0,last:null,shown:[],throttle:new Map(),log:[],ctx:null};
+// Existing unread from before this page loaded: counted, never alerted.
+S.unread={b1:{done:1,needs:0,failed:0},b2:{done:0,needs:0,failed:0},b3:{done:0,needs:0,failed:0}};
+const $=id=>document.getElementById(id), w=()=>T[S.lang];
+const bot=id=>BOTS.find(b=>b.id===id);
+const total=id=>{const u=S.unread[id];return u.done+u.needs+u.failed};
+const allTotal=()=>BOTS.reduce((n,b)=>n+total(b.id),0);
+const reduced=()=>document.documentElement.hasAttribute("data-reduce")||matchMedia("(prefers-reduced-motion: reduce)").matches;
+function log(text,cls){S.log.unshift({text,cls});S.log=S.log.slice(0,40);renderLog()}
+function renderLog(){
+  const ul=$("log");ul.textContent="";
+  if(!S.log.length){const li=document.createElement("li");li.className="skip";li.textContent=w().lgNone;ul.append(li);return}
+  for(const e of S.log){const li=document.createElement("li");li.className=e.cls||"";li.textContent=e.text;ul.append(li)}
+}
+function kindWord(k){return {done:w().kDone,needs:w().kNeeds,failed:w().kFailed}[k]}
+function kindSub(k){return {done:w().sDone,needs:w().sNeeds,failed:w().sFailed}[k]}
+function kindColor(k){return {done:"var(--ok)",needs:"var(--warn)",failed:"var(--bad)"}[k]}
+
+/* One alert per meaningful event: the event ID is the key, never a count change. */
+function receive(ev){
+  S.unread[ev.bot][ev.kind]++;
+  if(S.alerted.has(ev.id)){S.unread[ev.bot][ev.kind]--;log(w().lgDup(ev.id),"skip");render();return}
+  S.alerted.add(ev.id);S.last=ev;
+  const name=bot(ev.bot).name[S.lang];
+  if(S.botsOpen){log(w().lgOpen,"skip");render();return}
+  if(S.quiet){log(w().lgQuiet,"skip");render();return}
+  let line=w().lgShown(name,ev.kind);
+  if(S.tips){S.shown=S.shown.filter(t=>t.bot!==ev.bot);S.shown.unshift(ev);S.shown=S.shown.slice(0,1);announce(ev)}
+  else line=w().lgTipsOff;
+  if(S.sound){
+    const key=ev.bot+":"+ev.kind,now=Date.now();
+    if(now-(S.throttle.get(key)||0)<5000)line+=" · "+w().lgThrottle;
+    else{S.throttle.set(key,now);chime();line+=" · "+w().lgSound}
+  } else line+=" · "+w().lgNoSound;
+  log(line,"ok");
+  if(ev.kind==="done"&&S.tips)scheduleFade(ev);
+  ring();render();
+}
+function announce(ev){$("live").textContent=`${bot(ev.bot).name[S.lang]} ${kindWord(ev.kind)}${S.lang==="zh"?"。":". "}${w().waiting(allTotal())}`}
+function scheduleFade(ev){setTimeout(()=>{if(S.shown[0]&&S.shown[0].id===ev.id&&!$("tips").contains(document.activeElement)){S.shown=[];render()}},5200)}
+function ring(){const o=$("orb");if(reduced())return;o.removeAttribute("data-ringing");void o.offsetWidth;o.setAttribute("data-ringing","");setTimeout(()=>o.removeAttribute("data-ringing"),1300)}
+function simulate(kind){
+  const b=BOTS[S.turn%BOTS.length];S.turn++;S.seq++;
+  receive({id:`evt-${String(S.seq).padStart(3,"0")}`,bot:b.id,kind});
+}
+function reconnect(){
+  // A reload delivers a snapshot of unread state; the IDs it contains are
+  // recorded as seen so nothing in it can alert.
+  log(w().lgReconnect(allTotal()),"skip");render();
+}
+/* Audio: created only from an explicit click; never changes audio routing. */
+function ensureAudio(){
+  if(!S.ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;S.ctx=new C()}
+  if(S.ctx.state==="suspended")S.ctx.resume();
+  return S.ctx;
+}
+function chime(){
+  const ctx=S.ctx;if(!ctx)return;
+  const t=ctx.currentTime+0.01;
+  [[784,0],[1046.5,0.11]].forEach(([f,d])=>{
+    const o=ctx.createOscillator(),g=ctx.createGain();o.type="sine";o.frequency.value=f;
+    g.gain.setValueAtTime(0,t+d);g.gain.linearRampToValueAtTime(0.05,t+d+0.015);g.gain.exponentialRampToValueAtTime(0.0001,t+d+0.18);
+    o.connect(g).connect(ctx.destination);o.start(t+d);o.stop(t+d+0.2);
+  });
+  audioState();
+}
+function audioState(){$("audioState").textContent=S.ctx?w().audioOn(S.ctx.state):w().audioIdle}
+function openBots(id){
+  S.botsOpen=true;S.focusBot=id||null;S.shown=[];
+  if(id){const u=S.unread[id];u.done=u.needs=u.failed=0;log(w().lgOpened(bot(id).name[S.lang]))}
+  render();$("closeBots").focus();
+}
+function closeBots(){S.botsOpen=false;S.focusBot=null;render();$("orb").focus()}
+function setSwitch(el,on){el.setAttribute("aria-checked",String(on))}
+function render(){
+  const d=w();document.documentElement.lang=S.lang==="zh"?"zh-Hant-TW":"en";
+  document.querySelectorAll("[data-i]").forEach(el=>{const v=d[el.dataset.i];if(typeof v==="string")el.textContent=v});
+  $("lang").setAttribute("aria-label",d.language);
+  document.querySelectorAll("[data-ev]").forEach(b=>{b.innerHTML=`<span class="dot" style="background:${kindColor(b.dataset.ev)}"></span>`;b.append(d[b.dataset.ev])});
+  $("replay").textContent=d.replay;$("replay").disabled=!S.last;$("reconnect").textContent=d.reconnect;
+  $("testSound").textContent=d.testSound;$("resume").textContent=d.resume;$("closeBots").textContent=d.closeBots;
+  [["tipsOn",d.tips],["soundOn",d.sound],["reduce",d.reduce]].forEach(([id,l])=>$(id).setAttribute("aria-label",l));
+  setSwitch($("tipsOn"),S.tips);setSwitch($("soundOn"),S.sound);setSwitch($("reduce"),document.documentElement.hasAttribute("data-reduce"));
+  $("quietRow").hidden=!S.quiet;
+  $("stage").dataset.mode=S.mode;
+  document.querySelectorAll("#lang button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===S.lang)));
+  document.querySelectorAll("#mode button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===S.mode)));
+  const n=allTotal();$("badge").hidden=!n;$("badge").textContent=n;
+  $("orb").setAttribute("aria-label",d.orbLabel(n));$("orb").title=d.openBots;$("orb").hidden=S.botsOpen;
+  $("orbAvatar").innerHTML=avatar("blob","#e39567",36);
+  $("tips").setAttribute("aria-label",S.lang==="zh"?"Bots 提示":"Bots tips");
+  renderTips();renderBots();audioState();renderLog();
+}
+function renderTips(){
+  const box=$("tips"),had=box.contains(document.activeElement);box.textContent="";
+  for(const ev of S.shown){
+    const b=bot(ev.bot),d=w(),others=allTotal()-total(ev.bot);
+    const el=document.createElement("div");el.className="tip";el.dataset.kind=ev.kind;
+    el.innerHTML=`<div>${avatar(b.shape,b.color,34,ev.kind==="needs"?"needs":"")}</div>
+      <div><div class="t1"><span class="dot" style="background:${kindColor(ev.kind)}"></span></div><div class="t2"></div><div class="t2 cnt"></div>
+      <div class="acts"><button type="button" class="open"></button><button type="button" class="q"></button></div></div>
+      <button type="button" class="x">×</button>`;
+    el.querySelector(".t1").append(`${b.name[S.lang]} ${kindWord(ev.kind)}`);
+    el.querySelector(".t2").textContent=kindSub(ev.kind);
+    el.querySelector(".cnt").textContent=[d.forBot(total(ev.bot)),others?d.more(others):""].filter(Boolean).join(" · ");
+    const open=el.querySelector(".open");open.textContent=d.openBot;open.onclick=()=>openBots(ev.bot);
+    const q=el.querySelector(".q");q.textContent=d.quiet;q.onclick=()=>{S.quiet=true;S.shown=[];render();$("resume").focus()};
+    const x=el.querySelector(".x");x.setAttribute("aria-label",d.dismiss);x.title=d.dismiss;x.onclick=()=>dismiss();
+    el.addEventListener("keydown",e=>{if(e.key==="Escape"){e.stopPropagation();dismiss()}});
+    box.append(el);
+  }
+  if(had&&!S.shown.length)$("orb").focus();
+}
+function dismiss(){S.shown=[];log(w().lgDismiss,"skip");render();$("orb").focus()}
+function renderBots(){
+  $("bots").toggleAttribute("data-open",S.botsOpen);
+  const list=$("botsList");list.textContent="";
+  for(const b of BOTS){
+    const u=S.unread[b.id],n=total(b.id),d=w();
+    const parts=[u.done+u.failed?d.unread(u.done+u.failed):"",u.needs?d.pending(u.needs):""].filter(Boolean);
+    const row=document.createElement("div");row.className="bot";row.toggleAttribute("data-focus",S.focusBot===b.id);
+    row.innerHTML=`${avatar(b.shape,b.color,40,u.needs?"needs":"")}<div><div class="n"></div><div class="s"></div></div>${n?`<span class="c">${n}</span>`:""}`;
+    row.querySelector(".n").textContent=b.name[S.lang];row.querySelector(".s").textContent=parts.join(" · ")||d.noUnread;
+    list.append(row);
+  }
+}
+document.querySelectorAll("[data-ev]").forEach(b=>b.onclick=()=>simulate(b.dataset.ev));
+$("replay").onclick=()=>{if(S.last)receive({...S.last})};
+$("reconnect").onclick=reconnect;
+$("lang").onclick=e=>{const v=e.target.closest("button")?.dataset.v;if(v){S.lang=v;render()}};
+$("mode").onclick=e=>{const v=e.target.closest("button")?.dataset.v;if(v){S.mode=v;render()}};
+$("tipsOn").onclick=()=>{S.tips=!S.tips;if(!S.tips)S.shown=[];render()};
+$("soundOn").onclick=()=>{S.sound=!S.sound;if(S.sound)ensureAudio();render()};
+$("testSound").onclick=()=>{ensureAudio();chime()};
+$("resume").onclick=()=>{S.quiet=false;render();$("resume").blur();$("tipsOn").focus()};
+$("reduce").onclick=()=>{document.documentElement.toggleAttribute("data-reduce");render()};
+$("orb").onclick=()=>openBots(null);
+$("closeBots").onclick=closeBots;
+$("bots").addEventListener("keydown",e=>{if(e.key==="Escape")closeBots()});
+render();
+log(w().lgReconnect(allTotal()),"skip");
+</script>
+</body>
+</html>
