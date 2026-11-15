@@ -735,9 +735,8 @@ const (
 	BotsProcesses             = "bots.processes"
 	BotsRPCPending            = "bots.rpc_rows"
 	BotsPermissions           = "bots.perm_rows"
-	BotsNotifications         = "bots.notice_rows"
 	BotsFrames                = "bots.frame_bytes"
-	BotsCapture               = "bots.capture_bytes"
+	BotsProcessCensusBytes    = "bots.process_census_bytes"
 	BotsStderr                = "bots.stderr_bytes"
 	BotsWrite                 = "bots.write_ms"
 	BotsCleanup               = "bots.cleanup_ms"
@@ -767,6 +766,7 @@ const (
 	BotsMemorySearchResults   = "bots.memory_search_results"
 	BotsSteerAnswer           = "bots.steer_answer_ms"
 	BotsRulesFileBytes        = "bots.rules_file_bytes"
+	BotsErrorKindBytes        = "bots.error_kind_bytes"
 )
 
 const BotsOwnedDescendants = "bots.owned_children"

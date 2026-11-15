@@ -18,7 +18,7 @@ type Limits struct {
 	IncomingPermissions int
 	Notifications       int
 	FrameBytes          int
-	CaptureBytes        int
+	CaptureBytes        int // Process census only; native ACP text has no capture ceiling.
 	StderrBytes         int
 	OwnedDescendants    int
 	WriteTimeout        time.Duration
@@ -28,7 +28,7 @@ type Limits struct {
 }
 
 func (l Limits) Validate() error {
-	if l.RPCPending < 1 || l.IncomingPermissions < 1 || l.Notifications < 1 || l.FrameBytes < 1 || l.CaptureBytes < 1 || l.StderrBytes < 1 || l.OwnedDescendants < 1 || l.WriteTimeout <= 0 || l.CleanupTimeout <= 0 || l.RPCTimeout <= 0 || l.DescendantPoll <= 0 {
+	if l.RPCPending < 1 || l.IncomingPermissions < 1 || l.CaptureBytes < 1 || l.FrameBytes < 1 || l.StderrBytes < 1 || l.OwnedDescendants < 1 || l.WriteTimeout <= 0 || l.CleanupTimeout <= 0 || l.RPCTimeout <= 0 || l.DescendantPoll <= 0 {
 		return refusal(pa.Invalid, "acp_limits")
 	}
 	return nil
@@ -288,9 +288,6 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 }
 
 func (p *Process) Write(ctx context.Context, b []byte) error {
-	if len(b) > p.limits.FrameBytes {
-		return refusal(pa.CapacityFull, "frame_bytes")
-	}
 	writeCtx, cancel := context.WithTimeout(ctx, p.limits.WriteTimeout)
 	defer cancel()
 	select {

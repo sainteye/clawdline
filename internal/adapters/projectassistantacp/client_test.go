@@ -4,13 +4,16 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -64,7 +67,7 @@ func TestACPTestPeer(t *testing.T) {
 		}
 		switch f.Method {
 		case "initialize":
-			if strings.HasPrefix(mode, "configure-") {
+			if strings.HasPrefix(mode, "configure-") || strings.HasPrefix(mode, "provider-") || mode == "exit" {
 				name := adapterPackage(pa.Codex)
 				if strings.Contains(mode, "claude") {
 					name = adapterPackage(pa.ClaudeCode)
@@ -92,9 +95,67 @@ func TestACPTestPeer(t *testing.T) {
 					os.Exit(5)
 				}
 			}
+			if mode == "load-burst" {
+				for i := 0; i < 1024; i++ {
+					send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "historical"}}})})
+				}
+			}
 			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": peerSessionID("CLAWDLINE_ACP_LOAD_ID")})})
 		case "session/prompt":
 			promptID = f.ID
+			if path := os.Getenv("CLAWDLINE_ACP_PROMPT_LOG"); path != "" {
+				log, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					os.Exit(9)
+				}
+				_, err = log.Write(append(append([]byte(nil), scanner.Bytes()...), '\n'))
+				if closeErr := log.Close(); err != nil || closeErr != nil {
+					os.Exit(9)
+				}
+			}
+			if mode == "provider-error" || mode == "provider-error-eof" {
+				var rpc rpcError
+				if json.Unmarshal([]byte(os.Getenv("CLAWDLINE_ACP_ERROR")), &rpc) != nil {
+					os.Exit(9)
+				}
+				send(frame{ID: f.ID, Error: &rpc})
+				if mode == "provider-error-eof" {
+					os.Exit(0)
+				}
+				continue
+			}
+			if mode == "quota-reply" {
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn", "text": "You've hit your usage limit; authentication_failed 429 billing_error"})})
+				continue
+			}
+			if strings.HasPrefix(mode, "native-stop-") {
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": strings.TrimPrefix(mode, "native-stop-"), "text": "native partial reply"})})
+				continue
+			}
+			if strings.HasPrefix(mode, "burst") {
+				for i := 0; i < 288; i++ {
+					send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": fmt.Sprintf("%03d,", i)}}})})
+				}
+				if mode == "burst-permission" {
+					send(frame{ID: raw("burst-permission"), Method: "session/request_permission", Params: raw(map[string]any{"sessionId": "scripted-session", "options": []any{map[string]string{"optionId": "allow", "name": "Allow once", "kind": "allow_once"}}})})
+				} else {
+					send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				}
+				continue
+			}
+			if mode == "long-stream" || mode == "long-frame" {
+				text := strings.Repeat("x", 8192)
+				count := 129
+				if mode == "long-frame" {
+					text = strings.Repeat("x", (1<<20)+32)
+					count = 1
+				}
+				for i := 0; i < count; i++ {
+					send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": text}}})})
+				}
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				continue
+			}
 			if mode == "quote" || mode == "handoff" {
 				var payload struct {
 					Prompt []struct {
@@ -186,6 +247,11 @@ func TestACPTestPeer(t *testing.T) {
 			if string(f.ID) == `"permission-rpc"` {
 				send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "end_turn", "text": "after permission"})})
 			}
+			if string(f.ID) == `"burst-permission"` {
+				send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+			}
+		case "fixture/ack":
+			send(frame{ID: f.ID, Result: raw(map[string]bool{"ok": true})})
 		}
 	}
 	os.Exit(0)
@@ -205,7 +271,7 @@ func peerConfiguration(t *testing.T, mode string) Configuration {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Configuration{Executable: exe, Arguments: []string{"-test.run=^TestACPTestPeer$"}, Environment: []string{"CLAWDLINE_ACP_TEST_PEER=1", "CLAWDLINE_ACP_TEST_MODE=" + mode, "GORACE=atexit_sleep_ms=0"}}
+	return Configuration{Executable: exe, Arguments: []string{"-test.run=^TestACPTestPeer$"}, Environment: []string{"CLAWDLINE_ACP_TEST_PEER=1", "CLAWDLINE_ACP_TEST_MODE=" + mode, "GORACE=atexit_sleep_ms=0", "CLAWDLINE_ACP_ERROR=" + os.Getenv("CLAWDLINE_ACP_ERROR"), "CLAWDLINE_ACP_PROMPT_LOG=" + os.Getenv("CLAWDLINE_ACP_PROMPT_LOG")}}
 }
 func openTestClient(t *testing.T, mode string, sink func(context.Context, app.ProtocolEvent) error) (*Client, *Process) {
 	t.Helper()
@@ -215,6 +281,10 @@ func openTestClient(t *testing.T, mode string, sink func(context.Context, app.Pr
 // openClassifiedTestClient sets what the payload classifier says about every
 // native permission request.
 func openClassifiedTestClient(t *testing.T, mode string, sink func(context.Context, app.ProtocolEvent) error, readOnly bool) (*Client, *Process) {
+	return openLimitedTestClient(t, mode, sink, readOnly, testLimits())
+}
+
+func openLimitedTestClient(t *testing.T, mode string, sink func(context.Context, app.ProtocolEvent) error, readOnly bool, l Limits) (*Client, *Process) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows native supervisor is explicitly unavailable")
@@ -222,7 +292,6 @@ func openClassifiedTestClient(t *testing.T, mode string, sink func(context.Conte
 	if inventoryUnavailable() {
 		t.Skip("process inventory is unavailable; safe startup admission must refuse")
 	}
-	l := testLimits()
 	p, err := StartProcess(context.Background(), ProcessOptions{Configuration: peerConfiguration(t, mode), Directory: t.TempDir(), Limits: l})
 	if err != nil {
 		t.Fatal(err)
@@ -632,5 +701,120 @@ func TestAlwaysAllowGoesToTheAgent(t *testing.T) {
 	}
 	if result, err := pending.Wait(context.Background()); err != nil || result.FinalText != "after permission" {
 		t.Fatalf("the turn did not carry on: %+v %v", result, err)
+	}
+}
+
+func TestACPBurstPreservesSlowSinkOrderAndPermission(t *testing.T) {
+	for _, mode := range []string{"burst", "burst-permission", "burst-control"} {
+		t.Run(mode, func(t *testing.T) {
+			l := testLimits()
+			l.Notifications = 256 // The former production count, not a new bound.
+			var client *Client
+			var chunks []string
+			path := filepath.Join(t.TempDir(), "prompts.jsonl")
+			t.Setenv("CLAWDLINE_ACP_PROMPT_LOG", path)
+			c, _ := openLimitedTestClient(t, mode, func(ctx context.Context, e app.ProtocolEvent) error {
+				if e.Permission != nil {
+					return client.Answer(ctx, e.Permission.NativeRequestID, "allow")
+				}
+				if e.Trace != nil {
+					if mode == "burst-control" && len(chunks) == 0 {
+						if _, err := client.call(ctx, "fixture/ack", nil); err != nil {
+							return err
+						}
+					}
+					time.Sleep(time.Millisecond)
+					chunks = append(chunks, e.Trace.Text)
+				}
+				return nil
+			}, true, l)
+			client = c
+			result, err := sendTestPrompt(t, c).Wait(context.Background())
+			if err != nil {
+				t.Fatalf("burst failed: %v", err)
+			}
+			var expected strings.Builder
+			for i := 0; i < 288; i++ {
+				expected.WriteString(fmt.Sprintf("%03d,", i))
+			}
+			if len(chunks) != 288 || strings.Join(chunks, "") != expected.String() || result.FinalText != expected.String() {
+				t.Fatal("lost or reordered notification/final response")
+			}
+			b, err := os.ReadFile(path)
+			if err != nil || strings.Count(string(b), "\n") != 1 {
+				t.Fatalf("prompt count=%q err=%v", b, err)
+			}
+		})
+	}
+}
+
+func TestACPLoadReplaysHistoryBeforeResponseWithoutCapture(t *testing.T) {
+	l := testLimits()
+	l.Notifications = 256
+	c, _ := openLimitedTestClient(t, "load-burst", func(context.Context, app.ProtocolEvent) error { t.Error("history reached the active sink"); return nil }, true, l)
+	if err := c.initialize(context.Background(), app.OpenRequest{Directory: t.TempDir(), Resume: true, Binding: pa.ExecutionBinding{NativeSessionID: "scripted-session"}}); err != nil {
+		t.Fatalf("load replay failed: %v", err)
+	}
+	if c.Usage().CapturedBytes != 0 {
+		t.Fatal("historical text captured as current reply")
+	}
+}
+
+func TestACPNativeTextExceedsFormerLocalCaptureAndFrameCaps(t *testing.T) {
+	for _, mode := range []string{"long-stream", "long-frame"} {
+		t.Run(mode, func(t *testing.T) {
+			c, _ := openTestClient(t, mode, func(context.Context, app.ProtocolEvent) error { return nil })
+			result, err := sendTestPrompt(t, c).Wait(context.Background())
+			if err != nil || len(result.FinalText) <= 1<<20 || strings.Trim(result.FinalText, "x") != "" {
+				t.Fatalf("native text bytes=%d err=%v", len(result.FinalText), err)
+			}
+		})
+	}
+}
+
+func TestACPCloseCancelsSlowSinkAndDiscardsQueuedEvents(t *testing.T) {
+	entered := make(chan struct{})
+	var calls atomic.Int32
+	c, _ := openTestClient(t, "burst", func(ctx context.Context, _ app.ProtocolEvent) error {
+		if calls.Add(1) == 1 {
+			close(entered)
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	pending := sendTestPrompt(t, c)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("sink did not start")
+	}
+	deadline := time.Now().Add(time.Second)
+	for c.Usage().QueuedNotifications <= 256 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if c.Usage().QueuedNotifications <= 256 {
+		t.Fatal("reader did not drain burst while sink was blocked")
+	}
+	if err := c.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pending.Wait(context.Background()); pa.Code(err) != pa.ExecutionEffectUnknown {
+		t.Fatalf("close lost unknown: %v", err)
+	}
+	if calls.Load() != 1 || c.Usage().QueuedNotifications != 0 {
+		t.Fatal("queued events survived close")
+	}
+}
+
+func TestACPNativeOutputStopsRemainTyped(t *testing.T) {
+	for _, reason := range []string{"max_tokens", "max_turn_requests"} {
+		t.Run(reason, func(t *testing.T) {
+			c, _ := openTestClient(t, "native-stop-"+reason, func(context.Context, app.ProtocolEvent) error { return nil })
+			_, err := sendTestPrompt(t, c).Wait(context.Background())
+			var failure *pa.Failure
+			if !errors.As(err, &failure) || failure.Field != "prompt_"+reason || pa.Code(err) == pa.CapacityFull {
+				t.Fatalf("native stop lost: %v", err)
+			}
+		})
 	}
 }

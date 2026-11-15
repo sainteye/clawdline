@@ -47,6 +47,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		return capacity.Reading{Known: !installed, Note: "no allocation before installation; installed durable queues, native descendants and IO duration are not exposed by Host.Usage"}
 	}
 	return map[string]func() capacity.Reading{
+		capacity.BotsErrorKindBytes:          pure,
 		capacity.BotsRoutineDefinitions:      unobserved,
 		capacity.BotsRoutineTriggers:         pure,
 		capacity.BotsRoutineTickMilliseconds: pure,
@@ -81,9 +82,8 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsProcesses:             count(func(u app.RuntimeUsage) int { return u.Processes }, "actual Host.Usage process slots, including unresolved owners; not native readiness"),
 		capacity.BotsRPCPending:            sessions(func(u app.SessionUsage) int { return u.PendingRPC }, "largest shared ACP request/owned MCP connection occupancy; no provider is configured in production"),
 		capacity.BotsPermissions:           sessions(func(u app.SessionUsage) int { return u.PendingPermissions }, "largest session-reported pending permission occupancy"),
-		capacity.BotsNotifications:         sessions(func(u app.SessionUsage) int { return u.QueuedNotifications }, "largest session-reported native notification queue"),
 		capacity.BotsFrames:                unobserved,
-		capacity.BotsCapture:               sessions(func(u app.SessionUsage) int { return u.CapturedBytes }, "largest session-reported captured byte count"),
+		capacity.BotsProcessCensusBytes:    unobserved,
 		capacity.BotsStderr:                sessions(func(u app.SessionUsage) int { return u.StderrBytes }, "largest session-reported stderr byte count; no content is exposed"),
 		capacity.BotsWrite:                 unobserved,
 		capacity.BotsCleanup:               unobserved,

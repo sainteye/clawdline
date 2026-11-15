@@ -1048,6 +1048,13 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 		if state == pa.TurnUnknown {
 			field = r.unknownField()
 		}
+		// Capacity is an execution outcome, not an invitation to retry. Keep
+		// its typed boundary so diagnostics can distinguish local pressure
+		// from a provider limit. A planned restart retains its recovery marker.
+		var capacityFailure *pa.Failure
+		if field == "execution" && pa.Code(cause) == pa.CapacityFull && errors.As(cause, &capacityFailure) && capacityFailure.Field != "" {
+			field = capacityFailure.Field
+		}
 		t.Failure = &pa.Failure{Code: pa.Code(cause), Field: field}
 	}
 	if c.ActiveTurnID == t.ID {

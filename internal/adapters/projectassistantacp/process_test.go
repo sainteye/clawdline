@@ -2,6 +2,7 @@ package projectassistantacp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -411,5 +412,45 @@ func TestProcessCleanupUsesOneRemainingBudgetAndFallsBackToOwnedHandle(t *testin
 	case <-p.done:
 	case <-time.After(p.limits.CleanupTimeout):
 		t.Fatal("fallback failed to reap direct owned process")
+	}
+}
+
+// The native ACP protocol accepts long context frames; it has no application
+// byte ceiling. The owned process write still has its cancellation deadline.
+func TestProcessWritesACPFrameBeyondFormerLocalCeiling(t *testing.T) {
+	if runtime.GOOS == "windows" || inventoryUnavailable() {
+		t.Skip("requires owned process inventory")
+	}
+	l := nativeLimits()
+	l.WriteTimeout = 2 * time.Second
+	p, err := StartProcess(context.Background(), ProcessOptions{Configuration: peerConfiguration(t, "normal"), Directory: t.TempDir(), Limits: l})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close(context.Background())
+	request := frame{JSONRPC: "2.0", ID: raw(1), Method: "initialize", Params: raw(map[string]string{"context": strings.Repeat("x", (1<<20)+128)})}
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.Write(context.Background(), append(encoded, '\n')); err != nil {
+		t.Fatalf("native request rejected by a local frame ceiling: %v", err)
+	}
+	answer := make(chan error, 1)
+	go func() {
+		var response frame
+		err := json.NewDecoder(p.stdout).Decode(&response)
+		if err == nil && (string(response.ID) != "1" || len(response.Result) == 0 || response.Error != nil) {
+			err = errors.New("peer did not accept the complete request")
+		}
+		answer <- err
+	}()
+	select {
+	case err := <-answer:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("native peer did not answer the long request")
 	}
 }

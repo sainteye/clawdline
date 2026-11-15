@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -78,5 +79,52 @@ func TestRuntimeRevalidatesAfterExecutionPreparationAndOpen(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRuntimeCapacityFailurePreservesItsBoundaryWithoutReplay(t *testing.T) {
+	for _, field := range []string{"incoming_queue", "frame_bytes", "partial_capture", "reply_capture"} {
+		t.Run(field, func(t *testing.T) {
+			f := newRuntimeFixture(t)
+			f.provider.sendErr = fmt.Errorf("native execution: %w", runtimeFailure(pa.CapacityFull, field))
+			receipt, err := f.submit(t, "synthetic input", "capacity")
+			if err != nil {
+				t.Fatal(err)
+			}
+			receivePrompt(t, f.provider)
+			awaitTurn(t, f, receipt.ResourceID, pa.TurnUnknown)
+			turn, err := f.store.Turn(context.Background(), f.key, receipt.ResourceID)
+			if err != nil || turn.Failure == nil || turn.Failure.Code != pa.CapacityFull || turn.Failure.Field != field {
+				t.Fatalf("capacity boundary was discarded: %+v %v", turn.Failure, err)
+			}
+			replay, err := f.submit(t, "synthetic input", "capacity")
+			if err != nil || replay.ID != receipt.ID {
+				t.Fatalf("same command did not retain its receipt: %+v %v", replay, err)
+			}
+			if err = f.r.Recover(context.Background(), f.key); err != nil {
+				t.Fatal(err)
+			}
+			if f.provider.count() != 1 || len(f.provider.sent) != 0 {
+				t.Fatal("capacity failure replayed a prompt")
+			}
+		})
+	}
+}
+
+func TestRuntimeCapacityFailureKeepsRestartRecoveryMarker(t *testing.T) {
+	f := newRuntimeFixture(t)
+	f.r.mu.Lock()
+	f.r.restarting = true
+	f.r.mu.Unlock()
+	f.provider.sendErr = runtimeFailure(pa.CapacityFull, "incoming_queue")
+	receipt, err := f.submit(t, "synthetic input", "capacity-restart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	awaitTurn(t, f, receipt.ResourceID, pa.TurnUnknown)
+	turn, err := f.store.Turn(context.Background(), f.key, receipt.ResourceID)
+	if err != nil || turn.Failure == nil || turn.Failure.Field != RestartField {
+		t.Fatalf("restart recovery marker lost: %+v %v", turn.Failure, err)
 	}
 }
