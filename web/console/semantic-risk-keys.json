@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12238,
+  "englishKeys": 12239,
   "counts": {
     "negation": 3297,
     "state": 2038,
     "permission": 724,
     "deletion": 276,
-    "uncertainty": 462
+    "uncertainty": 463
   },
-  "unionCount": 5306,
+  "unionCount": 5307,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6801,6 +6801,7 @@
       "viewPlugins.error_host_unavailable",
       "viewPlugins.error_missing_entry",
       "viewPlugins.error_storage_unavailable",
+      "viewPlugins.offline",
       "viewPlugins.unavailable",
       "work.assignSessionsIncomplete",
       "work.closureClock",
@@ -11986,6 +11987,7 @@
     "viewPlugins.manageHint",
     "viewPlugins.navigate",
     "viewPlugins.noSource",
+    "viewPlugins.offline",
     "viewPlugins.open",
     "viewPlugins.openView",
     "viewPlugins.permissions",

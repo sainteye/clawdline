@@ -11,17 +11,17 @@ import { pathToFileURL } from "node:url"
 const scratch = await mkdtemp(join(tmpdir(), "cl-view-unit-"))
 const bundle = join(scratch,"runtime.mjs")
 await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
-const {parsePackage,pluginBridge,PluginError,cloudPluginSources} = await import(pathToFileURL(bundle).href)
+const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource} = await import(pathToFileURL(bundle).href)
 test.after(() => rm(scratch,{recursive:true,force:true}))
 const packageURL = new URL("../../public/view-plugins/session-galaxy.zip",import.meta.url)
 const context = {language:"en",theme:"dark",reducedMotion:true,visible:true,scopeLabel:"Studio",connection:"connected"}
 const row = {key:"private-machine/execution",title:"<img src=x onerror=alert(1)>",project:{key:"/private/project",label:"Demo"},workState:"working",freshness:"fresh"}
 const reading = {sessions:[row],connected:true}
 const tick = () => new Promise(r => setTimeout(r,15))
-function fixture(capabilities=["sessions.read","sessions.open"]) {
+function fixture(capabilities=["sessions.read","sessions.open"], initial=reading) {
   const channel = new MessageChannel(), answers=[], opened=[], faults=[]; let closes=0
   channel.port2.onmessage = e => answers.push(e.data)
-  const bridge = pluginBridge({port:channel.port1,instanceId:"instance",capabilities,reading,context,open:async key => {opened.push(key)},close:()=>closes++,fault:e=>faults.push(e)})
+  const bridge = pluginBridge({port:channel.port1,instanceId:"instance",capabilities,reading:initial,context,open:async key => {opened.push(key)},close:()=>closes++,fault:e=>faults.push(e)})
   const send = (method,params={},extra={}) => channel.port2.postMessage({v:1,instanceId:"instance",id:"r"+Math.random(),method,params,...extra})
   return {channel,bridge,answers,opened,faults,send,get closes(){return closes},dispose(){bridge.dispose();channel.port2.close()}}
 }
@@ -129,4 +129,69 @@ test("The public packer reproduces both shipped ZIPs from author sources and the
   assert.equal(result.status,0,result.stderr)
   assert.deepEqual(await readFile(out),await readFile(new URL("../../public/view-plugins/"+id+".zip",import.meta.url)))
  }
+})
+
+
+test("The fleet combines all machines and Projects without colliding local identities",async()=>{
+ const opened=[],events=new Set(),controller=new AbortController()
+ const make=(key,connected=true)=>({key,label:key,async read(signal){assert.equal(signal,controller.signal);return{sessions:[{...row,key:"same-session"}],connected}},subscribe(fn){events.add(fn);return()=>events.delete(fn)},async prepareOpen(key,signal){assert.equal(signal,controller.signal);return()=>opened.push([this.key,key])}})
+ const one=make("machine-one"),two=make("machine-two"),fleet=fleetPluginSource([two,one],"All machines")
+ assert.equal(fleet.key,fleetPluginSource([one,two],"Other language").key)
+ const value=await fleet.read(controller.signal)
+ assert.equal(value.sessions.length,2);assert.equal(value.connected,true);assert.equal(value.partial,false)
+ assert.notEqual(value.sessions[0].key,value.sessions[1].key)
+ assert.notEqual(value.sessions[0].project.key,value.sessions[1].project.key)
+ assert.deepEqual(value.sessions.map(s=>s.project.label),["Demo","Demo"])
+ const navigate=await fleet.prepareOpen(value.sessions[1].key,controller.signal);navigate()
+ assert.deepEqual(opened,[["machine-two","same-session"]])
+ let calls=0;const a=()=>calls++,b=()=>calls++;one.subscribe=fn=>{events.add(a);return()=>events.delete(a)};two.subscribe=fn=>{events.add(b);return()=>events.delete(b)}
+ const stop=fleet.subscribe(()=>{});assert.equal(events.size,2);for(const event of events)event();assert.equal(calls,2);stop();assert.equal(events.size,0)
+ const f=fixture(undefined,value)
+ try{f.send("sessions.subscribe");await tick();const payload=f.answers[0].result
+  assert.notEqual(payload.sessions[0].ref,payload.sessions[1].ref)
+  assert.notEqual(payload.sessions[0].project.ref,payload.sessions[1].project.ref)
+  assert.ok(!JSON.stringify(payload).includes("machine-one"));assert.ok(!JSON.stringify(payload).includes("private"))
+ }finally{f.dispose()}
+})
+
+test("One offline machine stays stale while another can still open its own Session",async()=>{
+ const make=(key,connected)=>({key,label:key,async read(){return{sessions:[{...row,key}],connected}},subscribe(){return()=>{}},async prepareOpen(){return()=>{}}})
+ const fleet=fleetPluginSource([make("online",true),make("offline",false)],"All machines")
+ const value=await fleet.read(new AbortController().signal)
+ assert.equal(value.connected,true);assert.equal(value.partial,true)
+ const f=fixture(undefined,value)
+ try{f.send("sessions.subscribe");await tick();const items=f.answers[0].result.sessions
+  const offline=items[value.sessions.findIndex(s=>!s.connected)],online=items[value.sessions.findIndex(s=>s.connected)]
+  assert.equal(offline.freshness,"stale");assert.equal(online.freshness,"fresh")
+  f.send("sessions.open",{ref:offline.ref});await tick();assert.equal(f.answers.at(-1).error.code,"host_unavailable");assert.deepEqual(f.opened,[])
+  f.send("sessions.open",{ref:online.ref});await tick();assert.deepEqual(f.opened,[value.sessions.find(s=>s.connected).key])
+ }finally{f.dispose()}
+})
+
+test("Fleet read failures are explicit and authorization failures never become partial success",async()=>{
+ const controller=new AbortController(),good={key:"good",label:"Good",async read(){return reading},subscribe(){return()=>{}},async prepareOpen(){return()=>{}}}
+ const broken=code=>({...good,key:code,async read(){throw new PluginError(code)}})
+ const partial=await fleetPluginSource([good,broken("host_unavailable")],"All").read(controller.signal)
+ assert.equal(partial.sessions.length,1);assert.equal(partial.connected,true);assert.equal(partial.partial,true)
+ for(const code of ["permission_denied","scope_changed"])await assert.rejects(fleetPluginSource([good,broken(code)],"All").read(controller.signal),e=>e.code===code)
+ await assert.rejects(fleetPluginSource([broken("host_unavailable")],"All").read(controller.signal),e=>e.code==="host_unavailable")
+ await assert.rejects(fleetPluginSource([],"All").read(controller.signal),e=>e.code==="permission_denied")
+ controller.abort();await assert.rejects(fleetPluginSource([good],"All").read(controller.signal),e=>e.code==="scope_changed")
+ const many=key=>({...good,key,async read(){return{...reading,sessions:Array.from({length:129},(_,i)=>({...row,key:String(i)}))}}})
+ const overflow=await fleetPluginSource([many("one"),many("two")],"All").read(new AbortController().signal),channel=new MessageChannel()
+ try{assert.throws(()=>pluginBridge({port:channel.port1,instanceId:"i",capabilities:["sessions.read"],reading:overflow,context,open:async()=>{},close(){},fault(){}}),e=>e.code==="too_many_sessions")}
+ finally{channel.port1.close();channel.port2.close()}
+})
+
+test("An offline row is refused before the coalesced fleet snapshot is delivered",async()=>{
+ const replies=[],opened=[],port={start(){},close(){},postMessage(value){replies.push(value)}}
+ const initial={sessions:[{...row,key:"offline-next",connected:true},{...row,key:"still-online",connected:true}],connected:true}
+ const bridge=pluginBridge({port,instanceId:"fleet",capabilities:["sessions.read","sessions.open"],reading:initial,context,open:async key=>opened.push(key),close(){},fault(){}})
+ const send=(id,method,params={})=>port.onmessage({data:{v:1,instanceId:"fleet",id,method,params}})
+ try{
+  await send("subscribe","sessions.subscribe");const ref=replies[0].result.sessions[0].ref
+  bridge.update({...initial,partial:true,sessions:initial.sessions.map((row,index)=>({...row,connected:index!==0}))},context)
+  await send("open","sessions.open",{ref})
+  assert.equal(replies.at(-1).error?.code,"host_unavailable");assert.deepEqual(opened,[])
+ }finally{bridge.dispose()}
 })

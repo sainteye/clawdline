@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "englishContentKeys": 12238,
-  "riskKeys": 5306,
+  "englishContentKeys": 12239,
+  "riskKeys": 5307,
   "nonRiskCount": 6932,
   "groups": [
     {
@@ -7313,6 +7313,7 @@
         "viewPlugins.error_registry_changed",
         "viewPlugins.error_too_many_sessions",
         "viewPlugins.error_unsupported_zip",
+        "viewPlugins.everything",
         "viewPlugins.examplesHint",
         "viewPlugins.galaxy",
         "viewPlugins.galaxyHint",
@@ -7325,7 +7326,6 @@
         "viewPlugins.loading",
         "viewPlugins.manage",
         "viewPlugins.manageHeading",
-        "viewPlugins.offline",
         "viewPlugins.personalize",
         "viewPlugins.preset",
         "viewPlugins.previous",

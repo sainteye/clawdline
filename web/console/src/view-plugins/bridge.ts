@@ -6,9 +6,9 @@ export type WorkState = typeof WORK_STATES[number]
 export type Freshness = "fresh" | "stale" | "unknown"
 export interface SourceSession {
   key: string; title: string; project: { key: string; label: string } | null
-  workState: WorkState; freshness: Freshness
+  workState: WorkState; freshness: Freshness; connected?: boolean
 }
-export interface ViewReading { sessions: SourceSession[]; connected: boolean }
+export interface ViewReading { sessions: SourceSession[]; connected: boolean; partial?: boolean }
 export interface ViewSource {
   key: string; label: string
   read(signal: AbortSignal): Promise<ViewReading>
@@ -56,7 +56,7 @@ export function pluginBridge(options: {
       }
       return { ref, title: clipped(s.title), project,
         workState: WORK_STATES.includes(s.workState) ? s.workState : "unknown",
-        freshness: reading.connected ? s.freshness : "stale" }
+        freshness: (s.connected ?? reading.connected) ? s.freshness : "stale" }
     })
     const result = { streamId, revision, sessions }
     if (size(result) > B.messageBytes) throw new PluginError("message_too_large")
@@ -84,10 +84,11 @@ export function pluginBridge(options: {
         const result = snapshot(); subscribed = true; reply(id, { result })
       } else if (method === "sessions.open" && exact(params, ["ref"]) && text(params.ref)) {
         if (!options.capabilities.includes("sessions.open")) throw new PluginError("permission_denied")
-        if (!reading.connected) throw new PluginError("host_unavailable")
         if (navigating) throw new PluginError("busy")
-        const row = byRef.get(params.ref)
-        if (!row || !reading.sessions.some(s => s.key === row.key)) throw new PluginError("session_unavailable")
+        const previous = byRef.get(params.ref)
+        const row = previous && reading.sessions.find(s => s.key === previous.key)
+        if (!row) throw new PluginError("session_unavailable")
+        if (!(row.connected ?? reading.connected)) throw new PluginError("host_unavailable")
         // The source rechecks exact machine/execution identity before navigating.
         navigating = true
         try { await options.open(row.key) } finally { navigating = false }
