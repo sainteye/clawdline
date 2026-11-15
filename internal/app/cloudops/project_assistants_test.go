@@ -47,6 +47,9 @@ func projectAssistantOperationCases() []operationCase {
 		{"memory", "POST", "/bot/memory", map[string]any{"expected_revision": 1, "entry": map[string]any{"id": "memory", "key": key, "project": project, "text": "remember", "sources": []any{}, "revision": 1, "forgotten": false}}, nil},
 		{"visibility", "POST", "/bot/visibility", map[string]any{"hidden": true}, nil},
 		{"delete", "POST", "/bot/delete", map[string]any{}, nil},
+		{"rules", "GET", "/bot/rules", key, map[string]string{"machine_id": "mac-01"}},
+		{"send-now", "POST", "/bot/send-now", map[string]any{"fence": fence, "turn_id": "turn"}, nil},
+		{"rule-remove", "POST", "/bot/rules/remove", map[string]any{"rule": map[string]any{"behavior": "allow", "rule": "Bash(npm test:*)"}}, nil},
 	}
 	out := []operationCase{}
 	for _, r := range rows {
@@ -60,7 +63,7 @@ func projectAssistantOperationCases() []operationCase {
 		}
 		c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
 		if r.method != "GET" {
-			op := map[string]string{"observed": "observe", "memory": "memory_save"}[r.word]
+			op := map[string]string{"observed": "observe", "memory": "memory_save", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
 			if op == "" {
 				op = r.word
 			}
@@ -96,7 +99,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 19 {
+	if len(out) != 22 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
