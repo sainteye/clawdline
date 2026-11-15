@@ -68,6 +68,13 @@ historical anchor, the later source row can supply that anchor without replacing
 the newer work fact. Persisted messages/work validate exact machine/Bot/full
 Project/conversation scope and can retain an older execution fence.
 
+`ChatRows` renders messages and work cards from that same merged timeline.
+A work card stays after its admission message, before subsequent messages;
+a live result changes the card in place. It is never collected into a separate
+tail after all chat messages or sorted by completion time. Work resets author
+grouping without inventing a date. Queued messages still belong only to their
+footer, and the local sending bubble follows the persisted timeline.
+
 Message and work IDs have separate source namespaces. Both rows can legitimately
 contain the same ID string; duplicate checks use kind plus ID, and the original
 IDs remain unchanged. Duplicate rows within either kind still fail. The root's
@@ -193,6 +200,12 @@ focus and voice ownership. `BOTS_CHAT_SOURCE=<retained-seed-Chat.tsx>` runs the
 same input against the original Chat without modifying the checkout; the
 initial600-event assertion must go red. `BOTS_CATALOG_ONLY=1` retains the
 existing catalog matrix.
+
+`BOTS_READ_RACE=order` selects the work-card chronology regression: send a new
+instruction, complete older work, then release delayed history with the older
+work state. It checks visible row order and quoting through the real Chat in
+Chromium/WebKit at both widths and languages. The pre-fix renderer fails because
+the old card follows the new instruction. These fixtures make no provider calls.
 
 The retained v1 Chat is a separate red control for two narrower races. Set
 `BOTS_READ_RACE=permission` to test second-detail cursor/generation failure,

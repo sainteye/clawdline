@@ -1,7 +1,9 @@
 // Adapted from Codync 234219ce, apps/desktop/src/renderer/views/thread/chat-items.ts.
 // Copyright 2026 Po Kai Lee and Codync contributors. Apache-2.0; see third_party/codync.
 import type * as W from "@clawdline/contract"
-export type ChatItem = { id: string; kind: "separator"; at: string } | { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean }
+// @ts-expect-error Node executes source extensions.
+import {mergeTimeline} from "./read-views.ts"
+export type ChatItem = { id: string; kind: "separator"; at: string } | { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean } | { id:string; kind:"work"; work:W.ProjectAssistantWorkLink }
 export const ChatSeparatorGapMs = 3_600_000
 export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessage[])[]): W.ProjectAssistantMessage[] {
   const byID = new Map<string,W.ProjectAssistantMessage>()
@@ -9,9 +11,16 @@ export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessag
   return [...byID.values()].sort((a,b)=>a.seq-b.seq || a.id.localeCompare(b.id))
 }
 export function buildChat(messages: readonly W.ProjectAssistantMessage[]): ChatItem[] {
+  return buildTimelineChat(messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message})))
+}
+/** Work keeps its source admission position even when its result arrives after newer messages. */
+export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewItem[]):ChatItem[] {
   const out: ChatItem[] = []
   let lastDate: number | null = null, lastAuthor: string | null = null
-  for (const message of mergeMessages([messages])) {
+  for (const row of mergeTimeline([timeline])) {
+    if(row.work){out.push({id:row.work.id,kind:"work",work:row.work});lastAuthor=null;continue}
+    const message=row.message
+    if(!message)continue
     const date = Date.parse(message.at)
     if (lastDate === null || date-lastDate > ChatSeparatorGapMs) { out.push({id:`sep-${message.id}`,kind:"separator",at:message.at}); lastAuthor=null }
     out.push({id:message.id,kind:"message",message,groupStart:message.kind!==lastAuthor})
