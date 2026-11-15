@@ -20,7 +20,7 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  let forbiddenRequests=0
  const files=new Map(result.outputFiles.map(f=>["/"+f.path.split("/").at(-1),f.text]))
  const server=createServer(async(req,res)=>{try{const u=new URL(req.url,"http://test");let body;if(u.pathname==="/")body=`<!doctype html><html lang="${u.searchParams.get("lang")||"en"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script>`;
- else if(/^\/view-plugins\/(session-galaxy|session-list)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
+ else if(/^\/view-plugins\/(session-galaxy|session-list|session-pop-art)\.zip$/.test(u.pathname))body=await readFile(new URL("../public"+u.pathname,import.meta.url));else body=files.get(u.pathname);
  if(u.pathname.startsWith("/v1/"))forbiddenRequests++
  if(body===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",u.pathname.endsWith(".js")?"text/javascript":u.pathname.endsWith(".css")?"text/css":u.pathname.endsWith(".zip")?"application/zip":"text/html");res.end(body)}catch(e){res.writeHead(500);res.end(String(e))}})
  await new Promise(r=>server.listen(0,"127.0.0.1",r));const origin=`http://127.0.0.1:${server.address().port}`
@@ -142,6 +142,26 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await page.locator("iframe").waitFor({state:"detached"})
  await page.getByRole("heading",{name:zh?"還沒有啟用的視圖":"No views enabled yet",exact:true}).waitFor()
  await other.close()
+ // Pop uses the same static-package review and install flow without a native file chooser.
+ await dismiss();await manager()
+ await page.getByRole("button",{name:zh?"安裝普普風":"Install Pop",exact:true}).click()
+ await page.locator(".vp-review").getByRole("heading",{name:zh?"Session 普普風":"Session Pop",exact:true}).waitFor()
+ await page.getByRole("button",{name:zh?"安裝套件":"Install package",exact:true}).click()
+ const pop=page.locator(".vp-installed").filter({has:page.getByRole("heading",{name:zh?"Session 普普風":"Session Pop",exact:true})})
+ await pop.getByRole("button",{name:new RegExp("^"+open)}).waitFor()
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-pop-installed.png`})
+ await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
+ await frame.locator(".panel").first().waitFor()
+ assert.equal(await frame.locator(".panel").count(),4,"Pop reads every supplied machine through the existing host")
+ assert.equal(await frame.locator("img").count(),0,"Pop renders hostile labels as text")
+ await page.screenshot({path:`${artifacts}/${engine}-${width}-${lang}-pop.png`})
+ await dismiss();await page.getByRole("button",{name:entry,exact:true}).click()
+ await frame.locator(".panel",{hasText:"Remote Session"}).click()
+ assert.deepEqual(await page.evaluate(()=>fixture.navigations),[],"Selecting a panel does not navigate")
+ await frame.getByRole("button",{name:zh?"開啟 Session":"Open Session",exact:true}).click()
+ await page.locator(".vp-host").waitFor({state:"hidden"})
+ await page.waitForFunction(()=>fixture.navigations.length===1)
+ assert.deepEqual(await page.evaluate(()=>fixture.navigations),["field:first"],"Pop's explicit action preserves machine routing")
  assert.deepEqual(errors,[])
  reports.push({engine,width,lang,passed:true})
  }catch(e){await page.screenshot({path:`${artifacts}/failure.png`});console.error(await page.locator("body").innerHTML());throw e}finally{await browser.close()}

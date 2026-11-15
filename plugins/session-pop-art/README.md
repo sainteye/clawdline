@@ -47,7 +47,8 @@ python3 tools/pack-view-plugin.py plugins/session-pop-art web/console/public/vie
 The unchanged packer inlines the SDK at `<!-- CLAWDLINE_SDK -->` and writes a deterministic
 two-file STORE ZIP (39247 bytes, under the 262144-byte limit; repeated packing is
 byte-identical). Import it from **Sidebar → View plugins → Import ZIP**; no host rebuild is
-needed.
+needed. The curated **Explore views → Install Pop** button fetches this same ZIP
+and opens the existing package review, without a native file chooser.
 
 ## Verification
 

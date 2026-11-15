@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12240,
+  "englishContentKeys": 12243,
   "riskKeys": 5307,
-  "nonRiskCount": 6933,
+  "nonRiskCount": 6936,
   "groups": [
     {
       "name": "acp / other",
@@ -7285,13 +7285,14 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 52,
+      "count": 55,
       "sources": [
         null
       ],
       "keys": [
         "viewPlugins.addGalaxy",
         "viewPlugins.addList",
+        "viewPlugins.addPop",
         "viewPlugins.added",
         "viewPlugins.all",
         "viewPlugins.author",
@@ -7327,6 +7328,8 @@
         "viewPlugins.manage",
         "viewPlugins.manageHeading",
         "viewPlugins.personalize",
+        "viewPlugins.pop",
+        "viewPlugins.popHint",
         "viewPlugins.preset",
         "viewPlugins.previous",
         "viewPlugins.project",

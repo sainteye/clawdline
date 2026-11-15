@@ -1,8 +1,8 @@
 # View Plugin v1
 
 Revision 5 describes the **experimental browser-local runtime** implemented in
-`web/console/src/view-plugins`. The first two packages are Session Galaxy and
-Session List. Public Release acceptance is separate from source and Cloud delivery.
+`web/console/src/view-plugins`. The supplied packages are Session Galaxy,
+Session List and Session Pop. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -65,6 +65,7 @@ the HTML and let the repository packer insert that SDK:
 ```sh
 python3 tools/pack-view-plugin.py plugins/session-galaxy /tmp/session-galaxy.zip
 python3 tools/pack-view-plugin.py plugins/session-list /tmp/session-list.zip
+python3 tools/pack-view-plugin.py plugins/session-pop-art /tmp/session-pop-art.zip
 ```
 
 The packer uses Python's standard library and deterministic ZIP timestamps. It
@@ -72,6 +73,12 @@ installs nothing and makes no network requests. The browser performs authoritati
 validation before installation. The example ZIPs under
 `web/console/public/view-plugins/` are static downloads, never compiled React views.
 Import a replacement ZIP through the manager to test it without rebuilding the host.
+
+The supplied examples also have install buttons in **Explore views**. These fetch
+their static ZIP and enter the same validation and package review as file import.
+The Session Pop button needs no native file chooser. The package remains a separate
+archive and uses the existing v1 runtime; community ZIP import stays independent
+of this curated example list.
 
 ## Consent and data ownership
 
