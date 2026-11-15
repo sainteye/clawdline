@@ -174,6 +174,9 @@ func baseConsoleBounds() []Entry {
 		},
 		// KEPT_RECAP_SECONDS in realtime/copilot-tools.ts: how old a background
 		// recap on the Session list may be and still be read without a new fork.
+		// FRESH_RECAP_SECONDS in realtime/copilot-tools.ts: how old a recap may
+		// be when the person asks for the latest one; older ones are written now.
+		{Name: "console.copilot_fresh_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 300, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_kept_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_recent_idle_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_idle_fallback_seconds", Class: Buffer, Unit: Seconds, Limit: 3600, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},

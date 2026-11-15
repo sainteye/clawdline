@@ -1498,6 +1498,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_fresh_recap_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_help_section_characters",
     "Known": true,
     "Note": true

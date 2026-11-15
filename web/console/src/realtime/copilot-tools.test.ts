@@ -1732,6 +1732,26 @@ test("in the background, a recent recap from the list is read at once with its a
   assert.equal(fresh.recap, "Fresh.")
 })
 
+test("asked for the latest, a recap over five minutes old is written now and one within five is read", async () => {
+  const bodies: Record<string, unknown>[] = []
+  const rows = [{ ...RECAP_ROWS[1], recap: { ...RECAP_ROWS[1].recap, at: 2_000_000 - 600 } }]
+  const m = recapMachine(rows, "background", (body) => { bodies.push(body); return Response.json({ session_id: body.session, recap: "Just now.", at: 2_000_000, state: "working", current: true }) })
+  // Ten minutes old: kept for an ordinary question, rewritten when the latest is asked for.
+  const kept = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Bots tower design" }), m.deps)).output)
+  assert.equal(kept.recap, RECAP_ROWS[1].recap.text)
+  assert.equal(bodies.length, 0)
+  const latest = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Bots tower design", fresh: true }), m.deps)).output)
+  assert.equal(latest.recap, "Just now.")
+  assert.deepEqual(bodies, [{ session: "%4", fork: true }])
+  const group = JSON.parse((await runCopilotTool("get_sessions_summary", JSON.stringify({ which: "working", fresh: true }), m.deps)).output)
+  assert.equal(group.sessions[0].recap, "Just now.")
+  // Three minutes old counts as the latest.
+  const recent = recapMachine([{ ...RECAP_ROWS[1], recap: { ...RECAP_ROWS[1].recap, at: 2_000_000 - 180 } }], "background", () => { throw new Error("a recap within five minutes is the latest") })
+  const three = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Bots tower design", fresh: true }), recent.deps)).output)
+  assert.equal(three.recap, RECAP_ROWS[1].recap.text)
+  assert.equal(three.recap_written, "3 分鐘前")
+})
+
 test("a current recap is spoken as it is, without asking the machine again", async () => {
   const { deps, calls } = recapMachine(RECAP_ROWS, "on_demand", () => { throw new Error("must not fork") })
   const out = JSON.parse((await runCopilotTool("get_session_summary", JSON.stringify({ session_id: "Keyboard jump fix" }), deps)).output)

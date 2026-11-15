@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12210,
+  "englishContentKeys": 12212,
   "riskKeys": 5299,
-  "nonRiskCount": 6911,
+  "nonRiskCount": 6913,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 566,
+      "count": 568,
       "sources": [
         null
       ],
@@ -608,6 +608,8 @@
         "capacityRow.console.community_share_response_bytes.what",
         "capacityRow.console.community_share_text_characters.full",
         "capacityRow.console.community_share_text_characters.what",
+        "capacityRow.console.copilot_fresh_recap_seconds.full",
+        "capacityRow.console.copilot_fresh_recap_seconds.what",
         "capacityRow.console.copilot_help_section_characters.full",
         "capacityRow.console.copilot_help_section_characters.what",
         "capacityRow.console.copilot_help_sections.full",
