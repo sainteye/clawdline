@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12359,
-  "riskKeys": 5354,
-  "nonRiskCount": 7005,
+  "englishContentKeys": 12369,
+  "riskKeys": 5361,
+  "nonRiskCount": 7008,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 597,
+      "count": 598,
       "sources": [
         null
       ],
@@ -496,6 +496,7 @@
         "capacityRow.bots.routine_tick_ms.full",
         "capacityRow.bots.routine_tick_ms.what",
         "capacityRow.bots.routine_timeout_seconds.what",
+        "capacityRow.bots.routine_triggers.what",
         "capacityRow.bots.rpc_ms.what",
         "capacityRow.bots.rules_file_bytes.what",
         "capacityRow.bots.send_body_bytes.what",
@@ -5656,7 +5657,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 153,
+      "count": 155,
       "sources": [
         null
       ],
@@ -5678,6 +5679,8 @@
         "projectAssistants.bots",
         "projectAssistants.cancel",
         "projectAssistants.chatLoading",
+        "projectAssistants.checkSend",
+        "projectAssistants.checkingSend",
         "projectAssistants.chooseProject",
         "projectAssistants.close",
         "projectAssistants.collapse",

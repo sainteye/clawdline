@@ -67,6 +67,39 @@ func TestRoutineDefinitionCommitRollbackReplayAndOwner(t *testing.T) {
 		t.Fatal("delete leaked owned rows", defs, runs, e)
 	}
 }
+
+func TestRoutineCalendarArchiveRetainsIntentAndSpentOnce(t *testing.T) {
+	_, s, _ := testDB(t)
+	b := seed(t, s, "calendar")
+	now := time.Unix(1800000000, 0)
+	d, err := pa.SetRoutineSchedule(routineFixture(b), pa.Routine{}, []pa.RoutineTrigger{
+		{Type: "once", At: now.Add(time.Minute).UnixMilli()},
+		{Type: "cron", Expression: "0 9 * * 1-5", TimeZone: "Asia/Taipei"},
+		{Type: "interval", Seconds: 60},
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err = pa.AdvanceRoutineSchedule(d, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "calendar"), ExpectedVersion: 1, Routine: &d, Receipt: pa.Receipt{ID: "calendar-saved", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := s.ExportArchive(testContext, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, restored, _ := testDB(t)
+	if err = restored.RestoreArchive(testContext, archive); err != nil {
+		t.Fatal(err)
+	}
+	defs, runs, err := restored.Routines(testContext, b.Key)
+	if err != nil || len(defs) != 1 || len(runs) != 0 || !reflect.DeepEqual(defs[0].Triggers, d.Triggers) || !defs[0].NextRuns[0].IsZero() || !defs[0].NextDue.Equal(d.NextDue) {
+		t.Fatal("archive changed calendar intent", defs, err)
+	}
+}
 func TestRoutinePendingWakeCoalescesAndPausedClaimRefuses(t *testing.T) {
 	_, s, _ := testDB(t)
 	b := seed(t, s, "one")

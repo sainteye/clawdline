@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -139,6 +140,9 @@ func TestBotRoutineACPFixturePeer(t *testing.T) {
 			log("send", session)
 			request("initialize", 1, map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "clientInfo": map[string]string{"name": "fixture", "version": "1"}})
 			request("notifications/initialized", nil, nil)
+			if !bytes.Contains(request("tools/list", 2, nil), []byte(`"timeZone"`)) {
+				os.Exit(41)
+			}
 			if session == "fixture-main-A" {
 				var list struct{ Definitions []pa.Routine }
 				if json.Unmarshal(call("list_routines", map[string]any{}, false), &list) != nil {
@@ -146,6 +150,14 @@ func TestBotRoutineACPFixturePeer(t *testing.T) {
 				}
 				if len(list.Definitions) == 0 {
 					save := map[string]any{"idempotency_key": "save-once", "name": "Fixture interval", "instruction": "Return the isolated routine result.", "interval_seconds": 1, "timeout_seconds": 10, "enabled": false}
+					if raw := os.Getenv("CLAWDLINE_ROUTINE_TRIGGERS"); raw != "" {
+						var triggers []pa.RoutineTrigger
+						if json.Unmarshal([]byte(raw), &triggers) != nil {
+							os.Exit(42)
+						}
+						delete(save, "interval_seconds")
+						save["triggers"] = triggers
+					}
 					var saved app.RoutineResult
 					if json.Unmarshal(call("save_routine", save, false), &saved) != nil || saved.ID == "" {
 						os.Exit(40)
@@ -157,6 +169,7 @@ func TestBotRoutineACPFixturePeer(t *testing.T) {
 					call("test_run_routine", map[string]any{"idempotency_key": "foreign-test", "id": "foreign-bot-routine"}, true)
 					barrier("/saved")
 					call("enable_routine", map[string]any{"idempotency_key": "start-interval", "id": saved.ID, "enabled": true}, false)
+					barrier("/enabled")
 				}
 			} else {
 				var list struct{ Definitions []pa.Routine }
@@ -175,12 +188,23 @@ func TestBotRoutineACPFixturePeer(t *testing.T) {
 }
 
 func TestProjectAssistantRoutineHTTPMCPActorABA(t *testing.T) {
+	routineHTTPMCPActorABA(t, "interval")
+}
+
+func TestProjectAssistantRoutineCalendarHTTPMCPActorABA(t *testing.T) {
+	for _, mode := range []string{"once", "cron", "combined"} {
+		t.Run(mode, func(t *testing.T) { routineHTTPMCPActorABA(t, mode) })
+	}
+}
+
+func routineHTTPMCPActorABA(t *testing.T, mode string) {
 	if runtime.GOOS == "windows" {
 		t.Skip("native supervisor fixture requires Unix")
 	}
 	t.Setenv("CLAWDLINE_NEXT_DIR", t.TempDir())
 	root := t.TempDir()
 	saved := make(chan struct{})
+	enabled := make(chan struct{})
 	continueMain := make(chan struct{})
 	running := make(chan struct{})
 	continueRoutine := make(chan struct{})
@@ -192,6 +216,8 @@ func TestProjectAssistantRoutineHTTPMCPActorABA(t *testing.T) {
 		case "/routine":
 			close(running)
 			<-continueRoutine
+		case "/enabled":
+			close(enabled)
 		default:
 			w.WriteHeader(404)
 		}
@@ -209,12 +235,32 @@ func TestProjectAssistantRoutineHTTPMCPActorABA(t *testing.T) {
 	defer release(continueMain)
 	defer release(continueRoutine)
 	f := newPAServerFixture(t, true)
+	var clock atomic.Int64
+	base := time.Now().UTC().Truncate(time.Minute).Add(time.Minute)
+	clock.Store(base.UnixMilli())
+	var triggers []pa.RoutineTrigger
+	switch mode {
+	case "once":
+		triggers = []pa.RoutineTrigger{{Type: "once", At: base.Add(time.Minute).UnixMilli()}}
+	case "cron":
+		triggers = []pa.RoutineTrigger{{Type: "cron", Expression: "* * * * *", TimeZone: "Asia/Taipei"}}
+	case "combined":
+		triggers = []pa.RoutineTrigger{{Type: "once", At: base.Add(time.Minute).UnixMilli()}, {Type: "interval", Seconds: 60}, {Type: "cron", Expression: "* * * * *", TimeZone: "Asia/Taipei"}}
+	}
+	if mode != "interval" {
+		f.s.projectAssistants.clock = func() time.Time { return time.UnixMilli(clock.Load()) }
+	}
+	triggerJSON, _ := json.Marshal(triggers)
 	executable, e := os.Executable()
 	if e != nil {
 		t.Fatal(e)
 	}
 	f.s.projectAssistants.provider = func() (app.Provider, error) {
-		return acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: executable, Arguments: []string{"-test.run=^TestBotRoutineACPFixturePeer$"}, Environment: []string{"CLAWDLINE_ROUTINE_PEER=1", "CLAWDLINE_ROUTINE_CONTROL=" + control.URL, "CLAWDLINE_ROUTINE_ROOT=" + root}}}, Limits: acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 4096, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 15 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+		env := []string{"CLAWDLINE_ROUTINE_PEER=1", "CLAWDLINE_ROUTINE_CONTROL=" + control.URL, "CLAWDLINE_ROUTINE_ROOT=" + root}
+		if mode != "interval" {
+			env = append(env, "CLAWDLINE_ROUTINE_TRIGGERS="+string(triggerJSON))
+		}
+		return acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: executable, Arguments: []string{"-test.run=^TestBotRoutineACPFixturePeer$"}, Environment: env}}, Limits: acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 4096, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 15 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 			c := paServerCaps(b)
 			c.AdapterVersion = "scripted"
 			c.SendMessage = true
@@ -244,10 +290,27 @@ func TestProjectAssistantRoutineHTTPMCPActorABA(t *testing.T) {
 		t.Fatalf("save prompted or duplicated: %+v %v", x, e)
 	}
 	close(continueMain)
+	wait(enabled, "MCP enable")
+	if mode != "interval" {
+		clock.Store(base.Add(time.Minute).UnixMilli())
+	}
 	wait(running, "lifecycle tick with no browser")
 	x, e = st.Export(context.Background(), f.key)
 	if e != nil || len(x.RoutineRuns) < 1 || len(x.RoutineRuns) > 2 || len(x.Turns) != 2 {
 		t.Fatalf("routine not durably claimed: %+v %v", x, e)
+	}
+	if mode != "interval" {
+		if len(x.RoutineRuns) != 1 || len(x.Routines) != 1 || len(x.Routines[0].Triggers) != len(triggers) {
+			t.Fatal("calendar wake duplicated or lost intent", x.RoutineRuns, x.Routines)
+		}
+		for i, trigger := range triggers {
+			if x.Routines[0].Triggers[i] != trigger {
+				t.Fatal("saved trigger changed", x.Routines[0])
+			}
+			if trigger.Type == "once" && !x.Routines[0].NextRuns[i].IsZero() {
+				t.Fatal("once not exhausted", x.Routines[0])
+			}
+		}
 	}
 	var run pa.RoutineRun
 	for _, v := range x.RoutineRuns {
@@ -335,10 +398,10 @@ func TestProjectAssistantRoutineHTTPMCPActorABA(t *testing.T) {
 	if e != nil || len(after.ReadCursors) != 1 || after.ReadCursors[0].MessageSeq != x.Conversation.LastMessageSeq {
 		t.Fatal("reader cursor changed", after.ReadCursors, e)
 	}
-	evidence := map[string]any{"fixture_bot": f.key, "main_session": "fixture-main-A", "routine_session": "fixture-routine-B", "order": order, "turns": len(x.Turns), "messages": len(x.Messages), "receipts": len(x.Receipts), "routine_results": count, "vendor_requests": 0, "model_requests": 0}
+	evidence := map[string]any{"schedule_mode": mode, "triggers": triggers, "fixture_bot": f.key, "main_session": "fixture-main-A", "routine_session": "fixture-routine-B", "order": order, "turns": len(x.Turns), "messages": len(x.Messages), "receipts": len(x.Receipts), "routine_results": count, "vendor_requests": 0, "model_requests": 0}
 	if dir := os.Getenv("CLAWDLINE_ROUTINE_EVIDENCE_DIR"); dir != "" {
 		raw, _ := json.MarshalIndent(evidence, "", "  ")
-		if e = os.WriteFile(filepath.Join(dir, "routine-http-aba.json"), append(raw, '\n'), 0600); e != nil {
+		if e = os.WriteFile(filepath.Join(dir, "routine-http-aba-"+mode+".json"), append(raw, '\n'), 0600); e != nil {
 			t.Fatal(e)
 		}
 	}

@@ -48,6 +48,7 @@ const (
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
 	return []Entry{
+		{Name: BotsRoutineTriggers, Class: Buffer, Unit: Rows, Limit: pa.MaxRoutineTriggers, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutineTriggers"}},
 		{Name: BotsRoutineTickMilliseconds, Class: Buffer, Unit: Milliseconds, Limit: pa.MaxRoutineTickMilliseconds, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutineTickMilliseconds"}},
 		{Name: BotsRoutinePending, Class: Buffer, Unit: Rows, Limit: pa.MaxRoutinePendingPerDefinition, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutinePendingPerDefinition"}},
 		{Name: BotsRoutineDefinitions, Class: Evidence, Unit: Rows, Limit: pa.MaxRoutineDefinitions, AtLimit: Refuse, Told: []Channel{Diagnostics, Health, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxRoutineDefinitions"}},
