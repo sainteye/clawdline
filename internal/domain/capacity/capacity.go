@@ -770,3 +770,14 @@ const (
 )
 
 const BotsOwnedDescendants = "bots.owned_children"
+
+const (
+	BotsRoutineDefinitions      = "bots.routine_definitions"
+	BotsRoutineTickMilliseconds = "bots.routine_tick_ms"
+	BotsRoutinePending          = "bots.routine_pending"
+	BotsRoutineNameBytes        = "bots.routine_name_bytes"
+	BotsRoutineInstructionBytes = "bots.routine_instruction_bytes"
+	BotsRoutineIntervalSeconds  = "bots.routine_interval_seconds"
+	BotsRoutineTimeoutSeconds   = "bots.routine_timeout_seconds"
+	BotsRoutineFinishedRuns     = "bots.routine_finished_runs"
+)

@@ -74,6 +74,8 @@ type MessagePage struct {
 // A failure writes none. Same key/different hash is a conflict; unknown effects
 // retain their receipts. All non-nil facts must belong to Command.Key.
 type Mutation struct {
+	Routine         *pa.Routine
+	RoutineRun      *pa.RoutineRun
 	Command         pa.Command
 	ExpectedVersion int64
 	Receipt         pa.Receipt
@@ -106,6 +108,8 @@ type Repository interface {
 // Export is a versioned data transfer, not a second Markdown authority. Restore
 // is PA-03's installer/store operation and must reject a newer unknown version.
 type Export struct {
+	Routines        []pa.Routine    `json:"Routines,omitempty"`
+	RoutineRuns     []pa.RoutineRun `json:"RoutineRuns,omitempty"`
 	ContractVersion string
 	SchemaVersion   int
 	Bot             pa.Bot

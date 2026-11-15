@@ -163,3 +163,22 @@ type InputReader interface {
 type InputRemover interface {
 	Remove(context.Context, pa.Fence, pa.InputFile) error
 }
+
+// RoutineTools is available only on the current owned native execution.
+type RoutineTools interface {
+	Routines(context.Context, RoutineRequest) (RoutineResult, error)
+}
+type RoutineRequest struct {
+	Action          string `json:"-"`
+	IdempotencyKey  string `json:"idempotency_key,omitempty"`
+	ID              string `json:"id,omitempty"`
+	Name            string `json:"name,omitempty"`
+	Instruction     string `json:"instruction,omitempty"`
+	IntervalSeconds int64  `json:"interval_seconds,omitempty"`
+	TimeoutSeconds  int64  `json:"timeout_seconds,omitempty"`
+	Enabled         *bool  `json:"enabled,omitempty"`
+}
+type RoutineResult struct {
+	Definitions []pa.Routine `json:"definitions,omitempty"`
+	ID          string       `json:"id,omitempty"`
+}

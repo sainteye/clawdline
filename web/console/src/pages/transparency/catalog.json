@@ -3508,7 +3508,7 @@
         },
         {
           "path": "internal/app/projectassistant/runtime.go",
-          "line": 456
+          "line": 656
         },
         {
           "path": "internal/adapters/projectassistantacp/capabilities.go",
@@ -3651,7 +3651,7 @@
       "sources": [
         {
           "path": "internal/adapters/projectassistantacp/mcp.go",
-          "line": 491
+          "line": 518
         },
         {
           "path": "internal/adapters/projectassistanthost/provider.go",
@@ -3736,6 +3736,58 @@
         "Message-bound input metadata and native prompt paths",
         "Authenticated paired-device input reads"
       ]
+    },
+    {
+      "id": "persistent-bot-routines",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/app/projectassistant/routines.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/runtime.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/lifecycle.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistanthost/provider.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/mcp.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/native_history.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "\t\ttool(\"list_routines\", \"List this Bot's elapsed-interval routines. Calendar, once, cron, webhook and event schedules are unsupported.\", map[string]any{}),\n",
+        "\t\ttool(\"save_routine\", \"Save an explicitly requested elapsed interval in seconds. Saving never executes the instruction. Reuse the idempotency key on retry.\", map[string]any{\"idempotency_key\": text(), \"id\": text(), \"name\": text(), \"instruction\": text(), \"interval_seconds\": map[string]any{\"type\": \"integer\", \"minimum\": 1, \"maximum\": pa.MaxRoutineIntervalSeconds}, \"timeout_seconds\": map[string]any{\"type\": \"integer\", \"minimum\": 1, \"maximum\": pa.MaxRoutineTimeoutSeconds}, \"enabled\": map[string]any{\"type\": \"boolean\"}}, \"idempotency_key\", \"name\", \"instruction\", \"interval_seconds\"),\n",
+        "\t\ttool(\"enable_routine\", \"Enable or pause this Bot's routine. A paused pending wake cannot send a prompt.\", map[string]any{\"idempotency_key\": text(), \"id\": text(), \"enabled\": map[string]any{\"type\": \"boolean\"}}, \"idempotency_key\", \"id\", \"enabled\"),\n",
+        "\t\ttool(\"delete_routine\", \"Delete this Bot's routine and cancel its pending wake; an already running task may finish.\", map[string]any{\"idempotency_key\": text(), \"id\": text()}, \"idempotency_key\", \"id\"),\n",
+        "\t\ttool(\"test_run_routine\", \"Explicitly enqueue one test run of an enabled routine. It runs in a separate session and returns its result to this chat.\", map[string]any{\"idempotency_key\": text(), \"id\": text()}, \"idempotency_key\", \"id\"),\n"
+      ],
+      "locations": [
+        "Execution-bound native MCP routine management tools",
+        "Enabled source Host timer and persistent Bot actor",
+        "Isolated routine session slot and existing Bot conversation"
+      ]
     }
   ],
   "sourceChecks": {
@@ -3780,10 +3832,11 @@
     "internal/adapters/projectassistantacp/client.go": "4de30906c14f85252759d030247a3ae6896737424257295bc82bb491e35df0b7",
     "internal/adapters/projectassistantacp/installation.go": "d57c9bdd536317a208c28790ab21beace0c18228f8b32c44d8ef3bb539e7f62c",
     "internal/adapters/projectassistantacp/installation_isolation.go": "37c100aba270c2e9c9b4ea9f3bc73cef5dbc611f9db7143471e8a903a227f54e",
-    "internal/adapters/projectassistantacp/mcp.go": "0d7761fe38e4da7efc693f75ad88248663dc55a30ebc1573e284220a8676997c",
+    "internal/adapters/projectassistantacp/mcp.go": "5081aef64997bc282460598ea8b3a89f0cbe26939cc9c3e7722d447843788433",
+    "internal/adapters/projectassistantacp/native_history.go": "7cf67113c9c36298930daad124ca61fef3f36233354897090f6ef908fa7feecb",
     "internal/adapters/projectassistantacp/session_configuration.go": "2fe99a92cb2fc365b0a4c0521aa924db012eac618fa2cb71b3dc0a8315537449",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
-    "internal/adapters/projectassistanthost/provider.go": "aac6986f61dd1e945c656cbd061d97f9aeca9bac5f3e97ae419ba8cc22b34724",
+    "internal/adapters/projectassistanthost/provider.go": "c35e8c67a897a77362e4d3d61e23b9fd33631c986a40c7b1dfff2d79f2d0d2f3",
     "internal/adapters/projectassistantstore/inputs.go": "b9f68823dcbd69ca9d5f2ad1e7d19e07da813299e62d4ca02b2f15c3cdf8319b",
     "internal/adapters/projectassistantstore/outputs.go": "805a68092026da563c980a25d88341b65ff0b55de3a22fc9ddef4458d5f09d1a",
     "internal/adapters/projects/antigravity_context.go": "e4155299d10f675cf4c290141cc7c73de7c5540ef58232d84668fc05bd00dafb",
@@ -3815,7 +3868,9 @@
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/projectassistant/inputs.go": "745f888b5c7279a0fbb8cea53e76ba4b60a3e50140819f821552cbf01d47fdb8",
-    "internal/app/projectassistant/runtime.go": "ad93e626f2f58142ae7194b3dd4c8ba7a48eb2132aed098d0a338bec71b5e6b1",
+    "internal/app/projectassistant/lifecycle.go": "f35775fb433290f80ee82c81ebccf1a9c8313f3c94a5fc7d7678b9aebee0b1ca",
+    "internal/app/projectassistant/routines.go": "f91ed530ec84d54ec4c31ed67a1c1dedc0855c39f43cc7214bac12f7025ca7a2",
+    "internal/app/projectassistant/runtime.go": "7fe322579040fc7e6562973b514f6d22233d1e7d9cfcd7e5cc2db55a479a5ee8",
     "internal/app/projectassistant/session_handoff.go": "64e4968581fcbb4774f00c650dec25f5b361f2c6d8ddaf86a847e03961cff2c7",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
@@ -3904,7 +3959,7 @@
     "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704"
   },
   "copyChecks": {
-    "en": "957abe741f9184d3c685a9244b1f2652d6190e32a20f85b45ffce622af641f76",
-    "zh-Hant": "1f6eebf5cad7b241953890ba7af57b0709b1e5c0705be5878360fdbc3d749851"
+    "en": "09259892288f04249cbdd74574372f24cc2e65b671744c59d07f187f39fa292e",
+    "zh-Hant": "cce942058784be0337d35d8d52b35ff7ce24edd7c1fd739c4d41957b1698a132"
   }
 }

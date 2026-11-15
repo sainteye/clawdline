@@ -33,6 +33,9 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS project_assistant_roster_machine ON project_assistant_roster_changes(machine,seq)`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_roster_bot ON project_assistant_roster_changes(machine,bot,seq)`,
 		`INSERT INTO project_assistant_roster_changes(machine,bot,project,conversation,generation,binding,removed) SELECT b.machine,b.bot,json_extract(CAST(b.data AS TEXT),'$.Bot.project'),json_extract(CAST(b.data AS TEXT),'$.Conversation.id'),json_extract(CAST(b.data AS TEXT),'$.Conversation.generation'),json_extract(CAST(b.data AS TEXT),'$.Conversation.binding_id'),0 FROM project_assistant_bots b WHERE NOT EXISTS(SELECT 1 FROM project_assistant_roster_changes c WHERE c.machine=b.machine AND c.bot=b.bot)`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_routines (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, deleted INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,id))`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_routine_runs (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, routine TEXT NOT NULL, state TEXT NOT NULL, published INTEGER NOT NULL, finished TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,id))`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS project_assistant_routine_pending ON project_assistant_routine_runs(machine,bot,routine) WHERE state='queued'`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_receipts (machine TEXT NOT NULL, bot TEXT NOT NULL, operation TEXT NOT NULL, command_key TEXT NOT NULL, receipt_id TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,operation,command_key), UNIQUE(machine,bot,receipt_id))`,
 	} {
 		if _, err = tx.ExecContext(ctx, statement); err != nil {
