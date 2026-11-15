@@ -3,10 +3,12 @@
 import React from "react"
 import { createRoot } from "react-dom/client"
 import App from "./App"
+import { setQuotaVisible } from "./provider-quota/visibility"
+import { setOrbPlace } from "./project-assistants/orb-dock"
 import { activateCatalog } from "./catalog"
 import { loadStrings } from "./legacy/bridge"
 import { fixtureSource } from "./project-assistants/fixtures"
-import { ProjectAssistantRegistry, assistantRelayRequest } from "./cloud/project-assistants"
+import { ProjectAssistantRegistry, assistantRelayRequest, PROJECT_ASSISTANTS_API_LEVEL } from "./cloud/project-assistants"
 import { copilotDock } from "./realtime/copilot-dock"
 import { realtimeCopilot } from "./realtime/realtime-copilot"
 import "./loading-skeleton.css"
@@ -41,7 +43,7 @@ const boardItem = machine => ({id:"PA-01",project:{id:"project",label:"Synthetic
   phase:"unassigned",condition:null,user_action:"",area:"unassigned",deployment_policy:"not_required",review_required:false,owner_session:null,
   created_at:1,updated_at:1,closed_at:null,cycle:1,version:1,documents:[],images:[],steps:[]})
 const grants = () => [a,b].map(source => ({accountKey:registry.accountKey,readerID:registry.readerID,machineID:source.machineID,
-  authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:56,paired:true,online:true,writable:true}))
+  authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:PROJECT_ASSISTANTS_API_LEVEL,paired:true,online:true,writable:true}))
 const transport = grant => async (path,init) => {
   const source = grant.machineID === "studio" ? a : b
   const request = assistantRelayRequest(path,init), signal = init?.signal || new AbortController().signal
@@ -60,6 +62,8 @@ sync()
 Object.defineProperty(navigator,"mediaDevices",{configurable:true,value:{getUserMedia:async () => {mediaOpens++;throw new Error("Physical media forbidden in fixture")}}})
 class FixtureEvents extends EventTarget {onopen = null;onerror = null; constructor(){super();queueMicrotask(() => this.onopen?.())} close(){} }
 window.EventSource = FixtureEvents
+let quotaMode = new URLSearchParams(location.search).get("quota") || "empty", releaseQuota = null
+const quotaAnswer = () => quotaMode === "error" ? Response.json({error:{code:"unavailable",message:"Synthetic quota failure"}},{status:503}) : Response.json({providers:quotaMode === "ready" ? [{id:"codex",label:"Codex",source:"codex_rollout",observed_at:1,stale:false,windows:[{name:"7d",used_percent:0}]}] : []})
 const at = Math.floor(Date.now()/1000)
 const row = index => ({id:"%fixture-"+index,label:index ? "Synthetic Session "+index : "Original Session",assistant:"claude",backend:"tmux",state:"idle",work_state:"idle",cwd:"/synthetic/project",isClaude:true,lastActivityAt:at,evidence:{},agents:[],shells:[],
   closeability:{state:"unknown",reasons:[],activity_generation:0,session_generation:0,obligation_generation:0,observed_at:at,provenance:[],source:{freshness:"unknown",provenance:"fixture",observed_at:at,max_age_seconds:0}}})
@@ -69,6 +73,7 @@ window.fetch = async (input,init) => {
   if (!url.pathname.startsWith("/v1/")) return originalFetch(input,init)
   requests.push({path:url.pathname,method:init?.method || "GET"})
   if (url.pathname.endsWith("/send")) sessionSends++
+  if (url.pathname === "/v1/provider-quotas") return quotaMode === "hold" ? new Promise(resolve => {releaseQuota = () => resolve(quotaAnswer())}) : quotaAnswer()
   if (url.pathname === "/v1/strings") return Response.json(words)
   if (url.pathname === "/v1/health") return Response.json({ok:true,version:"fixture",api_level:56,cloud:{enabled:false},integrations:{}})
   if (url.pathname === "/v1/sessions") return Response.json({at,scan:{complete:true,emptyAuthoritative:false,epoch:1,generation:1,provenance:"fixture",sources:[]},sessions:rows})
@@ -97,10 +102,13 @@ const workOpened = token => {if(pendingWork?.token === token){pendingWork=null;p
 const paint = () => root.render(<React.StrictMode><App key={appKey} projectAssistants={registry} fleetReaderMachine={active}
   onOpenAssistantWork={openWork} assistantWorkIntent={pendingWork} onAssistantWorkOpened={workOpened}/></React.StrictMode>)
 const fixture = {a,b,registry,requests,log,paint,
+  quota(mode){quotaMode=mode;releaseQuota?.();releaseQuota=null},
+  quotaVisible(layout,on){setQuotaVisible(layout,on)},
+  dockOrb(docked){setOrbPlace({docked,right:16,bottom:72})},
   remount(){appKey = active = active === "studio" ? "notebook" : "studio";paint()},
   revoke(){registry.revoke("studio")},
   offline(){a.setState("offline");sync(grants().map(grant => grant.machineID === "studio" ? {...grant,online:false} : grant))},
-  unsupported(){sync(grants().map(grant => grant.machineID === "studio" ? {...grant,apiLevel:55} : grant))},
+  unsupported(){sync(grants().map(grant => grant.machineID === "studio" ? {...grant,apiLevel:PROJECT_ASSISTANTS_API_LEVEL-1} : grant))},
   readOnly(){grantMode="history";a.setState("online","history_only");sync()},
   disabled(){feature=false;registry.revoke();sync()},
   stats(){return {mediaOpens,sessionSends,active}},

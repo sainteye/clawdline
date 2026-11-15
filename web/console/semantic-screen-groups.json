@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12235,
-  "riskKeys": 5304,
-  "nonRiskCount": 6931,
+  "englishContentKeys": 12238,
+  "riskKeys": 5306,
+  "nonRiskCount": 6932,
   "groups": [
     {
       "name": "acp / other",
@@ -3926,7 +3926,7 @@
     },
     {
       "name": "next / other",
-      "count": 1111,
+      "count": 1112,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4613,6 +4613,7 @@
         "next.quotaCreditsInUse",
         "next.quotaCreditsInUseLong",
         "next.quotaDetails",
+        "next.quotaLoading",
         "next.quotaMonthly",
         "next.quotaMore",
         "next.quotaOff",

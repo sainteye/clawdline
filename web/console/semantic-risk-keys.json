@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12235,
+  "englishKeys": 12238,
   "counts": {
-    "negation": 3296,
+    "negation": 3297,
     "state": 2038,
     "permission": 724,
     "deletion": 276,
-    "uncertainty": 461
+    "uncertainty": 462
   },
-  "unionCount": 5304,
+  "unionCount": 5306,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2624,6 +2624,7 @@
       "next.pushCloudOffUntold",
       "next.pushCloudUnreached",
       "next.quotaAccountScope",
+      "next.quotaEmpty",
       "next.quotaNoReading",
       "next.quotaNotSignedIn",
       "next.quotaReadUnavailable",
@@ -6737,6 +6738,7 @@
       "next.personaSkillUnavailable",
       "next.processOnlyShort",
       "next.projectsActivityHelpTitle",
+      "next.quotaOfflineNoReading",
       "next.quotaSettingHint",
       "next.quotaUnknown",
       "next.restoreDismissUnknown",
@@ -10925,8 +10927,10 @@
     "next.pushCloudOffUntold",
     "next.pushCloudUnreached",
     "next.quotaAccountScope",
+    "next.quotaEmpty",
     "next.quotaNoReading",
     "next.quotaNotSignedIn",
+    "next.quotaOfflineNoReading",
     "next.quotaReadUnavailable",
     "next.quotaReauth",
     "next.quotaRefreshHint",

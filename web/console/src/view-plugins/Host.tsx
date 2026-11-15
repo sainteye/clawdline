@@ -31,7 +31,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     openedRef.current = false; owned.current = null; closing.current = false; operations.current++
     setOpened(false); setGrant(null); setSelected(null); setPreview(null); setReview(null); setBusy(false)
     const next = navigate.current; navigate.current = null
-    requestAnimationFrame(() => { (opener.current?.isConnected ? opener.current : document.querySelector<HTMLButtonElement>(".vp-dock,.vp-float"))?.focus({ preventScroll: true });
+    requestAnimationFrame(() => { (opener.current?.isConnected ? opener.current : document.querySelector<HTMLButtonElement>(".vp-dock,#nav-view-plugins"))?.focus({ preventScroll: true });
       try { next?.() } catch { /* A source revoked during Back never receives navigation. */ }
     })
   }
@@ -151,7 +151,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     if (!selected || !source) throw new PluginError("scope_changed")
     await activate(selected, source, projectKey, true)
   })
-  const entry = <button type="button" className={dock ? "vp-dock" : "vp-float"} aria-label={w.entry} title={w.launcher} onClick={e => openRoot(e.currentTarget, "launch")}>
+  const entry = <button type="button" className="vp-dock" aria-label={w.entry} title={w.launcher} onClick={e => openRoot(e.currentTarget, "launch")}>
     <ViewPluginIcon />
   </button>
   const projects = new Map(preview?.sessions.flatMap(s => s.project ? [[s.project.key, s.project.label] as const] : []) ?? [])
@@ -210,6 +210,6 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
         </>}
       </main></>}
   </div>, document.body) : null
-  return { opened, openedRef, dock: !opened && dock ? entry : null, entry: !opened && !dock ? entry : null, content,
+  return { opened, openedRef, dock: !opened && dock ? entry : null, entry: null, content,
     openManager: (button: HTMLElement) => openRoot(button, "manage"), managerLabel: w.title }
 }

@@ -6,7 +6,7 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { build } from "esbuild"
 
-export async function hostBundle() {
+export async function hostBundle({sourceOverrides = new Map()} = {}) {
   const src = fileURLToPath(new URL("../src/",import.meta.url))
   const html = await readFile(new URL("fixtures/project-assistants-host.html",import.meta.url),"utf8")
   const contents = /<script type="text\/fixture-tsx">([\s\S]*?)<\/script>/.exec(html)?.[1]
@@ -16,6 +16,7 @@ export async function hostBundle() {
     plugins:[{name:"fixture-page-registry",setup(build){
       build.onResolve({filter:/\?raw$/},args => ({path:path.resolve(args.resolveDir,args.path.replace(/\?raw$/,"")),namespace:"fixture-raw"}))
       build.onLoad({filter:/.*/,namespace:"fixture-raw"},async args => ({loader:"text",contents:await readFile(args.path,"utf8")}))
+      build.onLoad({filter:/\.tsx$/},args => sourceOverrides.has(args.path) ? {loader:"tsx",resolveDir:path.dirname(args.path),contents:sourceOverrides.get(args.path)} : undefined)
       build.onLoad({filter:/\/App\.tsx$/},async args => ({loader:"tsx",resolveDir:src,contents:
       (await readFile(args.path,"utf8")).replace(/import\.meta\.glob<\{ page\?: PageModule \}>\("\.\/pages\/\*\.tsx", \{ eager: true \}\)/,
         '{"./pages/project-assistants.tsx":{page:assistantFixturePage},"./pages/work.tsx":{page:workFixturePage}}')+'\nimport {page as assistantFixturePage} from "./pages/project-assistants";import {page as workFixturePage} from "./pages/work"\n'}))}}]})

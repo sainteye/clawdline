@@ -53,16 +53,21 @@ first-use setup ahead of time and prints which Claude Code version it found;
 2. Give it a name, choose the Project and write its standing instructions.
    Creating a Bot does not call a model.
 3. Send a message. Up to four pictures can go with it: press **+**, paste
-   them or drop them on the message box. The Bot sees them as images. (Pictures
-   work from this machine's own console; not yet through Clawdline Cloud.)
+   them or drop them on the message box. The Bot sees them as images. Pictures
+   also work from a paired Clawdline Cloud browser when its source runs API 68
+   or newer. A picture-only message is allowed. Cloud keeps the existing
+   transport limits: a send that cannot fit is refused before sending, and a
+   picture too large for one encrypted read shows an explicit error. Loading
+   and failed reads remain visible; retrying a picture read does not resend
+   the message.
    The Bot answers in the chat. While it works, the chat shows what it is
    doing (the tool it is using, or that it is writing) and how long the turn
    has run. A message sent while it is still working waits in line and is
    shown as pending; **×** on a pending message takes it back before it is
    sent, leaving the current reply and the other pending messages alone, and
    **↳** sends it now, into the reply in progress, as in Codync. If that reply
-   had just ended, the message keeps its place and goes next. (Send now works
-   from this machine's own console; not yet through Clawdline Cloud.)
+   had just ended, the message keeps its place and goes next. Send now also
+   works from a paired Clawdline Cloud browser on a source that supports it.
 4. Ask it to dispatch work, for example "add a file and commit it". It
    starts an isolated worker in that Project's worktree, and a work card
    follows the work from accepted to running to done. The worker's summary
