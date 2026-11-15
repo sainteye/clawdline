@@ -3878,7 +3878,7 @@
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/projectassistant/inputs.go": "745f888b5c7279a0fbb8cea53e76ba4b60a3e50140819f821552cbf01d47fdb8",
     "internal/app/projectassistant/lifecycle.go": "f35775fb433290f80ee82c81ebccf1a9c8313f3c94a5fc7d7678b9aebee0b1ca",
-    "internal/app/projectassistant/routines.go": "fea51c70621267100dd7e6c270c93d40614e9368d94b258c21d0f101b8948685",
+    "internal/app/projectassistant/routines.go": "5336c2fc36d78ae613aab689ba5dfd79d342d62d4e5a42e682ce924279cfb9f6",
     "internal/app/projectassistant/runtime.go": "904c0c1e651b407b8203be19af3414e3b7fb9d88722ca637121c69d97c41ee64",
     "internal/app/projectassistant/session_handoff.go": "64e4968581fcbb4774f00c650dec25f5b361f2c6d8ddaf86a847e03961cff2c7",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
@@ -3969,7 +3969,7 @@
     "web/console/src/voice-work/runtime.ts": "4f98e53b557b7e73576522cf8b9674d2666aeead660c63c242aa1a09033d3704"
   },
   "copyChecks": {
-    "en": "10a8f8b2dba780a6842bfb88a168723238898fe0fc3aa1dd69cc6da9cb935118",
-    "zh-Hant": "4856fb1c16d038d273de22b1787beec5abe4b745e5fca6f1dd9b439fa384e25e"
+    "en": "3ecf3a9487350ea99bd3f2e52fa33ecbb1ab3b2856cd887945d6ba189f038552",
+    "zh-Hant": "defc76cb43feac436629585ac60ac3415044cf77531920c8225b584fe6aa847b"
   }
 }

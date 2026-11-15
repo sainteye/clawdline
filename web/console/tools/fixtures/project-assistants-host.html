@@ -8,7 +8,7 @@ import { setOrbPlace } from "./project-assistants/orb-dock"
 import { activateCatalog } from "./catalog"
 import { loadStrings } from "./legacy/bridge"
 import { fixtureSource } from "./project-assistants/fixtures"
-import { ProjectAssistantRegistry, assistantRelayRequest, PROJECT_ASSISTANTS_API_LEVEL } from "./cloud/project-assistants"
+import { ProjectAssistantRegistry, assistantRelayRequest, PROJECT_ASSISTANTS_API_LEVEL, PROJECT_ASSISTANTS_VIEW_API_LEVEL } from "./cloud/project-assistants"
 import { copilotDock } from "./realtime/copilot-dock"
 import { realtimeCopilot } from "./realtime/realtime-copilot"
 import "./loading-skeleton.css"
@@ -42,8 +42,8 @@ const boardItem = machine => ({id:"PA-01",project:{id:"project",label:"Synthetic
   acceptance_criteria:"Synthetic only",acceptance_version:1,acceptance_digest:"fixture",gate_snapshot_cycle:0,gate_snapshot_at:null,planning_gate:false,verify_gate:false,
   phase:"unassigned",condition:null,user_action:"",area:"unassigned",deployment_policy:"not_required",review_required:false,owner_session:null,
   created_at:1,updated_at:1,closed_at:null,cycle:1,version:1,documents:[],images:[],steps:[]})
-const grants = () => [a,b].map(source => ({accountKey:registry.accountKey,readerID:registry.readerID,machineID:source.machineID,
-  authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:PROJECT_ASSISTANTS_API_LEVEL,paired:true,online:true,writable:true}))
+const grants = () => [a,b].map(source => ({accountKey:registry.accountKey,readerID:registry.readerID,machineID:source.machineID,name:source.machineName,
+  authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:PROJECT_ASSISTANTS_VIEW_API_LEVEL,paired:true,online:true,writable:true}))
 const transport = grant => async (path,init) => {
   const source = grant.machineID === "studio" ? a : b
   const request = assistantRelayRequest(path,init), signal = init?.signal || new AbortController().signal
@@ -53,7 +53,7 @@ const transport = grant => async (path,init) => {
   if (method === "status" && !feature) log.push({method:"status",machine:grant.machineID,request:null})
   try {
     const answer = method === "status" && !feature ? {contract_version:"project-assistants.v1",sources:[{machine_id:grant.machineID,state:"online",access:"hidden",readable:false,writable:false,fresh:true,observed_at:"",capabilities:[]}]} :
-      ["status","projects"].includes(method) ? await source[method](signal) : await source[method](request.fields,signal)
+      method === "status" ? await source[method](signal) : await source[method](request.fields,signal)
     return Response.json(answer)
   } catch (error) { if (error?.error) return Response.json(error,{status:409}); throw error }
 }

@@ -46,8 +46,8 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
       const browser = await playwright[engine].launch({headless:true})
       const name = `${engine}-${width}-${lang}`, errors = [], page = await browser.newPage({viewport:{width,height:900},reducedMotion:"reduce"})
       page.on("pageerror",error => errors.push(error.message))
-      const w = lang === "en" ? {all:"All Bots",message:"Message",back:"Back to Bots",sessions:"Back to Sessions",select:"Select a Bot to start reading",openWork:"Open work",refresh:"Check for updates"} : {all:"所有 Bots",message:"訊息",back:"返回 Bots",sessions:"返回 Sessions",select:"選擇一位 Bot 開始閱讀",openWork:"查看任務",refresh:"檢查新訊息"}
-      const row = (machine="studio",bot="Project assistant") => page.getByRole("button",{name:new RegExp(`^${bot}, ${machine},`)})
+      const w = lang === "en" ? {all:"All Bots",message:"Message",back:"Back to Bots",collapse:"Collapse Bots",select:"Select a Bot to start reading",openWork:"Open work",refresh:"Check for updates",more:"More actions"} : {all:"所有 Bots",message:"訊息",back:"返回 Bots",collapse:"收起 Bots",select:"選擇一位 Bot 開始閱讀",openWork:"查看任務",refresh:"檢查新訊息",more:"更多動作"}
+      const row = (machine="studio") => page.locator(`button[data-bot-key='${JSON.stringify([machine,"bot-0"])}']`)
       const back = () => width > 700 ? page.evaluate(() => history.back()) : page.getByRole("button",{name:w.back,exact:true}).click()
       const shot = code => page.screenshot({path:path.join(artifacts,`${code}-${name}.png`),fullPage:true})
       try {
@@ -73,6 +73,7 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
         await row().click()
         const editor = page.getByRole("textbox",{name:w.message,exact:true});await editor.waitFor()
         await editor.fill("source-one draft")
+        await page.locator(".pa-chat-scroll").focus()
         if (width > 700) {
           await row("notebook").click();await editor.waitFor()
           assert.equal(await page.evaluate(() => history.length),historyLength+2,"desktop Bot switch replaces the single chat entry")
@@ -80,6 +81,15 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
         await page.evaluate(() => history.back())
         await editor.waitFor({state:"hidden"});await row().waitFor();assert.equal(await editor.count(),0)
         await row("notebook").click();await editor.waitFor();await editor.fill("source-two draft")
+        await page.locator(".pa-chat-scroll").focus()
+        const readMarks = await page.evaluate(() => window.fixtureHost.log.filter(row => row.method === "markRead"))
+        for (const machine of ["studio","notebook"]) {
+          assert.ok(readMarks.some(row => row.machine === machine && row.request.cursor.key.machine_id === machine &&
+            row.request.cursor.key.bot_id === "bot-0" && row.request.cursor.conversation_id === "chat-0" &&
+            row.request.cursor.reader_id === "synthetic-principal" && row.request.cursor.message_seq > 0),
+          "visible reading is acknowledged only for its source, Bot, conversation and reader")
+        }
+        await editor.focus()
         await editor.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true,data:"中"})))
         await editor.press("Enter")
         assert.equal(await page.evaluate(() => window.fixtureHost.log.filter(row => row.method === "send").length),0)
@@ -96,25 +106,24 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
         await page.locator(".realtime-modal-sheet").waitFor({state:"hidden"})
         await page.locator(".copilot-bubble").waitFor()
         await back();await row().waitFor()
-        await page.getByRole("button",{name:w.sessions,exact:true}).click();await orb.waitFor()
+        await page.getByRole("button",{name:w.collapse,exact:true}).click();await orb.waitFor()
         assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("pa-orb")),true)
         assert.equal(await page.evaluate(() => document.querySelector("#list-scroll").scrollTop),420)
         assert.equal(await page.evaluate(() => location.hash),originalHash)
         // App remount is CloudGate's active-machine key; the account-owned draft survives.
         await page.evaluate(() => window.fixtureHost.remount());await orb.waitFor();await orb.click();await row().click();await editor.waitFor()
         assert.equal(await editor.inputValue(),"source-one draft")
-        const beforeUnsupported = await page.evaluate(() => window.fixtureHost.log.filter(row => row.machine === "studio" && row.method === "get").length)
+        const beforeUnsupported = await page.evaluate(() => window.fixtureHost.log.filter(row => row.machine === "studio" && row.method === "view").length)
         await page.evaluate(() => window.fixtureHost.unsupported())
-        await page.getByRole("button",{name:w.refresh,exact:true}).click()
-        await page.getByText(/pa_unsupported/).first().waitFor()
-        assert.equal(await editor.isDisabled(),true)
-        assert.equal(await page.evaluate(() => window.fixtureHost.log.filter(row => row.machine === "studio" && row.method === "get").length),beforeUnsupported)
+        await row().waitFor({state:"hidden"});await row("notebook").waitFor()
+        assert.equal(await editor.count(),0,"an unsupported source cannot keep an editable chat")
+        assert.equal(await page.evaluate(() => window.fixtureHost.log.filter(row => row.machine === "studio" && row.method === "view").length),beforeUnsupported)
         await shot("unsupported-source")
         await page.evaluate(() => window.fixtureHost.readOnly());await row().waitFor();await row().click();await editor.waitFor()
         assert.equal(await editor.isDisabled(),true)
         await shot("history-only")
         await page.evaluate(() => window.fixtureHost.offline())
-        await page.getByRole("button",{name:w.refresh,exact:true}).click()
+        await page.getByRole("button",{name:w.more,exact:true}).click();await page.getByRole("menuitem",{name:w.refresh,exact:true}).click()
         await page.getByText(/pa_offline/).first().waitFor()
         assert.equal(await editor.inputValue(),"source-one draft")
         assert.equal(await editor.isDisabled(),true)

@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -207,16 +208,36 @@ func (r *Engine) TickRoutines(ctx context.Context, key pa.BotKey) error {
 			}
 		}
 		cmd := r.command(key, pa.EditOperation, "routine-due-"+d.ID+"-"+d.NextDue.UTC().Format(time.RFC3339Nano), d.NextDue)
-		d, err = pa.AdvanceRoutineSchedule(d, now)
-		if err != nil {
-			return err
-		}
-		d.Version++
-		m := Mutation{Command: cmd, Routine: &d, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: d.ID}}
-		if !exists {
+		advanced, advanceErr := pa.AdvanceRoutineSchedule(d, now)
+		m := Mutation{Command: cmd, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: d.ID}}
+		if advanceErr != nil {
+			var failure *pa.Failure
+			if !errors.As(advanceErr, &failure) || failure.Code != pa.Invalid || failure.Field != "routine_cron_future" {
+				return advanceErr
+			}
+			// Pause only this definition, retaining every original deadline and
+			// trigger (Advance may have partially advanced an OR schedule).
+			// Existing terminal run/turn events report a scheduling failure
+			// without claiming a native prompt ever started.
+			d.Enabled = false
+			run := r.newRoutineRun(d)
+			run.State, run.FinishedAt, run.Published = pa.TurnFailed, &now, true
+			f := currentFence(bot, x.Conversation)
+			turn := pa.Turn{ID: "routine-turn-" + run.ID, RoutineRunID: run.ID, Fence: f, MessageID: "routine-notice-" + run.ID, State: pa.TurnFailed, IdempotencyKey: "routine-" + run.ID, Failure: failure}
+			run.TurnID = turn.ID
+			msg := pa.Message{ID: turn.MessageID, Fence: f, TurnID: turn.ID, Kind: pa.NoticeMessage, Text: d.Name, At: now}
+			m.RoutineRun, m.Turn, m.Messages = &run, &turn, []pa.Message{msg}
+			m.Receipt.State = pa.EffectFailed
+			m.Events = []pa.Event{{Fence: f, Kind: pa.MessageCreated, Message: &msg}, {Fence: f, Kind: pa.TurnUpdated, Turn: &turn}}
+		} else if !exists {
+			d = advanced
 			run := r.newRoutineRun(d)
 			m.RoutineRun = &run
+		} else {
+			d = advanced
 		}
+		d.Version++
+		m.Routine = &d
 		if _, err = r.mutate(ctx, bot, m); err != nil {
 			return err
 		}
