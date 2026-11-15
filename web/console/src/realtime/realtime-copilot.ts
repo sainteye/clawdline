@@ -240,6 +240,8 @@ export class RealtimeCopilotClient {
   /** How long the live model is silent before its opening counts as said, and how long its opening may take to start. */
   liveQuietMs = 1500
   liveStartGraceMs = 8000
+  /** How often that wait looks again. */
+  livePollMs = 200
   /** The backend's function calls still running in this browser. */
   private livePending = new Set<string>()
   private liveSeconds = 0
@@ -1278,10 +1280,11 @@ export class RealtimeCopilotClient {
     for (;;) {
       if (!current()) return
       const now = Date.now()
-      const spoke = this.liveSaidAt > since
+      // Speech in the very millisecond of the opening note is the opening (CI 43708656326).
+      const spoke = this.liveSaidAt >= since && this.liveSaidAt > 0
       const quiet = spoke && now - this.liveSaidAt >= this.liveQuietMs && !this.liveHeard.peek()
       if (quiet || (!spoke && now - since >= this.liveStartGraceMs) || now - since >= LIVE_OPENING_WAIT_MS) return
-      await sleep(200)
+      await sleep(this.livePollMs)
     }
   }
 
