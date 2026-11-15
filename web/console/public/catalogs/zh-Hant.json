@@ -12244,6 +12244,7 @@
   "viewPlugins.territory": "Session 工作地圖",
   "viewPlugins.addTerritory": "安裝工作地圖",
   "viewPlugins.territoryHint": "以地圖呈現 Project 與 Session。目前尚未提供檔案活動。",
+  "viewPlugins.update": "檢查更新",
   "capacityRow.console.view_plugin_archive_bytes.what": "限制匯入單一視圖套件時讀取的 ZIP 大小。",
   "capacityRow.console.view_plugin_archive_bytes.full": "ZIP 過大時會拒絕匯入，保留原本已安裝的版本。",
   "capacityRow.console.view_plugin_expanded_bytes.what": "限制視圖套件解開後的內容總大小。",

@@ -11,8 +11,8 @@ import { deflateSync, crc32 as pngCRC } from "node:zlib"
 
 const scratch = await mkdtemp(join(tmpdir(), "cl-view-unit-"))
 const bundle = join(scratch,"runtime.mjs")
-await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover,curatedPackageIDs} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
-const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover,curatedPackageIDs} = await import(pathToFileURL(bundle).href)
+await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover,curatedPackageIDs,hasCuratedUpdate} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
+const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover,curatedPackageIDs,hasCuratedUpdate} = await import(pathToFileURL(bundle).href)
 test.after(() => rm(scratch,{recursive:true,force:true}))
 const packageURL = new URL("../../public/view-plugins/session-galaxy.zip",import.meta.url)
 const context = {language:"en",theme:"dark",reducedMotion:true,visible:true,scopeLabel:"Studio",connection:"connected"}
@@ -114,6 +114,16 @@ test("Curated views have downloadable packages with their own validated cover",a
   assert.ok(pkg.manifest.cover)
   assert.equal(exampleCover(id),pkg.manifest.cover)
  }
+})
+test("Curated updates require a newer stable release and never downgrade an installed package",async()=>{
+ const pkg=await parsePackage(await readFile(packageURL))
+ const atVersion=version=>({...pkg,manifest:{...pkg.manifest,version}})
+ assert.equal(hasCuratedUpdate(atVersion("0.0.0")),true)
+ assert.equal(hasCuratedUpdate(pkg),false)
+ assert.equal(hasCuratedUpdate(atVersion("99.0.0")),false)
+ assert.equal(hasCuratedUpdate(atVersion(pkg.manifest.version+"-preview.1")),true)
+ assert.equal(hasCuratedUpdate(atVersion(pkg.manifest.version+"+local")),false)
+ assert.equal(hasCuratedUpdate({...pkg,manifest:{...pkg.manifest,id:"org.example.private"}}),false)
 })
 function fixture(capabilities=["sessions.read","sessions.open"], initial=reading) {
   const channel = new MessageChannel(), answers=[], opened=[], faults=[]; let closes=0

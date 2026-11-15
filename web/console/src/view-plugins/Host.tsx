@@ -7,7 +7,7 @@ import { installedPackages, subscribePackages, installPackage, enablePackage, re
 import { PLUGIN_LIMITS as B } from "./limits.js"
 import { PluginFrame, readPluginSource, type ViewGrant } from "./Frame.js"
 import { pluginWords } from "./words.js"
-import { ViewArtwork, ViewPluginIcon, exampleCover, packageCover } from "./Artwork.js"
+import { ViewArtwork, ViewPluginIcon, exampleCover, packageCover, hasCuratedUpdate } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import "./plugins.css"
 
@@ -178,9 +178,11 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
               {id:"session-night-city", title:w.nightCity, description:w.nightCityHint, action:w.addNightCity},
               {id:"session-departures", title:w.departures, description:w.departuresHint, action:w.addDepartures},
               {id:"session-territory", title:w.territory, description:w.territoryHint, action:w.addTerritory},
-            ].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => <article className="vp-example" key={example.id}>
-              <ViewArtwork cover={exampleCover("com.clawdline." + example.id)} missing={w.coverRequired} /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || rows.some(r => r.id === "com.clawdline." + example.id)} onClick={() => void exampleInstall(example.id)}>{rows.some(r => r.id === "com.clawdline." + example.id) ? w.added : example.action}</button></div>
-            </article>)}
+            ].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => {
+              const installed = rows.find(r => r.id === "com.clawdline." + example.id), update = installed && hasCuratedUpdate(installed.active)
+              return <article className="vp-example" key={example.id}>
+              <ViewArtwork cover={exampleCover("com.clawdline." + example.id)} missing={w.coverRequired} /><div><h3>{example.title}</h3><p>{example.description}</p><button disabled={busy || !!installed && !update} onClick={() => void exampleInstall(example.id)}>{installed ? update ? w.update : w.added : example.action}</button></div>
+            </article>})}
           </div></section>
           <footer className="vp-local-note"><span aria-hidden="true">◌</span><p>{w.local}</p></footer>
         </>}

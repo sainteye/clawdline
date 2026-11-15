@@ -14,6 +14,16 @@ const covers = [
 ]
 export const curatedPackageIDs: readonly string[] = covers.map(row => row.manifest.id)
 export const exampleCover = (id: string) => covers.find(row => row.manifest.id === id)?.manifest.cover
+export function hasCuratedUpdate(pkg: ViewPackage): boolean {
+  const offered = covers.find(row => row.manifest.id === pkg.manifest.id)?.manifest.version
+  // Curated packages are stable releases. Never offer a downgrade or guess preview ordering.
+  if (!offered || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(offered)) return false
+  const installed = pkg.manifest.version.split("+")[0], core = installed.split("-")[0]
+  const next = offered.split(".").map(BigInt), prior = core.split(".").map(BigInt)
+  for (let i = 0; i < next.length; i++) if (next[i] !== prior[i]) return next[i] > prior[i]
+  return installed.includes("-")
+}
+
 export function packageCover(pkg: ViewPackage): string | undefined {
   // Attach authored covers to the exact previously shipped archives without replacing code.
   return pkg.manifest.cover ?? covers.find(row => row.manifest.id === pkg.manifest.id && row.legacy === pkg.digest)?.manifest.cover

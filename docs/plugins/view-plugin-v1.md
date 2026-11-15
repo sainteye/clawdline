@@ -113,6 +113,12 @@ their static ZIP and enter the same validation and package review as file import
 Curated install buttons fetch their ZIP with `cache: "no-store"`, so a previously cached
 fixed download URL cannot silently install an older published revision. The standard package
 review still names the exact downloaded identity and version before registry writes.
+When an installed curated package is older than the supplied stable version,
+Explore views offers **Review update** instead of disabling its install button.
+The downloaded package still goes through the identity, version and capability
+review, and replacement uses the current digest check. Matching or newer installed
+versions are not offered a downgrade; phone storage is never replaced remotely.
+
 
 Each supplied view has an install button that needs no native file chooser.
 The packages remain separate archives using the existing v1 runtime; community ZIP import stays independent

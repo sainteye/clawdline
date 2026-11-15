@@ -17,7 +17,7 @@ const en = {
   launcher: "Your views", launchEmpty: "No views enabled yet", launchEmptyHint: "Add a view from Sidebar → View plugins.", openView: "Open this view",
   personalize: "A different perspective", manageHeading: "Make room for your views", manageHint: "Add a view here. Open it anytime from the status bar.",
   manage: "Manage", enabled: "Enabled", disabled: "Disabled", emptyHint: "Start with a view below, or import a community package.",
-  examplesHint: "Different ways to see the same Sessions.", galaxyHint: "Sessions become stars, with work states mapped to orbits.", added: "Installed",
+  examplesHint: "Different ways to see the same Sessions.", galaxyHint: "Sessions become stars, with work states mapped to orbits.", added: "Installed", update: "Review update",
   errors: {
     retired_package: "This built-in view has been removed and can no longer be installed.",
     missing_cover: "This package has no cover. Add a dedicated cover before installation or publication.",
@@ -53,7 +53,7 @@ const zh: typeof en = {
   launcher: "已安裝視圖", launchEmpty: "還沒有啟用的視圖", launchEmptyHint: "從側邊欄的「視圖擴充」新增視圖。", openView: "開啟這個視圖",
   personalize: "換個角度看工作", manageHeading: "你的工作，不同視角", manageHint: "在這裡新增視圖，隨時從狀態列打開。",
   manage: "管理", enabled: "已啟用", disabled: "已停用", emptyHint: "從下方挑一個視圖，或匯入社群套件。",
-  examplesHint: "同一組 Session，不同的呈現方式。", galaxyHint: "以星體與軌道呈現 Session 和工作狀態。", added: "已安裝",
+  examplesHint: "同一組 Session，不同的呈現方式。", galaxyHint: "以星體與軌道呈現 Session 和工作狀態。", added: "已安裝", update: "檢查更新",
   errors: {
     retired_package: "此內建視圖已移除，無法再安裝。",
     missing_cover: "套件缺少封面圖，請補上專屬封面後再安裝或上架。",
