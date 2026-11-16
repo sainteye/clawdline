@@ -110,6 +110,7 @@ type Unit string
 const (
 	Bytes       Unit = "bytes"
 	Characters  Unit = "characters"
+	Tokens      Unit = "tokens"
 	Rows        Unit = "rows"
 	Multipliers Unit = "multipliers"
 	// Seconds is the age of an observation whose honesty depends on a time
@@ -785,6 +786,7 @@ const BotsOwnedDescendants = "bots.owned_children"
 
 const (
 	BotsRoutineDefinitions      = "bots.routine_definitions"
+	BotsRoutineProgressTokens   = "bots.routine_progress_tokens"
 	BotsRoutineTriggers         = "bots.routine_triggers"
 	BotsRoutineTickMilliseconds = "bots.routine_tick_ms"
 	BotsRoutinePending          = "bots.routine_pending"

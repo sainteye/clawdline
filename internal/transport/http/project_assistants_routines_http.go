@@ -85,7 +85,7 @@ func (h *projectAssistantHTTP) readRoutines(r *http.Request, route paHTTPRoute) 
 	}
 	out := contract.ProjectAssistantRoutineListResponse{ContractVersion: pa.ContractVersion, Source: source, Fence: paWireFence(result.Page.Fence), Definitions: []contract.ProjectAssistantRoutineDefinition{}, Runs: []contract.ProjectAssistantRoutineRun{}, NextCursor: result.Page.NextCursor}
 	for _, d := range result.Page.Definitions {
-		v := contract.ProjectAssistantRoutineDefinition{ID: d.ID, Key: paWireBotKey(d.Key), Project: paWireProjectScope(d.Project), ConversationID: d.ConversationID, Name: d.Name, Instruction: d.Instruction, TimeoutSeconds: d.TimeoutSeconds, Enabled: d.Enabled, Deleted: d.Deleted, NextDue: paRoutineTime(d.NextDue), Version: d.Version, Triggers: []contract.ProjectAssistantRoutineTrigger{}, NextRuns: []string{}}
+		v := contract.ProjectAssistantRoutineDefinition{ID: d.ID, Key: paWireBotKey(d.Key), Project: paWireProjectScope(d.Project), ConversationID: d.ConversationID, Progress: d.Progress, Name: d.Name, Instruction: d.Instruction, TimeoutSeconds: d.TimeoutSeconds, Enabled: d.Enabled, Deleted: d.Deleted, NextDue: paRoutineTime(d.NextDue), Version: d.Version, Triggers: []contract.ProjectAssistantRoutineTrigger{}, NextRuns: []string{}}
 		for _, t := range d.ScheduleTriggers() {
 			v.Triggers = append(v.Triggers, paRoutineTrigger(t))
 		}

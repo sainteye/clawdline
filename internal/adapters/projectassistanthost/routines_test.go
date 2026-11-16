@@ -239,3 +239,43 @@ func TestRoutineOnceAdmissionRollsBackAndDoesNotReplay(t *testing.T) {
 		t.Fatal("once replayed or never completed", x.RoutineRuns, err)
 	}
 }
+
+func TestRoutineProgressRejectsWritesFromBeforeForget(t *testing.T) {
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "progress")
+	if _, err := f.send(t, b, "main"); err != nil {
+		t.Fatal(err)
+	}
+	main := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	tools := main.q.Tools.(app.RoutineTools)
+	paused := false
+	saved, err := tools.Routines(context.Background(), app.RoutineRequest{Action: "save", IdempotencyKey: "definition", Name: "Fixture", Instruction: "Return a result", IntervalSeconds: 3600, Enabled: &paused})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tools.Routines(context.Background(), app.RoutineRequest{Action: "save_progress", IdempotencyKey: "progress", ID: saved.ID, Content: "Handled up to #40"}); err != nil {
+		t.Fatal(err)
+	}
+	service, _ := f.h.Service()
+	if _, err = service.Forget(context.Background(), app.ForgetRequest{Command: pa.Command{Key: b.Key, Operation: pa.ForgetOperation, IdempotencyKey: "forget-progress"}, Project: b.Project, ExpectedRevision: 1, SourceIDs: []string{"earlier-source"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tools.Routines(context.Background(), app.RoutineRequest{Action: "save_progress", IdempotencyKey: "after-forget", ID: saved.ID, Content: "Handled up to #60"}); pa.Code(err) != pa.ContextStale {
+		t.Fatal("old execution restored a note", err)
+	}
+	read, err := tools.Routines(context.Background(), app.RoutineRequest{Action: "read_progress", ID: saved.ID})
+	if err != nil || read.Progress == nil || *read.Progress != "" {
+		t.Fatal("forget left progress visible", read, err)
+	}
+	main.reply <- app.PromptResult{}
+	fixtureEventually(t, func() bool {
+		x, err := f.h.store.Export(context.Background(), b.Key)
+		return err == nil && len(x.Turns) == 1 && x.Turns[0].State == pa.TurnSucceeded
+	})
+	if _, err = tools.Routines(context.Background(), app.RoutineRequest{Action: "read_progress", ID: saved.ID}); err == nil {
+		t.Fatal("closed native capability still read progress")
+	}
+}

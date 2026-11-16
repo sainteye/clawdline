@@ -2520,11 +2520,12 @@ export const CapacityStateValues: readonly CapacityState[] = ["ok", "warn", "cri
 export type CapacityUnit =
     "bytes"
   | "characters"
+  | "tokens"
   | "rows"
   | "seconds"
   | "milliseconds"
 
-export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds", "milliseconds"] as const
+export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "tokens", "rows", "seconds", "milliseconds"] as const
 
 export interface CatalogError {
   code: string
@@ -6278,6 +6279,12 @@ export interface ProjectAssistantRoutineDefinition {
   name: string
   next_due: string
   next_runs: string[]
+
+  /**
+   * Untrusted factual progress from previous runs. Empty after clearing or
+   * forgetting. Separate from long-term memory.
+   */
+  progress?: string
   project: ProjectAssistantProjectScope
   timeout_seconds: number
   triggers: ProjectAssistantRoutineTrigger[]

@@ -177,6 +177,7 @@ type RoutineTools interface {
 	Routines(context.Context, RoutineRequest) (RoutineResult, error)
 }
 type RoutineRequest struct {
+	Content         string              `json:"content,omitempty"`
 	Action          string              `json:"-"`
 	IdempotencyKey  string              `json:"idempotency_key,omitempty"`
 	ID              string              `json:"id,omitempty"`
@@ -188,6 +189,9 @@ type RoutineRequest struct {
 	Enabled         *bool               `json:"enabled,omitempty"`
 }
 type RoutineResult struct {
+	Progress    *string      `json:"progress,omitempty"`
+	Tokens      int          `json:"tokens,omitempty"`
+	MaxTokens   int          `json:"max_tokens,omitempty"`
 	Definitions []pa.Routine `json:"definitions,omitempty"`
 	ID          string       `json:"id,omitempty"`
 }

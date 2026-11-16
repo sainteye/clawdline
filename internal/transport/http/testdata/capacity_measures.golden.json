@@ -505,6 +505,11 @@
     "Note": true
   },
   {
+    "Name": "bots.routine_progress_tokens",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.routine_tick_ms",
     "Known": true,
     "Note": true

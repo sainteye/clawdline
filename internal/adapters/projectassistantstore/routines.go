@@ -76,6 +76,9 @@ func applyRoutines(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation)
 		if !owner(d.Key, d.Project, d.ConversationID) {
 			return failure(pa.ScopeDenied, "routine_owner")
 		}
+		if d.Progress != "" && (d.ProgressRevision < a.Memory.ForgottenThrough || d.ProgressRevision > a.Memory.Revision) {
+			return failure(pa.ContextStale, "routine_progress_revision")
+		}
 		if err := pa.ValidateRoutine(d); err != nil {
 			return err
 		}
@@ -195,6 +198,31 @@ func applyRoutines(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation)
 		// messages, receipts and unresolved outcomes retain their provenance.
 		_, err = tx.ExecContext(ctx, `DELETE FROM project_assistant_routine_runs WHERE rowid IN (SELECT rowid FROM project_assistant_routine_runs WHERE published=1 AND state IN ('succeeded','failed','cancelled') ORDER BY finished DESC,id DESC LIMIT -1 OFFSET ?)`, pa.MaxRoutineFinishedRuns)
 		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Forget cannot attribute a compacted note to individual sources, so conservatively
+// clear every routine note in the same transaction as the forget receipt.
+func clearRoutineProgress(ctx context.Context, tx *sql.Tx, a aggregate) error {
+	definitions, _, err := readRoutines(ctx, tx, a.Bot.Key)
+	if err != nil {
+		return err
+	}
+	for _, d := range definitions {
+		if d.Progress == "" {
+			continue
+		}
+		d.Progress = ""
+		d.ProgressRevision = a.Memory.Revision
+		d.Version++
+		raw, err := json.Marshal(d)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE project_assistant_routines SET data=? WHERE machine=? AND bot=? AND id=?`, raw, d.Key.MachineID, d.Key.BotID, d.ID); err != nil {
 			return err
 		}
 	}

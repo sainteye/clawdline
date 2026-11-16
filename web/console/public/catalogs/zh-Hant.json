@@ -673,6 +673,7 @@
   "builtinSkill.seo-hreflang.purpose": "檢查 hreflang 設定與各語言版本的一致性",
   "builtinSkill.prioritize-features.name": "功能優先排序",
   "builtinSkill.prioritize-features.purpose": "依目標與明列的證據排序功能構想",
+  "capacity.estimatedTokens": "{0} 估計 token",
   "capacity.milliseconds": "{0} 毫秒",
   "capacityHelp.fullLabel": "滿了會怎樣",
   "capacityHelp.noteLabel": "daemon 的原始回報（英文）：",
@@ -12378,10 +12379,12 @@
   "capacityRow.bots.routine_pending.what": "每個例行定義的待執行喚醒數，包含前一次仍在執行時。",
   "capacityRow.bots.routine_pending.full": "重複喚醒會合併；第二個獨立待執行紀錄會被拒絕。Bot 回合仍依序執行。",
   "transparency.card.persistent-bot-routines.title": "Bot 例行排程",
-  "transparency.card.persistent-bot-routines.condition": "限開發版本，且 Bots 必須已啟用。已授權的 Bot 執行回合須明確儲存或啟用排程，原生接頭也須回報可續接。現行隨附 Codex 路徑回報不支援續接，因此無法使用本階段功能；腳本測試不代表已驗證安裝版原生對話 A／B／A。",
+  "transparency.card.persistent-bot-routines.condition": "限開發版本，且 Bots 必須已啟用。已授權的 Bot 執行回合或當事人須明確儲存或啟用排程，原生接頭也須回報已驗證的續接能力。腳本測試不代表已驗證安裝版的原生排程 A／B／A 流程。",
   "transparency.card.persistent-bot-routines.summary": "Clawdline 提供例行管理工具，之後可在新的例行對話啟動模型回合，將結果發布到同一個 Bot 聊天。",
   "transparency.card.persistent-bot-routines.how": "Bot 自有 MCP 入口新增 list_routines、save_routine、enable_routine、delete_routine、test_run_routine。儲存並啟用排程後，即使沒有瀏覽器連線，來源計時器也會持久接收通知與指令。最多 20 個 OR 條件保留經過時間間隔、Unix 毫秒的一次性時間，或明確 IANA 時區的標準五欄 cron。修改未變動的排程會保留原期限；已過期的一次性條件不再排入。既有 Bot actor 讓例行工作與真人訊息依序執行。每次例行工作使用新的對話槽；之後的一般聊天會用新的執行世代，載入另外記住的主對話。暫停的排程只有明確試跑才會執行。尚不支援 webhook、事件觸發及進階 cron 修飾語法。若已儲存的 cron 在解析器搜尋範圍內沒有下次日期，只會暫停該定義並在任何原生 prompt 啟動前記錄持久的排程失敗；原始期限保留，其他定義繼續。聊天中的例行排程面板會以真人授權管理定義並查看實際結果。無法讀取或屬於其他範圍的操作記錄會保留並禁止新變更；明確恢復可確認或完成原操作。",
   "transparency.card.persistent-bot-routines.effect": "啟用的排程之後會啟動原生模型回合，使用所選 agent 帳號的額度。儲存不等於立即試跑。授權、Project、記憶與權限檢查仍有效；未知作用不會授權自動重播，中斷的例行工作也不套用一般聊天的重啟續做。終態儲存失敗會保留已完成結果供確認後清理補存，而不再送 prompt；程序當機後仍可能留下未知結果。Bots 在公開 Release 仍隱藏。",
+  "capacityRow.bots.routine_progress_tokens.what": "一份排程進度筆記的估計 token 數：每個中日韓字元計一個，其他字元每四個計一個。每輪隔離執行都會讀取整份筆記。",
+  "capacityRow.bots.routine_progress_tokens.full": "超過 2,000 個估計 token 會整份拒絕，不會截斷；原筆記保留。請縮短後重新儲存。",
   "capacityRow.bots.routine_triggers.what": "單筆例行定義中，以 OR 組合的觸發條件數。",
   "capacityRow.bots.routine_triggers.full": "接受 1 至 20 個觸發條件；超過時拒絕，不會截斷。同時到期的條件合併為一筆待執行工作。",
   "work.detailMode": "詳細模式",
@@ -12466,5 +12469,10 @@
   "transparency.card.tool-library-suggestions.summary": "預設關閉。大任務前搜尋這台機器的工具箱，找到合適工具後先詢問是否試用。",
   "transparency.card.tool-library-suggestions.condition": "新 Session 或子任務開始時，這台機器的工具推薦開關已開啟。",
   "transparency.card.tool-library-suggestions.how": "指引 Agent 用 clawdline toolbox search 搜尋推薦與收藏，依任務判斷用途，說明合適工具，再依既有 answer 便條流程詢問。使用者送出同意後，Agent 才能安裝、載入、啟用或使用該工具。例行小任務不用搜尋；沒有合適工具或同一任務已拒絕時不打斷工作。",
-  "transparency.card.tool-library-suggestions.effect": "新執行獨立讀取此設定，保留繼承的工作流程。既有對話與恢復的 Session 維持原本脈絡。關閉不新增指引，也保留原本關閉狀態的快照。開關不授予權限或付費 API 核准；送達指令不代表 Agent 已搜尋或遵循。"
+  "transparency.card.tool-library-suggestions.effect": "新執行獨立讀取此設定，保留繼承的工作流程。既有對話與恢復的 Session 維持原本脈絡。關閉不新增指引，也保留原本關閉狀態的快照。開關不授予權限或付費 API 核准；送達指令不代表 Agent 已搜尋或遵循。",
+  "transparency.card.persistent-bot-routine-progress.title": "排程進度筆記",
+  "transparency.card.persistent-bot-routine-progress.condition": "限已啟用 Bots 的開發版本，且新的隔離排程正要執行。只有目前已授權的原生回合，能對自己 Bot、完整 Project 與對話內的排程使用進度工具。",
+  "transparency.card.persistent-bot-routine-progress.summary": "Clawdline 將排程上次留下的進度筆記作為不可信資料，加入下一輪隔離 prompt，並說明如何留下更新後的停留位置。",
+  "transparency.card.persistent-bot-routine-progress.how": "Bot 自有 MCP 入口提供 save_progress 與 read_progress。儲存會整份取代事實筆記；明確空字串可清除。缺少內容、超過 2,000 個估計 token、隱藏字元、帶提示的連結、植入指令語句及機密型態都會整份拒絕，不會截斷。下一輪收到以 JSON 引述且標明為不可信資料、不是指令的筆記，之後才是系統要求僅於需要時儲存整份更新停留位置的說明。估算法為每個中日韓字元計一個 token，其他字元每四個計一個。人的排程清單沿用既有來源授權回傳已儲存筆記。",
+  "transparency.card.persistent-bot-routine-progress.effect": "進度與長期記憶分開保存，來源重啟後仍保留。儲存筆記不會啟動模型回合，也不會修改排程。忘記記憶時，會在同一交易保守地清除該 Bot 的所有排程筆記，較舊的執行不能寫回。內容檢查不代表通過的文字可信。既有來源撤權、Project、執行 fence 與未知作用邊界仍有效。安裝版原生與正式環境資格化須另外驗證，不能以本機腳本證據代替；公開 Release 仍隱藏 Bots。"
 }
