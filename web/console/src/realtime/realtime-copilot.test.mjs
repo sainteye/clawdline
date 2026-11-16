@@ -788,6 +788,16 @@ test('a GPT-Live call follows the Session opened on screen with its summary', as
   assert.equal(notes.length, 1, 'the Session opened on screen is told from its summary without being asked')
   assert.match(notes[0], /switched the call to Session "Keyboard fix".*The keyboard fix is being written/)
   assert.ok(c.journalLines.some(l => l.text === 'switch_summary' && l.tool.args.includes('%8')), 'every switch leaves a trace in the call journal')
+  // The Session on screen when a call starts is where it starts, not a switch.
+  const first = new RealtimeCopilotClient(), firstSent = []
+  t.after(() => clearInterval(first.liveTicker))
+  Object.assign(first, { live: true, attempt: 1, journalCall: 'call-first', addLog: () => {}, call: { memory: '', snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [], toolDeps: c.toolDeps,
+    state: { ...first.state, status: 'connected' }, dc: { readyState: 'open', send: text => firstSent.push(JSON.parse(text)), close() {} } })
+  await first.onScreenChange()
+  for (let i = 0; i < 20; i++) await tick()
+  assert.equal(first.focus, '%8')
+  assert.equal(firstSent.filter(e => e.type === 'session.commentary.append').length, 0, 'no summary is spoken for the Session a call starts on')
+  first.dc.readyState = 'closed'
   // A Session the list does not have is journaled as such, not dropped silently.
   globalThis.location = { hash: '#machine=mac-1&session=%259&generation=0123456789abcdef0123456789abcdef' }
   c.focus = '%9'

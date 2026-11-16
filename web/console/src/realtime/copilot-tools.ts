@@ -2406,6 +2406,13 @@ export function choiceOf(choices: { n: number; label: string }[], spoken: string
     const byNumber = choices.find((c) => c.n === digits)
     if (byNumber) return byNumber
   }
+  // "2. Fix first", as the options are listed to the copilot (a GPT-Live call
+  // on 2026-11-16 chose it so and was told it matched nothing).
+  const listed = /^(\d+)\s*[.\u3001\uff0e)]\s*(.+)$/.exec(w)
+  if (listed) {
+    const byListing = choices.find((c) => c.n === Number(listed[1]) && c.label.toLowerCase() === listed[2].trim().toLowerCase())
+    if (byListing) return byListing
+  }
   const lower = w.toLowerCase()
   const exact = choices.filter((c) => c.label.toLowerCase() === lower)
   if (exact.length === 1) return exact[0]

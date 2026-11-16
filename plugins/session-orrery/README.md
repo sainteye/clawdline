@@ -1,6 +1,6 @@
 # Session Orrery
 
-Version **0.3.0**, package ID `com.clawdline.session-orrery`, is a source-derived
+Version **0.4.0**, package ID `com.clawdline.session-orrery`, is a source-derived
 browser port of the Herdr Orrery at commit
 `73bf616382d6b5c0ae5f73edf3cd122c4f51cda9`. This replaces the earlier independent
 interpretation. See [PROVENANCE.md](PROVENANCE.md) for licenses, exact source
@@ -21,8 +21,9 @@ readings; the central awaiting-you count includes fresh readings only.
 Project order is sorted opaque Project ref, including an unassigned Project;
 Session longitude hashes the opaque Session ref. References are opening-scoped,
 so no persistent identity or cross-opening position is promised. Adding/removing
-a Project changes sector width, as it does upstream. Dense labels/points may
-overlap: the complete, full-title register is the selectable fallback, with no
+a Project changes sector width, as it does upstream. Planet points retain source geometry; labels avoid one another and the dial edge.
+When space runs out, lower-priority labels tuck away and selection reveals them.
+Planet points may still overlap: the complete, full-title register is the selectable fallback, with no
 truncation of Session rows. Diagram names may ellipsize; list names wrap.
 
 The eyepiece honestly shows Session selection/detail, **not a terminal**. Selection

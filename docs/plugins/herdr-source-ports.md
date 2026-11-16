@@ -15,7 +15,8 @@ geometry and licensed assets, with explicit platform and data adaptations.
 The upstream views use native GPUI/Herdr modules. A browser port must translate
 those rendering primitives rather than execute native settings, terminal or shell
 actions. Clawdline View Plugin v1 currently supplies Session summaries and
-navigation, not a live terminal, file inventory, tool-event history or work timers.
+navigation, not a live terminal, file inventory or tool-event history. Optional declaration
+and working-turn timestamps are described in the View Plugin contract.
 No missing input may be fabricated from Session state. A source-faithful renderer
 with synthetic inputs establishes rendering only, not a live Territory feature.
 
@@ -108,3 +109,22 @@ the generated manifest into `web/console/src/view-plugins/previews.json`. The
 browser acceptance measures decoded pixels, reserved aspect ratio and image/area
 geometry in Chromium and WebKit at 390, 1440 and 1920 pixels in both languages.
 It rejects the previous low-resolution, square image clipped inside a short strip.
+
+## Label placement and departures metadata in 0.4.0
+
+Orrery retains the source planet coordinates, orbital semantics and state
+transitions. Desktop labels avoid each other, visible planet artwork and the
+instrument furniture, with faint leaders when displaced. Selection and attention
+labels get priority; overflow labels are explicitly tucked away and remain
+selectable through the complete register. Phone presentation stays list-first.
+
+Departures TIME now carries supplied declaration/turn metadata or an explicitly
+marked first observation in the current opening. FLIGHT generates a Project
+abbreviation and collision-free three-digit identity for that opening. Codes
+survive state and Project-label changes; neither codes nor observations become
+persisted Session history. Older hosts remain compatible through the fallback.
+
+Run `plugins/labels-time.acceptance.mjs` with existing `PLAYWRIGHT_MODULE` and
+`PLUGIN_ARTIFACTS`. `BEFORE_ARCHIVES` may point to retained `orrery-before.zip`
+and `departures-before.zip` to reproduce the original overlap and blank-time
+failures without reverting the working tree. No real Session data is required.

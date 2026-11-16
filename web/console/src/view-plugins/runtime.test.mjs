@@ -13,7 +13,7 @@ import { deflateSync, crc32 as pngCRC } from "node:zlib"
 const scratch = await mkdtemp(join(tmpdir(), "cl-view-unit-"))
 const bundle = join(scratch,"runtime.mjs")
 await build({stdin:{contents:'export * from "./package.js";export * from "./bridge.js";export * from "./sources.js";export * from "./store.js";export {packageCover,exampleCover,examplePreview,curatedPackageIDs,hasCuratedUpdate} from "./Artwork.js"',resolveDir:new URL(".",import.meta.url).pathname,loader:"ts"},bundle:true,platform:"node",format:"esm",outfile:bundle})
-const {parsePackage,pluginBridge,PluginError,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover,examplePreview,curatedPackageIDs,hasCuratedUpdate} = await import(pathToFileURL(bundle).href)
+const {parsePackage,pluginBridge,PluginError,localPluginRows,cloudPluginRows,cloudPluginSources,fleetPluginSource,installPackage,packageCover,exampleCover,examplePreview,curatedPackageIDs,hasCuratedUpdate} = await import(pathToFileURL(bundle).href)
 test.after(() => rm(scratch,{recursive:true,force:true}))
 const packageURL = new URL("../../public/view-plugins/session-galaxy.zip",import.meta.url)
 const context = {language:"en",theme:"dark",reducedMotion:true,visible:true,scopeLabel:"Studio",connection:"connected"}
@@ -322,4 +322,22 @@ test("An offline row is refused before the coalesced fleet snapshot is delivered
   await send("open","sessions.open",{ref})
   assert.equal(replies.at(-1).error?.code,"host_unavailable");assert.deepEqual(opened,[])
  }finally{bridge.dispose()}
+})
+
+test("View timestamps preserve their source on local, Cloud and opaque snapshots",async()=>{
+ const declared={id:"private-id",label:"Example",work_state:"holding",work_provenance:"self",work_since:1700000000,evidence:"read"}
+ const turn={...declared,work_state:"working",work_provenance:"broker",working_since:1700000100}
+ const local=localPluginRows([declared,turn,{...turn,work_state:"ready"},{...declared,work_since:NaN}],true)
+ assert.deepEqual(local.map(r=>r.stateTime),[{at:1700000000000,basis:"declaration"},{at:1700000100000,basis:"turn"},undefined,undefined])
+ const cloud=cloudPluginRows([{destination:{machineID:"machine",sessionID:"private-id"},title:"Example",status:declared,observedAt:1700000200,projection:{freshness:"current"}}])
+ assert.deepEqual(cloud[0].stateTime,local[0].stateTime)
+ const f=fixture();try{
+  f.send("sessions.subscribe");await tick()
+  f.bridge.update({sessions:[{...row,stateTime:local[0].stateTime,privateExtra:"never disclose"}],connected:true},context);await tick()
+  const result=f.answers.at(-1).data.sessions[0]
+  assert.deepEqual(result.stateTime,local[0].stateTime)
+  assert.equal(result.privateExtra,undefined);assert.notEqual(result.ref,row.key)
+  f.bridge.update({sessions:[{...row,stateTime:{at:Infinity,basis:"turn"}}],connected:true},context);await tick()
+  assert.equal(f.answers.at(-1).data.sessions[0].stateTime,undefined)
+ }finally{f.dispose()}
 })

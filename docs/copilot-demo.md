@@ -8,7 +8,7 @@ console as it is built, not drawn screens: the call sheet, the cloud orb and its
 captions, the cost and memory rows, the bubble, and the copilot's own tools all run unchanged.
 
 ```sh
-tools/copilot-demo.sh <output directory> [en] [zh-Hant] [--phone]
+tools/copilot-demo.sh <output directory> [en] [zh-Hant] [--phone] [--live]
 ```
 
 The script builds the console through `tools/heavy.sh`, then runs
@@ -17,6 +17,40 @@ The script builds the console through `tools/heavy.sh`, then runs
 ffmpeg, and spends nothing. It exits 1 unless the call ran as written: `open_session`,
 `get_session_recap`, `open_session`, `send_message_to_session`, and the message reached the
 stand-in daemon. Watch both films before publishing them.
+
+## A GPT-Live take
+
+```sh
+tools/copilot-demo.sh <output directory> [en] [zh-Hant] [--phone] --live
+```
+
+`--live` records a real GPT-Live call instead of the scripted Realtime one, as
+`clawdline-voice-copilot-demo-<lang>-live.mp4`. The stand-in daemon still serves the invented
+Sessions, now each with a recap on the list (`recaps` in `story.mjs`, written 20 minutes ago)
+and a latest one it writes when the call asks (`/v1/voice/copilot-recap`). It opens the call
+itself, as `internal/transport/http/copilot_live.go` does, with `OPENAI_API_KEY` or the key
+saved in Settings › Voice copilot; the key goes to OpenAI and never reaches the page. **It is
+paid**: about two minutes of `gpt-live-1` at $0.05 a minute plus the backend's tokens, roughly
+$0.10–0.20 a film on 2026-11-16.
+
+`live-stand-in.js` replaces only the microphone: the person's committed lines are played into
+it, with a constant silent source between them, because GPT-Live closed a session whose input
+sent nothing after about 20 s (`context_injection_incomplete`). The copilot's words and voice
+are the model's own; its voice is recorded from the remote track and laid under the video
+with the person's lines.
+
+Each of the person's lines waits until the copilot has answered the one before: it spoke after
+the line, its voice (read from the remote track's level, since the transcript runs seconds ahead
+of the sound) has been quiet for 3.5 s twice, 0.8 s apart, and no backend response, pending
+continuation or tool call is outstanding. Shorter waits, or waits read from the transcript, cut
+the copilot off mid-sentence in five of the first eight takes. "Yes, send it" is said only when
+the message is still unsent, since GPT-Live may act on the instruction at once or answer the
+Session's question instead of sending it.
+
+A real model chooses its own tools and words, so takes differ. The recorder exits 1 unless
+Release 2.4 received a message or an answer and no error was reported; it prints what the
+copilot said, and `--keep <dir>` keeps `take.json` with the backend's answers, the call
+journal, each line's timing and how long the copilot had been quiet before it. Watch every take.
 
 ## What is real and what stands in
 

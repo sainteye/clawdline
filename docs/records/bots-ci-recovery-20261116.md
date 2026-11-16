@@ -18,3 +18,8 @@ Linux failure is retained; its exact scheduling was not reproduced locally.
 The focused test passed. No vendor CLI, native prompt or production Bot ran.
 
 The integration commit must pass its ordinary gate; exact CI remains separate.
+
+The concurrently integrated main commit `ccb9184ab` independently fixes both
+fixture conditions. Integration keeps its watch test byte for byte and its
+normal cleanup-budget restoration, adding the controlled 60 ms writer recovery
+case from this branch. Both commit histories and original failures remain.
