@@ -3,6 +3,7 @@ package browserbridge
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/domain/browserpolicy"
@@ -117,5 +118,77 @@ func TestAnOwnedTabNumberDoesNotCrossProfiles(t *testing.T) {
 	}
 	if chrome != 0 {
 		t.Fatal("the refused read reached Chrome")
+	}
+}
+
+// A Bot's late page text or picture never crosses a takeover and handback, or
+// a stop and resume, that happened while its command was with the host. The
+// late result is dropped, not replayed, and the next command works again.
+func TestAnOwnedLateResultCannotCrossAPersonsABA(t *testing.T) {
+	for _, change := range []struct {
+		name   string
+		code   Refusal
+		toggle func(h *Profiles, tab int, on bool) error
+	}{
+		{"takeover", PersonControlling, func(h *Profiles, tab int, on bool) error { return h.SetPersonControl("isolated", tab, on) }},
+		{"stop", Stopped, func(h *Profiles, _ int, on bool) error { return h.SetStopped(on) }},
+	} {
+		for _, op := range []string{"read", "screenshot"} {
+			t.Run(change.name+"/"+op, func(t *testing.T) {
+				h, err := OpenProfiles("", nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				started, release := make(chan struct{}, 1), make(chan struct{})
+				hold := false
+				var sent []string
+				profilesHost(t, h, "isolated", func(c Command) Result {
+					sent = append(sent, c.Op)
+					if c.Op == "open" {
+						return Result{ID: c.ID, OK: true, Tab: 31, Value: json.RawMessage(`{"ok":true}`)}
+					}
+					if hold {
+						started <- struct{}{}
+						<-release
+						return Result{ID: c.ID, OK: true, Tab: 31, Value: json.RawMessage(`{"text":"private page","data":"cHJpdmF0ZQ=="}`), Thumb: "AAAA"}
+					}
+					return Result{ID: c.ID, OK: true, Tab: 31, Value: json.RawMessage(`{"text":"fresh"}`)}
+				})
+				policy, ctx := ownedPolicy(), context.Background()
+				if _, err := h.DoOwned(ctx, "bot-a", "open", json.RawMessage(`{"url":"https://example.com"}`), policy, ""); err != nil {
+					t.Fatal(err)
+				}
+				hold = true
+				type answer struct {
+					value json.RawMessage
+					err   error
+				}
+				done := make(chan answer, 1)
+				go func() {
+					v, err := h.DoOwned(ctx, "bot-a", op, nil, policy, "")
+					done <- answer{v, err}
+				}()
+				<-started
+				if err := change.toggle(h, 31, true); err != nil {
+					t.Fatal(err)
+				}
+				if err := change.toggle(h, 31, false); err != nil {
+					t.Fatal(err)
+				}
+				hold = false
+				close(release)
+				got := <-done
+				if got.err != change.code || len(got.value) != 0 {
+					t.Fatalf("late %s after %s ABA = %s %v, want %s and no value", op, change.name, got.value, got.err, change.code)
+				}
+				v, err := h.DoOwned(ctx, "bot-a", "read", nil, policy, "")
+				if err != nil || string(v) != `{"text":"fresh"}` {
+					t.Fatalf("after the person's ABA = %s %v", v, err)
+				}
+				if want := "open," + op + ",read"; strings.Join(sent, ",") != want {
+					t.Fatalf("host received %v, want %s (no replay)", sent, want)
+				}
+			})
+		}
 	}
 }
