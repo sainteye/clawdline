@@ -167,6 +167,7 @@ try {
     await until('!!document.querySelector(".pa-chat-header [role=menuitem]")')
     await run('[...document.querySelectorAll(".pa-chat-header [role=menuitem]")].find(button=>button.textContent==="Browser").click()')
     await until('!!document.querySelector("#browser-open-url")&&!document.querySelector("#browser-open-url").disabled')
+    if(await run('document.querySelector(".browser-card h3")?.textContent')!=="This Bot has no tab yet")throw Error("Bot empty state names a Session: "+await run('document.querySelector(".browser-card h3")?.textContent'))
     await run('const input=document.querySelector("#browser-open-url");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"https://synthetic.example/new");input.dispatchEvent(new Event("input",{bubbles:true}))')
     await run('document.querySelector("#browser-open-url").form.requestSubmit()')
     await until('document.querySelector(".browser-who")?.dataset.person==="true"')

@@ -12535,5 +12535,6 @@
   "botBrowser.audit": "Complete browser audit",
   "botBrowser.auditEmpty": "No browser actions recorded yet.",
   "botBrowser.disconnected": "Connect Chrome on this Bot’s source computer to view its tabs.",
-  "botBrowser.unknown": "The browser action may have run, but its result could not be confirmed. Do not send the action again. Check the browser state first."
+  "botBrowser.unknown": "The browser action may have run, but its result could not be confirmed. Do not send the action again. Check the browser state first.",
+  "botBrowser.noTab": "This Bot has no tab yet"
 }

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12535,
+  "englishKeys": 12536,
   "counts": {
-    "negation": 3379,
+    "negation": 3380,
     "state": 2107,
     "permission": 746,
     "deletion": 297,
     "uncertainty": 483
   },
-  "unionCount": 5441,
+  "unionCount": 5442,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -107,6 +107,7 @@
       "bar.nothingToSend",
       "bar.sendFailed",
       "botBrowser.auditEmpty",
+      "botBrowser.noTab",
       "botBrowser.stale",
       "botBrowser.unknown",
       "browserPairing.cliMissing",
@@ -7185,6 +7186,7 @@
     "bar.stackTip",
     "botBrowser.audit",
     "botBrowser.auditEmpty",
+    "botBrowser.noTab",
     "botBrowser.readOnly",
     "botBrowser.refused",
     "botBrowser.stale",

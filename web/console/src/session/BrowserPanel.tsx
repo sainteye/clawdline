@@ -305,7 +305,7 @@ export function BrowserPanel({ row = null, target: destination, open, onClose }:
     // Chrome is connected, even when the agent's own selection is native
     // tools or its switch is off (the daemon's person_open).
     if (!tab && status.person_open && !status.status.stopped) {
-      return <BrowserOpenCard call={call} writable={writable} reason={reason} describe={describe} conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
+      return <BrowserOpenCard call={call} writable={writable} reason={reason} describe={describe} conversation={conversation} assistant={name} bot={!!target} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
     }
     // Not connected, or browser use switched off: one card and one main
     // action. Setup happens only on the computer, so through Cloud the main
@@ -336,7 +336,7 @@ export function BrowserPanel({ row = null, target: destination, open, onClose }:
         </div>
       )
     }
-    if (!tab) return <BrowserOpenCard call={call} writable={writable} reason={reason} describe={describe} conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
+    if (!tab) return <BrowserOpenCard call={call} writable={writable} reason={reason} describe={describe} conversation={conversation} assistant={name} bot={!!target} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
     return (
       <div className="browser-stage">
         {status.status.state_error && <div className="screen-note err" role="alert">{nextWord("browserStateUnsaved")}</div>}
@@ -437,7 +437,7 @@ export function BrowserPanel({ row = null, target: destination, open, onClose }:
  * agent waits until they hand it back (POST /v1/browser/open; through Cloud,
  * chrome-tab-open).
  */
-function BrowserOpenCard({ conversation, assistant, onOpened, call = defaultCall, writable = true, reason = "", describe = said }: { conversation: string; assistant: string; onOpened: (phone: boolean) => void; call?: BrowserCall; writable?: boolean; reason?: string; describe?: (error: unknown, lead: "browserPanelReadFailed" | "browserPanelActFailed") => string }) {
+function BrowserOpenCard({ conversation, assistant, onOpened, call = defaultCall, writable = true, reason = "", describe = said, bot = false }: { conversation: string; assistant: string; bot?: boolean; onOpened: (phone: boolean) => void; call?: BrowserCall; writable?: boolean; reason?: string; describe?: (error: unknown, lead: "browserPanelReadFailed" | "browserPanelActFailed") => string }) {
   const [text, setText] = useState("")
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState("")
@@ -460,7 +460,7 @@ function BrowserOpenCard({ conversation, assistant, onOpened, call = defaultCall
   return (
     <div className="browser-card-wrap">
       <form className="browser-card" onSubmit={(e) => void submit(e)}>
-        <h3>{nextWord("browserCardNoTabTitle")}</h3>
+        <h3>{bot ? catalogWord("botBrowser","noTab") : nextWord("browserCardNoTabTitle")}</h3>
         <p>{nextWord("browserCardNoTabBody", { assistant })}</p>
         <label className="browser-card-label" htmlFor="browser-open-url">{nextWord("browserOpenLabel")}</label>
         <input id="browser-open-url" className="browser-card-input" type="text" inputMode="url" enterKeyHint="go"

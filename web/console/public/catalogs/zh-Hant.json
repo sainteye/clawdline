@@ -12535,5 +12535,6 @@
   "botBrowser.audit": "完整瀏覽器操作紀錄",
   "botBrowser.auditEmpty": "目前沒有瀏覽器操作紀錄。",
   "botBrowser.disconnected": "請在此 Bot 的來源電腦連接 Chrome，才能查看分頁。",
-  "botBrowser.unknown": "瀏覽器動作可能已執行，但目前無法確認結果。請勿再次送出相同動作，先查看瀏覽器狀態。"
+  "botBrowser.unknown": "瀏覽器動作可能已執行，但目前無法確認結果。請勿再次送出相同動作，先查看瀏覽器狀態。",
+  "botBrowser.noTab": "這個 Bot 還沒有分頁"
 }
