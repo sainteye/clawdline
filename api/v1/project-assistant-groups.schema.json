@@ -1,0 +1,582 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project-assistant-groups.v1",
+  "title": "Human group rooms and team approval cards",
+  "$defs": {
+    "ProjectAssistantGroupMember": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "joined_revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "joined_revision"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroup": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantGroupMember"
+          }
+        },
+        "membership_revision": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "conversation_id",
+        "name",
+        "members",
+        "membership_revision",
+        "version",
+        "deleted",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantRoomEntry": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "person",
+            "member"
+          ]
+        },
+        "author": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "text": {
+          "type": "string"
+        },
+        "reply_to_author": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        }
+      },
+      "required": [
+        "seq",
+        "kind",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantRoomState": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer"
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "integer"
+        },
+        "pending": {
+          "type": "integer"
+        },
+        "stopped_at": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision",
+        "epoch",
+        "running",
+        "pending",
+        "stopped_at"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupListRequest": {
+      "type": "object",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupListResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantSourceStatus"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantGroup"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "source",
+        "groups"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupHistoryRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "before_seq": {
+          "type": "integer"
+        },
+        "page_size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "before_seq",
+        "page_size"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupHistoryResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantSourceStatus"
+        },
+        "group": {
+          "$ref": "#/$defs/ProjectAssistantGroup"
+        },
+        "room": {
+          "$ref": "#/$defs/ProjectAssistantRoomState"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoomEntry"
+          }
+        },
+        "next_before_seq": {
+          "type": "integer"
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "source",
+        "group",
+        "room",
+        "lines",
+        "next_before_seq",
+        "has_more"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupCreateSettings": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantProjectSelection"
+        },
+        "name": {
+          "type": "string"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+          }
+        }
+      },
+      "required": [
+        "target",
+        "name",
+        "members"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupCreateRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProjectAssistantGroupCreateSettings"
+        }
+      },
+      "required": [
+        "command",
+        "settings"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupEditSettings": {
+      "type": "object",
+      "properties": {
+        "expected_version": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+          }
+        }
+      },
+      "required": [
+        "expected_version",
+        "name",
+        "members"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupEditRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProjectAssistantGroupEditSettings"
+        }
+      },
+      "required": [
+        "command",
+        "settings"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "expected_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command",
+        "expected_version"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupStopRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupSendRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "text": {
+          "type": "string"
+        },
+        "reply_to_author": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        }
+      },
+      "required": [
+        "command",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "group": {
+          "$ref": "#/$defs/ProjectAssistantGroup"
+        },
+        "receipt": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantReceipt"
+        }
+      },
+      "required": [
+        "contract_version",
+        "group",
+        "receipt"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupSendResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "entry": {
+          "$ref": "#/$defs/ProjectAssistantRoomEntry"
+        },
+        "room": {
+          "$ref": "#/$defs/ProjectAssistantRoomState"
+        }
+      },
+      "required": [
+        "contract_version",
+        "entry",
+        "room"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupStopResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "room": {
+          "$ref": "#/$defs/ProjectAssistantRoomState"
+        },
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "room",
+        "stopped"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantTeamPlan": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "manager": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "manager_name": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "create",
+            "edit"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "manager",
+        "manager_name",
+        "target",
+        "operation",
+        "detail",
+        "expires_at"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantTeamPlansRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantTeamPlansResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "plans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantTeamPlan"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "plans"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantTeamAnswerRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "plan_id": {
+          "type": "string"
+        },
+        "allow": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command",
+        "plan_id",
+        "allow"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantTeamAnswerResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "plan_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "plan_id",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantTeamEditSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Editable settings; omitted fallback_agents preserves the saved chain, while an empty array clears it. Primary Agent and Project remain immutable.",
+      "properties": {
+        "expected_version": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "appearance": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantAppearance"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "description": "The agent mode the Bot works in: auto (or empty) for the agent's Auto mode, otherwise one the agent offers (API level 65)."
+        },
+        "permission_policy": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantPermissionPolicy",
+          "description": "Empty leaves the permission setting unchanged (API level 65)."
+        },
+        "fallback_agents": {
+          "type": "array",
+          "items": {
+            "$ref": "project-assistants.v1#/$defs/ProjectAssistantAgent"
+          },
+          "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
+        },
+        "manage_team": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "expected_version",
+        "name",
+        "appearance",
+        "instructions",
+        "manage_team"
+      ]
+    },
+    "ProjectAssistantTeamSettingsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "settings"
+      ],
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProjectAssistantTeamEditSettings"
+        }
+      }
+    }
+  }
+}

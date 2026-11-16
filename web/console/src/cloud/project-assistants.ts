@@ -19,6 +19,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
 export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
+export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
 export const PROJECT_ASSISTANTS_INPUTS_API_LEVEL = 70
@@ -77,6 +78,16 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly authorizationRevision: string
   readonly grant: Readonly<AssistantGrant>
   readonly machineName?: string
+  canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
+  groups(r:W.ProjectAssistantGroupListRequest,s:AbortSignal) { if(r.machine_id!==this.machineID)throw notSent(failure("pa_scope_denied"));return this.request<W.ProjectAssistantGroupListResponse>(base+"/rooms/groups"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  groupHistory(r:W.ProjectAssistantGroupHistoryRequest,s:AbortSignal) { this.key(r.key);return this.request<W.ProjectAssistantGroupHistoryResponse>(base+"/rooms/groups/"+encodeURIComponent(r.key.bot_id)+query({machine_id:this.machineID,before_seq:r.before_seq,page_size:r.page_size}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  createGroup(r:W.ProjectAssistantGroupCreateRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  editGroup(r:W.ProjectAssistantGroupEditRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id),s,r,"PATCH",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  deleteGroup(r:W.ProjectAssistantGroupDeleteRequest,s:AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id),s,r,"DELETE",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  stopGroup(r:W.ProjectAssistantGroupStopRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupStopResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/stop",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  sendGroup(r:W.ProjectAssistantGroupSendRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupSendResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/messages",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  teamPlans(r:W.ProjectAssistantTeamPlansRequest,s:AbortSignal) { this.key(r.key);return this.request<W.ProjectAssistantTeamPlansResponse>(endpoint(r.key,"/team-plans")+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  answerTeamPlan(r:W.ProjectAssistantTeamAnswerRequest,s:AbortSignal) { return this.request<W.ProjectAssistantTeamAnswerResponse>(endpoint(r.command.key,"/team-answer"),s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   private readonly transport: AssistantFetch
   private readonly currentGrant: () => AssistantGrant | null
   private readonly lifetime = new AbortController()
@@ -294,7 +305,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     return answer
   }
   canFallbacks() { try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL); return true } catch { return false } }
-  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key),s,r,"PATCH",true,r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
+  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
     this.key(r.key);readViewRequest(r)
@@ -401,6 +412,22 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   }
   const work = /^\/v1\/work\/v2\/items\/([^/]+)$/.exec(url.pathname)
   if (work && method === "GET") return {word:"work.v2.item",kind:"read" as const,fields:{id:decodeURIComponent(work[1])},id:""}
+  const group=/^\/v1\/project-assistants\/rooms\/groups(?:\/([^/]+)(?:\/(messages|stop))?)?$/.exec(url.pathname)
+  if(group) {
+    const id=group[1]?decodeURIComponent(group[1]):"",q=Object.fromEntries(url.searchParams)
+    if(method==="GET") {
+      const names=id?["machine_id","before_seq","page_size"]:["machine_id"]
+      if(init?.body!=null||group[2]||url.searchParams.size!==names.length||names.some(n=>!url.searchParams.has(n))||!q.machine_id)throw failure("pa_invalid")
+      if(!id)return {word:"project-assistants.groups",kind:"read" as const,fields:{machine_id:q.machine_id},id:""}
+      if(!/^(0|[1-9][0-9]*)$/.test(q.before_seq)||! /^[1-9][0-9]*$/.test(q.page_size)||!Number.isSafeInteger(Number(q.before_seq))||Number(q.page_size)>100)throw failure("pa_invalid")
+      return {word:"project-assistants.group-history",kind:"read" as const,fields:{key:{machine_id:q.machine_id,bot_id:id},before_seq:Number(q.before_seq),page_size:Number(q.page_size)},id:""}
+    }
+    if(url.search||typeof init?.body!=="string")throw failure("pa_invalid")
+    const fields=JSON.parse(init.body),cmd=fields.command
+    const action=!id&&method==="POST"?"create":id&&!group[2]&&method==="PATCH"?"edit":id&&!group[2]&&method==="DELETE"?"delete":id&&method==="POST"&&group[2]==="messages"?"send":id&&method==="POST"&&group[2]==="stop"?"stop":""
+    if(!action||!cmd?.key?.machine_id||!cmd.key.bot_id||id&&cmd.key.bot_id!==id||cmd.operation!==action||!cmd.idempotency_key||new Headers(init.headers).get("Idempotency-Key")!==cmd.idempotency_key)throw failure("pa_invalid")
+    return {word:"project-assistants.group-"+action,kind:"action" as const,fields:fields as Record<string,unknown>,id:cmd.idempotency_key as string}
+  }
   const match = /^\/v1\/project-assistants(?:\/([^/]+))?(.*)$/.exec(url.pathname)
   if (!match) throw failure("pa_invalid")
   const bot = match[1] ? decodeURIComponent(match[1]) : "", tail = match[2]
@@ -409,6 +436,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     if (bot === "status" && !tail) return {word:"project-assistants.status",kind:"read" as const,fields:{},id:""}
     if (!bot) return {word:"project-assistants.list",kind:"read" as const,fields:{...q,page_size:Number(q.page_size)},id:""}
     const key = {machine_id:q.machine_id,bot_id:bot}
+    if(tail==="/team-plans") {
+      if(init?.body!=null||url.searchParams.size!==1||!q.machine_id)throw failure("pa_invalid")
+      return {word:"project-assistants.team-plans",kind:"read" as const,fields:{key},id:""}
+    }
     if(tail==="/view") {
       const fields=["machine_id","conversation_id","mode","source_epoch","cursor","after_seq","page_size"]
       if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(field=>!url.searchParams.has(field))||Object.keys(q).some(field=>!fields.includes(field))||! /^(0|[1-9][0-9]*)$/.test(q.after_seq)||! /^[1-9][0-9]*$/.test(q.page_size))throw failure("pa_invalid")
@@ -447,6 +478,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   const command = fields.command
   if (!command || typeof command !== "object" || !("idempotency_key" in command) || typeof command.idempotency_key !== "string") throw failure("pa_invalid")
   if (new Headers(init.headers).get("Idempotency-Key") !== command.idempotency_key) throw failure("pa_invalid")
+  if(tail==="/team-answer"||tail==="/team-settings") {
+    if(method!=="POST"||url.search||!("key" in command)||!command.key||typeof command.key!=="object"||!("bot_id" in command.key)||command.key.bot_id!==bot)throw failure("pa_invalid")
+    return {word:"project-assistants."+(tail==="/team-answer"?"team-answer":"team-settings"),kind:"action" as const,fields,id:command.idempotency_key}
+  }
   const routine=/^\/routines(?:\/([^/]+)(?:\/(enabled|runs|hook))?)?$/.exec(tail)
   if(routine) {
     const action=method==="DELETE"&&routine[1]&&!routine[2]?"routine-delete":method==="POST"&&!routine[1]?"routine-save":method==="POST"&&routine[2]==="enabled"?"routine-enabled":method==="POST"&&routine[2]==="runs"?"routine-test":method==="POST"&&routine[2]==="hook"?"routine-hook":null

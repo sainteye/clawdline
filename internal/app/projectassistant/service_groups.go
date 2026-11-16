@@ -2,9 +2,19 @@ package projectassistant
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+// CreatePersonGroup assigns the source-owned group key at the human HTTP
+// boundary. The durable principal and explicit operation key make retries
+// stable, including a retry from another device; no model chooses this ID.
+// CreateGroup itself remains the trusted host port used by coordinators.
+func (s *Service) CreatePersonGroup(ctx context.Context, c pa.Command, in CreateGroup) (pa.Group, pa.Receipt, error) {
+	return s.createGroup(ctx, c, in, true)
+}
 
 // The person's group operations. Each is authorized with the existing human
 // authority for the group's key (Service.authorize), and re-checked with
@@ -47,6 +57,10 @@ func person(a Authority, machine string) PersonAuthority {
 }
 
 func (s *Service) CreateGroup(ctx context.Context, c pa.Command, in CreateGroup) (pa.Group, pa.Receipt, error) {
+	return s.createGroup(ctx, c, in, false)
+}
+
+func (s *Service) createGroup(ctx context.Context, c pa.Command, in CreateGroup, assignKey bool) (pa.Group, pa.Receipt, error) {
 	rooms, _, err := s.groups()
 	if err != nil {
 		return pa.Group{}, pa.Receipt{}, err
@@ -54,6 +68,13 @@ func (s *Service) CreateGroup(ctx context.Context, c pa.Command, in CreateGroup)
 	a, err := s.authorize(ctx, c.Key, true)
 	if err != nil {
 		return pa.Group{}, pa.Receipt{}, err
+	}
+	if assignKey {
+		if c.IdempotencyKey == "" {
+			return pa.Group{}, pa.Receipt{}, serviceFailure(pa.Invalid, "idempotency_key")
+		}
+		digest := sha256.Sum256([]byte(a.PrincipalID + "\x00" + c.Key.MachineID + "\x00" + c.IdempotencyKey))
+		c.Key.BotID = "group-" + hex.EncodeToString(digest[:])
 	}
 	if in.Target.MachineID != c.Key.MachineID {
 		return pa.Group{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "target_machine")
@@ -202,4 +223,30 @@ func (s *Service) Groups(ctx context.Context, machine string) ([]pa.Group, error
 		return nil, err
 	}
 	return rooms.store.Groups(ctx, machine)
+}
+
+// GroupPublication captures the person's current read grant. The HTTP owner
+// calls it again after encoding, so a re-pair or revocation during a slow
+// group read cannot publish the old principal's data.
+func (s *Service) GroupPublication(ctx context.Context, key pa.BotKey) (func(context.Context) error, error) {
+	a, err := s.authorize(ctx, key, false)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context) error {
+		_, err := s.authorizeEffect(ctx, key, false, a)
+		return err
+	}, nil
+}
+
+// CancelRooms withdraws this Host's room loops before disable/shutdown. It
+// does not publish member replies, replay turns, or allocate replacement work.
+// The Host closes its Engine and then calls Idle outside its own mutex.
+func (d *RoomDriver) CancelRooms() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for key, cancel := range d.running {
+		cancel()
+		delete(d.running, key)
+	}
 }

@@ -455,6 +455,12 @@
             "$ref": "#/$defs/ProjectAssistantAgent"
           },
           "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
+        },
+        "manage_team": {
+          "type": "boolean"
+        },
+        "created_by": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
         }
       },
       "required": [
@@ -507,6 +513,9 @@
             "$ref": "#/$defs/ProjectAssistantAgent"
           },
           "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
+        },
+        "manage_team": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -550,6 +559,9 @@
             "$ref": "#/$defs/ProjectAssistantAgent"
           },
           "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
+        },
+        "manage_team": {
+          "type": "boolean"
         }
       },
       "required": [

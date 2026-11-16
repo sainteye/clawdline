@@ -10,6 +10,16 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+  canGroups?(): boolean
+  groups?(request:W.ProjectAssistantGroupListRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupListResponse>
+  groupHistory?(request:W.ProjectAssistantGroupHistoryRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupHistoryResponse>
+  createGroup?(request:W.ProjectAssistantGroupCreateRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupResponse>
+  editGroup?(request:W.ProjectAssistantGroupEditRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupResponse>
+  deleteGroup?(request:W.ProjectAssistantGroupDeleteRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
+  stopGroup?(request:W.ProjectAssistantGroupStopRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupStopResponse>
+  sendGroup?(request:W.ProjectAssistantGroupSendRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupSendResponse>
+  teamPlans?(request:W.ProjectAssistantTeamPlansRequest,signal:AbortSignal):Promise<W.ProjectAssistantTeamPlansResponse>
+  answerTeamPlan?(request:W.ProjectAssistantTeamAnswerRequest,signal:AbortSignal):Promise<W.ProjectAssistantTeamAnswerResponse>
   /** Bot browser calls use this captured source, never the selected-machine fetch. */
   browser?<T>(key: W.ProjectAssistantBotKey, conversation: string, method: "GET" | "POST", path: string, body: unknown, signal: AbortSignal): Promise<T>
   browserUnavailable?(): string
