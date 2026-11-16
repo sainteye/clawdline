@@ -14,12 +14,18 @@ const (
 	MaximumViewPluginRequestMilliseconds = 10000
 	MaximumViewPluginRequestsPerSecond   = 32
 	MaximumViewPluginTextCharacters      = 256
+	MaximumViewPluginCatalogBytes        = 1048576
+	MaximumViewPluginCatalogEntries      = 256
+	MaximumViewPluginUpdateMilliseconds  = 60000
 )
 
 func consoleBounds() []Entry { return append(baseConsoleBounds(), viewPluginBounds()...) }
 
 func viewPluginBounds() []Entry {
 	return []Entry{
+		{Name: "console.view_plugin_catalog_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginCatalogBytes, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginCatalogBytes"}},
+		{Name: "console.view_plugin_catalog_entries", Class: Buffer, Unit: Rows, Limit: MaximumViewPluginCatalogEntries, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginCatalogEntries"}},
+		{Name: "console.view_plugin_update_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: MaximumViewPluginUpdateMilliseconds, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginUpdateMilliseconds"}},
 		{Name: "console.view_plugin_files", Class: Buffer, Unit: Rows, Limit: MaximumViewPluginFiles, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginFiles"}},
 		{Name: "console.view_plugin_archive_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginArchiveBytes, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginArchiveBytes"}},
 		{Name: "console.view_plugin_expanded_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginExpandedBytes, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginExpandedBytes"}},

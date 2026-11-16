@@ -91,3 +91,13 @@ is allowed. This is an explicit Clawdline presentation adaptation, not a claim
 that upstream has this entrance: planets glide into place, city windows light
 in sequence, and the board fills through its normal half-flap engine. Controls
 remain available during the entrance; later snapshots do not replay it.
+
+In 0.5.0, a broker-confirmed callback wait has a separate teal orbit at 0.775 of
+the dial radius, between the original working and outer idle orbits. The name,
+detail, center reading, summary and accessible labels say Waiting for callback.
+A gentle halo pulses only for fresh readings with motion enabled. Still, reduced
+motion, hidden host and disconnected/stale readings stop it. The eight original
+work states remain intact; working roots and person/completion states take priority
+over their background callback metadata. Child Session waits keep their own text.
+This orbit is a Clawdline adaptation; the original Herdr renderer has no callback
+state. It does not imply a task result, elapsed time, progress or acceptance.

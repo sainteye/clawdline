@@ -477,6 +477,8 @@
 | `console.video_preview_reads` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.video_preview_side` | 640 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_archive_bytes` | 33554432 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_catalog_bytes` | 1048576 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_catalog_entries` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_cover_side` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_expanded_bytes` | 33554432 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_files` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -488,6 +490,7 @@
 | `console.view_plugin_requests_per_second` | 32 | `rows` | `disconnect` | `sender, diagnostics` | — |
 | `console.view_plugin_sessions` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_text_characters` | 256 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_update_milliseconds` | 60000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `console.viewer_health_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `console.viewer_health_backoff_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.viewer_health_batch_rows` | 50 | `rows` | `refuse` | `diagnostics` | — |

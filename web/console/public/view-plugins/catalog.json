@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "id": "com.clawdline.session-codecraft",
+      "version": "0.3.0",
+      "url": "/view-plugins/session-codecraft.zip",
+      "sha256": "85ac159b89e0f7089b8ac26d67c936df50da0896a030e0d90794caaaad25e6a6",
+      "bytes": 20879814,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "507c08394d51767ba7111befd1fdb85c4d289f98fd1085fd6eae7001d2acc152",
+        "85ac159b89e0f7089b8ac26d67c936df50da0896a030e0d90794caaaad25e6a6",
+        "d78377ebb2c14a563abc71904bccd6e7da35c62a411400d5d8ca735686a9978c"
+      ]
+    },
+    {
+      "id": "com.clawdline.session-departures",
+      "version": "0.4.0",
+      "url": "/view-plugins/session-departures.zip",
+      "sha256": "9d7fdb076b7f6ec6a2b135030ff69a00f6f40e1770a8224542de974d18ce99cd",
+      "bytes": 178820,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "9d7fdb076b7f6ec6a2b135030ff69a00f6f40e1770a8224542de974d18ce99cd",
+        "b690bb6e261d8438f2c36b641dec771d93c1f962caee2f7c19142aa2746dfda6",
+        "c907e7c395fb17d5ce93a44c252c362a8f0d15a7fd2aa716e7ae5fa0605b2283",
+        "dd91c53581126bf0eb3411d786d7c5c6890a14d147a0756a1d98023bd9c5f249"
+      ]
+    },
+    {
+      "id": "com.clawdline.session-galaxy",
+      "version": "0.1.1",
+      "url": "/view-plugins/session-galaxy.zip",
+      "sha256": "af01163c8250b2eb0ec52908e1f559e4340cbb3f8cc9a4df5b6ed72dd374a14f",
+      "bytes": 61541,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "51770c8f3604165cf352682dbc06b4cfd9c2e8a838a58a1941972478ad887f10",
+        "af01163c8250b2eb0ec52908e1f559e4340cbb3f8cc9a4df5b6ed72dd374a14f"
+      ]
+    },
+    {
+      "id": "com.clawdline.session-kaiju",
+      "version": "0.2.1",
+      "url": "/view-plugins/session-kaiju.zip",
+      "sha256": "5228551cde580db518e2c889902ddcdf3516f528095b685e920c8e463ff54b15",
+      "bytes": 415124,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "4171fc77bba108603225198256088e69bf0d33bbd44284e8339d7950de769dc5",
+        "5228551cde580db518e2c889902ddcdf3516f528095b685e920c8e463ff54b15",
+        "d49c2c5dd186db92a6f0a3d9ca268a2b62ef5fe483a1accb1fc5e80c53f2d3f2"
+      ]
+    },
+    {
+      "id": "com.clawdline.session-night-city",
+      "version": "0.3.0",
+      "url": "/view-plugins/session-night-city.zip",
+      "sha256": "800fb5ea3405e1f1783f1a7691359c91d63a77349f620dde66e33559980d4548",
+      "bytes": 33164,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "09b7328ad88f63424e9f814618e565375bb80124167ede2bf2203052cc17ffd7",
+        "800fb5ea3405e1f1783f1a7691359c91d63a77349f620dde66e33559980d4548",
+        "a6b5d72f1e04429a8ee9eaca0fac12946efc38adef670a6e43808e10d41d6df8"
+      ]
+    },
+    {
+      "id": "com.clawdline.session-orrery",
+      "version": "0.5.0",
+      "url": "/view-plugins/session-orrery.zip",
+      "sha256": "b7faab47c0a66ee80f2092179064a187240449f22f7c3011830121598e9e12f9",
+      "bytes": 257771,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "4f5c600610d5071250e50e1b5ecd37407edf0007bc5d30191aea3aa59efcad20",
+        "6e27210a31f7840aaaef1c52594ced7c597909d28d29494af79bc903f064b3b5",
+        "9ea2dd858a1f58212277b8be19e7230170c37aff8780eefc436362228e352ca9",
+        "b7faab47c0a66ee80f2092179064a187240449f22f7c3011830121598e9e12f9",
+        "fb8410993637e3fafe956f5b859f507bdf252f223c8f3df11e175625794be3f4"
+      ]
+    },
+    {
+      "id": "com.clawdline.session-territory",
+      "version": "0.1.0",
+      "url": "/view-plugins/session-territory.zip",
+      "sha256": "c3773ea6dca846b18c2ac218e2a511671d3943f653fdf1ca9045e64ebf756d22",
+      "bytes": 22905,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "c3773ea6dca846b18c2ac218e2a511671d3943f653fdf1ca9045e64ebf756d22"
+      ]
+    }
+  ]
+}

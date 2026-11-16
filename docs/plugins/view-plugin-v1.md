@@ -1,6 +1,6 @@
 # View Plugin v1
 
-Revision 8 describes the **experimental browser-local runtime** implemented in
+Revision 10 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
 Session Departures, Session Territory, World of Codecraft and Kaiju City. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
@@ -192,6 +192,21 @@ authorization result.
   "freshness": "fresh"
 }
 ```
+
+`waitKind` is optional additive metadata. The only current value is `callback`,
+projected from a live broker `waiting_for` target with kind `callback` or `heavy`.
+It carries no task ID, title or command. Missing or unrecognized kinds are omitted.
+It does not replace `workState`: a working root with background work remains
+working. Orrery uses a distinct waiting orbit only when the Session is not working,
+awaiting the person or reporting completion. Stale readings retain their freshness
+restrictions and cannot animate or navigate.
+
+`focused` is an optional boolean identifying the host's currently open Session.
+Local and Cloud hosts compare their own execution-scoped identities before projecting
+this flag; no raw identity crosses the bridge. Older hosts omit it. Views may use a
+changed focus to select and frame the corresponding character. Local exploration
+must not navigate or acknowledge work. The host still closes the view on explicit
+`sessions.open`; an embedded terminal remains outside this contract.
 
 `stateTime` is optional additive metadata: `{ "at": 1700000000000, "basis": "declaration" }`.
 `at` is Unix milliseconds. `declaration` means the current self-declared state's
@@ -393,3 +408,41 @@ and both motion preferences. It measures download and completion positions,
 observes intermediate scroll positions, and exercises cancellation, error
 attention and navigation to the installed card. These are isolated browser
 receipts; they do not establish deployment or native App acceptance.
+
+## Official updates
+
+Each installed card has its own Check for updates action. The manager also has
+Check for updates for the complete installed set. The host reads
+`/view-plugins/catalog.json` at startup, on return to the foreground, after a view
+closes and when asked. Version discovery is independent of the currently loaded
+host bundle; both the catalog and ZIP downloads bypass HTTP cache and reject
+redirects. These reads contain no Session or Project data. A failed check leaves
+installed views usable. There is no timer polling or automatic download retry loop.
+
+`python3 tools/build-view-plugin-catalog.py` generates the index from the exact
+shipped ZIPs and author manifests and records their SHA-256, bytes, API and
+capabilities. It also retains exact official archive digests in
+`plugins/official-package-revisions.json` so older installations can migrate without
+removal. The initial history came from main through `ef40d5aa515c43669124f4fcf7d08a58e75d0401`.
+Future generation retains each current revision. `--check` runs in the console
+tests; a package/manifest/catalog mismatch fails publication. The catalog uses
+registered byte and entry limits; downloads use the registered archive bound and
+update deadline. It is same-origin release metadata, not a claim of publisher
+signatures or general trust in a matching package ID.
+
+Only exact known official bytes are adopted automatically. Imported community
+packages with other digests keep their existing installation and can be updated by
+importing another ZIP. Official cards expose a persistent automatic-update checkbox.
+Same-permission newer stable releases can update silently; additional capabilities
+or a different host API require review or a newer host. Identity, version, full
+archive hash, byte length and capabilities must all match the catalog before any
+registry write. Older pages ignore catalog entries for views they do not know.
+
+A shared Web Lock spans each running view. Automatic replacement needs the exclusive
+lock, so views in other tabs remain intact; opening a view re-reads the installed
+revision after acquiring its lease. Hosts without Web Locks retain manual update.
+The registry compares the expected active digest and rechecks automatic-update
+consent in its atomic transaction. Enable/disable is preserved, and the prior
+archive remains available. Rolling back disables automatic updates until the person
+enables them again, preventing an immediate upgrade over their chosen rollback.
+This policy is browser/device-local and does not update another phone's registry.

@@ -22,22 +22,22 @@
   {
     "id": "com.clawdline.session-orrery",
     "language": "en",
-    "src": "/view-plugins/previews/session-orrery-en-93ffa7bdc8e6.webp",
+    "src": "/view-plugins/previews/session-orrery-en-878b81a6d124.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.4.0",
-    "packageDigest": "9ea2dd858a1f58212277b8be19e7230170c37aff8780eefc436362228e352ca9",
-    "sha256": "93ffa7bdc8e676e0cf587354357c7d2eac0ba0bb1734f1f8fe97fed308334200"
+    "packageVersion": "0.5.0",
+    "packageDigest": "b7faab47c0a66ee80f2092179064a187240449f22f7c3011830121598e9e12f9",
+    "sha256": "878b81a6d124b7472be2a7a29832b3b0f13553811878e294a36967f6b726828f"
   },
   {
     "id": "com.clawdline.session-orrery",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-orrery-zh-Hant-eb2e72fff74b.webp",
+    "src": "/view-plugins/previews/session-orrery-zh-Hant-b445bb9c0bd0.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.4.0",
-    "packageDigest": "9ea2dd858a1f58212277b8be19e7230170c37aff8780eefc436362228e352ca9",
-    "sha256": "eb2e72fff74bf59399f18e575e028b3be8919f3e3ed5e869d0319802cff26753"
+    "packageVersion": "0.5.0",
+    "packageDigest": "b7faab47c0a66ee80f2092179064a187240449f22f7c3011830121598e9e12f9",
+    "sha256": "b445bb9c0bd006cf796358906865aa51ba6684b064e16264f04732f698be5696"
   },
   {
     "id": "com.clawdline.session-night-city",
@@ -102,41 +102,41 @@
   {
     "id": "com.clawdline.session-codecraft",
     "language": "en",
-    "src": "/view-plugins/previews/session-codecraft-en-e235ba4e8fa6.webp",
+    "src": "/view-plugins/previews/session-codecraft-en-d6e8e62608e4.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.2.0",
-    "packageDigest": "d78377ebb2c14a563abc71904bccd6e7da35c62a411400d5d8ca735686a9978c",
-    "sha256": "e235ba4e8fa6f4200e73017de8e2f6a81e7a4bfa651ae14f234a38c9de39c685"
+    "packageVersion": "0.3.0",
+    "packageDigest": "85ac159b89e0f7089b8ac26d67c936df50da0896a030e0d90794caaaad25e6a6",
+    "sha256": "d6e8e62608e404558f605908e33fb95fb81e14ebe608bf769fcfa4174cca9148"
   },
   {
     "id": "com.clawdline.session-codecraft",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-codecraft-zh-Hant-92a82c48c998.webp",
+    "src": "/view-plugins/previews/session-codecraft-zh-Hant-6e190fb9c0fb.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.2.0",
-    "packageDigest": "d78377ebb2c14a563abc71904bccd6e7da35c62a411400d5d8ca735686a9978c",
-    "sha256": "92a82c48c9981815632f20f8bab4ebad457b671fd9dc134b11aa10d7138409d0"
+    "packageVersion": "0.3.0",
+    "packageDigest": "85ac159b89e0f7089b8ac26d67c936df50da0896a030e0d90794caaaad25e6a6",
+    "sha256": "6e190fb9c0fb357ec5df235173935bb8272b2e0ea222bbd39e49753df91e2172"
   },
   {
     "id": "com.clawdline.session-kaiju",
     "language": "en",
-    "src": "/view-plugins/previews/session-kaiju-en-087153651d0d.webp",
+    "src": "/view-plugins/previews/session-kaiju-en-7b07d617174b.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.2.0",
-    "packageDigest": "4171fc77bba108603225198256088e69bf0d33bbd44284e8339d7950de769dc5",
-    "sha256": "087153651d0d0a34de8539188e2dcb30b4a84414afca655ec2ebd9be2f9c5afd"
+    "packageVersion": "0.2.1",
+    "packageDigest": "5228551cde580db518e2c889902ddcdf3516f528095b685e920c8e463ff54b15",
+    "sha256": "7b07d617174bbcc77459bbf15a444b694348f8680149be044a43afd7772b5132"
   },
   {
     "id": "com.clawdline.session-kaiju",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-kaiju-zh-Hant-f3c7375ddc7f.webp",
+    "src": "/view-plugins/previews/session-kaiju-zh-Hant-4eb0955038dd.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.2.0",
-    "packageDigest": "4171fc77bba108603225198256088e69bf0d33bbd44284e8339d7950de769dc5",
-    "sha256": "f3c7375ddc7f6b30056c176544565c17350f0e253ac271fd5a397aae79998edd"
+    "packageVersion": "0.2.1",
+    "packageDigest": "5228551cde580db518e2c889902ddcdf3516f528095b685e920c8e463ff54b15",
+    "sha256": "4eb0955038dd7cf19fb03abe0dcecc421880cbd3584c57af8f86ba39d0c0e91b"
   }
 ]

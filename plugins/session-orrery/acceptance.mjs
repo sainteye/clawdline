@@ -40,7 +40,7 @@ const upstream=await readFile(root+"plugins/session-orrery/upstream/main.js","ut
 const sourceGeometry=[upstream.match(/^const ORBIT = .*$/m)[0],upstream.match(/^const RANK = .*$/m)[0],upstream.slice(upstream.indexOf("function hash("),upstream.indexOf("function minutesSince(")),upstream.slice(upstream.indexOf("function chart("),upstream.indexOf("function settingsButton("))].join("\n")
 const artwork={}
 for(const name of ["dial","sun","planet-blocked","planet-done","planet-working","planet-idle","halo-focus","halo-blocked"])artwork[name]="data:image/svg+xml;base64,"+(await readFile(root+"plugins/session-orrery/upstream/art/"+name+".svg")).toString("base64")
-try{for(const engine of ["chromium","webkit"])for(const width of [390,1440]){
+try{for(const engine of (process.env.ORRERY_ENGINES||"chromium,webkit").split(","))for(const width of (process.env.ORRERY_WIDTHS||"390,1440").split(",").map(Number)){
  const lang=width===390?"zh-Hant":"en",zh=lang!=="en",browser=await pw[engine].launch({headless:true})
  const page=await browser.newPage({viewport:{width,height:1000},reducedMotion:"reduce"}),errors=[]
  page.on("pageerror",e=>errors.push(e.message))
@@ -53,8 +53,37 @@ try{for(const engine of ["chromium","webkit"])for(const width of [390,1440]){
   await page.locator(".vp-installed").getByRole("button",{name:new RegExp(zh?"^開啟":"^Open")}).click()
   const f=page.frameLocator("iframe")
   await f.locator(".row").nth(9).waitFor()
+  if(process.env.ORRERY_CALLBACK_ONLY){
+   await page.evaluate(()=>{fixture.rows.splice(0,fixture.rows.length,
+    {key:'callback',title:'Waiting for the deployment callback',project:{key:'work',label:'Synthetic Project'},workState:'waiting_session',waitKind:'callback',freshness:'fresh'},
+    {key:'known-wait',title:'Unknown work with a confirmed callback',project:{key:'work',label:'Synthetic Project'},workState:'unknown',waitKind:'callback',freshness:'fresh'},
+    {key:'rest',title:'Ready Session',project:{key:'work',label:'Synthetic Project'},workState:'ready',freshness:'fresh'},
+    {key:'busy',title:'Working with background callback',project:{key:'work',label:'Synthetic Project'},workState:'working',waitKind:'callback',freshness:'fresh'},
+    {key:'old-wait',title:'Stale callback wait',project:{key:'work',label:'Synthetic Project'},workState:'waiting_session',waitKind:'callback',freshness:'stale'},
+    {key:'child',title:'Waiting for another Session',project:{key:'work',label:'Synthetic Project'},workState:'waiting_session',freshness:'fresh'});fixture.change()})
+   const waiting=f.locator('.planet[data-state=waiting_callback]')
+   await waiting.nth(2).waitFor({timeout:5000});assert.equal(await waiting.count(),3)
+   assert.deepEqual(await waiting.evaluateAll(es=>es.map(e=>Number(e.dataset.orbit))),[.775,.775,.775])
+   assert.equal(await f.locator('.planet[data-state=working]').count(),1,'Working roots retain working semantics while a callback runs')
+   assert.equal(await f.locator('.planet[data-state=waiting_session]').count(),1,'Child waits stay distinct')
+   assert.match(await f.locator('#waitingCount').innerText(),zh?/2 個等待回呼/:/2 waiting for callback/)
+   await f.locator('.row').filter({hasText:'Unknown work with a confirmed callback'}).click()
+   assert.match(await f.locator('#detail').innerText(),zh?/等待回呼/:/Waiting for callback/)
+   assert.equal(await f.locator('#openSession').isDisabled(),false)
+   await page.emulateMedia({reducedMotion:'no-preference'});await f.locator('body:not(.no-motion)').waitFor()
+   assert.ok(await f.locator('.planet[data-state=waiting_callback][data-freshness=fresh] .callback-halo').first().evaluate(e=>e.getAnimations().length>0),'Fresh callback waits have an actual gentle pulse')
+   assert.equal(await f.locator('.planet[data-state=waiting_callback][data-freshness=stale] .callback-halo').evaluate(e=>e.getAnimations().length),0)
+   await page.screenshot({path:artifacts+'/'+engine+'-'+width+'-callback-detail.png',fullPage:true});await f.locator('#dial').scrollIntoViewIfNeeded();await page.screenshot({path:artifacts+'/'+engine+'-'+width+'-callback.png',fullPage:true})
+   await page.emulateMedia({reducedMotion:'reduce'});await f.locator('body.no-motion').waitFor();assert.equal(await f.locator('.callback-halo').evaluateAll(es=>es.every(e=>e.getAnimations().length===0)),true)
+   await page.emulateMedia({reducedMotion:'no-preference'});await f.locator('body:not(.no-motion)').waitFor();await f.locator('#still').click();assert.equal(await f.locator('.callback-halo').evaluateAll(es=>es.every(e=>e.getAnimations().length===0)),true);await f.locator('#still').click()
+   await page.evaluate(()=>fixture.hidden(true));await f.locator('body.no-motion').waitFor();assert.equal(await f.locator('.callback-halo').evaluateAll(es=>es.every(e=>e.getAnimations().length===0)),true);await page.evaluate(()=>fixture.hidden(false))
+   await page.evaluate(()=>{delete fixture.rows[0].waitKind;fixture.change()});await f.locator('.planet[data-state=waiting_session]').nth(1).waitFor()
+   assert.equal(await waiting.count(),2,'Completed or removed callback evidence clears the dedicated state')
+   await page.evaluate(()=>fixture.disconnect());await f.locator('#warning').waitFor();assert.equal(await f.locator('.callback-halo').evaluateAll(es=>es.every(e=>e.getAnimations().length===0)),true)
+   assert.deepEqual(errors,[]);reports.push({engine,width,passed:true,cases:['broker-callback-state','separate-orbit','working-priority','child-wait-distinct','detail-label','actual-pulse','stale-reduced-still-hidden-disconnected-stop','callback-clears']});console.log(engine,width,'callback passed');continue
+  }
   assert.equal(await f.locator(".planet").count(),10)
-  assert.deepEqual(await f.locator(".ring").evaluateAll(es=>es.map(e=>Number(e.dataset.orbit))),[.30,.45,.60,.71,.84],"Source has five fixed orbit radii")
+  assert.deepEqual(await f.locator(".ring").evaluateAll(es=>es.map(e=>Number(e.dataset.orbit))),[.30,.45,.60,.71,.775,.84],"The source five orbit radii plus the callback orbit")
   const fidelity=await f.locator(".planet").evaluateAll(es=>es.map(e=>({ref:e.dataset.ref,project:e.dataset.project,state:e.dataset.state,orbit:Number(e.dataset.orbit),lon:Number(e.dataset.longitude),x:parseFloat(e.style.left),y:parseFloat(e.style.top)})))
   const projectRefs=[...new Set(fidelity.map(p=>p.project))].sort((a,b)=>a.localeCompare(b))
   const sourceHash=s=>{let h=2166136261;for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619);return((h>>>0)%10007)/10007}
@@ -69,9 +98,9 @@ try{for(const engine of ["chromium","webkit"])for(const width of [390,1440]){
   for(const p of fidelity){const h=sourceHash(p.ref),sector=Math.PI*2/projectRefs.length,expectedLon=-Math.PI/2+projectRefs.indexOf(p.project)*sector+(.14+.72*h)*sector;const expectedOrbit=p.state==="waiting_you"?.3:["milestone_complete","work_complete"].includes(p.state)?.45:p.state==="working"?(h<.5?.6:.71):.84;assert.ok(Math.abs(p.lon-expectedLon)<1e-10);assert.equal(p.orbit,expectedOrbit);assert.ok(Math.abs(p.x-(geo.cx+Math.cos(expectedLon)*expectedOrbit*geo.R))<.01);assert.ok(Math.abs(p.y-(geo.cy+Math.sin(expectedLon)*expectedOrbit*geo.R))<.01)}
   const fonts=await f.locator("body").evaluate(async()=>{await document.fonts.ready;return [...document.fonts].map(f=>({family:f.family,status:f.status}))})
   assert.ok(fonts.every(f=>f.status==="loaded"),JSON.stringify(fonts))
-  assert.equal(await f.locator(".summary-count").count(),4);assert.equal(await f.locator(".summary-count strong").allTextContents().then(xs=>xs.reduce((n,x)=>n+Number(x),0)),10);assert.equal(await f.locator(".count").count(),8)
-  assert.deepEqual(await f.locator("#counts strong").allTextContents(),["1","1","1","2","1","1","1","2"])
-  assert.equal(new Set(await f.locator("#counts .count span").allTextContents()).size,8)
+  assert.equal(await f.locator(".summary-count").count(),5);assert.equal(await f.locator(".summary-count strong").allTextContents().then(xs=>xs.reduce((n,x)=>n+Number(x),0)),10);assert.equal(await f.locator(".count").count(),9)
+  assert.deepEqual(await f.locator("#counts strong").allTextContents(),["1","1","1","2","1","1","1","2","0"])
+  assert.equal(new Set(await f.locator("#counts .count span").allTextContents()).size,9)
   assert.equal(await f.locator("#counts strong").allTextContents().then(v=>v.reduce((n,s)=>n+Number(s),0)),10)
   const rowsBefore=await f.locator(".row-title").allTextContents()
   assert.ok(rowsBefore.some(s=>s.startsWith("<img")))
@@ -166,7 +195,7 @@ try{for(const engine of ["chromium","webkit"])for(const width of [390,1440]){
   await page.waitForFunction(()=>fixture.navigations.length===1)
   assert.deepEqual(await page.evaluate(()=>fixture.navigations),["synthetic-5"])
   assert.deepEqual(errors,[])
-  reports.push({engine,width,lang,passed:true,cases:["production-file-import","source-orbit-geometry","whole-circle-equal-sectors","source-hash-longitude","embedded-font-load","unknown-state-navigation-refusal","10-row-initial","8-state-counts","hostile-text","null-project","fresh-stale-unknown","selection-no-navigation","list-parity","stable-position","snapshot-update","event-only-transition","reduced-motion","stale-stops-transition","still-mode","simulated-host-visibility","disconnect-reconnect","40-row-density","empty-replace","explicit-navigation","no-horizontal-overflow","touch-controls"]})
+  reports.push({engine,width,lang,passed:true,cases:["production-file-import","source-orbit-geometry","whole-circle-equal-sectors","source-hash-longitude","embedded-font-load","unknown-state-navigation-refusal","10-row-initial","8-work-states-plus-callback-count","hostile-text","null-project","fresh-stale-unknown","selection-no-navigation","list-parity","stable-position","snapshot-update","event-only-transition","reduced-motion","stale-stops-transition","still-mode","simulated-host-visibility","disconnect-reconnect","40-row-density","empty-replace","explicit-navigation","no-horizontal-overflow","touch-controls"]})
  }catch(e){await page.screenshot({path:`${artifacts}/${engine}-${width}-failure.png`,fullPage:true});throw e}finally{await browser.close()}
 }}finally{await new Promise(r=>server.close(r));await writeFile(`${artifacts}/results.json`,JSON.stringify(reports,null,2)+"\n")}
 console.log(JSON.stringify(reports,null,2))

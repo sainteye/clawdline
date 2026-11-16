@@ -12,4 +12,7 @@ export const PLUGIN_LIMITS = {
   requestMilliseconds: 10000,
   requestsPerSecond: 32,
   textCharacters: 256,
+  catalogBytes: 1048576,
+  catalogEntries: 256,
+  updateMilliseconds: 60000,
 } as const

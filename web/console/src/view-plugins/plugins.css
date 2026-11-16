@@ -95,6 +95,12 @@
 @media(max-width:740px) { .vp-manager { padding:24px 18px max(28px,var(--indicator,0px)) }.vp-bar { padding:10px 16px }.vp-intro { align-items:flex-start;gap:16px;margin-bottom:26px }.vp-intro h2 { font-size:24px }.vp-intro>div { flex:1 }.vp-intro p:not(.vp-eyebrow) { font-size:13px }.vp-import { padding:10px 12px;font-size:13px }.vp-library-grid { grid-template-columns:1fr }.vp-installed { padding:18px;gap:14px }.vp-section-head h2 { font-size:17px }.vp-example-grid { gap:12px }.vp-example>div:not(.vp-art) { padding:14px }.vp-example h3 { font-size:14px }.vp-example p { font-size:12px;min-height:4.5em }.vp-example button { width:100%;min-width:0;padding:10px;font-size:12px }.vp-art { height:112px }.vp-art-small { width:58px;height:58px }.vp-frame-bar { gap:8px }.vp-frame-bar>span[role=status] { font-size:11px }.vp-frame-bar button { padding:8px 10px } }
 @media(max-width:380px) { .vp-intro { flex-wrap:wrap }.vp-intro>div { flex-basis:100% }.vp-import { width:100% }.vp-example-grid { grid-template-columns:1fr }.vp-example p { min-height:0 }.vp-card-heading { gap:6px }.vp-card-heading h3 { font-size:15px } }
 .vp-version { display:inline-block;max-width:100%;overflow-wrap:anywhere }
+.vp-check-all { margin-left:auto }
+.vp-library .vp-section-head { flex-wrap:wrap }
+.vp-update-status,.vp-update-error { font-size:12px;line-height:1.6 }
+.vp-auto-update { display:flex;align-items:center;gap:8px;min-height:44px;font-size:12px;color:var(--vp-muted);cursor:pointer }
+.vp-auto-update input { width:18px;height:18px;accent-color:var(--vp-accent);flex:none }
+.vp-host .vp-update-button { font-size:12px }
 .vp-review:focus { outline:none }
 
 /* Curated screenshots have their own composition; package icons stay compact. */

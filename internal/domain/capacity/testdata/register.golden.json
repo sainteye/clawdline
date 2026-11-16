@@ -9133,6 +9133,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.view_plugin_catalog_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginCatalogBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_catalog_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginCatalogEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.view_plugin_cover_side",
     "Class": "buffer",
     "Unit": "rows",
@@ -9349,6 +9389,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumViewPluginTextCharacters"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.view_plugin_update_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 60000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginUpdateMilliseconds"
     ]
   },
   {

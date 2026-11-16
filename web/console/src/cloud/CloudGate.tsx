@@ -26,7 +26,7 @@ import { nextWord, type NextWord } from "../next-strings.js"
 import { focusModalContainer } from "../modal-focus.js"
 import { bootCatalog, catalogWord } from "../catalog.js"
 import { cardsAreFor } from "../session/send.js"
-import { namesSession, sessionFragment } from "../session/address.js"
+import { namesSession, sessionFragment, sessionsInFragment } from "../session/address.js"
 import { startedRow } from "../session/started-row.js"
 import {
   chooseTransport,
@@ -2144,8 +2144,16 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const pluginKeys = new Set(quickMachines.filter(m => m.pairing === "paired" && m.selectable && m.operationAllowed === true)
     .map(m => JSON.stringify([pluginOwner, m.id, m.pairing, m.operationAllowed])))
   const pluginKeysRef = useRef(pluginKeys); pluginKeysRef.current = pluginKeys
+  const pluginFocusRef = useRef({ fleetScope, fleetTarget, reading }); pluginFocusRef.current = { fleetScope, fleetTarget, reading }
   const viewSources = cloudPluginSources({ owner: pluginOwner, machines: quickMachines, source: liveSessionSource,
-    current: key => pluginKeysRef.current.has(key), open: openFleetSession })
+    current: key => pluginKeysRef.current.has(key), focused: () => {
+      const focus = pluginFocusRef.current
+      if (focus.fleetScope) return focus.fleetTarget
+      const projection = focus.reading ? fleetProjections.current.get(focus.reading)?.reading : null
+      const candidates = sessionsInFragment(location.hash)
+      return projection?.kind === "ready" && candidates
+        ? projection.rows.find(row => row.freshness === "current" && candidates.includes(row.destination.sessionID))?.destination ?? null : null
+    }, open: openFleetSession })
   return (
     <>
       <IdentityHandoverDialog relay={screen.at === "pairing" ? "pairing_required" : "connected"} />

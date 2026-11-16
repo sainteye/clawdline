@@ -7,7 +7,7 @@ export type Freshness = "fresh" | "stale" | "unknown"
 export interface StateTime { at: number; basis: "declaration" | "turn" }
 export interface SourceSession {
   key: string; title: string; project: { key: string; label: string } | null
-  workState: WorkState; freshness: Freshness; connected?: boolean; stateTime?: StateTime
+  workState: WorkState; freshness: Freshness; connected?: boolean; stateTime?: StateTime; focused?: boolean; waitKind?: "callback"
 }
 export interface ViewReading { sessions: SourceSession[]; connected: boolean; partial?: boolean }
 export interface ViewSource {
@@ -60,6 +60,8 @@ export function pluginBridge(options: {
       const time = stateTime(s.stateTime)
       return { ref, title: clipped(s.title), project,
         workState: WORK_STATES.includes(s.workState) ? s.workState : "unknown",
+        ...(typeof s.focused === "boolean" ? { focused: s.focused } : {}),
+        ...(s.waitKind === "callback" ? { waitKind: "callback" } : {}),
         ...(time ? { stateTime: time } : {}),
         freshness: (s.connected ?? reading.connected) ? s.freshness : "stale" }
     })

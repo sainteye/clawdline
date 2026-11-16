@@ -173,3 +173,33 @@ No new runtime capability or automatic navigation is introduced. Real browser
 regressions cover a single Project with nine active and two idle/unknown readings,
 256 attention readings, marker geometry and phone action visibility in Chromium
 and WebKit. These fixtures do not replace physical-phone acceptance.
+
+## Codecraft selection in 0.3.0
+
+The original `place.js` (246–273, 467–479, 516–565 at the pinned revision)
+uses an agent tooltip, selection ring and head bar, derives selection from native
+focus, glides for 650 ms and follows a walking hero horizontally. Manual scrolling,
+dragging or minimap movement stops follow until another hero is selected. The port
+restores those selection and camera behaviors with host-projected focus and keeps
+still/reduced-motion framing immediate. Browser arrow and zoom controls also stop
+follow. Kaiju 0.2.1 only carries the rebuilt shared template; its mobile detail sheet
+and selection behavior remain unchanged.
+
+Codecraft no longer automatically opens a phone detail sheet. A nearby foreground
+name/Project/state control supports hover and touch selection, keeps the existing
+explicit Open Session action, flips below the hero when needed and is clamped to
+the viewport. This touch control is an adaptation, not a claim that the original
+had a persistent name tag. The full title remains in the command panel/register.
+The host still closes a view before Session navigation; reproducing the original
+live terminal beside the village is outside this change. No provider identity,
+tool activity, accepted completion or native command capability is inferred.
+
+## Orrery callback waits in 0.5.0
+
+The host projects only the presence of live broker callback/heavy wait targets,
+without task names or IDs. Orrery retains the original five radii and places a
+confirmed callback wait on an additional teal 0.775-radius orbit. Its explicit
+state, summary and detail distinguish it from idle, unknown and child waits.
+Working, person-attention and completion states retain priority. The fresh waiting
+halo pulses gently; all existing motion/freshness stop conditions apply. This
+additional orbit is an intentional Clawdline extension, not an upstream feature.

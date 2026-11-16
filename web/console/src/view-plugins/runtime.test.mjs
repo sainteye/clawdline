@@ -369,3 +369,48 @@ test("View timestamps preserve their source on local, Cloud and opaque snapshots
   assert.equal(f.answers.at(-1).data.sessions[0].stateTime,undefined)
  }finally{f.dispose()}
 })
+
+test("Focused Sessions keep exact execution identity across local, Cloud and opaque fleet readings",async()=>{
+ const target={machineID:'machine-a',sessionID:'same-name',executionGeneration:'generation-a'}
+ const other={...target,machineID:'machine-b'},old={...target,executionGeneration:'old-generation'}
+ const local=localPluginRows([{id:'same-name',execution_generation:'generation-a',evidence:'read'},{id:'other',execution_generation:'generation-b',evidence:'read'}],true,'same-name')
+ assert.deepEqual(local.map(r=>r.focused),[true,false])
+ const cloud=cloudPluginRows([target,other,old].map(destination=>({destination,title:'Example',observedAt:1,projection:{freshness:'current'}})),target)
+ assert.deepEqual(cloud.map(r=>r.focused),[true,false,false])
+ let focused=target
+ const [cloudSource]=cloudPluginSources({owner:'owner',machines:[{id:'machine-a',label:'A',pairing:'paired',selectable:true,operationAllowed:true}],current:()=>true,focused:()=>focused,open(){throw Error('No navigation expected')},source:{
+  async readMachine(){return{kind:'ready',rows:[]}},
+  async readMachinePresentations(){return [target,old].map(destination=>({destination,title:'Example',observedAt:1,projection:{freshness:'current'}}))},subscribe(){return()=>{}}
+ }})
+ assert.deepEqual((await cloudSource.read(new AbortController().signal)).sessions.map(r=>r.focused),[true,false])
+ focused=old
+ assert.deepEqual((await cloudSource.read(new AbortController().signal)).sessions.map(r=>r.focused),[false,true])
+ assert.equal(localPluginRows([{id:'same-name'}],true)[0].focused,undefined,'Older callers omit focus rather than guessing')
+ const f=fixture();try{
+  f.send('sessions.subscribe');await tick()
+  const source={key:'authorized',label:'Example',async read(){return{sessions:[{...row,focused:true}],connected:true}},subscribe(){return()=>{}},async prepareOpen(){throw Error('No navigation expected')}}
+  const fleet=await fleetPluginSource([source],'All').read(new AbortController().signal)
+  f.bridge.update(fleet,context);await tick()
+  const projected=f.answers.at(-1).data.sessions[0]
+  assert.equal(projected.focused,true);assert.notEqual(projected.ref,row.key)
+  f.bridge.update({sessions:[{...row,focused:'private-value'}],connected:true},context);await tick()
+  assert.equal(f.answers.at(-1).data.sessions[0].focused,undefined)
+ }finally{f.dispose()}
+})
+
+test("Callback waits come from live broker targets without exposing task names or replacing working state",async()=>{
+ const waiting={id:'private-id',work_state:'unknown',evidence:'read',waiting_for:[{kind:'callback',task_id:'private-task',label:'private-title'}]}
+ const rows=localPluginRows([waiting,{...waiting,work_state:'working'},{...waiting,waiting_for:[{kind:'heavy'}]},{...waiting,waiting_for:[{kind:'session'}]},{...waiting,waiting_for:[],work_note:'callback'}],true)
+ assert.deepEqual(rows.map(r=>r.waitKind),['callback','callback','callback',undefined,undefined])
+ assert.equal(rows[1].workState,'working')
+ const cloud=cloudPluginRows([{destination:{machineID:'machine',sessionID:'private-id'},title:'Example',status:waiting,observedAt:1,projection:{freshness:'current'}}])
+ assert.equal(cloud[0].waitKind,'callback')
+ const f=fixture();try{
+  f.send('sessions.subscribe');await tick()
+  f.bridge.update({sessions:[{...row,...rows[0]}],connected:true},context);await tick()
+  const value=f.answers.at(-1).data.sessions[0]
+  assert.equal(value.waitKind,'callback');assert.ok(!JSON.stringify(value).includes('private'))
+  f.bridge.update({sessions:[{...row,waitKind:'not-confirmed'}],connected:true},context);await tick()
+  assert.equal(f.answers.at(-1).data.sessions[0].waitKind,undefined)
+ }finally{f.dispose()}
+})

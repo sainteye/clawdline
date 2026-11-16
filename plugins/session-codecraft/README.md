@@ -31,11 +31,19 @@ and all bridge bounds remain enforced. Installation is per browser and explicit.
 
 See [PROVENANCE.md](PROVENANCE.md) and [the shared source-port record](../../docs/plugins/herdr-source-ports.md).
 
-In 0.2.0, the left command panel and minimap match the original composition.
-The selected full title is a readable foreground control inside the
-village viewport, outside the building cut-out layers. Original attention and
-completion markers use separate non-overlapping touch targets; displaced markers
-have leaders and crowded readings share an explicit count and selection list.
-The complete title remains in the register and detail sheet. Phone selections
-show the full title and explicit Open Session action in a modal sheet. The
-landscape and original hero depth occlusion remain unchanged.
+In 0.3.0, selection follows the original focused-agent model. A host-provided
+focus flag selects and frames the matching hero when the view opens or that flag
+changes. Selecting another hero glides the camera for 650 ms; a walking selected
+hero remains horizontally followed until a drag, wheel, minimap, arrow or zoom
+operation stops follow. Another selection resumes it. Reduced motion and still
+mode frame immediately. Selected heroes retain the original ring and head bar.
+
+The left command panel remains available. Hovering a hero reveals a nearby name,
+Project and state; touch selection keeps that small foreground control available
+with an explicit Open Session action, without opening a bottom sheet. Its position
+follows the hero and camera, flips below when necessary, and stays within the
+viewport. Status markers retain separate non-overlapping targets and crowd lists.
+The persistent touch label and explicit navigation are browser adaptations: the
+original uses a native tooltip and keeps a live terminal beside the village.
+Opening a Session still closes the Clawdline view. Installation is explicit and
+browser-local; an older installed package must be reviewed and updated.

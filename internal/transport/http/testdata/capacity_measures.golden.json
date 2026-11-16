@@ -2333,6 +2333,14 @@
     "Err": true
   },
   {
+    "Name": "console.view_plugin_catalog_bytes",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_catalog_entries",
+    "Err": true
+  },
+  {
     "Name": "console.view_plugin_cover_side",
     "Err": true
   },
@@ -2374,6 +2382,10 @@
   },
   {
     "Name": "console.view_plugin_text_characters",
+    "Err": true
+  },
+  {
+    "Name": "console.view_plugin_update_milliseconds",
     "Err": true
   },
   {

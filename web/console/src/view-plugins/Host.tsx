@@ -3,7 +3,10 @@ import { createPortal } from "react-dom"
 import { useStatusDockAvailable } from "../project-assistants/BotOrb.js"
 import type { ViewSource } from "./bridge.js"
 import { PluginError, parsePackage, type ViewPackage } from "./package.js"
-import { installedPackages, subscribePackages, installPackage, enablePackage, removePackage, rollbackPackage, type Installed } from "./store.js"
+import { installedPackages, subscribePackages, installPackage, enablePackage, removePackage, rollbackPackage, officialUpdatePolicy, type Installed } from "./store.js"
+import { useViewUpdates } from "./useUpdates.js"
+import { downloadOfficialRelease, holdViewRuntime, isOfficialRevision } from "./updates.js"
+import { newerStableVersion } from "./package.js"
 import { PLUGIN_LIMITS as B } from "./limits.js"
 import { PluginFrame, readPluginSource, type ViewGrant } from "./Frame.js"
 import { pluginWords } from "./words.js"
@@ -15,7 +18,7 @@ import "./plugins.css"
 const code = (e: unknown) => e instanceof PluginError ? e.code : "storage_unavailable"
 const name = (p: ViewPackage, language: string) => p.manifest.name[language.startsWith("zh") ? "zh-Hant" : "en"]
 
-type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null }
+type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null; official: boolean }
 
 export function useViewPlugins(sources: readonly ViewSource[], language: string) {
   const [opened, setOpened] = useState(false), openedRef = useRef(false), dock = useStatusDockAvailable()
@@ -28,6 +31,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const attention = useRef<{ target: () => HTMLElement | null; anchor: HTMLElement | null; top: number } | null>(null)
   const isBusy = busy || installing !== null, panel = review?.pkg ?? installing?.pkg ?? completed
   const [grant, setGrant] = useState<ViewGrant | null>(null)
+  const updates = useViewUpdates(!!grant || !!review || !!installing || busy)
+  const runtime = useRef<{ release?: () => void; control: AbortController } | null>(null)
   const modal = useRef<HTMLDivElement>(null), opener = useRef<HTMLElement | null>(null)
   const owned = useRef<string | null>(null), navigate = useRef<(() => void) | null>(null)
   const closing = useRef(false)
@@ -35,6 +40,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const w = pluginWords(language), source = fleetPluginSource(sources, w.everything)
   const liveSource = useRef(source); liveSource.current = source
   const finish = () => {
+    runtime.current?.control.abort(); runtime.current?.release?.(); runtime.current = null
     openedRef.current = false; owned.current = null; closing.current = false; operations.current++
     setOpened(false); setGrant(null); setReview(null); setInstalling(null); setCompleted(null); setBusy(false); attention.current = null
     const next = navigate.current; navigate.current = null
@@ -51,6 +57,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     else finishRef.current()
   }
   const closeRef = useRef(close); closeRef.current = close
+  useEffect(() => { if (!grant) { runtime.current?.control.abort(); runtime.current?.release?.(); runtime.current = null } }, [grant])
+  useEffect(() => () => { runtime.current?.control.abort(); runtime.current?.release?.() }, [])
   const refresh = async () => { try { setRows(await installedPackages()) } catch (e) { setRows([]); setError(code(e)) } }
   useEffect(() => subscribePackages(() => {
     // A hint revokes the running grant immediately, before asynchronous storage verification.
@@ -135,19 +143,19 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     }
     finally { setBusy(false) }
   }
-  const inspect = async (archive: ArrayBuffer) => {
+  const inspect = async (archive: ArrayBuffer, official = false) => {
     const generation = operations.current
     const pkg = await parsePackage(archive), current = (await installedPackages()).find(r => r.id === pkg.manifest.id)
     if (!openedRef.current || generation !== operations.current) return
     queueAttention(() => modal.current?.querySelector<HTMLElement>(".vp-review") ?? null, reviewOpener.current)
-    setCompleted(null); setReview({ archive, pkg, expected: current?.active.digest ?? null })
+    setCompleted(null); setReview({ archive, pkg, expected: current?.active.digest ?? null, official })
   }
   const confirmInstall = async () => {
     if (!review || isBusy || installingRef.current) return
     const selected = review, opening = owned.current
     installingRef.current = true; setInstalling(selected); setError("")
     try {
-      await installPackage(selected.archive, selected.expected)
+      await installPackage(selected.archive, selected.expected, { official: selected.official })
       const installed = await installedPackages()
       if (!openedRef.current || owned.current !== opening) return
       setRows(installed); setReview(null); setCompleted(selected.pkg)
@@ -174,17 +182,40 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
         if (size > B.archiveBytes) throw new PluginError("package_too_large"); chunks.push(part.value) }
       } finally { await reader.cancel() }
       const bytes = new Uint8Array(size); let at = 0; for (const part of chunks) { bytes.set(part, at); at += part.length }
-      await inspect(bytes.buffer)
+      const pkg = await parsePackage(bytes.buffer), catalog = await updates.check(false)
+      const release = catalog?.packages.find(item => item.id === pkg.manifest.id)
+      await inspect(bytes.buffer, !!release && release.sha256 === pkg.digest && release.version === pkg.manifest.version)
     })
   }
   const choose = (pkg: ViewPackage) => {
     setReview(null)
     void act(async () => {
-      const operation = ++operations.current, current = liveSource.current, captured = current.key
-      const initial = await readPluginSource(current, new AbortController().signal)
-      if (operation !== operations.current || !openedRef.current || liveSource.current.key !== captured) throw new PluginError("scope_changed")
-      if (initial.sessions.length > B.sessions) throw new PluginError("too_many_sessions")
-      setGrant({ pkg, sourceKey: captured, initial, instanceId: crypto.randomUUID() })
+      const current = liveSource.current, captured = current.key
+      const lease = { control: new AbortController(), release: undefined as (() => void) | undefined }; runtime.current = lease
+      try {
+        lease.release = await holdViewRuntime(lease.control.signal)
+        if (lease.control.signal.aborted) throw new PluginError("scope_changed")
+        const operation = ++operations.current
+        const saved = (await installedPackages()).find(row => row.id === pkg.manifest.id)
+        if (!saved?.enabled) throw new PluginError("registry_changed")
+        const initial = await readPluginSource(current, new AbortController().signal)
+        if (operation !== operations.current || !openedRef.current || liveSource.current.key !== captured) throw new PluginError("scope_changed")
+        if (initial.sessions.length > B.sessions) throw new PluginError("too_many_sessions")
+        setGrant({ pkg: saved.active, sourceKey: captured, initial, instanceId: crypto.randomUUID() })
+      } catch (error) { lease.release?.(); if (runtime.current === lease) runtime.current = null; throw error }
+    })
+  }
+  const reviewUpdate = (row: Installed, button: HTMLElement) => {
+    reviewOpener.current = button
+    return act(async () => {
+      const catalog = await updates.check(false), release = catalog?.packages.find(item => item.id === row.id)
+      if (!catalog) throw new PluginError("update_check_failed")
+      if (!release) throw new PluginError("update_source_missing")
+      const current = (await installedPackages()).find(item => item.id === row.id)
+      if (!current) throw new PluginError("registry_changed")
+      if (!newerStableVersion(release.version, current.active.manifest.version)) return
+      const value = await downloadOfficialRelease(release, new AbortController().signal)
+      await inspect(value.archive, true)
     })
   }
   const entry = <button type="button" className="vp-dock" aria-label={w.entry} title={w.launcher} onClick={e => openRoot(e.currentTarget, "launch")}>
@@ -220,13 +251,20 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
               <button className="vp-primary" disabled={isBusy} onClick={() => void confirmInstall()}>{review?.expected || installing?.expected ? w.replace : w.confirmInstall}</button>
               <button disabled={isBusy} onClick={cancelReview}>{w.cancel}</button>
             </>}</div></section>}
-          <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span></div>
+          <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span><button className="vp-check-all" disabled={isBusy || updates.checking} onClick={() => void updates.check()}>{updates.checking ? w.checkingUpdates : w.checkUpdates}</button></div>
+            {updates.failure && <p className="vp-update-error" role="status">{w.errors[updates.failure] || w.errors.update_check_failed}</p>}
             {!rows.length && <div className="vp-empty"><ViewPluginIcon /><h3>{w.empty}</h3><p>{w.emptyHint}</p></div>}
-            <div className="vp-library-grid">{rows.map(row => <article className="vp-card vp-installed" key={row.id} data-enabled={row.enabled} data-package-id={row.id} tabIndex={-1}>
+            <div className="vp-library-grid">{rows.map(row => {
+              const release=updates.catalog?.packages.find(item=>item.id===row.id), newer=release&&newerStableVersion(release.version,row.active.manifest.version)
+              const official=!!release&&(row.official||isOfficialRevision(row,release)), status=newer?(updates.states[row.id]||"available"):"current"
+              return <article className="vp-card vp-installed" key={row.id} data-enabled={row.enabled} data-package-id={row.id} data-update-state={status} tabIndex={-1}>
               <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><div className="vp-installed-body"><div className="vp-card-heading"><h3>{name(row.active, language)}</h3><span className="vp-version">v{row.active.manifest.version}</span></div>
                 <span className="vp-status"><i />{row.enabled ? w.enabled : w.disabled}</span>
                 {!packageCover(row.active) && <span className="vp-muted">{w.coverRequired}</span>}
+                <p className="vp-update-status" role="status">{updates.failure ? w.updateCheckUnavailable : release ? newer ? w[status] + " · v" + release.version : w.current : updates.checking ? w.checkingUpdates : w.updateSourceUnknown}</p>
+                {official && <label className="vp-auto-update"><input type="checkbox" checked={row.official ? !!row.autoUpdate : true} disabled={isBusy} onChange={e=>{const enabled=e.currentTarget.checked;void act(()=>officialUpdatePolicy(row,enabled))}} />{w.autoUpdate}</label>}
                 <div className="vp-card-footer"><button className="vp-primary" disabled={isBusy || !row.enabled} onClick={() => choose(row.active)}>{w.open} <span aria-hidden="true">↗</span></button>
+                  <button className="vp-update-button" disabled={isBusy || updates.checking} onClick={e=>void reviewUpdate(row,e.currentTarget)}>{newer ? w.updateTo.replace("{version}",release.version) : w.checkUpdates}</button>
                   <ManageMenu label={w.manage} busy={isBusy} packageId={row.id} items={[
                     { label: row.enabled ? w.disable : w.enable, onSelect: () => void act(() => enablePackage(row, !row.enabled)) },
                     ...(row.previous ? [{ label: `${w.rollback} · ${row.previous.manifest.version}`, onSelect: () => void act(() => rollbackPackage(row)) }] : []),
@@ -235,7 +273,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
                     onConfirm: () => void act(() => removePackage(row)) }} />
                 </div>
               </div>
-            </article>)}</div>
+            </article>})}</div>
           </section>
           <section className="vp-examples"><div className="vp-section-head"><div><h2>{w.preset}</h2><p>{w.examplesHint}</p></div></div><div className="vp-example-grid">
             {[

@@ -8,6 +8,14 @@ export interface Manifest {
   name: Record<string, string>; entry: string; capabilities: Capability[]; cover?: string
 }
 export interface ViewPackage { manifest: Manifest; html: string; digest: string }
+export function newerStableVersion(next: string, installed: string): boolean {
+  if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(next)) return false
+  const prior = installed.split("+")[0], core = prior.split("-")[0]
+  if (!/^\d+\.\d+\.\d+$/.test(core)) return false
+  const a = next.split(".").map(BigInt), b = core.split(".").map(BigInt)
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]
+  return prior.includes("-")
+}
 export class PluginError extends Error {
   constructor(readonly code: string) { super(code); this.name = "PluginError" }
 }
@@ -59,7 +67,7 @@ async function validateCover(cover: string): Promise<void> {
   const png = Uint8Array.from(raw!, c => c.charCodeAt(0)), data = new DataView(png.buffer)
   if (png.length < 57 || ![137,80,78,71,13,10,26,10].every((n,i) => png[i] === n)) fail("invalid_cover")
   let at = 8, side = 0, ended = false, seenData = false
-  const compressed: Uint8Array[] = []
+  const compressed: Uint8Array<ArrayBuffer>[] = []
   while (at < png.length) {
     if (ended || at + 12 > png.length) fail("invalid_cover")
     const size = data.getUint32(at), end = at + 12 + size
@@ -82,7 +90,9 @@ async function validateCover(cover: string): Promise<void> {
   const stride = side * 4 + 1, expected = side * stride
   let total = 0
   try {
-    const stream = new Blob(compressed as BlobPart[]).stream().pipeThrough(new DecompressionStream("deflate")), reader = stream.getReader()
+    // Keep validation in memory; WebKit's Blob stream can outlive a closing page.
+    const input = new ReadableStream<BufferSource>({ start(controller) { for (const chunk of compressed) controller.enqueue(chunk); controller.close() } })
+    const stream = input.pipeThrough(new DecompressionStream("deflate")), reader = stream.getReader()
     try {
       while (true) {
         const part = await reader.read(); if (part.done) break

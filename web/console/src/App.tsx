@@ -601,7 +601,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     if (!keepFocus && !phone() && !videoAddress) rowNode(id)?.focus({ preventScroll: true })
   }
 
-  const localViewSource = useLocalPluginSource(rows, fleet.live, fleet.loaded, openSession)
+  const localViewSource = useLocalPluginSource(rows, fleet.live, fleet.loaded, openSession, openId)
   const plugins = useViewPlugins(viewPluginSources ?? [localViewSource], document.documentElement.lang || "en")
 
   const openStarted = (answer: StartAnswer, place: StartPlaceRow | null, finish: () => boolean): boolean => {

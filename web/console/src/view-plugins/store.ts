@@ -1,9 +1,9 @@
-import { fail, parsePackage, RETIRED_PACKAGES, type ViewPackage } from "./package.js"
+import { fail, parsePackage, newerStableVersion, RETIRED_PACKAGES, type ViewPackage } from "./package.js"
 import { PLUGIN_LIMITS as B } from "./limits.js"
 
 interface Revision { archive: ArrayBuffer; digest: string }
-interface Saved { id: string; enabled: boolean; active: Revision; previous?: Revision }
-export interface Installed { id: string; enabled: boolean; active: ViewPackage; previous?: ViewPackage }
+interface Saved { id: string; enabled: boolean; active: Revision; previous?: Revision; official?: boolean; autoUpdate?: boolean }
+export interface Installed { id: string; enabled: boolean; active: ViewPackage; previous?: ViewPackage; official?: boolean; autoUpdate?: boolean }
 const listeners = new Set<() => void>()
 let database: Promise<IDBDatabase> | null = null
 let broadcast: BroadcastChannel | null = null
@@ -51,8 +51,9 @@ export async function installedPackages(): Promise<Installed[]> {
   if (saved.length > B.packages) fail("storage_unavailable")
   return Promise.all(saved.map(async r => {
     const active = await unpack(r.active), previous = r.previous ? await unpack(r.previous) : undefined
-    if (r.id !== active.manifest.id || (previous && previous.manifest.id !== r.id) || typeof r.enabled !== "boolean") fail("storage_unavailable")
-    return { id: r.id, enabled: r.enabled, active, previous }
+    if (r.id !== active.manifest.id || (previous && previous.manifest.id !== r.id) || typeof r.enabled !== "boolean" ||
+        (r.official !== undefined && typeof r.official !== "boolean") || (r.autoUpdate !== undefined && typeof r.autoUpdate !== "boolean")) fail("storage_unavailable")
+    return { id: r.id, enabled: r.enabled, active, previous, official: r.official === true, autoUpdate: r.autoUpdate === true }
   }))
 }
 async function change(id: string, expected: string | null, apply: (r: Saved | undefined, count: number) => Saved | null): Promise<void> {
@@ -74,20 +75,34 @@ async function change(id: string, expected: string | null, apply: (r: Saved | un
   })
   changed()
 }
-export async function installPackage(archive: ArrayBuffer, expectedDigest: string | null): Promise<void> {
+export async function installPackage(archive: ArrayBuffer, expectedDigest: string | null, options: { official?: boolean; automatic?: boolean } = {}): Promise<void> {
   const value = await parsePackage(archive)
+  if (options.automatic) {
+    const current = (await installedPackages()).find(row => row.id === value.manifest.id)
+    if (!options.official || !current?.official || !current.autoUpdate || current.active.digest !== expectedDigest ||
+        !newerStableVersion(value.manifest.version, current.active.manifest.version) ||
+        value.manifest.capabilities.some(capability => !current.active.manifest.capabilities.includes(capability))) fail("update_review_required")
+  }
   await change(value.manifest.id, expectedDigest, (old, count) => {
+    if (options.automatic && (!old?.official || !old.autoUpdate)) fail("registry_changed")
     if (!old && count >= B.packages) fail("package_capacity")
     if (old?.active.digest === value.digest) fail("already_installed")
     return { id: value.manifest.id, enabled: old?.enabled ?? true,
-      active: { archive: archive.slice(0), digest: value.digest }, previous: old?.active }
+      active: { archive: archive.slice(0), digest: value.digest }, previous: old?.active,
+      official: options.official === true,
+      autoUpdate: options.official === true && (old?.official ? old.autoUpdate === true : true) }
   })
 }
+/** Only call after matching the exact archive digest against the official catalog. */
+export const officialUpdatePolicy = (p: Installed, autoUpdate: boolean) => change(p.id, p.active.digest, old => {
+  if (!old) fail("registry_changed")
+  return { ...old, official: true, autoUpdate }
+})
 export const enablePackage = (p: Installed, enabled: boolean) => change(p.id, p.active.digest, old => {
   if (!old) fail("registry_changed"); return { ...old, enabled }
 })
 export const removePackage = (p: Installed) => change(p.id, p.active.digest, () => null)
 export const rollbackPackage = (p: Installed) => change(p.id, p.active.digest, old => {
   if (!old?.previous) fail("registry_changed")
-  return { ...old, active: old.previous, previous: old.active }
+  return { ...old, active: old.previous, previous: old.active, autoUpdate: false }
 })
