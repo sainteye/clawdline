@@ -159,5 +159,15 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsMemorySearchResults:   pure,
 		capacity.BotsSteerAnswer:           pure,
 		capacity.BotsRulesFileBytes:        pure,
+
+		// Group rooms: per-room-turn and per-prompt bounds hold no occupancy.
+		// Bots created by managers is a live count that no surface reads yet.
+		capacity.BotsGroupRounds:            pure,
+		capacity.BotsGroupReplies:           pure,
+		capacity.BotsGroupLateTurns:         pure,
+		capacity.BotsGroupMemberWaitSeconds: pure,
+		capacity.BotsGroupHistoryLines:      pure,
+		capacity.BotsGroupPeerLineChars:     pure,
+		capacity.BotsManagerCreated:         unobserved,
 	}
 }
