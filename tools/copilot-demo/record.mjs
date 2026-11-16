@@ -21,6 +21,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { IDS, story, steps, LANGS } from './story.mjs'
+import { tighten } from './tighten.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const arg = (name, fallback) => { const i = process.argv.indexOf('--' + name); return i > 0 ? process.argv[i + 1] : fallback }
@@ -229,6 +230,7 @@ async function moveTo(x, y, stepsN = 28) {
   }
 }
 const centre = (sel) => run(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
+const actions = [] // when each click landed (ms, this clock), so the edit keeps it
 async function click(sel) {
   const { x, y } = await centre(sel)
   // A tap lands on whatever is drawn there; say so when it is not the control meant.
@@ -236,11 +238,13 @@ async function click(sel) {
   if (hit) throw new Error('the tap would land on ' + hit)
   if (PHONE) {
     await sleep(350)
+    actions.push(Date.now())
     await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(90)
     await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     return
   }
   await moveTo(x, y); await sleep(250)
+  actions.push(Date.now())
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }); await sleep(90)
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
 }
@@ -303,10 +307,17 @@ if (LIVE) {
   await click('.realtime-minimize-btn')
   await moveTo(1250, 560, 25)
   if (PHONE) { await until(`!!document.querySelector('.copilot-bubble-body')`, 5000); await sleep(600); await drag('.copilot-bubble-body', VIEW.width - 40, VIEW.height - 235) }
-  await sleep(900); await say('pS')
+  // The person opens Sessions from the list with the mouse; the copilot tells
+  // each one's state without being asked (a call that follows the screen).
+  const openRow = async (id) => {
+    await run(`(() => { const row = [...document.querySelectorAll('li.row')].find((li) => li.textContent.includes(${JSON.stringify(S.sessions().find((r) => r.id === id).label)})); row?.setAttribute('data-demo-row', ${JSON.stringify(id)}) })()`)
+    await click(`[data-demo-row="${id}"]`)
+    await run('window.__demo.mark()')
+  }
+  await sleep(900); await openRow(IDS.search)
   // While the copilot tells Search rebuild's story, read down its conversation.
   const reading = (async () => {
-    try { await until(`decodeURIComponent(location.hash).includes(${JSON.stringify(IDS.search)})`, 40000) } catch { return }
+    try { await until(`decodeURIComponent(location.hash).includes(${JSON.stringify(IDS.search)})`, 10000) } catch { return }
     await sleep(1200)
     if (PHONE) { await glide(0, 1500); await sleep(1500); await glide(1, 15000) } else {
       await moveTo(1150, 520, 20)
@@ -315,8 +326,8 @@ if (LIVE) {
       for (let i = 0; i < 150; i++) { await wheel(14); await sleep(100) }
     }
   })()
-  await turn('pS', 120000); await reading
-  await sleep(800); await say('p2o'); await turn('p2o', 90000)
+  await turn('Search rebuild', 120000); await reading
+  await sleep(800); await openRow(IDS.release); await turn('Release 2.4', 90000)
   await sleep(800); await say('p3o'); await turn('p3o', 60000)
   // GPT-Live may send at once or read the message back first; the yes is said only when it is still unsent.
   if (!S.state.releaseSent) { await sleep(500); await say('p4'); await turn('p4', 60000) }
@@ -384,6 +395,9 @@ const inputs = voices.flatMap((v) => ['-i', v.file])
 const graph = voices.map((v, i) => `[${i + 1}]aformat=channel_layouts=mono,adelay=${Math.max(0, Math.round(v.at - first))}:all=1[a${i}]`).join(';') + ';' +
   voices.map((_, i) => `[a${i}]`).join('') + `amix=inputs=${voices.length}:normalize=0,pan=stereo|c0=c0|c1=c0,apad=whole_dur=${duration.toFixed(3)},alimiter=limit=0.95[aout]`
 ff('-i', 'video.mp4', ...inputs, '-filter_complex', graph, '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-ar', '48000', '-t', duration.toFixed(3), '-movflags', '+faststart', resolve(OUT))
+// A GPT-Live take waits on a real model; the film keeps the talk and shortens the waits.
+const cut = LIVE && !process.argv.includes('--no-tighten') ? tighten(resolve(OUT), KEEP ? join(work, 'untrimmed.mp4') : '', actions.map((at) => (at - first) / 1000)) : null
+
 writeFileSync(join(work, 'take.json'), JSON.stringify({ lang: LANG, phone: PHONE, live: LIVE, session: liveSession, frames: frames.length, duration, clips: clips.map((c) => ({ id: c.id, at: (c.wallMs - first) / 1000 })), tools, said: liveSaid, backend: liveBackend, turns: liveTurns, voiceAt: voice.start ? (voice.start - first) / 1000 : null, errors: liveErrors, sent: S.state.sentText, journal }, null, 2))
 if (!KEEP) rmSync(work, { recursive: true, force: true })
 
@@ -392,7 +406,8 @@ if (LIVE) {
   // A real model chooses its own tools and words: the take holds when the message reached Release 2.4 and nothing failed.
   console.log('copilot-demo: the copilot said:\n  ' + liveSaid.join('\n  '))
   if (!S.state.releaseSent || liveErrors.length) { console.error(`the GPT-Live take did not run through: tools ${ran}; sent=${S.state.releaseSent}; errors: ${liveErrors.join('; ') || 'none'}`); process.exit(1) }
-  console.log(`copilot-demo: ${resolve(OUT)} (${LANG}${PHONE ? ', phone' : ''}, GPT-Live, ${duration.toFixed(1)} s, ${frames.length} frames; tools: ${ran}; sent: ${S.state.sentText})`)
+  const length = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', resolve(OUT)]).toString())
+  console.log(`copilot-demo: ${resolve(OUT)} (${LANG}${PHONE ? ', phone' : ''}, GPT-Live, ${length.toFixed(1)} s${cut ? `, ${cut.removed} s of waiting cut in ${cut.segments - 1} places from ${duration.toFixed(1)} s` : ''}; tools: ${ran}; sent: ${S.state.sentText})`)
   process.exit(0)
 }
 const expected = ['open_session', 'get_session_recap', 'open_session', 'send_message_to_session']

@@ -62,7 +62,8 @@ const WORDS = {
       checkout: { kept: 'Checkout redesign finished the single-page checkout with Apple Pay first; all 212 tests pass. It is waiting for you to choose: merge into main now, or wait for the design review.' },
       webhooks: { kept: 'Payment webhooks made the Stripe handler idempotent and is building a retry queue with exponential backoff. Nothing for you yet.' },
       emails: { kept: 'Order emails delivered: they render in dark mode, the Outlook logo has a PNG fallback, and 14 snapshot tests cover Gmail, Outlook and Apple Mail.' },
-      release: { kept: 'Release 2.4 bumped the versions and drafted the release notes. Three UI tests fail on iPad only, and it is waiting for you: skip them for 2.4, or fix them first.',
+      // Kept from before the UI suite finished, so the latest one has news to add.
+      release: { kept: 'Release 2.4 bumped the versions to 2.4.0, drafted the release notes and is running the full UI suite on iPhone and iPad.',
         latest: 'Release 2.4 has bumped every version to 2.4.0 and drafted the notes. The UI suite passes on iPhone; CheckoutSheet, PhotoPicker and SettingsSplit fail on iPad only. It is waiting for you to choose: skip them for 2.4, or fix them first.',
         sent: 'Release 2.4 got your message and is fixing the three iPad UI tests now; the release waits until they pass.' },
       sync: { kept: 'Offline sync queues edits on disk and is writing conflict resolution for edits made on two devices. Nothing for you yet.' },
@@ -129,7 +130,7 @@ const WORDS = {
       checkout: { kept: '結帳改版做好了單頁結帳，Apple Pay 排第一個，212 個測試全部通過。現在在等你決定：要現在合併到 main，還是等設計審查。' },
       webhooks: { kept: '金流 Webhook 已經讓 Stripe 的處理可以重複執行，正在做指數退避的重試佇列。目前不需要你處理。' },
       emails: { kept: '訂單通知信已經交付：深色模式顯示正常，Outlook 的 Logo 用 PNG 備援修好，還補了 14 個涵蓋 Gmail、Outlook 和 Apple Mail 的快照測試。' },
-      release: { kept: '2.4 版發布更新了版本號、寫好發布說明。有三個 UI 測試只在 iPad 上失敗，正在等你決定：2.4 先略過，還是先修好。',
+      release: { kept: '2.4 版發布把版本號改成 2.4.0、寫好發布說明，正在 iPhone 和 iPad 上跑完整的 UI 測試。',
         latest: '2.4 版發布已經把版本號都改成 2.4.0，發布說明也寫好了。UI 測試在 iPhone 上全過，CheckoutSheet、PhotoPicker 和 SettingsSplit 只在 iPad 上失敗。現在等你決定：2.4 先略過，還是先修好。',
         sent: '2.4 版發布收到你的訊息，正在修那三個 iPad UI 測試，測試通過前先不發布。' },
       sync: { kept: '離線同步已經把修改存進磁碟佇列，正在寫兩台裝置同時修改的衝突處理。目前不需要你處理。' },

@@ -47,6 +47,21 @@ the copilot off mid-sentence in five of the first eight takes. "Yes, send it" is
 the message is still unsent, since GPT-Live may act on the instruction at once or answer the
 Session's question instead of sending it.
 
+The take shows a call that follows the screen: after the overview the person opens Search
+rebuild and then Release 2.4 from the list with the mouse, and the copilot tells each one's
+state unasked, its kept recap first and then the latest. Release 2.4's kept recap is from before
+its UI suite finished, so the latest one brings the iPad failures. Switching by voice
+("open Search rebuild") is not shown: it took a backend round trip per switch and made the film
+longer without showing more.
+
+Every take is then edited (`tighten.mjs`, also runnable alone on a film): each stretch in
+which neither voice is heard and that is longer than 1.2 s becomes 0.6 s, the opening keeps
+its first 2.6 s and the close 1.6 s after the last word, and each click keeps 1.2 s before and
+0.6 s after it so the pointer is seen moving there. Picture and sound are cut together
+(`trim`/`atrim` and `concat`; `select`/`aselect` cut only the picture). On 2026-11-16 this
+took 134 s to 80 s in English and 184 s to 123 s in Chinese. `--no-tighten` keeps the whole
+take, and `--keep` keeps it as `untrimmed.mp4`.
+
 A real model chooses its own tools and words, so takes differ. The recorder exits 1 unless
 Release 2.4 received a message or an answer and no error was reported; it prints what the
 copilot said, and `--keep <dir>` keeps `take.json` with the backend's answers, the call

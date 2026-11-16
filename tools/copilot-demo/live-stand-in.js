@@ -97,6 +97,8 @@
       await new Promise((r) => { src.onended = r })
       watch.personEnd = wall()
     },
+    /** A click that should be answered (a Session opened from the list) is the person's turn. */
+    mark() { watch.personEnd = wall() },
     /**
      * Whether the copilot has answered the person's last line and finished:
      * it spoke after the line ended, has been silent for `quietMs`, and has no
