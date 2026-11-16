@@ -466,9 +466,36 @@ func (b *Bridge) SetPersonControl(tab int, on bool) error {
 
 // SetPersonControlForMode binds a viewer's intent to the profile it saw.
 func (b *Bridge) SetPersonControlForMode(tab int, on bool, mode string) error {
+	return b.setPersonControl(tab, on, mode, tabScope{})
+}
+
+// BotOwnerPrefix begins every tab owner that is a Bot conversation
+// (projectassistanthost.BrowserOwner), never a terminal Session.
+const BotOwnerPrefix = "bot-"
+
+// tabScope limits a person's request to the tabs of one owner, or, for a
+// request that names no owner, away from the tabs of Bots. The zero value
+// allows every tab, as the engine always has for its own callers.
+type tabScope struct {
+	owner   string
+	exclude string
+}
+
+func (s tabScope) allows(tabOwner string) bool {
+	if s.owner != "" {
+		return tabOwner == s.owner
+	}
+	return s.exclude == "" || !strings.HasPrefix(tabOwner, s.exclude)
+}
+
+func (b *Bridge) setPersonControl(tab int, on bool, mode string, scope tabScope) error {
 	b.mu.Lock()
 	if mode == "" {
 		mode = "isolated"
+	}
+	if !scope.allows(b.owner[tab]) {
+		b.mu.Unlock()
+		return OtherSessionsTab
 	}
 	if on && b.disabled {
 		b.mu.Unlock()
@@ -550,17 +577,21 @@ func (b *Bridge) PersonDo(ctx context.Context, op string, tab int, args json.Raw
 
 // PersonDoForMode rejects stale viewer actions even when profiles reuse tab IDs.
 func (b *Bridge) PersonDoForMode(ctx context.Context, op string, tab int, args json.RawMessage, mode string) (json.RawMessage, error) {
-	return b.personDo(ctx, op, tab, args, mode, nil)
+	return b.personDo(ctx, op, tab, args, mode, nil, tabScope{})
 }
 
 func (b *Bridge) PersonDoWithAdmission(ctx context.Context, op string, tab int, args json.RawMessage, mode string, release func()) (json.RawMessage, error) {
+	return b.personDoScoped(ctx, op, tab, args, mode, release, tabScope{})
+}
+
+func (b *Bridge) personDoScoped(ctx context.Context, op string, tab int, args json.RawMessage, mode string, release func(), scope tabScope) (json.RawMessage, error) {
 	var once sync.Once
 	unlock := func() { once.Do(release) }
 	defer unlock()
-	return b.personDo(ctx, op, tab, args, mode, unlock)
+	return b.personDo(ctx, op, tab, args, mode, unlock, scope)
 }
 
-func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.RawMessage, mode string, admitted func()) (json.RawMessage, error) {
+func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.RawMessage, mode string, admitted func(), scope tabScope) (json.RawMessage, error) {
 	if !personOps[op] || tab <= 0 || len(args) > MaxArgBytes {
 		return nil, BadRequest
 	}
@@ -586,6 +617,10 @@ func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.Raw
 	if mode != b.mode {
 		b.mu.Unlock()
 		return nil, WrongMode
+	}
+	if !scope.allows(b.owner[tab]) {
+		b.mu.Unlock()
+		return nil, OtherSessionsTab
 	}
 
 	if !b.hostConnected() {
@@ -631,12 +666,15 @@ func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.Raw
 		res = Result{Error: string(Disabled)}
 	} else if op != "screenshot" && (!b.person[tab] || b.controlEpoch[tab] != controlEpoch) {
 		res = Result{Error: string(NotTakenOver)}
+	} else if !scope.allows(b.owner[tab]) {
+		// The tab was forgotten or reassigned while the picture was on its way.
+		res = Result{Error: string(OtherSessionsTab)}
 	}
 	b.mu.Unlock()
 	if res.OK {
 		return res.Value, nil
 	}
-	if Refusal(res.Error) == TimedOut || Refusal(res.Error) == NotTakenOver || Refusal(res.Error) == Disabled || Refusal(res.Error) == WrongMode {
+	if Refusal(res.Error) == TimedOut || Refusal(res.Error) == NotTakenOver || Refusal(res.Error) == Disabled || Refusal(res.Error) == WrongMode || Refusal(res.Error) == OtherSessionsTab {
 		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
@@ -657,10 +695,14 @@ type AuditFilter struct {
 	Site string
 	// Since is a Unix time in seconds; rows before it are left out.
 	Since int64
+	// Exclude leaves out rows whose owner begins with it, such as every Bot
+	// (BotOwnerPrefix) in a view that named none.
+	Exclude string
 }
 
 func (f AuditFilter) matches(row AuditRow) bool {
 	return (f.Conversation == "" || row.Conversation == f.Conversation) &&
+		(f.Exclude == "" || !strings.HasPrefix(row.Conversation, f.Exclude)) &&
 		(f.Site == "" || row.Site == f.Site) && row.At >= f.Since
 }
 

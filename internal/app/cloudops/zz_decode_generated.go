@@ -663,7 +663,14 @@ func genDecodeChromeAudit(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "conversation", "limit", "request", "session", "since"},
 		[]string{"type", "limit", "request", "session", "since", "site"},
 		[]string{"type", "conversation", "limit", "request", "session", "since", "site"},
+		[]string{"type", "bot_id", "conversation", "limit", "request", "session"},
+		[]string{"type", "bot_id", "conversation", "limit", "request", "session", "site"},
+		[]string{"type", "bot_id", "conversation", "limit", "request", "session", "since"},
+		[]string{"type", "bot_id", "conversation", "limit", "request", "session", "since", "site"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
@@ -684,7 +691,7 @@ func genDecodeChromeAudit(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/browser/audit"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"conversation": genValue{from: "conversation"}, "limit": genValue{from: "limit"}, "since": genValue{from: "since"}, "site": genValue{from: "site"}})
+	req.Query = b.genQuery(map[string]genValue{"bot_id": genValue{from: "bot_id"}, "conversation": genValue{from: "conversation"}, "limit": genValue{from: "limit"}, "since": genValue{from: "since"}, "site": genValue{from: "site"}})
 	req.Header = asDevice()
 	return p, req, true
 }
@@ -831,7 +838,11 @@ func genDecodeChromeStop(b body) (plan, LocalRequest, bool) {
 func genDecodeChromeTabActivity(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "conversation", "request", "session"},
+		[]string{"type", "bot_id", "conversation", "request", "session"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
@@ -843,7 +854,7 @@ func genDecodeChromeTabActivity(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/browser/activity"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"conversation": genValue{from: "conversation"}})
+	req.Query = b.genQuery(map[string]genValue{"bot_id": genValue{from: "bot_id"}, "conversation": genValue{from: "conversation"}})
 	req.Header = asDevice()
 	return p, req, true
 }
@@ -853,10 +864,18 @@ func genDecodeChromeTabControl(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "person", "request", "session", "tab"},
 		[]string{"type", "browser_mode", "person", "request", "session", "tab"},
+		[]string{"type", "bot_id", "conversation", "person", "request", "session", "tab"},
+		[]string{"type", "bot_id", "browser_mode", "conversation", "person", "request", "session", "tab"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
 	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("person", genRule{kind: "bool"}) {
@@ -872,7 +891,7 @@ func genDecodeChromeTabControl(b body) (plan, LocalRequest, bool) {
 	path := "/v1/browser/control"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
-	req.Body = b.genFields(map[string]genValue{"browser_mode": genValue{from: "browser_mode"}, "person": genValue{from: "person"}, "tab": genValue{from: "tab"}})
+	req.Body = b.genFields(map[string]genValue{"bot_id": genValue{from: "bot_id"}, "browser_mode": genValue{from: "browser_mode"}, "conversation": genValue{from: "conversation"}, "person": genValue{from: "person"}, "tab": genValue{from: "tab"}})
 	return p, req, true
 }
 
@@ -881,13 +900,21 @@ func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "args", "op", "request", "session", "tab"},
 		[]string{"type", "args", "browser_mode", "op", "request", "session", "tab"},
+		[]string{"type", "args", "bot_id", "conversation", "op", "request", "session", "tab"},
+		[]string{"type", "args", "bot_id", "browser_mode", "conversation", "op", "request", "session", "tab"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("args", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"direction": genRule{kind: "string", enum: []string{"up", "down"}}, "key": genRule{kind: "string", enum: []string{"Enter", "Tab", "Backspace", "Escape", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp"}}, "mode": genRule{kind: "string", enum: []string{"mobile", "desktop"}}, "replace": genRule{kind: "bool"}, "text": genRule{kind: "string", maxBytes: 16384}, "url": genRule{kind: "string", nonEmpty: true, maxBytes: 8192}, "x": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}, "y": genRule{kind: "integer", min: genInt(0), max: genInt(100000)}}, closed: true, maxKeys: 3}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
 	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("op", genRule{kind: "string", enum: []string{"click", "type", "key", "scroll", "viewport", "field", "reload", "navigate"}}) {
@@ -903,7 +930,7 @@ func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
 	path := "/v1/browser/person"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
-	req.Body = b.genFields(map[string]genValue{"args": genValue{from: "args"}, "browser_mode": genValue{from: "browser_mode"}, "op": genValue{from: "op"}, "tab": genValue{from: "tab"}})
+	req.Body = b.genFields(map[string]genValue{"args": genValue{from: "args"}, "bot_id": genValue{from: "bot_id"}, "browser_mode": genValue{from: "browser_mode"}, "conversation": genValue{from: "conversation"}, "op": genValue{from: "op"}, "tab": genValue{from: "tab"}})
 	return p, req, true
 }
 
@@ -911,7 +938,11 @@ func genDecodeChromeTabInput(b body) (plan, LocalRequest, bool) {
 func genDecodeChromeTabMute(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "conversation", "muted", "request", "session"},
+		[]string{"type", "bot_id", "conversation", "muted", "request", "session"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
@@ -927,7 +958,7 @@ func genDecodeChromeTabMute(b body) (plan, LocalRequest, bool) {
 	path := "/v1/browser/mute"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
-	req.Body = b.genFields(map[string]genValue{"conversation": genValue{from: "conversation"}, "muted": genValue{from: "muted"}})
+	req.Body = b.genFields(map[string]genValue{"bot_id": genValue{from: "bot_id"}, "conversation": genValue{from: "conversation"}, "muted": genValue{from: "muted"}})
 	return p, req, true
 }
 
@@ -936,7 +967,12 @@ func genDecodeChromeTabOpen(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "conversation", "request", "session", "url"},
 		[]string{"type", "conversation", "layout", "request", "session", "url"},
+		[]string{"type", "bot_id", "conversation", "request", "session", "url"},
+		[]string{"type", "bot_id", "conversation", "layout", "request", "session", "url"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
@@ -955,7 +991,7 @@ func genDecodeChromeTabOpen(b body) (plan, LocalRequest, bool) {
 	path := "/v1/browser/open"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
-	req.Body = b.genFields(map[string]genValue{"conversation": genValue{from: "conversation"}, "layout": genValue{from: "layout"}, "url": genValue{from: "url"}})
+	req.Body = b.genFields(map[string]genValue{"bot_id": genValue{from: "bot_id"}, "conversation": genValue{from: "conversation"}, "layout": genValue{from: "layout"}, "url": genValue{from: "url"}})
 	return p, req, true
 }
 
@@ -966,10 +1002,20 @@ func genDecodeChromeTabScreenshot(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "browser_mode", "quality", "request", "session", "tab"},
 		[]string{"type", "request", "session", "tab"},
 		[]string{"type", "browser_mode", "request", "session", "tab"},
+		[]string{"type", "bot_id", "conversation", "quality", "request", "session", "tab"},
+		[]string{"type", "bot_id", "browser_mode", "conversation", "quality", "request", "session", "tab"},
+		[]string{"type", "bot_id", "conversation", "request", "session", "tab"},
+		[]string{"type", "bot_id", "browser_mode", "conversation", "request", "session", "tab"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
 	if !b.genValid("browser_mode", genRule{kind: "string", enum: []string{"native", "user_chrome", "isolated"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("quality", genRule{kind: "string", enum: []string{"30", "45", "55", "70"}}) {
@@ -984,7 +1030,7 @@ func genDecodeChromeTabScreenshot(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/browser/screenshot"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"browser_mode": genValue{from: "browser_mode"}, "quality": genValue{from: "quality"}, "tab": genValue{from: "tab"}})
+	req.Query = b.genQuery(map[string]genValue{"bot_id": genValue{from: "bot_id"}, "browser_mode": genValue{from: "browser_mode"}, "conversation": genValue{from: "conversation"}, "quality": genValue{from: "quality"}, "tab": genValue{from: "tab"}})
 	req.Header = asDevice()
 	return p, req, true
 }
@@ -994,7 +1040,11 @@ func genDecodeChromeTabStatus(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "request", "session"},
 		[]string{"type", "conversation", "request", "session"},
+		[]string{"type", "bot_id", "conversation", "request", "session"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
@@ -1006,7 +1056,7 @@ func genDecodeChromeTabStatus(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/browser/status"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"conversation": genValue{from: "conversation"}})
+	req.Query = b.genQuery(map[string]genValue{"bot_id": genValue{from: "bot_id"}, "conversation": genValue{from: "conversation"}})
 	req.Header = asDevice()
 	return p, req, true
 }

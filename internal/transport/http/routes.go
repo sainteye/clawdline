@@ -19,7 +19,11 @@ import (
 // Explicit Bot input uploads and authenticated readback arrive at level 70.
 // Live Bot roster streams are available from level 71.
 // Human Bot routine management is available from level 73.
-const APILevel = 73
+// A person's browser status, activity, audit, screenshot, control, person,
+// open and mute requests accept a Bot target (bot_id with its conversation)
+// from level 74; an older daemon ignores an unknown GET field, so a console
+// must not name a Bot to a source below 74.
+const APILevel = 74
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux
