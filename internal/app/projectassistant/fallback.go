@@ -115,12 +115,30 @@ func (r *Engine) appendAttempt(ctx context.Context, a *runtimeActor, t *pa.Turn,
 	if len(t.Attempts) == 0 {
 		return nil
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	// Native events may have appended facts while Open/Send/Wait ran. Reload
+	// rather than overwriting that evidence with the worker's older snapshot.
+	latest, err := r.o.Repository.Turn(ctx, a.key, t.ID)
+	if err != nil {
+		return err
+	}
+	if latest.Fence != t.Fence || len(latest.Attempts) == 0 {
+		return runtimeFailure(pa.StaleGeneration, "attempt_fence")
+	}
+	*t = latest
 	f := t.Attempts[len(t.Attempts)-1]
 	f.Stage = stage
 	switch stage {
+	case pa.AttemptOpened:
+		f.Opened = true
 	case pa.AttemptSending:
 		f.SendStarted = true
 		f.Effect = "unknown"
+	case pa.AttemptSent:
+		f.SendReturned = true
+	case pa.AttemptAnswered:
+		f.AnswerObserved = true
 	case pa.AttemptClosed:
 		f.CleanupConfirmed = true
 	}
@@ -174,7 +192,7 @@ func (r *Engine) refuseBeforeSend(ctx context.Context, a *runtimeActor, t *pa.Tu
 		}
 	}
 	f := t.Attempts[len(t.Attempts)-1]
-	if f.Stage != pa.AttemptOpening || f.SendStarted {
+	if f.Stage != pa.AttemptOpening || f.SendStarted || f.NativeActivity || f.ToolActivity || f.SendReturned || f.AnswerObserved {
 		return false, nil
 	}
 	f.Reason = string(refusal.Failure.Reason)

@@ -63,3 +63,25 @@ func TestFallbackRestMatchesUpstreamCadence(t *testing.T) {
 		}
 	}
 }
+
+func TestSafeAttemptClosedRefusesEveryObservedEffect(t *testing.T) {
+	clean := AttemptFact{Stage: AttemptClosed, Effect: "none", CleanupConfirmed: true, Reason: "usage_limit"}
+	if !SafeAttemptClosed(Turn{Attempts: []AttemptFact{clean}}) {
+		t.Fatal("authoritative cleaned refusal was rejected")
+	}
+	for _, change := range []func(*AttemptFact){
+		func(f *AttemptFact) { f.SendStarted = true },
+		func(f *AttemptFact) { f.SendReturned = true },
+		func(f *AttemptFact) { f.NativeActivity = true },
+		func(f *AttemptFact) { f.ToolActivity = true },
+		func(f *AttemptFact) { f.AnswerObserved = true },
+		func(f *AttemptFact) { f.CleanupConfirmed = false },
+		func(f *AttemptFact) { f.Effect = "unknown" },
+	} {
+		fact := clean
+		change(&fact)
+		if SafeAttemptClosed(Turn{Attempts: []AttemptFact{fact}}) {
+			t.Fatalf("observed effect authorized another attempt: %+v", fact)
+		}
+	}
+}
