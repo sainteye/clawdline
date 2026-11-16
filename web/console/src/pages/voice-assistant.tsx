@@ -40,7 +40,11 @@ function VoiceAssistant({ shown }: { shown: boolean }) {
           <h1 id="voice-work-heading">{W('voiceWorkTitle')}</h1>
           <p>{tab === 'tools' ? W('voiceToolsCardJumpHint') : W('copilotSettingsHint')}</p>
         </div>
-        <button type="button" onClick={() => document.dispatchEvent(new CustomEvent(COPILOT_OPEN))}>
+        <button
+          type="button"
+          className="voice-work-call-btn"
+          onClick={() => document.dispatchEvent(new CustomEvent(COPILOT_OPEN))}
+        >
           {W('voiceWorkCall')}
         </button>
       </header>
