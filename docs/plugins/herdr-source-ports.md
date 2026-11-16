@@ -7,6 +7,8 @@ geometry and licensed assets, with explicit platform and data adaptations.
 
 | View | Pinned source | Rendering boundary |
 | --- | --- | --- |
+| World of Codecraft | [kevinpardo/world-of-codecraft, 6c5b65b](https://github.com/kevinpardo/world-of-codecraft/tree/6c5b65b75eafb78dd906cdccfebabdd262ac9f28) | Original day/night landscape, transparent foreground cut-outs, six original heroes with work/rest/walk frames, anchors, road, smoke and light. Browser camera and complete Session register replace native terminals and recruiting. Decorative classes do not imply provider identity or tool activity. |
+| Kaiju City | [Jiqize/herdr-kaiju, ba44d36](https://github.com/Jiqize/herdr-kaiju/tree/ba44d36dafd8a5ba757513253ea1eac2934a67b6) | Original eight-slot isometric city, all eight monsters, damage layers, depth ordering, dust and sirens. Additional districts expose overflow Projects. Trusted working-turn times alone drive timed damage; native statistics and commands are omitted. |
 | Orrery | [isaacin42/herdr-layouts, 73bf616](https://github.com/isaacin42/herdr-layouts/tree/73bf616382d6b5c0ae5f73edf3cd122c4f51cda9/orrery) | `main.js` divides the entire dial into equal space sectors and places planets inside their sector. Preserve that geometry, the original SVG dial/planets/halos, typography and brass/walnut composition. |
 | Night City | [vib-z/herdr-layouts, e4619fa](https://github.com/vib-z/herdr-layouts/tree/e4619fad4d5dea423fe1ebf2c296de7e6964f52d/night-city) | `model.js` derives floors, windows and skyline geometry; `main.js` composes the tower, signs, glass and beams. Reuse the composition and assets without inventing missing native hierarchy or history. |
 | Departures | [adamentwistle/herdr-departures, b63bf21](https://github.com/adamentwistle/herdr-departures/tree/b63bf21671ad50d081cb624ec750cf6482508667) | `logic.js` and `view.js` own board sizing, columns and split-flap cells. Port those mechanisms while keeping full Unicode names and labeling unavailable fields. |
@@ -19,6 +21,21 @@ navigation, not a live terminal, file inventory or tool-event history. Optional 
 and working-turn timestamps are described in the View Plugin contract.
 No missing input may be fabricated from Session state. A source-faithful renderer
 with synthetic inputs establishes rendering only, not a live Territory feature.
+
+The two raster-art ports preserve original pixels with exact lossless WebP and
+retain source/encoded hashes in their artwork inventories. They use the same
+two-file STORE profile; their larger embedded assets require the registered
+32 MiB archive/expanded bounds. The eight installed packages with one rollback
+each imply at most 512 MiB of archive payload, subject to browser quota refusal.
+The extension remains browser-local, and a newer host is required to import these
+packages. No new capability, remote asset fetch, ZIP compression or native code
+execution is introduced. All titles and labels remain text.
+
+Codecraft's MIT license explicitly includes code and art; its bundled Cinzel
+Decorative font retains its separate OFL notice. Kaiju retains its original MIT
+notice and does not bundle its font. Both notices are embedded in the HTML as
+well as preserved with source. Static source inspection and automated browser
+checks do not establish the person's artistic approval or physical-phone use.
 
 Orrery's repository carries Apache-2.0; its IM Fell fonts carry a separate SIL OFL
 notice. The other three repositories carry MIT licenses. Retain the full applicable

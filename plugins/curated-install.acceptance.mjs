@@ -21,6 +21,7 @@ const views = [
   ['galaxy', 'Install Galaxy', '安裝星系'], ['orrery', 'Install Orrery', '安裝星象儀'],
   ['night-city', 'Install Night City', '安裝夜城'], ['departures', 'Install Departures', '安裝航班板'],
   ['territory', 'Install Territory', '安裝工作地圖'],
+  ['codecraft', 'Install Codecraft', '安裝奇幻村莊'], ['kaiju', 'Install Kaiju City', '安裝怪獸城市'],
 ]
 const archives = new Map(await Promise.all(views.map(async ([slug]) => [slug, await readFile(root + 'web/console/public/view-plugins/session-' + slug + '.zip')])))
 const requests = [], redirected = []
@@ -84,7 +85,7 @@ try {
               await page.locator('.vp-installed').nth(before).waitFor()
               await page.locator('input[type=file]:not([disabled])').waitFor()
             }
-            const expected = mode === 'native' || mode === 'public' ? 5 : mode === 'denied' ? 0 : 1
+            const expected = mode === 'native' || mode === 'public' ? 7 : mode === 'denied' ? 0 : 1
             assert.equal(await page.locator('.vp-installed').count(), expected)
             await page.reload(); await page.locator('#manager').click(); await page.locator('input[type=file]:not([disabled])').waitFor()
             if (expected) await page.locator('.vp-installed').nth(expected - 1).waitFor()

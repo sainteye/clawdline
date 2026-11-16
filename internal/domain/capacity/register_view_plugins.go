@@ -2,8 +2,8 @@ package capacity
 
 // The browser enforces these bounds without granting plugin code a daemon API.
 const (
-	MaximumViewPluginArchiveBytes        = 262144
-	MaximumViewPluginExpandedBytes       = 524288
+	MaximumViewPluginArchiveBytes        = 33554432
+	MaximumViewPluginExpandedBytes       = 33554432
 	MaximumViewPluginManifestBytes       = 8192
 	MaximumViewPluginCoverSide           = 256
 	MaximumViewPluginPackages            = 8

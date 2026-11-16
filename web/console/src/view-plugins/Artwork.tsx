@@ -3,10 +3,14 @@ import orrery from "../../../../plugins/session-orrery/manifest.json"
 import nightCity from "../../../../plugins/session-night-city/manifest.json"
 import departures from "../../../../plugins/session-departures/manifest.json"
 import territory from "../../../../plugins/session-territory/manifest.json"
+import codecraft from "../../../../plugins/session-codecraft/manifest.json"
+import kaiju from "../../../../plugins/session-kaiju/manifest.json"
 import previews from "./previews.json"
 import type { ViewPackage } from "./package.js"
 
 const covers = [
+  { manifest: codecraft },
+  { manifest: kaiju },
   { manifest: orrery },
   { manifest: nightCity },
   { manifest: departures },

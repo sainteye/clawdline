@@ -1,8 +1,8 @@
 // Kept in the capacity register by TestViewPluginBoundsAreRegistered.
 export const PLUGIN_LIMITS = {
   files: 2,
-  archiveBytes: 262144,
-  expandedBytes: 524288,
+  archiveBytes: 33554432,
+  expandedBytes: 33554432,
   manifestBytes: 8192,
   coverSide: 256,
   packages: 8,

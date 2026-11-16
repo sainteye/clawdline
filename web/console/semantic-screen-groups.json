@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12458,
+  "englishContentKeys": 12464,
   "riskKeys": 5403,
-  "nonRiskCount": 7055,
+  "nonRiskCount": 7061,
   "groups": [
     {
       "name": "acp / other",
@@ -7395,13 +7395,15 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 61,
+      "count": 67,
       "sources": [
         null
       ],
       "keys": [
+        "viewPlugins.addCodecraft",
         "viewPlugins.addDepartures",
         "viewPlugins.addGalaxy",
+        "viewPlugins.addKaiju",
         "viewPlugins.addNightCity",
         "viewPlugins.addOrrery",
         "viewPlugins.addTerritory",
@@ -7411,6 +7413,8 @@
         "viewPlugins.back",
         "viewPlugins.cancel",
         "viewPlugins.close",
+        "viewPlugins.codecraft",
+        "viewPlugins.codecraftHint",
         "viewPlugins.confirmInstall",
         "viewPlugins.coverRequired",
         "viewPlugins.departures",
@@ -7435,6 +7439,8 @@
         "viewPlugins.galaxyHint",
         "viewPlugins.install",
         "viewPlugins.installed",
+        "viewPlugins.kaiju",
+        "viewPlugins.kaijuHint",
         "viewPlugins.launchEmptyHint",
         "viewPlugins.launcher",
         "viewPlugins.loading",

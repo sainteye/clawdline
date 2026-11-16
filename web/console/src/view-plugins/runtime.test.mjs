@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { pathToFileURL } from "node:url"
 import { deflateSync, crc32 as pngCRC } from "node:zlib"
+import { PLUGIN_LIMITS } from './limits.ts'
 
 const scratch = await mkdtemp(join(tmpdir(), "cl-view-unit-"))
 const bundle = join(scratch,"runtime.mjs")
@@ -19,6 +20,16 @@ const packageURL = new URL("../../public/view-plugins/session-galaxy.zip",import
 const context = {language:"en",theme:"dark",reducedMotion:true,visible:true,scopeLabel:"Studio",connection:"connected"}
 const row = {key:"private-machine/execution",title:"<img src=x onerror=alert(1)>",project:{key:"/private/project",label:"Demo"},workState:"working",freshness:"fresh"}
 const reading = {sessions:[row],connected:true}
+test('Original-art packages retain the bounded archive refusal before installation', async()=>{
+ const tooLarge=new Uint8Array(PLUGIN_LIMITS.archiveBytes+1)
+ await assert.rejects(parsePackage(tooLarge),e=>e.code==='package_too_large')
+ await assert.rejects(installPackage(tooLarge,null),e=>e.code==='package_too_large')
+ for(const slug of ['session-codecraft','session-kaiju']){
+  const pkg=await parsePackage(await readFile(new URL('../../public/view-plugins/'+slug+'.zip',import.meta.url)))
+  assert.equal(pkg.manifest.id,'com.clawdline.'+slug)
+  assert.deepEqual(pkg.manifest.capabilities,['sessions.read','sessions.open'])
+ }
+})
 const tick = () => new Promise(r => setTimeout(r,15))
 function changedManifest(archive, patch) {
  const script=`import sys,json,io,base64,zipfile
@@ -168,7 +179,7 @@ test("ZIP corruption, compressed/encrypted archives and overflow are refused bef
   await assert.rejects(parsePackage(compression),e=>e.code==="unsupported_zip")
   const encryption=Buffer.from(original);encryption.writeUInt16LE(1,central+8)
   await assert.rejects(parsePackage(encryption),e=>e.code==="unsupported_zip")
-  await assert.rejects(parsePackage(new Uint8Array(262145)),e=>e.code==="package_too_large")
+  await assert.rejects(parsePackage(new Uint8Array(PLUGIN_LIMITS.archiveBytes+1)),e=>e.code==="package_too_large")
   await assert.rejects(parsePackage(original.subarray(0,-1)),PluginError)
 })
 test("Initial subscribe precedes updates, refs hide private identity, deleted refs cannot navigate",async()=>{

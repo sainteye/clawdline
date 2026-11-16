@@ -239,6 +239,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
           </section>
           <section className="vp-examples"><div className="vp-section-head"><div><h2>{w.preset}</h2><p>{w.examplesHint}</p></div></div><div className="vp-example-grid">
             {[
+              {id:"session-codecraft", title:w.codecraft, description:w.codecraftHint, action:w.addCodecraft},
+              {id:"session-kaiju", title:w.kaiju, description:w.kaijuHint, action:w.addKaiju},
               {id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},
               {id:"session-orrery", title:w.orrery, description:w.orreryHint, action:w.addOrrery},
               {id:"session-night-city", title:w.nightCity, description:w.nightCityHint, action:w.addNightCity},

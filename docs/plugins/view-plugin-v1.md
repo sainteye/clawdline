@@ -2,7 +2,7 @@
 
 Revision 8 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
-Session Departures and Session Territory. Public Release acceptance is separate from source and Cloud delivery.
+Session Departures, Session Territory, World of Codecraft and Kaiju City. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -42,7 +42,7 @@ cross-tab hints, revoke running grants before rereading the saved archives.
 
 ## Supplied Session views
 
-Explore views offers Galaxy, Orrery, Night City, Departures and Territory. Each
+Explore views offers Galaxy, Orrery, Night City, Departures, Territory, World of Codecraft and Kaiju City. Each
 install button opens the standard identity and permission review before saving
 that package in this browser. Open installed views from the bottom status bar;
 multiple enabled packages appear in its picker. A phone must install packages in
@@ -313,8 +313,8 @@ and matched against the browser and SDK by the parity guard:
 
 | Resource | Limit | At limit |
 | --- | ---: | --- |
-| ZIP bytes | 262144 | Refuse import |
-| Expanded bytes | 524288 | Refuse import |
+| ZIP bytes | 33554432 | Refuse import |
+| Expanded bytes | 33554432 | Refuse import |
 | Manifest bytes | 8192 | Refuse import |
 | Cover side | 256 pixels, square | Refuse import or packing |
 | Files | Exactly two | Refuse import |
@@ -327,6 +327,12 @@ and matched against the browser and SDK by the parity guard:
 | Names, versions, paths and request/display strings | 256 Unicode characters | Refuse, no silent truncation |
 
 The daemon reports these browser-local capacities as unmeasured, not zero.
+The larger archive profile admits original raster-art scenes without external
+resources or ZIP decompression. It applies to every package, including arbitrary
+author packages. With eight active packages and one rollback per package, archive
+payload is bounded at 512 MiB before browser bookkeeping; browser quota failures
+remain typed storage errors. Older hosts reject these larger archives. Manifest,
+two-file, CRC, cover, scope, CSP and bridge checks remain enforced.
 No global UI badges, remote update feed, publisher signing, cross-device package
 sync, plugin database or native capabilities are included.
 

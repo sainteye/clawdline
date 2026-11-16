@@ -1,0 +1,1070 @@
+[
+  {
+    "source": "mods/kaiju/assets/day/slot4-empty.png",
+    "asset": "art/assets/day/slot4-empty.webp",
+    "sourceSha256": "c3500ceeb51d5fb0def94af74709ead9bb290517012231cb9623cce3ffcf77f4",
+    "sha256": "9058316c579884e50909cea4c0ea6b9b8fdfebadd89924fd7bdcb9a89b39817a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot2-empty.png",
+    "asset": "art/assets/day/slot2-empty.webp",
+    "sourceSha256": "f05b698bdce3b7040c08245804cec6625bdf6eeba07df89d21cc5e5682e1f91a",
+    "sha256": "a8d33167b18952b3983280c0fa3f40e32f2fd0a8c1787dfb56e224ee6039ec3f"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot5-empty.png",
+    "asset": "art/assets/day/slot5-empty.webp",
+    "sourceSha256": "8d5236c3635aa06f46e98d8cb63ca2fa8753139654ab3d9f44cc261553df5c09",
+    "sha256": "c5b947fc3927e47d4fb434bcde53591e4766c0b82204b0f2964d654b3b941653"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot3-empty.png",
+    "asset": "art/assets/day/slot3-empty.webp",
+    "sourceSha256": "32d2b4cf386317c8bf04009f623d181e47dd9e9b84340d940d50455b7af073df",
+    "sha256": "d129532001aff23239b2ccfbd735e33cd615c1fdfd3a9c270ec784cfb6f221fd"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot3-0.png",
+    "asset": "art/assets/day/slot3-0.webp",
+    "sourceSha256": "d95b204640c22444f3fce96882f370eee28fe907f3b18a2579134c17ed69ddf5",
+    "sha256": "9eef77f88623a7c8710101e7b5562d9e5e4f946f7e28a4ee1c76124edb538428"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot1-2.png",
+    "asset": "art/assets/day/slot1-2.webp",
+    "sourceSha256": "f5ffc6120caa2a481eb0fa73098b534bcfde101e42002010438d0e4aab109996",
+    "sha256": "2db2f8e78d0bc5004c88319a7cc75f8deeb14960b8e2315e38db6744ca8d0f00"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot1-3.png",
+    "asset": "art/assets/day/slot1-3.webp",
+    "sourceSha256": "3ef55b2c74e0d07cfc543ebe5fbbded344f1d6160ad3ddaa0a88b5137d66efd7",
+    "sha256": "1d37c7f66f272b7b6b73729645192609d33c8088b04288bf3e77badefd63a529"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot3-1.png",
+    "asset": "art/assets/day/slot3-1.webp",
+    "sourceSha256": "43900d623fbe4ba53e08da51a7dab0e1e8b762ab95c9fe99b47ea4e0e740d283",
+    "sha256": "d9f69cef895eb11edbb2cbb3ebcd3e0858776d08f2cef204a0dcfddd2798265e"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot3-3.png",
+    "asset": "art/assets/day/slot3-3.webp",
+    "sourceSha256": "83a306c4c8d6a014ebec1c71a1b39842ab9a7fbcaae20d07a6e957f087d71210",
+    "sha256": "ed81d5101dcdd0993bee87c7e1864bc32638856349069cb63eaf669263d9cfe4"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot1-1.png",
+    "asset": "art/assets/day/slot1-1.webp",
+    "sourceSha256": "b67bcfb492d52634577fc4279c927fa28e4a9b339fd46bb0089c4728f5d7af0c",
+    "sha256": "f6af539908b9722b485fc72b284920a1808205f1b0a346d5825ab28d07b6aaf4"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot6-empty.png",
+    "asset": "art/assets/day/slot6-empty.webp",
+    "sourceSha256": "9aaa7955aff3dee43d0d3f4d28346229bbeec366aa5ef306dbfabdd16dd08312",
+    "sha256": "d7138bd15a94e0701f7c0c9d38cfe09759d09f2e814c7c784da77a1abaf6a717"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot1-0.png",
+    "asset": "art/assets/day/slot1-0.webp",
+    "sourceSha256": "63ae891cb2f1a7a6570122f7892d1dd3d3ff3d5ca92d6674fcefc27572566ada",
+    "sha256": "57cb31dfe0128f9d476bb51809894ea9665ca3cbad53f125164a2055dd952c48"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot3-2.png",
+    "asset": "art/assets/day/slot3-2.webp",
+    "sourceSha256": "ddc7de861d8bed289a8c5487f553d99c142258b8477132e0a64d6ca1e390bde0",
+    "sha256": "575dc324b2eb4b2f42f5395bcee36241e553d069d9b621d9ba6ccd8043542d54"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot7-2.png",
+    "asset": "art/assets/day/slot7-2.webp",
+    "sourceSha256": "58b631b3da6d8d63638b3af2f9785a2fed4c47fcf9f9f2c99bd38ed12d2012ad",
+    "sha256": "dfc34a10d96b8643b679b491f88fdfd91c861998cf5be223c6aeb8a13bbed260"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot5-0.png",
+    "asset": "art/assets/day/slot5-0.webp",
+    "sourceSha256": "d61e19488d300332470ed4fa946edb19219553fb8b73f1ec749e31cdeb7181fd",
+    "sha256": "c82f215e97c284d68032efc5ec2c17ea88a6cd73149e714edd75bc4572c00473"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot5-1.png",
+    "asset": "art/assets/day/slot5-1.webp",
+    "sourceSha256": "821318645270baedf48e7aba789ef545fe25062010ba67242ea0daa448fa8616",
+    "sha256": "d251a39bd5a352143a2979cc17de1aa981d2645af8af98c4521dbd6e97a10606"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot7-3.png",
+    "asset": "art/assets/day/slot7-3.webp",
+    "sourceSha256": "38b14c937a85ce1857b68562eeaefc7839597f6a2904b083498677b9330a0527",
+    "sha256": "1c1b55e5f209265ca2f66da34a31272856b57c3074dba82f50ce96306a98ec3f"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot0-empty.png",
+    "asset": "art/assets/day/slot0-empty.webp",
+    "sourceSha256": "4486554d46f271a9585d3590fd6f15641f14aa3a9208a30a08a37dd1afbe4a84",
+    "sha256": "ed416f2cd871f5ed005f67e7534436e2f1117c430c6340afa12f5062117251dc"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot7-1.png",
+    "asset": "art/assets/day/slot7-1.webp",
+    "sourceSha256": "ae094d5abd78f7c526c3ea7664cfd3084321c83878ac9f72c332ecbf3b225089",
+    "sha256": "e3ac0a4305f73be199d5848bf31010acac87382f78784338dbc34f40cc90755a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot5-3.png",
+    "asset": "art/assets/day/slot5-3.webp",
+    "sourceSha256": "21fb51a9747043f3abb5042d745cbcd4116c236045e4e7f76d5329f0010b8cca",
+    "sha256": "319673bbc84b0515200eacc7ffce8bd981ec8d81876cad500d6fc7206293dbef"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot5-2.png",
+    "asset": "art/assets/day/slot5-2.webp",
+    "sourceSha256": "b381ee67e876d5df4d6437e2bd991337d43b5128a0308775fc4fa5485184445b",
+    "sha256": "99ea841a546a3f5e36977851ae6e225845d13db9af9cbbb86839b8240259229c"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot7-0.png",
+    "asset": "art/assets/day/slot7-0.webp",
+    "sourceSha256": "b86709475c0f6040be95142082706fdbf1d8a9b6cfeb700ed0da83f54ed92fbb",
+    "sha256": "0552d28d9309831ffb7c15735ccb6d0c2ab246a1ccd76934adfdd5518184f00e"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot0-1.png",
+    "asset": "art/assets/day/slot0-1.webp",
+    "sourceSha256": "4d28a5387cd8efe0833c44c4c00918345d24b4b8a43aa6ad231cec8238157c96",
+    "sha256": "b3573cd6960b10cd92f4b82a2a7c25c2adc7f1bcd354d2946ff180481aa99952"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot2-3.png",
+    "asset": "art/assets/day/slot2-3.webp",
+    "sourceSha256": "8c13e5b75cfb40da519933905be2dbd2ca83e11d6c27dad6152ae5495da8f8df",
+    "sha256": "57514ef3ed6de3171efbbb5e67ed186294551f0e10bdbc38096f9b70fed36fa4"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot2-2.png",
+    "asset": "art/assets/day/slot2-2.webp",
+    "sourceSha256": "ea5a8b496ec8d0fcb4c9b3f4ec2ba0c3d8390068ab5941bd98bd0a9d8ed1c8cf",
+    "sha256": "f4656ef1b6839941b5f837301159727a17c7331f61f9da37cffc107c553df8b3"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot0-0.png",
+    "asset": "art/assets/day/slot0-0.webp",
+    "sourceSha256": "98c2b1759b47f723fb71bd7721e3e98f5ff241b21b9ac857b58907f1bc400be2",
+    "sha256": "b0c57554b5aa4246a632d6487e221fdd1475170597da0d436b91d3bf9d180a92"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot0-2.png",
+    "asset": "art/assets/day/slot0-2.webp",
+    "sourceSha256": "008830f4ae07663f8bdfd2a075f6a2576c9662c15577584ae4ab6b2138ec1bed",
+    "sha256": "c0904d0853ee0e90e2c5e3ef663fcd632aebd8b135c7882c422c83d2ecf3b137"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot2-0.png",
+    "asset": "art/assets/day/slot2-0.webp",
+    "sourceSha256": "8ff563b168f20bd20b0d09d9e15c08074e2c96a1843be209e9365497450db365",
+    "sha256": "a7a8d645f1d53b3c6c0c80c3b83e4c5411c16dcd1d8a23028beff68313b8e79a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/plate.png",
+    "asset": "art/assets/day/plate.webp",
+    "sourceSha256": "7b7c78a57c4fb6d252f29df8d637ee86894004623ed497b7a23f508801567dd6",
+    "sha256": "62b6b6f3904c6cb2cc5adb0a88765e9285add4c9c20a21e74f130a3fd63be5f0"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot2-1.png",
+    "asset": "art/assets/day/slot2-1.webp",
+    "sourceSha256": "621bf74f0acf5b952befa7a6eb8e3e09893c51c0d824deb3c60e2ce15426a50c",
+    "sha256": "ff30a340fea8b2fd6dfb4a1b7409078434873fd5e8936bad3d8cc438d1d9b15b"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot0-3.png",
+    "asset": "art/assets/day/slot0-3.webp",
+    "sourceSha256": "86e73d8299d55e1e5ea64092129ea4d8582729f24082d798395d5c51b34f08f2",
+    "sha256": "0d1b3f8db2881e091c9b91b36605c38496eda947cb843f9adfb231c92ec8d6a2"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot7-empty.png",
+    "asset": "art/assets/day/slot7-empty.webp",
+    "sourceSha256": "71a35cd4bd2f12e63b5331d0b8fb050f482a97e6a54177bf1c0c9f3cad50f8bc",
+    "sha256": "f5025f93644af637de22cea86959556318cdd43c3f2d55f11ae1b1817528e471"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot4-3.png",
+    "asset": "art/assets/day/slot4-3.webp",
+    "sourceSha256": "e4c154142944eba4b297e71e04ba5d1c0b756434d09fa00bbd001a0896a297c7",
+    "sha256": "5001c24b20ac73aaacc8c99f2430a83c50fd82591940dda3ca25a377e1dae527"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot6-1.png",
+    "asset": "art/assets/day/slot6-1.webp",
+    "sourceSha256": "6f4806798c311a5c705c8e5b21336f0bfd001b6ebe3bd45d1c4793ec65062b4e",
+    "sha256": "fd6536691c452e18521e2c1c6c2d17981a41ba873d47850f2d087138031af188"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot6-0.png",
+    "asset": "art/assets/day/slot6-0.webp",
+    "sourceSha256": "264e8ee3820012515b75fd66e6aca6088311fcf5fce065a1cf7c557cefa96a72",
+    "sha256": "e2523377f2531f28d6d38d135211ba05846e414137b06589f7e180df5234143f"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot4-2.png",
+    "asset": "art/assets/day/slot4-2.webp",
+    "sourceSha256": "0b50d23ff469712988a99f119251ae963c7be2d035835aa0504bb723c2d50a6c",
+    "sha256": "f0c4f3574582026576d5fd493c83ca413cfc28cfb72056723fc8593d3b91b7da"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot4-0.png",
+    "asset": "art/assets/day/slot4-0.webp",
+    "sourceSha256": "5561da2f387a29e7bd01c53abb273c0c8fe9c92202e94f16ebe187c8df35de33",
+    "sha256": "b9a44af6c5d2d05f850188dae56bc4bc394e01a2635919da4f65047f69ee8cb4"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot6-2.png",
+    "asset": "art/assets/day/slot6-2.webp",
+    "sourceSha256": "829839a627f8934580a27f74e9adc58877ca1b818f34952fdc1e7b0a4feb0c6d",
+    "sha256": "fbf42bb3f24f6c85ece408baa1e5a15e85b39c6664b33ccd340b274f1ddc9b67"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot1-empty.png",
+    "asset": "art/assets/day/slot1-empty.webp",
+    "sourceSha256": "5be6f22cda8550c7024ccb8742899e2ec161ac48bb0afe7c217780fa07b03c06",
+    "sha256": "2e7356dda7d791adfd70739d7b09f5cbfdb4a6cff8d85c9af7df46c5ebce0915"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot6-3.png",
+    "asset": "art/assets/day/slot6-3.webp",
+    "sourceSha256": "4cbd17aeab4bccb92a8d8eecba6c5916a3d630cfb423b3741ccb16230c656edc",
+    "sha256": "a64f4e2d23f0d1d031dc599df5e6dfdaaad6db578aa65496bf788e5a34d0d5a5"
+  },
+  {
+    "source": "mods/kaiju/assets/day/slot4-1.png",
+    "asset": "art/assets/day/slot4-1.webp",
+    "sourceSha256": "f6cdf02dfee56b57e68e3b8189230495d0f0871b161e89264d0e95379b1a09e7",
+    "sha256": "e2e52066ce363734e6859dd660131e9f957105aa82edd97cfa6003746021f643"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/zz.png",
+    "asset": "art/assets/day/fx/zz.webp",
+    "sourceSha256": "bf2a6f6f983ac725778bd654d709a99f9b77c646a50516da76d5be6d501bedfd",
+    "sha256": "fd483752d2ec592e0ced3d91a3c71bcb0d1c51e601c32e60f9daeac931702c23"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/bang.png",
+    "asset": "art/assets/day/fx/bang.webp",
+    "sourceSha256": "1987fbaa54f8304ad6d216ed723e9a4019e49bd9a5894a19c723b1753e41f14f",
+    "sha256": "bc936a432a3efa092a365e09b48c363d4f475434475b9b7f6ca400c300a1fc1a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/question.png",
+    "asset": "art/assets/day/fx/question.webp",
+    "sourceSha256": "3e800551d0df1f6a5c0ad3b3a87433ea8f36d785c5f0eed4c68b9460c7c240b5",
+    "sha256": "4865488f41bb2173daf41e0722621eeaaa87d2e9df35844aeec7f8677061c5d7"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/dust.png",
+    "asset": "art/assets/day/fx/dust.webp",
+    "sourceSha256": "78fd4e10744cd06f91d759dd106042acda2208c3d2bfe3d50430e078c7d44696",
+    "sha256": "0917847e14b4e13f55775ff41554647355904afe97a8b7bdb9e7f1df79fe1938"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/arrow.png",
+    "asset": "art/assets/day/fx/arrow.webp",
+    "sourceSha256": "23a54c0534971f66fa9fd3756a4209a90aff35407aebcac954ee4908645debe9",
+    "sha256": "d8442c58b0ff51143fe0e0ce41a3f17b4d23324a27e842ed2d179cde1fe5bbeb"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/clip.png",
+    "asset": "art/assets/day/fx/clip.webp",
+    "sourceSha256": "7bfd67eef5ebdee6b8a05efce6f4a1b5ccd0417f6d84fb53b45b456c2f5c83bb",
+    "sha256": "874e2b2d7a41be7bc0fd26a7df8033a8c3df9241fa8f9d61c29415280c31ebd9"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/siren.png",
+    "asset": "art/assets/day/fx/siren.webp",
+    "sourceSha256": "faa917702d5f4da032c4c2ae071fc9f6d703569a79647928ff1e666a3e9478a2",
+    "sha256": "1e12b4e110e2c7744edd8c93923a76551239a14249711899b1d72d8607999bc2"
+  },
+  {
+    "source": "mods/kaiju/assets/day/fx/brick.png",
+    "asset": "art/assets/day/fx/brick.webp",
+    "sourceSha256": "832180edc260bb6dfe43a07e1b811960476b6b49a9b6e69bba0775163a19397e",
+    "sha256": "388fb7d5d1616eb21e6cc8a42a40ac341970c4c5e04ab98c18b1847e9026dac2"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/roar.png",
+    "asset": "art/assets/day/monsters/crab/roar.webp",
+    "sourceSha256": "b4246ef77bdae73d6b46837f723a573cf581140a2a2bbbb512c4eae79bb40e73",
+    "sha256": "72936c09e538d34aed2fe479e1a877e5ac26eaf0267d4f4e18b54f6c5a842ee2"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/idle.png",
+    "asset": "art/assets/day/monsters/crab/idle.webp",
+    "sourceSha256": "8562981113d5f8a99a67ef9446e431e4a6e9e22cfe47477fb04aa9efa8680b37",
+    "sha256": "dad30774d9da6c21a89d94bdfd3b2af875b2c254e3188301a877f7b9d5b3b967"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/smash.png",
+    "asset": "art/assets/day/monsters/crab/smash.webp",
+    "sourceSha256": "9125d01e64b0f6231acce0e7ef7f1d8de7e71cc36c7740376dc794964acfb151",
+    "sha256": "069ba78d71eee04687a3f5d54248c78dacc0ed6fe0bc48515b8b7bd6dbd26ca5"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/wave.png",
+    "asset": "art/assets/day/monsters/crab/wave.webp",
+    "sourceSha256": "1178897e60c16cec13c5b8fdd29fcca7f7b63acdd633fdc7ad144ab244fb0189",
+    "sha256": "f16388d8b2325fb76d54bcc21b88af57d9b5394f347158f71191d42c085e0146"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/walk.png",
+    "asset": "art/assets/day/monsters/crab/walk.webp",
+    "sourceSha256": "70ebab98362837e60c4d3a76deb6d09f518ba53e7e4ddb0dda39877da2a29cf1",
+    "sha256": "896f765f24e895784a9155c1415d546d3cd184c159e28c5720f1b4c4e593dce9"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/roar.png",
+    "asset": "art/assets/day/monsters/ape/roar.webp",
+    "sourceSha256": "39639f1722e362e1390c0f277f7e1645708cf1ec07a6bc5920d4c046a3a9588e",
+    "sha256": "c7287fc198599f202651aca9179a0d64406ba8c1cc27948754adf738edbc4401"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/idle.png",
+    "asset": "art/assets/day/monsters/ape/idle.webp",
+    "sourceSha256": "365cede616086c04102250bdcfb3d5510eadd62ff6c2dbf3910845ddef3b40e8",
+    "sha256": "4befb5b4b7ac53efbecf70deaecfeed8025a5c8c2a4d525a8204c064f6995a41"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/smash.png",
+    "asset": "art/assets/day/monsters/ape/smash.webp",
+    "sourceSha256": "793a12b7f07b42705796951eacbe6957a368122907449e9fa41164db91b84052",
+    "sha256": "6748e7ca6d1eeaf5cd66b0d5b08f00c9fcff66e18b92096ec2ff56ef69cc3172"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/wave.png",
+    "asset": "art/assets/day/monsters/ape/wave.webp",
+    "sourceSha256": "f3b639e293c0b064d4993fa41e711d8187b39c37da477acb25e26014d2e2f73d",
+    "sha256": "70e1d208036e576ba559877cc0353de852175a45e1245bc569e6f3b93f2250c3"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/walk.png",
+    "asset": "art/assets/day/monsters/ape/walk.webp",
+    "sourceSha256": "c452c89aa39f8608f7294ad7335210cc267c4abc3d6f8e234dc02982cab6bd7d",
+    "sha256": "949336132d8d488daf11fd0043abd1892e4b7c3c43cd34f47257ba959cb63362"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/roar.png",
+    "asset": "art/assets/day/monsters/turtle/roar.webp",
+    "sourceSha256": "cf313d314306b66ba98ee9b6fff0b6d5710c12bbe604cd73d1f6ff0de75f12e0",
+    "sha256": "a5dacdcfc8353e5d133be88e4778e5dcd2d766cf10e3719cf06e8423c7412506"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/idle.png",
+    "asset": "art/assets/day/monsters/turtle/idle.webp",
+    "sourceSha256": "da745cdf73b56a1e39cb9e68ff88f72d2bbfa635a96238eb8b6bed4662cab46c",
+    "sha256": "e87e751da49a8b5bf98ec94441489f0e9c04a7b09855fa1c617d23c91d501838"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/smash.png",
+    "asset": "art/assets/day/monsters/turtle/smash.webp",
+    "sourceSha256": "3b5eeecb23f96e7ce06bc68774e91b1b5edc6c118da27399c5b023cba86e7ab2",
+    "sha256": "835f43d187b78539b6e192be42794b58afaae7b631e81895639b860da7e9d535"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/wave.png",
+    "asset": "art/assets/day/monsters/turtle/wave.webp",
+    "sourceSha256": "0ea982e7d2e8635d121dd1e41d3021874503e67a61a9372ad8c74d0c984499b2",
+    "sha256": "fb63e29f35a5411c960e181ed53a88a94d3d14db3d673f9612cf4bcfb05614e7"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/walk.png",
+    "asset": "art/assets/day/monsters/turtle/walk.webp",
+    "sourceSha256": "db0d6a27d3e16b491bd5e14842aac79dfb423048e65cb06a21fa8397d2aa0a5f",
+    "sha256": "e28b12cdcc7baf9942eb4a52e7bb4c1f9a8e89cfbe1e6abb0ac7854542367a94"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/roar.png",
+    "asset": "art/assets/day/monsters/moth/roar.webp",
+    "sourceSha256": "f7a3d36615d098475cf38e561acc49ed95afa306fdf93ea31110f9e5be0b0acf",
+    "sha256": "b86208249ff5fa8550a3369951a0a95ffaafe4bda58d686d15cd0fc6561edd19"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/idle.png",
+    "asset": "art/assets/day/monsters/moth/idle.webp",
+    "sourceSha256": "535bd2c1e332bf3957847edcd34774243dd01716a6a5233e43cb5bbc46749750",
+    "sha256": "89c580dad1a7d34e51b2ed30347ebc5ae839ab61e5526373a0d95f89b783198e"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/smash.png",
+    "asset": "art/assets/day/monsters/moth/smash.webp",
+    "sourceSha256": "1ca20065fb410d4f34ada3017267f747f5e80aacda2cef9b4b6c2a2606d60714",
+    "sha256": "4c67b31dc391bd067c53faa98efa9cf9ca97dfe76e070db2dda299e3778347fb"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/wave.png",
+    "asset": "art/assets/day/monsters/moth/wave.webp",
+    "sourceSha256": "8984883d42b23a711e6fb5928a298e0a30ee0ad65b1f6e461012d1aa4e2a47d8",
+    "sha256": "38c1d7cc477e1b8a6b05248a99681f7165a4a5b7aa59913dace16d4d55fcaa6e"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/walk.png",
+    "asset": "art/assets/day/monsters/moth/walk.webp",
+    "sourceSha256": "db1c3477f8064cc6e4403bab6d2ba48396d8d012cf088bba4e3da30ced68bf27",
+    "sha256": "2bab7ad3dd602e3895288bb5995d7148951079abb9f761590a04d7f631ecd19b"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/roar.png",
+    "asset": "art/assets/day/monsters/lizard/roar.webp",
+    "sourceSha256": "3bb7e768ecc724eb3b809c9a9d0b2ea6288a073da6f04199da2013fed29e8c03",
+    "sha256": "79dbdca09d530361f83bfc307438532f2ff2c903ff7af3d2199977c2eadc6b80"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/idle.png",
+    "asset": "art/assets/day/monsters/lizard/idle.webp",
+    "sourceSha256": "906a86be05a872b3228f6d702935a073d52d1e081b770e89b5cc632e77312be5",
+    "sha256": "88534a4e2acf93c53c7e3ec7a584c5efb5c3e9043d960699f09154f276a68750"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/smash.png",
+    "asset": "art/assets/day/monsters/lizard/smash.webp",
+    "sourceSha256": "591616f030b99e16b4462fd1d9ed2dab1781b4901ef94f6e986850a6e92c42f5",
+    "sha256": "25005382727d3d4787ab8ded3931f30a3a44d7c45f4aa1032f403569d271c2ae"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/wave.png",
+    "asset": "art/assets/day/monsters/lizard/wave.webp",
+    "sourceSha256": "f0b90c4e5a5845110e96c903b8172cf5a0adf8cfcbf2567c463998c2a32470ba",
+    "sha256": "d79f345a194f9a714a44892d7840cac88a172350048c713643b2fe321064e3e1"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/walk.png",
+    "asset": "art/assets/day/monsters/lizard/walk.webp",
+    "sourceSha256": "ef2b69b5bca1105a38dd6b86c351edac5e31022f3636a0dc1da00e876acdf897",
+    "sha256": "2571eb15279662f581133c9059ad74d45a38858130bc49a1f12d84a112b21b43"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/roar.png",
+    "asset": "art/assets/day/monsters/bat/roar.webp",
+    "sourceSha256": "d2b98f3552a459cb51ce8da00b105b3af87ceaa3fdd7884d38e185bf5f64687c",
+    "sha256": "a599f9909d80636fa5ca90b593b21f23aeff3c1e21b4cdf9d49b697aa407417f"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/idle.png",
+    "asset": "art/assets/day/monsters/bat/idle.webp",
+    "sourceSha256": "449f5505281822437c2488aeadda94a9058ce7536c8411f5af9e394ef1ae3ab3",
+    "sha256": "f616e48558a4ecd315621e8634abfc7c95f0d4dce5c30b831524685774c81d31"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/smash.png",
+    "asset": "art/assets/day/monsters/bat/smash.webp",
+    "sourceSha256": "1d407a2e14829a2e6a143beae146d3e022f9c37b971a6680133eca5cd7b3b53f",
+    "sha256": "338fb002aba49aefb35e9ee6ddfa47a1e5ded190cdbd90629ef266cfdd1907e8"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/wave.png",
+    "asset": "art/assets/day/monsters/bat/wave.webp",
+    "sourceSha256": "af539e89495be359ba63fbced16bd0d4c0eada94eab02bc883cd30723aa60709",
+    "sha256": "544db8d72c132d217f50bb5a42d260a5886c542a55fcef781fa971f3392c5125"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/walk.png",
+    "asset": "art/assets/day/monsters/bat/walk.webp",
+    "sourceSha256": "acc931bb440c726ea45ea0bedb80b60233f4598a949f2bb3c710692e8bc56a24",
+    "sha256": "cd09963fc2a7f1423444c2c81ce1ea0d9ac89fdcf530b55b4d437a038df26bf7"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/roar.png",
+    "asset": "art/assets/day/monsters/axolotl/roar.webp",
+    "sourceSha256": "5945e444a281fcfcd7070bc2c2711afb17a599210bf6916df9a76707f7da5639",
+    "sha256": "55801d92a5f389e1ca7aeae482c8c38bbdcbffc83b5218dcbf6dd092b58b3a1c"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/idle.png",
+    "asset": "art/assets/day/monsters/axolotl/idle.webp",
+    "sourceSha256": "e6c2e20e7de6ed9ac4486a7d62bd357167e9bf228908035ba7494226590e932f",
+    "sha256": "423473195bf1fd483edabf06fa3225cffdc7e4d179e81e4020c2ae793262c5ac"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/smash.png",
+    "asset": "art/assets/day/monsters/axolotl/smash.webp",
+    "sourceSha256": "ea21b8c49ae905c3721a50c548022a5b3e7b49e77ee132a042149a74ef50bf17",
+    "sha256": "29765f9c490b64a7be8bf299e2f2a5f44aef030c9202b85365a1cc6eb41c98ee"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/wave.png",
+    "asset": "art/assets/day/monsters/axolotl/wave.webp",
+    "sourceSha256": "bc402cd3bf765fc444f00382ad562e04031b8ea2ef568d8292cd40a6ade1c38f",
+    "sha256": "9faa345bd8eb4a2a924f21d4b5deb840ad6adc626b064f374d6f860c6b97795b"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/walk.png",
+    "asset": "art/assets/day/monsters/axolotl/walk.webp",
+    "sourceSha256": "1327512c6dadfad021563062be5d071b0ada6b56fa44681d035fa351540ff5e8",
+    "sha256": "d2103c464f9ec5636fca08d11b2aa6db4e69dc1f074ce0d5f37162283bed8061"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/roar.png",
+    "asset": "art/assets/day/monsters/yeti/roar.webp",
+    "sourceSha256": "d99d5f61935e6ef5e49d586c8d03710a4a1c84b8146c3ab8c113836105eacafc",
+    "sha256": "ac17f31268bea7fc9ceb9d9a480089086ade5c27c1707644a542b51dd2273e00"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/idle.png",
+    "asset": "art/assets/day/monsters/yeti/idle.webp",
+    "sourceSha256": "04eaefc30473ce91634ea990bec7a6c91641c11bf8f18fe49e6d9ed4a40e3189",
+    "sha256": "d997bcb21eeab02a908d167745e224f0b41928863385fd8d2e74f00702beac99"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/smash.png",
+    "asset": "art/assets/day/monsters/yeti/smash.webp",
+    "sourceSha256": "d1155a07bdc18ebf91f4c9f9d90bb15a225c99277531a2355c39bc4031edbf7d",
+    "sha256": "c96179c39d987a96d2748ce489266a57cf66c42bdc2f1a189367846458d8e3fc"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/wave.png",
+    "asset": "art/assets/day/monsters/yeti/wave.webp",
+    "sourceSha256": "35e3ac2b32f75f3f9ce92903071745266125ad420916e9bfa53869fe2e7662ce",
+    "sha256": "e48de35ef53bf8dfffe6d5c65788ae4bd79bdc9da68be2aaf8dd6e653599629a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/walk.png",
+    "asset": "art/assets/day/monsters/yeti/walk.webp",
+    "sourceSha256": "9c726083d6af7a9128e0fa0e004d950367567fc17d77789fd645fcdf0b62d9d1",
+    "sha256": "d5b68335a209c419cbe6dd8cdbedbbb72ea964d21d0eb0e9013969aa4d07ae5b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot4-empty.png",
+    "asset": "art/assets/night/slot4-empty.webp",
+    "sourceSha256": "7aec83f3227c0a0ba8cc2ea7941c94044a14f910d8178418ec37b73a86205845",
+    "sha256": "919d78c77a4636b4a548569af0ea803bc07d3fd6a87ec5d8bfec93d053ca7062"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot2-empty.png",
+    "asset": "art/assets/night/slot2-empty.webp",
+    "sourceSha256": "00623c2e0000415efbea4bf6bcbc356c7e998654582cb7e1e22c1ad5cad8a01a",
+    "sha256": "6ce3ad862abb20646c2387402188579bf9986f4acdc70b9fba05758bc3740a07"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot5-empty.png",
+    "asset": "art/assets/night/slot5-empty.webp",
+    "sourceSha256": "8759d38d4b34575d2da71b9f35e7ee8953697a4c3e40346137971901d6695867",
+    "sha256": "183e10f3ba2ead25f10635fbcba84c20e0c6c0818f4bc19de51db5ef7d227894"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot3-empty.png",
+    "asset": "art/assets/night/slot3-empty.webp",
+    "sourceSha256": "dd373f3b92049ec9f7934842b93cf7af4874d23e47f5c687456ee7f725a7c0b4",
+    "sha256": "1eff78b81af04b04d2d4c12059bcd352fe1906759703b3969d6f1b5f3bcd7352"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot3-0.png",
+    "asset": "art/assets/night/slot3-0.webp",
+    "sourceSha256": "94fb02f40901d0260af14823bda4368b57b18d4212d35be38af01c26c88c1c36",
+    "sha256": "4034b040ddd3a91ea873dbf7eeb5a77539c5a077c899842465ed1fc15471710a"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot1-2.png",
+    "asset": "art/assets/night/slot1-2.webp",
+    "sourceSha256": "7afe8912d8b79b3cd8742f03c743e9adbd9c7e1e47713770c7d59ecee3dcb9e9",
+    "sha256": "840190533dbef453dce8bf072c6f91dade52ce18190e87dbc697292e729ca6a4"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot1-3.png",
+    "asset": "art/assets/night/slot1-3.webp",
+    "sourceSha256": "3d655c3363d4f9ecf2c741b24bce5b4360b76e5419d759f615773a7ea0b52e37",
+    "sha256": "28bce2e99a79ca215a590a0c0acc1020e21fc0b28917462651741327d72c7da4"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot3-1.png",
+    "asset": "art/assets/night/slot3-1.webp",
+    "sourceSha256": "ff79c6602ebf2f54fe0c9c5564ed0a2bb622642b537b43d3a9c1ddec8d16a2af",
+    "sha256": "0df6b4ea18a80973a4a3c71ae4076b893422fc35a3e77e5f319f334d41bd70bc"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot3-3.png",
+    "asset": "art/assets/night/slot3-3.webp",
+    "sourceSha256": "7f35f04629a7eaeeae79109ce3be707f1ad7abf57f50d13d2aab8fe0ba9497a7",
+    "sha256": "0d01783901f93ded5333c8624a6f709fdd1d0130ea7093e040e9eb610377cced"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot1-1.png",
+    "asset": "art/assets/night/slot1-1.webp",
+    "sourceSha256": "a31c918ec8e4f996434b827e779eebceb3ad83f1e3da8c95b05d0907783cc826",
+    "sha256": "d0ff2f52a859ee0d71b40b568b3171bc6bd410e008e0d87e16f729bf2a0e51ce"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot6-empty.png",
+    "asset": "art/assets/night/slot6-empty.webp",
+    "sourceSha256": "d91e5631911f783c4bbe18415de7ee4122116aee4d4feca61985339abe33ddb3",
+    "sha256": "3f5a0055fa8ecb2f343162784c9b385588aca6f711fda3323d34e0dc66c12968"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot1-0.png",
+    "asset": "art/assets/night/slot1-0.webp",
+    "sourceSha256": "8ccfbc52027297afb4c6bdfea72cf2e4c6b2655389c0cf45a103edc4beb159ce",
+    "sha256": "f34c0b72bc294347c36eb965abd2db5c1652c6763be164e13eb858b3c6dfdf2a"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot3-2.png",
+    "asset": "art/assets/night/slot3-2.webp",
+    "sourceSha256": "ded21cf3a27850e8f277a917d54b29a6c65eb5bd6c9971249b8b9dfb0f279842",
+    "sha256": "9bd30b071bbc386fc53de64a1afa5687b991e25c15d687e6cd5633039385548c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot7-2.png",
+    "asset": "art/assets/night/slot7-2.webp",
+    "sourceSha256": "4d1093a142a2c2eb4c2accfedd6ac7b1860abe2f9d76393ec0a2bd5ed942a409",
+    "sha256": "4be613c5278ed7ba9e19ba1dab9da5dfc484ce5d74e63550f3b6d28e0610a0ca"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot5-0.png",
+    "asset": "art/assets/night/slot5-0.webp",
+    "sourceSha256": "2f613926dcde7b1763138c8d9993a6f6d8923d5343c82d4edb5a7ff9bb9cc254",
+    "sha256": "29d11cfd119c5cd311dd31abb84db4ea4768880418e94bf2058e083ad8d0a35f"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot5-1.png",
+    "asset": "art/assets/night/slot5-1.webp",
+    "sourceSha256": "5098e1237416cfcbbc6b4bdceffeb1577d06125c28eeb93f00d4628a3e5d8111",
+    "sha256": "7cde8383f56a42ceeb8e08b3e330d84e860d0f58cd985e1ca811e6228f246835"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot7-3.png",
+    "asset": "art/assets/night/slot7-3.webp",
+    "sourceSha256": "8f830856459a3d86f36157fb48b1632289e4d1a8142f886df380cc0d4c95a899",
+    "sha256": "ca72e1eb52dd889936060e955c2b05d23845a5fabf2b7ee5ca44c2859780d1bf"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot0-empty.png",
+    "asset": "art/assets/night/slot0-empty.webp",
+    "sourceSha256": "6d8f782a371ea538b1accf35cf5d1e2746a6dd77a011b6b04da04664c7909040",
+    "sha256": "8b3e4ee741e9ad606e7d87fadc603926dacad517e0eabb00fefccdc7d8723c7b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot7-1.png",
+    "asset": "art/assets/night/slot7-1.webp",
+    "sourceSha256": "6ff0c8e9c41893f5d05fcfe78a368182cf9dce097d9f80b843c41636ce4fff93",
+    "sha256": "2525978aea1e3aa6360ad467fce69ece68ef8d9442c75eeb36a16dd198acb809"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot5-3.png",
+    "asset": "art/assets/night/slot5-3.webp",
+    "sourceSha256": "33d5e9272748d05baad9635ae08e0f49b24425458f094d95f2bbef4e8e8a66d0",
+    "sha256": "f2ffb0f44c06987df9efdbfecf6bf95cf7e8ea505dbdfed0db5a8aa39de92bef"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot5-2.png",
+    "asset": "art/assets/night/slot5-2.webp",
+    "sourceSha256": "72ce3981f5cf5381d3e7e0e4636032f34972909b201eb69fd911f2c43b2c57b6",
+    "sha256": "fc736ae781c3cd066f968af204ebf5f8010c2e357bb0ca179fccb7f30621f6f9"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot7-0.png",
+    "asset": "art/assets/night/slot7-0.webp",
+    "sourceSha256": "ac77853a4156f21307ec5f285799e30fcc6234a6585c50b7ff5ac6b3d8814793",
+    "sha256": "bee90f7aa8bc5e9e340f04a5490ff2b321618ce788495255cf2cb9451691cd9c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot0-1.png",
+    "asset": "art/assets/night/slot0-1.webp",
+    "sourceSha256": "48fc752653a7d79f5b868d0d6beadcdfba1f40ded39a139e136b18b1920d33b1",
+    "sha256": "f652a5459439bb07ce9862c598f4218be645e5eaa5d51b79466e78143d111cbf"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot2-3.png",
+    "asset": "art/assets/night/slot2-3.webp",
+    "sourceSha256": "7eafba793a1f2a9bc4fb59c337f9e0aa62eba479b05e183fb8c91a97afd20324",
+    "sha256": "8d74e014690d6dbbe123495f5b45b22968642d7bceeb6f413f80daa0ea67b38f"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot2-2.png",
+    "asset": "art/assets/night/slot2-2.webp",
+    "sourceSha256": "4029e0cacc41b34cad6b847e40df532c873eccf0320220240547b33e954003d7",
+    "sha256": "0c501e43f5bb8b137f6066faa3aa0727d8dc5974f9efcce8da638b268d35c1f2"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot0-0.png",
+    "asset": "art/assets/night/slot0-0.webp",
+    "sourceSha256": "a3decf72c08ada7887b4e3aaf77b9db6adb945bd259466b50c65b8f5bdd78c9b",
+    "sha256": "4fa0993b8090420eec86527e250364d56a1953948618887c570b9fbdb881e6c5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot0-2.png",
+    "asset": "art/assets/night/slot0-2.webp",
+    "sourceSha256": "7fc930850905a8ffe53362656d3806f89e9be89595df2a34f5eb85b6a97f0e1f",
+    "sha256": "23eb59c116c76bc8819553d56b7b73286ee9d40f387141f78c33f54ca1bfdc5c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot2-0.png",
+    "asset": "art/assets/night/slot2-0.webp",
+    "sourceSha256": "34c401c00b8a4bc2893c719599875f16ab8bbe94326e77f1ada8b1ba6d7f2923",
+    "sha256": "1dc468e7a001b8ae79b536976b66932ab353dc378ec6fce736ff1f31a3cf9f0a"
+  },
+  {
+    "source": "mods/kaiju/assets/night/plate.png",
+    "asset": "art/assets/night/plate.webp",
+    "sourceSha256": "8085e7c1463a3a10cc46bdba06eab6de8b39e139ff65b14718c8bf2613188af0",
+    "sha256": "eff9b7c87349fcc76a4bdffd3e853a6c7ade01de748c972cb0b31479a1ed5acd"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot2-1.png",
+    "asset": "art/assets/night/slot2-1.webp",
+    "sourceSha256": "d2d88d6a1f8abb77aa899fee2b944e562d9669d33de7c65965e4981d8a55cb8e",
+    "sha256": "c49be4751d8b020758c68c87aa52d855a81edfa22183a85c0b86f1027b885c0e"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot0-3.png",
+    "asset": "art/assets/night/slot0-3.webp",
+    "sourceSha256": "a95fef792685deb6daa1912e654125b3dbad0c36fe9d26688683f64e9f6e0d8f",
+    "sha256": "fe5d2f865d559dd556dbb41971593b28d69706cacb32f03675ced80d1be8e808"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot7-empty.png",
+    "asset": "art/assets/night/slot7-empty.webp",
+    "sourceSha256": "a2a492cb2c8a3127fc72ffe0c90e594475deca5786e371bc0d4fcfd1967f24d9",
+    "sha256": "bd86cc0f76f791aeb3a4696e1c7d4378f4d43032abcf88035613cb45568940f6"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot4-3.png",
+    "asset": "art/assets/night/slot4-3.webp",
+    "sourceSha256": "41f5d45e70ad77d196174e06a22356ffcc662d475a7d0a99df429b14f8155344",
+    "sha256": "2d1b6cf1b7908e4ee1eca49f63a5153c4b2e53d7cf4c2db0e3b4b5c923aca7ae"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot6-1.png",
+    "asset": "art/assets/night/slot6-1.webp",
+    "sourceSha256": "b7051634167e00400cb6712980968cf4d863086ca1b22fc982400eb3928b40b2",
+    "sha256": "5e13bf55136ad4f3cba4444d59c3987121bf2902a78fd32dbec198bdccffbef5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot6-0.png",
+    "asset": "art/assets/night/slot6-0.webp",
+    "sourceSha256": "4fc2942d84dbc5c653efba3869efeed4f5074feab7217bf3ad5e412905355c6c",
+    "sha256": "88d6eab796f1945b173f2afaca524707b4cc845ce8ae4f45e9a0a9e95ba09375"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot4-2.png",
+    "asset": "art/assets/night/slot4-2.webp",
+    "sourceSha256": "dbc74646bb3a2374bccffda15c1c8ffbf1bb22f1a7ae57098da2586436f53dae",
+    "sha256": "933d1312a09d77b6bac8fa5f504eba36eddbc89ed698173ad53eff592ad4152c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot4-0.png",
+    "asset": "art/assets/night/slot4-0.webp",
+    "sourceSha256": "ad6878d6d3dee37b017b32f2d2610c791351bba3a217009317210412c809e9aa",
+    "sha256": "4a37268b7b78442b606a92a5fae619faf698045a5c667c306a74f5b72370f20c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot6-2.png",
+    "asset": "art/assets/night/slot6-2.webp",
+    "sourceSha256": "672941eca56ed1f59f2ee93f5835b29285ed95a990f434128ec5643726fa17e5",
+    "sha256": "45eca1774b3fd54549f89a078352f30061622abf6b4460465233b14f90da5ab0"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot1-empty.png",
+    "asset": "art/assets/night/slot1-empty.webp",
+    "sourceSha256": "f7c1ca1b24e73e9b4777d16366e6010477a7f4346064e1f29efa4576b3070702",
+    "sha256": "79ddda97469b01a06281a6908f4fe7de98a4f176653154b2ee4bc5e939befede"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot6-3.png",
+    "asset": "art/assets/night/slot6-3.webp",
+    "sourceSha256": "b2b6b3ebca52d8bd42781b07238a03356eb3b988e90b9f29322c8bfda232a62d",
+    "sha256": "cb534659c0f9b1742f9501fcf9eebdab1d72a07583f81b0baeb26c666c9cdf35"
+  },
+  {
+    "source": "mods/kaiju/assets/night/slot4-1.png",
+    "asset": "art/assets/night/slot4-1.webp",
+    "sourceSha256": "c1b95cab5f5962fa9cb87a13802f2d773e6ad6abf787dd7103ee7e7205ededb8",
+    "sha256": "bb7c377c10b12785c394d382149973d5635df84c369f10cc829d2af316a3f4b3"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/zz.png",
+    "asset": "art/assets/night/fx/zz.webp",
+    "sourceSha256": "bf2a6f6f983ac725778bd654d709a99f9b77c646a50516da76d5be6d501bedfd",
+    "sha256": "fd483752d2ec592e0ced3d91a3c71bcb0d1c51e601c32e60f9daeac931702c23"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/bang.png",
+    "asset": "art/assets/night/fx/bang.webp",
+    "sourceSha256": "1987fbaa54f8304ad6d216ed723e9a4019e49bd9a5894a19c723b1753e41f14f",
+    "sha256": "bc936a432a3efa092a365e09b48c363d4f475434475b9b7f6ca400c300a1fc1a"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/question.png",
+    "asset": "art/assets/night/fx/question.webp",
+    "sourceSha256": "3e800551d0df1f6a5c0ad3b3a87433ea8f36d785c5f0eed4c68b9460c7c240b5",
+    "sha256": "4865488f41bb2173daf41e0722621eeaaa87d2e9df35844aeec7f8677061c5d7"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/dust.png",
+    "asset": "art/assets/night/fx/dust.webp",
+    "sourceSha256": "0389260dea5b2127707b8293733ba1b15f5339edda203ee0a60bc6153df6de7a",
+    "sha256": "5fdc9e79fe94e2b0bbf75ba0de77c3416b706ba15a1a366631e1c2cc05141c9f"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/arrow.png",
+    "asset": "art/assets/night/fx/arrow.webp",
+    "sourceSha256": "23a54c0534971f66fa9fd3756a4209a90aff35407aebcac954ee4908645debe9",
+    "sha256": "d8442c58b0ff51143fe0e0ce41a3f17b4d23324a27e842ed2d179cde1fe5bbeb"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/clip.png",
+    "asset": "art/assets/night/fx/clip.webp",
+    "sourceSha256": "7bfd67eef5ebdee6b8a05efce6f4a1b5ccd0417f6d84fb53b45b456c2f5c83bb",
+    "sha256": "874e2b2d7a41be7bc0fd26a7df8033a8c3df9241fa8f9d61c29415280c31ebd9"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/siren.png",
+    "asset": "art/assets/night/fx/siren.webp",
+    "sourceSha256": "faa917702d5f4da032c4c2ae071fc9f6d703569a79647928ff1e666a3e9478a2",
+    "sha256": "1e12b4e110e2c7744edd8c93923a76551239a14249711899b1d72d8607999bc2"
+  },
+  {
+    "source": "mods/kaiju/assets/night/fx/brick.png",
+    "asset": "art/assets/night/fx/brick.webp",
+    "sourceSha256": "ca030283f048fd1287a3762a3832ac830e792d7268da580f40116a1c6612fb94",
+    "sha256": "13f9e801276fb8a44e40f52f6d41aa43b2a8afb9ddeaeed2088d1999c6efd6a3"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/roar.png",
+    "asset": "art/assets/night/monsters/crab/roar.webp",
+    "sourceSha256": "b5d15d3e008c4efdbbf13fd35b39ad7cb36ce0c1e8da126ee1401715b35d4f04",
+    "sha256": "df5203c9bdb9a94e1f32dcbf5a48f9a5adf4685f5796df4a9afd9641b0a8b090"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/idle.png",
+    "asset": "art/assets/night/monsters/crab/idle.webp",
+    "sourceSha256": "13f5eb306d483c88623bcbbda01ce9688a6d285f36a196a309925232709b6584",
+    "sha256": "10d2d4c77fca4c74d2cc6593f2206baba4c39a92ef72db01f26d94f572fd043b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/smash.png",
+    "asset": "art/assets/night/monsters/crab/smash.webp",
+    "sourceSha256": "404e7661a3d6bf515a965517e1d87c5957217ba9fa9f8876e58dc83eb4885581",
+    "sha256": "e124f8d5d369839ea1b1be97d802c9b0aabd24cdf82911c10cbe7e3a70a14a9b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/wave.png",
+    "asset": "art/assets/night/monsters/crab/wave.webp",
+    "sourceSha256": "68cf73084abdee9a465452d4eea73a4322eeb2fbe1ef9e4300419969aa3fb4dc",
+    "sha256": "ba80e754ad091a6d6a5482edcbc93a080855c3aeeace5798233dedb445adfa00"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/walk.png",
+    "asset": "art/assets/night/monsters/crab/walk.webp",
+    "sourceSha256": "bbdf9ca44e276f3977216b76660a90ed00d4f3fe1992f0b1c546833c3864bdbf",
+    "sha256": "55f0aa62937d29a03e3e1f3b36e5f76e6b8eeef02a3e096e92274e8547d728e5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/roar.png",
+    "asset": "art/assets/night/monsters/ape/roar.webp",
+    "sourceSha256": "959814715131824cadd5211c2afcde73fe4f656f37e517723439273c6453aca9",
+    "sha256": "2dd4dcdda21f23a3cb3c39c4fed1b876dc0a08fd6ff1141751d874d420558b71"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/idle.png",
+    "asset": "art/assets/night/monsters/ape/idle.webp",
+    "sourceSha256": "d0b0f2b230ecbf6e67cb6f09d2b005146db5fb807c9637c00c7f809b74756bd8",
+    "sha256": "214c3f270d3f223bfbde7e1f5ba472c3d0de3d1509aa9802700241c2fb002cad"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/smash.png",
+    "asset": "art/assets/night/monsters/ape/smash.webp",
+    "sourceSha256": "157b6d8acd1a8cc04c1b02e8fa849752d6cb4781a84d9571f54986d2bf886a22",
+    "sha256": "b839d7126a7251c69ec31a683113b47c180bc2588603691f669fbbafc5a47e59"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/wave.png",
+    "asset": "art/assets/night/monsters/ape/wave.webp",
+    "sourceSha256": "0d2dfbab216b14c43f6ca9b3c3ce3b4dc4b30debbd1be18a064311a5377cce5c",
+    "sha256": "70830247dd64bb7c1986cd5e1bb97a74c1a0573b45fa10ea9530c5d37980c80e"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/walk.png",
+    "asset": "art/assets/night/monsters/ape/walk.webp",
+    "sourceSha256": "d71f03cca4e6a9e1a16b3fdb394df41605fc0dbec18913c81621d18c8a5ad6cd",
+    "sha256": "cb4810977e16c7d24a1f5dc99908e5c04c016049d1bf9634cfbee6e80f45f131"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/roar.png",
+    "asset": "art/assets/night/monsters/turtle/roar.webp",
+    "sourceSha256": "d7ace23d71d5abe349569f545298e200a0b89499574283c1b6d393851ffd3b1d",
+    "sha256": "de1ad94199d2ccb00112730ea17f00eb92ae433bb5cf71951d30562252e469e7"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/idle.png",
+    "asset": "art/assets/night/monsters/turtle/idle.webp",
+    "sourceSha256": "c00bb59ffe720e23998688f803f8285e05ee3bebe017cf4ecfc3b9256aa6a35b",
+    "sha256": "5317d2de03b70ee2f61d16f9e49479c0844ca0c3b8feb28ec1cd1849e46508e4"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/smash.png",
+    "asset": "art/assets/night/monsters/turtle/smash.webp",
+    "sourceSha256": "73b0329f5ad4b600e115f2b4a94b2394f8dd811b0c59464570df01dd6a1949e1",
+    "sha256": "b4b6a43feebea77bbfaa79984d220c8694f77b5ec86ce379e8c285bd07bab842"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/wave.png",
+    "asset": "art/assets/night/monsters/turtle/wave.webp",
+    "sourceSha256": "0e9c450870c328296be9d5de12c58def2fb250e6a8d952cae012a4ba5f1aa9fa",
+    "sha256": "28420436257e78412052f8f61ee7a95126cba003eaf27b6b80a7e57ac863ad24"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/walk.png",
+    "asset": "art/assets/night/monsters/turtle/walk.webp",
+    "sourceSha256": "a3f5f284d9b11176cb929d77a3b364957d0f2bac301a7aa1098f416acf481245",
+    "sha256": "6fefea9e0556af82b2ec9fa795096d77f24a13e941023b1eb1f78aacf2e60908"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/roar.png",
+    "asset": "art/assets/night/monsters/moth/roar.webp",
+    "sourceSha256": "810e8e89c4b0575fcad38210d2f6721e863be3c45f1c2aa03184030241d97777",
+    "sha256": "a1766002f526bec0cc9deff992ea4893066e47fbcc50e94bc30facde2f4ebb23"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/idle.png",
+    "asset": "art/assets/night/monsters/moth/idle.webp",
+    "sourceSha256": "b010449448dad732c4070db70cf4af15c6e91659f5e9e332eefd54f37dacc42c",
+    "sha256": "9b8b79f9d3e9fa8a2b93cb649be5c73a5dcfb7b504da8d65ccf2af6413f97cf5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/smash.png",
+    "asset": "art/assets/night/monsters/moth/smash.webp",
+    "sourceSha256": "edc7fb50ea304a35f1def0c19e0c84dbae7a4dde472d8bc2dd8597520ef83c47",
+    "sha256": "6fe45f1667c091f8e811e9ab7763cc0c4049bba84536e945633e12de2f736e64"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/wave.png",
+    "asset": "art/assets/night/monsters/moth/wave.webp",
+    "sourceSha256": "73be00c90eb4f50e5e828e90fbaad5b6cc18f7f98b2b60b7bea3fc3d71c2ab2c",
+    "sha256": "a60cc89da6d4bdb9580ab4c399799fd22528c189a95e36643058ffba7a6e5b31"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/walk.png",
+    "asset": "art/assets/night/monsters/moth/walk.webp",
+    "sourceSha256": "8f67da30ffd0473281146c71586bbff1f257858fd6f3ab9eaeeab9dfb3bb80bc",
+    "sha256": "b3edc00b1806b8c457ea9fb3b1ed93366b6982dee4782d581c40cf0cb89d946c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/roar.png",
+    "asset": "art/assets/night/monsters/lizard/roar.webp",
+    "sourceSha256": "03c059f66dc7650e39217628801e089289a90077e4af917cd8254eee3528c11c",
+    "sha256": "cc823f142ddf7f7f758dc2c9c5f5d18fde96cb587f2879629a9247d94baa6832"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/idle.png",
+    "asset": "art/assets/night/monsters/lizard/idle.webp",
+    "sourceSha256": "fb21781625e7e5b3df903470710fe597f962328fc4a7d2d74e8c020ffcee52e3",
+    "sha256": "619f31275531b63882c4b0464fbb56382cffd7db7b33346dab1b0fa101cbe5e0"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/smash.png",
+    "asset": "art/assets/night/monsters/lizard/smash.webp",
+    "sourceSha256": "a787598dc3e0977939f50e9e7dedb2aa230c79671c17caab5708f3ecc66c4b0f",
+    "sha256": "daeb3ba06e198dec95c672bfa583a4240b1cd062910141d499956a3b3b9cc93c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/wave.png",
+    "asset": "art/assets/night/monsters/lizard/wave.webp",
+    "sourceSha256": "351483a86da300d3e8b95892c9c02ab63fb323468c4cc6fee58b61ebce2f62f0",
+    "sha256": "c246f77ee2b69fb1e71625d19f79bc548b0b4d57e6c390e0fae8f68899c01bd4"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/walk.png",
+    "asset": "art/assets/night/monsters/lizard/walk.webp",
+    "sourceSha256": "d6b3f24c3eb5c71b43e13f1b369d1fd52e8c7f4471deee7c97846256bbbd887e",
+    "sha256": "b4b268a614480df171bd20eafb8b76baa56628513b6f7d909143be01b69f28b8"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/roar.png",
+    "asset": "art/assets/night/monsters/bat/roar.webp",
+    "sourceSha256": "3bfc7924671c76a4602d3bf8e0a04b79483f77a9a6160aa35bc034e7f3cd207b",
+    "sha256": "27e143f470b2d199286937ece86f157ef08b8573c3dfa252a557d1b9ec51bf42"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/idle.png",
+    "asset": "art/assets/night/monsters/bat/idle.webp",
+    "sourceSha256": "f344dbf431d10fbed2741588ec0b1c4bc5f4363676e49159ed0e5c131fa90be8",
+    "sha256": "b332af77bf4f7d95497b0dcaa8ff3fc0a450f42f18cabf74f957735db835212d"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/smash.png",
+    "asset": "art/assets/night/monsters/bat/smash.webp",
+    "sourceSha256": "12372c988a2451428996cdb6394c7dbb99fbaef909bec9b6fe07a800ad8571cd",
+    "sha256": "ab7c1bc06e38aafab21c937b9552d47ed2a2d6468f8cd8c4634b6ecece718b3e"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/wave.png",
+    "asset": "art/assets/night/monsters/bat/wave.webp",
+    "sourceSha256": "2e2bc071ed554f7e405e79687c33ee97ee75acdca7a86ca5dec3178a23c2fc57",
+    "sha256": "a846273d0b19618dd5bad9bc08c8b7e39b1afc0bc3fb8e4d9e29e2a9d14118f5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/walk.png",
+    "asset": "art/assets/night/monsters/bat/walk.webp",
+    "sourceSha256": "2ba89550ecabacf906bdca7dbc2d6a99e47964e53585fdc9b55f3f119534c8ba",
+    "sha256": "d6a69ba532245a5a97731037f0316ceaee372598e07112306c342ee9da824f9b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/roar.png",
+    "asset": "art/assets/night/monsters/axolotl/roar.webp",
+    "sourceSha256": "575544fc7c5380dd9dfcd7a259cd6b650d645baa194e2deba3b3aab76e2d4cbb",
+    "sha256": "e1fea5eb82c4129b72021a8a0e60eb7d3bffd6a264dfa4b6bd4dff0b9ce21d66"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/idle.png",
+    "asset": "art/assets/night/monsters/axolotl/idle.webp",
+    "sourceSha256": "3839a4f815bf7cc1e8488b9d45459fd044fffb71c3994e11c5bb75d443ee1ec0",
+    "sha256": "8f573e6d18cab730061a4201ae25ececb914df55ebcef03f03ff78dd619a3258"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/smash.png",
+    "asset": "art/assets/night/monsters/axolotl/smash.webp",
+    "sourceSha256": "ce1ee9a851eeb012cfacd04acddd74b4b2a1ff81e68a801057e132805e798df6",
+    "sha256": "0cb1c97e8678a7084f4cf84d89b73c8c890a93e46e3f04115fa36680fadfdcd5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/wave.png",
+    "asset": "art/assets/night/monsters/axolotl/wave.webp",
+    "sourceSha256": "2daacba17cfe86aa30aeee1a5b4e5089fbdc9112d2e5281768300e334eb4dea9",
+    "sha256": "814df98343ed81a725bc7954800ba2f16e8a37e15c4a9cbeef506d252d7c9729"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/walk.png",
+    "asset": "art/assets/night/monsters/axolotl/walk.webp",
+    "sourceSha256": "721e3cb550947c87e9db59ef6fa969d62fb1795d6f3363eac77a38578c0de803",
+    "sha256": "a2bf1d8cdabe86c6dd9dbad511117676904ef7951b456bfb6d8ebd903e82be0b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/roar.png",
+    "asset": "art/assets/night/monsters/yeti/roar.webp",
+    "sourceSha256": "b7ed94ef576ce71050497ea8c88a9945a1b7793ad7907d7e9a3d999faa451aa7",
+    "sha256": "2da2769629e07aa4bcce5b38a4ec52613c1ecd8b1cc259181e3bfdec4411a115"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/idle.png",
+    "asset": "art/assets/night/monsters/yeti/idle.webp",
+    "sourceSha256": "26df5d0e4d1939008ad98a4bc2355822c6ee881a70fd1bad6a7727e10bfd3df4",
+    "sha256": "b763932211c75b11ec78f33fe91e07bf0a166ff95db4b9bc574a7fdf3de5dcd9"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/smash.png",
+    "asset": "art/assets/night/monsters/yeti/smash.webp",
+    "sourceSha256": "d1029c215dc995aca588d857d7f5c6a62e1e0f8aba2b02d59eb6321498b8894e",
+    "sha256": "d6d57c34588ff20b71d1040f45e0300f86c0a088c24c6d8eb841696a7420ba34"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/wave.png",
+    "asset": "art/assets/night/monsters/yeti/wave.webp",
+    "sourceSha256": "f45b15ef6e1d7b1ee7b4eeabb61d76e60e2797d1f0dc8cf91c7abbec06719e36",
+    "sha256": "062486463b7438aa78c9d723f1ac0b2b8e4b97ea8f750a296552ce59c8ea0562"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/walk.png",
+    "asset": "art/assets/night/monsters/yeti/walk.webp",
+    "sourceSha256": "e1819a96c12ac9b1313f229b7d22598750ba53f2ca8fed51530a4c8c3e265c33",
+    "sha256": "1325c7ecdb6c30546035f4c9006d37a8ac7866cb4ca9ea22e58704eed067c555"
+  }
+]

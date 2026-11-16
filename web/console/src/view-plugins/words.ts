@@ -1,4 +1,6 @@
 const en = {
+  codecraft: "World of Codecraft", addCodecraft: "Install Codecraft", codecraftHint: "An original fantasy village brings Sessions to life as animated heroes, with a landscape to explore.",
+  kaiju: "Kaiju City", addKaiju: "Install Kaiju City", kaijuHint: "Original pixel monsters act out Session states in a layered city of Project buildings.",
   title: "View plugins", close: "Close", returnToApp: "Back to Clawdline", entry: "Open installed views", install: "Import ZIP", preset: "Explore views",
   installed: "Installed views", empty: "No view plugins installed.", local: "Packages are saved in this interface. Install separately on each browser or device.",
   galaxy: "Session Galaxy", addGalaxy: "Install Galaxy", download: "Download package",
@@ -37,6 +39,8 @@ const en = {
   } as Record<string, string>,
 }
 const zh: typeof en = {
+  codecraft: "奇幻村莊", addCodecraft: "安裝奇幻村莊", codecraftHint: "探索原作奇幻村莊，讓 Session 化為有動作的英雄。",
+  kaiju: "怪獸城市", addKaiju: "安裝怪獸城市", kaijuHint: "Project 化為立體街區，原作像素怪獸用動作呈現 Session 狀態。",
   title: "視圖擴充", close: "關閉", returnToApp: "返回 Clawdline", entry: "開啟已安裝視圖", install: "匯入 ZIP", preset: "探索視圖",
   installed: "已安裝視圖", empty: "尚未安裝視圖擴充。", local: "套件保存在目前介面。不同瀏覽器或裝置需各自安裝。",
   galaxy: "Session 星系", addGalaxy: "安裝星系", download: "下載套件",

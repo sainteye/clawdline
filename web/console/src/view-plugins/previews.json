@@ -98,5 +98,45 @@
     "packageVersion": "0.1.0",
     "packageDigest": "c3773ea6dca846b18c2ac218e2a511671d3943f653fdf1ca9045e64ebf756d22",
     "sha256": "419d83d1924cd04a464e21bec5288510400b41438c730b90e96889d38a849b5f"
+  },
+  {
+    "id": "com.clawdline.session-codecraft",
+    "language": "en",
+    "src": "/view-plugins/previews/session-codecraft-en-e7ef34df8d2a.webp",
+    "width": 1600,
+    "height": 1000,
+    "packageVersion": "0.1.0",
+    "packageDigest": "507c08394d51767ba7111befd1fdb85c4d289f98fd1085fd6eae7001d2acc152",
+    "sha256": "e7ef34df8d2aacb41fe002bdd9242ed07a1059c8983220f11e956bd3df0a9762"
+  },
+  {
+    "id": "com.clawdline.session-codecraft",
+    "language": "zh-Hant",
+    "src": "/view-plugins/previews/session-codecraft-zh-Hant-4a8c6464a416.webp",
+    "width": 1600,
+    "height": 1000,
+    "packageVersion": "0.1.0",
+    "packageDigest": "507c08394d51767ba7111befd1fdb85c4d289f98fd1085fd6eae7001d2acc152",
+    "sha256": "4a8c6464a41620794efc136290097c39480b69e609324b4914173df3200b7d61"
+  },
+  {
+    "id": "com.clawdline.session-kaiju",
+    "language": "en",
+    "src": "/view-plugins/previews/session-kaiju-en-1ec5def63b52.webp",
+    "width": 1600,
+    "height": 1000,
+    "packageVersion": "0.1.0",
+    "packageDigest": "d49c2c5dd186db92a6f0a3d9ca268a2b62ef5fe483a1accb1fc5e80c53f2d3f2",
+    "sha256": "1ec5def63b52dd340e569e99ab63f823f060a95e7ace6d846df539972d9568b2"
+  },
+  {
+    "id": "com.clawdline.session-kaiju",
+    "language": "zh-Hant",
+    "src": "/view-plugins/previews/session-kaiju-zh-Hant-68493248ab0f.webp",
+    "width": 1600,
+    "height": 1000,
+    "packageVersion": "0.1.0",
+    "packageDigest": "d49c2c5dd186db92a6f0a3d9ca268a2b62ef5fe483a1accb1fc5e80c53f2d3f2",
+    "sha256": "68493248ab0f77f86e006cc22d121406d632c9f90cca71df13771aee339f1475"
   }
 ]
