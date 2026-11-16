@@ -1832,6 +1832,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_recent_replies",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_reply_characters",
     "Known": true,
     "Note": true
@@ -3997,6 +4002,41 @@
   },
   {
     "Name": "voice.polish_timeout_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.question_concurrent",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.question_context_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.question_contexts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.question_input_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.question_output_tokens",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.question_pages",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.question_replies",
     "Known": true,
     "Note": true
   },

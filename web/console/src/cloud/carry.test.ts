@@ -388,6 +388,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["copilot-briefing"], "POST /v1/voice/copilot-briefing")
   assert.equal(CARRIED["copilot-decide"], "POST /v1/voice/copilot-decide")
   assert.equal(CARRIED["copilot-journal"], "POST /v1/voice/copilot-journal")
+  assert.equal(CARRIED["copilot-question"], "POST /v1/voice/copilot-question")
   assert.equal(CARRIED["copilot-recap"], "POST /v1/voice/copilot-recap")
   assert.equal(CARRIED["copilot-work"], "GET /v1/voice/copilot-work")
   assert.equal(CARRIED["copilot-work-update"], "POST /v1/voice/copilot-work")
@@ -426,7 +427,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     assert.ok(!(word in DEFERRED), word)
     assert.ok(!(word in NO_MACHINE_ROUTE), word)
   }
-  assert.equal(Object.keys(CARRIED).length, 275)
+  assert.equal(Object.keys(CARRIED).length, 276)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

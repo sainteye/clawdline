@@ -336,6 +336,7 @@ export type WriteRoute =
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
   | { op: "copilot-recap"; word: Carried<"copilot-recap"> }
+  | { op: "copilot-question"; word: Carried<"copilot-question"> }
   | { op: "copilot-journal"; word: Carried<"copilot-journal"> }
   | { op: "copilot-work"; word: Carried<"copilot-work"> }
   | { op: "copilot-work-update"; word: Carried<"copilot-work-update"> }
@@ -828,6 +829,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-decide" && segments.length === 2) {
     return { op: "copilot-decide", word: "copilot-decide" }
   }
+  if (head === "voice" && a === "copilot-question" && segments.length === 2) {
+    return { op: "copilot-question", word: "copilot-question" }
+  }
   if (head === "voice" && a === "copilot-recap" && segments.length === 2) {
     return { op: "copilot-recap", word: "copilot-recap" }
   }
@@ -1120,6 +1124,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-live":
     case "copilot-briefing":
     case "copilot-decide":
+    case "copilot-question":
     case "copilot-recap":
     case "copilot-work":
     case "copilot-work-update":
@@ -2159,6 +2164,12 @@ export class RelayWriter {
         const sent = await bodyOf(init)
         const sessions = Array.isArray(sent.sessions) ? sent.sessions : []
         return this.machineWorkV2(client, route.word, { decision: { said: String(sent.said ?? ""), ...(sessions.length ? { sessions } : {}) } }, headerOf(init, "idempotency-key"), this.callMachine(client))
+      }
+      case "copilot-question": {
+        if (url.search) throw failure("invalid_query", "Question analysis has no query parameters.", 400)
+        const sent = await bodyOf(init)
+        const question = Object.fromEntries(['session','conversation','question','replies','context','language'].filter(key => Object.hasOwn(sent,key)).map(key => [key,sent[key]]))
+        return this.machineWorkV2(client, route.word, { question }, headerOf(init,"idempotency-key"), unopenedMachine(init) ?? this.host.machine)
       }
       case "copilot-recap": {
         // A Session's spoken recap is written by the machine that holds the

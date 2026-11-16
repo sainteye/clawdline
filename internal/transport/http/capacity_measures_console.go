@@ -287,6 +287,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.copilot_recap_pages": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-recap paging budget; daemon cannot measure another device's reads"}
 		},
+		"console.copilot_recent_replies": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-explanation recent reply count; enforced in the console"}
+		},
 		"console.copilot_reply_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-explanation clip of a last reply; daemon cannot measure another device's reads"}
 		},

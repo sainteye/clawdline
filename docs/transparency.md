@@ -643,3 +643,28 @@ input, answer or action approval is created by the implicit opening. The separat
 durable task allowance remains three. Both language explanations and the original
 reporting guidance reflect the two-Session bound. The public website snapshot must
 follow this reviewed product revision after it lands.
+
+## Voice questions selected in the call window (2026-11-16)
+
+The voice-question-menu entry records the new explicit UI trigger and both provider paths.
+Opening the menu reads only directory metadata. Clicking a complete sentence adds user input
+and application routing context; it never approves a mutation. Recent-reply explanation shares
+the existing reader, carries the actual question and checks conversation identity before and
+after content reads. The English and Traditional Chinese descriptions distinguish submission,
+model behavior, speech and playback. They also distinguish this menu from the proposed separate
+question-focused analysis service, which is not implemented. Source receipts and local fixture
+acceptance do not establish website, Cloud deployment or live-call acceptance.
+
+
+## Focused voice questions and the call menu (2026-11-16)
+
+A focused question now reaches a shared machine endpoint from either voice engine. It provides
+the actual user question and bounded recent originals to the existing small OpenAI text model,
+with no tools. The response carries an answer, literal source quotes, unknowns and whether older
+material is needed. Quote validation is structural evidence, not a semantic-quality guarantee.
+The original-message context stays in bounded machine memory, is checked against the current
+conversation and newest-page revision before reuse, and is reclaimed on a later request after
+expiry. Opening summaries and their five-minute freshness policy do not invoke this path.
+The revised bilingual voice-question-menu entry covers this provider input, its usage estimate,
+its demand-only trigger and its failure behavior. A new route fails on an older machine instead
+of accidentally starting an unrelated paid recap. No live paid call was used for local tests.

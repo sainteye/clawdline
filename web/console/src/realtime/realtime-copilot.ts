@@ -1,3 +1,5 @@
+import { UNOPENED_MACHINE_HEADER, UNOPENED_READ_HEADER } from '../cloud/unopened-read.js'
+import { questionRequest, type CallQuestionID, type QuestionTarget } from './copilot-questions.js'
 import { SESSION_ADDRESS } from '../overlays/events.js'
 import { destinationFromFragment } from '../cloud/all-machine-sessions.js'
 import {SpokenSessions,SessionReportQueue,SESSION_REPORT_BATCH,SESSION_REPORT_GUIDANCE,continueReport,remainingReport,type SessionReportPage} from './copilot-reports.js'
@@ -18,9 +20,9 @@ import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence,
 
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
-import { COPILOT_TOOLS, FRESH_RECAP_SECONDS, forkedRecap, recapFields, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps } from './copilot-tools.js'
+import { COPILOT_TOOLS, MACHINE_RECAP_MS, FRESH_RECAP_SECONDS, forkedRecap, recapFields, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, type ToolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps, type CopilotSessionRow } from './copilot-tools.js'
 import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
-import { addUsage, emptyCost, type CallCost } from './copilot-cost.js'
+import { addUsage, emptyCost, questionAnalysisUSD, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, titleSavedOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
@@ -337,6 +339,8 @@ export class RealtimeCopilotClient {
       devstack: (place) => openDevStackOnThisPage(place),
       help: loadCopilotHelp,
       heard: () => this.heardNow,
+      selectedReadTarget: this.questionTarget,
+      analyzeQuestion: (row, question, replies) => this.analyzeQuestion(row, question, replies),
       spokenReference:text=>this.spokenSessions.resolve(text),
       onRead:ref=>this.spokenSessions.observe(ref),
       decide: (said, sessions, current) => decideOnMachine(said, sessions, current),
@@ -429,6 +433,93 @@ export class RealtimeCopilotClient {
       return null
     }
     return null
+  }
+
+  /** Both voice engines use the same demand-only analyzer; no opening summary is rewritten. */
+  private async analyzeQuestion(row: CopilotSessionRow, question: string, replies: number): Promise<Record<string,unknown> | undefined> {
+    const attempt = this.attempt
+    const previous = this.questionContext
+    const same = previous?.target.id === row.id && previous.target.machine === row.machine && previous.target.conversation === row.conversation
+    const response = await this.toolDeps().fetch('/v1/voice/copilot-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), [UNOPENED_READ_HEADER]: '1', ...(row.machine ? { [UNOPENED_MACHINE_HEADER]: row.machine } : {}) },
+      body: JSON.stringify({session: row.session ?? row.id, conversation: row.conversation ?? '', question, replies, language: consoleLanguage(), ...(same ? {context: previous.key} : {})}),
+      signal: AbortSignal.timeout(MACHINE_RECAP_MS),
+    })
+    // An older machine has no analysis endpoint; it cannot mistake this for a recap request.
+    if (response.status === 404 || response.status === 501) return undefined
+    const body = await response.json().catch(() => null) as Record<string,unknown> | null
+    if (!response.ok) return { error: copilotRefusal(body,response.status).code, analysis_unavailable: true }
+    if (attempt !== this.attempt || !body || body.conversation !== row.conversation || body.session_id !== (row.session ?? row.id) || typeof body.context !== 'string' || !body.analysis) return {error:'copilot_question_identity_changed'}
+    const dollars = questionAnalysisUSD(body.model,body.usage)
+    if (dollars === undefined) this.questionCostKnown = false
+    else this.questionUSD += dollars
+    if (this.live) this.updateLiveCost()
+    else { const cost=this.state.cost ?? emptyCost(this.model); this.updateState({cost:{...cost,usd:cost.usd+(dollars ?? 0),priced:cost.priced && dollars !== undefined}}) }
+    this.questionContext = {target:{id:row.id,label:row.label,machine:row.machine,conversation:row.conversation},key:body.context}
+    const { session_id, usage, ...answer } = body
+    return answer
+  }
+
+  /** Opening the menu reads only the directory, never transcripts or models. */
+  async questionTargets(): Promise<{ targets: QuestionTarget[]; current?: string }> {
+    const read = await readRows(this.toolDeps())
+    if ('error' in read) throw new Error(read.error)
+    return { targets: read.rows.map(row => ({ id: row.id, label: row.label, machine: row.machine, machineName: row.machineName, conversation: row.conversation })), current: this.focus }
+  }
+
+  private questionSending = false
+  private questionSerial = 0
+  private questionTarget?: QuestionTarget
+  private questionUSD = 0
+  private questionCostKnown = true
+  private questionContext?: { target: QuestionTarget; key: string }
+
+  /** A click is a conversational read request, never a submitted work item. */
+  async askQuestion(id: CallQuestionID, text: string, target: QuestionTarget): Promise<void> {
+    const dc = this.dc, attempt = this.attempt
+    if (this.questionSending || this.state.status !== 'connected' || !this.state.connectionReady || dc?.readyState !== 'open') throw new Error(nextWord('copilotQuestionNotReady'))
+    this.questionSending = true
+    const serial = ++this.questionSerial, call = this.journalCall
+    const waiting = `question-menu:${serial}`
+    this.narrator.toolStarted(waiting)
+    try {
+      const read = await readRows(this.toolDeps())
+      if ('error' in read) throw new Error(read.error)
+      const matches = read.rows.filter(row => row.id === target.id && row.machine === target.machine && row.conversation === target.conversation)
+      if (matches.length !== 1) throw new Error(nextWord('copilotQuestionTargetChanged'))
+      if (serial !== this.questionSerial || attempt !== this.attempt || this.dc !== dc || dc.readyState !== 'open') throw new Error(nextWord('copilotQuestionNotReady'))
+      // Freeze the selected identity and its current label, rather than a pronoun
+      // that could be redirected by a page navigation during an awaited save.
+      const selected = { ...target, label: matches[0].label }
+      const request = questionRequest(id, text, selected)
+      const input = crypto.randomUUID()
+      if (this.call.options.workEnabled && !this.live) {
+        await receiveCallInput(request.text, call, input, selected)
+        if (serial !== this.questionSerial || attempt !== this.attempt || this.dc !== dc || dc.readyState !== 'open') {
+          await parkVoiceInput(input, call)
+          throw new Error(nextWord('copilotQuestionNotReady'))
+        }
+      }
+      this.personSpoke = true
+      this.cancelOpening()
+      this.sessionReports.interrupt()
+      this.narrator.discard('session-report')
+      this.heardNow = request.text
+      this.questionTarget = selected
+      this.focus = selected.id
+      this.doneSinceHeard.clear()
+      this.keep('user', request.text)
+      this.journal('heard', request.text, { source: 'question_menu', question: id })
+      this.updateState({ lastTranscript: request.text, tools: [] })
+      if (this.live) {
+        dc.send(JSON.stringify(liveNote('commentary', `${request.routing}\nThe person's selected question: ${JSON.stringify(request.text)}. Delegate this request before answering.`)))
+      } else {
+        dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: request.text }] } }))
+        dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: `${request.routing}\n${this.call.options.workEnabled ? `Saved conversational input ID: ${input}. It is not a submitted task.` : ''}` }] } }))
+        this.requestConversation(input, `question:${input}`)
+      }
+    } finally { this.questionSending = false; this.narrator.toolFinished(waiting) }
   }
 
   /** Resends the whole configuration once the briefing has arrived. */
@@ -561,6 +652,7 @@ export class RealtimeCopilotClient {
     // was placed from, and that Session is the one under discussion.
     this.call = { memory: '', snapshot: '', options: { origin } }
     this.focus = origin?.id
+    this.questionTarget=undefined;this.questionContext=undefined;this.questionUSD=0;this.questionCostKnown=true
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
@@ -903,6 +995,8 @@ export class RealtimeCopilotClient {
     if(event.type==='response.created')this.awaitingResponse=true
     if(event.type==='response.done')this.awaitingResponse=false
     if(event.type === 'input_audio_buffer.speech_started'){
+      this.questionSerial++
+      this.questionTarget = undefined
       this.personSpoke=true;this.cancelOpening()
       if(this.call.options.workEnabled) {
         const onScreen=sessionsInFragment(location.hash)
@@ -1440,6 +1534,8 @@ export class RealtimeCopilotClient {
         void this.configureLive()
         return
       case 'session.input_transcript.delta': {
+        this.questionSerial++
+        this.questionTarget = undefined
         this.personSpoke = true
         this.cancelOpening()
         this.sessionReports.interrupt();this.spokenSessions.interrupted(!!this.liveSaid.peek());this.awaitingResponse=false
@@ -1484,8 +1580,8 @@ export class RealtimeCopilotClient {
 
   private updateLiveCost() {
     const elapsed = this.liveStarted ? (Date.now() - this.liveStarted) / 1000 : 0
-    const { seconds, usd } = liveCost(elapsed, this.liveSeconds, this.liveBackendUsd)
-    this.updateState({ cost: { ...emptyCost(this.model), usd, priced: true, live: { seconds, billedSeconds: this.liveSeconds, backendUSD: this.liveBackendUsd } } })
+    const { seconds, usd } = liveCost(elapsed, this.liveSeconds, this.liveBackendUsd + this.questionUSD)
+    this.updateState({ cost: { ...emptyCost(this.model), usd, priced: this.questionCostKnown, live: { seconds, billedSeconds: this.liveSeconds, backendUSD: this.liveBackendUsd } } })
   }
 
   /** Runs one backend function call with the same tools a Realtime call has, and lets the backend continue after the last one. */

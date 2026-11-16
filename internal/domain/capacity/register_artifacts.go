@@ -4,6 +4,14 @@ package capacity
 // screens.* and voice.*: pictures, icons, screen captures and voice models.
 func artifactsBounds() []Entry {
 	return []Entry{
+		{Name: "voice.question_replies", Class: Buffer, Unit: Rows, Limit: 5, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionReplies"}},
+		{Name: "voice.question_pages", Class: Buffer, Unit: Rows, Limit: 5, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionPages"}},
+		{Name: "voice.question_input_characters", Class: Buffer, Unit: Characters, Limit: 40000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionInputRunes"}},
+		{Name: "voice.question_contexts", Class: Buffer, Unit: Rows, Limit: 16, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionContexts"}},
+		{Name: "voice.question_context_seconds", Class: Observation, Unit: Seconds, Limit: 300, AtLimit: EvictOldest, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionAge"}},
+		{Name: "voice.question_concurrent", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionConcurrent"}},
+		{Name: "voice.question_output_tokens", Class: Buffer, Unit: Tokens, Limit: 1400, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionOutputTokens"}},
+
 		{Name: "voice.work_auto_continue", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxAutoContinue"}},
 		{Name: "voice.work_plan_rounds", Class: Buffer, Unit: Rows, Limit: 4, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxPlanRounds"}},
 		{Name: "voice.work_progress", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/voicework.MaxProgress"}},

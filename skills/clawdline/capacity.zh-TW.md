@@ -376,6 +376,7 @@
 | `console.copilot_orb_pixel_ratio` | 2 | `multipliers` | `coalesce` | `diagnostics` | — |
 | `console.copilot_recap_pages` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_recent_idle_seconds` | 1800 | `seconds` | `coalesce` | `sender, diagnostics` | — |
+| `console.copilot_recent_replies` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_reply_characters` | 8000 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_session_report_batch` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -821,6 +822,13 @@
 | `voice.polish_characters` | 4000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.polish_terms` | 240 | `rows` | `refuse` | `diagnostics` | — |
 | `voice.polish_timeout_milliseconds` | 15000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.question_concurrent` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.question_context_seconds` | 300 | `seconds` | `evict_oldest` | `sender, diagnostics` | — |
+| `voice.question_contexts` | 16 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `voice.question_input_characters` | 40000 | `characters` | `coalesce` | `sender, diagnostics` | — |
+| `voice.question_output_tokens` | 1400 | `tokens` | `refuse` | `sender, diagnostics` | — |
+| `voice.question_pages` | 5 | `rows` | `coalesce` | `sender, diagnostics` | — |
+| `voice.question_replies` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.vocabulary_project_terms` | 40 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `voice.vocabulary_term_characters` | 64 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.vocabulary_terms` | 200 | `rows` | `refuse` | `sender, diagnostics` | — |

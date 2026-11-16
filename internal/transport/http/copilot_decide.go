@@ -244,7 +244,19 @@ func decideCopilotSession(ctx context.Context, key, said, current string, sessio
 // copilotChatJSON sends one Chat Completions request on the person's key and
 // answers the first choice's content, or the HTTP status and a detail that
 // never carries the key.
+type copilotChatUsage struct {
+	Prompt     int `json:"prompt_tokens"`
+	Completion int `json:"completion_tokens"`
+	Details    struct {
+		Cached int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+}
+
 func copilotChatJSON(ctx context.Context, key string, body map[string]any) (string, int, string) {
+	return copilotChatJSONRecord(ctx, key, body, nil)
+}
+
+func copilotChatJSONRecord(ctx context.Context, key string, body map[string]any, usage *copilotChatUsage) (string, int, string) {
 	payload, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotOpenAI+"/v1/chat/completions", bytes.NewReader(payload))
 	if err != nil {
@@ -262,6 +274,7 @@ func copilotChatJSON(ctx context.Context, key string, body map[string]any) (stri
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 	var reply struct {
+		Usage   copilotChatUsage `json:"usage"`
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
@@ -273,6 +286,9 @@ func copilotChatJSON(ctx context.Context, key string, body map[string]any) (stri
 		} `json:"error"`
 	}
 	_ = json.Unmarshal(raw, &reply)
+	if usage != nil {
+		*usage = reply.Usage
+	}
 	if res.StatusCode/100 != 2 || len(reply.Choices) == 0 {
 		detail := strings.TrimSpace(reply.Error.Message)
 		if detail == "" {

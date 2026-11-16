@@ -92,3 +92,13 @@ export function formatUSD(usd: number): string {
   if (usd < 0.01) return `US$${usd.toFixed(4)}`
   return `US$${usd.toFixed(3)}`
 }
+
+
+/** GPT-4.1 mini standard text rates, official model page checked 2026-11-16. */
+export function questionAnalysisUSD(model: unknown, usage: unknown): number | undefined {
+  if (model !== 'gpt-4.1-mini' || !usage || typeof usage !== 'object') return undefined
+  const u = usage as {prompt_tokens?:unknown;completion_tokens?:unknown;prompt_tokens_details?:{cached_tokens?:unknown}}
+  if (typeof u.prompt_tokens !== 'number' || typeof u.completion_tokens !== 'number' || u.prompt_tokens + u.completion_tokens <= 0) return undefined
+  const cached = Math.min(n(u.prompt_tokens), n(u.prompt_tokens_details?.cached_tokens))
+  return ((n(u.prompt_tokens)-cached)*0.4 + cached*0.1 + n(u.completion_tokens)*1.6)/1_000_000
+}

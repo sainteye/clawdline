@@ -2054,3 +2054,93 @@ test('an automatic report keeps an unidentified Note unread instead of saying th
  assert.equal(out.sessions[0].needs_your_response.notes.error,'voice_notes_conversation_unavailable')
  assert.equal(out.sessions[0].needs_your_response.notes.note,undefined)
 })
+
+
+test('detailed reads count assistant replies across pages and preserve table middles and related questions', async () => {
+  const calls: string[] = []
+  const table = '| dimension | option A | option B |\n|---|---|---|\n| quality | 8 | 9 |'
+  const messages = Array.from({length:5}, (_,i) => [
+    {role:'user',text:`Question ${i}`,at:i*10},
+    {role:'tool',text:'not an assistant reply'},
+    {role:'assistant',text:`Reply ${i}\n${'x'.repeat(900)}\n${table}\nEnd ${i}`,at:i*10+1},
+  ]).flat()
+  const deps: ToolDeps = {
+    fetch: async path => {
+      calls.push(path)
+      if(path==='/v1/sessions')return Response.json({sessions:ROWS})
+      assert.ok(path.startsWith('/v1/transcript?session='))
+      return Response.json(path.includes('before=')?{entries:messages.slice(0,9)}:{entries:messages.slice(9),nextBefore:30})
+    }, sleep:async()=>{},
+    decide:async()=>assert.fail('an exact menu target requires no classifier'),
+  }
+  const result=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',said:'Prepare screenshots',replies:5}),deps)).output)
+  assert.equal(result.read_replies,5)
+  assert.equal(result.coverage.complete,true)
+  assert.equal(result.replies[0].asked,'Question 0')
+  assert.equal(result.replies.at(-1).asked,'Question 4')
+  assert.equal(result.replies[0].at,1)
+  assert.ok(result.replies.every((reply:{reply:string})=>reply.reply.includes(table)))
+  assert.equal(calls.filter(path=>path.includes('/v1/transcript')).length,2)
+  assert.ok(calls.every(path=>!path.includes('copilot-recap')))
+})
+
+test('detailed reads expose missing coverage, truncation and partial page failures', async()=>{
+  for(const mode of ['short','long','failed']){
+    const deps:ToolDeps={sleep:async()=>{},fetch:async path=>{
+      if(path==='/v1/sessions')return Response.json({sessions:ROWS})
+      if(path.includes('before='))return new Response('',{status:503})
+      return Response.json({entries:[{role:'assistant',text:mode==='long'?'a'.repeat(REPLY_CHARS+20):'Only reply'}],...(mode==='failed'?{nextBefore:10}:{})})
+    }}
+    const result=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',replies:5}),deps)).output)
+    assert.equal(result.read_replies,1)
+    assert.equal(result.coverage.complete,false)
+    assert.equal(result.coverage.read_failed,mode==='failed')
+    assert.equal(result.reply_truncated===true,mode==='long')
+  }
+})
+
+test('invalid detailed reply counts stop before any directory or content read',async()=>{
+  const deps:ToolDeps={sleep:async()=>{},fetch:async()=>assert.fail('invalid count must not read')}
+  for(const replies of [0,6,2.5])assert.equal(JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',replies}),deps)).output).error,'voice_reply_count_invalid')
+})
+
+
+test('a detailed read carries the question and refuses a conversation replaced during paging', async()=>{
+  let lists=0
+  const deps:ToolDeps={sleep:async()=>{},fetch:async path=>{
+    if(path==='/v1/sessions')return Response.json({sessions:[{...ROWS[1],sessionId:++lists===1?'original':'successor'}]})
+    return Response.json({entries:[{role:'user',text:'Compare options'},{role:'assistant',text:'Option A saves time.'}]})
+  }}
+  const result=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',question:'Why option A?'}),deps)).output)
+  assert.equal(result.error,'voice_session_identity_changed')
+})
+
+test('a menu-selected identity cannot be redirected by another tool argument or a reused terminal',async()=>{
+  for(const wanted of ['%2','%9']){
+    const m=fakeMachine({}, {transcripts:{'%2':{entries:[{role:'assistant',text:'Other conversation'}]}}})
+    const result=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:wanted}),{...m.deps,selectedReadTarget:{id:'%2',label:'Prepare screenshots',conversation:'original'}})).output)
+    assert.equal(result.error,'voice_session_identity_changed')
+    assert.equal(m.calls.filter(c=>c.path.startsWith('/v1/transcript')).length,0)
+  }
+})
+
+
+test('the user analysis question stays separate from the Session pending question',async()=>{
+  const m=fakeMachine({}, {transcripts:{'%7':{entries:[{role:'user',text:'Compare the options'},{role:'assistant',text:'Option A is faster.'}]}}})
+  const result=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%7',question:'Why option A?'}),m.deps)).output)
+  assert.equal(result.user_question,'Why option A?')
+  assert.equal(result.question,'Push to main?')
+})
+
+
+test('focused explanations use the shared analyzer while summaries keep their existing fast path',async()=>{
+ const m=fakeMachine({}, {transcripts:{'%2':{entries:[{role:'user',text:'Compare options'},{role:'assistant',text:'A is faster.'}]}}})
+ const asked:unknown[]=[]
+ const deps:ToolDeps={...m.deps,analyzeQuestion:async(row,question,replies)=>{asked.push({id:row.id,question,replies});return {analysis:{answer:'A is faster; the cost is unknown.',evidence:[{ref:2,quote:'A is faster'}],unknowns:['cost'],needs_older:false}}}}
+ const answer=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',question:'Why A?',replies:3}),deps)).output)
+ assert.equal(answer.analysis.answer,'A is faster; the cost is unknown.')
+ assert.deepEqual(asked,[{id:'%2',question:'Why A?',replies:3}])
+ assert.equal(m.calls.filter(c=>c.path.startsWith('/v1/transcript')).length,0,'the analyzer owns detailed reads')
+ await runCopilotTool('get_session_summary',JSON.stringify({session_id:'%2'}),deps)
+ assert.equal(asked.length,1,'ordinary summaries never start focused analysis')
+})

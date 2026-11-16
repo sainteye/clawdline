@@ -7361,6 +7361,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_recent_replies",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_reply_characters",
     "Class": "buffer",
     "Unit": "characters",
@@ -15884,6 +15902,146 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/planner.MaxPolishDuration"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.question_concurrent",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotQuestionConcurrent"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.question_context_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotQuestionAge"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.question_contexts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotQuestionContexts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.question_input_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 40000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotQuestionInputRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.question_output_tokens",
+    "Class": "buffer",
+    "Unit": "tokens",
+    "Limit": 1400,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotQuestionOutputTokens"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.question_pages",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotQuestionPages"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.question_replies",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotQuestionReplies"
     ]
   },
   {

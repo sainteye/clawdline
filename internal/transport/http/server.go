@@ -63,6 +63,7 @@ import (
 )
 
 type Server struct {
+	questionAnalysis copilotQuestionBook
 	// recaps keeps each Session's forked recap (session_recaps.go).
 	recaps             *recapBook
 	projectAssistants  projectAssistantServer
@@ -821,6 +822,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/voice/copilot-briefing"}, s.copilotBriefingRoute},
 		{Route{"*", "/v1/voice/copilot-decide"}, s.copilotDecideRoute},
 		{Route{"*", "/v1/voice/copilot-recap"}, s.copilotRecapRoute},
+		{Route{"*", "/v1/voice/copilot-question"}, s.copilotQuestionRequestRoute},
 		{Route{"*", "/v1/voice/copilot-journal"}, s.copilotJournalRoute},
 		{Route{"*", "/v1/voice/copilot-work"}, s.copilotWorkRoute},
 		{Route{"*", "/v1/voice/language"}, s.voiceLanguageRoute},

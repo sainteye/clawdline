@@ -103,6 +103,9 @@ export const CARRIED = {
   // posts to OpenAI with its key; it answers OpenAI's offer answer and the
   // session id.
   "copilot-live": "POST /v1/voice/copilot-live",
+  // Question-focused analysis of bounded recent Session messages, with exact
+  // source references and no tools.
+  "copilot-question": "POST /v1/voice/copilot-question",
   // The voice copilot's Session recap (`realtime/copilot-tools.ts`,
   // `get_session_recap`): the machine holding the Session reads its whole
   // record and Board steps, and a text model on its key writes one spoken

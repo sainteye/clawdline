@@ -59,6 +59,10 @@ export interface ToolDeps {
   /** Call-local read identity. It is never authority for a mutation. */
   spokenReference?: (text:string)=>SpokenReference|undefined
   onRead?: (ref:SessionReference)=>void
+  /** Demand-only question analysis on the Session machine; undefined on older daemons. */
+  analyzeQuestion?: (row: CopilotSessionRow, question: string, replies: number) => Promise<Record<string, unknown> | undefined>
+  /** Exact identity selected in the call menu; a reused terminal must not redirect a read. */
+  selectedReadTarget?:SessionReference
   summaryAttentionFirst?:boolean
   summaryLimit?:number
   summaryTargets?:readonly SessionReference[]
@@ -164,6 +168,8 @@ export const SCREEN_TAIL_LINES = 40
  * thousand characters; the 600 the other reads keep lose its reasoning.
  */
 export const REPLY_CHARS = 8000
+/** Maximum assistant replies in one explicit detailed read. */
+export const RECENT_REPLIES = 5
 /**
  * How many Sessions one smart_rename_sessions call names. Each one spends a
  * small model turn on the machine, one after another, so a longer list would
@@ -299,16 +305,24 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 進度數字（完成幾步、還剩幾項）只能用 progress，那是剛剛從看板讀到的現況。deliveries 每筆的 when 是那次回報的時間，裡面的數字是當時的；和 progress 不同時，絕對不可以說成現在的進度，要提就說是什麼時候的。沒有 progress 就不要講剩幾項。
 
 【解說單一 Session】
-- 先讀 get_session_summary，用兩到三句講：它在做什麼、做到哪（依 delivered_summary 或 last_reply 講具體結果）、現在要不要使用者處理（在等什麼）。閒置的 Session 也要說它最後完成了什麼。使用者追問過程或細節，再讀 get_session_activity。
+- 明確問最近訊息、表格、原因、取捨或洞見時，直接 explain_session_reply，不先產生摘要；只有概況與進度問題才先讀 get_session_summary。
+- 一般概況先讀 get_session_summary，用兩到三句講：它在做什麼、做到哪（依 delivered_summary 或 last_reply 講具體結果）、現在要不要使用者處理（在等什麼）。閒置的 Session 也要說它最後完成了什麼。使用者追問執行過程才讀 get_session_activity；訊息內容、原因或取捨直接 explain_session_reply。
 - 依紀錄內容具體講，不要只說「在工作中」或「已閒置」。
 - 有 progress 時，進度數字以 progress 為準（剛剛從看板讀到的步驟數）；delivered_summary 或 last_reply 裡的數字和它不同時，那是舊的，不可以說成現在的進度。
 - last_reply 的結尾如果在問使用者（要不要做、選哪個、請他確認），即使狀態是閒置，也要說它在等使用者決定，並問要不要詳細解釋。
 
-【解釋最後一則回覆（explain_session_reply）】
+【深入解釋最近回覆（explain_session_reply）】
+- 需要根據最近原文解答問題時，將使用者真正的問題放入 question，不需要固定口令；摘要不足、原因、比較、取捨、洞見與針對內容的追問都走此工具。
+- 詳解不受一般三句回答限制；先講結論與影響，再分段解釋原因和選項，讓使用者能隨時插話。
+- 結果有 analysis 時，是小型文字模型針對問題整理的 answer、evidence、unknowns、needs_older。用 answer 回答，保留條件與未知，不要再縮成泛用進度摘要。需要時以來源 ref 說明依據，勿逐字念技術識別。needs_older 時可在原先只讀一或三則的情況增加 replies 到五則；仍不足就說明缺口，不自動無限往前翻。error 時說分析未完成，不要假裝已看過。
+- user_question 是使用者真正想解決的問題；question 是 Session 目前待回答的問題，兩者分開。以 user_question 為目標從原文抽取答案、依據與未知；追問優先沿用已讀資料，不足才重新讀取或改變範圍。
+- replies 是由舊到新的助理回覆及各自的 asked。依使用者指定的則數讀；「最近幾則」預設三則；「最後五則」用五則。只讀一則時用一。不要把工具紀錄算一則回覆。
+- 以原文區分事實、原作者主張與你的推論；表格要對齊欄名、數字與條件。跨訊息的更正以較新者為準。評分或成本缺少來源與測量條件就說明，不可宣稱已驗證。coverage.complete 為 false 時交代讀了幾則與缺少或截短的部分。
+- 一般工作過程／執行紀錄才用 get_session_activity；從頭到尾的歷史才用 get_session_recap；上次匯報後的新內容才用 get_session_updates。
 - 目的是讓使用者聽完就懂、知道要決定什麼。像同事當面解釋，分幾次講，不要一口氣講完。
 - 先一兩句講它原本要處理什麼、查到的原因是什麼（用白話講「為什麼會這樣」，不念函式名稱、檔名、路徑、API 或程式碼）；再講它建議怎麼做；最後明確說要他決定的是什麼，把可以選的做法和各自的代價講出來。他想知道更細的原因再往下講。
 - 回覆裡沒有要他決定的事，就直接說它沒有要你決定什麼，並說它現在的狀態。
-- 只講 reply 裡有的內容，不要補充或推測；reply_truncated 為 true 時說中間有一部分沒讀到。
+- 只講 replies（舊版只有 reply）裡有的內容；推論必須清楚標示。reply_truncated 為 true 時說中間有一部分沒讀到。
 - 使用者聽完說要做（例如「好，叫它修」），先念出要送的文字並等使用者說好，再用 send_message_to_session 送出。`
 
 export const COPILOT_TOOLS = [
@@ -397,10 +411,12 @@ export const COPILOT_TOOLS = [
     type: 'function',
     name: 'explain_session_reply',
     description:
-      '讀取特定 Session 最後一則回覆的全文（reply），以及使用者最後交代它的事（asked）、目前狀態與它在等什麼。使用者說「解釋給我聽」「它在說什麼」「我看不懂」「它要我決定什麼」時用這個，然後依指示講清楚原因、建議與要使用者決定的事。',
+      '深入讀取特定 Session 最近一至五則助理回覆及相關提問，保留表格與段落。最後一則用 replies=1；最後幾則、洞見、比較或取捨預設 replies=3；明確最後五則用 replies=5。這是內容詳解，不是進度摘要，不必先讀 get_session_summary。依原文講清楚結論、原因、選項、影響及待決事項，說明未讀或截短範圍。',
     parameters: {
       type: 'object',
       properties: {
+        question: { type: 'string', description: '使用者這次想了解的實際問題；讀完 replies 後針對此問題找答案、依據與未知，不要另做泛用摘要。' },
+        replies: { type: 'integer', minimum: 1, maximum: RECENT_REPLIES, description: '要詳讀的助理回覆則數；未指定最後幾則時用 3，明確只問最後一則用 1。工具與系統紀錄不占則數。' },
         said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: {
           type: 'string',
@@ -1126,11 +1142,18 @@ export interface SessionDecision { id?: string; candidates?: string[]; many?: bo
  * from, as before (`resolveSession`). Writes never come here (`resolveForWrite`).
  */
 export async function resolveRead(
-  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus' | 'screen'>,
+  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus' | 'screen' | 'selectedReadTarget'>,
   rows: readonly CopilotSessionRow[],
   wanted: string,
 ): Promise<ReturnType<typeof resolveSession>> {
   const finish=(result:ReturnType<typeof resolveSession>)=>{if('row' in result)deps.onRead?.({id:result.row.id,label:result.row.label,machine:result.row.machine,conversation:result.row.conversation});return result}
+  if (deps.selectedReadTarget) {
+    const target = deps.selectedReadTarget
+    const row = uniqueSessionID(rows, target.id)
+    if (!row || !sameReference(target, row)) return { error: 'voice_session_identity_changed' }
+    if (!wanted || wanted === target.id || wanted === target.label || wanted === row.label) return finish({ row })
+    return { error: 'voice_question_target_mismatch' }
+  }
   const direct = resolveSession(rows, wanted, deps.focus?.get())
   // The person's words decide when there are any: measured live, the voice
   // model filled in a wrong id itself (「做衣服圖片的那個」 read as another
@@ -2096,7 +2119,8 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string, f
   return out
 }
 
-async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
+async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, count = 1, question = ''): Promise<unknown> {
+  if (!Number.isInteger(count) || count < 1 || count > RECENT_REPLIES) return { error: 'voice_reply_count_invalid', maximum: RECENT_REPLIES }
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -2108,6 +2132,13 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     return { error: found.error, candidates: found.candidates ?? read.rows.map((r) => ({ id: r.id, label: r.label })), ...('many' in found ? { many: true } : {}) }
   }
   const { row } = found
+  deps.focus?.set(row.id)
+  if (deps.analyzeQuestion) {
+    const requested = question.trim() || deps.heard?.().trim() || 'Explain the conclusions, reasons, tradeoffs and decisions in these recent replies.'
+    const analysis = await deps.analyzeQuestion(row, requested, count)
+    if (analysis) return { session_id: row.id, label: row.label, state: row.state, user_question: requested, ...analysis }
+  }
+
   const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
   if (!res.ok) {
     const why = await refusalText(res)
@@ -2115,25 +2146,48 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     logs.push({ level: 'error', text: error })
     return { error }
   }
-  const data = (await res.json()) as { entries?: unknown }
-  const list = Array.isArray(data?.entries) ? data.entries : []
-  let reply = ''
-  let replyAt = -1
-  for (let i = list.length - 1; i >= 0; i--) {
-    const e = list[i] as Record<string, unknown> | null
-    if (e && e.role === 'assistant' && str(e.text).trim()) { reply = plainScreenText(str(e.text)).trim(); replyAt = i; break }
+  const page = (await res.json()) as { entries?: unknown; nextBefore?: number }
+  let list = Array.isArray(page.entries) ? page.entries : []
+  let before = Number(page.nextBefore) || 0
+  let readFailed = false
+  // Older pages are fetched only for an explicit detailed read, never at call start.
+  const enough = () => list.filter(e => e && typeof e === 'object' && (e as Record<string, unknown>).role === 'assistant' && str((e as Record<string, unknown>).text).trim()).length >= count
+  for (let n = 1; n < RECAP_PAGES && before > 0; n++) {
+    if (enough() && list.slice(0, list.findIndex(e => e && typeof e === 'object' && (e as Record<string, unknown>).role === 'assistant')).some(e => e && typeof e === 'object' && (e as Record<string, unknown>).role === 'user')) break
+    const older = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}&before=${before}`, NAMED_READ)
+    if (!older.ok) { readFailed = true; break }
+    const data = await older.json() as { entries?: unknown; nextBefore?: number }
+    list = [...(Array.isArray(data.entries) ? data.entries : []), ...list]
+    const next = Number(data.nextBefore) || 0
+    if (next >= before) { readFailed = true; break }
+    before = next
   }
-  let asked = ''
-  for (let i = (replyAt >= 0 ? replyAt : list.length) - 1; i >= 0; i--) {
+  const replies: { reply: string; asked?: string; at?: number; truncated?: boolean }[] = []
+  for (let i = 0; i < list.length; i++) {
     const e = list[i] as Record<string, unknown> | null
-    const words = e && e.role === 'user' ? personWords(str(e.text)) : ''
-    if (words) { asked = clip(plainScreenText(words), ACTIVITY_TEXT_CHARS); break }
+    if (!e || e.role !== 'assistant' || !str(e.text).trim()) continue
+    const text = plainScreenText(str(e.text)).trim()
+    let asked = ''
+    for (let j = i - 1; j >= 0; j--) {
+      const preceding = list[j] as Record<string, unknown> | null
+      const words = preceding?.role === 'user' ? personWords(str(preceding.text)) : ''
+      if (words) { asked = clipKeepingLines(plainScreenText(words), REPLY_CHARS); break }
+    }
+    replies.push({ reply: clipKeepingLines(text, REPLY_CHARS), ...(asked ? { asked } : {}), ...(Number(e.at) ? { at: Number(e.at) } : {}), ...(text.length > REPLY_CHARS ? { truncated: true } : {}) })
   }
+  const refreshed = await readRows(deps)
+  if ('error' in refreshed) return { error: 'voice_reply_identity_unavailable' }
+  const current = uniqueSessionID(refreshed.rows, row.id)
+  if (!current || !sameReference(row, current)) return { error: 'voice_session_identity_changed' }
+  const selected = replies.slice(-count)
+  const last = selected.at(-1)
+  const reply = last?.reply ?? ''
+  const asked = last?.asked ?? ''
   if (!reply) {
     logs.push({ level: 'error', text: say(`No reply of "${row.label}" could be read`, `「${row.label}」讀不到回覆`) })
     return { session_id: row.id, label: row.label, state: row.state, note: '這個 Session 讀不到最後一則回覆，可改用 get_session_screen 看畫面' }
   }
-  const truncated = reply.length > REPLY_CHARS
+  const truncated = selected.some(entry => entry.truncated)
   logs.push({ level: 'info', text: say(`Read the last reply of "${row.label}" (${reply.length} characters)`, `成功讀取「${row.label}」最後一則回覆（${reply.length} 字）`) })
   return {
     session_id: row.id,
@@ -2141,7 +2195,13 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
     assistant: row.assistant,
     state: row.state,
     ...(asked ? { asked } : {}),
-    reply: truncated ? clipKeepingLines(reply, REPLY_CHARS) : reply,
+    reply,
+    replies: selected,
+    user_question: clipKeepingLines(question, REPLY_CHARS),
+    source: { machine: row.machine, session_id: row.id, conversation: row.conversation },
+    requested_replies: count,
+    read_replies: selected.length,
+    coverage: { complete: selected.length === count && selected.every(entry => !!entry.asked) && !truncated && !readFailed, older_available: before > 0, read_failed: readFailed },
     ...(truncated ? { reply_truncated: true } : {}),
     ...(row.question ? { question: row.question } : {}),
     ...(row.options?.length ? { options: row.options } : {}),
@@ -3054,7 +3114,7 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id), args.fresh === true)
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
-    else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id))
+    else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id), args.replies === undefined ? 1 : Number(args.replies), str(args.question))
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true, str(args.expected_question))

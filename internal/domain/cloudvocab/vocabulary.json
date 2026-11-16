@@ -343,6 +343,67 @@
       "decode": {"reply": "action", "fields": {"live": {"type": "object", "max_bytes": 61440, "copies": {"max_bytes": "copilotLiveCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-live", "body": {"object": "live"}}}
     },
     {
+      "op": "copilot-question",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/voice/copilot-question",
+      "console_seam": "writer",
+      "console_note": "Question-focused analysis of bounded recent Session messages, with exact source references and no tools.",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "question": {
+          "session": "%1",
+          "conversation": "c1",
+          "question": "Why was option A proposed?",
+          "replies": 3,
+          "context": "context1",
+          "language": "en"
+        },
+        "request": "req-question",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "question",
+            "request",
+            "session"
+          ],
+          "path": "/v1/voice/copilot-question",
+          "local_body": [
+            "context",
+            "conversation",
+            "language",
+            "question",
+            "replies",
+            "session"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "question": {
+            "type": "object",
+            "max_bytes": 65536,
+            "copies": {
+              "max_bytes": "defaultModelsCloudBodyLimit"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/voice/copilot-question",
+          "body": {
+            "object": "question"
+          }
+        }
+      }
+    },
+    {
       "op": "copilot-recap",
       "kind": "command",
       "write_gate": true,

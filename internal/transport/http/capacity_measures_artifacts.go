@@ -15,6 +15,32 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"voice.question_replies": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: 0, Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
+		},
+		"voice.question_pages": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: 0, Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
+		},
+		"voice.question_input_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: 0, Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
+		},
+		"voice.question_contexts": func() capacity.Reading {
+			s.questionAnalysis.Lock()
+			defer s.questionAnalysis.Unlock()
+			return capacity.Reading{Known: true, Used: int64(len(s.questionAnalysis.contexts)), Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
+		},
+		"voice.question_context_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: 0, Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
+		},
+		"voice.question_concurrent": func() capacity.Reading {
+			s.questionAnalysis.Lock()
+			defer s.questionAnalysis.Unlock()
+			return capacity.Reading{Known: true, Used: int64(s.questionAnalysis.active), Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
+		},
+		"voice.question_output_tokens": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: 0, Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
+		},
+
 		"voice.work_auto_continue": func() capacity.Reading {
 			settings, err := s.readCopilot()
 			if err != nil {

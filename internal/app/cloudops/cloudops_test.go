@@ -1012,6 +1012,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/voice/copilot-live",
 		body2: `{"instructions":"Speak briefly.","sdp":"v=0"}`,
 	}, {
+		word:    "copilot-question",
+		body:    map[string]any{"type": "copilot-question", "session": machine, "request": "req-question", "question": map[string]any{"session": "%2", "conversation": "c1", "question": "Why A?", "replies": 3, "context": "context1", "language": "en"}},
+		session: machine, name: "action:req-question", method: "POST", path: "/v1/voice/copilot-question",
+		body2: `{"context":"context1","conversation":"c1","language":"en","question":"Why A?","replies":3,"session":"%2"}`,
+	}, {
 		word: "copilot-recap",
 		body: map[string]any{"type": "copilot-recap", "session": machine, "request": "req-recap",
 			"recap": map[string]any{"session": "%2", "conversation": "c1"}},

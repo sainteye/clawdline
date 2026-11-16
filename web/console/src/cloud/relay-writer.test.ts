@@ -3346,6 +3346,11 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
   await reader.fetch("/v1/voice/copilot-recap", post({ session: "%7" }, { "Idempotency-Key": "recap-2", "X-Clawdline-Unopened-Machine": "mac-c" }))
   assert.deepEqual(client.calls[0].slice(1, 5), ["recap-2", "mac-c", "copilot-recap", { recap: { session: "%7" } }])
 
+  // Detailed question analysis follows the selected Session machine and preserves its context.
+  client.calls.length = 0
+  await reader.fetch("/v1/voice/copilot-question", post({session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant",extra:"discard"}, {"Idempotency-Key":"question-1","X-Clawdline-Unopened-Machine":"mac-c"}))
+  assert.deepEqual(client.calls[0].slice(1,5),["question-1","mac-c","copilot-question",{question:{session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant"}}])
+
   // And the call's journal lines are kept there too.
   client.calls.length = 0
   await reader.fetch("/v1/voice/copilot-journal", post({ call: "call-0001", entries: [{ at: 1, kind: "heard", text: "hi" }] }, { "Idempotency-Key": "journal-1" }))

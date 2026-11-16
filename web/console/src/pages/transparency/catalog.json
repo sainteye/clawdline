@@ -4185,6 +4185,50 @@
         "Current Session summaries and unresolved Notes",
         "Existing call-local presentation queue"
       ]
+    },
+    {
+      "id": "voice-question-menu",
+      "scope": "conditional",
+      "agents": [],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "web/console/src/realtime/copilot-questions.ts",
+          "line": 22
+        },
+        {
+          "path": "web/console/src/realtime/realtime-copilot.ts",
+          "line": 436
+        },
+        {
+          "path": "web/console/src/realtime/copilot-tools.ts",
+          "line": 2117
+        },
+        {
+          "path": "web/console/src/realtime/copilot-live.ts",
+          "line": 96
+        },
+        {
+          "path": "internal/transport/http/copilot_question.go",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/realtime/copilot-cost.ts",
+          "line": 100
+        }
+      ],
+      "original": [
+        "The person clicked a read-only question in the call window.",
+        "Read that target with that tool before answering. Do not first generate a summary for an explicit detail question.",
+        "Never send a message, approve, or execute a mutation for this question.",
+        "Answer the person's actual question using only the supplied recent Session messages.",
+        "Quotes must be literal substrings of the referenced message."
+      ]
     }
   ],
   "sourceChecks": {
@@ -4318,6 +4362,7 @@
     "internal/transport/http/codegraph.go": "c2f88e6495724bd5e48254669f62274e72d613e2c4757c32e0fbae909c65954c",
     "internal/transport/http/codegraph_guidance.go": "8a8270387e51712efeb14d484514bb96f3935f9be3193734702495f2812b9c0b",
     "internal/transport/http/coordinator.go": "21ae3a467eb3601187e6773ceef73c6edc6f80ba96dd537864782018ae31b7a6",
+    "internal/transport/http/copilot_question.go": "dc3868bae030bafcc128dc67c65ae5fff79471f43838e7885e7a862ec5902af1",
     "internal/transport/http/copilot_work.go": "41ee101b71e06a8901a56d1eb2095791435976d854c63954a35e3d12bb76a9c8",
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
@@ -4349,9 +4394,9 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
-    "web/console/src/cloud/relay-writer.ts": "46e1e824e7fb8006dc9a89e7069f8210129c1a217d0bf7c8d1e823303b126011",
+    "web/console/src/cloud/relay-writer.ts": "ed547f1c6f763eda64c3c7a524a6d7cf9570ae4f9baee3df8e5c2f92b2dcfa3f",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "0c6ad2ea912427f6c432180b0496f26088b740a670cc6dd28862f2eaeeac1aa7",
+    "web/console/src/next-strings.ts": "6cd62f9cfe91f00491c80da45860ed8758930f09e26d58bdd76fc1fd5c0dc34a",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "6ba7c41b702897e95e2a8712c1defe1dca8af24819f93458009786a0c7e36f2f",
     "web/console/src/project-assistants/OutputCard.tsx": "41bf8737de8d646a2175e2aeb0b7ffbaebc68e5a66cbd955c01da5f36928d724",
@@ -4359,13 +4404,15 @@
     "web/console/src/project-assistants/inputs.ts": "142db25550cc2db93a1bc3104949ed5579daf6c7492c30f5820cbb708f3a64ec",
     "web/console/src/project-assistants/outputs.ts": "e524a558f00101342032767f0f77d21fd9dc787fb4112a4e689e0e262b3ad9a7",
     "web/console/src/project-assistants/routine-intent.ts": "3fe5a42378fd7adfc75895ff458e52693b18f90f9c27a1f849cb9b4f8dadf4fa",
+    "web/console/src/realtime/copilot-cost.ts": "3b52811e9148275868fc0c44cca7ed51d8ea99a3ea8a73329748b761113c6fb5",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
-    "web/console/src/realtime/copilot-live.ts": "f0c04000601f191d4a558f3a69bc031e06525bf9d87845a1c5b3af3350ed6437",
+    "web/console/src/realtime/copilot-live.ts": "01a6432c588ea2edd19f72932bd75fb4977b8b22cc81a0046c032b30003d8123",
+    "web/console/src/realtime/copilot-questions.ts": "d8c258b7b4b284fe81d1e4a927f8cf118f55f61fa9964344cef202bc3bca1951",
     "web/console/src/realtime/copilot-reports.ts": "89a413bed5f993d0e45e45ccf73638b7559f0d704051885b5887e77b3373aaa5",
     "web/console/src/realtime/copilot-speech.ts": "29d2f8d0875ddb75c5d0294dbe593da3add3d02b393ba68571db4f99bb064089",
-    "web/console/src/realtime/copilot-tools.ts": "e6c8eaf7af8245ce05f901ca9eee04bfadc48d11b0e079922ed0e28613ff926e",
-    "web/console/src/realtime/realtime-copilot.ts": "8d26c63d74466007c4323520e12c9b3f67af64f1dbb4cee45fd9101a21dbf433",
+    "web/console/src/realtime/copilot-tools.ts": "adf026253cc0bbad35a6a90706665da3fa95a9c13cec406ff712527278c72446",
+    "web/console/src/realtime/realtime-copilot.ts": "e90923fb0ce83b166419002ebf8b9c5fd82b83d74b3d99c477674ea87d4ce1d4",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "b9d9ff8fbdc78af0e53a9cf47f3246f47c813066a93ea4c12e44da5e5cfc5039",
@@ -4381,7 +4428,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "539f53e8ae3be99befdc8d11e5087298e227d8780bd95ccf5b221223199a5b3f",
-    "zh-Hant": "a6c7f41b5ed923e38aa8cd3db75f92c3054204507a5777ccb19f02ac4c862c31"
+    "en": "5f6656d9b8fafdba1481ede756dae54643772cc3ca97528e0ad2f058cf1267ab",
+    "zh-Hant": "4334d58db773a31f6b2cfe508537ae628fabc3ad70a8b1ae836fae0754b15114"
   }
 }

@@ -1,3 +1,4 @@
+import { CopilotQuestions } from './CopilotQuestions.js'
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { nextWord } from '../next-strings.js'
 import { BRAND_MARK } from '../brand-mark.js'
@@ -17,6 +18,8 @@ const TOOL_OUTCOME_WORD = { done: 'copilotToolDone', queued:'copilotToolQueued',
 
 /** One stable reader, so the orb is not woken by every render. */
 const readCallLevels = () => realtimeCopilot.readLevels()
+const questionTargets = () => realtimeCopilot.questionTargets()
+const sendQuestion = realtimeCopilot.askQuestion.bind(realtimeCopilot)
 
 interface Props {
   open: boolean
@@ -154,6 +157,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
         {isConnected&&copilotState.messageProposal?<section className="copilot-message-proposal" aria-label={nextWord('copilotProposalTitle')}>
           <strong>{nextWord('copilotProposalTitle')}</strong><p>{copilotState.messageProposal.target}</p><blockquote>{copilotState.messageProposal.message}</blockquote><p>{nextWord('copilotProposalHint')}</p>
         </section>:null}
+        <CopilotQuestions ready={isConnected && copilotState.connectionReady === true} targets={questionTargets} send={sendQuestion} />
         {/* Live speech / transcript display */}
         {isConnected && (
           <div className="realtime-transcript-box" ref={transcript} role="region" tabIndex={0}

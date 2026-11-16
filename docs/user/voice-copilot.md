@@ -54,6 +54,74 @@ batch. A call started inside one Session keeps its focused summary.
 - To end the call: say so ("we're done, you can hang up"). It says a short goodbye and hangs up
   when it has finished. Asking it to close a Session does not end the call.
 
+## Ways to ask
+
+Open **Ways to ask** in the call window, choose a Session, then tap a complete question to send it
+into the current call. **Another way to ask** shows an alternative sentence for the same request;
+you can say either sentence aloud later. A call must already be connected and ready. Opening the
+menu reads only the Session directory, without starting a call, reading transcripts or writing a
+new recap. Selecting a question uses the connected call and its normal provider usage.
+
+| Purpose | Example | Source |
+|---|---|---|
+| Current situation | Give me a quick summary | Existing recap and recent status; an explicit latest-status request uses the freshness policy |
+| Progress and history | What happened since the last report? | New entries after the report cursor; whole-history questions use the separate recap path |
+| Understand the details | Read the last five replies and explain the insights | Recent assistant replies plus related questions, retaining table formatting |
+| My decisions | What do I need to decide? | Current questions and unresolved Notes, checked against current status |
+
+Explicit detail questions go directly to the reply reader, without first generating another
+summary. The reader pages back through at most five transcript pages and retains up to five
+assistant replies, at most 8,000 JavaScript characters per reply and related question. Tool records
+do not count as replies. Longer text keeps both ends, with incomplete coverage exposed to the
+assistant; insufficient history and failed older-page reads are also reported. Comparison scores
+and prices in a Session are source claims unless the record provides verification.
+
+### Tool responsibilities
+
+`get_session_summary` owns status, and `fresh: true` applies the existing five-minute freshness
+policy. `get_session_updates` owns the since-last-report cursor. `explain_session_reply` owns both
+single and multiple recent reply explanations (`replies: 1..5`). `get_session_activity` remains a
+compact execution chronology for process questions. `get_session_recap` remains the whole-history
+overview, and `get_status_briefing` the existing prepared multi-Session briefing. Do not combine
+these paths for one question without a missing source that requires it. No startup read is added;
+existing opening and recap policies remain.
+
+A menu click verifies machine and conversation identity again; the subsequent read rejects a
+replaced Session. A click is a conversational question, not mutation consent. Realtime uses a user
+text message and its existing narrator; GPT-Live receives the selected question through application
+commentary and delegation. Local transport tests establish neither live model tool selection nor
+spoken/audio acceptance or measured startup latency.
+
+### Question-focused analysis
+
+Both voice engines use the same demand-only question endpoint (API level 76). The selected
+Session's machine reads recent originals and the related user questions, then the existing small
+text model answers the actual question with exact quoted source references and explicit unknowns.
+The voice model receives that focused answer and source metadata; the large original-message
+window stays on the machine. No question-analysis request runs for an opening or normal summary.
+Existing five-minute latest-summary and background recap policies are unchanged.
+
+Follow-ups can reuse the selected context for up to five minutes. The machine first checks the
+current newest-page revision, exact conversation and requested reply count. A changed revision or
+conversation starts a fresh read. At most sixteen contexts remain in memory, with expired contexts
+reclaimed on the next analysis request; they are never written to disk. Two analyses may run at
+once. Each reads at most five pages and five assistant replies, fits originals within 40,000 Unicode
+characters, and limits model output to 1,400 tokens. Older-page failures or shortened text remain
+incomplete. If the answer needs older material, the assistant can increase a one- or three-reply
+read to five; it must state the gap when the bounded window still cannot answer.
+
+The analysis uses the same OpenAI key and small text model as the existing recap/Decision path.
+One model request runs per question, without tools or automatic retries. Provider-reported token
+usage from successful analyses is added to the current call's estimate in either voice engine;
+missing or unknown model pricing is not treated as a fully priced total. Rates follow the
+[official model page](https://developers.openai.com/api/docs/models/gpt-4.1-mini). No paid model
+call was made during local verification. Source-quote validation proves literal correspondence,
+not the model's reasoning quality or live spoken comprehension.
+
+An older machine returns an unsupported endpoint without spending on a different recap. The
+voice client can then use the existing bounded original-message explanation. This is a fallback
+for compatibility; it does not claim that the small-model analysis succeeded.
+
 ## Session recaps
 
 With **Session recaps** on (**Settings** → **Voice copilot**), each Session's own assistant reads its

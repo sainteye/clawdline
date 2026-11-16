@@ -16,7 +16,7 @@ lines.on("line",line=>{const message=JSON.parse(line),resolve=pending.get(messag
 const exchange=frame=>new Promise(resolve=>{const id=++sequence;pending.set(id,resolve);process.stdout.write(JSON.stringify({id,...frame})+"\n")})
 const boot=await exchange({kind:"init"}),trace=[],checks=[],mutants=[]
 const words=Object.keys(CARRIED)
-assert.equal(words.length,275)
+assert.equal(words.length,276)
 assert.deepEqual(words.filter(word=>word.startsWith("project-assistants.")).sort(),["input","upload","send-files","output","attachment","send-pictures","status","projects","list","get","history","events","export","create","edit","send","stop","answer","read","observed","forget","memory","view","delete","visibility","rules","send-now","rule-remove","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook"].map(word=>"project-assistants."+word).sort())
 const signal=()=>new AbortController().signal
 const request=(name,mode="snapshot",extra={})=>({key:boot.fixtures[name].key,conversation_id:boot.fixtures[name].conversation_id,mode,source_epoch:"",cursor:"",after_seq:0,page_size:100,...extra})

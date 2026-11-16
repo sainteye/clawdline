@@ -1,13 +1,41 @@
 {
   "description": "Exact registered route to Agent guide part map. A row is discoverability, never authorization or proof of success. tools/contract-gen checks it against the daemon route table.",
   "routes": [
-    {"method":"POST","pattern":"/hooks/routines/","guide":"project"},
-    { "method": "*", "pattern": "/v1/project-assistant-targets", "guide": "project" },
-    { "method": "*", "pattern": "/v1/project-assistants", "guide": "project" },
-    { "method": "*", "pattern": "/v1/project-assistants/", "guide": "project" },
-    { "method": "*", "pattern": "/v1/project-assistants/status", "guide": "project" },
-    { "method": "GET", "pattern": "/v1/project-assistants/roster-events", "guide": "project" },
-    { "method": "*", "pattern": "/v1/settings/project-assistants", "guide": "project" },
+    {
+      "method": "POST",
+      "pattern": "/hooks/routines/",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/project-assistant-targets",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/project-assistants",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/project-assistants/",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/project-assistants/status",
+      "guide": "project"
+    },
+    {
+      "method": "GET",
+      "pattern": "/v1/project-assistants/roster-events",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/settings/project-assistants",
+      "guide": "project"
+    },
     {
       "method": "*",
       "pattern": "/v1/api-performance",
@@ -711,6 +739,11 @@
     {
       "method": "*",
       "pattern": "/v1/voice/copilot-recap",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/voice/copilot-question",
       "guide": "connect"
     },
     {
