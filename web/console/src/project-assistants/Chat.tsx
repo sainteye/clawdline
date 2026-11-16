@@ -8,6 +8,7 @@ import { partitionMessages } from "./chat-items"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import { BotAvatar } from "./BotAvatar"
 import { BotSettings } from "./BotSettings"
+import { Routines } from "./Routines"
 import { MemoryPanel } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
 import { ChatRows } from "./ChatRows"
@@ -67,6 +68,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [text,setText]=useState(()=>heldSendAtMount?heldSendAtMount.text:legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(heldSendAtMount?heldSendAtMount.quote_message_id:legacyAtMount?.quote??entryDraft.quote)
   const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
   const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)||view.heldOutcomes.problem(draftKey)==="unreadable"),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
+  const [routines,setRoutines]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
   const [inspection,setInspection]=useState<{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}|null>(null),inspecting=useRef<AbortController|null>(null)
@@ -549,6 +551,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36}/><div><h2 tabIndex={-1}>{bot.name}</h2><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></div><PaMenu label={w.moreActions} items={[
       {id:"library",label:w.library,onSelect:()=>setLibrary(true)},
       {id:"settings",label:w.settings,onSelect:()=>setSettings(true)},
+      {id:"routines",label:w.routines,onSelect:()=>setRoutines(true)},
       {id:"memory",label:w.memory,onSelect:()=>void memoryPanel.current?.open()},
       {id:"refresh",label:w.refresh,onSelect:()=>void refresh(true)},
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
@@ -558,6 +561,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       <Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
       {turns.filter(t=>t.state!=="queued"&&t.state!=="accepted").map(t=>t.state==="running"||t.state==="waiting_permission"?<WorkingIndicator key={t.id} turn={t} activity={activity[t.id]??""} w={w}/>:<p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
+      {routines&&<Routines key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])} onClose={()=>setRoutines(false)}/>}
       {(memory||memoryLoading)&&<MemoryPanel value={memory} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>memoryPanel.current?.close()} w={w}/>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}

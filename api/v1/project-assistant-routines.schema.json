@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project-assistant-routines.v1",
+  "title": "Human Bot routine management",
+  "description": "API 73. Save never executes a test. Commands use edit receipts; expected_revision is the routine version. Original schedule values remain exact.",
+  "$defs": {
+    "ProjectAssistantRoutineTrigger": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "timeZone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "seconds",
+        "at",
+        "expression",
+        "timeZone"
+      ]
+    },
+    "ProjectAssistantRoutineDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoutineTrigger"
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "next_due": {
+          "type": "string"
+        },
+        "next_runs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "project",
+        "conversation_id",
+        "name",
+        "instruction",
+        "triggers",
+        "timeout_seconds",
+        "enabled",
+        "deleted",
+        "next_due",
+        "next_runs",
+        "version"
+      ]
+    },
+    "ProjectAssistantRoutineRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "routine_id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantTurnState"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        },
+        "failure": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantFailure"
+        }
+      },
+      "required": [
+        "id",
+        "routine_id",
+        "source",
+        "state",
+        "turn_id",
+        "created_at",
+        "finished_at",
+        "result"
+      ]
+    },
+    "ProjectAssistantRoutineListRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "routine_id": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "page_size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "conversation_id",
+        "routine_id",
+        "cursor",
+        "page_size"
+      ]
+    },
+    "ProjectAssistantRoutineListResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantSourceStatus"
+        },
+        "fence": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantFence"
+        },
+        "definitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoutineDefinition"
+          }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoutineRun"
+          }
+        },
+        "next_cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "source",
+        "fence",
+        "definitions",
+        "runs",
+        "next_cursor"
+      ]
+    },
+    "ProjectAssistantRoutineSaveRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantFence"
+        },
+        "id": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoutineTrigger"
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "id",
+        "expected_revision",
+        "name",
+        "instruction",
+        "triggers",
+        "timeout_seconds",
+        "enabled"
+      ]
+    },
+    "ProjectAssistantRoutineEnabledRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantFence"
+        },
+        "id": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "id",
+        "expected_revision",
+        "enabled"
+      ]
+    },
+    "ProjectAssistantRoutineActionRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantFence"
+        },
+        "id": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "id",
+        "expected_revision"
+      ]
+    }
+  }
+}

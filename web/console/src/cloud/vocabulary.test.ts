@@ -28,6 +28,7 @@ interface Row {
   example: Record<string,unknown>
   shapes: {path:string;query?:string[]}[]
   local?: {method:string}
+  decode?:{route?:{query?:Record<string,{from:string}>}}
 }
 
 function rows(): Row[] {
@@ -69,7 +70,10 @@ test("every carried row's console route is parsed as its word", () => {
         let path = row.shapes[0].path.replace(/\{([^}]+)\}/g,(_match,field:string) => encodeURIComponent(String(lookup(field))))
         const command = example.command as {key:{machine_id:string};idempotency_key:string} | undefined
         const key = example.key as {machine_id:string} | undefined
-        const query = new URLSearchParams((row.shapes[0].query ?? []).map(field => [field,String(field === "machine_id" ? key?.machine_id ?? example.machine_id : example[field])]))
+        const query = new URLSearchParams((row.shapes[0].query ?? []).map(field => {
+          const from=row.decode?.route?.query?.[field]?.from
+          return [field,String(from?lookup(from):field === "machine_id" ? key?.machine_id ?? example.machine_id : example[field])]
+        }))
         if (query.size) path += "?"+query
         const {session:_session,request:_request,...fields} = example
         const method = row.local!.method
