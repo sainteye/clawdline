@@ -297,10 +297,12 @@ func TestBotBrowserACPSubprocess(t *testing.T) {
 			if !strings.Contains(list, `"browser_status"`) || !strings.Contains(list, `"browser_command"`) {
 				fail("tools/list")
 			}
-			prompt := string(q.Params)
+			// A fresh-history prompt quotes recent turns before the new input, so
+			// only the newest marker names this turn's script.
+			prompt := newestBrowserMarker(string(q.Params))
 			reply := ""
 			switch {
-			case strings.Contains(prompt, "browser-drive"):
+			case prompt == "browser-drive":
 				turn = "drive"
 				open := command("open", map[string]any{"url": "http://127.0.0.1:9/form"}, "")
 				call("browser_status", map[string]any{})
@@ -323,7 +325,7 @@ func TestBotBrowserACPSubprocess(t *testing.T) {
 				}
 				_ = json.Unmarshal(last.Value, &page)
 				reply = fmt.Sprintf("Browser run complete: clicks=%d text=%s", page.Value.Clicks, page.Value.Text)
-			case strings.Contains(prompt, "browser-control"):
+			case prompt == "browser-control":
 				turn = "control"
 				command("open", map[string]any{"url": "http://127.0.0.1:9/control"}, "")
 				command("click", map[string]any{"label": "Missing"}, "")
@@ -346,19 +348,33 @@ func TestBotBrowserACPSubprocess(t *testing.T) {
 				command("read", nil, "")
 				wg.Wait()
 				reply = "Browser control checks complete"
-			default:
+			case strings.HasPrefix(prompt, "browser-probe-"):
 				turn = "probe"
 				mode := ""
-				if strings.Contains(prompt, "probe-user-chrome") {
+				if prompt == "browser-probe-user-chrome" {
 					mode = "user_chrome"
 				}
 				command("open", map[string]any{"url": "http://127.0.0.1:9/probe"}, mode)
 				reply = "Browser probe complete"
+			default:
+				fail("no turn marker in prompt")
 			}
 			write(q.ID, map[string]string{"stopReason": "end_turn", "text": reply})
 		}
 	}
 	os.Exit(0)
+}
+
+// newestBrowserMarker returns whichever turn marker the test sends starts
+// last in the prompt; a prompt naming none of them returns "".
+func newestBrowserMarker(prompt string) string {
+	newest, at := "", -1
+	for _, marker := range []string{"browser-drive", "browser-control", "browser-probe-remembered", "browser-probe-user-chrome", "browser-probe-native"} {
+		if i := strings.LastIndex(prompt, marker); i > at {
+			newest, at = marker, i
+		}
+	}
+	return newest
 }
 
 // scriptedNativeHost stands in for the native host and extension behind the
