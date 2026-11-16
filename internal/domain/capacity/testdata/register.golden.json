@@ -1335,6 +1335,120 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.group_history_lines",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotGroupHistoryLines"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.group_late_turns",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotGroupLateTurns"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.group_member_wait_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 600,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotGroupMemberWaitSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.group_peer_line_chars",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotGroupPeerLineChars"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.group_replies",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotGroupReplies"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.group_rounds",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotGroupRounds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.input_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1431,6 +1545,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxInstructionBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.manager_created",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotManagerCreated"
     ]
   },
   {

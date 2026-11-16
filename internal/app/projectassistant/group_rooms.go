@@ -2,10 +2,25 @@ package projectassistant
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+// InstallSchemas installs the feature schema and then the group tables, each
+// in its own repeatable transaction. The host calls it wherever it installed
+// the feature schema alone; the group installer refuses to run before the
+// feature schema exists, so the order is part of the contract.
+func InstallSchemas(ctx context.Context, db *sql.DB, feature, groups SchemaInstaller) error {
+	if db == nil || feature == nil || groups == nil {
+		return serviceFailure(pa.Invalid, "schema_installers")
+	}
+	if err := feature.Install(ctx, db); err != nil {
+		return err
+	}
+	return groups.Install(ctx, db)
+}
 
 // GroupRoomStore is the persistence a group room needs. The SQLite
 // implementation is projectassistantstore.GroupStore; it is not part of the
@@ -18,6 +33,12 @@ type GroupRoomStore interface {
 	Room(context.Context, pa.BotKey) (pa.RoomState, error)
 	UpdateRoom(context.Context, pa.BotKey, int64, func(pa.Group, pa.RoomState) (pa.RoomState, error)) (pa.RoomState, error)
 	CheckTicket(context.Context, pa.RoomTicket) error
+	// PersonWrote writes the person's line and starts its room turn in one
+	// transaction under the room revision.
+	PersonWrote(context.Context, pa.Command, int64, string, pa.BotKey) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error)
+	Lines(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
+	LinesBefore(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
+	Groups(context.Context, string) ([]pa.Group, error)
 }
 
 // GroupRooms coordinates group rooms: who is asked, which answers are still
@@ -61,7 +82,13 @@ func (r *GroupRooms) Create(ctx context.Context, who PersonAuthority, c pa.Comma
 	if err := who.check(d.Key); err != nil {
 		return pa.Receipt{}, err
 	}
-	c, err := canonicalCommand(c, pa.CreateOperation, who.Principal, d)
+	// The person's intent, not the host-generated conversation ID, so a
+	// retried create replays instead of conflicting.
+	c, err := canonicalCommand(c, pa.CreateOperation, who.Principal, struct {
+		Project pa.ProjectScope `json:"project"`
+		Name    string          `json:"name"`
+		Members []pa.BotKey     `json:"members"`
+	}{d.Project, d.Name, d.Members})
 	if err != nil {
 		return pa.Receipt{}, err
 	}
@@ -105,6 +132,34 @@ func (r *GroupRooms) step(ctx context.Context, key pa.BotKey, revision int64, f 
 		return next, err
 	})
 	return RoomStep{State: st, Turn: turn}, err
+}
+
+// Send writes the person's message into the room and starts the room turn it
+// asks for, replacing the one running. replyToAuthor is the stored author of
+// a quoted line, or zero. A replayed command starts nothing (Turn nil).
+func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command, revision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, RoomStep, error) {
+	if err := who.check(c.Key); err != nil {
+		return pa.RoomEntry{}, RoomStep{}, err
+	}
+	if err := pa.ValidateMessage(text); err != nil {
+		return pa.RoomEntry{}, RoomStep{}, err
+	}
+	c, err := canonicalCommand(c, pa.SendOperation, who.Principal, struct {
+		Text          string    `json:"text"`
+		ReplyToAuthor pa.BotKey `json:"reply_to_author"`
+	}{text, replyToAuthor})
+	if err != nil {
+		return pa.RoomEntry{}, RoomStep{}, err
+	}
+	e, st, t, err := r.store.PersonWrote(ctx, c, revision, text, replyToAuthor)
+	return e, RoomStep{State: st, Turn: t}, err
+}
+
+// MarkOverdue: the room stops waiting for t; its answer still lands late.
+func (r *GroupRooms) MarkOverdue(ctx context.Context, t pa.RoomTicket, revision int64) (RoomStep, error) {
+	return r.step(ctx, t.Group, revision, func(_ pa.Group, s pa.RoomState) (pa.RoomState, *pa.RoomTurn, error) {
+		return pa.MarkOverdue(s, t), nil, nil
+	})
 }
 
 // PersonWrote starts the room turn for the person's new message, replacing

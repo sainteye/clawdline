@@ -23,6 +23,9 @@ type Store struct {
 	db     *sql.DB
 	locks  sync.Map
 	roster rosterBus
+	// groupHook, when set by a test, fails a group write at the named stage
+	// inside a Store transaction (DeleteBot, FinishRoomTurn).
+	groupHook func(stage string) error
 }
 
 func New(db *sql.DB) *Store { return &Store{db: db} }
@@ -232,6 +235,13 @@ func (s *Store) Commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 	return s.commit(ctx, m)
 }
 func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) {
+	return s.commitWith(ctx, m, nil)
+}
+
+// commitWith is commit with extra writes in the same transaction, run after
+// the aggregate is persisted and before the transaction commits. extra is
+// not called when the command was already committed (a replay).
+func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(context.Context, *sql.Tx, aggregate) error) (pa.Receipt, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -300,6 +310,11 @@ func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 	}
 	if err = writeReceipt(ctx, tx, result); err != nil {
 		return pa.Receipt{}, err
+	}
+	if extra != nil {
+		if err = extra(ctx, tx, a); err != nil {
+			return pa.Receipt{}, err
+		}
 	}
 	if err = s.commitRoster(ctx, tx, m.Command.Key.MachineID); err != nil {
 		return pa.Receipt{}, err
@@ -435,6 +450,9 @@ func validateAggregate(a aggregate) error {
 	if b.Instructions.Revision < 1 {
 		return failure(pa.Invalid, "instructions_revision")
 	}
+	if err := pa.ValidateCreatedBy(b); err != nil {
+		return err
+	}
 	c := a.Conversation
 	if c.Key != b.Key || c.ID != b.ConversationID || c.Generation < 0 || c.LastMessageSeq != int64(len(a.Messages)) {
 		return failure(pa.ScopeDenied, "conversation")
@@ -497,6 +515,9 @@ func validateAggregate(a aggregate) error {
 	}
 	pending := 0
 	for id, t := range a.Turns {
+		if err := pa.ValidateRoomTurn(t); err != nil {
+			return err
+		}
 		if err := pa.ValidateTurnOrigin(t); err != nil {
 			return err
 		}
@@ -941,6 +962,15 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	}
 	for _, table := range []string{"project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
+			return err
+		}
+	}
+	// The Bot leaves every group in this same transaction: no reader sees a
+	// group naming a member whose row is gone. What it said stays in rooms.
+	if installed, e := groupsInstalled(ctx, tx); e != nil {
+		return e
+	} else if installed {
+		if _, err = leaveGroupsTx(ctx, tx, key, time.Now().UTC(), s.groupHook); err != nil {
 			return err
 		}
 	}

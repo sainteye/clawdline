@@ -1,6 +1,8 @@
 package projectassistant
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -308,4 +310,92 @@ func TestPublishedRoomAnswerAuthorIsTheTicketsMember(t *testing.T) {
 	if _, _, err = PublishRoomAnswer(g, s, tk, 6, "x"); Code(err) != ScopeDenied {
 		t.Fatal("ticket for another group")
 	}
+}
+
+func TestRoomTurnProvenanceNamesTheFenceOwner(t *testing.T) {
+	scope := groupScope()
+	member := key("a")
+	fence := Fence{Key: member, Project: scope, ConversationID: "chat/a"}
+	good := Turn{ID: "t", Fence: fence, Origin: HostNoticeOrigin, Room: &RoomTicket{Group: key("g"), Member: member, Epoch: 1, JoinedRevision: 1}}
+	if err := ValidateRoomTurn(good); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRoomTurn(Turn{ID: "plain", Fence: fence, Origin: UserOrigin}); err != nil {
+		t.Fatalf("an ordinary turn: %v", err)
+	}
+	for name, mutate := range map[string]func(*Turn){
+		"another member's fence": func(t *Turn) { t.Room.Member = key("b") },
+		"group is the member":    func(t *Turn) { t.Room.Group = member },
+		"other machine group":    func(t *Turn) { t.Room.Group = BotKey{MachineID: "x", BotID: "g"} },
+		"user origin":            func(t *Turn) { t.Origin = UserOrigin },
+		"collaboration":          func(t *Turn) { t.ExchangeID = "x" },
+		"routine":                func(t *Turn) { t.RoutineRunID = "r" },
+		"no epoch":               func(t *Turn) { t.Room.Epoch = 0 },
+		"no join revision":       func(t *Turn) { t.Room.JoinedRevision = 0 },
+	} {
+		bad := good
+		ticket := *good.Room
+		bad.Room = &ticket
+		mutate(&bad)
+		if err := ValidateRoomTurn(bad); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}
+
+func TestManageTeamIsThePersonsSwitchAndCreatedByIsHostOnly(t *testing.T) {
+	b := groupBot("a", "Alice", groupScope())
+	b.Version, b.Instructions.Revision, b.Appearance = 1, 1, Appearance{Shape: Blob, Color: "#e39567"}
+	edit := EditBot{ExpectedVersion: 1, Name: "Alice", Appearance: b.Appearance}
+	kept, err := ApplyEdit(b, edit)
+	if err != nil || kept.ManageTeam {
+		t.Fatalf("an edit without the field turned it on: %+v %v", kept, err)
+	}
+	on := true
+	edit.ManageTeam = &on
+	turned, err := ApplyEdit(b, edit)
+	if err != nil || !turned.ManageTeam || turned.Version != 2 {
+		t.Fatalf("person's switch: %+v %v", turned, err)
+	}
+	off := false
+	edit.ExpectedVersion, edit.ManageTeam = 2, nil
+	if again, _ := ApplyEdit(turned, edit); !again.ManageTeam {
+		t.Fatal("an older console's edit reset the switch")
+	}
+	edit.ManageTeam = &off
+	if again, _ := ApplyEdit(turned, edit); again.ManageTeam {
+		t.Fatal("the person could not turn it off")
+	}
+	// Neither request type can carry CreatedBy: only the host's manager
+	// operation sets it on the stored Bot.
+	for _, typ := range []any{CreateBot{}, EditBot{}} {
+		if hasJSONField(typ, "created_by") {
+			t.Fatalf("%T carries created_by", typ)
+		}
+	}
+	manager := key("m1")
+	b.CreatedBy = &manager
+	if err := ValidateCreatedBy(b); err != nil {
+		t.Fatal(err)
+	}
+	self := b.Key
+	b.CreatedBy = &self
+	if err := ValidateCreatedBy(b); err == nil {
+		t.Fatal("a Bot created itself")
+	}
+	other := BotKey{MachineID: "x", BotID: "m1"}
+	b.CreatedBy = &other
+	if err := ValidateCreatedBy(b); err == nil {
+		t.Fatal("a manager on another machine")
+	}
+}
+
+func hasJSONField(v any, name string) bool {
+	typ := reflect.TypeOf(v)
+	for i := range typ.NumField() {
+		if strings.Split(typ.Field(i).Tag.Get("json"), ",")[0] == name {
+			return true
+		}
+	}
+	return false
 }

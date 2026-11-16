@@ -41,7 +41,11 @@ type ServiceOptions struct {
 	// Rules is optional; without it the rules routes answer unsupported.
 	Rules RuleStore
 	// Deleter removes a Bot's stored records; without it Delete is unsupported.
-	Deleter   BotDeleter
+	Deleter BotDeleter
+	// Groups and Rooms are optional; without them the group operations
+	// answer unsupported (service_groups.go).
+	Groups    *GroupRooms
+	Rooms     *RoomDriver
 	Authorize func(context.Context, pa.BotKey, bool) (Authority, error)
 	Clock     func() time.Time
 	ID        func() string
@@ -182,7 +186,7 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 	}
 	now := s.opts.Clock().UTC()
 	bot := pa.Bot{Key: c.Key, Project: resolved.Scope, ConversationID: s.opts.ID(), Name: settings.Name,
-		Appearance: settings.Appearance, Agent: settings.Agent, FallbackAgents: pa.FallbackConfigOf(settings.FallbackAgents), PermissionPolicy: settings.PermissionPolicy, Mode: settings.Mode,
+		Appearance: settings.Appearance, Agent: settings.Agent, FallbackAgents: pa.FallbackConfigOf(settings.FallbackAgents), PermissionPolicy: settings.PermissionPolicy, Mode: settings.Mode, ManageTeam: settings.ManageTeam,
 		Instructions: pa.InstructionSnapshot{Revision: 1, Text: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef},
 		Version:      1, CreatedAt: now, UpdatedAt: now}
 	conversation := pa.Conversation{Key: c.Key, ID: bot.ConversationID, MemoryRevision: 1, Version: 1}

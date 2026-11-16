@@ -1,0 +1,205 @@
+package projectassistant
+
+import (
+	"context"
+
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+)
+
+// The person's group operations. Each is authorized with the existing human
+// authority for the group's key (Service.authorize), and re-checked with
+// authorizeEffect immediately before its store write, as the Bot operations
+// are. A group key is source-qualified like a BotKey; it names no Bot. The
+// member Bots' own authority is not consulted to read the room: reading the
+// room is the person's read of the group, separate from member execution.
+
+// CreateGroup is the person's new group. The command's key is the new
+// group's host-generated key; the conversation ID is host-generated too.
+type CreateGroup struct {
+	Target  pa.ProjectSelection `json:"target"`
+	Name    string              `json:"name"`
+	Members []pa.BotKey         `json:"members"`
+}
+
+// GroupHistoryQuery pages the room's lines, newest page first: BeforeSeq 0
+// is the newest page.
+type GroupHistoryQuery struct {
+	Key       pa.BotKey
+	BeforeSeq int64
+	PageSize  int
+}
+
+type GroupHistoryPage struct {
+	Group pa.Group
+	Room  pa.RoomState
+	Lines []pa.RoomEntry
+}
+
+func (s *Service) groups() (*GroupRooms, *RoomDriver, error) {
+	if s.opts.Groups == nil || s.opts.Rooms == nil {
+		return nil, nil, serviceFailure(pa.Unsupported, "groups")
+	}
+	return s.opts.Groups, s.opts.Rooms, nil
+}
+
+func person(a Authority, machine string) PersonAuthority {
+	return PersonAuthority{Principal: a.PrincipalID, Machine: machine}
+}
+
+func (s *Service) CreateGroup(ctx context.Context, c pa.Command, in CreateGroup) (pa.Group, pa.Receipt, error) {
+	rooms, _, err := s.groups()
+	if err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	if in.Target.MachineID != c.Key.MachineID {
+		return pa.Group{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "target_machine")
+	}
+	resolved, err := s.opts.Projects.Resolve(ctx, in.Target)
+	if err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	if err = pa.ValidateTarget(in.Target, resolved); err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	d := pa.GroupDraft{Key: c.Key, Project: resolved.Scope, ConversationID: s.opts.ID(), Name: in.Name, Members: in.Members}
+	if a, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	r, err := rooms.Create(ctx, person(a, c.Key.MachineID), c, d)
+	if err != nil {
+		return pa.Group{}, r, err
+	}
+	// Creating the same Bots again opens the group they already share.
+	g, err := rooms.store.Group(ctx, pa.BotKey{MachineID: c.Key.MachineID, BotID: r.ResourceID})
+	return g, r, err
+}
+
+func (s *Service) EditGroup(ctx context.Context, c pa.Command, e pa.GroupEdit) (pa.Group, pa.Receipt, error) {
+	rooms, _, err := s.groups()
+	if err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	if a, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return pa.Group{}, pa.Receipt{}, err
+	}
+	r, err := rooms.Edit(ctx, person(a, c.Key.MachineID), c, e)
+	if err != nil {
+		return pa.Group{}, r, err
+	}
+	g, err := rooms.store.Group(ctx, c.Key)
+	return g, r, err
+}
+
+// DeleteGroup tombstones the group after stopping its room: members' queued
+// and active turns in this room end; the member Bots and their own
+// conversations are untouched.
+func (s *Service) DeleteGroup(ctx context.Context, c pa.Command, expectedVersion int64) (pa.Receipt, error) {
+	rooms, driver, err := s.groups()
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if a, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return pa.Receipt{}, err
+	}
+	who := person(a, c.Key.MachineID)
+	r, err := rooms.Delete(ctx, who, c, expectedVersion)
+	if err != nil {
+		return r, err
+	}
+	// The store already moved the epoch; stop what members still run here.
+	g, gerr := rooms.store.Group(ctx, c.Key)
+	if gerr == nil {
+		driver.cancelMembers(ctx, c.Key, g.MemberKeys())
+	}
+	return r, nil
+}
+
+// StopGroup is the group's Stop button.
+func (s *Service) StopGroup(ctx context.Context, key pa.BotKey) (GroupStop, error) {
+	_, driver, err := s.groups()
+	if err != nil {
+		return GroupStop{}, err
+	}
+	a, err := s.authorize(ctx, key, true)
+	if err != nil {
+		return GroupStop{}, err
+	}
+	if a, err = s.authorizeEffect(ctx, key, true, a); err != nil {
+		return GroupStop{}, err
+	}
+	return driver.Stop(ctx, person(a, key.MachineID), key)
+}
+
+// SendGroup is the person's message into the room. The authority is checked
+// again after the room read and immediately before the write.
+func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, RoomStep, error) {
+	_, driver, err := s.groups()
+	if err != nil {
+		return pa.RoomEntry{}, RoomStep{}, err
+	}
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.RoomEntry{}, RoomStep{}, err
+	}
+	if err = pa.ValidateMessage(text); err != nil {
+		return pa.RoomEntry{}, RoomStep{}, err
+	}
+	check := func(ctx context.Context) error {
+		_, e := s.authorizeEffect(ctx, c.Key, true, a)
+		return e
+	}
+	return driver.Send(ctx, person(a, c.Key.MachineID), c, text, replyToAuthor, check)
+}
+
+// GroupHistory reads the room with the person's read authority for the
+// group; it does not require, and does not use, any member's execution.
+func (s *Service) GroupHistory(ctx context.Context, q GroupHistoryQuery) (GroupHistoryPage, error) {
+	rooms, _, err := s.groups()
+	if err != nil {
+		return GroupHistoryPage{}, err
+	}
+	if _, err = s.authorize(ctx, q.Key, false); err != nil {
+		return GroupHistoryPage{}, err
+	}
+	if err = pa.CheckPage(q.PageSize, false); err != nil {
+		return GroupHistoryPage{}, err
+	}
+	if q.BeforeSeq < 0 {
+		return GroupHistoryPage{}, serviceFailure(pa.Invalid, "before_seq")
+	}
+	g, err := rooms.store.Group(ctx, q.Key)
+	if err != nil {
+		return GroupHistoryPage{}, err
+	}
+	st, err := rooms.store.Room(ctx, q.Key)
+	if err != nil {
+		return GroupHistoryPage{}, err
+	}
+	lines, err := rooms.store.LinesBefore(ctx, q.Key, q.BeforeSeq, q.PageSize)
+	return GroupHistoryPage{Group: g, Room: st, Lines: lines}, err
+}
+
+// Groups lists one machine's groups, deleted ones included (tombstones let
+// a viewer converge), for the person's read of that machine.
+func (s *Service) Groups(ctx context.Context, machine string) ([]pa.Group, error) {
+	rooms, _, err := s.groups()
+	if err != nil {
+		return nil, err
+	}
+	if _, err = s.authorize(ctx, pa.BotKey{MachineID: machine, BotID: "groups"}, false); err != nil {
+		return nil, err
+	}
+	return rooms.store.Groups(ctx, machine)
+}
