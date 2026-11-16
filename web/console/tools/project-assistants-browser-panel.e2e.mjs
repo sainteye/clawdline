@@ -116,9 +116,17 @@ try {
     await send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:width<700},sessionId)
     await send("Page.navigate",{url:origin+"/?mode="+mode+"&lang="+lang+"#bot="+encodeURIComponent(bot)+"&conversation="+encodeURIComponent(conversation)+"&machine="+encodeURIComponent(machine)},sessionId)
     await until('document.querySelector(".pa-chat-header h2")?.textContent==="Synthetic Bot"')
-    await run('document.querySelector(".pa-chat-header button[aria-haspopup=menu]").click()')
-    await until('!!document.querySelector("[role=menuitem]")')
-    await run('document.querySelector("[role=menuitem]").click()')
+    if(mode==="old") {
+      assert.equal(await run('!!document.querySelector(".pa-chat-header .browser-chip")'),false)
+      assert.equal(await run('!!document.querySelector(".pa-reply-browser")'),false)
+      await run('document.querySelector(".pa-chat-header button[aria-haspopup=menu]").click()')
+      await until('!!document.querySelector("[role=menuitem]")')
+      await run('document.querySelector("[role=menuitem]").click()')
+    } else {
+      await until('!!document.querySelector(".pa-chat-header .browser-chip")')
+      assert.equal(await run('document.querySelector(".pa-chat-header").scrollWidth>document.querySelector(".pa-chat-header").clientWidth'),false,"chip fits the phone header")
+      await run('document.querySelector(".pa-chat-header .browser-chip").click()')
+    }
     await until('!!document.querySelector("#browser-panel")')
     if(mode==="old") {
       await until('document.querySelector("#browser-panel").innerText.includes("API 74")')
@@ -145,6 +153,17 @@ try {
         await until('document.querySelectorAll(".browser-activity li").length>0')
       }
     }
+    if(mode!=="old") {
+      // The reply entry uses durable tool details, without opening the trace first.
+      await run('document.querySelector("#browser-panel .browser-close").click()')
+      await until('!document.querySelector("#browser-panel")')
+      await until('!!document.querySelector("[data-message-id=browser-ui-reply] .pa-reply-browser")')
+      assert.equal(await run('document.querySelectorAll(".pa-reply-browser").length'),1,"the user message mentioning a tool has no browser action")
+      assert.equal(await run('document.querySelector(".pa-reply-browser").textContent'),lang==="en"?"Open browser":"打開瀏覽器")
+      await run('document.querySelector(".pa-reply-browser").click()')
+      await until('!!document.querySelector("#browser-panel img")?.naturalWidth')
+      assert.equal(await run('document.querySelector(".browser-take").disabled'),mode==="read")
+    }
     const {data}=await send("Page.captureScreenshot",{format:"png"},sessionId)
     await writeFile(path.join(artifacts,`bot-browser-${mode}-${lang}-${width}.png`),Buffer.from(data,"base64"))
     for(const request of requests.slice(start).filter(r=>r.path.startsWith("/v1/browser/"))) {
@@ -152,7 +171,7 @@ try {
       assert.equal(fields.bot_id,bot);assert.equal(fields.conversation,conversation);assert.equal("owner" in fields,false);assert.equal("machine_id" in fields,false)
       assert.equal(request.status,200,JSON.stringify(request))
     }
-    results.push({mode,lang,width,requests:requests.length-start})
+    results.push({mode,lang,width,chip:mode!=="old",replyEntry:mode!=="old",requests:requests.length-start})
     await send("Target.closeTarget",{targetId})
   }
   // A Bot with no tab can be given one, already taken over, through the same UI.
@@ -163,9 +182,9 @@ try {
     const until=async(expression)=>{const deadline=Date.now()+10000;while(!await run(expression)){if(Date.now()>deadline)throw Error("open fixture did not reach "+expression+" "+await run("document.body.innerText"));await new Promise(r=>setTimeout(r,50))}}
     await send("Page.navigate",{url:origin+"/?mode=local&lang=en#bot="+emptyBot+"&conversation="+emptyConversation},sessionId)
     await until('document.querySelector(".pa-chat-header h2")?.textContent==="Empty Bot"')
-    await run('document.querySelector(".pa-chat-header button[aria-haspopup=menu]").click()')
-    await until('!!document.querySelector(".pa-chat-header [role=menuitem]")')
-    await run('[...document.querySelectorAll(".pa-chat-header [role=menuitem]")].find(button=>button.textContent==="Browser").click()')
+    await until('!!document.querySelector(".pa-reply-browser")')
+    assert.equal(await run('!!document.querySelector(".pa-chat-header .browser-chip")'),false,"no chip without an owned tab")
+    await run('document.querySelector(".pa-reply-browser").click()')
     await until('!!document.querySelector("#browser-open-url")&&!document.querySelector("#browser-open-url").disabled')
     if(await run('document.querySelector(".browser-card h3")?.textContent')!=="This Bot has no tab yet")throw Error("Bot empty state names a Session: "+await run('document.querySelector(".browser-card h3")?.textContent'))
     await run('const input=document.querySelector("#browser-open-url");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"https://synthetic.example/new");input.dispatchEvent(new Event("input",{bubbles:true}))')

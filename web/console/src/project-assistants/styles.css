@@ -391,3 +391,11 @@
 .pa-browser { position:absolute;inset:0;z-index:20;background:var(--pa-bg);min-width:0;min-height:0; }
 .pa-browser #browser-panel { display:flex;flex-direction:column;position:absolute;inset:0;width:100%;height:100%;min-height:0;box-sizing:border-box;background:var(--pa-bg); }
 .pa-browser .panel-view-body { flex:1; }
+
+/* Keep the shared Session chip compact beside the Bot name on phones. */
+.project-assistants .pa-chat-header .browser-chip { flex:none; }
+.project-assistants .pa-chat-header .browser-chip .header-menu-label { display:none; }
+.project-assistants .pa-reply-browser { display:block;margin-top:10px; }
+@media(max-width:700px) {
+  .project-assistants .pa-chat-header .browser-chip { padding:0 8px;gap:4px; }
+}

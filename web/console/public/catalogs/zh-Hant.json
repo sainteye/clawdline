@@ -12551,6 +12551,7 @@
   "transparency.card.voice-list-briefing.title": "從列表撥號自動介紹 Session",
   "transparency.card.voice-list-briefing.how": "向確切機器讀取目前摘要、最後回覆，以及現在的問題或未解便條。沿用既有摘要設定與快取規則；摘要啟用時可能使用該 Session 助理的額度。不另開整理模型或持久任務；目前講述期間可準備一個下一批。",
   "transparency.card.voice-list-briefing.condition": "僅在未指定 Session、從列表開始語音通話，且服務確認設定後啟動。使用者先開口會取代自動開場；從某個 Session 撥號仍沿用該 Session 的交接摘要。",
+  "botBrowser.openReply": "打開瀏覽器",
   "botBrowser.open": "瀏覽器",
   "botBrowser.unsupported": "請更新來源電腦，才能查看此 Bot 的瀏覽器（需要 API 74 以上）。",
   "botBrowser.unpaired": "請先配對來源電腦，才能查看此 Bot 的瀏覽器。",
