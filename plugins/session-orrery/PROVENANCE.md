@@ -58,8 +58,12 @@ installer, transcript scanner, exec handler or network service is run.
 7. The original has desktop minimum widths of 520+420 and no mobile layout.
    At 390px, this port stacks dial, mount/register and almanac; the sun is 64px,
    diagram labels give way to the register, and all controls retain 44px targets.
-   The original desktop source geometry is unchanged. Crowded points/labels can
-   overlap, as in the source; the full list remains authoritative.
+   The original desktop source geometry is unchanged. Planet coordinates remain source-derived. Version 0.4.0 adds label placement
+   that avoids visible labels, planet artwork, the title, sun, almanac and legend,
+   keeps labels inside the dial, and draws faint leaders for displaced labels.
+   Selection and waiting-for-you labels take priority; labels that cannot fit are
+   tucked away with a visible count. Selection from the full register reveals
+   the selected label. Phone labels still give way to the register.
 8. Three complete TTF files would exceed the existing 262144-byte STORE ZIP
    bound. Basic Latin WOFF subsets preserve retained glyph outlines, original
    metrics/hinting and relevant kerning, with composite closure. Non-Basic-Latin

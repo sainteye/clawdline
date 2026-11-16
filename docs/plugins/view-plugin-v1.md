@@ -193,6 +193,15 @@ authorization result.
 }
 ```
 
+`stateTime` is optional additive metadata: `{ "at": 1700000000000, "basis": "declaration" }`.
+`at` is Unix milliseconds. `declaration` means the current self-declared state's
+recorded time; `turn` means the supplied working turn began, and is only exposed
+beside `working`. Neither is an arrival time or proof of progress. Missing,
+non-finite or invalid dates are omitted. Local and Cloud presentations use the
+same projection; no raw identities are added. A view may record first observation
+within its opening, but must label that fallback and must not infer a historical
+state transition. Older hosts omit this optional field.
+
 `project` may be null. States are `ready`, `working`, `holding`, `waiting_you`,
 `waiting_session`, `unknown`, `milestone_complete`, `work_complete`. Freshness is
 `fresh`, `stale`, `unknown`. The host generates new opaque references per opening;

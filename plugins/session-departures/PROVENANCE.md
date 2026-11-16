@@ -63,7 +63,7 @@ font's coverage uses the device's fallback font and therefore varies by platform
 | Upstream source | Browser adaptation and reason |
 | --- | --- |
 | main.js world/readFlights reads agents and terminals, parent chains and pane IDs | Only authorized opaque Session/Project projection is used; no native terminal or parent/child relationship is available. |
-| logic.js noteChanges/flightLine derives status time; assignCodes synthesizes flight numbers | TIME and FLIGHT are em dashes. No arrival time, elapsed duration or generated flight code is created. |
+| logic.js noteChanges/flightLine derives status time; assignCodes synthesizes flight numbers | TIME uses optional host declaration/turn metadata; absent metadata falls back to explicitly marked first observation in this opening. FLIGHT generates a Project abbreviation plus a unique three-digit code, stable during this opening. ASCII prefixes retain the source rule; non-ASCII Project prefixes preserve their first two letters/graphemes. Neither field claims an arrival time. |
 | logic.js destinationOf/space and plainText | Supplied title/Project occupy DESTINATION/GATE. Unicode stays exact; only ASCII-only labels get the original uppercase board treatment. Full unmodified labels remain in list/detail. |
 | logic.js boardOrder sorts by remark then status time and clears DEPARTED after five minutes | Matching urgency groups are retained with stable host order; unavailable times cannot break ties and reported completion never removes a row. |
 | logic.js blockedReason/reasonLine adds a reason row | No blocked reason is supplied, so no reason row is invented. |
@@ -73,20 +73,23 @@ font's coverage uses the device's fallback font and therefore varies by platform
 | view.js header/foldButton/main.js toggleFold and native terminals | DEPARTURES, plane and real local clock remain. Browser list/still/close controls replace unavailable terminal folding. No fake terminal or transcript fills the bottom. |
 | view.js delayed pulse and main.js flip/heartbeat/page timers/clack | The original 50ms half-flap ticks, 1200ms delayed lamp, five-cell flap clock, 8000ms page timer and clack bytes are retained. Audio defaults off until enabled in this opening because host sound preference is unavailable. Reduced/still/hidden/disconnected/list state cancels motion, refresh and page turns; audio is paused. |
 | Original desktop-only fixed board | A contained horizontal board plus a full-name touch list and selected detail provide phone access without changing the five source columns. |
-| main.js localStorage seen/codes/open | No Session state, history or selection is persisted. |
+| main.js localStorage seen/codes/open | No Session state, history or selection is persisted. Version 0.4.0 keeps current-row observation times and flight codes only in memory, removing entries when their opaque refs disappear. |
 
 The runtime uses only the current public SDK. The production host continues to
 own trusted return, authorization and deliberate Session navigation. Unknown,
-stale or disconnected readings cannot navigate. No host/API/catalog or Galaxy
-file is modified by this package.
+stale or disconnected readings cannot navigate. Version 0.4.0 consumes additive
+`stateTime` metadata from the reviewed sessions.read projection, with an explicit
+observation fallback for older hosts. No new capability, general API or Galaxy
+change is introduced.
 
 ## Evidence boundary
 
 The task artifacts retain the original preview, original/port side-by-side
 comparison, browser matrix screenshots, actual geometry, fixture parity and gate
 logs. The original preview is evidence, not a recreation of a running Herdr app.
-The port uses explicitly synthetic Session inputs; original timing/codes/reasons
-are intentionally absent. Local checks do not establish visual approval,
+The acceptance uses explicitly synthetic Session inputs and separately checks
+supplied timestamps, observation fallback and generated identifiers. Native blocked
+reasons and terminal hierarchy remain unavailable. Local checks do not establish visual approval,
 production Cloud/dev behavior or public Release acceptance.
 
 ## Version 0.3.0 motion update

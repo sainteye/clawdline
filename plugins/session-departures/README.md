@@ -13,8 +13,10 @@ inverted DELAYED letters and forward half-flap wave are retained. The original
 JetBrains Mono bold is embedded under its SIL OFL 1.1 license. CJK and other non-drum graphemes use a single old/new half-flap instead of
 cycling through unrelated Latin letters; no transliteration removes Unicode names. Platform fallback fonts supply glyphs absent from JetBrains Mono.
 
-TIME and FLIGHT show an em dash because this projection has neither Session
-timing nor actual flight IDs. GATE carries the supplied Project label. Names and
+TIME distinguishes supplied declaration/turn timestamps from explicitly marked
+first observation in this opening. FLIGHT is a generated identity for the current
+opening, following the original abbreviation/number convention. GATE carries the
+supplied Project label. Names and
 Projects are shortened visually to the original column capacity; the readable
 list and selected detail always contain the exact complete values. The board
 scrolls inside its own region at phone width, with an obvious readable-list
@@ -99,3 +101,13 @@ is allowed. This is an explicit Clawdline presentation adaptation, not a claim
 that upstream has this entrance: planets glide into place, city windows light
 in sequence, and the board fills through its normal half-flap engine. Controls
 remain available during the entrance; later snapshots do not replay it.
+
+## Version 0.4.0 time and identity
+
+TIME shows a supplied state declaration or working-turn timestamp. A dotted
+underline identifies first observation in the current opening when no timestamp
+is supplied; stale or unknown first readings are not assigned a made-up time.
+Details identify the source and full date. FLIGHT follows the source's Project
+abbreviation plus three-digit identity, resolves collisions, and stays unchanged
+through state updates and Project renames during the opening. Reopening grants
+new opaque refs and therefore new codes; no Session history is persisted.

@@ -1,20 +1,28 @@
 import type { SessionRow } from "@clawdline/contract"
 import type { MachineListPresentation, SessionDestination, SessionProjectionSource } from "../cloud/all-machine-sessions.js"
 import { destinationKey } from "../cloud/all-machine-sessions.js"
-import { WORK_STATES, type SourceSession, type ViewReading, type ViewSource, type WorkState } from "./bridge.js"
+import { WORK_STATES, type SourceSession, type StateTime, type ViewReading, type ViewSource, type WorkState } from "./bridge.js"
 import { PluginError } from "./package.js"
 
 const state = (v: unknown): WorkState => WORK_STATES.includes(v as WorkState) ? v as WorkState : "unknown"
 const basename = (v: string) => v.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || v
 const project = (key: string | undefined) => key ? { key, label: basename(key) } : null
+const stateTime = (row: Partial<SessionRow> | undefined): StateTime | undefined => {
+  if (!row) return
+  const basis = row.work_provenance === "self" && row.work_since ? "declaration" : row.work_state === "working" && row.working_since ? "turn" : undefined
+  const seconds = basis === "declaration" ? row.work_since : basis === "turn" ? row.working_since : undefined
+  if (!basis || typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(new Date(seconds * 1000).getTime())) return
+  return { at: seconds * 1000, basis }
+}
 export function localPluginRows(rows: readonly SessionRow[], connected: boolean): SourceSession[] {
   return rows.map(row => ({ key: JSON.stringify([row.id, row.execution_generation ?? row.sessionId ?? ""]),
     title: row.label || "Session", project: project(row.project_key), workState: state(row.work_state),
+    stateTime: stateTime(row),
     freshness: !connected ? "stale" : row.evidence === "none" ? "unknown" : "fresh" }))
 }
 export function cloudPluginRows(rows: readonly MachineListPresentation[]): SourceSession[] {
   return rows.map(p => ({ key: destinationKey(p.destination), title: p.title, project: project(p.projectKey),
-    workState: state(p.status?.work_state),
+    workState: state(p.status?.work_state), stateTime: stateTime(p.status),
     freshness: p.projection?.freshness === "current" && p.observedAt !== undefined ? "fresh" :
       p.projection?.freshness === "stale" ? "stale" : "unknown" }))
 }
