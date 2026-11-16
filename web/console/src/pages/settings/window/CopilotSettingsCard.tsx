@@ -155,25 +155,12 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
           onPick={(picked) => { void change({ eagerness: picked }).catch(() => undefined) }} />
       </Row>
 
-      <Row label={nextWord("voiceWorkEnable")} hint={nextWord("voiceWorkEnableHint")}>
-        <Switch label={nextWord("voiceWorkEnable")} on={snapshot.work_enabled === true}
-          onChange={(on) => { void change({ work_enabled: on }).catch(() => undefined) }} />
-      </Row>
-      {snapshot.max_auto_continue&&snapshot.work_auto_continue?<Row label={nextWord("voiceWorkBatchLimit")} hint={nextWord("voiceWorkBatchHint")}>
-        <PopUp label={nextWord("voiceWorkBatchLimit")} value={String(snapshot.work_auto_continue)} options={Array.from({length:snapshot.max_auto_continue},(_,i)=>({value:String(i+1),label:String(i+1)}))} onPick={picked=>{void change({work_auto_continue:Number(picked)}).catch(()=>undefined)}}/>
-      </Row>:null}
-      <Row label={nextWord("voiceWorkPlanner")}>
-        <PopUp label={nextWord("voiceWorkPlanner")} value={snapshot.work_assistant ?? snapshot.briefing_assistant}
-          options={[{value:"claude",label:nextWord("voiceWorkClaude")},{value:"codex",label:nextWord("voiceWorkCodex")}]}
-          onPick={(picked) => { void change({work_assistant:picked}).catch(() => undefined) }} />
-      </Row>
-      {snapshot.work_enabled ? <p className="sw-hint">{nextWord("voiceWorkBriefingReplaced")}</p> : null}
       <Row label={nextWord("copilotBriefingLabel")} hint={nextWord("copilotBriefingHint")}>
-        <Switch label={nextWord("copilotBriefingLabel")} on={snapshot.briefing} disabled={snapshot.work_enabled}
+        <Switch label={nextWord("copilotBriefingLabel")} on={snapshot.briefing}
           onChange={(on) => { void change({ briefing: on }).catch(() => undefined) }} />
       </Row>
       <Row label={nextWord("copilotBriefingAssistantLabel")}>
-        <PopUp label={nextWord("copilotBriefingAssistantLabel")} value={snapshot.briefing_assistant} disabled={!snapshot.briefing || snapshot.work_enabled}
+        <PopUp label={nextWord("copilotBriefingAssistantLabel")} value={snapshot.briefing_assistant} disabled={!snapshot.briefing}
           options={[
             { value: "claude", label: nextWord("copilotBriefingClaude") },
             { value: "codex", label: nextWord("copilotBriefingCodex") },
@@ -203,18 +190,18 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
       </div>
 
       <details className="sw-copilot-source">
-        <summary>{snapshot.work_enabled ? nextWord("voiceWorkManagedSource") : nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
-        <p className="sw-hint">{nextWord(snapshot.work_enabled ? "voiceWorkManagedSourceHint" : "copilotSourceHint")}</p>
+        <summary>{nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
+        <p className="sw-hint">{nextWord("copilotSourceHint")}</p>
         <h4>{nextWord("copilotSourceInstructions")}</h4>
         <pre className="sw-copilot-pre">{snapshot.engine === "live"
           ? liveInstructions({ speed: snapshot.speed, brief: snapshot.brief, extra: snapshot.extra_instructions, language: document.documentElement.lang })
-          : String((sessionUpdateEvent("","",{workEnabled:snapshot.work_enabled,brief:snapshot.brief,language:document.documentElement.lang}) as {session:{instructions:string}}).session.instructions)}</pre>
-        {!snapshot.work_enabled ? <><h4>{nextWord("copilotSourceTools")}</h4>
+          : String((sessionUpdateEvent("","",{brief:snapshot.brief,language:document.documentElement.lang}) as {session:{instructions:string}}).session.instructions)}</pre>
+        <h4>{nextWord("copilotSourceTools")}</h4>
         <ul className="sw-copilot-tools">
           {COPILOT_TOOLS.map((tool) => (
             <li key={tool.name}><code>{tool.name}</code><span>{tool.description}</span></li>
           ))}
-        </ul></> : null}
+        </ul>
       </details>
 
       {said ? <p className="sw-said sw-voice-saved" role="status">{said}</p> : null}

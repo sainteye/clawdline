@@ -12,6 +12,6 @@ export function CopilotProgress({progress,compact=false}:{progress?:CallProgress
  return <div className={`copilot-progress${compact?' is-compact':''}${active?' is-active':''}`}>
   {/* Text only: the person asked for the working mascot off the call screen (2026-11-13). */}
   <p role="status" aria-live="polite">{detail}</p>
-  {!active?<a href="#page=voice-assistant&tab=work">{W('copilotProgressOpen')}</a>:null}
+  {!active?<a href="#page=voice-assistant">{W('copilotProgressOpen')}</a>:null}
  </div>
 }

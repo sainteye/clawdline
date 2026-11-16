@@ -4073,7 +4073,7 @@
         },
         {
           "path": "web/console/src/pages/settings/window/CopilotSettingsCard.tsx",
-          "line": 206
+          "line": 197
         }
       ],
       "original": [
@@ -4319,7 +4319,7 @@
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "7e4b3edbaa2e454b6ab93d9cabaa6070695c4c8c7eb962b3b569d4d29b5583c5",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
-    "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "da5ce9a3e9d7ed63d16db49625cfe53419754df29ff24023c865f73453913862",
+    "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "6ba7c41b702897e95e2a8712c1defe1dca8af24819f93458009786a0c7e36f2f",
     "web/console/src/project-assistants/OutputCard.tsx": "41bf8737de8d646a2175e2aeb0b7ffbaebc68e5a66cbd955c01da5f36928d724",
     "web/console/src/project-assistants/Routines.tsx": "b4b06b9d501d12b7721d981b5f11e8e1e47c150cbf555a5bcd2d415fe93bb252",
     "web/console/src/project-assistants/inputs.ts": "142db25550cc2db93a1bc3104949ed5579daf6c7492c30f5820cbb708f3a64ec",
@@ -4329,7 +4329,7 @@
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
     "web/console/src/realtime/copilot-live.ts": "f0c04000601f191d4a558f3a69bc031e06525bf9d87845a1c5b3af3350ed6437",
     "web/console/src/realtime/copilot-reports.ts": "89a413bed5f993d0e45e45ccf73638b7559f0d704051885b5887e77b3373aaa5",
-    "web/console/src/realtime/copilot-speech.ts": "693365864fd8f309d396aa5d9878e550e9de8d55811288779bb76aa70f5b312b",
+    "web/console/src/realtime/copilot-speech.ts": "29d2f8d0875ddb75c5d0294dbe593da3add3d02b393ba68571db4f99bb064089",
     "web/console/src/realtime/copilot-tools.ts": "e6c8eaf7af8245ce05f901ca9eee04bfadc48d11b0e079922ed0e28613ff926e",
     "web/console/src/realtime/realtime-copilot.ts": "8d26c63d74466007c4323520e12c9b3f67af64f1dbb4cee45fd9101a21dbf433",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
