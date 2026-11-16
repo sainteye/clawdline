@@ -1,4 +1,19 @@
 import * as L from "../legacy/bridge.js"
+import type { SessionRow } from "@clawdline/contract"
+
+export type BrowserCall = <T>(method: "GET" | "POST", path: string, body?: unknown) => Promise<T>
+export type BrowserPanelTarget = {kind:"session";row:SessionRow|null} | {
+  kind: "bot"
+  id: string
+  conversation: string
+  name: string
+  remote: boolean
+  writable: boolean
+  reason: string
+  call: BrowserCall
+  /** A stale owner stops this panel until another explicit open. */
+  refusal?: (error: unknown) => string
+}
 
 /**
  * One `/v1/browser/*` request for the Chrome panel and the browser setup

@@ -12525,5 +12525,15 @@
   "transparency.card.voice-list-briefing.summary": "Starts a report automatically in Realtime and GPT-Live. Sessions waiting for the person, including unresolved Notes, are read first; ordinary work follows in batches of one or two.",
   "transparency.card.voice-list-briefing.title": "Automatic Session briefing from the list",
   "transparency.card.voice-list-briefing.how": "Reads current summaries, the latest reply, and the current question or unresolved Notes on the exact machine. It respects the existing recap setting and cache policy; an enabled recap may use that Session assistant’s quota. It uses no extra organizer model or persistent task. One next batch can prepare while the current one is presented.",
-  "transparency.card.voice-list-briefing.condition": "Only when a voice call starts from the Session list without a selected Session, after the service acknowledges its configuration. Speaking first supersedes the automatic opening. Calls placed inside a Session keep their focused handover."
+  "transparency.card.voice-list-briefing.condition": "Only when a voice call starts from the Session list without a selected Session, after the service acknowledges its configuration. Speaking first supersedes the automatic opening. Calls placed inside a Session keep their focused handover.",
+  "botBrowser.open": "Browser",
+  "botBrowser.unsupported": "Update this source to view this Bot’s browser (API 74 or later).",
+  "botBrowser.unpaired": "Pair this source before viewing this Bot’s browser.",
+  "botBrowser.readOnly": "This device can view the browser. Browser controls require write access.",
+  "botBrowser.stale": "The Bot’s conversation changed. Its details are being reloaded. Close and reopen the browser to continue; the action was not replayed.",
+  "botBrowser.refused": "This Bot’s browser is unavailable ({code}). Refresh the Bot and check its source.",
+  "botBrowser.audit": "Complete browser audit",
+  "botBrowser.auditEmpty": "No browser actions recorded yet.",
+  "botBrowser.disconnected": "Connect Chrome on this Bot’s source computer to view its tabs.",
+  "botBrowser.unknown": "The browser action may have run, but its result could not be confirmed. Do not send the action again. Check the browser state first."
 }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12525,
-  "riskKeys": 5434,
-  "nonRiskCount": 7091,
+  "englishContentKeys": 12535,
+  "riskKeys": 5441,
+  "nonRiskCount": 7094,
   "groups": [
     {
       "name": "acp / other",
@@ -362,6 +362,18 @@
         "bar.placeholder",
         "bar.scanning",
         "bar.sessionAgents"
+      ]
+    },
+    {
+      "name": "botBrowser / other",
+      "count": 3,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "botBrowser.disconnected",
+        "botBrowser.open",
+        "botBrowser.unsupported"
       ]
     },
     {

@@ -1,12 +1,38 @@
 package push
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"net/url"
 	"strings"
 	"time"
 )
+
+type botDestinationKey struct{}
+type botDestination struct{ bot, conversation string }
+
+// WithBotDestination carries a server-derived destination through the existing
+// notification allowance and ledger. It is never decoded from a request body.
+func WithBotDestination(ctx context.Context, bot, conversation string) context.Context {
+	return context.WithValue(ctx, botDestinationKey{}, botDestination{bot, conversation})
+}
+
+func BotDestinationFromContext(ctx context.Context) (string, string) {
+	target, _ := ctx.Value(botDestinationKey{}).(botDestination)
+	return target.bot, target.conversation
+}
+
+func BotDestinationURL(bot, conversation, machine string) string {
+	if bot == "" || conversation == "" {
+		return "/"
+	}
+	fragment := "bot=" + url.QueryEscape(bot) + "&conversation=" + url.QueryEscape(conversation)
+	if machine != "" {
+		fragment += "&machine=" + url.QueryEscape(machine)
+	}
+	return "/#" + fragment
+}
 
 // Notification is what a caller asks to have delivered.
 //

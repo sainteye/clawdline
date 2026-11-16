@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
-import { authorized, command, errorCode, projectChoices } from "./client"
+import { authorized, command, errorCode, projectChoices, botFromFragment } from "./client"
 import { BotRoster } from "./BotRoster"
 import { FallbackSourceScope } from "./FallbackSettings"
 import { BotCreate } from "./BotCreate"
@@ -34,6 +34,7 @@ interface SourcePage {revision:string;query:string;items:W.ProjectAssistantBotSu
 export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,manageHistory=false,onSelectionChange}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
+  const [destination,setDestination]=useState(()=>botFromFragment(location.hash))
   const [livePending,setLivePending]=useState<Record<string,boolean>>({})
   const [projectNames,setProjectNames]=useState(new Map<string,string>()),[projectIcons,setProjectIcons]=useState(new Map<string,W.Icon>())
   const host=useRef<HTMLDivElement>(null),sourceRef=useRef(sources),closeRef=useRef(onClose),selectRef=useRef(onSelectionChange)
@@ -52,7 +53,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
   const rosterLoading=loading||sources.some(s=>livePending[s.machineID])
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
-  const selectedItem=items.find(i=>botIdentity(i.bot.key)===selected)
+  const selectedItem=allItems.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
   const statuses=Object.entries(pages).flatMap(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
   const errors=Object.entries(pages).filter(([id,p])=>shownSourceError(p.error)&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id,p])=>[id,`${w.sourceError} (${p.error})`] as [string,string])
@@ -125,9 +126,23 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     }
   }
   const back=()=>{
+    setDestination(null)
     if(manageHistory&&history.state?.paView===historyID.current&&history.state?.paBot){history.back();return}
     setSelected(null);selectRef.current?.(null)
   }
+  useEffect(()=>{
+    const follow=()=>setDestination(botFromFragment(location.hash))
+    window.addEventListener("hashchange",follow)
+    return()=>window.removeEventListener("hashchange",follow)
+  },[])
+  useEffect(()=>{
+    if(!destination)return
+    const matches=allItems.filter(i=>i.bot.key.bot_id===destination.bot&&(!destination.machine||i.bot.key.machine_id===destination.machine))
+    // An ambiguous source never falls through to whichever machine is active.
+    if(matches.length!==1)return
+    if(botIdentity(matches[0].bot.key)!==selected)select(matches[0])
+    setDestination(null)
+  },[destination,pages,authorization,selected])
   useEffect(()=>{
     const opener=returnFocus??(document.activeElement instanceof HTMLElement?document.activeElement:null)
     const scrollX=window.scrollX,scrollY=window.scrollY

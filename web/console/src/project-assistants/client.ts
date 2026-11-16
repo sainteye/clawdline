@@ -1,7 +1,19 @@
 import type * as W from "@clawdline/contract"
 
+/** Notification routing selects a chat; the live Bot still supplies browser authority. */
+export function botFromFragment(hash: string): {bot:string;conversation:string;machine:string} | null {
+  const fields=new URLSearchParams(hash.replace(/^#/,""))
+  if(fields.getAll("bot").length!==1||fields.getAll("conversation").length!==1||fields.getAll("machine").length>1||fields.has("session"))return null
+  const bot=fields.get("bot"),conversation=fields.get("conversation")
+  return bot&&conversation?{bot,conversation,machine:fields.get("machine")??""}:null
+}
+
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+  /** Bot browser calls use this captured source, never the selected-machine fetch. */
+  browser?<T>(key: W.ProjectAssistantBotKey, conversation: string, method: "GET" | "POST", path: string, body: unknown, signal: AbortSignal): Promise<T>
+  browserUnavailable?(): string
+  readonly browserRemote?: boolean
   /** API72 configuration support, independent of native execution qualification. */
   canFallbacks?(): boolean
   canRoster?(): boolean

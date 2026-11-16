@@ -10,7 +10,7 @@ import { openWorkItem } from "./work/new-item.js"
 import { requestPage } from "../overlays/events.js"
 import { toast } from "../overlays/toast.js"
 import { words } from "../project-assistants/words.js"
-import { errorCode } from "../project-assistants/client.js"
+import { errorCode, botFromFragment } from "../project-assistants/client.js"
 import { followLiveRoster } from "../project-assistants/live-roster.js"
 
 const BADGE_REFRESH_MS = 15_000
@@ -146,6 +146,19 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     folded.current = false
     openedRef.current = true; setEntry(value => value+1); setOpened(true)
   }
+  // A notice may arrive before source metadata, or focus an already open app.
+  const noticeOpened=useRef("")
+  useEffect(()=>{
+    const follow=()=>{
+      if(!admitted||!botFromFragment(location.hash))return
+      if(openedRef.current){noticeOpened.current=location.hash;return}
+      if(noticeOpened.current===location.hash)return
+      noticeOpened.current=location.hash
+      open()
+    }
+    follow();window.addEventListener("hashchange",follow)
+    return()=>window.removeEventListener("hashchange",follow)
+  },[admitted,sources])
   useEffect(() => { if (opened && !admitted) close() },[opened,admitted,close])
   const [ox,oy] = windowOrigin.current.split(" ")
   const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}

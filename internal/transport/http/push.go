@@ -306,14 +306,18 @@ func (s *Server) PushSend(ctx context.Context, title, body, sessionID, tag, icon
 	if err != nil {
 		return adapterpush.Delivery{}, err
 	}
-	url := "/"
-	if sessionID != "" {
-		url = s.pushSessionURL(ctx, sessionID)
-	}
+	url := s.pushDestinationURL(ctx, sessionID)
 	sender := &adapterpush.Sender{Store: store, Cloud: s.pushCourier()}
 	return sender.Send(ctx, adapterpush.Notification{
 		Title: title, Body: body, URL: url, Tag: tag, Icon: icon,
 	}, "")
+}
+
+func (s *Server) pushDestinationURL(ctx context.Context, sessionID string) string {
+	if bot, conversation := adapterpush.BotDestinationFromContext(ctx); bot != "" && conversation != "" {
+		return adapterpush.BotDestinationURL(bot, conversation, s.executionMachine())
+	}
+	return s.pushSessionURL(ctx, sessionID)
 }
 
 // cloudPushLine is the half of a Cloud link that forwards pushes. It is its

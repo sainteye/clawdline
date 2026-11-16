@@ -4,13 +4,14 @@ import { followsRelay } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { ChoiceMenu } from "../ui-language/ChoiceMenu.js"
-import { browserCall as call } from "./browser-call.js"
+import { browserCall as defaultCall, type BrowserCall, type BrowserPanelTarget } from "./browser-call.js"
 import { openBrowserSetup } from "./BrowserSetup.js"
 import { BrowserViewport } from "./BrowserViewport.js"
 import { BrowserComposer, type BrowserKeyboardHandle, type PageField } from "./BrowserComposer.js"
 import type { InputReceipt } from "./browser-keyboard.js"
 import { webAddress } from "./browser-address.js"
 import { extensionCurrent } from "./browser-extension.js"
+import { catalogWord } from "../catalog.js"
 import "./browser-panel.css"
 
 /**
@@ -33,7 +34,7 @@ import "./browser-panel.css"
  */
 
 type TabInfo = { browser_mode?: string; tab: number; conversation: string; person: boolean; current: boolean }
-type Status = { mode?: string; enabled: boolean; person_open?: string; person_navigate?: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[]; host?: { version?: string } } }
+type Status = { owner?: string; mode?: string; enabled: boolean; person_open?: string; person_navigate?: boolean; status: { connected: boolean; stopped: boolean; state_error?: boolean; tabs: TabInfo[]; muted?: string[]; host?: { version?: string } } }
 type Activity = { at: number; op: string; site?: string; url?: string; target?: string; text_length?: number; password?: boolean; ok: boolean; thumb: string }
 
 const OP_WORD: Record<string, Parameters<typeof nextWord>[0]> = {
@@ -80,9 +81,15 @@ function assistantName(row: SessionRow | null): string {
   return "Agent"
 }
 
-export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; open: boolean; onClose: (restore: boolean) => void }) {
-  const relay = followsRelay()
-  const conversation = row?.sessionId ?? ""
+export function BrowserPanel({ row = null, target: destination, open, onClose }: { row?: SessionRow | null; target?: BrowserPanelTarget; open: boolean; onClose: (restore: boolean) => void }) {
+  const target=destination?.kind==="bot"?destination:undefined
+  row=destination?.kind==="session"?destination.row:row
+  const call = target?.call ?? defaultCall
+  const relay = target ? target.remote : followsRelay()
+  const conversation = target?.conversation ?? row?.sessionId ?? ""
+  const writable = target?.writable ?? true
+  const reason = target?.reason ?? ""
+  const describe = (error: unknown, lead: "browserPanelReadFailed" | "browserPanelActFailed") => target?.refusal?.(error) || said(error, lead)
   const [status, setStatus] = useState<Status | null>(null)
   const [statusError, setStatusError] = useState<unknown>(null)
   const [shotRecord, setShotRecord] = useState<{ value: Shot; tab: number; mode?: string; scope: string } | null>(null)
@@ -93,6 +100,8 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const [toolsOpen, setToolsOpen] = useState(false)
   const [reminded, setReminded] = useState(false)
   const [activity, setActivity] = useState<Activity[]>([])
+  const [audit, setAudit] = useState<Activity[]>([])
+  const [auditError, setAuditError] = useState<unknown>(null)
   const [statusTick, setStatusTick] = useState(0)
   // A tab the person opened from a phone should show the phone layout; an
   // older extension ignores the request at open, so it is switched here.
@@ -103,18 +112,19 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   const controlRevision = useRef(0)
   const controlPending = useRef(false)
 
-  const mine = status?.status.tabs.filter((t) => t.conversation === conversation && (!t.browser_mode || t.browser_mode === status?.mode)) ?? []
+  const mine = status?.status.tabs.filter((t) => t.conversation === (target ? status?.owner : conversation) && (!t.browser_mode || t.browser_mode === status?.mode)) ?? []
   const tab = mine.find((t) => t.current) ?? mine[mine.length - 1] ?? null
   const tabID = tab?.tab ?? 0
   const browserMode = status?.mode
-  const scopeKey = (row?.id ?? "") + ":" + conversation + ":" + (browserMode ?? "legacy") + ":" + tabID
+  const scopeKey = (target?.id ?? row?.id ?? "") + ":" + conversation + ":" + (browserMode ?? "legacy") + ":" + tabID
   const scope = useRef(scopeKey)
   scope.current = scopeKey
   const shot = shotRecord?.scope === scopeKey && shotRecord.tab === tabID && shotRecord.mode === browserMode ? shotRecord.value : null
   const otherDebugger = (shotError as { code?: string } | null)?.code === "browser_other_debugger"
   const person = !!tab?.person && status?.enabled !== false && !otherDebugger
-  const name = assistantName(row)
+  const name = target?.name ?? assistantName(row)
 
+  useEffect(()=>{setStatus(null);setStatusError(null);setActError(null)},[call])
   useEffect(() => {
     if (!open) return
     let alive = true
@@ -128,7 +138,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     read()
     const timer = window.setInterval(() => { if (!document.hidden) read() }, STATUS_MS)
     return () => { alive = false; window.clearInterval(timer) }
-  }, [open, relay, conversation, statusTick])
+  }, [open, relay, conversation, statusTick, call])
 
   useEffect(() => {
     setReminded(false)
@@ -150,7 +160,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     read()
     const timer = window.setInterval(read, SHOT_MS)
     return () => { alive = false; window.clearInterval(timer) }
-  }, [open, relay, tabID, browserMode, scopeKey, shotTick])
+  }, [open, relay, tabID, browserMode, scopeKey, shotTick, call])
 
   // What the agent did, with the picture of the page after each action.
   useEffect(() => {
@@ -167,9 +177,19 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     read()
     const timer = window.setInterval(read, STATUS_MS)
     return () => { alive = false; window.clearInterval(timer) }
-  }, [open, conversation, tabID])
+  }, [open, conversation, tabID, call])
 
   useEffect(() => { if (open) closeRef.current?.focus({ preventScroll: true }) }, [open])
+  useEffect(() => {
+    setAudit([]); setAuditError(null)
+    if (!open || !toolsOpen || !target) return
+    let alive = true
+    call<{rows:Activity[]}>("GET", "/v1/browser/audit?limit=200").then(
+      result => { if(alive)setAudit(result.rows ?? []) },
+      error => { if(alive)setAuditError(error) },
+    )
+    return () => { alive=false }
+  },[open,toolsOpen,call,target?.id,target?.conversation])
   useEffect(() => {
     if (controlPending.current) { controlRevision.current++; controlPending.current = false }
     setToolsOpen(false); setBusy(false); setControlBusy(false); setActError(null)
@@ -177,7 +197,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   }, [open, scopeKey])
 
   const act = useCallback(async (op: string, args: Record<string, unknown>): Promise<InputReceipt> => {
-    if (!tabID || scope.current !== scopeKey) return { ok: false }
+    if (!writable || !tabID || scope.current !== scopeKey) return { ok: false }
     setBusy(true)
     setActError(null)
     try {
@@ -190,35 +210,37 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     } finally {
       if (scope.current === scopeKey) setBusy(false)
     }
-  }, [tabID, browserMode, scopeKey])
+  }, [tabID, browserMode, scopeKey, call, writable])
 
   // The person's own read of the focused field, for checking what was sent.
   // It neither marks the panel busy nor reports an error: an unreadable field
   // only means nothing is compared.
   const readField = useCallback(async (): Promise<PageField | null> => {
-    if (!tabID || scope.current !== scopeKey) return null
+    if (!writable || !tabID || scope.current !== scopeKey) return null
     try {
       const result = await call<{ value?: PageField }>("POST", "/v1/browser/person", { op: "field", tab: tabID, args: {}, ...(browserMode ? {browser_mode:browserMode} : {}) })
       return scope.current === scopeKey ? result.value ?? null : null
     } catch { return null }
-  }, [tabID, browserMode, scopeKey])
+  }, [tabID, browserMode, scopeKey, call, writable])
 
-  const muted = !!status?.status.muted?.includes(conversation)
+  const muted = !!status?.status.muted?.includes(target ? status.owner ?? "" : conversation)
   const mute = async (on: boolean) => {
+    if (!writable) return
     setBusy(true)
     setActError(null)
     try {
       await call("POST", "/v1/browser/mute", { conversation, muted: on })
-      setStatus((s) => s && { ...s, status: { ...s.status, muted: on ? [...(s.status.muted ?? []), conversation] : (s.status.muted ?? []).filter((c) => c !== conversation) } })
+      if(scope.current!==scopeKey)return
+      setStatus((s) => s && { ...s, status: { ...s.status, muted: on ? [...(s.status.muted ?? []), s.owner ?? conversation] : (s.status.muted ?? []).filter((c) => c !== (s.owner ?? conversation)) } })
     } catch (e) {
-      setActError(e)
+      if(scope.current===scopeKey)setActError(e)
     } finally {
-      setBusy(false)
+      if(scope.current===scopeKey)setBusy(false)
     }
   }
 
   const control = async (on: boolean): Promise<boolean> => {
-    if (!tabID || scope.current !== scopeKey) return false
+    if (!writable || !tabID || scope.current !== scopeKey) return false
     if (!on) nativeKeyboard.current?.close()
     controlRevision.current++; controlPending.current = true
     setControlBusy(true)
@@ -236,7 +258,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
     }
   }
 
-  const ensureControl = () => person ? Promise.resolve(true) : control(true)
+  const ensureControl = () => !writable ? Promise.resolve(false) : person ? Promise.resolve(true) : control(true)
   const tap = async (x: number, y: number): Promise<InputReceipt> => await ensureControl() ? act("click", { x, y }) : { ok: false }
   const changeLayout = async (mode: string) => {
     if (mode === shot?.layout) return
@@ -277,18 +299,19 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
   )
 
   const body = () => {
-    if (statusError) return <div className="screen-note err" role="alert">{said(statusError, "browserPanelReadFailed")}</div>
+    if (statusError) return <div className="screen-note err" role="alert">{describe(statusError, "browserPanelReadFailed")}</div>
     if (!status) return <div className="screen-note" role="status">…</div>
     // A Session without a tab can be given one by the person whenever some
     // Chrome is connected, even when the agent's own selection is native
     // tools or its switch is off (the daemon's person_open).
     if (!tab && status.person_open && !status.status.stopped) {
-      return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
+      return <BrowserOpenCard call={call} writable={writable} reason={reason} describe={describe} conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
     }
     // Not connected, or browser use switched off: one card and one main
     // action. Setup happens only on the computer, so through Cloud the main
     // action is the reminder and the setup steps are secondary.
     if (!status.status.connected || !status.enabled) {
+      if (target) return <div className="screen-note" role="status">{reason || (status.status.connected ? nextWord("browserCardDisabledBody") : catalogWord("botBrowser","disconnected"))}</div>
       const off = status.status.connected
       const remind = async () => {
         setBusy(true); setActError(null)
@@ -307,28 +330,28 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
               <button type="button" className="browser-card-primary" disabled={busy || reminded} onClick={() => void remind()}>{nextWord(reminded ? "browserReminded" : "browserRemind")}</button>
               <button type="button" className="browser-card-secondary" onClick={() => openBrowserSetup()}>{nextWord("browserCardSetupSteps")}</button>
             </> : <button type="button" className="browser-card-primary" onClick={() => openBrowserSetup()}>{nextWord("browserSetupOpen")}</button>}
-            {actError ? <p className="browser-card-error" role="alert">{said(actError, "browserPanelActFailed")}</p> : null}
+            {actError ? <p className="browser-card-error" role="alert">{describe(actError, "browserPanelActFailed")}</p> : null}
           </div>
           {relay && !off && <p className="browser-card-hint">{nextWord("browserCardNotConnectedHint")}</p>}
         </div>
       )
     }
-    if (!tab) return <BrowserOpenCard conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
+    if (!tab) return <BrowserOpenCard call={call} writable={writable} reason={reason} describe={describe} conversation={conversation} assistant={name} onOpened={(phone) => { wantPhone.current = phone; setStatusTick((n) => n + 1) }} />
     return (
       <div className="browser-stage">
         {status.status.state_error && <div className="screen-note err" role="alert">{nextWord("browserStateUnsaved")}</div>}
         {status.status.stopped && <div className="screen-note" role="status">{nextWord("browserPanelStopped")}</div>}
-        {shotError ? <div className="screen-note err" role="alert">{(shotError as { code?: string })?.code === "browser_other_debugger" ? nextWord("browserPanelOtherDebugger") : said(shotError, "browserPanelReadFailed")}</div> : null}
+        {shotError ? <div className="screen-note err" role="alert">{otherDebugger ? nextWord("browserPanelOtherDebugger") : describe(shotError, "browserPanelReadFailed")}</div> : null}
         {shot && !otherDebugger && (
-          <BrowserViewport key={scopeKey + ":" + (shot.layout || "desktop")} shot={shot} canClick={!busy && !controlBusy} person={person} onTap={tap}
+          <BrowserViewport key={scopeKey + ":" + (shot.layout || "desktop")} shot={shot} canClick={writable && !busy && !controlBusy} person={person} onTap={tap}
             onKeyboard={(kind, ready) => nativeKeyboard.current?.open(kind, ready)} onFocusKeyboard={() => nativeKeyboard.current?.open()} onCloseKeyboard={() => nativeKeyboard.current?.close()}
             layoutControl={<div className="browser-mode" title={nextWord("browserPanelLayoutReload")}>
-              <ChoiceMenu label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={busy || controlBusy}
+              <ChoiceMenu label={nextWord("browserPanelLayout")} value={shot.layout || "desktop"} disabled={!writable || busy || controlBusy}
                 options={[{value:"mobile", label:nextWord("browserPanelMobile")}, {value:"desktop", label:nextWord("browserPanelDesktop")}]} onPick={(value) => void changeLayout(value)} />
             </div>}
-            reloadControl={<button type="button" className="chip browser-reload" data-outdated={canReload ? undefined : "true"} disabled={busy || controlBusy}
+            reloadControl={<button type="button" className="chip browser-reload" data-outdated={canReload ? undefined : "true"} disabled={!writable || busy || controlBusy || (!!target && !canReload)}
               aria-label={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")} title={nextWord(canReload ? "browserPanelReload" : "browserPanelReloadNeedsUpdate")}
-              onClick={() => canReload ? void reloadPage() : openBrowserSetup(browserMode === "user_chrome" ? "user_chrome" : "isolated")}>
+              onClick={() => canReload ? void reloadPage() : target ? undefined : openBrowserSetup(browserMode === "user_chrome" ? "user_chrome" : "isolated")}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.46-3.54" /><path d="M13 2.5v3h-3" /></svg>
             </button>} />
 
@@ -345,7 +368,7 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
           shown (a picture about once a second), and the way out. */}
       <div className="browser-bar">
         <h2 id="browser-title" className="sr-only">{nextWord("browserPanelTitle")}</h2>
-        {person && status?.person_navigate && extensionCurrent(status.status.host?.version, "0.5.0") ? <BrowserAddress key={scopeKey} url={shot?.url || ""} person={person} busy={busy || controlBusy}
+        {writable && person && status?.person_navigate && extensionCurrent(status.status.host?.version, "0.5.0") ? <BrowserAddress key={scopeKey} url={shot?.url || ""} person={person} busy={busy || controlBusy}
           onNavigate={(url) => act("navigate", {url})} /> : <div className="browser-url" title={shot?.url || ""}>
           {address(shot?.url).secure
             ? <svg className="browser-lock" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" /><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" /></svg>
@@ -358,46 +381,50 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
       </div>
+      {reason && <p className="screen-note" role="status">{reason}</p>}
       <div className="scroller panel-view-body" aria-live="polite">{open ? body() : null}</div>
       {open && !!tabID && (
         <div className="browser-controls">
           <BrowserComposer key={scopeKey} keyboardRef={nativeKeyboard} person={person}
-            available={ready && !otherDebugger && !controlBusy && !busy}
+            available={writable && ready && !otherDebugger && !controlBusy && !busy}
             onPrepare={ensureControl} onSend={(text, replace) => act("type", replace ? { text, replace: true } : { text })}
             onDelete={() => void act("key", { key: "Backspace" })} onReadField={readField} />
           {/* The everyday keys sit in the panel itself (direction C,
               2026-11-14): keyboard, Tab, Enter and scrolling, each taking
               the tab over first like a tap does. More keeps the rest. */}
-          <p className="browser-who-line" data-person={person ? "true" : undefined} aria-live="polite">{person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</p>
+          <p className="browser-who-line" data-person={person ? "true" : undefined} aria-live="polite">{!writable ? reason : person ? nextWord("browserPanelPersonActs", { assistant: name }) : nextWord("browserPanelTapToTake")}</p>
           <div className="browser-who" data-person={person ? "true" : undefined}>
             <div className="browser-keys" role="group" aria-label={nextWord("browserPanelKeys")}>
-              <button type="button" className="browser-keyboard-open" aria-label={nextWord("browserPanelKeyboard")} title={nextWord("browserPanelKeyboard")} disabled={busy || controlBusy || otherDebugger} onClick={() => nativeKeyboard.current?.open()}>
+              <button type="button" className="browser-keyboard-open" aria-label={nextWord("browserPanelKeyboard")} title={nextWord("browserPanelKeyboard")} disabled={!writable || busy || controlBusy || otherDebugger} onClick={() => nativeKeyboard.current?.open()}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9" /></svg>
               </button>
-              <button type="button" aria-label="Tab" title="Tab" disabled={busy || controlBusy || otherDebugger} onClick={() => void keyPress("Tab")}>
+              <button type="button" aria-label="Tab" title="Tab" disabled={!writable || busy || controlBusy || otherDebugger} onClick={() => void keyPress("Tab")}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M13 8l4 4-4 4M20 6v12" /></svg>
               </button>
-              <button type="button" aria-label="Enter" title="Enter" disabled={busy || controlBusy || otherDebugger} onClick={() => void keyPress("Enter")}>
+              <button type="button" aria-label="Enter" title="Enter" disabled={!writable || busy || controlBusy || otherDebugger} onClick={() => void keyPress("Enter")}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6v6H6M10 8l-4 4 4 4" /></svg>
               </button>
-              <button type="button" aria-label={nextWord("browserPanelScrollUp")} title={nextWord("browserPanelScrollUp")} disabled={busy || controlBusy || otherDebugger} onClick={() => void scrollPage("up")}>
+              <button type="button" aria-label={nextWord("browserPanelScrollUp")} title={nextWord("browserPanelScrollUp")} disabled={!writable || busy || controlBusy || otherDebugger} onClick={() => void scrollPage("up")}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6" /></svg>
               </button>
-              <button type="button" aria-label={nextWord("browserPanelScrollDown")} title={nextWord("browserPanelScrollDown")} disabled={busy || controlBusy || otherDebugger} onClick={() => void scrollPage("down")}>
+              <button type="button" aria-label={nextWord("browserPanelScrollDown")} title={nextWord("browserPanelScrollDown")} disabled={!writable || busy || controlBusy || otherDebugger} onClick={() => void scrollPage("down")}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10l6 6 6-6" /></svg>
               </button>
             </div>
-            <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={controlBusy || otherDebugger} onClick={() => void control(!person)}>
+            <button type="button" className={person ? "browser-take" : "browser-take browser-primary"} disabled={!writable || controlBusy || otherDebugger} onClick={() => void control(!person)}>
               {person ? nextWord("browserPanelHandBackShort") : nextWord("browserPanelTakeOverShort")}
             </button>
             <button type="button" className="browser-tools-toggle" aria-expanded={toolsOpen} aria-controls="browser-tools" onClick={() => setToolsOpen(v => !v)}>{nextWord("browserPanelTools")}</button>
           </div>
           <div id="browser-tools" className="browser-tools" hidden={!toolsOpen}>
             <div className="browser-tools-head"><b>{nextWord("browserPanelTools")}</b><button type="button" onClick={() => setToolsOpen(false)} aria-label={L.strings.webClose}>×</button></div>
-            <button type="button" className="browser-notify" aria-pressed={!muted} disabled={busy} onClick={() => void mute(!muted)}>{nextWord(muted ? "browserPanelNotifyOff" : "browserPanelNotifyOn")}</button>
+            <button type="button" className="browser-notify" aria-pressed={!muted} disabled={!writable || busy} onClick={() => void mute(!muted)}>{nextWord(muted ? "browserPanelNotifyOff" : "browserPanelNotifyOn")}</button>
             {activityList()}
+            {target && <details className="browser-activity"><summary>{catalogWord("botBrowser","audit")}</summary>
+              {auditError ? <p role="alert">{describe(auditError,"browserPanelReadFailed")}</p> : audit.length ? <ol>{audit.map((row,i)=><li key={row.at+":"+i}><span className="browser-activity-words"><b>{OP_WORD[row.op]?nextWord(OP_WORD[row.op]):row.op}</b><span>{row.site || address(row.url).host}</span><time>{new Date(row.at*1000).toLocaleTimeString()}</time></span></li>)}</ol> : <p>{catalogWord("botBrowser","auditEmpty")}</p>}
+            </details>}
           </div>
-          {actError ? <div className="screen-note err" role="alert">{said(actError, "browserPanelActFailed")}</div> : null}
+          {actError ? <div className="screen-note err" role="alert">{describe(actError, "browserPanelActFailed")}</div> : null}
         </div>
       )}
     </section>
@@ -410,13 +437,13 @@ export function BrowserPanel({ row, open, onClose }: { row: SessionRow | null; o
  * agent waits until they hand it back (POST /v1/browser/open; through Cloud,
  * chrome-tab-open).
  */
-function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: string; assistant: string; onOpened: (phone: boolean) => void }) {
+function BrowserOpenCard({ conversation, assistant, onOpened, call = defaultCall, writable = true, reason = "", describe = said }: { conversation: string; assistant: string; onOpened: (phone: boolean) => void; call?: BrowserCall; writable?: boolean; reason?: string; describe?: (error: unknown, lead: "browserPanelReadFailed" | "browserPanelActFailed") => string }) {
   const [text, setText] = useState("")
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState("")
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (opening) return
+    if (opening || !writable) return
     const url = webAddress(text)
     if (!url) { setError(nextWord("browserOpenBadAddress")); return }
     setOpening(true); setError("")
@@ -425,7 +452,7 @@ function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: 
       await call("POST", "/v1/browser/open", phone ? { conversation, url, layout: "mobile" } : { conversation, url })
       onOpened(phone)
     } catch (e) {
-      setError(nextWord("browserOpenFailed", { reason: L.failureSentence(e, { fallback: (e as Error)?.message || "" }) }))
+      setError(describe(e, "browserPanelActFailed"))
     } finally {
       setOpening(false)
     }
@@ -438,13 +465,13 @@ function BrowserOpenCard({ conversation, assistant, onOpened }: { conversation: 
         <label className="browser-card-label" htmlFor="browser-open-url">{nextWord("browserOpenLabel")}</label>
         <input id="browser-open-url" className="browser-card-input" type="text" inputMode="url" enterKeyHint="go"
           autoCapitalize="off" autoCorrect="off" autoComplete="url" spellCheck={false}
-          placeholder={nextWord("browserOpenPlaceholder")} value={text} disabled={opening}
+          placeholder={nextWord("browserOpenPlaceholder")} value={text} disabled={!writable || opening}
           aria-invalid={error ? true : undefined} aria-describedby={error ? "browser-open-error" : undefined}
           onChange={(e) => { setText(e.target.value); if (error) setError("") }} />
-        <button type="submit" className="browser-card-primary" disabled={opening || !text.trim()}>{nextWord(opening ? "browserOpenOpening" : "browserOpenSubmit")}</button>
+        <button type="submit" className="browser-card-primary" disabled={!writable || opening || !text.trim()}>{nextWord(opening ? "browserOpenOpening" : "browserOpenSubmit")}</button>
         {error ? <p id="browser-open-error" className="browser-card-error" role="alert">{error}</p> : null}
       </form>
-      <p className="browser-card-hint">{nextWord("browserOpenNote", { assistant })}</p>
+      <p className="browser-card-hint">{reason || nextWord("browserOpenNote", { assistant })}</p>
     </div>
   )
 }
@@ -502,7 +529,7 @@ export function useBrowserTab(row: SessionRow | null, hidden: boolean): boolean 
     let alive = true
     const read = () => {
       if (document.hidden) return
-      call<Status>("GET", "/v1/browser/status?conversation=" + encodeURIComponent(conversation)).then(
+      defaultCall<Status>("GET", "/v1/browser/status?conversation=" + encodeURIComponent(conversation)).then(
         (s) => { if (alive) setHas(!!s.status?.connected && s.status.tabs.some((t) => t.conversation === conversation)) },
         () => { if (alive) setHas(false) },
       )

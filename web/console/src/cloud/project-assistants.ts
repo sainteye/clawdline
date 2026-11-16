@@ -18,6 +18,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
 export const PROJECT_ASSISTANTS_INPUTS_API_LEVEL = 70
@@ -86,6 +87,41 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.transport = transport; this.currentGrant = currentGrant
   }
   revoke() { this.lifetime.abort() }
+  get browserRemote() { return this.grant.accountKey !== "local" }
+  browserUnavailable(): string {
+    try { this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_BROWSER_API_LEVEL); return "" }
+    catch (error) { return sourceFailure(error) ? error.error.code : "pa_offline" }
+  }
+  async browser<T>(key: W.ProjectAssistantBotKey, conversation: string, method: "GET" | "POST", path: string, body: unknown, signal: AbortSignal): Promise<T> {
+    const minimum = PROJECT_ASSISTANTS_BROWSER_API_LEVEL, write = method === "POST"
+    const url = new URL(path,"http://source.invalid")
+    let fields: Record<string,unknown>
+    try {
+      this.key(key)
+      if (!key.bot_id || !conversation || url.origin !== "http://source.invalid") throw failure("pa_invalid")
+      this.check(signal,write,true,minimum)
+      fields = write ? {...body as Record<string,unknown>} : Object.fromEntries(url.searchParams)
+      // Target fields are owned here, and never accepted from panel arguments.
+      if (["bot_id","owner","machine_id"].some(field => field in fields)) throw failure("pa_invalid")
+      fields = {...fields,bot_id:key.bot_id,conversation}
+      if (!write) { url.search=""; for(const [k,v] of Object.entries(fields))url.searchParams.set(k,String(v)) }
+      browserRelayRequest(url,method,write?fields:undefined,write?"validation":"")
+    } catch(error) { throw notSent(error) }
+    const control=new AbortController(),abort=()=>control.abort()
+    signal.addEventListener("abort",abort,{once:true});this.lifetime.signal.addEventListener("abort",abort,{once:true})
+    try {
+      const response=await this.transport(url.pathname+url.search,{method,signal:control.signal,cache:"no-store",...(write?{headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(fields)}:{})})
+      this.recheck(signal,write,true,minimum,response)
+      const answer=await response.json()
+      this.recheck(signal,write,true,minimum,answer)
+      const raw=answer?.error, code=typeof raw==="string"?raw:raw?.code
+      if(!response.ok||code) {
+        const error=Object.assign(new Error(typeof answer?.detail==="string"?answer.detail:code??"browser_unavailable"),{code:code??"browser_unavailable",response:answer})
+        throw error
+      }
+      return answer as T
+    } finally { signal.removeEventListener("abort",abort);this.lifetime.signal.removeEventListener("abort",abort) }
+  }
   current(): boolean { try {this.check(new AbortController().signal,false,false);return true} catch {return false} }
   private check(signal: AbortSignal, write: boolean, content: boolean, minimum = PROJECT_ASSISTANTS_API_LEVEL) {
     const live = this.currentGrant()
@@ -327,9 +363,34 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
 }
 
+/** Exact browser vocabulary; neither client authority nor an owner crosses this boundary. */
+function browserRelayRequest(url: URL, method: string, body?: Record<string,unknown>, id = "") {
+  const routes: Record<string,{method:string;word:string;fields:string[];required:string[]}> = {
+    status:{method:"GET",word:"chrome-tab-status",fields:[],required:[]},
+    activity:{method:"GET",word:"chrome-tab-activity",fields:[],required:[]},
+    audit:{method:"GET",word:"chrome-audit",fields:["limit","site","since"],required:["limit"]},
+    screenshot:{method:"GET",word:"chrome-tab-screenshot",fields:["tab","browser_mode","quality"],required:["tab"]},
+    control:{method:"POST",word:"chrome-tab-control",fields:["tab","browser_mode","person"],required:["tab","person"]},
+    person:{method:"POST",word:"chrome-tab-input",fields:["op","tab","browser_mode","args"],required:["op","tab","args"]},
+    open:{method:"POST",word:"chrome-tab-open",fields:["url","layout"],required:["url"]},
+    mute:{method:"POST",word:"chrome-tab-mute",fields:["muted"],required:["muted"]},
+  }
+  const route=routes[url.pathname.replace(/^\/v1\/browser\//,"")]
+  const fields:Record<string,unknown>=body?{...body}:Object.fromEntries(url.searchParams)
+  if(!route||route.method!==method||!fields.bot_id||typeof fields.bot_id!=="string"||!fields.conversation||typeof fields.conversation!=="string"||
+    route.required.some(k=>!(k in fields))||Object.keys(fields).some(k=>!["bot_id","conversation",...route.fields].includes(k))||(!body&&url.searchParams.size!==Object.keys(fields).length)||
+    (method==="POST"&&(!body||!id||url.search))||(method==="GET"&&body))throw failure("pa_invalid")
+  // Screenshot query fields stay strings in Cloud's existing vocabulary.
+  for(const key of (route.word==="chrome-tab-screenshot"?[]:["tab","limit","since"]))if(key in fields) {
+    const value=Number(fields[key]);if(!Number.isSafeInteger(value)||value<0)throw failure("pa_invalid");fields[key]=value
+  }
+  return {word:route.word,kind:method==="GET"?"read" as const:"action" as const,fields,id:method==="GET"?"":id}
+}
+
 /** Route metadata used by the captured encrypted transport; never a second UI model. */
 export function assistantRelayRequest(input: string, init?: RequestInit) {
   const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
+  if(url.pathname.startsWith("/v1/browser/"))return browserRelayRequest(url,method,init?.body?JSON.parse(String(init.body)):undefined,new Headers(init?.headers).get("Idempotency-Key")??"")
   if (url.pathname === base+"/roster-events") throw failure("pa_unsupported")
   if (url.pathname === "/v1/projects" && method === "GET") return {word:"projects",kind:"read" as const,fields:{},id:""}
   if (url.pathname === "/v1/project-assistant-targets" && method === "GET") {
