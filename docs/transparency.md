@@ -585,3 +585,9 @@ The conditional `persistent-bot-routines` entry records a new timer-triggered pr
 ## Native Bot protocol volume and diagnostic boundaries
 
 The ACP reader, ordered notification queue, write path and text capture no longer impose local notification-count or one-mebibyte transport ceilings. They follow the referenced Codync transport behavior while retaining prompt/load ordering, cancellation, source fencing and unknown-effect receipts. Native output-stop reasons remain distinct from local pressure. The runtime keeps a typed capacity boundary when one is available, without copying raw provider errors, changing model instructions or turning uncertainty into permission to replay. The persistent Bot context, input and routine explanations in both languages were reviewed and remain accurate; these changes affect protocol delivery and diagnostics, not the instructions they describe. The refreshed source receipts are not website deployment acceptance.
+
+The default-off tool-library suggestion switch adds conditional guidance to new
+Session and child executions. Its own card explains local search of recommended
+and saved sources, the explicit proposal and agreement boundary, and unchanged
+existing/resumed conversations. It grants no tool installation, API spending or
+workflow authority. The CLI search reads metadata only.

@@ -43,7 +43,7 @@ func TestToolLibraryBrowserFixture(t *testing.T) {
 			default:
 				close(done)
 			}
-		case strings.HasPrefix(r.URL.Path, "/v1/tool-library") || strings.HasSuffix(r.URL.Path, "/send"):
+		case r.URL.Path == "/v1/settings/integrations" || strings.HasPrefix(r.URL.Path, "/v1/tool-library") || strings.HasSuffix(r.URL.Path, "/send"):
 			r.Header.Set("Authorization", "Bearer "+f.local)
 			h.ServeHTTP(w, r)
 		case r.URL.Path == "/v1/strings":

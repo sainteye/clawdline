@@ -3309,6 +3309,10 @@ type IntegrationSettingsRequest struct {
 	// Machine-wide image review opt-in; omitted by older daemons and off by default.
 	SpaceSavingImages bool `json:"space_saving_images,omitempty"`
 
+	// Suggest tools for substantial tasks in new executions; off by default. Usage
+	// requires the person to agree.
+	ToolLibrarySuggestionsEnabled bool `json:"tool_library_suggestions_enabled,omitempty"`
+
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile       string `json:"workflow_profile,omitempty"`
 	WorkflowSkillsEnabled bool   `json:"workflow_skills_enabled,omitempty"`
@@ -3320,6 +3324,10 @@ type IntegrationSettingsSnapshot struct {
 
 	// Machine-wide image review opt-in; omitted by older daemons and off by default.
 	SpaceSavingImages bool `json:"space_saving_images,omitempty"`
+
+	// Suggest tools for substantial tasks in new executions; off by default. Usage
+	// requires the person to agree.
+	ToolLibrarySuggestionsEnabled bool `json:"tool_library_suggestions_enabled,omitempty"`
 
 	// Machine-wide main workflow; omitted by older daemons.
 	WorkflowProfile string `json:"workflow_profile,omitempty"`
@@ -8402,7 +8410,8 @@ type SettingsRequest struct {
 	TailscaleHostname *string `json:"tailscale_hostname"`
 
 	// `auto`, `iterm`, `iterm_native` or `tmux`.
-	Terminal *string `json:"terminal"`
+	Terminal                      *string `json:"terminal"`
+	ToolLibrarySuggestionsEnabled *bool   `json:"tool_library_suggestions_enabled"`
 
 	// true or false.
 	UpdateAutoApply *bool `json:"update_auto_apply"`
@@ -8680,7 +8689,8 @@ type SettingsSnapshot struct {
 	// installed, `auto` and `iterm` run the session in tmux and show it in an iTerm2
 	// tab; `iterm_native` runs it in the tab itself. Not the same question as
 	// scope_app.
-	Terminal *string `json:"terminal"`
+	Terminal                      *string `json:"terminal"`
+	ToolLibrarySuggestionsEnabled *bool   `json:"tool_library_suggestions_enabled"`
 
 	// Whether this machine installs a newer stable release by itself when no session
 	// it started is busy (docs/updates.md). Only a release install acts on it. Null or

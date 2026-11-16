@@ -519,6 +519,14 @@ POST `/v1/tool-library/prepare` 接受
 `unknown_project`、`unknown_skill`、`invalid_task`、`stale_session` 與既有收據／執行身分錯誤。
 缺少安裝、載入或採用收據時維持未知。完整契約見 `docs/tool-library.md`。
 
+`clawdline toolbox search [關鍵字]` 只讀取這台機器的推薦與收藏，不抓取上游或安裝工具。
+省略關鍵字可瀏覽全部；多個關鍵字採任一符合，搜尋中英文名稱、摘要與 Skill 用途。
+讀取失敗不算空工具庫。設定 → 工作流程與工具庫共用 `tool_library_suggestions_enabled`，
+預設關閉，透過 `/v1/settings/integrations` 讀寫。開啟後，新 Session 與 child 會收到指引：
+大任務前先搜尋，說明合適工具，再用 answer 便條詢問是否想試用。收到使用者送出的同意後
+才使用該工具。既有對話與恢復的 Session 保留原本指令；開啟不代表安裝、載入或授權工具
+及付費 API。
+
 ## 2a. Feature Root 的一般流程
 
 一般的 Feature Root——負責一張看板項目的 Session——要執行的就是下面這些，依序。每一步都是指令：指令

@@ -12458,5 +12458,13 @@
   "capacityRow.bots.carry_messages.what": "每次 Bot 開新執行時交接的近期主聊天訊息，最多 12 則，逐則核對來源。",
   "capacityRow.bots.carry_messages.full": "較早訊息不放進摘錄；不會刪除聊天，也不代表可以重試未完成的工作。",
   "capacityRow.bots.carry_quote_bytes.what": "Bot 開新執行時，每則歷史聊天引用的 UTF-8 摘錄上限為 2,000 位元組。",
-  "capacityRow.bots.carry_quote_bytes.full": "過長原句會在完整字元邊界截短並標示截短；不得猜測省略的內容。"
+  "capacityRow.bots.carry_quote_bytes.full": "過長原句會在完整字元邊界截短並標示截短；不得猜測省略的內容。",
+  "integrationSettings.tool_library_suggestions_enabledTitle": "大任務時主動推薦工具",
+  "integrationSettings.tool_library_suggestions_enabledDescription": "執行大任務前，讓 Agent 搜尋推薦與收藏的工具，說明合適工具的用途，並詢問你是否想試用。同意後才會使用。",
+  "integrationSettings.tool_library_suggestions_enabledScope": "預設關閉。設定與工具箱共用這台機器的同一個開關，套用到之後新開的 Session 與子任務；既有對話與恢復的 Session 保留原本載入的設定。",
+  "transparency.card.tool-library-suggestions.title": "大任務時主動推薦工具（選用）",
+  "transparency.card.tool-library-suggestions.summary": "預設關閉。大任務前搜尋這台機器的工具箱，找到合適工具後先詢問是否試用。",
+  "transparency.card.tool-library-suggestions.condition": "新 Session 或子任務開始時，這台機器的工具推薦開關已開啟。",
+  "transparency.card.tool-library-suggestions.how": "指引 Agent 用 clawdline toolbox search 搜尋推薦與收藏，依任務判斷用途，說明合適工具，再依既有 answer 便條流程詢問。使用者送出同意後，Agent 才能安裝、載入、啟用或使用該工具。例行小任務不用搜尋；沒有合適工具或同一任務已拒絕時不打斷工作。",
+  "transparency.card.tool-library-suggestions.effect": "新執行獨立讀取此設定，保留繼承的工作流程。既有對話與恢復的 Session 維持原本脈絡。關閉不新增指引，也保留原本關閉狀態的快照。開關不授予權限或付費 API 核准；送達指令不代表 Agent 已搜尋或遵循。"
 }

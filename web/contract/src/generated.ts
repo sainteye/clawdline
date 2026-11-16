@@ -3828,6 +3828,12 @@ export interface IntegrationSettingsRequest {
   space_saving_images?: boolean
 
   /**
+   * Suggest tools for substantial tasks in new executions; off by default. Usage
+   * requires the person to agree.
+   */
+  tool_library_suggestions_enabled?: boolean
+
+  /**
    * Machine-wide main workflow; omitted by older daemons.
    */
   workflow_profile?: string
@@ -3844,6 +3850,12 @@ export interface IntegrationSettingsSnapshot {
    * Machine-wide image review opt-in; omitted by older daemons and off by default.
    */
   space_saving_images?: boolean
+
+  /**
+   * Suggest tools for substantial tasks in new executions; off by default. Usage
+   * requires the person to agree.
+   */
+  tool_library_suggestions_enabled?: boolean
 
   /**
    * Machine-wide main workflow; omitted by older daemons.
@@ -9957,6 +9969,7 @@ export interface SettingsRequest {
    * `auto`, `iterm`, `iterm_native` or `tmux`.
    */
   terminal: string | null
+  tool_library_suggestions_enabled: boolean | null
 
   /**
    * true or false.
@@ -10382,6 +10395,7 @@ export interface SettingsSnapshot {
    * scope_app.
    */
   terminal: string | null
+  tool_library_suggestions_enabled: boolean | null
 
   /**
    * Whether this machine installs a newer stable release by itself when no session
