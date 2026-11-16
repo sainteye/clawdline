@@ -24,7 +24,10 @@ export function mergeRoster(pages: readonly (readonly W.ProjectAssistantBotSumma
 }
 
 export interface ReadingPosition { top: number; following: boolean }
-/** One unresolved effect per account/Bot, owned by the existing host lifetime. Never replayed. */
+/**
+ * One unresolved effect per account/Bot, owned by the existing host lifetime. Never replayed.
+ * A send's open request belongs to this lifetime too, so leaving its Chat keeps its receipt.
+ */
 export interface HeldOutcome {
   intent: W.ProjectAssistantSendRequest | W.ProjectAssistantPermissionAnswerRequest; receipt: W.ProjectAssistantReceipt | null
   /** Pictures this send carried. Their data is never stored, so after a reload only the count remains. */
@@ -153,7 +156,47 @@ export class HeldOutcomes {
     if (j.aside.length !== before) this.save(key, j)
   }
   dismissUnreadable(key: string) { const j = this.load(key); if (j.unreadable) { j.unreadable = false; this.save(key, j) } }
+  /**
+   * Records one send's own answer by its command identity. A newer held send
+   * in the box is never replaced, and a send set aside keeps its place: its
+   * answer updates or settles only that entry. Returns where the send was.
+   */
+  /** The held send with this command identity, in the box or set aside. */
+  find(key: string, idempotencyKey: string) {
+    const j = this.load(key)
+    return j.active?.intent.command.idempotency_key === idempotencyKey ? j.active : j.aside.find(o => o.intent.command.idempotency_key === idempotencyKey)
+  }
+  settle(key: string, idempotencyKey: string, outcome: HeldOutcome | null): "active" | "aside" | "none" {
+    const j = this.load(key)
+    if (j.active?.intent.command.idempotency_key === idempotencyKey) { j.active = outcome; this.save(key, j); return "active" }
+    const at = j.aside.findIndex(o => o.intent.command.idempotency_key === idempotencyKey)
+    if (at < 0) return "none"
+    j.aside = outcome ? j.aside.map((o, n) => n === at ? outcome : o) : j.aside.filter((_, n) => n !== at)
+    this.save(key, j); return "aside"
+  }
+  // Sends whose request this page still has open. Memory only: a reload loses
+  // the request, so its journaled send stays genuinely unknown.
+  private readonly transports = new Map<string, Set<string>>()
+  private readonly listeners = new Map<string, Set<(landed: SendLanded) => void>>()
+  /** The send's bytes may cross now; its answer will land here, whichever Chat is mounted. */
+  beginTransport(key: string, idempotencyKey: string) {
+    const open = this.transports.get(key) ?? new Set<string>(); open.add(idempotencyKey); this.transports.set(key, open)
+  }
+  transporting(key: string, idempotencyKey: string) { return !!this.transports.get(key)?.has(idempotencyKey) }
+  /** The request ended, answered or not; every Chat watching this Bot is told once. */
+  endTransport(key: string, idempotencyKey: string, receipt: W.ProjectAssistantReceipt | null) {
+    const open = this.transports.get(key)
+    if (!open?.delete(idempotencyKey)) return
+    if (!open.size) this.transports.delete(key)
+    for (const listen of [...this.listeners.get(key) ?? []]) listen({ idempotency_key: idempotencyKey, receipt })
+  }
+  subscribe(key: string, listen: (landed: SendLanded) => void) {
+    const set = this.listeners.get(key) ?? new Set(); set.add(listen); this.listeners.set(key, set)
+    return () => { set.delete(listen); if (!set.size && this.listeners.get(key) === set) this.listeners.delete(key) }
+  }
 }
+/** One send's request ended; its outcome is already in the journal. */
+export interface SendLanded { idempotency_key: string; receipt: W.ProjectAssistantReceipt | null }
 /**
  * What one explicit read of the source's durable receipts says about a held
  * send. `delivered`: the source admitted exactly this command and its turn is

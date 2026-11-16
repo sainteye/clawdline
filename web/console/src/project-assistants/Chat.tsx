@@ -61,13 +61,16 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
   // A held send read back after a reload shows its own text and quote, locked, whatever the draft store says.
   const heldAtMount=useRef(view.heldOutcomes.get(draftKey)).current,heldSendAtMount=heldAtMount?.intent.command.operation==="send"?heldAtMount.intent as W.ProjectAssistantSendRequest:null
+  // A send this page still has a request open for, from a Chat that was left: shown as sending until its own answer lands.
+  const awaiting=useRef(heldSendAtMount&&view.heldOutcomes.transporting(draftKey,heldSendAtMount.command.idempotency_key)?heldSendAtMount:null),inFlightAtMount=awaiting.current
   // Capture the entry draft before any asynchronous source read or composer edit.
   const entryDraft=useRef({text:view.draft(draftKey),quote:view.quotes.get(draftKey)??""}).current
   const entryChecked=useRef(false),entryUnknown=useRef(false)
   const legacyAtMount=useRef(view.unverifiedDrafts.active(draftKey,scope)).current
-  const [text,setText]=useState(()=>heldSendAtMount?heldSendAtMount.text:legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(heldSendAtMount?heldSendAtMount.quote_message_id:legacyAtMount?.quote??entryDraft.quote)
-  const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(false),[sending,setSending]=useState<string|null>(null)
-  const [unknown,setUnknown]=useState(()=>view.heldOutcomes.has(draftKey)||view.heldOutcomes.problem(draftKey)==="unreadable"),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
+  const lockedAtMount=inFlightAtMount?null:heldSendAtMount
+  const [text,setText]=useState(()=>lockedAtMount?lockedAtMount.text:legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(lockedAtMount?lockedAtMount.quote_message_id:legacyAtMount?.quote??entryDraft.quote)
+  const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>(inFlightAtMount?.text??null)
+  const [unknown,setUnknown]=useState(()=>(view.heldOutcomes.has(draftKey)&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [routines,setRoutines]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
@@ -207,6 +210,27 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show)
     return()=>{alive.current=false;uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
+  // A send made by a Chat that was left lands in the host journal by its own
+  // command identity; this Chat shows that outcome once and never resends.
+  const refreshRef=useRef(refresh);refreshRef.current=refresh
+  useEffect(()=>{
+    const landed=(id:string,answer:W.ProjectAssistantReceipt|null)=>{
+      const was=awaiting.current
+      if(!alive.current||!was||was.command.idempotency_key!==id)return
+      awaiting.current=null
+      const held=view.heldOutcomes.get(draftKey)
+      // The left Chat already put an unsettled or failed message back in an empty box; a delivered one leaves the box as the person has it.
+      setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"")
+      setReceipt(held?.receipt??answer);setUnknown(view.heldOutcomes.has(draftKey))
+      setBusy(false);setSending(null);repaintJournal()
+      if(valid())void refreshRef.current(true)
+    }
+    const stop=view.heldOutcomes.subscribe(draftKey,n=>{if(alive.current)repaintJournal();landed(n.idempotency_key,n.receipt)})
+    // It may have landed between this Chat's first render and this subscription.
+    const was=awaiting.current
+    if(was&&!view.heldOutcomes.transporting(draftKey,was.command.idempotency_key))landed(was.command.idempotency_key,null)
+    return stop
+  },[view,draftKey,valid])
 
   useLayoutEffect(()=>{
     const el=scroll.current;if(!el||!data)return
@@ -278,8 +302,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const send=async()=>{
     if(busy||unknown||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
     const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
+    const id=intent.command.idempotency_key
     let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setInspection(null)
     const hold=(receipt:W.ProjectAssistantReceipt|null):HeldOutcome=>({intent,receipt,...(pictures.length?{pictures:pictures.length}:{}),...(selected.length?{files:selected.map(f=>f.file.name)}:{})})
+    // This send's own answer changes only its own journal entry: never a newer
+    // held send, and a send set aside stays aside. Then any Chat showing this
+    // Bot, including one opened after this one was left, is told once.
+    const land=(outcome:HeldOutcome|null)=>{
+      const owner=view.heldOutcomes.settle(draftKey,id,outcome)
+      view.heldOutcomes.endTransport(draftKey,id,answered?.receipt??outcome?.receipt??null);repaintJournal()
+      return owner
+    }
     // The message leaves the box at once and shows above as sending, as in a
     // messaging app. A send that failed outright gives it back to the box.
     const quoted=quote
@@ -306,30 +339,32 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         // uncertain send is held.
         if(view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
         // Journaled before the transport, so a full reload still holds it.
-        attempted=true;view.heldOutcomes.set(draftKey,hold(null));repaintJournal()
-        answered=await source.send(intent,s)
+        attempted=true;view.heldOutcomes.set(draftKey,hold(null));view.heldOutcomes.beginTransport(draftKey,id);repaintJournal()
+        // Once bytes may cross, leaving this Chat no longer drops the request:
+        // the host journal outlives the Chat and takes the receipt. Authority
+        // changes while the Chat is shown still cancel it, and the source
+        // client itself turns a later revocation into outcome unknown.
+        const effect=new AbortController(),follow=()=>{if(alive.current)effect.abort()}
+        if(s.aborted)follow();else s.addEventListener("abort",follow,{once:true})
+        try{answered=await source.send(intent,effect.signal)}finally{s.removeEventListener("abort",follow)}
         return answered
       })
-      if(result.receipt.state==="unknown")view.heldOutcomes.set(draftKey,hold(result.receipt))
-      else view.heldOutcomes.delete(draftKey)
-      repaintJournal()
-      if(result.receipt.state==="unknown"||result.receipt.state==="failed")restore()
+      const owner=land(result.receipt.state==="unknown"?hold(result.receipt):null)
+      if((result.receipt.state==="unknown"||result.receipt.state==="failed")&&owner==="active")restore()
       if(!valid()||recovery.current)return
-      setReceipt(result.receipt);setUnknown(result.receipt.state==="unknown")
+      setReceipt(result.receipt);setUnknown(view.heldOutcomes.has(draftKey))
       if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed"){setFiles([]);rememberFiles(false);flush()}
       await refresh()
     }catch(e){
       // The source's own receipt outlives a later authority or abort check.
       const kept=answered as W.ProjectAssistantReceiptResponse|null
-      if(kept&&kept.receipt.state!=="unknown"&&kept.receipt.state!=="failed"){view.heldOutcomes.delete(draftKey);rememberFiles(false);view.flush(draftKey);if(valid()){setReceipt(kept.receipt);setUnknown(false);setFiles([]);setError("")}return}
+      if(kept&&kept.receipt.state!=="unknown"&&kept.receipt.state!=="failed"){if(land(null)==="active"){rememberFiles(false);view.flush(draftKey)}if(valid()){setReceipt(kept.receipt);setUnknown(view.heldOutcomes.has(draftKey));setFiles([]);setError("")}return}
       // Only a refusal that provably sent nothing releases the hold; anything
       // that may have crossed the transport stays unknown and is never resent.
       const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
-      if(attempted&&!unresolved)view.heldOutcomes.delete(draftKey)
-      else if(unresolved&&kept)view.heldOutcomes.set(draftKey,hold(kept.receipt))
-      repaintJournal()
-      restore()
-      if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(unresolved||view.heldOutcomes.has(draftKey))}
+      const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
+      if(!attempted||owner==="active")restore()
+      if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(view.heldOutcomes.has(draftKey))}
     }finally{if(valid()){setBusy(false);setSending(null)}}
   }
 

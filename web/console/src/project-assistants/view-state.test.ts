@@ -250,3 +250,41 @@ test("legacy plain draft retention does not borrow the send-size bound",()=>{
   assert.equal(restored.unverifiedDrafts.writeNew(own,scope),true)
   assert.equal(createViewState(store).unverifiedDrafts.history(own,scope)[0]?.text,text)
 })
+test("a send's late answer settles only its own entry and reaches a Chat opened after the sender left",()=>{
+  const disk=new Map<string,string>(),store={getItem:(k:string)=>disk.get(k)??null,setItem:(k:string,v:string)=>{disk.set(k,v)},removeItem:(k:string)=>{disk.delete(k)}}
+  const view=createViewState(store),own=draftIdentity("account",key)
+  const send=(id:string,text:string):W.ProjectAssistantSendRequest=>({command:{key,operation:"send",idempotency_key:id,content_hash:""},fence,text,quote_message_id:""})
+  const unknown=(id:string)=>({id,command:{key,operation:"send",idempotency_key:id,content_hash:""},state:"unknown"}) as unknown as W.ProjectAssistantReceipt
+  view.heldOutcomes.set(own,{intent:send("old","first"),receipt:null});view.heldOutcomes.beginTransport(own,"old")
+  const heard:string[]=[];const stop=view.heldOutcomes.subscribe(own,n=>heard.push(n.idempotency_key+":"+(n.receipt?.state??"none")))
+  // A full reload is a new page: the journal comes back without the request, so it stays genuinely unknown.
+  const reloaded=createViewState(store)
+  assert.equal(reloaded.heldOutcomes.get(own)?.intent.command.idempotency_key,"old")
+  assert.equal(reloaded.heldOutcomes.transporting(own,"old"),false)
+  assert.equal(view.heldOutcomes.transporting(own,"old"),true)
+  assert.equal(view.heldOutcomes.transporting(draftIdentity("other",key),"old"),false)
+  // The person set the old send aside and a newer one is held in the box, with a new draft and quote.
+  assert.equal(view.heldOutcomes.setAside(own),true)
+  view.heldOutcomes.set(own,{intent:send("new","second"),receipt:null});view.stage(own,"new draft");view.quotes.set(own,"new-quote")
+  // A late unknown answer for the old send updates it where it is.
+  assert.equal(view.heldOutcomes.settle(own,"old",{intent:send("old","first"),receipt:unknown("old")}),"aside")
+  assert.equal(view.heldOutcomes.get(own)?.intent.command.idempotency_key,"new")
+  assert.equal(view.heldOutcomes.aside(own)[0].receipt?.state,"unknown")
+  // Its accepted answer removes only that aside entry.
+  assert.equal(view.heldOutcomes.settle(own,"old",null),"aside")
+  view.heldOutcomes.endTransport(own,"old",null)
+  assert.equal(view.heldOutcomes.get(own)?.intent.command.idempotency_key,"new")
+  assert.equal(view.heldOutcomes.aside(own).length,0)
+  assert.equal(view.draft(own),"new draft");assert.equal(view.quotes.get(own),"new-quote")
+  assert.deepEqual(heard,["old:none"])
+  // Ending twice, or a request that was never opened, tells nobody again.
+  view.heldOutcomes.endTransport(own,"old",null);view.heldOutcomes.endTransport(own,"never",null)
+  assert.deepEqual(heard,["old:none"])
+  assert.equal(view.heldOutcomes.settle(own,"never",null),"none")
+  // The newer held send settles by its own identity, and the journal on disk agrees.
+  view.heldOutcomes.beginTransport(own,"new");assert.equal(view.heldOutcomes.settle(own,"new",null),"active");view.heldOutcomes.endTransport(own,"new",unknown("new"))
+  assert.deepEqual(heard,["old:none","new:unknown"])
+  assert.equal(createViewState(store).heldOutcomes.has(own),false)
+  stop();view.heldOutcomes.beginTransport(own,"later");view.heldOutcomes.endTransport(own,"later",null)
+  assert.equal(heard.length,2)
+})
