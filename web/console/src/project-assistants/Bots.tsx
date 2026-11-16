@@ -9,6 +9,7 @@ import { sourceHealth } from "./source-status"
 import { HiddenBots } from "./HiddenBots"
 import { Chat, EventRefreshMs } from "./Chat"
 import { followLiveRoster } from "./live-roster"
+import { readSnapshotRoster, serialSnapshotRefresh, followSnapshotRoster } from "./snapshot-roster"
 import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type ViewState } from "./view-state"
 import { words } from "./words"
 import { shownSourceError } from "./source-errors"
@@ -28,7 +29,7 @@ export interface BotsProps {
   manageHistory?:boolean
   onSelectionChange?:(key:W.ProjectAssistantBotKey|null)=>void
 }
-interface SourcePage {revision:string;query:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string}
+interface SourcePage {revision:string;query:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;loadedPages?:number}
 export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,manageHistory=false,onSelectionChange}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
@@ -42,7 +43,8 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const view=useMemo(()=>{if(viewState)return viewState;try{return createViewState(window.localStorage)}catch{return createViewState()}},[viewState,namespace])
   const historyID=useRef(typeof crypto!=="undefined"?crypto.randomUUID():"")
   const lastSelected=useRef<string|null>(null)
-  const controller=useRef<AbortController|null>(null),request=useRef(0)
+  const loader=useRef<(append?:boolean)=>Promise<void>>(async()=>{})
+  const deniedSnapshots=useRef(new Set<SourceClient>())
   const pagesRef=useRef(pages);pagesRef.current=pages
   const allItems=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
   const matching=allItems.filter(i=>i.bot.name.toLowerCase().includes(query.toLowerCase()))
@@ -56,26 +58,39 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const machineNames=new Map(sources.map(s=>[s.machineID,s.machineName??""] as [string,string]))
   const withoutBots=Object.entries(pages).filter(([id,p])=>p.error&&!shownSourceError(p.error)&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id])=>id)
   const health=sourceHealth(statuses,machineNames,withoutBots,w as unknown as Record<string,string>)
-  const load=useCallback(async(append=false)=>{
-    if(!append){controller.current?.abort();controller.current=new AbortController()}
-    const control=controller.current??new AbortController(),id=++request.current
-    setLoading(true)
+  const load=useCallback((append=false)=>loader.current(append),[])
+  useEffect(()=>{
+    const control=new AbortController()
+    deniedSnapshots.current.clear()
+    loader.current=serialSnapshotRefresh(async append=>{
+    if(append||!Object.values(pagesRef.current).some(p=>p.query===query))setLoading(true)
     await Promise.all(current().map(async source=>{
       if(source.canRoster?.()&&source.subscribeRoster)return
+      if(deniedSnapshots.current.has(source))return
       const previous=pagesRef.current[source.machineID],cursor=append&&previous?.revision===source.authorizationRevision&&previous.query===query?previous.cursor:""
       if(append&&!cursor)return
       try {
-        const [status,response]=await authorized(source,current,s=>Promise.all([source.status(s),source.list({machine_id:source.machineID,cursor,query,page_size:100},s)]),control.signal)
-        if(control.signal.aborted||id!==request.current)return
+        const coverage=previous?.revision===source.authorizationRevision&&previous.query===query?previous.loadedPages??1:1
+        const response=append?await authorized(source,current,async s=>{const status=await source.status(s);const page=await source.list({machine_id:source.machineID,cursor,query,page_size:100},s);return {status,items:page.items,cursor:page.next_cursor,loadedPages:coverage+1}},control.signal):await readSnapshotRoster(source,current,query,coverage,control.signal)
+        const {status}=response
+        if(control.signal.aborted)return
         const own=status.sources.find(s=>s.machine_id===source.machineID)
         const rows=response.items.filter(i=>i.bot.key.machine_id===source.machineID&&canRead(i.source)).map(i=>own?{...i,source:own}:i)
-        setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,items:append&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query?mergeRoster([old[source.machineID].items,rows]):rows,cursor:response.next_cursor,statuses:status.sources.filter(s=>s.machine_id===source.machineID),error:""}}))
-      }catch(e){if(!control.signal.aborted&&id===request.current)setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,items:old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID].items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):[],cursor:old[source.machineID]?.query===query?old[source.machineID]?.cursor??"":"",statuses:old[source.machineID]?.statuses??[],error:errorCode(e)}}))}
+        setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,items:append&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query?mergeRoster([old[source.machineID].items,rows]):rows,cursor:response.cursor,loadedPages:response.loadedPages,statuses:status.sources.filter(s=>s.machine_id===source.machineID),error:""}}))
+      }catch(e){if(!control.signal.aborted){const code=errorCode(e),denied=["pa_revoked","pa_scope_denied","pa_unpaired"].includes(code);if(denied)deniedSnapshots.current.add(source);setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,items:!denied&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query?old[source.machineID].items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):[],cursor:!denied&&old[source.machineID]?.query===query?old[source.machineID]?.cursor??"":"",loadedPages:old[source.machineID]?.loadedPages,statuses:old[source.machineID]?.statuses.map(s=>({...s,fresh:false,writable:false}))??[],error:code}}))}}
     }))
-    if(!control.signal.aborted&&id===request.current)setLoading(false)
+    if(!control.signal.aborted)setLoading(false)
+    },control.signal)
+    if(selected||current().every(s=>s.canRoster?.()&&s.subscribeRoster))void load()
+    return()=>control.abort()
   },[authorization,query,current])
-  useEffect(()=>{setSelected(null);setPages({});setMachine("");return()=>controller.current?.abort()},[authorization])
-  useEffect(()=>{void load();return()=>controller.current?.abort()},[query,authorization])
+  useEffect(()=>{setSelected(null);setPages({});setMachine("")},[authorization])
+  useEffect(()=>{
+    if(selected||!sources.some(s=>!s.canRoster?.()||!s.subscribeRoster))return
+    const control=new AbortController()
+    followSnapshotRoster(async()=>{await load();if(!current().some(s=>s.current?.()!==false&&!deniedSnapshots.current.has(s)&&(!s.canRoster?.()||!s.subscribeRoster)))control.abort()},control.signal,EventRefreshMs,document,window)
+    return()=>control.abort()
+  },[selected,authorization,query,load])
   useEffect(()=>{
     const control=new AbortController()
     setLivePending({})

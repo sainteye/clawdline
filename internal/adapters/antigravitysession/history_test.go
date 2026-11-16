@@ -733,8 +733,15 @@ func TestNativeBackgroundTaskAndTheTurnItWakesAreShown(t *testing.T) {
 		last := p.Entries[len(p.Entries)-1]
 		return toolStatus(p, "native:"+native+":5:0") == "completed" && last.Role == "assistant" && last.Text == "Deployed and healthy."
 	})
+	// Publishing idle and detaching the completed watcher are separate
+	// asynchronous effects. Wait for both within the existing deadline.
+	watchEnded := func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.watch == nil
+	}
 	deadline := time.Now().Add(3 * time.Second)
-	for state() != session.StateIdle && time.Now().Before(deadline) {
+	for (state() != session.StateIdle || !watchEnded()) && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if got := state(); got != session.StateIdle {
