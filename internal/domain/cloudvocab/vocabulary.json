@@ -921,9 +921,10 @@
             "type": "object",
             "max_bytes": 65536,
             "closed": true,
-            "max_keys": 4,
+            "max_keys": 5,
             "properties": {
               "space_saving_images": { "type": "bool" },
+              "tool_library_suggestions_enabled": { "type": "bool" },
               "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"] },
               "workflow_skills_enabled": {
                 "type": "bool"

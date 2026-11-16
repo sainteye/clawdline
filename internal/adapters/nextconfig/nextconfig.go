@@ -640,6 +640,7 @@ var Settables = []Settable{
 	// One notification each time a Session starts operating a new site; absent is off.
 	{Name: "browser_notify_new_site", Kind: "bool"},
 	{Name: "space_saving_images", Kind: "bool"},
+	{Name: "tool_library_suggestions_enabled", Kind: "bool"},
 	// The console's setup wizard (web/console/src/setup): `local` is the
 	// person choosing to use this machine only, so the header shows a quiet
 	// local mark instead of unfinished Cloud steps.

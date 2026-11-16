@@ -66,6 +66,7 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 	if resume == "" {
 		on, _ := values.Bool("space_saving_images")
 		browser, _ := values.Bool("browser_enabled")
+		tools, _ := values.Bool("tool_library_suggestions_enabled")
 		if _, configured := values.Raw["browser_policy"]; configured {
 			// Ordered policy also teaches native-first and explicit Session choices.
 			// It grants no browser permission by itself.
@@ -76,7 +77,7 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 		}
 		if snap.ProfileID == "" {
 			// Legacy parents still cannot acquire today's workflow choice.
-			if !on && !browser {
+			if !on && !browser && !tools {
 				return Prepared{}, nil
 			}
 			snap, err = workflow.Seal(workflow.Snapshot{ProfileID: "clawdline", Version: "1", Source: "Clawdline"})
@@ -84,9 +85,10 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 				return Prepared{}, err
 			}
 		}
-		if snap.SpaceSavingImages != on || snap.BrowserUse != browser {
+		if snap.SpaceSavingImages != on || snap.BrowserUse != browser || snap.ToolLibrarySuggestions != tools {
 			snap.SpaceSavingImages = on
 			snap.BrowserUse = browser
+			snap.ToolLibrarySuggestions = tools
 			// Historical schema 1 cannot encode new opt-ins.
 			snap.Schema = 2
 			snap, err = workflow.Seal(snap)
@@ -113,6 +115,9 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 		}
 		if snap.BrowserUse {
 			parts = append(parts, workflow.BrowserUseInstructions())
+		}
+		if snap.ToolLibrarySuggestions {
+			parts = append(parts, workflow.ToolLibrarySuggestionInstructions())
 		}
 		text = strings.Join(parts, "\n\n")
 	}

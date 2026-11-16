@@ -35,6 +35,35 @@ reviewed product change, not runtime third-party execution.
 The dialog uses 15 px body copy and at least 13 px supporting text. Mobile
 layouts retain these sizes and reflow the cards; form fields use 16 px text.
 
+## Suggestions before substantial tasks
+
+Settings → Workflow and the tool library share the machine setting
+`tool_library_suggestions_enabled`, off by default. It uses the narrow
+`/v1/settings/integrations` read/write contract and the full settings contract;
+Cloud carries the same boolean through the existing integration-settings operation.
+Older machines omit the field and the switch stays unavailable.
+
+Enabling it supplies guidance to subsequent Clawdline-owned Session and child
+executions, independently of the selected workflow. Existing conversations and
+resumes retain their original context. Disabling it adds no suggestion guidance
+to new executions and preserves the previous disabled snapshot digest.
+
+For a substantial task, the agent is instructed to run `clawdline toolbox search
+[terms]`. The read-only CLI searches both compiled recommendations and saved
+projects on the current machine, with saved metadata overriding a matching
+repository. English and Traditional Chinese metadata and individual Skill names
+and purposes are searchable. Multiple terms match any term; omitting terms browses
+all sources. No upstream fetch, model call, installation or setting write occurs.
+Failures remain failures rather than an empty catalog.
+
+The agent assesses fit, explains a useful candidate and asks whether the person
+wants to try it through the existing answer Note procedure. It waits for a sent
+answer before installing, loading, activating or using that proposed tool. If
+nothing helps, it continues normally. Routine questions and small edits do not
+need a search. Declined suggestions are not repeated for the same task. Agreement
+still follows source review, preparation, permissions and paid-API rules. The
+setting records instruction delivery, not proof that a model followed it.
+
 ## Categories by intent
 
 Categories follow what the person wants to do. In order: Architecture & domain

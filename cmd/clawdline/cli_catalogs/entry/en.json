@@ -142,5 +142,6 @@
   "usage_write_the_raw_per_unit_samples": "  write the raw per-unit samples of the range to a file outside any repository",
   "main_tmux_args_which": "  tmux <args…> | tmux which    the tmux this daemon runs, on its own server: this machine's, or the one this release carries",
   "main_squad_help": "  squad <catalog|definition|scopes|settings|save|bind|icon>   private roles, skills and pixel robots; guide squad has a complete example",
-  "main_playbook": "  playbook <list|create|edit|delete>   manage saved launch messages; guide project has examples"
+  "main_playbook": "  playbook <list|create|edit|delete>   manage saved launch messages; guide project has examples",
+  "toolbox_usage": "usage: clawdline toolbox search [terms]"
 }
