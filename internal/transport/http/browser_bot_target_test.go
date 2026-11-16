@@ -31,6 +31,8 @@ type botTargetHost struct {
 	next   int
 	hold   chan struct{}
 	held   chan struct{}
+	// url, when set, is the page address every result reports.
+	url string
 }
 
 func (h *botTargetHost) commands() []browserbridge.Command {
@@ -44,9 +46,9 @@ func (h *botTargetHost) serve(ctx context.Context, t *testing.T) {
 		for _, c := range h.bridge.Poll(ctx, browserbridge.HostInfo{Mode: "isolated", Version: "scripted"}) {
 			h.mu.Lock()
 			h.seen = append(h.seen, c)
-			hold, held := h.hold, h.held
+			hold, held, page := h.hold, h.held, h.url
 			h.mu.Unlock()
-			result := browserbridge.Result{ID: c.ID, OK: true, Tab: c.Tab, Value: json.RawMessage(`{"ok":true}`)}
+			result := browserbridge.Result{ID: c.ID, OK: true, Tab: c.Tab, URL: page, Value: json.RawMessage(`{"ok":true}`)}
 			switch c.Op {
 			case "open":
 				h.mu.Lock()
@@ -466,3 +468,86 @@ func itoa(n int) string {
 }
 
 var _ = http.StatusOK
+
+// A Bot's tab reaching a site for the first time sends the person's new-site
+// notice naming that Bot, in English and Taiwan Traditional Chinese, and
+// never lands on a terminal Session. A terminal Session keeps its own words.
+// An owner no current Bot derives is not announced as any Bot or Session.
+func TestABotsNewSiteNoticeNamesTheBotNotASession(t *testing.T) {
+	f := newBotTargetFixture(t)
+	if f.s.broker == nil {
+		t.Fatal("the fixture has no broker")
+	}
+	type pushed struct{ title, body, terminal string }
+	got := make(chan pushed, 8)
+	f.s.broker.Push = func(_ context.Context, title, body, terminal, _ string) (int, int, error) {
+		got <- pushed{title, body, terminal}
+		return 1, 0, nil
+	}
+	f.s.broker.NotifyEnabled = func() bool { return true }
+	if _, err := f.s.settingsFile().Set(map[string]any{"browser_notify_new_site": true}); err != nil {
+		t.Fatal(err)
+	}
+	next := func(what string) pushed {
+		t.Helper()
+		select {
+		case n := <-got:
+			return n
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no notice for %s", what)
+		}
+		return pushed{}
+	}
+	f.host.mu.Lock()
+	f.host.url = "https://bot-site.example/form"
+	f.host.mu.Unlock()
+	ownerA := f.owner(f.key, f.projectA, f.convA, 0)
+	f.botOpen(t, ownerA)
+	n := next("the Bot")
+	if n.title != "Clawdline: Bot Synthetic Bot is using a new site" || n.body != "bot-site.example. Open Synthetic Bot's chat in Bots to watch or take over." || n.terminal != "" {
+		t.Fatalf("Bot notice = %+v", n)
+	}
+
+	notice, ok := f.s.browserSiteNotice(t.Context(), browserbridge.NewSite{Conversation: ownerA, Site: "bot-site.example"})
+	if !ok || notice.bot != f.key || notice.conversation != f.convA || notice.session != "" {
+		t.Fatalf("Bot notice target = %+v %v", notice, ok)
+	}
+	if _, err := f.s.settingsFile().Set(map[string]any{"product_language": "zh-Hant"}); err != nil {
+		t.Fatal(err)
+	}
+	notice, _ = f.s.browserSiteNotice(t.Context(), browserbridge.NewSite{Conversation: ownerA, Site: "bot-site.example"})
+	if notice.title != "Bot Synthetic Bot 開始操作新網站" || notice.body != "bot-site.example。到 Bots 打開 Synthetic Bot 的對話，即可查看畫面或接手。" {
+		t.Fatalf("zh-Hant Bot notice = %+v", notice)
+	}
+	if _, err := f.s.settingsFile().Set(map[string]any{"product_language": "en"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The second Bot's notice names the second Bot.
+	ownerB := f.owner(f.keyB, f.projectB, f.convB, 0)
+	f.botOpen(t, ownerB)
+	if n = next("the second Bot"); n.title != "Clawdline: Bot Synthetic Bot B is using a new site" || n.terminal != "" {
+		t.Fatalf("second Bot notice = %+v", n)
+	}
+
+	// A terminal Session that is not watched keeps the Session words.
+	f.host.mu.Lock()
+	f.host.url = "https://session-site.example/"
+	f.host.mu.Unlock()
+	if _, err := f.s.browsers().DoSession(t.Context(), f.terminal, "open", json.RawMessage(`{"url":"https://session-site.example/"}`), mustBrowserPolicy(t, f.s), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if n = next("the Session"); n.title != "Clawdline: Session is using a new site" || n.body != "session-site.example. Open the Session to watch or take over." {
+		t.Fatalf("Session notice = %+v", n)
+	}
+
+	// After a forget the old owner names no Bot, and nothing is sent.
+	if _, ok := f.s.browserSiteNotice(t.Context(), browserbridge.NewSite{Conversation: f.owner(f.key, f.projectA, f.convA, 7), Site: "x.example"}); ok {
+		t.Fatal("an owner no current Bot derives was announced")
+	}
+	select {
+	case n := <-got:
+		t.Fatalf("unexpected notice %+v", n)
+	case <-time.After(100 * time.Millisecond):
+	}
+}

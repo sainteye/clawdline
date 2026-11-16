@@ -122,8 +122,12 @@ screenshot across takeover/handback and stop/resume.
   device read/send gates for status, screenshot, control and audit
   (`Records(owner)`). Opening a tab for a Bot from the panel needs its own
   Host-verified branch in `/v1/browser/open`.
-- New-site notices (`announceBrowserSite`) find no live Session for a Bot owner
-  and fall back to a generic label without a target.
+- New-site notices now name the Bot whose current conversation owns the tab
+  (`Host.BrowserOwnerBot`, `browser.bot_new_site.*`) and never a terminal
+  Session; a tap still opens the console's front page, because the broker's
+  push carries only a Session destination. A Bot destination needs
+  `internal/transport/http/push.go`, `internal/app/orchestrator` and a console
+  hash route.
 - Real Chrome and native Claude Code / Codex acceptance.
 - The transparency page has no card describing the `browser_status` and
   `browser_command` tool text a Bot receives; only the source receipts were

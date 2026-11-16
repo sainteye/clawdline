@@ -11,10 +11,12 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/domain/auth"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
@@ -119,25 +121,85 @@ func (s *Server) browserSetting(key string) bool {
 }
 
 // announceBrowserSite sends the person's chosen notification: once for each
-// site a Session starts operating. It never blocks the command that caused it.
+// site a Session or a Bot conversation starts operating. It never blocks the
+// command that caused it.
 func (s *Server) announceBrowserSite(n browserbridge.NewSite) {
 	if s.broker == nil || !s.browserSetting("browser_notify_new_site") {
 		return
 	}
 	go func() {
 		ctx := context.Background()
-		label, sessionID := "Session", ""
+		notice, ok := s.browserSiteNotice(ctx, n)
+		if !ok {
+			return
+		}
+		_, _ = s.broker.MachineNotify(ctx, notice.title, notice.body, notice.session)
+	}()
+}
+
+// browserNoticeLabelRunes keeps a Bot's name inside the notification title.
+const browserNoticeLabelRunes = 40
+
+// browserSiteNotice is one new-site notification's words and destination.
+type browserSiteNotice struct {
+	title, body string
+	// session is a terminal Session this machine watches, or empty: a Bot's
+	// notice never lands on a terminal Session.
+	session string
+	// bot and conversation name the Bot conversation whose tab reached the
+	// site; both are empty for a Session.
+	bot          pa.BotKey
+	conversation string
+}
+
+// browserSiteNotice words the notice for the owner that reached the site. A
+// Bot owner names that Bot from its current stored row; when no current Bot
+// derives the owner any longer (deleted, forgotten, another conversation),
+// nothing is sent rather than naming the wrong Bot or a Session.
+func (s *Server) browserSiteNotice(ctx context.Context, n browserbridge.NewSite) (browserSiteNotice, bool) {
+	language := s.productLanguage()
+	if strings.HasPrefix(n.Conversation, browserbridge.BotOwnerPrefix) {
+		p := &s.projectAssistants
+		p.mu.RLock()
+		h := p.host
+		p.mu.RUnlock()
+		if h == nil {
+			return browserSiteNotice{}, false
+		}
+		bot, found, err := h.BrowserOwnerBot(ctx, n.Conversation)
+		if err != nil || !found {
+			return browserSiteNotice{}, false
+		}
+		label := bot.Name
+		if label == "" {
+			label = bot.Key.BotID
+		}
+		// The title is held to 80 characters (notifyFields); a long name is
+		// cut so the notice is still sent.
+		if r := []rune(label); len(r) > browserNoticeLabelRunes {
+			label = string(r[:browserNoticeLabelRunes-1]) + "…"
+		}
+		return browserSiteNotice{
+			title:        productcopy.Format(language, "browser.bot_new_site.title", map[string]string{"label": label}),
+			body:         productcopy.Format(language, "browser.bot_new_site.body", map[string]string{"label": label, "site": n.Site}),
+			bot:          bot.Key,
+			conversation: bot.ConversationID,
+		}, true
+	}
+	label, sessionID := "Session", ""
+	if s.broker != nil {
 		if live, err := s.broker.LiveSession(ctx, n.Conversation); err == nil {
 			sessionID = live.ID
 			if live.Label != "" {
 				label = live.Label
 			}
 		}
-		language := s.productLanguage()
-		title := productcopy.Format(language, "browser.new_site.title", map[string]string{"label": label})
-		body := productcopy.Format(language, "browser.new_site.body", map[string]string{"site": n.Site})
-		_, _ = s.broker.MachineNotify(ctx, title, body, sessionID)
-	}()
+	}
+	return browserSiteNotice{
+		title:   productcopy.Format(language, "browser.new_site.title", map[string]string{"label": label}),
+		body:    productcopy.Format(language, "browser.new_site.body", map[string]string{"site": n.Site}),
+		session: sessionID,
+	}, true
 }
 
 func readBrowserBody(w http.ResponseWriter, r *http.Request, limit int64, into any) bool {

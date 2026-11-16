@@ -74,6 +74,16 @@ whether the last write to disk failed.
 When `browser_notify_new_site` is on, the first successful action of a Session on a site
 (registrable domain) sends one notification through the agent-notification path.
 
+For a Bot's tab the owner is a Bot conversation (`bot-…`), not a Session. The daemon finds the
+current stored Bot whose conversation and forget epoch derive that owner
+(`projectassistanthost.Host.BrowserOwnerBot`) and words the notice with the Bot's name
+(`browser.bot_new_site.title`/`.body`, English and Taiwan Traditional Chinese), cut to 40
+characters so the title stays within the 80-character limit. Such a notice never names or lands
+on a terminal Session. When no current Bot derives the owner (deleted, forgotten, another
+conversation), nothing is sent rather than guessing. The push still lands on the console's front
+page: the broker's notification path carries only a Session as its destination, so opening that
+Bot's chat directly needs a Bot destination in `push.go` and the console (see "Not done").
+
 ## The live panel
 
 The Session's ⋯ menu has **Chrome tab** (`web/console/src/session/BrowserPanel.tsx`). It reads
@@ -209,8 +219,8 @@ native host, forget, feature off, deletion, and a forget while the host holds a 
 picture) and `internal/app/cloudops/browser_mode_test.go` (Cloud shapes).
 
 **Not done.** The console panel for a Bot (`BrowserPanel` with a Bot target, its mounting in the
-Bot chat, and the level-74 gate); new-site notices for a Bot owner (`announceBrowserSite` still
-looks for a live Session); real Chrome and native Claude Code / Codex acceptance; Cloud acceptance
+Bot chat, and the level-74 gate); a tap on a Bot's new-site notice opening that Bot's chat (the
+notice names the Bot but its push carries no Bot destination); real Chrome and native Claude Code / Codex acceptance; Cloud acceptance
 through a paired phone.
 
 ## The Settings block

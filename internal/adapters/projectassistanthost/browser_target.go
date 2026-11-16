@@ -81,3 +81,56 @@ func (h *Host) BrowserTarget(ctx context.Context, botID, conversation string, wr
 	owner := BrowserOwner(pa.Fence{Key: bot.Key, Project: bot.Project, ConversationID: bot.ConversationID}, memory.ForgottenThrough)
 	return BrowserTarget{Key: key, ConversationID: bot.ConversationID, Owner: owner}, nil
 }
+
+// BrowserOwnerBot is the Bot whose current conversation owns a browser tab
+// owner, for the daemon's own new-site notice. It grants nothing: the person
+// who taps the notice still opens the Bot through its routes and authority.
+type BrowserOwnerBot struct {
+	Key            pa.BotKey
+	ConversationID string
+	Name           string
+}
+
+// BrowserOwnerBot finds the stored Bot on this machine whose current
+// conversation and forget epoch derive owner. false means no current Bot
+// does: the Bot was deleted, forgotten or moved to another conversation after
+// its command, and the notice must not guess one. It reads each Bot row and
+// its memory frontier once, page by page, and holds no lock while reading.
+func (h *Host) BrowserOwnerBot(ctx context.Context, owner string) (BrowserOwnerBot, bool, error) {
+	if len(owner) <= len(BrowserOwnerPrefix) || owner[:len(BrowserOwnerPrefix)] != BrowserOwnerPrefix {
+		return BrowserOwnerBot{}, false, nil
+	}
+	h.mu.Lock()
+	st := h.store
+	h.mu.Unlock()
+	if st == nil {
+		return BrowserOwnerBot{}, false, nil
+	}
+	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
+	for {
+		page, err := st.List(ctx, query)
+		if err != nil {
+			return BrowserOwnerBot{}, false, err
+		}
+		for _, item := range page.Items {
+			bot := item.Bot
+			if bot.Key.MachineID != h.o.MachineID || bot.Project.MachineID != h.o.MachineID || bot.ConversationID == "" {
+				continue
+			}
+			memory, err := st.Current(ctx, bot.Key)
+			if err != nil {
+				return BrowserOwnerBot{}, false, err
+			}
+			if memory.ForgottenThrough < 0 {
+				continue
+			}
+			if BrowserOwner(pa.Fence{Key: bot.Key, Project: bot.Project, ConversationID: bot.ConversationID}, memory.ForgottenThrough) == owner {
+				return BrowserOwnerBot{Key: bot.Key, ConversationID: bot.ConversationID, Name: bot.Name}, true, nil
+			}
+		}
+		if page.NextCursor == "" {
+			return BrowserOwnerBot{}, false, nil
+		}
+		query.Cursor = page.NextCursor
+	}
+}
