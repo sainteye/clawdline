@@ -75,6 +75,15 @@ first-use setup ahead of time and prints which Claude Code version it found;
 5. **Stop** ends the current reply and any pending ones. Your ordinary
    Sessions are not touched.
 
+Bot avatars keep their outline shapes. Each saved color has a matching
+three-color gradient and a soft neon halo, including while idle and in the
+shape and color picker. Color choices preview the selected shape. Working
+Bots glance, blink and slowly turn the gradient light; Bots waiting for an
+answer keep their gaze centered and send a faint contour outward. These
+motions follow Codync's activity cadence, adapted to line art. Reduced
+motion keeps the gradient and halo without movement. Existing saved shapes
+and colors keep the same storage and transport format.
+
 A Bot keeps its own memory, as in Codync: when you tell it something lasting
 or ask it to remember, change or forget something, it does so with its
 memory tools, one short fact per entry. **Memory** in the chat lists every

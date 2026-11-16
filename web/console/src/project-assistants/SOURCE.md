@@ -69,9 +69,27 @@ composition; it does not prove encrypted Cloud streaming or a physical phone.
 The roster uses the existing approved BR-06 SVG outlines, eye strokes and
 identity palette. Its activity states follow Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`
 (`BotRow.tsx` and `host/src/agent/bot/updates.rs`). `Avatar.tsx` supplies the
-working glance/blink and waiting-ripple timing, adapted to eye transforms and
-contour opacity on the existing line art. Idle/reduced-motion geometry remains
-static, and off-screen/hidden avatars stop scheduling frames.
+working glance/blink and waiting-ripple timing. Its moving surface light becomes
+a rotating three-color SVG gradient; its radial wave becomes a faint expanding
+copy of the outline. The original outline and eyes retain their geometry. A
+blurred outline beneath the sharp stroke supplies a static neon halo, including
+in the picker. Each saved identity color maps to a fixed set of gradient stops;
+storage and transport remain unchanged. Idle/reduced-motion rendering retains
+the gradient and halo without motion, and off-screen/hidden avatars stop
+scheduling frames. Each avatar owns unique gradient/filter IDs.
+
+The rendering and picker acceptance can be rerun with installed Chromium and
+WebKit, without a daemon or provider request:
+
+```sh
+BOTS_ARTIFACTS=/absolute/output/directory PLAYWRIGHT_MODULE=/absolute/playwright/index.mjs \
+  node web/console/tools/project-assistants-avatar.e2e.mjs
+```
+
+This exercises static halo visibility, animated working light, waiting waves,
+reduced motion, all eight shapes and identity colors, independent SVG paints,
+and English desktop / Traditional Chinese phone-width layouts. It does not
+establish production deployment or physical-phone acceptance.
 
 The small thinking orb adapts that commit's actual desktop Canvas implementation
 (`components/ThinkingOrb.tsx` and `lib/theme.ts`). See `third_party/codync` and
