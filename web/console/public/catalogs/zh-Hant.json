@@ -12525,5 +12525,15 @@
   "transparency.card.voice-list-briefing.summary": "Realtime 與 GPT-Live 都會自動開始報告。先讀需要本人回覆的 Session，包括未解便條，再以每批一至兩個介紹其他工作。",
   "transparency.card.voice-list-briefing.title": "從列表撥號自動介紹 Session",
   "transparency.card.voice-list-briefing.how": "向確切機器讀取目前摘要、最後回覆，以及現在的問題或未解便條。沿用既有摘要設定與快取規則；摘要啟用時可能使用該 Session 助理的額度。不另開整理模型或持久任務；目前講述期間可準備一個下一批。",
-  "transparency.card.voice-list-briefing.condition": "僅在未指定 Session、從列表開始語音通話，且服務確認設定後啟動。使用者先開口會取代自動開場；從某個 Session 撥號仍沿用該 Session 的交接摘要。"
+  "transparency.card.voice-list-briefing.condition": "僅在未指定 Session、從列表開始語音通話，且服務確認設定後啟動。使用者先開口會取代自動開場；從某個 Session 撥號仍沿用該 Session 的交接摘要。",
+  "botBrowser.open": "瀏覽器",
+  "botBrowser.unsupported": "請更新來源電腦，才能查看此 Bot 的瀏覽器（需要 API 74 以上）。",
+  "botBrowser.unpaired": "請先配對來源電腦，才能查看此 Bot 的瀏覽器。",
+  "botBrowser.readOnly": "這個裝置可以查看瀏覽器；操作需要寫入權限。",
+  "botBrowser.stale": "Bot 的對話已變更，正在重新讀取資料。請關閉後重新開啟瀏覽器再操作；剛才的動作不會自動重送。",
+  "botBrowser.refused": "目前無法使用此 Bot 的瀏覽器（{code}）。請重新整理 Bot 並檢查來源。",
+  "botBrowser.audit": "完整瀏覽器操作紀錄",
+  "botBrowser.auditEmpty": "目前沒有瀏覽器操作紀錄。",
+  "botBrowser.disconnected": "請在此 Bot 的來源電腦連接 Chrome，才能查看分頁。",
+  "botBrowser.unknown": "瀏覽器動作可能已執行，但目前無法確認結果。請勿再次送出相同動作，先查看瀏覽器狀態。"
 }

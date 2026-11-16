@@ -382,3 +382,8 @@
 .pa-input-card strong{overflow-wrap:anywhere}
 
 .pa-routines{min-width:0;overflow-wrap:anywhere}.pa-routines .pa-toolbar{flex-wrap:wrap;gap:8px}.pa-routines h4{margin:12px 0 6px}.pa-routine,.pa-routine-run{border-bottom:1px solid var(--border,#333);padding:12px 0}.pa-routines fieldset{min-width:0;margin:12px 0;padding:12px;border:1px solid var(--border,#444)}.pa-routines label{display:grid;gap:6px;margin:10px 0}.pa-routines input,.pa-routines textarea,.pa-routines select{box-sizing:border-box;max-width:100%;min-width:0;width:100%;font:inherit;color:inherit;background:var(--surface,#171717);border:1px solid var(--border,#555);padding:8px}.pa-routines input[type=checkbox]{width:auto;justify-self:start}.pa-routines textarea{min-height:100px;resize:vertical}.pa-routine-result{white-space:pre-wrap}.pa-routines button{max-width:100%}
+
+/* The shared browser panel sits above its owning Bot chat. */
+.pa-browser { position:absolute;inset:0;z-index:20;background:var(--pa-bg);min-width:0;min-height:0; }
+.pa-browser #browser-panel { display:flex;flex-direction:column;position:absolute;inset:0;width:100%;height:100%;min-height:0;box-sizing:border-box;background:var(--pa-bg); }
+.pa-browser .panel-view-body { flex:1; }

@@ -114,21 +114,71 @@ Bot conversation. The scripted subprocess and host are not a model or Chrome.
 `TestAnOwnedLateResultCannotCrossAPersonsABA` covers a late owned read or
 screenshot across takeover/handback and stop/resume.
 
-## Not done
+## The person's Bot chat
 
-- The person's view: `BrowserPanel` still needs a Session row. A Bot target
-  should pass the Host-derived owner (resolved by the daemon from the Bot key,
-  never trusted from the client), the profile and tab, through the existing
-  device read/send gates for status, screenshot, control and audit
-  (`Records(owner)`). Opening a tab for a Bot from the panel needs its own
-  Host-verified branch in `/v1/browser/open`.
-- New-site notices now name the Bot whose current conversation owns the tab
-  (`Host.BrowserOwnerBot`, `browser.bot_new_site.*`) and never a terminal
-  Session; a tap still opens the console's front page, because the broker's
-  push carries only a Session destination. A Bot destination needs
-  `internal/transport/http/push.go`, `internal/app/orchestrator` and a console
-  hash route.
-- Real Chrome and native Claude Code / Codex acceptance.
+The chat's More menu opens the shared `BrowserPanel` with an explicit Bot
+target. The Session target retains its existing transport. A Bot uses its
+captured `SourceClient`, for both local HTTP and Cloud `chrome-*` words. No
+selected-machine singleton chooses its source. Every browser request carries
+`bot_id` and the Bot's current `conversation`, and carries neither an owner nor
+a machine ID. The daemon resolves the owner and filters status, screenshots,
+activity and the complete audit. Browser control, opening and muting use the
+same device and Bot write gates as the backend.
+
+A source below API 74 is refused before any targeted request is sent: older
+sources ignore unknown GET fields and could return a machine-wide view.
+Read-only devices can inspect the picture and audit; write controls are
+disabled with their reason. Unpaired, unavailable and old sources keep their
+reason. The browser setup of another machine is never opened from the Bot
+panel. `pa_stale_version` freezes the panel, reloads Bot identity and requires
+another explicit open; it never replays the old action. A lost write result
+keeps its original outcome and is never automatically sent again. The modal
+restores its menu focus on close, contains keyboard focus, and supports Escape.
+
+The `MachineNotifyBot` helper carries a Bot destination through the existing agent notice
+switch, hourly allowance and notification ledger. The tap fragment contains
+`bot`, `conversation` and, when known by the daemon, `machine`. The fragment
+selects a chat when Bots is mounted, never a browser owner: the current Bot still supplies the
+conversation for each panel call. An ambiguous machine selection is not
+resolved by falling through to the active machine. Session notifications keep
+their existing destination.
+
+`bot-browser.test.ts` exercises API gating, local and Cloud target fields,
+read-only and revoked grants, stale outcomes, and the Cloud source capture.
+`push_bot_test.go` checks destination construction, the shared switch/ledger,
+and the new-site tap. It also executes the actual TypeScript SourceClient
+and passes all eight resulting requests through the real Go Cloud decoder,
+including a negative audit request without its required limit. `TestBotChatBrowserPanelE2E` is an explicit browser test
+against an empty task-owned Go daemon on a temporary TCP port and a scripted
+native host. It launches a separate headless Chrome profile and the production
+Bots/Chat/BrowserPanel components. It covers local and mapped Cloud traffic,
+English and Taiwan Traditional Chinese, desktop and phone sizes, read-only and
+old sources, takeover/handback, mute, audit, opening a first tab, and stale/lost
+write responses. The Cloud fixture maps words into real daemon routes; it does
+not prove production relay encryption or pairing. The screenshot is a synthetic
+JPEG from the scripted host, not real Chrome automation or a physical phone.
+
+Run the UI fixture explicitly from the repository root:
+
+```sh
+BOTS_BROWSER_UI_E2E=1 BOTS_ARTIFACTS=<task-artifacts> \
+  go test -v ./internal/transport/http -run '^TestBotChatBrowserPanelE2E$' \
+  -count=1 -timeout=3m
+```
+
+The fixture discovers an existing Playwright Chromium headless shell from
+`PLAYWRIGHT_BROWSERS_PATH` (or the OS account's standard browser cache), with an
+explicit `CHROME` executable override. It installs nothing and keeps its
+profile in task-owned temporary storage. The Go test passes the cache path
+separately because this package deliberately replaces HOME with an empty one.
+The normal-environment matrix passed all six panel modes, the first-tab open,
+and the stale/lost response cases, with six screenshots and no model requests.
+A physical device, an agent driving actual Chrome, and production Cloud still
+have separate acceptance below.
+
+## Remaining integration and acceptance
+
+- Real Chrome and native Claude Code / Codex acceptance, and production Cloud.
 - The transparency page has no card describing the `browser_status` and
   `browser_command` tool text a Bot receives; only the source receipts were
   refreshed. A card needs its English and Taiwan Traditional Chinese copy.

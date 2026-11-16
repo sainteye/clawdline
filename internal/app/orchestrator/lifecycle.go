@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 )
@@ -617,6 +618,15 @@ func (b *Broker) MachineNotify(ctx context.Context, title, body, session string)
 			"Too many agent notifications; wait for the hourly window.")
 	}
 	return b.sendNotify(ctx, machineNotifyTask, "Clawdline: "+title, title, body, session, "agent-root")
+}
+
+// MachineNotifyBot spends exactly the same switch, hourly allowance and ledger
+// as other agent notices, while keeping its tap out of terminal Sessions.
+func (b *Broker) MachineNotifyBot(ctx context.Context, title, body, bot, conversation string) (NotifyResult, error) {
+	if bot == "" || conversation == "" {
+		return NotifyResult{}, refuse(http.StatusBadRequest, "bad_request", "A Bot destination needs its current conversation.")
+	}
+	return b.MachineNotify(adapterpush.WithBotDestination(ctx, bot, conversation), title, body, "")
 }
 
 // machineNotifyTask is the task id a root's own notification is recorded

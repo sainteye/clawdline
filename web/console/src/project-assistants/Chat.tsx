@@ -27,6 +27,7 @@ import { PaMenu } from "./PaSelect"
 import type { Words } from "./words"
 import { ChatSkeleton, useShowAfter } from "./PaLoading"
 import { memoryOpener } from "./loading"
+import { BotBrowser, botBrowserWord } from "./BotBrowser"
 
 export const EventRefreshMs = 3000
 /** Covers every await of a permission attempt, including the second detail preflight. */
@@ -49,6 +50,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
   const [library,setLibrary]=useState(false)
+  const [browser,setBrowser]=useState(false)
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
   const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
@@ -587,6 +589,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
   return <section className="pa-chat" aria-label={bot.name}>
     <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36} mood={mood}/><div><h2 tabIndex={-1}>{bot.name}</h2><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></div><PaMenu label={w.moreActions} items={[
+      {id:"browser",label:botBrowserWord("open"),onSelect:()=>setBrowser(true)},
       {id:"library",label:w.library,onSelect:()=>setLibrary(true)},
       {id:"settings",label:w.settings,onSelect:()=>setSettings(true)},
       {id:"routines",label:w.routines,onSelect:()=>setRoutines(true)},
@@ -615,6 +618,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
       {fileError&&<p role="alert">{fileError}</p>}<Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown||legacyBlocked()} sendBlocked={filesLost} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
+    {browser&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowser(false)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
     {library&&<OutputLibrary source={source} bot={bot} messages={parts.chat} w={w} onClose={()=>setLibrary(false)}/>}
     {settings&&<BotSettings bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>

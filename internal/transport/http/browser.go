@@ -133,7 +133,11 @@ func (s *Server) announceBrowserSite(n browserbridge.NewSite) {
 		if !ok {
 			return
 		}
-		_, _ = s.broker.MachineNotify(ctx, notice.title, notice.body, notice.session)
+		if notice.bot.BotID != "" {
+			_, _ = s.broker.MachineNotifyBot(ctx, notice.title, notice.body, notice.bot.BotID, notice.conversation)
+		} else {
+			_, _ = s.broker.MachineNotify(ctx, notice.title, notice.body, notice.session)
+		}
 	}()
 }
 
