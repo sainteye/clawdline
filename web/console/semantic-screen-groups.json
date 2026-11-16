@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12571,
-  "riskKeys": 5459,
-  "nonRiskCount": 7112,
+  "englishContentKeys": 12575,
+  "riskKeys": 5461,
+  "nonRiskCount": 7114,
   "groups": [
     {
       "name": "acp / other",
@@ -5704,7 +5704,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 196,
+      "count": 198,
       "sources": [
         null
       ],
@@ -5777,6 +5777,8 @@
         "projectAssistants.jump",
         "projectAssistants.landed",
         "projectAssistants.library",
+        "projectAssistants.libraryCancel",
+        "projectAssistants.libraryPicture",
         "projectAssistants.loading",
         "projectAssistants.machine",
         "projectAssistants.memory",

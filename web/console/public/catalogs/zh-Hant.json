@@ -12571,5 +12571,9 @@
   "capacityRow.bots.routine_retry_attempts.full": "結果不明或逾時時，絕不自動重播。",
   "capacityRow.bots.follow_up_seconds.full": "超出可設定時間時拒絕。",
   "capacityRow.bots.follow_up_pending.full": "先取消一筆等待中的追蹤，才能新增。",
-  "transparency.card.persistent-bot-routines-events.how": "專屬 MCP 入口提供排程管理、routine_hook、rotate_routine_hook、follow_up 與 cancel_follow_up。最多 20 個 OR 觸發條件可保留週期、Unix 毫秒單次時間、含明確 IANA 時區的五欄 cron、webhook 或來源／事件／篩選規則；webhook 與事件不設時鐘期限。本機接收路由先驗證原始位元組，再比對條件；未知 ID 與錯誤金鑰回覆相同，已驗證的 ping 不執行，暫停或忙碌時拒絕，同一 delivery ID 永遠回傳第一次的 run。金鑰在本機產生、獨立儲存、依編輯收據換鑰且不進匯出；只有目前可寫的人或該 Bot 自己的執行可查看。事件與先前進度以 JSON 引用並標為不可信資料。一般排程維持 main／run／main 隔離；後續追蹤續接主對話，可設定 1 至 43,200 分鐘、最多 500 個估計 token，每個 Bot 最多等待 10 筆、連續接續 24 次。停止會撤回到期提醒並保留未來提醒；忘記記憶會撤回提醒並阻擋舊事件。排程編輯器仍只提供計時控制；事件、金鑰、追蹤介面及私有 Cloud 公開 webhook relay 是分開的後續範圍。"
+  "transparency.card.persistent-bot-routines-events.how": "專屬 MCP 入口提供排程管理、routine_hook、rotate_routine_hook、follow_up 與 cancel_follow_up。最多 20 個 OR 觸發條件可保留週期、Unix 毫秒單次時間、含明確 IANA 時區的五欄 cron、webhook 或來源／事件／篩選規則；webhook 與事件不設時鐘期限。本機接收路由先驗證原始位元組，再比對條件；未知 ID 與錯誤金鑰回覆相同，已驗證的 ping 不執行，暫停或忙碌時拒絕，同一 delivery ID 永遠回傳第一次的 run。金鑰在本機產生、獨立儲存、依編輯收據換鑰且不進匯出；只有目前可寫的人或該 Bot 自己的執行可查看。事件與先前進度以 JSON 引用並標為不可信資料。一般排程維持 main／run／main 隔離；後續追蹤續接主對話，可設定 1 至 43,200 分鐘、最多 500 個估計 token，每個 Bot 最多等待 10 筆、連續接續 24 次。停止會撤回到期提醒並保留未來提醒；忘記記憶會撤回提醒並阻擋舊事件。排程編輯器仍只提供計時控制；事件、金鑰、追蹤介面及私有 Cloud 公開 webhook relay 是分開的後續範圍。",
+  "projectAssistants.libraryPicture": "圖片",
+  "projectAssistants.libraryCancel": "取消下載",
+  "projectAssistants.libraryCancelled": "已取消下載",
+  "projectAssistants.libraryOpenBrowser": "在瀏覽器開啟"
 }

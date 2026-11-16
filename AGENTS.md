@@ -252,8 +252,10 @@ For a concrete choice the person must make, read `clawdline guide note`, create 
 with complete suggested replies, then ask briefly in chat and wait for the person's sent message.
 For Codex's non-blocking `request_user_input_async`, also create one answer Note with the same
 question and complete replies so the person can return to it later. A blocking question screen
-(Claude Code's `AskUserQuestion`, or a blocking Codex prompt) needs no duplicate Note. Suggested
-or preselected options are not answers; wait for the person's sent message.
+(Claude Code's `AskUserQuestion`, or a blocking Codex prompt) needs no duplicate Note. For Gemini
+(Antigravity), create one answer Note with complete suggested replies when asking multiple-choice
+questions or offering concrete choices, instead of relying on chat text or `ask_question` alone.
+Suggested or preselected options are not answers; wait for the person's sent message.
 
 ## The single pages
 
