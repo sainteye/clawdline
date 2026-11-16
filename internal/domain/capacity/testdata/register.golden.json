@@ -1138,6 +1138,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.carry_messages",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 12,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotContinuationMessages"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.carry_quote_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotContinuationQuoteBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.chat_gap_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

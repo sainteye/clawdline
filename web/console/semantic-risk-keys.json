@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12454,
+  "englishKeys": 12458,
   "counts": {
-    "negation": 3353,
+    "negation": 3355,
     "state": 2087,
     "permission": 739,
-    "deletion": 292,
-    "uncertainty": 477
+    "deletion": 293,
+    "uncertainty": 478
   },
-  "unionCount": 5401,
+  "unionCount": 5403,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -156,6 +156,8 @@
       "capacityRow.board.receipts.full",
       "capacityRow.board.receipts.what",
       "capacityRow.bots.agent_rest_seconds.full",
+      "capacityRow.bots.carry_messages.full",
+      "capacityRow.bots.carry_quote_bytes.full",
       "capacityRow.bots.chat_gap_ms.full",
       "capacityRow.bots.cleanup_ms.full",
       "capacityRow.bots.dispatch_seconds.full",
@@ -6209,6 +6211,7 @@
       "capacityRow.artifacts.images.full",
       "capacityRow.audit.security.full",
       "capacityRow.audit.security.what",
+      "capacityRow.bots.carry_messages.full",
       "capacityRow.bots.inputs_per_bot.full",
       "capacityRow.bots.inputs_per_message.full",
       "capacityRow.bots.page_rows.what",
@@ -6513,6 +6516,7 @@
       "capacityRow.antigravity.native_tty_entries.full",
       "capacityRow.antigravity.process_read_seconds.full",
       "capacityRow.antigravity.state_age_seconds.full",
+      "capacityRow.bots.carry_quote_bytes.full",
       "capacityRow.bots.fallback_agents.full",
       "capacityRow.bots.owned_children.full",
       "capacityRow.bots.pending_turns.full",
@@ -7237,6 +7241,8 @@
     "capacityRow.bots.artifact_title_bytes.full",
     "capacityRow.bots.attachment_bytes.full",
     "capacityRow.bots.attachments_per_message.full",
+    "capacityRow.bots.carry_messages.full",
+    "capacityRow.bots.carry_quote_bytes.full",
     "capacityRow.bots.chat_gap_ms.full",
     "capacityRow.bots.cleanup_ms.full",
     "capacityRow.bots.dispatch_seconds.full",

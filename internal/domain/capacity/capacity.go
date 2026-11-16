@@ -731,6 +731,11 @@ func Default(name string) int64 {
 }
 
 const (
+	BotsContinuationMessages   = "bots.carry_messages"
+	BotsContinuationQuoteBytes = "bots.carry_quote_bytes"
+)
+
+const (
 	BotsActors                = "bots.actors"
 	BotsProcesses             = "bots.processes"
 	BotsRPCPending            = "bots.rpc_rows"

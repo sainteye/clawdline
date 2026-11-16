@@ -3,6 +3,10 @@ package capacity
 import pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 
 const (
+	// CodyNC 9f67eb09, host/src/agent/fallback/carry.rs:13-18 and
+	// repeated(None): a bounded recent transcript when no window is known.
+	MaximumBotContinuationMessages   = 12
+	MaximumBotContinuationQuoteBytes = 2000
 	// Trusted ACP category identifiers; reject longer or non-ASCII metadata.
 	MaximumBotErrorKindBytes   = 40
 	MaximumBotOwnedDescendants = 256
@@ -50,6 +54,8 @@ const (
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
 	return []Entry{
+		{Name: BotsContinuationMessages, Class: Buffer, Unit: Rows, Limit: MaximumBotContinuationMessages, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotContinuationMessages"}},
+		{Name: BotsContinuationQuoteBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotContinuationQuoteBytes, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotContinuationQuoteBytes"}},
 		{Name: BotsReviewPending, Class: Buffer, Unit: Rows, Limit: pa.MaxCollaborationOutstanding, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCollaborationOutstanding"}},
 		{Name: BotsReviewPerSender, Class: Buffer, Unit: Rows, Limit: pa.MaxCollaborationPerSender, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCollaborationPerSender"}},
 		{Name: BotsReviewHops, Class: Buffer, Unit: Rows, Limit: pa.MaxCollaborationHops, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCollaborationHops"}},

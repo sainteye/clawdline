@@ -12454,5 +12454,9 @@
   "projectAssistants.routineScheduled": "排程執行",
   "projectAssistants.routineSaving": "正在更新例行排程…",
   "projectAssistants.routineJournalUnreadable": "暫時無法讀取上次操作。已保留原始記錄並暫停變更排程，仍可查看執行紀錄。",
-  "projectAssistants.routineRefresh": "更新排程與紀錄"
+  "projectAssistants.routineRefresh": "更新排程與紀錄",
+  "capacityRow.bots.carry_messages.what": "每次 Bot 開新執行時交接的近期主聊天訊息，最多 12 則，逐則核對來源。",
+  "capacityRow.bots.carry_messages.full": "較早訊息不放進摘錄；不會刪除聊天，也不代表可以重試未完成的工作。",
+  "capacityRow.bots.carry_quote_bytes.what": "Bot 開新執行時，每則歷史聊天引用的 UTF-8 摘錄上限為 2,000 位元組。",
+  "capacityRow.bots.carry_quote_bytes.full": "過長原句會在完整字元邊界截短並標示截短；不得猜測省略的內容。"
 }

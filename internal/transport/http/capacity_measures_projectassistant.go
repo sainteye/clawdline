@@ -68,12 +68,14 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		}
 	}
 	return map[string]func() capacity.Reading{
-		capacity.BotsReviewPending:   reviews(false),
-		capacity.BotsReviewPerSender: reviews(true),
-		capacity.BotsReviewHops:      pure,
-		capacity.BotsReviewRequest:   pure,
-		capacity.BotsReviewReply:     pure,
-		capacity.BotsFallbacks:       pure,
+		capacity.BotsContinuationMessages:   pure,
+		capacity.BotsContinuationQuoteBytes: pure,
+		capacity.BotsReviewPending:          reviews(false),
+		capacity.BotsReviewPerSender:        reviews(true),
+		capacity.BotsReviewHops:             pure,
+		capacity.BotsReviewRequest:          pure,
+		capacity.BotsReviewReply:            pure,
+		capacity.BotsFallbacks:              pure,
 		capacity.BotsAgentRestSeconds: func() capacity.Reading {
 			p := &s.projectAssistants
 			p.mu.RLock()

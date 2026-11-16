@@ -1,11 +1,134 @@
 package projectassistant
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+func continuationFixture() (Export, pa.Turn, pa.ContextSnapshot) {
+	x, turn, filtered := handoffFixture()
+	turn.MessageID = "current-input"
+	old := x.Messages[0].Fence
+	x.Messages = []pa.Message{
+		{ID: "topic", TurnID: "prior", Fence: old, Seq: 1, Kind: pa.UserMessage, Text: "Research https://example.invalid/topic-alpha"},
+		{ID: "answer", TurnID: "prior", Fence: old, Seq: 2, Kind: pa.AssistantMessage, Text: "Banner: 1600 by 900; violet mountains"},
+		{ID: turn.MessageID, TurnID: turn.ID, Fence: turn.Fence, Seq: 3, Kind: pa.UserMessage, Text: "Please start"},
+	}
+	x.Turns = []pa.Turn{{ID: "prior", MessageID: "topic", Fence: old, State: pa.TurnSucceeded, MemoryRevision: 2, Origin: pa.UserOrigin}, turn}
+	x.Bindings = []pa.ExecutionBinding{{Fence: old, Agent: pa.Codex}}
+	return x, turn, filtered
+}
+
+func TestFreshContinuationProvenanceAndForget(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Export, *pa.ContextSnapshot)
+		want   int
+		code   pa.ErrorCode
+	}{
+		{name: "own main chat", want: 2},
+		{name: "routine", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Turns[0].RoutineRunID = "routine" }},
+		{name: "routine slot", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Bindings[0].SessionSlot = "routine" }},
+		{name: "bot exchange", mutate: func(x *Export, _ *pa.ContextSnapshot) {
+			x.Turns[0].Origin = pa.BotRequestOrigin
+			x.Turns[0].ExchangeID = "exchange"
+		}},
+		{name: "host notice", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Turns[0].Origin = pa.HostNoticeOrigin }},
+		{name: "work and notice", mutate: func(x *Export, _ *pa.ContextSnapshot) {
+			x.Messages[0].Kind = pa.WorkMessage
+			x.Messages[1].Kind = pa.NoticeMessage
+		}},
+		{name: "queued", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Turns[0].State = pa.TurnQueued }},
+		{name: "unknown human only", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Turns[0].State = pa.TurnUnknown }, want: 1},
+		{name: "acknowledged unknown human only", mutate: func(x *Export, _ *pa.ContextSnapshot) {
+			x.Turns[0].State = pa.TurnFailed
+			x.Turns[0].Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown}
+		}, want: 1},
+		{name: "unknown after forget", mutate: func(x *Export, m *pa.ContextSnapshot) {
+			x.Turns[0].State = pa.TurnUnknown
+			m.Memory.ForgottenThrough = 1
+		}},
+		{name: "future", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Turns[0].MemoryRevision = 3 }},
+		{name: "before forget", mutate: func(x *Export, m *pa.ContextSnapshot) { x.Turns[0].MemoryRevision = 1; m.Memory.ForgottenThrough = 2 }},
+		{name: "forgotten input", mutate: func(_ *Export, m *pa.ContextSnapshot) { m.Memory.ForgottenSourceIDs = []string{"topic"} }},
+		{name: "forgotten turn", mutate: func(_ *Export, m *pa.ContextSnapshot) { m.Memory.ForgottenSourceIDs = []string{"prior"} }},
+		{name: "forgotten reply", mutate: func(_ *Export, m *pa.ContextSnapshot) { m.Memory.ForgottenSourceIDs = []string{"answer"} }, want: 1},
+		{name: "ambiguous message", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Messages = append(x.Messages, x.Messages[0]) }, code: pa.Invalid},
+		{name: "ambiguous turn", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Turns = append(x.Turns, x.Turns[0]) }, code: pa.Invalid},
+		{name: "foreign machine", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Messages[0].Fence.Key.MachineID = "foreign" }, code: pa.ScopeDenied},
+		{name: "foreign bot", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Turns[0].Fence.Key.BotID = "foreign" }, code: pa.ScopeDenied},
+		{name: "foreign canonical project", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Messages[0].Fence.Project.CanonicalID = "foreign" }, code: pa.ScopeDenied},
+		{name: "foreign conversation", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Messages[0].Fence.ConversationID = "foreign" }, code: pa.ScopeDenied},
+		{name: "foreign agent", mutate: func(x *Export, _ *pa.ContextSnapshot) { x.Bindings[0].Agent = "foreign" }, code: pa.ScopeDenied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x, turn, filtered := continuationFixture()
+			if tc.mutate != nil {
+				tc.mutate(&x, &filtered)
+			}
+			h, err := newSessionHandoff(x, turn, filtered)
+			if pa.Code(err) != tc.code {
+				t.Fatalf("error=%v want=%s", err, tc.code)
+			}
+			if err != nil {
+				return
+			}
+			if len(h.Continuation) != tc.want {
+				t.Fatalf("quotes=%+v want=%d", h.Continuation, tc.want)
+			}
+			if _, err = h.Opening(turn, filtered); err != nil {
+				t.Fatal(err)
+			}
+			if len(h.Continuation) > 0 && strings.Contains(tc.name, "unknown") && h.Continuation[0].State != pa.TurnUnknown {
+				t.Fatal("unknown became successful")
+			}
+		})
+	}
+}
+
+func TestFreshContinuationIsBoundedAndFinalSnapshotChecked(t *testing.T) {
+	x, turn, filtered := continuationFixture()
+	old := x.Messages[0].Fence
+	x.Messages = nil
+	x.Turns = nil
+	for i := 0; i < capacity.MaximumBotContinuationMessages+2; i++ {
+		id := fmt.Sprintf("message-%d", i)
+		tid := fmt.Sprintf("turn-%d", i)
+		x.Messages = append(x.Messages, pa.Message{ID: id, TurnID: tid, Fence: old, Seq: int64(i + 1), Kind: pa.UserMessage, Text: strings.Repeat("字", capacity.MaximumBotContinuationQuoteBytes)})
+		x.Turns = append(x.Turns, pa.Turn{ID: tid, MessageID: id, Fence: old, State: pa.TurnSucceeded, MemoryRevision: 2})
+	}
+	x.Messages = append(x.Messages, pa.Message{ID: turn.MessageID, TurnID: turn.ID, Fence: turn.Fence, Seq: 100, Kind: pa.UserMessage, Text: "Now"})
+	h, err := newSessionHandoff(x, turn, filtered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Continuation) != capacity.MaximumBotContinuationMessages || h.Continuation[0].MessageID != "message-2" {
+		t.Fatal("recent bound lost", h.Continuation)
+	}
+	for _, q := range h.Continuation {
+		if !utf8.ValidString(q.Text) || len(q.Text) > capacity.MaximumBotContinuationQuoteBytes || !q.Truncated {
+			t.Fatal("quote bound or UTF-8 lost", q)
+		}
+	}
+	h.Continuation[0].Text = "forged"
+	if _, err = h.Opening(turn, filtered); pa.Code(err) != pa.ContextStale {
+		t.Fatal("mutated quote admitted", err)
+	}
+	x, turn, filtered = continuationFixture()
+	h, err = newSessionHandoff(x, turn, filtered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered.Memory.ForgottenSourceIDs = []string{"topic"}
+	if _, err = h.Opening(turn, filtered); pa.Code(err) != pa.ContextStale {
+		t.Fatal("post-capture forget admitted", err)
+	}
+}
 
 func handoffFixture() (Export, pa.Turn, pa.ContextSnapshot) {
 	key := pa.BotKey{MachineID: "machine", BotID: "bot"}

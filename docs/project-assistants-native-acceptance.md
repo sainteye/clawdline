@@ -11,6 +11,57 @@ retained privately; no unknown turn was acknowledged or resent.
 
 ## Verified inputs and results
 
+### Fresh continuation controls and native results (2026-11-16)
+
+These controls are synthetic and do not increase the native prompt counts
+below. `TestRuntimeSQLiteFreshContinuation` reproduces a fresh provider prompt
+losing the prior research URL or banner brief, then checks that the candidate
+passes through the same Store/Engine entry. Both an immediate short follow-up
+and one after unrelated chat are covered across a real SQLite close/reopen.
+No short-term detail becomes a MemoryEntry, and the expected reply count stays
+one per input. `TestHostLegacyUnownedBindingReopensFreshWithChat` closes and
+reopens Host and SQLite, invokes production Codex owner admission against an
+empty synthetic state, observes `ResumeUnsupported`, and uses a scripted fresh
+provider to verify continuation. This is safe fresh fallback, not legacy-ID
+resume or a successful native model call.
+
+Additional controls exercise normal resume without recap, acknowledged-unknown
+human topics without unknown Bot replies, final forget/revocation with zero
+prompt sends, foreign scopes, routine/exchange isolation and late events.
+The existing snapshot byte/source equality and quote forget rules are retained.
+The registered 12-message / 2,000-byte excerpt bounds have a retained guard-red
+run before registration. Longer history and truncated details remain outside
+this continuation acceptance; no hidden search or paid summary is introduced.
+
+`TestInstalledAgentsNativeFreshContinuation` is a default-skipped optional
+batch for the integrating root. After authorizing the batch, set
+`CLAWDLINE_NATIVE_CONTINUATION=four-prompts-once` and
+`CLAWDLINE_NATIVE_CONTINUATION_ROOT` to a new absolute task-owned path, then run
+`go test ./internal/adapters/projectassistanthost -run
+'^TestInstalledAgentsNativeFreshContinuation$' -count=1 -v`. The existing
+qualification wrapper hard-caps both opens and prompt writes at four, with
+no retries. Each agent receives two turns. Between them Host/SQLite reopen and
+a normal Service.Edit instruction revision require distinct fresh native IDs;
+the second prompt must recover the first turn's synthetic URL token and banner
+dimensions through handoff, without persisting memory. A failed or unknown
+outcome stops the batch. The child did not enable it. The root then ran the
+batch once on the preserved candidate source: Claude Code passed its two turns
+in 26.21 seconds and Codex passed its two in 44.08 seconds; the full Go test
+reported 70.30 seconds. Each agent used distinct fresh native IDs across a real
+Host/SQLite reopen and a normal instruction revision. Each second turn returned
+the earlier synthetic URL token and banner dimensions through one successful
+MCP message. Reopened SQLite held two succeeded turns, four messages and zero
+MemoryEntries per agent.
+
+This adds four native opens, four prompt writes, no read_memory calls and four
+successful send_message calls. The earlier common/resume batches below remain
+unchanged: cumulative recorded native prompt writes are ten. No direct content
+API or additional purchase was used; provider-internal requests and billing
+remain unmeasured. A post-test count-reporting wrapper failed on the legitimate
+null read list after the Go test had passed; the root reconstructed and checked
+the counts from the original saved observations without rerunning a prompt.
+Production Cloud and running dev acceptance remain separate.
+
 The initial run used source `284034701e4fe8eb7f22e8bf2a5b50341b46b892`.
 It sent two prompts to each agent. Claude passed both; Codex passed its first
 turn and failed the follow-up assertion. The correction was then exercised

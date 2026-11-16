@@ -10,6 +10,38 @@ records modifications and distinguishes completed ports from later work.
 
 ## Actual reuse in PA-01
 
+### Fresh-session chat continuation (2026-11-16)
+
+The additional reference for fresh continuation is CodyNC
+`9f67eb09084db61b3cca9c84a11bc03df9de29b7`,
+`host/src/agent/fallback/carry.rs`: `said`, `repeated(None)` and `Recap::text`.
+Its unknown-window branch selects the latest 12 chat messages and quotes at
+most 2,000 bytes per message. Clawdline adopts only those two bounds and the
+historical-information framing, registered as `bots.carry_messages` and
+`bots.carry_quote_bytes`. It does not adopt window estimates, earlier-message
+budgets, catch-up, ledgers, history search, model summaries or background dreams.
+`host/src/chat/handoff.rs::build`, `chat/context.rs::resolve` and
+`agent/bot/{session,turn}.rs` were also reviewed: frozen memory/instructions,
+native resume and deterministic handoff remain separate responsibilities.
+
+The Go adaptation selects main-chat human inputs and successful Bot replies
+from the one source-owned Export inside the final `Memory.WithCurrent` check.
+Each excerpt retains message, turn and input IDs, sequence, memory revision,
+kind, outcome and an explicit truncation flag. Text is cut only at UTF-8
+boundaries. Unknown or acknowledged-unknown human inputs can preserve a topic
+before any forget fence; their replies are never presented as completed work.
+The existing quote provenance and forget rules apply independently to both
+the excerpt and its original input. Routine, Bot exchange, host notice,
+queued, withdrawn and foreign conversation content is excluded.
+
+This is short-term context in the existing ACP prompt opening, not a memory
+write or new wire method. Normal native resume receives no duplicate recap.
+Older-than-window or truncated details are not reconstructed or searched for;
+in particular, a truncated URL is not evidence of its missing suffix. These
+changes have scripted Store/Engine/Host controls and four actual installed
+Claude Code/Codex prompt writes passing fresh continuation with zero durable
+memory entries. Destination deployment remains separately pending.
+
 | Exact pinned upstream path | Retained structure/rule | Delivery classification and difference |
 | --- | --- | --- |
 | host/src/store/model.rs | Stable BotConfig independent of lane/entry history; avatar vocabulary, permission setting and profile | Go data-contract adaptation. Source machine/canonical Project identity is added. `auto_read` is deliberately narrower than upstream `auto`; groups, pinning, reordering and provider switching are omitted. |
