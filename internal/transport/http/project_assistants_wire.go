@@ -68,6 +68,11 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 	}
 	out.Mode = value.Mode
 	out.Hidden = value.Hidden
+	out.ManageTeam = value.ManageTeam
+	if value.CreatedBy != nil {
+		key := paWireBotKey(*value.CreatedBy)
+		out.CreatedBy = &key
+	}
 	out.Instructions = paWireInstructionSnapshot(value.Instructions)
 	out.Version = value.Version
 	convertedCreatedAt, err := paWireTime(value.CreatedAt)

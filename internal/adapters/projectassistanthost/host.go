@@ -69,6 +69,9 @@ type Host struct {
 	store           *featurestore.Store
 	service         *app.Service
 	engine          *app.Engine
+	groups          *app.GroupRooms
+	rooms           *app.RoomDriver
+	team            *app.TeamCoordinator
 	authority       *orchestrator.AssistantAuthority
 	bridge          *app.BrokerWorkBridge
 }
@@ -90,7 +93,7 @@ func New(ctx context.Context, o Options) (*Host, error) {
 	if exists {
 		// Disabled installations retain readable history and may skip Enable.
 		// Run repeatable additive migrations here, never in the read adapter.
-		if err = (featurestore.Installer{}).Install(ctx, o.Database); err != nil {
+		if err = app.InstallSchemas(ctx, o.Database, featurestore.Installer{}, featurestore.GroupInstaller{}); err != nil {
 			return nil, err
 		}
 		if err = h.makeService(); err != nil {
@@ -124,7 +127,7 @@ func (h *Host) inspect(ctx context.Context) (bool, bool, error) {
 		return true, false, failure(pa.Unsupported, "schema_version")
 	}
 	var has bool
-	err = h.o.Database.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?)`, h.o.MachineID).Scan(&has)
+	err = h.o.Database.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?) OR EXISTS(SELECT 1 FROM project_assistant_groups WHERE machine=?)`, h.o.MachineID, h.o.MachineID).Scan(&has)
 	return true, has, err
 }
 
@@ -149,7 +152,32 @@ func (h *Host) makeService() error {
 			return err
 		}
 	}
-	s, err := app.NewService(app.ServiceOptions{Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+
+	groups, err := app.NewGroupRooms(featurestore.NewGroupStore(h.o.Database), app.DefaultGroupLimits(), h.o.Clock)
+	if err != nil {
+		return err
+	}
+	rooms, err := app.NewRoomDriver(app.RoomDriverOptions{Rooms: groups, Bots: h.store, Limits: app.DefaultRoomLimits(), ID: h.o.ID, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+		return h.background(ctx, key, true)
+	}})
+	if err != nil {
+		return err
+	}
+	rooms.Attach(runtimeFacade{h})
+	team, err := app.NewTeamCoordinator(app.TeamCoordinatorOptions{Repository: h.store, Clock: h.o.Clock, ID: h.o.ID, Check: func(ctx context.Context, fence pa.Fence, turn string) (app.ManagerContext, error) {
+		h.mu.Lock()
+		r := h.engine
+		h.mu.Unlock()
+		if r == nil {
+			return app.ManagerContext{}, failure(pa.Revoked, "manager_execution")
+		}
+		return r.ManagerContext(ctx, fence, turn)
+	}})
+	if err != nil {
+		return err
+	}
+	h.groups, h.rooms, h.team = groups, rooms, team
+	s, err := app.NewService(app.ServiceOptions{Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}
@@ -356,7 +384,7 @@ func (h *Host) Enable(ctx context.Context) error {
 		h.cleanupPending = false
 		h.mu.Unlock()
 	}
-	if err := (featurestore.Installer{}).Install(ctx, h.o.Database); err != nil {
+	if err := app.InstallSchemas(ctx, h.o.Database, featurestore.Installer{}, featurestore.GroupInstaller{}); err != nil {
 		return err
 	}
 	h.mu.Lock()
@@ -440,10 +468,14 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	h.enabled = false
 	h.closed = h.closed || closeHost
 	r := h.engine
+	rooms := h.rooms
 	stop, done := h.routineStop, h.routineDone
 	h.cleanupPending = h.store != nil
 	h.mu.Unlock()
 	var result error
+	if rooms != nil {
+		rooms.CancelRooms()
+	}
 	if stop != nil {
 		stop()
 		select {
@@ -462,6 +494,9 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 		} else {
 			result = errors.Join(result, r.Close(ctx))
 		}
+	}
+	if rooms != nil {
+		rooms.Idle()
 	}
 	field := "execution"
 	if closeHost {
@@ -534,7 +569,7 @@ func (h *Host) runtime() (*app.Engine, error) {
 		return h.engine, nil
 	}
 	p := &lazyProvider{factory: h.o.Provider}
-	r, err := app.NewRuntime(app.RuntimeOptions{Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	r, err := app.NewRuntime(app.RuntimeOptions{Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		f, s, e := h.background(ctx, key, true)
 		if e != nil {
 			return f, s, e
@@ -699,4 +734,28 @@ func (h *Host) AgentRests(ctx context.Context) ([]pa.AgentRest, error) {
 		}
 	}
 	return rests, nil
+}
+
+func (f runtimeFacade) TeamCoordinator() *app.TeamCoordinator {
+	f.h.mu.Lock()
+	defer f.h.mu.Unlock()
+	return f.h.team
+}
+func (f runtimeFacade) BusyElsewhere(ctx context.Context, member, group pa.BotKey) (bool, error) {
+	f.h.mu.Lock()
+	r := f.h.engine
+	f.h.mu.Unlock()
+	if r == nil {
+		return false, nil
+	}
+	return r.BusyElsewhere(ctx, member, group)
+}
+func (f runtimeFacade) CancelRoomTurns(ctx context.Context, group, member pa.BotKey, active bool) error {
+	f.h.mu.Lock()
+	r := f.h.engine
+	f.h.mu.Unlock()
+	if r == nil {
+		return nil
+	}
+	return r.CancelRoomTurns(ctx, group, member, active)
 }
