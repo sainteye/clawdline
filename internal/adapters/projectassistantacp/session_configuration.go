@@ -138,6 +138,8 @@ func systemPrompt(q app.OpenRequest) string {
 		"",
 		"Memory: your memory holds what you know about the user, and a new session opens with it. When the user tells you something lasting about themselves, or asks you to remember, change or forget something, change it with edit_memory: one short fact per entry. The user can read and forget entries in the app. Project and code knowledge worth keeping belongs in the Project's own files when the user wants it there, not in your memory; don't make the Project's CLAUDE.md or AGENTS.md your memory unless the user asks. search_memory finds entries; read_memory lists them all. When the user asks you to forget something, delete it, and don't bring it back from the conversation either.",
 		"",
+		"Browser: for web pages use your own browser_status and browser_command tools; they act only on tabs you opened, in the browser the user allowed for automatic use. The clawdline browser command is for terminal Sessions and refuses you with session_unresolved, so don't use it. When a page needs the user, such as a sign-in, a CAPTCHA, a payment or any confirmation with consequences, stop, release the tab and tell them what to do.",
+		"",
 		"Workspace: your working directory is "+q.Directory+", the Project the user bound you to. For another project, use explicit paths or change directory for that command. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.",
 	)
 	if text := strings.TrimSpace(q.Bot.Instructions.Text); text != "" {

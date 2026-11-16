@@ -174,8 +174,10 @@ func TestProviderRefusesUnownedOrRevokedToolsBeforeLaunching(t *testing.T) {
 }
 
 // framed is the Codync frame followed by the person's instructions: who the
-// Bot is, how replies reach the user, and that its Project grants nothing.
+// Bot is, how replies reach the user, that its Project grants nothing, and
+// that its browser is its own tools, not the Session-only clawdline browser.
 func framed(prompt, instructions string) bool {
 	return strings.HasPrefix(prompt, "Agent profile:") && strings.HasSuffix(prompt, "\n"+instructions) &&
-		strings.Contains(prompt, "send_message") && strings.Contains(prompt, "dispatch_work") && strings.Contains(prompt, "not a sandbox or a grant of access")
+		strings.Contains(prompt, "send_message") && strings.Contains(prompt, "dispatch_work") && strings.Contains(prompt, "not a sandbox or a grant of access") &&
+		strings.Contains(prompt, "browser_command") && strings.Contains(prompt, "session_unresolved")
 }
