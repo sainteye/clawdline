@@ -43,6 +43,10 @@ test('a later call: 「你剛剛講的最後一個」 is the last name spoken ev
 test('positional words are recognized as positions, not handed to a guess',()=>{
  for(const words of ['跟我講你最後的那一個','最後那個','最后那个','最後一個','你最後提到的'])assert.equal(relativeSession(words),'last',words)
  for(const words of ['最後怎麼了','它最後做完什麼'])assert.equal(relativeSession(words),undefined,words)
+ // 2026-11-16: "at the end it said several messages" was read as "the last Session mentioned",
+ // and explain_session_reply refused the exact Session id the copilot gave.
+ for(const words of ['你最後講的那個','你剛剛最後介紹的'])assert.equal(relativeSession(words),'last',words)
+ for(const words of ['他最後有講幾個訊息,然後裡面講了蠻多資訊的。你可以幫我看一下嗎','它最後說了什麼'])assert.equal(relativeSession(words),undefined,words)
 })
 test('interrupted, duplicate-name and unanchored speech cannot silently reuse an old identity',()=>{
  const spoken=new SpokenSessions();spoken.observe(a);spoken.observe(b)

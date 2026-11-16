@@ -35,8 +35,11 @@ export function sessionNamePosition(text:string,label:string){
 }
 /** A label without the trailing 「（machine）」 the fleet adds when several machines are listed. */
 export function spokenName(label:string){return label.replace(/\s*\uff08[^\uff08\uff09]+\uff09\s*$/u,'')||label}
+// "The one you mentioned last" (最後提到的) points at a Session; "at the end it
+// said..." (他最後有講幾個訊息) is about its words, and on 2026-11-16 reading it as
+// a position made explain_session_reply refuse the Session the call was about.
 export function relativeSession(text:string):number|'last'|undefined {
- if(/(?:最後|最后)(?:的)?(?:那|这|這)?(?:一)?(?:個|个|位)|(?:最後|最后).*(?:提到|介紹|介绍|說|说|講|讲)|\b(?:last|previous) (?:one|session)\b|\b(?:one|session) you (?:mentioned|described) last\b/i.test(text))return 'last'
+ if(/(?:最後|最后)(?:的)?(?:那|这|這)?(?:一)?(?:個|个|位)|(?:最後|最后)(?:提到|介紹|介绍|說|说|講|讲)(?:過|过)?(?:的|那|這|这)|\b(?:last|previous) (?:one|session)\b|\b(?:one|session) you (?:mentioned|described) last\b/i.test(text))return 'last'
  const cn=/第\s*([一二三四五六七八九十兩两\d]+)\s*(?:個|个|項|项|session|station|stage)/i.exec(text)
  if(cn){const n:Record<string,number>={一:1,二:2,三:3,兩:2,两:2};return n[cn[1]]??Number(cn[1])}
  const en=/\b(first|second|third) (?:one|session)\b/i.exec(text)

@@ -4064,7 +4064,7 @@
     "web/console/src/project-assistants/routine-intent.ts": "3fe5a42378fd7adfc75895ff458e52693b18f90f9c27a1f849cb9b4f8dadf4fa",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
-    "web/console/src/realtime/copilot-reports.ts": "03670b0f8aceb6c500203b5d14b96063e845bbb4ad040da0ca377f46dbfc3a7d",
+    "web/console/src/realtime/copilot-reports.ts": "7810e94b00ca6f0a8e230cdca071dcd606de9f661b9272bf035b84f4c0d9be20",
     "web/console/src/realtime/copilot-speech.ts": "693365864fd8f309d396aa5d9878e550e9de8d55811288779bb76aa70f5b312b",
     "web/console/src/realtime/copilot-tools.ts": "e41a1987e2da74664efec38fcef89c29ab54d38f8ed054730a83f6726f127d07",
     "web/console/src/realtime/realtime-copilot.ts": "d48f5c34b0723a8af76e6757f3179fc4e61eee506f704678e0234d5d63d348c8",

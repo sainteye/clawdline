@@ -5,6 +5,8 @@ import assert from "node:assert/strict"
 import { withMark, UPDATE_MARKS } from "./copilot-marks.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { CHILDREN_NOTE, ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { SpokenSessions } from "./copilot-reports.ts"
 
 // Rows in the shape `GET /v1/sessions` answers (the daemon's row and the Cloud
 // reader's snapshot carry the same keys).
@@ -495,6 +497,18 @@ test("explain_session_reply hands over a long reply whole, with the ask it answe
   assert.equal(out.asked, "Why does it still open on Argon?")
   assert.equal(out.reply, diagnosis)
   assert.equal(out.reply_truncated, undefined)
+})
+
+test("explain_session_reply reads the Session when the person says what it said at the end", async () => {
+  // 2026-11-16, a GPT-Live call: 「他最後有講幾個訊息」 was taken for "the last Session
+  // mentioned"; with no spoken list to check it against, every try was refused in 0.0 s.
+  const { deps } = fakeMachine({}, { transcripts: { "%2": { entries: [{ role: "assistant", text: "Three findings, and a question at the end." }] } } })
+  // A GPT-Live call keeps no spoken list, so its references resolve against an empty one.
+  const spoken = new SpokenSessions()
+  Object.assign(deps, { heard: () => "他最後有講幾個訊息,然後裡面講了蠻多資訊的。你可以幫我看一下嗎", spokenReference: (text: string) => spoken.resolve(text) })
+  const out = JSON.parse((await runCopilotTool("explain_session_reply", '{"session_id":"%2"}', deps)).output)
+  assert.equal(out.error, undefined, JSON.stringify(out))
+  assert.equal(out.reply, "Three findings, and a question at the end.")
 })
 
 test("a reply over its budget keeps its beginning and the question it ends on", async () => {
