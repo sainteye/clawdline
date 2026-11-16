@@ -179,5 +179,5 @@ func TestProviderRefusesUnownedOrRevokedToolsBeforeLaunching(t *testing.T) {
 func framed(prompt, instructions string) bool {
 	return strings.HasPrefix(prompt, "Agent profile:") && strings.HasSuffix(prompt, "\n"+instructions) &&
 		strings.Contains(prompt, "send_message") && strings.Contains(prompt, "dispatch_work") && strings.Contains(prompt, "not a sandbox or a grant of access") &&
-		strings.Contains(prompt, "browser_command") && strings.Contains(prompt, "session_unresolved")
+		strings.Contains(prompt, "browser_command") && strings.Contains(prompt, "session_unresolved") && strings.Contains(prompt, "Don't release it")
 }

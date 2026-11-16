@@ -4237,7 +4237,7 @@
     "internal/adapters/projectassistantacp/mcp.go": "a5a3fe13122897cb03aa4728e4a59f36bc4736f03709e6d05eef48167f431300",
     "internal/adapters/projectassistantacp/native_history.go": "76a4e6dce128045caaf145538acec3d81e8f130cd6e3e00a1fd41a2c84606176",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "f0b42ad4e1d93bebec6e0e4cc014a216262de602669922c6473ccd5f8c2dafd9",
+    "internal/adapters/projectassistantacp/session_configuration.go": "f5de7ac6654435e88248fee99602a496953ffef79ff723b8f58b96dcb9bbed0f",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projectassistanthost/provider.go": "d05faa733a985ee82357ea07b4c51a30e0fd6d6295208cad168b66e0044c22bd",
     "internal/adapters/projectassistantstore/collaboration.go": "a0eea746b9f472c4ed122700c58da9500404537ded316da09b9b75987522c7a4",
@@ -4386,7 +4386,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "01c0bbe095605efa338767e4a6d639ac244d5cdb896e32ef08459b7f4c5f4134",
-    "zh-Hant": "b8535ba4a85bef3dac11c7efded2e6f4694abeb24a7bb9a44f488de24083defd"
+    "en": "2d81d4a1665f57986a07b2ebf884f6d783f97df6ec87fcad198be17b50fbf885",
+    "zh-Hant": "8c34617d336c6475e6226fc50efd494b9e6fb8a8dcb2548d8c7bfa77ddbe0d69"
   }
 }
