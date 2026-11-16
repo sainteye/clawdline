@@ -28,6 +28,7 @@
     personEnd: 0, // when the person's last line ended
     delegations: 0, // backend work started and not yet completed
     responses: new Set(), // backend responses created and not yet finished (one per tool round)
+    latestNoteAt: 0, // when the call last handed the live model a Session's latest state
     awaiting: false, // backend work asked for (a delegation, or a continuation after a tool result) whose response has not started
     pending: new Set(), // backend function calls without a result yet
     said: [], // the copilot's words, as the transcript gave them
@@ -79,6 +80,7 @@
           const m = JSON.parse(text)
           if (m.type === 'response.item.create' && m.item?.type === 'function_call_output') watch.pending.delete(m.item.call_id)
           if (m.type === 'response.create') watch.awaiting = true
+          if (m.type === 'session.commentary.append' && /latest state of Session/.test(String(m.content))) watch.latestNoteAt = wall()
         } catch {}
         return send(text)
       }

@@ -1011,6 +1011,8 @@ test('a GPT-Live call placed from a Session opens on its summary at once and goe
   assert.match(long.sent[1], /這個 Session 在準備截圖。/, 'and its first sentence')
   const same = await run({ latest: 'Four screenshots were taken.' })
   assert.equal(same.sent.length, 1, 'an unchanged latest summary with no new reports is not said again')
+  const reworded = await run({ latest: 'Four screenshots: taken, four.' })
+  assert.equal(reworded.sent.length, 1, 'a latest summary in other words with nothing new is not said as news')
   const fresh = await run({ latest: 'unused', keptAge: 60 })
   assert.equal(fresh.forks.length, 0, 'a summary at most five minutes old is the latest; nothing more is read')
   assert.equal(fresh.sent.length, 1)

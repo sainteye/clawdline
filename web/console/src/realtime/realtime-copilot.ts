@@ -25,7 +25,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, LIVE_NEWS_SHARE, newShare, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -240,6 +240,8 @@ export class RealtimeCopilotClient {
   private liveSaid = new LiveTranscript()
   /** When the live model last spoke (`session.output_transcript.delta`); 0 before it has. */
   private liveSaidAt = 0
+  /** Everything the live model has said in this call, which the latest state is checked against. */
+  private liveSaidAll = ''
   /** How long the live model is silent before its opening counts as said, and how long its opening may take to start. */
   liveQuietMs = 1500
   liveStartGraceMs = 8000
@@ -563,7 +565,7 @@ export class RealtimeCopilotClient {
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
     clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.screenLooked=false
-    this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
+    this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.liveSaidAll='';this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
     // Which build and tools this call has: on 2026-11-13 a call could not be
@@ -1393,6 +1395,12 @@ export class RealtimeCopilotClient {
     const hadOpening = opened && !!kept
     if (hadOpening) await this.untilOpeningSaid(noteAt, current)
     if (!current() || !dc) return
+    // Nothing the call has not already said (an overview included) is not news.
+    const share = newShare(`${changed ? text : ''} ${reports}`, `${kept} ${this.liveSaidAll}`)
+    if (hadOpening && share < LIVE_NEWS_SHARE) {
+      this.journal('tool', 'opening_latest_summary', { args: JSON.stringify({ session_id: row.id }), outcome: 'no_news', answer: `new share ${share.toFixed(2)}` })
+      return
+    }
     dc.send(JSON.stringify(liveNote('commentary', liveLatestNote(row.label, changed ? text : kept, hadOpening, reports))))
     this.journal('tool', 'opening_latest_summary', { args: JSON.stringify({ session_id: row.id }), answer: (changed ? text : kept).slice(0, 1500) })
   }
@@ -1447,6 +1455,7 @@ export class RealtimeCopilotClient {
         if (heard) { this.journal('heard', heard); this.doneSinceHeard.clear(); this.updateState({ tools: [] }) }
         this.liveSaid.add(event.delta)
         this.liveSaidAt = Date.now()
+        if (typeof event.delta === 'string') this.liveSaidAll += event.delta
         this.updateState({ speakingState: 'speaking', lastAssistantSpeech: this.liveSaid.peek() })
         return
       }

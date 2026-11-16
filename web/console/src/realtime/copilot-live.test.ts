@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingInstructions, livePacingUpdate, liveNote, liveToolReply } from "./copilot-live.ts"
+import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, newShare, LIVE_NEWS_SHARE, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingInstructions, livePacingUpdate, liveNote, liveToolReply } from "./copilot-live.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { formatDuration } from "./copilot-cost.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
@@ -142,4 +142,13 @@ test("the backend answers an overview from the snapshot's recaps and does not re
   assert.match(text, /不要把查過的 Session 再逐一重講/)
   // The Live flow comes after the Realtime rules it overrides.
   assert.ok(text.indexOf("GPT-Live 的做法") > text.indexOf("【工具】"))
+})
+
+test("the latest state is news only by what the call has not said yet", () => {
+  // 2026-11-16: the overview said the iPad failures, and the latest recap said them again as news.
+  const said = "有兩件要你決定：結帳改版要不要合併；2.4 版有三個 UI 測試只在 iPad 上失敗，要先略過還是先修好？"
+  assert.ok(newShare("2.4 版有三個 UI 測試只在 iPad 上失敗，要先略過還是先修好", said) < LIVE_NEWS_SHARE)
+  assert.ok(newShare("Search rebuild deleted 1,240 lines of the old search", "Search rebuild delivered Meilisearch.") > LIVE_NEWS_SHARE)
+  assert.equal(newShare("", "anything"), 0)
+  assert.equal(newShare("all new words", ""), 1)
 })

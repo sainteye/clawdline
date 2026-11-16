@@ -29,7 +29,7 @@ const arg = (name, fallback) => { const i = process.argv.indexOf('--' + name); r
 // passed "--person-voice cedar" as one word and the take was made in the
 // default voice without a word said.
 {
-  const VALUED = ['--lang', '--dist', '--out', '--keep', '--script', '--person-voice'], FLAGS = ['--phone', '--live', '--no-tighten']
+  const VALUED = ['--lang', '--dist', '--out', '--keep', '--script', '--person-voice'], FLAGS = ['--phone', '--live', '--no-tighten', '--allow-glitches']
   for (let i = 2; i < process.argv.length; i++) {
     const a = process.argv[i]
     if (VALUED.includes(a)) { i++; continue }
@@ -136,6 +136,7 @@ const server = createServer(async (req, res) => {
   if (path === '/v1/voice/copilot-recap' && req.method === 'POST') {
     const b = await body(req); await sleep(1800)
     const text = S.latest(String(b.session ?? ''))
+    push() // Release 2.4's suite may just have finished: the list shows its question now.
     return text ? json(res, 200, { recap: text, at: Math.floor(Date.now() / 1000), current: true }) : json(res, 404, { error: { code: 'not_found' } })
   }
   // Which Session a sentence means: the one it names, or the one being discussed.
@@ -170,6 +171,22 @@ const origin = 'http://127.0.0.1:' + server.address().port
 const profile = mkdtempSync(join(tmpdir(), 'clawdline-copilot-demo-'))
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile, '--no-first-run', '--no-default-browser-check',
   '--autoplay-policy=no-user-gesture-required', '--hide-scrollbars', `--window-size=${VIEW.width},${VIEW.height}`, 'about:blank'])
+// Chrome and its profile go away however the recorder ends: an error, a
+// timeout's SIGTERM or Ctrl-C included. On 2026-11-16 another Session found
+// 155 headless Chromes left by takes that had failed or been timed out,
+// orphaned for up to four days and loading the machine; the recorder had
+// closed Chrome only after a take that succeeded.
+let chromeGone = false
+function stopChrome() {
+  if (chromeGone) return
+  chromeGone = true
+  try { chrome.kill('SIGKILL') } catch { /* already gone */ }
+  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5 }) } catch { /* removed already */ }
+}
+process.on('exit', stopChrome)
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => { stopChrome(); process.exit(signal === 'SIGINT' ? 130 : 143) })
+process.on('uncaughtException', (error) => { console.error(error); stopChrome(); process.exit(1) })
+process.on('unhandledRejection', (error) => { console.error(error); stopChrome(); process.exit(1) })
 const endpoint = await new Promise((ok, fail) => {
   let said = ''; const timer = setTimeout(() => fail(new Error('Chrome did not start: ' + said)), 20000)
   chrome.stderr.on('data', (c) => { said += c; const m = /DevTools listening on (ws:\/\/\S+)/.exec(said); if (m) { clearTimeout(timer); ok(m[1]) } })
@@ -347,8 +364,19 @@ if (LIVE) {
     } else if (step.open) {
       await sleep(900)
       await openRow(IDS[step.open])
+      const opened = await run('window.__demo.watch.personEnd')
       const reading = step.read ? readDown(IDS[step.open]) : Promise.resolve()
       await turn(S.words.names[step.open], 120000); await reading
+      // The latest state follows the kept summary once that has been said, and the
+      // live model takes a few seconds to start on it: the person waits for it, as a
+      // person would (a phone take on 2026-11-16 spoke over it). A call that finds
+      // nothing new sends none; then the wait ends after 25 s.
+      const end = Date.now() + 25000
+      while (Date.now() < end && !(await run(`window.__demo.watch.latestNoteAt > ${opened}`))) await sleep(200)
+      if (await run(`window.__demo.watch.latestNoteAt > ${opened}`)) {
+        await run('window.__demo.watch.personEnd = window.__demo.watch.latestNoteAt')
+        await turn(`${S.words.names[step.open]} (latest)`, 60000)
+      }
     } else if (step.say || step.sayUnsent) {
       // GPT-Live may act on an instruction at once; a yes is said only while nothing has been sent.
       if (step.sayUnsent && S.state.releaseSent) continue
@@ -421,6 +449,26 @@ const first = frames[0].ts * 1000
 // A GPT-Live take adds the copilot's recorded voice, from the moment its recording started.
 const voices = [...clips.map((c) => ({ file: join(VOICES, c.id + '.ogg'), at: c.wallMs })), ...(LIVE && voice.data ? [{ file: join(work, 'copilot.webm'), at: voice.start }] : [])]
 if (LIVE && voice.data) writeFileSync(join(work, 'copilot.webm'), Buffer.from(voice.data, 'base64'))
+const glitches = LIVE && voice.data ? audioGlitches(join(work, 'copilot.webm'), (voice.start - first) / 1000) : []
+
+/**
+ * Where the copilot's received voice breaks up, in seconds of the untrimmed
+ * film: a 10 ms frame gone silent between loud ones (a lost packet), or a
+ * sample-to-sample jump no voice makes (a click). On 2026-11-16 a take made at
+ * a load average near 10 broke up twice in one answer and was heard; a take is
+ * now refused for it (--allow-glitches keeps it).
+ */
+function audioGlitches(file, offset) {
+  const RATE = 16000
+  const raw = execFileSync('ffmpeg', ['-v', 'quiet', '-i', file, '-ac', '1', '-ar', String(RATE), '-f', 's16le', '-'], { maxBuffer: 1 << 28 })
+  const n = raw.length >> 1, at = (i) => raw.readInt16LE(i * 2), found = new Set()
+  const F = RATE / 100, level = []
+  for (let i = 0; i + F <= n; i += F) { let sum = 0; for (let j = 0; j < F; j++) sum += Math.abs(at(i + j)); level.push(sum / F) }
+  for (let i = 3; i < level.length - 3; i++)
+    if (level[i] < 15 && Math.max(...level.slice(i - 3, i)) > 600 && Math.max(...level.slice(i + 1, i + 4)) > 600) found.add(Math.round((i / 100 + offset) * 10) / 10)
+  for (let i = 1; i < n; i++) if (Math.abs(at(i) - at(i - 1)) > 9000) found.add(Math.round((i / RATE + offset) * 10) / 10)
+  return [...found].sort((a, b) => a - b)
+}
 const inputs = voices.flatMap((v) => ['-i', v.file])
 const graph = voices.map((v, i) => `[${i + 1}]aformat=channel_layouts=mono,adelay=${Math.max(0, Math.round(v.at - first))}:all=1[a${i}]`).join(';') + ';' +
   voices.map((_, i) => `[a${i}]`).join('') + `amix=inputs=${voices.length}:normalize=0,pan=stereo|c0=c0|c1=c0,apad=whole_dur=${duration.toFixed(3)},alimiter=limit=0.95[aout]`
@@ -428,13 +476,14 @@ ff('-i', 'video.mp4', ...inputs, '-filter_complex', graph, '-map', '0:v', '-map'
 // A GPT-Live take waits on a real model; the film keeps the talk and shortens the waits.
 const cut = LIVE && !process.argv.includes('--no-tighten') ? tighten(resolve(OUT), KEEP ? join(work, 'untrimmed.mp4') : '', actions.map((at) => (at - first) / 1000)) : null
 
-writeFileSync(join(work, 'take.json'), JSON.stringify({ lang: LANG, phone: PHONE, live: LIVE, session: liveSession, frames: frames.length, duration, clips: clips.map((c) => ({ id: c.id, at: (c.wallMs - first) / 1000 })), tools, script: LIVE ? SCRIPT : null, personVoice: PERSON_VOICE || null, endedByVoice, actions: actions.map((at) => (at - first) / 1000), said: liveSaid, backend: liveBackend, turns: liveTurns, voiceAt: voice.start ? (voice.start - first) / 1000 : null, errors: liveErrors, sent: S.state.sentText, journal }, null, 2))
+writeFileSync(join(work, 'take.json'), JSON.stringify({ lang: LANG, phone: PHONE, live: LIVE, session: liveSession, frames: frames.length, duration, clips: clips.map((c) => ({ id: c.id, at: (c.wallMs - first) / 1000 })), tools, script: LIVE ? SCRIPT : null, glitches, personVoice: PERSON_VOICE || null, endedByVoice, actions: actions.map((at) => (at - first) / 1000), said: liveSaid, backend: liveBackend, turns: liveTurns, voiceAt: voice.start ? (voice.start - first) / 1000 : null, errors: liveErrors, sent: S.state.sentText, journal }, null, 2))
 if (!KEEP) rmSync(work, { recursive: true, force: true })
 
 const ran = tools.map((t) => t.name).join(', ')
 if (LIVE) {
   // A real model chooses its own tools and words: the take holds when the message reached Release 2.4 and nothing failed.
   console.log('copilot-demo: the copilot said:\n  ' + liveSaid.join('\n  '))
+  if (glitches.length && !process.argv.includes('--allow-glitches')) { console.error(`the copilot's voice broke up at ${glitches.join(', ')} s of the untrimmed take; record it again (the load average now: ${execFileSync('uptime').toString().trim().split('averages: ')[1] ?? '?'})`); process.exit(1) }
   const wantsVoiceEnd = LIVE_SCRIPTS[SCRIPT].some((step) => step.byVoice)
   if (wantsVoiceEnd && !endedByVoice) { console.error('the GPT-Live take did not end by voice'); process.exit(1) }
   if (!S.state.releaseSent || liveErrors.length) { console.error(`the GPT-Live take did not run through: tools ${ran}; sent=${S.state.releaseSent}; errors: ${liveErrors.join('; ') || 'none'}`); process.exit(1) }

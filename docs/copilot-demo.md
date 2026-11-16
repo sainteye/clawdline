@@ -58,6 +58,11 @@ and what has it cost so far?" (`get_call_status`), and "That's it for today. You
 (`end_call`: the copilot says goodbye and the call hangs up by itself). The take fails unless the
 call ended by voice. A phone take of it ran 72-99 s after the edit.
 
+In a GPT-Live take Release 2.4's UI suite is still running when the call starts: the
+briefing, the list and its kept recap all say so. It fails on iPad at the moment the call asks for
+its latest state, and the list shows its question then. The news is news: an earlier take's
+briefing already held the failures, and the copilot told them twice.
+
 `--person-voice <voice>` plays the person's lines in another voice, from
 `voices/<lang>@<voice>/` (`voices.mjs --lang <lang> --person-voice <voice>` speaks them, with the
 language's own instructions for the person). On 2026-11-16 the Chinese phone take was made twice,
@@ -79,6 +84,23 @@ the bubble is seen going away. `take.json` keeps those moments (`actions`). Pict
 (`trim`/`atrim` and `concat`; `select`/`aselect` cut only the picture). On 2026-11-16 this
 took 134 s to 80 s in English and 184 s to 123 s in Chinese. `--no-tighten` keeps the whole
 take, and `--keep` keeps it as `untrimmed.mp4`.
+
+The copilot's voice arrives over WebRTC and can break up when the machine is busy: on
+2026-11-16 a Chinese take made at a load average near 10 broke up in one answer, and the
+person heard it. Every live take is checked (`audioGlitches`): a 10 ms frame gone silent between
+loud ones, or a sample-to-sample jump no voice makes, is a break, and the take exits 1 naming
+where (`--allow-glitches` keeps it; `take.json` lists them as `glitches`). The take that broke up
+had eight; the clean takes had none to two. Record again when the load is lower.
+
+After a Session is opened, the person waits for its latest state too (`latestNoteAt`): the
+call sends it only once the kept summary has been said, and the live model takes a few seconds to
+start on it, so a phone take on 2026-11-16 played the next line over it. With nothing new the call
+sends none, and the wait ends after 25 s.
+
+The recorder closes its Chrome and removes the profile however it ends, a failure, a timeout's
+SIGTERM or Ctrl-C included. Before 2026-11-16 it did so only after a take that succeeded; another
+Session found 155 headless Chromes from failed takes, orphaned for up to four days and loading the
+machine, which made later takes break up.
 
 A real model chooses its own tools and words, so takes differ. The recorder exits 1 unless
 Release 2.4 received a message or an answer and no error was reported; it prints what the

@@ -31,6 +31,9 @@ const WORDS = {
     emailsDelivered: 'Order emails render in dark mode, the Outlook logo is fixed, and 14 tests cover them.',
     searchDelivered: 'Meilisearch search is live for every shopper and the old SQL search is removed.',
     send: "Fix the three iPad UI tests first; don't skip them.",
+    // A GPT-Live take starts before Release 2.4's UI suite has finished (story({ live })).
+    liveBriefing: 'One Session needs you: Checkout redesign is done and asks whether to merge into main now or wait for the design review. Release 2.4 has bumped its versions and is running the full UI suite on iPhone and iPad. Payment webhooks is building the retry queue; Offline sync is writing conflict resolution. Order emails and Search rebuild have delivered.',
+    releaseRunning: 'Versions are bumped to 2.4.0 and the release notes are drafted. Running the full UI suite on iPhone and iPad now.',
     briefing: 'Two Sessions need you. Checkout redesign is done and asks whether to merge into main now or wait for the design review. Release 2.4 has three UI tests failing on iPad only and asks whether to skip them for 2.4 or fix them first. Payment webhooks is building the retry queue; Offline sync is writing conflict resolution. Order emails and Search rebuild have delivered.',
     transcripts: {
       checkout: [['user', 'Rebuild the checkout as a single page: address, shipping and payment together, with Apple Pay first.', 7200],
@@ -106,6 +109,8 @@ const WORDS = {
     emailsDelivered: '訂單通知信在深色模式下顯示正常，修好 Outlook 的 Logo，並補上 14 個測試。',
     searchDelivered: 'Meilisearch 搜尋已對所有顧客上線，舊的 SQL 搜尋已移除。',
     send: '先把三個 iPad UI 測試修好，不要略過。',
+    liveBriefing: '有一個 Session 在等你：結帳改版已經完成，在問要現在合併到 main 還是等設計審查。2.4 版發布已經更新版本號，正在 iPhone 和 iPad 上跑完整的 UI 測試。金流 Webhook 正在做重試佇列；離線同步正在寫衝突處理。訂單通知信和搜尋重建都已經交付。',
+    releaseRunning: '版本號已更新到 2.4.0，發布說明也寫好了。正在 iPhone 和 iPad 上跑完整的 UI 測試。',
     briefing: '有兩個 Session 在等你。結帳改版已經完成，在問要現在合併到 main 還是等設計審查。2.4 版發布有三個 UI 測試只在 iPad 上失敗，在問 2.4 要先略過還是先修好。金流 Webhook 正在做重試佇列；離線同步正在寫衝突處理。訂單通知信和搜尋重建都已經交付。',
     transcripts: {
       checkout: [['user', '把結帳改成單一頁面：地址、運送和付款放在一起，Apple Pay 放第一個。', 7200],
@@ -203,7 +208,11 @@ export function story(lang, { live = false } = {}) {
   const w = WORDS[lang]
   if (!w) throw new Error(`no story in ${lang}; have ${LANGS.join(', ')}`)
   const now = Math.floor(Date.now() / 1000)
-  const state = { releaseSent: false, sentText: '' }
+  // In a GPT-Live take Release 2.4's suite is still running when the call starts
+  // and fails on iPad at the moment the call asks for its latest state, so that
+  // state is news the overview could not have told (asked for on 2026-11-16:
+  // the failures were said in the overview and again as "the latest").
+  const state = { releaseSent: false, sentText: '', releaseFailed: !live }
   const fill = (s) => s.replace(/\{(\w+)\}/g, (_, k) => w[k])
   const menu = (question, options) => ({ question, options: options.map(([label, detail], i) => ({ n: i + 1, label, detail, can: true, selected: false })) })
   const row = (key, minutesAgo, extra = {}) => ({
@@ -224,21 +233,27 @@ export function story(lang, { live = false } = {}) {
     return key === 'release' && state.releaseSent ? r.sent : (r.latest ?? r.kept)
   }
   return {
-    latest(id) { const key = Object.keys(IDS).find((k) => IDS[k] === id); return key ? latest(key) : '' },
-    lang, words: w, state, places: PLACES, lines: w.lines, briefing: w.briefing, send: w.send,
+    latest(id) {
+      const key = Object.keys(IDS).find((k) => IDS[k] === id)
+      if (key === 'release') state.releaseFailed = true
+      return key ? latest(key) : ''
+    },
+    lang, words: w, state, places: PLACES, lines: w.lines, briefing: live ? w.liveBriefing : w.briefing, send: w.send,
     sessions: () => [
       row('checkout', 2, { ...kept('checkout'), state: 'waiting', work_state: 'waiting_you', menu: menu(w.checkoutQ, w.checkoutOptions) }),
       row('webhooks', 1, { ...kept('webhooks'), ...codex, state: 'working', work_state: 'working', line: '14m' }),
       row('emails', 25, { ...kept('emails'), ...delivered(w.emailsDelivered, 1500) }),
-      row('release', state.releaseSent ? 0 : 4, { ...kept('release'), cwd: APP, ...codex, ...(state.releaseSent
+      row('release', state.releaseSent ? 0 : state.releaseFailed ? 4 : 1, { ...kept('release'), cwd: APP, ...codex, ...(state.releaseSent
         ? { state: 'working', work_state: 'working', line: '0m' }
+        : !state.releaseFailed ? { state: 'working', work_state: 'working', line: '8m' }
         : { state: 'waiting', work_state: 'waiting_you', menu: menu(w.releaseQ, w.releaseOptions) }) }),
       row('sync', 6, { ...kept('sync'), cwd: APP, state: 'working', work_state: 'working', line: '31m' }),
       row('search', 50, { ...kept('search'), ...delivered(w.searchDelivered, 3000) }),
     ],
     transcript(id) {
       const key = Object.keys(IDS).find((k) => IDS[k] === id)
-      const entries = (w.transcripts[key] ?? []).map(([role, text, ago]) => role === 'report'
+      const said = key === 'release' && !state.releaseFailed ? [w.transcripts.release[0], ['assistant', w.releaseRunning, 480]] : w.transcripts[key]
+      const entries = (said ?? []).map(([role, text, ago]) => role === 'report'
         // A delivery as the transcript records it: the Session ran `clawdline session report`.
         ? { role: 'tool', text: `clawdline session report --summary "${fill(text)}"`, at: now - ago, kind: 'tool' }
         : { role, text: fill(text), at: now - ago, kind: 'message' })

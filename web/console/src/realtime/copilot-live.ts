@@ -233,9 +233,33 @@ export function liveLatestNote(label: string, summary: string, hadOpening: boole
   const reports = updates ? ` Its newest reports: ${updates}` : ''
   const clipped = clipRecap(summary, LIVE_NOTE_CHARS - (updates ? updates.length : 0))
   return hadOpening
-    ? `The latest state of Session "${label}" just arrived. Go on now with only what is newer than what you said, starting with a short phrase such as "I just got the latest": where it stands now and anything waiting for the person, in one to three everyday sentences in their language. Do not retell its history or repeat what you already said. Latest summary: ${clipped}${reports}`
+    ? `The latest state of Session "${label}" just arrived. Compare it with everything you have already told the person in this call, your earlier overview included. If it adds nothing newer, say nothing at all: no "I just got the latest", no repeat. Otherwise say only what is new, starting with a short phrase such as "I just got the latest", in one to three everyday sentences in their language: where it stands now and anything waiting for the person. Never retell its history or repeat what you already said (on 2026-11-16 the iPad failures from the overview were said a second time as news). Latest summary: ${clipped}${reports}`
     : `Here is the latest state of Session "${label}". Tell the person where it stands now and anything waiting for them, in two or three everyday sentences in their language: ${clipped}${reports}`
 }
+
+/**
+ * How much of `next` is new against `said`: the share of its words (Latin
+ * words and numbers, and pairs of CJK characters) that `said` does not have.
+ * 0 is nothing new, 1 is all new.
+ */
+export function newShare(next: string, said: string): number {
+  const pieces = (text: string) => {
+    const t = text.toLowerCase(), out = new Set<string>()
+    // A dot inside a word (2.4.0) is part of it; one that ends a sentence is not.
+    for (const w of t.match(/[a-z0-9]+(?:\.[a-z0-9]+)*/g) ?? []) out.add(w)
+    const cjk = t.replace(/[^\u4e00-\u9fff]/g, '')
+    for (let i = 0; i + 1 < cjk.length; i++) out.add(cjk.slice(i, i + 2))
+    return out
+  }
+  const a = pieces(next), b = pieces(said)
+  if (a.size === 0) return 0
+  let fresh = 0
+  for (const w of a) if (!b.has(w)) fresh++
+  return fresh / a.size
+}
+
+/** Below this share of new words, the latest state is not said at all (`newShare`). */
+export const LIVE_NEWS_SHARE = 0.25
 
 /** The greeting the call opens with, as OpenAI's guide asks: once, after `session.started`. */
 export const LIVE_GREETING = 'Greet the person now in one short, warm sentence in their language and say you are ready to help. Do not report Sessions or list options. Then pause and listen.'
