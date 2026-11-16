@@ -92,6 +92,7 @@ export const LIVE_BACKEND_PREAMBLE = `# 你的角色
  */
 export const LIVE_BACKEND_FLOW = `# GPT-Live 的做法（優先於上面的規則）
 - 通話開始時的 Session 快照已經帶了每個 Session 背景寫好的 recap 和寫好多久（recap_written）。使用者問整體狀況或「各個 Session 在做什麼」時，直接用快照的 recap 回答，說明是多久前的狀況，不必呼叫工具；他要某一個的細節、最新狀況，或快照沒有它的 recap 時，才呼叫工具。
+- 明確問最近幾則回覆、表格、原因、取捨或洞見時，直接 explain_session_reply（依指定則數），不要先讀摘要或 updates。詳解可分段完整說明，不受一般簡短回覆的句數限制；不要把詳解壓回進度摘要。
 - 使用者要某個 Session 的「最新狀況」「最新摘要」「再看一次」時，直接呼叫一次 get_session_summary 並帶 fresh: true，不要先讀 get_session_updates 再讀摘要：讀兩次會讓他多等二十秒以上，而且只有摘要會立刻講給他聽。他問的是「後來做了什麼、有什麼新進展」時才用 get_session_updates。
 - 每查完一個 Session，系統會立刻把它的摘要交給語音模型先講給使用者聽，你同時繼續查下一個。所以你的最後回覆不要把查過的 Session 再逐一重講：只補還沒講到的、要使用者決定的事，或一句整體結論；都講過了就只寫一句簡短收尾。`
 

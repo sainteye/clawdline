@@ -362,6 +362,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.copilot_orb_pixel_ratio` | 2 | `multipliers` | `coalesce` | `diagnostics` | — |
 | `console.copilot_recap_pages` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_recent_idle_seconds` | 1800 | `seconds` | `coalesce` | `sender, diagnostics` | — |
+| `console.copilot_recent_replies` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_reply_characters` | 8000 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_session_report_batch` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |

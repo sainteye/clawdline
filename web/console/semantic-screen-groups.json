@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12535,
-  "riskKeys": 5441,
-  "nonRiskCount": 7094,
+  "englishContentKeys": 12571,
+  "riskKeys": 5449,
+  "nonRiskCount": 7122,
   "groups": [
     {
       "name": "acp / other",
@@ -3988,7 +3988,7 @@
     },
     {
       "name": "next / other",
-      "count": 1121,
+      "count": 1146,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4231,6 +4231,19 @@
         "next.compressedReadTooLarge",
         "next.compressedReadUnsupported",
         "next.copilotAnswering",
+        "next.copilotAskDecisions",
+        "next.copilotAskHistoryAlt",
+        "next.copilotAskInsights",
+        "next.copilotAskInsightsAlt",
+        "next.copilotAskLatest",
+        "next.copilotAskLatestAlt",
+        "next.copilotAskReply",
+        "next.copilotAskSummary",
+        "next.copilotAskSummaryAlt",
+        "next.copilotAskTable",
+        "next.copilotAskTableAlt",
+        "next.copilotAskUpdates",
+        "next.copilotAskUpdatesAlt",
         "next.copilotBriefHint",
         "next.copilotBriefLabel",
         "next.copilotBriefingAssistantLabel",
@@ -4308,6 +4321,18 @@
         "next.copilotProgressSaving",
         "next.copilotProgressSounds",
         "next.copilotProposalHint",
+        "next.copilotQuestionAlternative",
+        "next.copilotQuestionChoose",
+        "next.copilotQuestionNotReady",
+        "next.copilotQuestionSending",
+        "next.copilotQuestionTarget",
+        "next.copilotQuestions",
+        "next.copilotQuestionsDecisions",
+        "next.copilotQuestionsHint",
+        "next.copilotQuestionsLoading",
+        "next.copilotQuestionsOverview",
+        "next.copilotQuestionsUnderstand",
+        "next.copilotQuestionsUpdates",
         "next.copilotReady",
         "next.copilotRecapsBackground",
         "next.copilotRecapsLabel",
@@ -7168,7 +7193,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 191,
+      "count": 194,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7327,6 +7352,9 @@
         "transparency.card.voice-live-pacing.title",
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",
+        "transparency.card.voice-question-menu.condition",
+        "transparency.card.voice-question-menu.how",
+        "transparency.card.voice-question-menu.title",
         "transparency.card.voice-work.title",
         "transparency.claude",
         "transparency.codex",

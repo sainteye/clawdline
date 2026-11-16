@@ -7081,6 +7081,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_recent_replies",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_reply_characters",
     "Class": "buffer",
     "Unit": "characters",

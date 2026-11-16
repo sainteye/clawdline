@@ -54,6 +54,61 @@ batch. A call started inside one Session keeps its focused summary.
 - To end the call: say so ("we're done, you can hang up"). It says a short goodbye and hangs up
   when it has finished. Asking it to close a Session does not end the call.
 
+## Ways to ask
+
+Open **Ways to ask** in the call window, choose a Session, then tap a complete question to send it
+into the current call. **Another way to ask** shows an alternative sentence for the same request;
+you can say either sentence aloud later. A call must already be connected and ready. Opening the
+menu reads only the Session directory, without starting a call, reading transcripts or writing a
+new recap. Selecting a question uses the connected call and its normal provider usage.
+
+| Purpose | Example | Source |
+|---|---|---|
+| Current situation | Give me a quick summary | Existing recap and recent status; an explicit latest-status request uses the freshness policy |
+| Progress and history | What happened since the last report? | New entries after the report cursor; whole-history questions use the separate recap path |
+| Understand the details | Read the last five replies and explain the insights | Recent assistant replies plus related questions, retaining table formatting |
+| My decisions | What do I need to decide? | Current questions and unresolved Notes, checked against current status |
+
+Explicit detail questions go directly to the reply reader, without first generating another
+summary. The reader pages back through at most five transcript pages and retains up to five
+assistant replies, at most 8,000 JavaScript characters per reply and related question. Tool records
+do not count as replies. Longer text keeps both ends, with incomplete coverage exposed to the
+assistant; insufficient history and failed older-page reads are also reported. Comparison scores
+and prices in a Session are source claims unless the record provides verification.
+
+### Tool responsibilities
+
+`get_session_summary` owns status, and `fresh: true` applies the existing five-minute freshness
+policy. `get_session_updates` owns the since-last-report cursor. `explain_session_reply` owns both
+single and multiple recent reply explanations (`replies: 1..5`). `get_session_activity` remains a
+compact execution chronology for process questions. `get_session_recap` remains the whole-history
+overview, and `get_status_briefing` the existing prepared multi-Session briefing. Do not combine
+these paths for one question without a missing source that requires it. No startup read is added;
+existing opening and recap policies remain.
+
+A menu click verifies machine and conversation identity again; the subsequent read rejects a
+replaced Session. A click is a conversational question, not mutation consent. Realtime uses a user
+text message and its existing narrator; GPT-Live receives the selected question through application
+commentary and delegation. Local transport tests establish neither live model tool selection nor
+spoken/audio acceptance or measured startup latency.
+
+### Proposed question-focused analysis
+
+The next design uses the user's question and recent original messages as input to a small text
+model. It returns a question-specific answer, source references, unknowns and optional requests for
+older sections, which the voice assistant explains. General status uses cached recaps; explicit
+explanation requests bypass recap generation. Follow-ups reuse the selected conversation and read
+window when valid; new content invalidates cached analysis. A summary-sufficiency decision must not
+add an extra model roundtrip before every status question: use the selected menu intent or the
+existing voice/backend intent decision. Source text is untrusted data, not tool instructions.
+
+GPT-Live already delegates tool use and reasoning to a text backend, so first evaluate whether that
+existing backend can do the focused extraction without another model hop. A separate reusable
+analysis service would give Realtime the same behavior but is not implemented by the menu change.
+Its acceptance must include question relevance, faithful evidence, bounded older reads, revision
+isolation, interruption and latency/cost on both engines. No model/pricing or live-quality claim is
+made here. This paragraph is a proposal, not a deployed capability.
+
 ## Session recaps
 
 With **Session recaps** on (**Settings** → **Voice copilot**), each Session's own assistant reads its

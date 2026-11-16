@@ -643,3 +643,14 @@ input, answer or action approval is created by the implicit opening. The separat
 durable task allowance remains three. Both language explanations and the original
 reporting guidance reflect the two-Session bound. The public website snapshot must
 follow this reviewed product revision after it lands.
+
+## Voice questions selected in the call window (2026-11-16)
+
+The voice-question-menu entry records the new explicit UI trigger and both provider paths.
+Opening the menu reads only directory metadata. Clicking a complete sentence adds user input
+and application routing context; it never approves a mutation. Recent-reply explanation shares
+the existing reader, carries the actual question and checks conversation identity before and
+after content reads. The English and Traditional Chinese descriptions distinguish submission,
+model behavior, speech and playback. They also distinguish this menu from the proposed separate
+question-focused analysis service, which is not implemented. Source receipts and local fixture
+acceptance do not establish website, Cloud deployment or live-call acceptance.

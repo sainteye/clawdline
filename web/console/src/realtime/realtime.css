@@ -869,3 +869,18 @@
 .copilot-processing-sounds { display: flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--muted, #aaa); }
 .copilot-message-proposal { margin: .5rem 0; padding: .6rem; border: 1px solid var(--border, #333); font-size: .9rem; overflow-wrap: anywhere; }
 .copilot-message-proposal blockquote { margin: .5rem 0; white-space: pre-wrap; }
+
+/* A bounded menu keeps complete question wording readable on a phone. */
+.copilot-questions { text-align: left; position: relative; }
+.copilot-questions-toggle { width: 100%; display: flex; justify-content: space-between; padding: 10px 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--border, var(--line)); border-radius: 8px; font: inherit; cursor: pointer; }
+.copilot-questions-panel { position: absolute; z-index: 5; inset-inline: 0; top: calc(100% + 4px); max-height: min(54dvh, 460px); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border, var(--line)); border-radius: 8px; background: var(--bg, #111); box-shadow: 0 8px 30px #0005; font-size: 14px; }
+.copilot-questions-panel p { margin: 0 0 10px; line-height: 1.5; color: var(--dim); }
+.copilot-questions-panel label { display: grid; gap: 6px; }
+.copilot-questions-panel select { width: 100%; min-height: 40px; color: var(--fg); background: var(--bg); border: 1px solid var(--border, var(--line)); padding: 6px; font: inherit; }
+.copilot-questions-panel fieldset { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; }
+.copilot-questions-panel legend { color: var(--dim); margin-bottom: 6px; }
+.copilot-question { border-top: 1px solid var(--border, var(--line)); padding: 6px 0; }
+.copilot-question button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: start; white-space: normal; overflow-wrap: anywhere; min-height: 44px; padding: 8px; color: var(--fg); background: transparent; border: 0; font: inherit; line-height: 1.5; cursor: pointer; }
+.copilot-question button:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.copilot-question summary { padding: 6px 8px; font-size: 13px; color: var(--dim); cursor: pointer; }
+.copilot-question button:disabled, .copilot-questions-panel fieldset:disabled { opacity: .5; }

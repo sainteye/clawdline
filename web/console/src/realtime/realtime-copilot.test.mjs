@@ -1060,3 +1060,54 @@ test('speaking during a Live list summary read cancels automatic narration witho
  assert.equal(f.sent.filter(e=>e.type==='session.commentary.append').length,0)
  assert.equal(f.reads.some(r=>r.path.includes('copilot-work')),false)
 })
+
+
+test('menu questions send visible text and explicit read routing in both engines without a planning model',async()=>{
+  for(const live of [false,true]){
+    const f=fixture(false)
+    f.c.live=live
+    f.c.state.status='connected';f.c.state.connectionReady=true
+    const menu=await f.c.questionTargets()
+    assert.equal(f.reads.filter(r=>r.path.includes('/v1/transcript')).length,0,'opening the menu is directory-only')
+    await f.c.askQuestion('insights','Read the last five replies.',menu.targets.find(r=>r.id===origin.id))
+    assert.match(f.c.getState().lastTranscript,/Read the last five replies/)
+    const text=JSON.stringify(f.sent)
+    assert.match(text,/explain_session_reply/)
+    assert.match(text,/replies/)
+    assert.match(text,/Read the last five replies/)
+    assert.ok(f.reads.every(r=>!r.init?.method),'menu submission does not execute a mutation or planner call')
+    if(live)assert.equal(f.sent.filter(e=>e.type==='session.commentary.append').length,1)
+    else assert.equal(f.sent.filter(e=>e.type==='conversation.item.create'&&e.item.role==='user').length,1)
+    f.c.narrator.reset()
+  }
+})
+
+test('a menu target replaced by another conversation sends nothing',async()=>{
+  const f=fixture(false)
+  f.c.state.status='connected';f.c.state.connectionReady=true
+  await assert.rejects(f.c.askQuestion('reply','Explain its reply.',{id:origin.id,label:origin.label,conversation:'another-conversation'}))
+  assert.equal(f.sent.length,0)
+})
+
+test('a disconnected question neither starts a paid call nor sends a request',async()=>{
+  const f=fixture(false)
+  await assert.rejects(f.c.askQuestion('summary','Summarize.',origin))
+  assert.equal(f.sent.length,0)
+  assert.equal(f.reads.length,0)
+})
+
+
+test('a managed menu question is saved deferred with exact focus and never submitted for planning',async()=>{
+  const f=fixture(true)
+  f.c.state.status='connected';f.c.state.connectionReady=true
+  await withLedger(f,async(state,requests)=>{
+    const menu=await f.c.questionTargets()
+    await f.c.askQuestion('insights','Read the last five replies.',menu.targets.find(r=>r.id===origin.id))
+    assert.equal(state.inputs.length,1)
+    assert.equal(state.inputs[0].deferred,true)
+    assert.equal(state.inputs[0].focus.id,origin.id)
+    assert.equal(state.inputs[0].focus.conversation,'conversation-seven')
+    assert.equal(requests.filter(r=>r.action==='plan').length,0)
+    assert.match(JSON.stringify(f.sent),new RegExp(state.inputs[0].id))
+  })
+})

@@ -1,3 +1,4 @@
+import { questionRequest, type CallQuestionID, type QuestionTarget } from './copilot-questions.js'
 import { SESSION_ADDRESS } from '../overlays/events.js'
 import { destinationFromFragment } from '../cloud/all-machine-sessions.js'
 import {SpokenSessions,SessionReportQueue,SESSION_REPORT_BATCH,SESSION_REPORT_GUIDANCE,continueReport,remainingReport,type SessionReportPage} from './copilot-reports.js'
@@ -337,6 +338,7 @@ export class RealtimeCopilotClient {
       devstack: (place) => openDevStackOnThisPage(place),
       help: loadCopilotHelp,
       heard: () => this.heardNow,
+      selectedReadTarget: this.questionTarget,
       spokenReference:text=>this.spokenSessions.resolve(text),
       onRead:ref=>this.spokenSessions.observe(ref),
       decide: (said, sessions, current) => decideOnMachine(said, sessions, current),
@@ -429,6 +431,64 @@ export class RealtimeCopilotClient {
       return null
     }
     return null
+  }
+
+  /** Opening the menu reads only the directory, never transcripts or models. */
+  async questionTargets(): Promise<{ targets: QuestionTarget[]; current?: string }> {
+    const read = await readRows(this.toolDeps())
+    if ('error' in read) throw new Error(read.error)
+    return { targets: read.rows.map(row => ({ id: row.id, label: row.label, machine: row.machine, machineName: row.machineName, conversation: row.conversation })), current: this.focus }
+  }
+
+  private questionSending = false
+  private questionSerial = 0
+  private questionTarget?: QuestionTarget
+
+  /** A click is a conversational read request, never a submitted work item. */
+  async askQuestion(id: CallQuestionID, text: string, target: QuestionTarget): Promise<void> {
+    const dc = this.dc, attempt = this.attempt
+    if (this.questionSending || this.state.status !== 'connected' || !this.state.connectionReady || dc?.readyState !== 'open') throw new Error(nextWord('copilotQuestionNotReady'))
+    this.questionSending = true
+    const serial = ++this.questionSerial, call = this.journalCall
+    const waiting = `question-menu:${serial}`
+    this.narrator.toolStarted(waiting)
+    try {
+      const read = await readRows(this.toolDeps())
+      if ('error' in read) throw new Error(read.error)
+      const matches = read.rows.filter(row => row.id === target.id && row.machine === target.machine && row.conversation === target.conversation)
+      if (matches.length !== 1) throw new Error(nextWord('copilotQuestionTargetChanged'))
+      if (serial !== this.questionSerial || attempt !== this.attempt || this.dc !== dc || dc.readyState !== 'open') throw new Error(nextWord('copilotQuestionNotReady'))
+      // Freeze the selected identity and its current label, rather than a pronoun
+      // that could be redirected by a page navigation during an awaited save.
+      const selected = { ...target, label: matches[0].label }
+      const request = questionRequest(id, text, selected)
+      const input = crypto.randomUUID()
+      if (this.call.options.workEnabled && !this.live) {
+        await receiveCallInput(request.text, call, input, selected)
+        if (serial !== this.questionSerial || attempt !== this.attempt || this.dc !== dc || dc.readyState !== 'open') {
+          await parkVoiceInput(input, call)
+          throw new Error(nextWord('copilotQuestionNotReady'))
+        }
+      }
+      this.personSpoke = true
+      this.cancelOpening()
+      this.sessionReports.interrupt()
+      this.narrator.discard('session-report')
+      this.heardNow = request.text
+      this.questionTarget = selected
+      this.focus = selected.id
+      this.doneSinceHeard.clear()
+      this.keep('user', request.text)
+      this.journal('heard', request.text, { source: 'question_menu', question: id })
+      this.updateState({ lastTranscript: request.text, tools: [] })
+      if (this.live) {
+        dc.send(JSON.stringify(liveNote('commentary', `${request.routing}\nThe person's selected question: ${JSON.stringify(request.text)}. Delegate this request before answering.`)))
+      } else {
+        dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: request.text }] } }))
+        dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: `${request.routing}\n${this.call.options.workEnabled ? `Saved conversational input ID: ${input}. It is not a submitted task.` : ''}` }] } }))
+        this.requestConversation(input, `question:${input}`)
+      }
+    } finally { this.questionSending = false; this.narrator.toolFinished(waiting) }
   }
 
   /** Resends the whole configuration once the briefing has arrived. */
@@ -561,6 +621,7 @@ export class RealtimeCopilotClient {
     // was placed from, and that Session is the one under discussion.
     this.call = { memory: '', snapshot: '', options: { origin } }
     this.focus = origin?.id
+    this.questionTarget=undefined
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
@@ -903,6 +964,8 @@ export class RealtimeCopilotClient {
     if(event.type==='response.created')this.awaitingResponse=true
     if(event.type==='response.done')this.awaitingResponse=false
     if(event.type === 'input_audio_buffer.speech_started'){
+      this.questionSerial++
+      this.questionTarget = undefined
       this.personSpoke=true;this.cancelOpening()
       if(this.call.options.workEnabled) {
         const onScreen=sessionsInFragment(location.hash)
@@ -1440,6 +1503,8 @@ export class RealtimeCopilotClient {
         void this.configureLive()
         return
       case 'session.input_transcript.delta': {
+        this.questionSerial++
+        this.questionTarget = undefined
         this.personSpoke = true
         this.cancelOpening()
         this.sessionReports.interrupt();this.spokenSessions.interrupted(!!this.liveSaid.peek());this.awaitingResponse=false

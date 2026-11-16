@@ -33,6 +33,7 @@ func TestTheVoiceCopilotConsoleBoundsMatchTheirRegistrations(t *testing.T) {
 		{"copilot-help.ts", "HELP_SECTIONS", "console.copilot_help_sections"},
 		{"copilot-help.ts", "HELP_SECTION_CHARS", "console.copilot_help_section_characters"},
 		{"copilot-tools.ts", "SCREEN_READ_ATTEMPTS", "console.copilot_screen_reads"},
+		{"copilot-tools.ts", "RECENT_REPLIES", "console.copilot_recent_replies"},
 		{"copilot-tools.ts", "REPLY_CHARS", "console.copilot_reply_characters"},
 		{"copilot-tools.ts", "SMART_RENAME_SESSIONS", "console.copilot_smart_rename_sessions"},
 		{"copilot-tools.ts", "UPDATE_PAGES", "console.copilot_update_pages"},

@@ -172,6 +172,8 @@ func baseConsoleBounds() []Entry {
 			Name: "console.copilot_reply_characters", Class: Buffer, Unit: Characters,
 			Limit: 8000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
 		},
+		// RECENT_REPLIES bounds an explicit read of assistant replies; tool rows do not count.
+		{Name: "console.copilot_recent_replies", Class: Buffer, Unit: Rows, Limit: 5, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		// KEPT_RECAP_SECONDS in realtime/copilot-tools.ts: how old a background
 		// recap on the Session list may be and still be read without a new fork.
 		// FRESH_RECAP_SECONDS in realtime/copilot-tools.ts: how old a recap may
