@@ -324,7 +324,14 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	}
 	out.ActivityAt = convertedActivityAt
 	out.UnreadCount = value.UnreadCount
-	out.ReadCursor = paWireReadCursor(value.ReadCursor)
+	// Metadata events have no reader observation. Scope only that exact zero
+	// value to its Bot; never repair a nonzero cursor or acknowledge a read.
+	cursor := value.ReadCursor
+	if cursor == (pa.ReadCursor{}) {
+		cursor.Key = value.Bot.Key
+		cursor.ConversationID = value.Bot.ConversationID
+	}
+	out.ReadCursor = paWireReadCursor(cursor)
 	out.PendingPermissions = value.PendingPermissions
 	out.Version = value.Version
 	convertedSource, err := paWireSourceStatus(value.Source)
