@@ -287,6 +287,8 @@ func TestBotBrowserACPSubprocess(t *testing.T) {
 			}
 			endpoint, token = p.MCPServers[0].URL, p.MCPServers[0].Headers[0].Value
 			record(map[string]string{"acp": q.Method})
+			// The test replays this descriptor after the turn has ended.
+			record(map[string]string{"descriptor": endpoint, "authorization": token})
 			write(q.ID, map[string]string{"sessionId": "browser-peer"})
 		case "session/prompt":
 			rpc("initialize", 1, map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "clientInfo": map[string]string{"name": "browser-peer", "version": "1"}})
@@ -464,6 +466,9 @@ func readBrowserPeer(t *testing.T, path string) (lines []browserPeerLine, acpCal
 		}
 		if v, ok := probe["acp"]; ok {
 			acpCalls = append(acpCalls, fmt.Sprint(v))
+			continue
+		}
+		if _, ok := probe["descriptor"]; ok {
 			continue
 		}
 		if v, ok := probe["failure"]; ok {
@@ -646,10 +651,47 @@ func TestBotBrowserRunsEndToEndThroughACPAndOwnedMCP(t *testing.T) {
 	}
 	t.Logf("drive: acp=%v commands=%v owner=%s audit=%d", acpCalls, ids, owner, len(rows))
 
+	// The finished turn's retained MCP descriptor, replayed over TCP, admits
+	// nothing: the Host revoked it with the execution.
+	raw, _ := os.ReadFile(logPath)
+	var retained struct{ Descriptor, Authorization string }
+	for _, s := range strings.Split(string(raw), "\n") {
+		if strings.Contains(s, `"descriptor"`) {
+			_ = json.Unmarshal([]byte(s), &retained)
+		}
+	}
+	if retained.Descriptor == "" {
+		t.Fatal("no descriptor was recorded")
+	}
+	for _, body := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_command","arguments":{"op":"open","args":{"url":"http://127.0.0.1:9/late"}}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"browser_status","arguments":{}}}`,
+	} {
+		r, _ := http.NewRequest("POST", retained.Descriptor, strings.NewReader(body))
+		r.Header.Set("Authorization", retained.Authorization)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept", "application/json, text/event-stream")
+		r.Header.Set("MCP-Protocol-Version", "2025-06-18")
+		resp, err := (&http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}}).Do(r)
+		status, answerBody := 0, []byte(nil)
+		if err == nil {
+			status = resp.StatusCode
+			answerBody, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		if err == nil && status < 400 && !strings.Contains(string(answerBody), `"isError":true`) {
+			t.Fatalf("retained descriptor still worked: %d %s", status, answerBody)
+		}
+		t.Logf("retained descriptor: err=%v status=%d body=%.120s", err, status, answerBody)
+	}
+	if len(native.seen()) != len(seen) || bridge.Status().Pending != 0 {
+		t.Fatal("a retained descriptor admitted a command")
+	}
+
 	// The CLI route still refuses this Bot's conversation before admission.
 	g, _ := newGateFixture(t)
 	handler := g.g.wrap(http.HandlerFunc(f.s.browserCommandRoute))
-	raw, _ := json.Marshal(map[string]any{"conversation": x.Conversation.ID, "op": "open", "args": map[string]any{"url": "http://127.0.0.1:9/page"}})
+	raw, _ = json.Marshal(map[string]any{"conversation": x.Conversation.ID, "op": "open", "args": map[string]any{"url": "http://127.0.0.1:9/page"}})
 	answer := (call{method: "POST", path: "/v1/browser/commands", body: string(raw), headers: map[string]string{"X-Clawdline-Orchestrator": g.machine, "Content-Type": "application/json"}}).do(handler)
 	if answer.Code != 403 || !strings.Contains(answer.Body.String(), "session_unresolved") || len(native.seen()) != len(seen) {
 		t.Fatalf("CLI route for the Bot conversation: %d %s", answer.Code, answer.Body)
