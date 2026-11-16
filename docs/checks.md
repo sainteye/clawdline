@@ -76,6 +76,30 @@ filesystem-reader tests; configuration/unknown fixtures run broader web tests. C
 retain their complete localization validators. The bundle build waits for
 integration/CI. A test selection is not a claim that unselected tests ran.
 
+Direct Node test steps (affected console tests and check-planning/profiling tests)
+use `--test-timeout=120000`, plus a wall-clock bound around their entire
+process group: ten minutes for the affected console tests, which took 124 s
+under a load average above 20 on 2026-11-16, and three minutes for the
+planning/profiling tests. Node test cancellation alone does not guarantee exit when
+a test retains active handles or blocks synchronously. The outer deadline prints
+the command and selected test paths and returns a failure. The full web
+`npm run check` and `npm test` steps each have a ten-minute
+wall-clock bound for their entire process group, since these scripts launch
+nested runners and Node does not allow `--test-timeout` in `NODE_OPTIONS`. On
+expiry the gate prints the active process commands (including test paths, when
+process inspection is permitted), kills
+that step's process group and records exit 124. Other checks still run and failed
+logs remain available. These bounds apply only to the commit tooling, not the
+daemon or console runtime; `TestEveryBoundIsRegistered` scans `internal/` and
+`cmd/`, so neither timeout belongs in the product capacity register.
+
+The view-plugin runtime tests send archive mutation payloads through a temporary
+file with stdin ignored, instead of depending on EOF delivery over a synchronous
+child's stdin socket. Every Python fixture is limited to 15 seconds with SIGKILL
+and asserts spawn errors before checking expected success or refusal. Fleet
+subscription assertions wait for their request's actual reply, with a two-second
+failure deadline, rather than assuming a reply arrives after a fixed sleep.
+
 Privacy checks on ordinary commits read the changed files through literal Git
 pathspecs, including untracked files. They still require the private-word list;
 undetermined is not a pass. Whole-tree checks remain mandatory at Release; the existing incoming-commit

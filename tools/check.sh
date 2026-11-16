@@ -128,7 +128,45 @@ check() {
 # gofmt answers 0 whatever it lists; a file it lists is the failure.
 gofmt_silent() { local out; out=$(gofmt -l internal cmd) || return $?; [ -z "$out" ] || { echo "$out"; return 1; }; }
 
-run_web_tests() { (cd web/console && node --experimental-strip-types --test ${web_tests[@]+"${web_tests[@]}"}); }
+# The runner's parent can terminate a file even when its event loop is blocked.
+run_web_tests() { (cd web/console && bounded_test_step 600 node --experimental-strip-types --test --test-timeout=120000 ${web_tests[@]+"${web_tests[@]}"}); }
+# npm scripts launch additional test runners. Bound their entire process group;
+# NODE_OPTIONS cannot carry --test-timeout on the supported Node version.
+bounded_test_step() {
+  python3 -c '
+import os, signal, subprocess, sys
+seconds = float(sys.argv[1])
+command = sys.argv[2:]
+child = subprocess.Popen(command, start_new_session=True)
+def stop_group():
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    child.wait()
+def interrupted(signum, frame):
+    stop_group()
+    sys.exit(128 + signum)
+signal.signal(signal.SIGINT, interrupted)
+signal.signal(signal.SIGTERM, interrupted)
+try:
+    code = child.wait(timeout=seconds)
+except subprocess.TimeoutExpired:
+    print("check: test step exceeded " + str(seconds) + "s: " + " ".join(command), file=sys.stderr, flush=True)
+    try:
+        # Print only this process group, including the active test file.
+        listing = subprocess.run(["ps", "-axo", "pgid=,pid=,command="], capture_output=True, text=True, timeout=5, check=True)
+        for line in listing.stdout.splitlines():
+            if line.split() and line.split(maxsplit=1)[0] == str(child.pid):
+                print(line, file=sys.stderr, flush=True)
+    except (OSError, subprocess.SubprocessError) as error:
+        print("check: could not list timed-out processes: " + str(error), file=sys.stderr)
+    finally:
+        stop_group()
+    sys.exit(124)
+sys.exit(code if code >= 0 else 128 - code)
+' "$@"
+}
 selected() {
   local value
   value=$(node tools/check-scope.mjs --field "$logs/scope.json" "guards.$1") || exit 2
@@ -193,7 +231,7 @@ if [ "$(uname -s)" = Linux ]; then
   check "test-heavy-linux-cache.sh" bash tools/test-heavy-linux-cache.sh
   check "test-linux-dev-build.sh" bash tools/test-linux-dev-build.sh
 fi
-check "check planning and profiling tests" node --test tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs
+check "check planning and profiling tests" bounded_test_step 180 node --test --test-timeout=120000 tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs
 check "check modes integration" bash tools/test-check-modes.sh
 check "machine-word delta guard" bash tools/test-machine-words-changes.sh
 check "heavy handoff capability" bash tools/test-heavy-handoff.sh
@@ -216,9 +254,9 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 else summary+=("SKIP  release evidence  (tools/release and the release workflows unchanged; full checks run it)"); fi
 if [ "$web" = yes ]; then
-  check "web: npm run check" sh -c 'cd web && npm run deps && npm run check'
+  check "web: npm run check" bounded_test_step 600 sh -c 'cd web && npm run deps && npm run check'
   check "web: npm run build" sh -c 'cd web && npm run build'
-  check "web: npm test" sh -c 'cd web && npm test'
+  check "web: npm test" bounded_test_step 600 sh -c 'cd web && npm test'
 elif [ "$web" = scoped ]; then
   check "web: incremental type-check" sh -c 'cd web && node node_modules/typescript/bin/tsc --noEmit -p console --incremental --tsBuildInfoFile .clawdline-check.tsbuildinfo'
   check "web: source catalog" node web/console/tools/check-source-catalog.mjs
