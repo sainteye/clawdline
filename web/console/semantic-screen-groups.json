@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12575,
-  "riskKeys": 5461,
-  "nonRiskCount": 7114,
+  "englishContentKeys": 12598,
+  "riskKeys": 5463,
+  "nonRiskCount": 7135,
   "groups": [
     {
       "name": "acp / other",
@@ -4002,7 +4002,7 @@
     },
     {
       "name": "next / other",
-      "count": 1121,
+      "count": 1142,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5082,6 +5082,27 @@
         "next.voicePreparing",
         "next.voiceRetry",
         "next.voiceStopping",
+        "next.voiceTabSettings",
+        "next.voiceTabTools",
+        "next.voiceToolsCardJump",
+        "next.voiceToolsCardJumpHint",
+        "next.voiceToolsCategoryAll",
+        "next.voiceToolsCategorySession",
+        "next.voiceToolsCategoryStatus",
+        "next.voiceToolsCategoryTools",
+        "next.voiceToolsCategoryVoice",
+        "next.voiceToolsCollapseAll",
+        "next.voiceToolsCountSummary",
+        "next.voiceToolsEnumLabel",
+        "next.voiceToolsExpandAll",
+        "next.voiceToolsOptional",
+        "next.voiceToolsParameters",
+        "next.voiceToolsParamsCount",
+        "next.voiceToolsRequired",
+        "next.voiceToolsSearchPlaceholder",
+        "next.voiceToolsSectionDesc",
+        "next.voiceToolsSectionTriggers",
+        "next.voiceToolsTrySaying",
         "next.voiceTryPartial",
         "next.voiceWaitForAudio",
         "next.voiceWillSend",
