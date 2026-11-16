@@ -16,11 +16,13 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projectassistanthost"
+	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 type botBrowserDecoderRouter struct{ calls int }
@@ -161,6 +163,75 @@ func TestBotNewSitePushOpensItsOwnChat(t *testing.T) {
 	}
 }
 
+// Seed real durable tool records and their reply without calling a provider.
+func seedBotBrowserReply(t *testing.T, f *paServerFixture, key pa.BotKey) {
+	t.Helper()
+	store := featurestore.New(f.s.store.ProjectAssistantDatabase())
+	x, err := store.Export(t.Context(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := x.Conversation
+	c.BindingID, c.Generation, c.ActiveTurnID = "browser-ui-binding", 1, "browser-ui-turn"
+	fence := pa.Fence{Key: key, Project: x.Bot.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
+	turn := pa.Turn{ID: c.ActiveTurnID, Fence: fence, MessageID: "browser-ui-request", State: pa.TurnRunning, Instructions: x.Bot.Instructions, MemoryRevision: 1, IdempotencyKey: "browser-ui-turn"}
+	commit := func(id string, version int64, mutation app.Mutation) {
+		mutation.Command = pa.Command{Key: key, Operation: pa.EditOperation, IdempotencyKey: id, ContentHash: strings.Repeat("a", 64)}
+		mutation.ExpectedVersion = version
+		mutation.Receipt = pa.Receipt{ID: id, State: pa.EffectDelivered}
+		if _, err := store.Commit(t.Context(), mutation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.Version++
+	commit("browser-ui-start", x.Bot.Version, app.Mutation{Conversation: &c, Turn: &turn,
+		Binding:  &pa.ExecutionBinding{Fence: fence, Agent: x.Bot.Agent, MemoryRevision: 1, InstructionRevision: 1},
+		Messages: []pa.Message{{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: pa.UserMessage, Text: "Use browser_command to open the page", At: time.Now().UTC()}}})
+	fresh, err := store.Export(t.Context(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = fresh.Conversation
+	c.ActiveTurnID = ""
+	c.Version++
+	turn.State = pa.TurnSucceeded
+	trace := pa.Trace{TurnID: turn.ID, Category: "tool_call", Text: "mcp__clawdline__browser_command", Complete: true}
+	commit("browser-ui-reply", fresh.Bot.Version, app.Mutation{Conversation: &c, Turn: &turn,
+		Messages: []pa.Message{{ID: "browser-ui-reply", Fence: fence, TurnID: turn.ID, Kind: pa.AssistantMessage, Text: "The page is ready. Sign in through the browser.", At: time.Now().UTC()}},
+		Events:   []pa.Event{{Version: pa.ContractVersion, ID: "browser-ui-tool-" + key.BotID, Fence: fence, Kind: pa.TraceUpdated, At: time.Now().UTC(), Trace: &trace}}})
+}
+
+func TestBotBrowserReplyEntryFacts(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	f.enable(t)
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+	seedBotBrowserReply(t, f, f.key)
+	x, err := featurestore.New(f.s.store.ProjectAssistantDatabase()).Export(t.Context(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(x.Messages) != 2 || len(x.Turns) != 1 || x.Turns[0].State != pa.TurnSucceeded {
+		t.Fatalf("reply facts: %+v", x)
+	}
+	found := false
+	for _, event := range x.Events {
+		if event.Trace != nil && event.Trace.Text == "mcp__clawdline__browser_command" && event.Trace.TurnID == x.Messages[1].TurnID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("browser trace is not linked to the reply")
+	}
+	second := f.create()
+	second.Command.Key.BotID = "synthetic-second-browser-bot"
+	second.Command.IdempotencyKey = "second-browser-bot"
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, second))
+	seedBotBrowserReply(t, f, pa.BotKey{MachineID: f.key.MachineID, BotID: second.Command.Key.BotID})
+	if f.providerCalls.Load() != 0 {
+		t.Fatal("fixture called a provider")
+	}
+}
+
 // Run explicitly: the normal gate does not launch a browser. The handler owns
 // an empty state directory and a temporary TCP port, with a scripted host.
 func TestBotChatBrowserPanelE2E(t *testing.T) {
@@ -170,11 +241,13 @@ func TestBotChatBrowserPanelE2E(t *testing.T) {
 	f := newPAServerFixture(t, true)
 	f.enable(t)
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+	seedBotBrowserReply(t, f, f.key)
 	empty := f.create()
 	empty.Command.Key.BotID = "synthetic-empty-bot"
 	empty.Command.IdempotencyKey = "empty-bot"
 	empty.Settings.Name = "Empty Bot"
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, empty))
+	seedBotBrowserReply(t, f, pa.BotKey{MachineID: empty.Command.Key.MachineID, BotID: empty.Command.Key.BotID})
 	var emptyBot contract.ProjectAssistantGetResponse
 	if err := json.Unmarshal(f.request(t, "GET", "/v1/project-assistants/"+empty.Command.Key.BotID+"?machine_id="+f.key.MachineID, f.local, nil).Body.Bytes(), &emptyBot); err != nil {
 		t.Fatal(err)

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12598,
+  "englishKeys": 12599,
   "counts": {
     "negation": 3392,
-    "state": 2122,
+    "state": 2123,
     "permission": 748,
     "deletion": 297,
     "uncertainty": 488
   },
-  "unionCount": 5463,
+  "unionCount": 5464,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3442,6 +3442,7 @@
       "bar.sessionWaiting",
       "bar.stackTip",
       "botBrowser.audit",
+      "botBrowser.openReply",
       "browserPairing.androidOpen",
       "browserPairing.approvalPage",
       "browserPairing.failed",
@@ -7221,6 +7222,7 @@
     "botBrowser.audit",
     "botBrowser.auditEmpty",
     "botBrowser.noTab",
+    "botBrowser.openReply",
     "botBrowser.readOnly",
     "botBrowser.refused",
     "botBrowser.stale",

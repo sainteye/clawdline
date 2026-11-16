@@ -5,7 +5,7 @@ Session (`browserCommandRoute` → `broker.LiveSession`), so a Bot's native
 conversation answers `session_unresolved` there, before any browser admission.
 A Bot instead reaches the same browser engine through its own turn's owned
 MCP tools. This page records the backend contract; the person's view of a
-Bot's tab is not built yet (see "Not done").
+Bot's tab uses the shared browser panel described below.
 
 ## Path
 
@@ -125,6 +125,27 @@ a machine ID. The daemon resolves the owner and filters status, screenshots,
 activity and the complete audit. Browser control, opening and muting use the
 same device and Bot write gates as the backend.
 
+The chat header also reuses the Session's Chrome chip when targeted status
+contains an owned tab in the selected profile. It reads status immediately,
+every 15 seconds while visible with the panel closed, and when the page becomes
+visible again. Requests are serialized, cancelled on scope changes, and pinned
+to the Bot's source and current conversation. Read-only devices get the same
+entry; sources below API 74 send no browser status request.
+
+Assistant replies with a `browser_status` or `browser_command` tool trace in
+their own turn show an **Open browser** action. Tool details are read serially
+from the existing bounded trace collection without opening the trace disclosure;
+thoughts, reply text, unrelated tools, and other turns do not add the action.
+Observed live browser traces remain attached to that turn while the chat is
+mounted. Automatic detail failures do not lock the chat or replay browser actions.
+The trace reader exposes the latest record per turn/category: on reopening,
+only the retained tool record can establish this action; earlier tool calls
+replaced by a later non-browser tool are not recoverable from that summary.
+Older trace pages follow the existing More action. The reply entry remains
+available after a tab is released and opens the existing empty state. Both
+entries use the same panel selection of the current owned tab (or last owned
+tab), takeover, handback, and write gates. Closing restores focus to the reply opener when available, otherwise the More menu.
+
 A source below API 74 is refused before any targeted request is sent: older
 sources ignore unknown GET fields and could return a machine-wide view.
 Read-only devices can inspect the picture and audit; write controls are
@@ -154,7 +175,10 @@ native host. It launches a separate headless Chrome profile and the production
 Bots/Chat/BrowserPanel components. It covers local and mapped Cloud traffic,
 English and Taiwan Traditional Chinese, desktop and phone sizes, read-only and
 old sources, takeover/handback, mute, audit, opening a first tab, and stale/lost
-write responses. The Cloud fixture maps words into real daemon routes; it does
+write responses. It also checks the owned-tab header chip, the reply action
+loaded from durable tool details, and a reply opening the empty state after no
+tab remains. `TestBotBrowserReplyEntryFacts` verifies that the fixture's trace
+and reply are linked in SQLite without a provider call. The Cloud fixture maps words into real daemon routes; it does
 not prove production relay encryption or pairing. The screenshot is a synthetic
 JPEG from the scripted host, not real Chrome automation or a physical phone.
 
