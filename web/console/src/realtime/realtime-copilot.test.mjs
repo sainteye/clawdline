@@ -840,6 +840,20 @@ test('a GPT-Live call follows the Session opened on screen with its summary', as
   assert.equal(first.focus, '%8')
   assert.equal(firstSent.filter(e => e.type === 'session.commentary.append').length, 0, 'no summary is spoken for the Session a call starts on')
   first.dc.readyState = 'closed'
+  // A call that starts on the list, with no Session open, and then opens one is a switch
+  // (a phone call on 2026-11-16 opened Release 2.4 from the list and was told nothing of it).
+  const listed = new RealtimeCopilotClient(), listedSent = []
+  t.after(() => clearInterval(listed.liveTicker))
+  Object.assign(listed, { live: true, attempt: 1, journalCall: 'call-listed', addLog: () => {}, call: { memory: '', snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [], toolDeps: c.toolDeps,
+    state: { ...listed.state, status: 'connected' }, dc: { readyState: 'open', send: text => listedSent.push(JSON.parse(text)), close() {} } })
+  globalThis.location = { hash: '' }
+  await listed.onScreenChange()
+  globalThis.location = { hash: '#machine=mac-1&session=%258&generation=0123456789abcdef0123456789abcdef' }
+  await listed.onScreenChange()
+  for (let i = 0; i < 20; i++) await tick()
+  assert.equal(listed.focus, '%8')
+  assert.match(listedSent.filter(e => e.type === 'session.commentary.append')[0]?.content ?? '', /switched the call to Session "Keyboard fix"/)
+  listed.dc.readyState = 'closed'
   // A Session the list does not have is journaled as such, not dropped silently.
   globalThis.location = { hash: '#machine=mac-1&session=%259&generation=0123456789abcdef0123456789abcdef' }
   c.focus = '%9'

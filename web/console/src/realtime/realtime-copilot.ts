@@ -252,6 +252,8 @@ export class RealtimeCopilotClient {
   private liveStarted = 0
   /** When this call connected (either system), for `get_call_status`; 0 before it has. */
   private connectedAt = 0
+  /** Whether this call has read the screen once (`followScreen`). */
+  private screenLooked = false
   /** When a Realtime call's voice was last playing (an audio delta, or its playback stopping). */
   private spokeAt = 0
   /** When the copilot was asked to hang up after its goodbye (`end_call`); 0 when it was not. */
@@ -287,6 +289,12 @@ export class RealtimeCopilotClient {
    * Session they are looking at is the one they mean.
    */
   private async followScreen() {
+    // Whether this call has already looked at the screen once: a Session
+    // opened after that is a switch, even when the call started on the list
+    // with none open (a phone call on 2026-11-16 opened Release 2.4 from the
+    // list and was told nothing of it).
+    const looked = this.screenLooked
+    this.screenLooked = true
     const wanted = sessionsInFragment(location.hash)
     if (!wanted) return
     const attempt = this.attempt, hash = location.hash
@@ -298,7 +306,7 @@ export class RealtimeCopilotClient {
     // The first Session a call finds on screen is only where it starts; a move
     // from one to another is a switch (a call from the desktop list opened on
     // its first Session and spoke it instead of answering, 2026-11-16).
-    const moved = !!this.focus
+    const moved = looked || !!this.focus
     this.focus = row.id
     if (this.dc && this.dc.readyState === 'open') {
       if (this.live) {
@@ -549,7 +557,7 @@ export class RealtimeCopilotClient {
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
-    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0
+    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.screenLooked=false
     this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.journalLines = []

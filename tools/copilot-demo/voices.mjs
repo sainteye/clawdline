@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Speaks the demo's lines with OpenAI's text-to-speech (docs/copilot-demo.md).
 //
-//   OPENAI_API_KEY=… node tools/copilot-demo/voices.mjs --lang en|zh-Hant [--force]
+//   OPENAI_API_KEY=… node tools/copilot-demo/voices.mjs --lang en|zh-Hant [--person-voice <voice>] [--force]
 //
+// --person-voice speaks only the person's lines, in that voice, into
+// voices/<lang>@<voice>/ (a GPT-Live take speaks the copilot itself), with the
+// language's own speaking instructions for the person.
 // Writes voices/<lang>/<line>.ogg (Opus, silence trimmed, played at the story's
 // tempo) for every line in
 // story.mjs that has no file yet; --force speaks them all again. This is a
@@ -18,19 +21,23 @@ import { story, LANGS } from './story.mjs'
 const here = dirname(fileURLToPath(import.meta.url))
 const i = process.argv.indexOf('--lang'), lang = i > 0 ? process.argv[i + 1] : ''
 const force = process.argv.includes('--force')
+const pv = process.argv.indexOf('--person-voice'), personVoice = pv > 0 ? process.argv[pv + 1] : ''
 if (!LANGS.includes(lang)) { console.error(`usage: voices.mjs --lang ${LANGS.join('|')} [--force]`); process.exit(2) }
 const key = process.env.OPENAI_API_KEY
 if (!key) { console.error('OPENAI_API_KEY is not set'); process.exit(2) }
-const S = story(lang), out = join(here, 'voices', lang), work = mkdtempSync(join(tmpdir(), 'clawdline-copilot-voices-'))
+const S = story(lang), out = join(here, 'voices', personVoice ? `${lang}@${personVoice}` : lang), work = mkdtempSync(join(tmpdir(), 'clawdline-copilot-voices-'))
 mkdirSync(out, { recursive: true })
 let spoken = 0
 try {
-  for (const [id, [voice, input]] of Object.entries(S.lines)) {
+  for (const [id, [own, input]] of Object.entries(S.lines)) {
+    if (personVoice && !id.startsWith('p')) continue
+    const voice = personVoice && id.startsWith('p') ? personVoice : own
+    const style = S.words.voiceStyle[own]
     const file = join(out, id + '.ogg')
     if (existsSync(file) && !force) continue
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice, input, instructions: S.words.voiceStyle[voice], response_format: 'wav' }),
+      body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice, input, instructions: style, response_format: 'wav' }),
     })
     if (!res.ok) throw new Error(`${id}: HTTP ${res.status} ${await res.text()}`)
     const raw = join(work, id + '.wav'); writeFileSync(raw, Buffer.from(await res.arrayBuffer()))

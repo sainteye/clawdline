@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Records the voice copilot demo from the built console (docs/copilot-demo.md).
 //
-//   node tools/copilot-demo/record.mjs --lang en|zh-Hant --dist web/console/dist --out <file.mp4> [--phone] [--live] [--keep <dir>]
+//   node tools/copilot-demo/record.mjs --lang en|zh-Hant --dist web/console/dist --out <file.mp4> [--phone] [--live [--script triage|switching]] [--keep <dir>]
 //
 // --phone records a 390 x 844 phone with touch, as a portrait 1080 x 2338 film.
 // --live makes a real GPT-Live call instead of the scripted Realtime one: the
@@ -20,7 +20,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
 import { homedir, tmpdir } from 'node:os'
 import { dirname, extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { IDS, story, steps, LANGS } from './story.mjs'
+import { IDS, story, steps, LANGS, LIVE_SCRIPTS } from './story.mjs'
 import { tighten } from './tighten.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -29,6 +29,9 @@ const LANG = arg('lang', 'en'), DIST = resolve(arg('dist', join(here, '../../web
 const KEEP = arg('keep')
 const PHONE = process.argv.includes('--phone')
 const LIVE = process.argv.includes('--live')
+// Which LIVE_SCRIPTS a GPT-Live take follows.
+const SCRIPT = arg('script', 'triage')
+if (LIVE && !LIVE_SCRIPTS[SCRIPT]) { console.error(`no script ${SCRIPT}; have ${Object.keys(LIVE_SCRIPTS).join(', ')}`); process.exit(2) }
 // The page as it is drawn, the screencast's largest frame, and the film's size.
 const VIEW = PHONE ? { width: 390, height: 844, deviceScaleFactor: 3, mobile: true } : { width: 1600, height: 900, deviceScaleFactor: 1.2, mobile: false }
 const FRAME = PHONE ? { maxWidth: 1170, maxHeight: 2532 } : { maxWidth: 1920, maxHeight: 1080 }
@@ -36,7 +39,10 @@ const FILM = PHONE ? '1080:2338' : '1920:1080'
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 if (!OUT || !LANGS.includes(LANG)) { console.error(`usage: record.mjs --lang ${LANGS.join('|')} --dist <dist> --out <file.mp4> [--phone] [--live] [--keep <dir>]`); process.exit(2) }
 for (const need of [join(DIST, 'index.html'), CHROME]) if (!existsSync(need)) { console.error('missing: ' + need); process.exit(2) }
-const VOICES = join(here, 'voices', LANG)
+// --person-voice plays the person's lines spoken in another voice (voices.mjs --person-voice).
+const PERSON_VOICE = arg('person-voice', '')
+const VOICES = join(here, 'voices', PERSON_VOICE ? `${LANG}@${PERSON_VOICE}` : LANG)
+if (PERSON_VOICE && !LIVE) { console.error('--person-voice is for a GPT-Live take, whose copilot speaks for itself'); process.exit(2) }
 const S = story(LANG, { live: LIVE })
 // A GPT-Live take speaks with the model's own voice; only the person's lines are played.
 for (const id of Object.keys(S.lines).filter((id) => !LIVE || id.startsWith('p'))) if (!existsSync(join(VOICES, id + '.ogg'))) { console.error(`missing voice ${LANG}/${id}.ogg: run voices.mjs --lang ${LANG}`); process.exit(2) }
@@ -280,7 +286,7 @@ listeners.push((msg) => {
 await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: mouse.x, y: mouse.y })
 await send('Page.startScreencast', { format: 'jpeg', quality: 92, ...FRAME, everyNthFrame: 1 })
 await sleep(1800)
-let voice = { start: 0, data: '' }, liveTools = [], liveSaid = [], liveErrors = [], liveBackend = [], liveTurns = []
+let voice = { start: 0, data: '' }, liveTools = [], liveSaid = [], liveErrors = [], liveBackend = [], liveTurns = [], endedByVoice = false
 if (LIVE) {
   // A real GPT-Live call: each of the person's lines waits until the copilot
   // has answered the one before and fallen quiet.
@@ -298,26 +304,16 @@ if (LIVE) {
     said.push(await run(`({ id: ${JSON.stringify(id)}, quietForMs: Math.round(performance.timeOrigin + performance.now() - Math.max(window.__demo.watch.lastVoice, window.__demo.watch.lastSaid)), responses: window.__demo.watch.responses.size, awaiting: window.__demo.watch.awaiting })`))
     return run(`window.__demo.person(${JSON.stringify(id)})`, 60000)
   }
-  await sleep(300)
-  await click('#copilot-call')
-  await until(`window.__demo.watch.lastSaid > 0`, 40000)
-  await turn('the greeting', 30000)
-  await sleep(500); await say('p1'); await turn('p1', 60000)
-  await sleep(400)
-  await click('.realtime-minimize-btn')
-  await moveTo(1250, 560, 25)
-  if (PHONE) { await until(`!!document.querySelector('.copilot-bubble-body')`, 5000); await sleep(600); await drag('.copilot-bubble-body', VIEW.width - 40, VIEW.height - 235) }
-  // The person opens Sessions from the list with the mouse; the copilot tells
-  // each one's state without being asked (a call that follows the screen).
+  // The person opens Sessions from the list with the pointer or a finger; the
+  // copilot tells each one's state without being asked (a call that follows the screen).
   const openRow = async (id) => {
     await run(`(() => { const row = [...document.querySelectorAll('li.row')].find((li) => li.textContent.includes(${JSON.stringify(S.sessions().find((r) => r.id === id).label)})); row?.setAttribute('data-demo-row', ${JSON.stringify(id)}) })()`)
     await click(`[data-demo-row="${id}"]`)
     await run('window.__demo.mark()')
   }
-  await sleep(900); await openRow(IDS.search)
-  // While the copilot tells Search rebuild's story, read down its conversation.
-  const reading = (async () => {
-    try { await until(`decodeURIComponent(location.hash).includes(${JSON.stringify(IDS.search)})`, 10000) } catch { return }
+  // While the copilot tells a finished Session's story, read down its conversation.
+  const readDown = async (id) => {
+    try { await until(`decodeURIComponent(location.hash).includes(${JSON.stringify(id)})`, 10000) } catch { return }
     await sleep(1200)
     if (PHONE) { await glide(0, 1500); await sleep(1500); await glide(1, 15000) } else {
       await moveTo(1150, 520, 20)
@@ -325,16 +321,39 @@ if (LIVE) {
       await sleep(1500)
       for (let i = 0; i < 150; i++) { await wheel(14); await sleep(100) }
     }
-  })()
-  await turn('Search rebuild', 120000); await reading
-  await sleep(800); await openRow(IDS.release); await turn('Release 2.4', 90000)
-  await sleep(800); await say('p3o'); await turn('p3o', 60000)
-  // GPT-Live may send at once or read the message back first; the yes is said only when it is still unsent.
-  if (!S.state.releaseSent) { await sleep(500); await say('p4'); await turn('p4', 60000) }
-  await sleep(900); await say('p6'); await turn('p6', 30000)
-  await sleep(1200)
-  await click('.copilot-bubble-hangup')
-  await sleep(2000)
+  }
+  for (const step of LIVE_SCRIPTS[SCRIPT]) {
+    if (step.call) {
+      await sleep(300)
+      await click('#copilot-call')
+      await until(`window.__demo.watch.lastSaid > 0`, 40000)
+      await turn('the greeting', 30000)
+    } else if (step.minimize) {
+      await sleep(400)
+      await click('.realtime-minimize-btn')
+      await moveTo(1250, 560, 25)
+      if (PHONE) { await until(`!!document.querySelector('.copilot-bubble-body')`, 5000); await sleep(600); await drag('.copilot-bubble-body', VIEW.width - 40, VIEW.height - 235) }
+    } else if (step.open) {
+      await sleep(900)
+      await openRow(IDS[step.open])
+      const reading = step.read ? readDown(IDS[step.open]) : Promise.resolve()
+      await turn(S.words.names[step.open], 120000); await reading
+    } else if (step.say || step.sayUnsent) {
+      // GPT-Live may act on an instruction at once; a yes is said only while nothing has been sent.
+      if (step.sayUnsent && S.state.releaseSent) continue
+      await sleep(700); await say(step.say || step.sayUnsent)
+      if (step.byVoice) {
+        // Asked to, the copilot says goodbye and the call hangs up by itself.
+        try { await until(`!document.querySelector('.copilot-bubble-hangup, .realtime-end-btn')`, 45000); endedByVoice = true; actions.push(Date.now()) }
+        catch { console.error('copilot-demo: the call did not end by voice; hanging up'); await click('.copilot-bubble-hangup') }
+        await sleep(1800)
+      } else await turn(step.say || step.sayUnsent, 60000)
+    } else if (step.hangup) {
+      await sleep(1200)
+      await click('.copilot-bubble-hangup')
+      await sleep(2000)
+    }
+  }
   liveTools = await run('window.__demo.watch.tools.map((t) => t.name)')
   liveSaid = await run('window.__demo.watch.said.map((s) => s.text)')
   liveErrors = await run('window.__demo.watch.errors')
@@ -398,13 +417,15 @@ ff('-i', 'video.mp4', ...inputs, '-filter_complex', graph, '-map', '0:v', '-map'
 // A GPT-Live take waits on a real model; the film keeps the talk and shortens the waits.
 const cut = LIVE && !process.argv.includes('--no-tighten') ? tighten(resolve(OUT), KEEP ? join(work, 'untrimmed.mp4') : '', actions.map((at) => (at - first) / 1000)) : null
 
-writeFileSync(join(work, 'take.json'), JSON.stringify({ lang: LANG, phone: PHONE, live: LIVE, session: liveSession, frames: frames.length, duration, clips: clips.map((c) => ({ id: c.id, at: (c.wallMs - first) / 1000 })), tools, said: liveSaid, backend: liveBackend, turns: liveTurns, voiceAt: voice.start ? (voice.start - first) / 1000 : null, errors: liveErrors, sent: S.state.sentText, journal }, null, 2))
+writeFileSync(join(work, 'take.json'), JSON.stringify({ lang: LANG, phone: PHONE, live: LIVE, session: liveSession, frames: frames.length, duration, clips: clips.map((c) => ({ id: c.id, at: (c.wallMs - first) / 1000 })), tools, script: LIVE ? SCRIPT : null, personVoice: PERSON_VOICE || null, endedByVoice, actions: actions.map((at) => (at - first) / 1000), said: liveSaid, backend: liveBackend, turns: liveTurns, voiceAt: voice.start ? (voice.start - first) / 1000 : null, errors: liveErrors, sent: S.state.sentText, journal }, null, 2))
 if (!KEEP) rmSync(work, { recursive: true, force: true })
 
 const ran = tools.map((t) => t.name).join(', ')
 if (LIVE) {
   // A real model chooses its own tools and words: the take holds when the message reached Release 2.4 and nothing failed.
   console.log('copilot-demo: the copilot said:\n  ' + liveSaid.join('\n  '))
+  const wantsVoiceEnd = LIVE_SCRIPTS[SCRIPT].some((step) => step.byVoice)
+  if (wantsVoiceEnd && !endedByVoice) { console.error('the GPT-Live take did not end by voice'); process.exit(1) }
   if (!S.state.releaseSent || liveErrors.length) { console.error(`the GPT-Live take did not run through: tools ${ran}; sent=${S.state.releaseSent}; errors: ${liveErrors.join('; ') || 'none'}`); process.exit(1) }
   const length = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', resolve(OUT)]).toString())
   console.log(`copilot-demo: ${resolve(OUT)} (${LANG}${PHONE ? ', phone' : ''}, GPT-Live, ${length.toFixed(1)} s${cut ? `, ${cut.removed} s of waiting cut in ${cut.segments - 1} places from ${duration.toFixed(1)} s` : ''}; tools: ${ran}; sent: ${S.state.sentText})`)

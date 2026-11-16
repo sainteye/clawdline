@@ -84,6 +84,10 @@ const WORDS = {
       p4: ['cedar', 'Yes, send it.'],
       c4: ['marin', 'Sent. Release 2.4 is on it.'],
       p6: ['cedar', "Perfect, that's all for now."],
+      // The GPT-Live take's own lines (LIVE_SCRIPTS).
+      pT: ['cedar', 'Anything need me right now?'],
+      pC: ['cedar', 'How long have we been on, and what has it cost so far?'],
+      pE: ['cedar', "That's it for today. You can hang up."],
       c6: ['marin', 'Sounds good. Talk soon!'],
     },
     // How much faster than spoken each voice is played (voices.mjs applies it).
@@ -150,6 +154,9 @@ const WORDS = {
       p4: ['ash', '好，送出。'],
       c4: ['marin', '送出了，2.4 版發布已經開始處理。'],
       p6: ['ash', '很好，先這樣。'],
+      pT: ['ash', '現在有什麼要我處理的嗎？'],
+      pC: ['ash', '我們講多久了？目前花了多少錢？'],
+      pE: ['ash', '我們這一次的對話已經結束了，可以關閉。'],
       c6: ['marin', '好，有事再找我！'],
     },
     // Spoken Chinese came out about 4.1 characters a second, slower than talk;
@@ -163,6 +170,33 @@ const WORDS = {
 }
 
 export const LANGS = Object.keys(WORDS)
+
+/**
+ * What a GPT-Live take does, step by step (record.mjs --live --script <name>).
+ * A real model chooses its own words, so a step waits for the copilot's
+ * answer instead of a fixed time. Steps: `call` places it from the list;
+ * `say` plays one of the person's lines and waits for the answer;
+ * `sayUnsent` does so only while Release 2.4 has had no message or answer;
+ * `minimize` shrinks the sheet to its bubble; `open` opens a Session from the
+ * list with the pointer or a finger and waits for what the copilot tells of
+ * it; `hangup` presses the bubble's red mark; `byVoice` waits for the call to
+ * end by itself after the person asked it to.
+ *
+ * `triage` (2026-11-16) is what a person on a phone wants from a call: what
+ * needs them, one decision made from the call, what the call has cost, and
+ * hanging up by saying so. `switching` is the first desktop take's: the
+ * overview, then two Sessions opened with the mouse.
+ */
+export const LIVE_SCRIPTS = {
+  triage: [
+    { call: true }, { say: 'pT' }, { minimize: true }, { open: 'release' },
+    { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'pC' }, { say: 'pE', byVoice: true },
+  ],
+  switching: [
+    { call: true }, { say: 'p1' }, { minimize: true }, { open: 'search', read: true }, { open: 'release' },
+    { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'p6' }, { hangup: true },
+  ],
+}
 
 /** The story in `lang`, with the mutable part (whether the message has been sent). */
 export function story(lang, { live = false } = {}) {

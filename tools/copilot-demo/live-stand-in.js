@@ -113,7 +113,8 @@
     async voice() {
       const r = recording.recorder
       if (!r) return { start: 0, data: '' }
-      await new Promise((ok) => { r.onstop = ok; r.stop() })
+      // A call that ended by itself may already have stopped the recorder.
+      if (r.state !== 'inactive') await new Promise((ok) => { r.onstop = ok; r.stop() })
       const blob = new Blob(recording.chunks, { type: 'audio/webm' })
       const data = await new Promise((ok) => { const f = new FileReader(); f.onload = () => ok(String(f.result).split(',')[1] ?? ''); f.readAsDataURL(blob) })
       return { start: recording.start, data }

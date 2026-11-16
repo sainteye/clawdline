@@ -22,6 +22,7 @@ stand-in daemon. Watch both films before publishing them.
 
 ```sh
 tools/copilot-demo.sh <output directory> [en] [zh-Hant] [--phone] --live
+node tools/copilot-demo/record.mjs --lang zh-Hant --live --phone --script triage --person-voice cedar --dist web/console/dist --out <file.mp4>
 ```
 
 `--live` records a real GPT-Live call instead of the scripted Realtime one, as
@@ -47,7 +48,23 @@ the copilot off mid-sentence in five of the first eight takes. "Yes, send it" is
 the message is still unsent, since GPT-Live may act on the instruction at once or answer the
 Session's question instead of sending it.
 
-The take shows a call that follows the screen: after the overview the person opens Search
+What a take does is a script in `story.mjs` (`LIVE_SCRIPTS`, `--script <name>`), so it can be
+revised without touching the recorder. `triage`, the default since 2026-11-16, is what a person on
+a phone wants from a call, one selling point a step: "Anything need me right now?" (the copilot
+picks out what waits on them), the finger opens Release 2.4 from the list (it tells that
+Session's state unasked, its kept recap and then the latest, which brings the iPad failures),
+"Tell it to fix the iPad tests first" (a decision made from the call), "How long have we been on,
+and what has it cost so far?" (`get_call_status`), and "That's it for today. You can hang up"
+(`end_call`: the copilot says goodbye and the call hangs up by itself). The take fails unless the
+call ended by voice. A phone take of it ran 72-99 s after the edit.
+
+`--person-voice <voice>` plays the person's lines in another voice, from
+`voices/<lang>@<voice>/` (`voices.mjs --lang <lang> --person-voice <voice>` speaks them, with the
+language's own instructions for the person). On 2026-11-16 the Chinese phone take was made twice,
+with `ash` and with the English film's `cedar`, to compare them.
+
+`switching`, the first desktop takes' script, is the overview and then two Sessions opened with
+the mouse: after the overview the person opens Search
 rebuild and then Release 2.4 from the list with the mouse, and the copilot tells each one's
 state unasked, its kept recap first and then the latest. Release 2.4's kept recap is from before
 its UI suite finished, so the latest one brings the iPad failures. Switching by voice
@@ -56,8 +73,9 @@ longer without showing more.
 
 Every take is then edited (`tighten.mjs`, also runnable alone on a film): each stretch in
 which neither voice is heard and that is longer than 1.2 s becomes 0.6 s, the opening keeps
-its first 2.6 s and the close 1.6 s after the last word, and each click keeps 1.2 s before and
-0.6 s after it so the pointer is seen moving there. Picture and sound are cut together
+its first 2.6 s and the close 1.6 s after the last word, and each click, and the moment a call
+hangs up by itself, keeps 1.2 s before and 0.6 s after it, so the pointer is seen moving there and
+the bubble is seen going away. `take.json` keeps those moments (`actions`). Picture and sound are cut together
 (`trim`/`atrim` and `concat`; `select`/`aselect` cut only the picture). On 2026-11-16 this
 took 134 s to 80 s in English and 184 s to 123 s in Chinese. `--no-tighten` keeps the whole
 take, and `--keep` keeps it as `untrimmed.mp4`.

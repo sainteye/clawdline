@@ -2,7 +2,7 @@
 // Shortens the waits in a GPT-Live demo film (docs/copilot-demo.md). record.mjs
 // --live runs it on every take; it also runs alone on a film already made:
 //
-//   node tools/copilot-demo/tighten.mjs <film.mp4>
+//   node tools/copilot-demo/tighten.mjs <film.mp4> [--close <seconds>]
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
@@ -14,8 +14,8 @@ import { resolve } from 'node:path'
  * film's seconds at which something visible is done; the moment before and
  * after each is kept. Returns the cut.
  */
-export function tighten(file, untrimmed = '', actions = []) {
-  const TIGHT_GAP = 1.2, TIGHT_KEEP = 0.6, TIGHT_OPENING = 2.6, TIGHT_CLOSE = 1.6, STEP = 0.05, RATE = 8000
+export function tighten(file, untrimmed = '', actions = [], close = 1.6) {
+  const TIGHT_GAP = 1.2, TIGHT_KEEP = 0.6, TIGHT_OPENING = 2.6, TIGHT_CLOSE = close, STEP = 0.05, RATE = 8000
   const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', String(RATE), '-f', 's16le', '-'], { maxBuffer: 1 << 28 })
   const n = RATE * STEP, quiet = []
   for (let i = 0; (i + n) * 2 <= raw.length; i += n) {
@@ -51,6 +51,8 @@ export function tighten(file, untrimmed = '', actions = []) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const file = process.argv[2]
   if (!file) { console.error('usage: tighten.mjs <film.mp4>'); process.exit(2) }
-  const cut = tighten(resolve(file))
+  // --close <s> keeps longer after the last word (a call that hangs up by itself a moment later).
+  const c = process.argv.indexOf('--close'), close = c > 0 ? Number(process.argv[c + 1]) : 1.6
+  const cut = tighten(resolve(file), '', [], close)
   console.log(`tighten: ${cut.removed} s of waiting cut in ${cut.segments - 1} places`)
 }
