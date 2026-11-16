@@ -12407,7 +12407,7 @@
   "transparency.card.persistent-bot-fallback.condition": "必須啟用開發版 Bots，並明確設定替代 Agent；人在 Bot 設定裡依序選擇最多三個替代 Agent，唯讀裝置不能修改。只有 Open 明確保證尚未送出提示或產生外部效果、保留清理控制代碼且確認關閉，才可切換。本次尚未驗證已安裝原生 Agent 可提供這項保證。",
   "transparency.card.persistent-bot-fallback.summary": "主要 Agent 在 Send 前安全拒絕後，已設定的替代 Agent 可用新的執行授權完成同一 Bot 訊息；原本設定的主要 Agent 保持不變。",
   "transparency.card.persistent-bot-fallback.how": "來源持久保存不可覆寫的嘗試事實與整台機器共用的 Agent 休息時間，撤銷舊綁定和工具、確認 Close，再重新檢查權限、Project、設定與記憶後開啟下一個 Agent。既有的過濾交接內容會明確標示實際 Agent。用量百分比不會觸發切換，全部嘗試共用同一回合期限與程序名額。所有身分都在休息或尚無已驗證的替代模式時，新輸入仍會嘗試主要 Agent；休息狀態不會禁止未設定替代方案的主要 Agent 接收新輸入。",
-  "transparency.card.persistent-bot-fallback.effect": "提示送到替代 Agent 時可能消耗該帳號額度。Send／Wait 錯誤、部分寫入、缺少清理控制代碼、工具活動，以及不確定的權限或 Broker 回覆，都不能授權自動重送。中斷的 fallback 回合保持結果未知。原生驗證、進度與副作用紀錄、停放 Session、摘要追補仍待完成；Codex 仍不支援恢復原生 Session。",
+  "transparency.card.persistent-bot-fallback.effect": "提示送到替代 Agent 時可能消耗該帳號額度。Send／Wait 錯誤、部分寫入、缺少清理控制代碼、工具活動，以及不確定的權限或 Broker 回覆，都不能授權自動重送。中斷的 fallback 回合保持結果未知。每次嘗試都會持久記錄開啟、送出中、已送出、已回答、工具活動與清理等事實，切換與續接只依這些事實判斷。替代 Agent 回答後，主要 Agent 最新的安全原生 Session 會被停放；下一次明確輸入可以續接它，並附上替代 Agent 做了什麼的摘要，以依來源與記憶篩選過的不可信引用資料提供。原生驗證、Host 全面的工具呼叫紀錄，以及主控台的進度顯示仍待完成；Codex 仍不支援恢復原生 Session。",
   "capacityRow.bots.fallback_agents.what": "單一 Bot 除主要 Agent 之外所設定的預設登入身分。上游上限為三個，目前只接受不重複的 Claude 與 Codex 身分。",
   "capacityRow.bots.fallback_agents.full": "超額、重複或未知身分會在儲存設定前遭拒絕。空陣列會清除設定；省略欄位則保留原設定。",
   "capacityRow.bots.agent_rest_seconds.what": "這台機器目前最長的 Agent 持久休息剩餘時間。額度與登出等待一小時、餘額不足六小時，暫時性失敗依序等待一、五、二十五與六十分鐘。",
