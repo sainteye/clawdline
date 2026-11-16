@@ -438,6 +438,9 @@ func validateAggregate(a aggregate) error {
 	if b.Instructions.Revision < 1 {
 		return failure(pa.Invalid, "instructions_revision")
 	}
+	if err := pa.ValidateCreatedBy(b); err != nil {
+		return err
+	}
 	c := a.Conversation
 	if c.Key != b.Key || c.ID != b.ConversationID || c.Generation < 0 || c.LastMessageSeq != int64(len(a.Messages)) {
 		return failure(pa.ScopeDenied, "conversation")
@@ -500,6 +503,9 @@ func validateAggregate(a aggregate) error {
 	}
 	pending := 0
 	for id, t := range a.Turns {
+		if err := pa.ValidateRoomTurn(t); err != nil {
+			return err
+		}
 		if err := pa.ValidateTurnOrigin(t); err != nil {
 			return err
 		}

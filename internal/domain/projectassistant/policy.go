@@ -151,6 +151,9 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 		}
 		bot.FallbackAgents = FallbackConfigOf(*in.FallbackAgents)
 	}
+	if in.ManageTeam != nil {
+		bot.ManageTeam = *in.ManageTeam
+	}
 	bot.Name = in.Name
 	bot.Appearance = in.Appearance
 	if bot.Instructions.Text != in.Instructions {

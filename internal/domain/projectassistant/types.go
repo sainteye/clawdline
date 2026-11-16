@@ -118,7 +118,14 @@ type Bot struct {
 	Mode string `json:"mode,omitempty"`
 	// Hidden keeps the Bot out of the list and its badge, as Codync's Hide
 	// from list does; its chat, memory and settings stay.
-	Hidden       bool                `json:"hidden,omitempty"`
+	Hidden bool `json:"hidden,omitempty"`
+	// ManageTeam is Codync's "Manage the team": off by default, written
+	// only by the person's own settings (CreateBot/EditBot), never by a
+	// manager tool or a model.
+	ManageTeam bool `json:"manage_team,omitempty"`
+	// CreatedBy names the manager Bot that created this one. Only the host
+	// sets it, in its manager operation; no person or model request does.
+	CreatedBy    *BotKey             `json:"created_by,omitempty"`
 	Instructions InstructionSnapshot `json:"instructions"`
 	Version      int64               `json:"version"`
 	CreatedAt    time.Time           `json:"created_at"`
@@ -135,6 +142,8 @@ type CreateBot struct {
 	Mode             string           `json:"mode,omitempty"`
 	Instructions     string           `json:"instructions"`
 	RoleSnapshotRef  string           `json:"role_snapshot_ref"`
+	// ManageTeam is the person's switch; omitted (false) keeps the default.
+	ManageTeam bool `json:"manage_team,omitempty"`
 }
 
 // EditBot is a complete replacement of the three editable settings; Agent,
@@ -149,6 +158,9 @@ type EditBot struct {
 	// older than this setting cannot reset it.
 	PermissionPolicy PermissionPolicy `json:"permission_policy,omitempty"`
 	Mode             string           `json:"mode,omitempty"`
+	// ManageTeam nil leaves the switch as it is, so an older console cannot
+	// reset it; only the person's edit reaches this field.
+	ManageTeam *bool `json:"manage_team,omitempty"`
 }
 
 type Conversation struct {
@@ -204,6 +216,11 @@ type Turn struct {
 	// JoinedTurnID names the running turn this queued message was sent into
 	// with Send now, as Codync's steer; the message has no reply of its own.
 	JoinedTurnID string `json:"joined_turn_id,omitempty"`
+	// Room is the provenance of a group member's room turn: an ordinary turn
+	// of the member's own conversation under its own fence, plus the ticket
+	// the room handed it. The room line it publishes takes its Author from
+	// Room.Member, never from text the model wrote.
+	Room *RoomTicket `json:"room,omitempty"`
 }
 
 type ExecutionBinding struct {

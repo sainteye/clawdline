@@ -667,3 +667,33 @@ func (r *RoomRun) EndRound(l GroupLimits) bool {
 	r.Spoke = 0
 	return true
 }
+
+// ValidateRoomTurn checks a turn's room provenance as stored: a room turn is
+// a host notice of the member's own conversation, never a collaboration or
+// routine turn, and its ticket names the member that owns the fence.
+func ValidateRoomTurn(t Turn) error {
+	if t.Room == nil {
+		return nil
+	}
+	r := *t.Room
+	switch {
+	case t.Origin != HostNoticeOrigin || t.ExchangeID != "" || t.RoutineRunID != "":
+		return fail(Invalid, "room_turn")
+	case r.Member != t.Fence.Key || r.Group.MachineID != r.Member.MachineID || r.Group == r.Member || r.Group.BotID == "":
+		return fail(ScopeDenied, "room_turn")
+	case r.Epoch < 1 || r.JoinedRevision < 1:
+		return fail(Invalid, "room_turn")
+	}
+	return nil
+}
+
+// ValidateCreatedBy: a manager is another Bot of the same machine.
+func ValidateCreatedBy(b Bot) error {
+	if b.CreatedBy == nil {
+		return nil
+	}
+	if *b.CreatedBy == b.Key || b.CreatedBy.MachineID != b.Key.MachineID || b.CreatedBy.BotID == "" {
+		return fail(ScopeDenied, "created_by")
+	}
+	return nil
+}

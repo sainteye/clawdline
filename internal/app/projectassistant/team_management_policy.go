@@ -21,6 +21,13 @@ type TeamManagerGrant struct {
 	CreatedBy *pa.BotKey `json:"created_by,omitempty"`
 }
 
+// GrantFor is the stored Bot's grant: its ManageTeam switch under its
+// aggregate version, which moves on every settings change, so a decision made
+// under one version cannot be applied under another.
+func GrantFor(b pa.Bot) TeamManagerGrant {
+	return TeamManagerGrant{Bot: b.Key, Enabled: b.ManageTeam, Revision: b.Version, CreatedBy: b.CreatedBy}
+}
+
 // ManagerContext is what the host derives for a manage tool call: the calling
 // Bot from the turn's fence, its current grant, and its current Project. None
 // of it comes from tool arguments.
