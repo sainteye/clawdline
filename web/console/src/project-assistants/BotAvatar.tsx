@@ -1,9 +1,9 @@
 // Motion timing adapted from Codync 9f67eb09084db61b3cca9c84a11bc03df9de29b7.
 // Copyright 2026 Po Kai Lee and the Codync contributors. Apache-2.0.
 // See third_party/codync/{LICENSE,NOTICE}.
-import {useEffect,useRef} from "react"
+import {useEffect,useId,useRef} from "react"
 import type {ProjectAssistantAppearance} from "@clawdline/contract"
-import {palette,avatarPaths} from "./avatar-paths"
+import {palette,avatarPaths,avatarLights} from "./avatar-paths"
 import type {Words} from "./words"
 import {useReduceMotion} from "./codync-rendering"
 
@@ -14,13 +14,15 @@ type Mood = "idle" | "working" | "needsInput" | "failed"
 export function BotAvatar({appearance,size=44,mood="idle"}:{appearance:ProjectAssistantAppearance;size?:number;mood?:Mood}) {
   const path=avatarPaths[appearance.shape]??avatarPaths.blob
   const color=palette.find(c=>c===appearance.color.toLowerCase())??palette[0]
-  const svg=useRef<SVGSVGElement>(null),outline=useRef<SVGPathElement>(null),eyes=useRef<SVGPathElement>(null)
+  const lights=avatarLights[color],id=useId(),gradientID=`${id}-ink`,glowID=`${id}-glow`
+  const svg=useRef<SVGSVGElement>(null),gradient=useRef<SVGLinearGradientElement>(null),ripple=useRef<SVGPathElement>(null),eyes=useRef<SVGPathElement>(null)
   const reduce=useReduceMotion()
 
   useEffect(()=>{
-    const el=svg.current,body=outline.current,face=eyes.current
-    if(!el||!body||!face)return
-    face.removeAttribute("transform");body.removeAttribute("opacity")
+    const el=svg.current,light=gradient.current,wave=ripple.current,face=eyes.current
+    if(!el||!light||!wave||!face)return
+    face.removeAttribute("transform");light.removeAttribute("gradientTransform")
+    wave.setAttribute("opacity","0");wave.removeAttribute("transform")
     if(reduce||(mood!=="working"&&mood!=="needsInput"))return
     let frame=0,drawn=-Infinity,visible=true
     const draw=(time:number)=>{
@@ -33,10 +35,16 @@ export function BotAvatar({appearance,size=44,mood="idle"}:{appearance:ProjectAs
         const glance=mood==="working"?Math.round(Math.sin(t*2*Math.PI/3.2)*1.4)*100/9:0
         const blink=(t/4.7)%1<0.035
         face.setAttribute("transform",`translate(${glance} 47.5) scale(1 ${blink?0.15:1}) translate(0 -47.5)`)
-        // The waiting ripple's 5 rad/s cadence becomes an ink pulse along
-        // the existing contour. Working retains the slower 1.4 rad/s light.
-        const ink=mood==="needsInput"?0.6+0.4*(0.5+0.5*Math.sin(-t*5)):0.88+0.12*(0.5+0.5*Math.cos(t*1.4))
-        body.setAttribute("opacity",String(ink))
+        // Keep the upstream light's spatial movement instead of dimming the
+        // whole outline together. The silhouette and its center never move.
+        if(mood==="working")light.setAttribute("gradientTransform",`rotate(${t*1.4*180/Math.PI} 50 50)`)
+        // A radial field on a thin outline loses its direction. A separate
+        // expanding contour carries that direction while the face stays clear.
+        if(mood==="needsInput"){
+          const phase=(t*5/(2*Math.PI))%1,scale=1+phase*0.2
+          wave.setAttribute("transform",`translate(50 50) scale(${scale}) translate(-50 -50)`)
+          wave.setAttribute("opacity",String(Math.sin(phase*Math.PI)*(1-phase)*0.65))
+        }
       }
       if(visible&&!document.hidden)frame=requestAnimationFrame(draw)
     }
@@ -52,13 +60,23 @@ export function BotAvatar({appearance,size=44,mood="idle"}:{appearance:ProjectAs
   },[path,color,mood,reduce])
 
   return <svg ref={svg} className="pa-avatar" data-mood={mood} width={size} height={size} viewBox="-5 -5 110 110" aria-hidden="true" focusable="false">
-    <path ref={outline} d={path} fill="none" stroke={color} strokeWidth="4.4" strokeLinejoin="round"/>
-    <path ref={eyes} d="M36 40 V55 M63 40 V55" fill="none" stroke={color} strokeWidth="5.5" strokeLinecap="round"/>
+    <defs>
+      <linearGradient ref={gradient} id={gradientID} gradientUnits="userSpaceOnUse" x1="8" y1="5" x2="92" y2="95">
+        {lights.map((ink,i)=><stop key={i} offset={`${i*50}%`} stopColor={ink}/>)}
+      </linearGradient>
+      <filter id={glowID} x="-50%" y="-50%" width="200%" height="200%" colorInterpolationFilters="sRGB"><feGaussianBlur stdDeviation="3.5"/></filter>
+    </defs>
+    <g fill="none" stroke={`url(#${gradientID})`} strokeLinejoin="round">
+      <path ref={ripple} d={path} strokeWidth="2" opacity="0"/>
+      <path d={path} strokeWidth="6" filter={`url(#${glowID})`} opacity="0.55"/>
+      <path d={path} strokeWidth="4.4"/>
+      <path ref={eyes} d="M36 40 V55 M63 40 V55" strokeWidth="5.5" strokeLinecap="round"/>
+    </g>
   </svg>
 }
 export function AppearancePicker({value,onChange,w}: {value: ProjectAssistantAppearance; onChange:(value:ProjectAssistantAppearance)=>void; w:Words}) {
   return <fieldset className="pa-appearance"><legend>{w.appearance}</legend>
     <div className="pa-shapes">{Object.keys(avatarPaths).map(shape=><button type="button" key={shape} aria-label={w[`shape_${shape}` as keyof Words]} aria-pressed={value.shape===shape} onClick={()=>onChange({...value,shape:shape as ProjectAssistantAppearance["shape"]})}><BotAvatar appearance={{...value,shape:shape as ProjectAssistantAppearance["shape"]}} size={40}/></button>)}</div>
-    <div className="pa-colors">{palette.map(color=><button type="button" key={color} aria-label={color} aria-pressed={value.color===color} style={{color}} onClick={()=>onChange({...value,color})}>●</button>)}</div>
+    <div className="pa-colors">{palette.map(color=><button type="button" key={color} aria-label={color} aria-pressed={value.color.toLowerCase()===color} onClick={()=>onChange({...value,color})}><BotAvatar appearance={{...value,color}} size={30}/></button>)}</div>
   </fieldset>
 }

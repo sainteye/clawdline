@@ -12,3 +12,16 @@ export const avatarPaths: Record<ProjectAssistantShape,string> = {
   "teardrop": "M50 2 C62 20 94 38 94 62 A44 36 0 0 1 6 62 C6 38 38 20 50 2 Z"
 }
 export const palette = ["#e39567", "#b39af2", "#75c6a5", "#7eafff", "#e3bc6b", "#9ca6b3", "#8ad1c9", "#d29ac4"] as const
+
+/** The saved color remains the identity. These light/dark accents are presentation,
+ * so every reader and the picker share a look without changing the wire format. */
+export const avatarLights: Record<typeof palette[number], readonly [string,string,string]> = {
+  "#e39567": ["#ffe4b5", "#e39567", "#ed70ad"],
+  "#b39af2": ["#a8e7ff", "#b39af2", "#f68ed7"],
+  "#75c6a5": ["#d4fbb0", "#75c6a5", "#65c6ee"],
+  "#7eafff": ["#a0f2ff", "#7eafff", "#bd8dff"],
+  "#e3bc6b": ["#fff0ae", "#e3bc6b", "#ff967f"],
+  "#9ca6b3": ["#e4f4ff", "#9ca6b3", "#a79aca"],
+  "#8ad1c9": ["#c3ffd9", "#8ad1c9", "#91b9ff"],
+  "#d29ac4": ["#ffd1e8", "#d29ac4", "#b5a1ff"],
+}
