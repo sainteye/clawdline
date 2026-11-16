@@ -2018,3 +2018,39 @@ test("an unsealed voice answer first reads back the question without pressing", 
   assert.equal(out.expected_question, menuFingerprint(ROWS[2].menu as never))
   assert.equal(calls.some(c => c.path.endsWith("/key")), false)
 })
+
+test('the automatic list report reads fresh waiting summaries and Notes before newer ordinary work',async()=>{
+ const {deps,calls}=fakeMachine({}, {notes:{rows:[{id:'note',kind:'answer',title:'Choose the scope',summary:'One choice remains',action:'Choose one scope',reason:'Needs the person',options:[{label:'This task only'}]}]}})
+ const rows=[
+  {id:'%w',label:'Newest work',state:'working',work_state:'working',project_key:'/work/alpha',activity:{known:true,at:999}},
+  {id:'%n',label:'Pending note',state:'idle',work_state:'milestone_complete',attention_count:1,sessionId:'note-conversation',project_key:'/work/beta',activity:{known:true,at:90}},
+  {id:'%q',label:'Pending question',state:'waiting',work_state:'waiting_you',sessionId:'question-conversation',project_key:'/work/beta',activity:{known:true,at:80},menu:{question:'Allow this check?',options:[{n:1,label:'Yes',can:true},{n:2,label:'No',can:true}]}},
+ ]
+ deps.fleet=async()=>rows.map(row=>({machine:'machine-a',machineName:'Office',row}))
+ deps.summaryAttentionFirst=true;deps.summaryLimit=2;deps.recapMode=()=> 'on_demand';deps.now=()=>1000
+ const base=deps.fetch
+ deps.fetch=async(path,init)=>{
+  if(path==='/v1/voice/copilot-recap'){calls.push({path,init});const id=JSON.parse(String(init?.body)).session;return Response.json({recap:`Fresh summary for ${id}`,at:1000,current:true})}
+  if(path.startsWith('/v1/transcript?')){calls.push({path,init});return Response.json({entries:[{role:'assistant',text:'Current actual reply'}]})}
+  return base(path,init)
+ }
+ const out=JSON.parse((await runCopilotTool('get_sessions_summary','{"which":"all","fresh":true}',deps)).output)
+ assert.deepEqual(out.sessions.map((r:{label:string})=>r.label),['Pending note','Pending question'])
+ assert.equal(out.sessions[0].recap,'Fresh summary for %n')
+ assert.equal(out.sessions[0].needs_your_response.notes.sessions[0].notes[0].title,'Choose the scope')
+ assert.equal(out.sessions[1].needs_your_response.question,'Allow this check?')
+ assert.deepEqual(out.sessions[1].needs_your_response.options,['1. Yes','2. No'])
+ assert.equal(out.remaining[0].label,'Newest work')
+ assert.deepEqual(calls.filter(c=>c.path==='/v1/voice/copilot-recap').map(c=>JSON.parse(String(c.init?.body)).session),['%n','%q'])
+ assert.ok(calls.every(c=>!c.path.endsWith('/key')&&!c.path.endsWith('/send')))
+})
+
+test('an automatic report keeps an unidentified Note unread instead of saying there are none',async()=>{
+ const {deps}=fakeMachine({})
+ deps.fleet=async()=>[{machine:'machine-a',machineName:'Office',row:{id:'%n',label:'Pending note',state:'idle',attention_count:1}}]
+ deps.summaryAttentionFirst=true;deps.summaryLimit=2
+ const out=JSON.parse((await runCopilotTool('get_sessions_summary','{"which":"all","fresh":true}',deps)).output)
+ assert.equal(out.sessions[0].state,'needs_you')
+ assert.equal(out.sessions[0].needs_your_response.notes.error,'voice_notes_conversation_unavailable')
+ assert.equal(out.sessions[0].needs_your_response.notes.note,undefined)
+})

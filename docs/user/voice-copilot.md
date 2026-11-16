@@ -28,6 +28,12 @@ dials at once and rings until it connects; press **End the call** while it rings
 Allow the microphone when the browser asks. **Shrink to a bubble** keeps the call going while you
 use the page; drag the bubble aside, press it to open the call again, or press its **×** to hang up.
 
+When a call connects from the list, it begins reporting automatically. Sessions
+waiting for your answer or with unresolved Notes come first. It reads their
+summaries and current questions, then introduces the other Sessions one or two at
+a time. Interrupt whenever you need to; ask it to continue to resume the prepared
+batch. A call started inside one Session keeps its focused summary.
+
 ## What you can ask
 
 - The state of your Sessions: all of them, the working ones, or the idle and recently finished

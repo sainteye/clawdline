@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test, afterEach } from 'node:test'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -14,6 +14,8 @@ const { RealtimeCopilotClient,voiceWork,useCallWorkTools } = compiled.exports
 const origin = { id: '%7', label: 'Prepare screenshots' }
 const row = { ...origin, assistant: 'codex', state: 'idle', sessionId: 'conversation-seven' }
 const tick = () => new Promise(resolve => setImmediate(resolve))
+const fixtures=new Set()
+afterEach(()=>{for(const c of fixtures){if(c.dc)c.dc.readyState='closed';c.resetSessionReports();clearTimeout(c.configurationTimer);clearInterval(c.cueTimer);clearInterval(c.liveTicker)}fixtures.clear()})
 
 function fixture(managed, target = origin) {
   globalThis.document??={documentElement:{lang:'en'}};globalThis.location??={hash:''}
@@ -21,6 +23,7 @@ function fixture(managed, target = origin) {
   let release
   const held = new Promise(resolve => { release = resolve })
   const c = new RealtimeCopilotClient()
+  fixtures.add(c)
   c.dc = { readyState: 'open', send: text => {const e=JSON.parse(text);sent.push(e);if(e.type==='session.update')queueMicrotask(()=>void c.handleRealtimeEvent({type:'session.updated',session:e.session}))}, close() {} }
   c.call = { memory: '', snapshot: '', options: { workEnabled: managed, origin: target } }
   c.focus = target?.id
@@ -47,27 +50,26 @@ function fixture(managed, target = origin) {
   return { c, sent, reads, release, responses: () => sent.filter(e => e.type === 'response.create') }
 }
 
-test('connecting without a Session greets once after the ready cue, reads nothing, and yields to the person', async () => {
+test('a list call automatically reads summaries before reporting in both engines and modes', async () => {
   globalThis.document = { documentElement: { lang: 'en' } }
   globalThis.location = { hash: '' }
-  for (const managed of [false, true]) {
+  for (const live of [false, true]) for (const managed of [false, true]) {
     const f = fixture(managed, null)
-    f.c.memory = [{ role: 'user', text: 'An earlier request.', at: Math.floor(Date.now()/1000) }]
+    f.c.live = live
     f.c.dc.send = text => f.sent.push(JSON.parse(text))
-    await f.c.sendSessionConfiguration()
-    assert.equal(f.responses().length, 0, 'nothing is said before the service confirms the tools')
-    assert.equal(f.reads.length, 0)
-    assert.equal(f.sent.filter(e => e.type === 'session.update').length, 1)
-    await f.c.handleRealtimeEvent({ type: 'session.updated', session: f.sent.find(e => e.type === 'session.update').session })
-    assert.equal(f.responses().length, 1, 'one greeting')
-    assert.match(JSON.stringify(f.responses()[0]), /Greet them in one short/)
-    assert.equal(f.reads.length, 0, 'the greeting reads nothing')
-    const quiet = fixture(managed, null)
-    quiet.c.dc.send = text => quiet.sent.push(JSON.parse(text))
-    await quiet.c.sendSessionConfiguration()
-    await quiet.c.handleRealtimeEvent({ type: 'input_audio_buffer.speech_started', item_id: 'first' })
-    await quiet.c.handleRealtimeEvent({ type: 'session.updated', session: quiet.sent.find(e => e.type === 'session.update').session })
-    assert.doesNotMatch(JSON.stringify(quiet.responses()), /Greet them in one short/, 'speaking first drops the greeting')
+    const ready = live ? f.c.configureLive() : f.c.sendSessionConfiguration()
+    await tick()
+    assert.ok(f.reads.some(r => r.path.startsWith('/v1/transcript?')), 'the list call requests each summary without waiting for a user command')
+    assert.equal(f.responses().length, 0, 'no invented status before the summaries arrive')
+    f.release()
+    await ready
+    await tick()
+    if (!live) await f.c.handleRealtimeEvent({type:'session.updated',session:f.sent.find(e=>e.type==='session.update').session})
+    const speech = live ? f.sent.filter(e=>e.type==='session.commentary.append') : f.responses()
+    assert.ok(speech.length > 0, 'summary content is submitted automatically')
+    assert.match(JSON.stringify(speech), /All six screenshots are captured/)
+    assert.doesNotMatch(JSON.stringify(speech), /Greet them in one short/)
+    f.c.resetSessionReports()
   }
 })
 
@@ -483,19 +485,23 @@ test('a message is prepared without planning and confirmed only after exact audi
  })
 })
 
-test('connected cue waits for configured tools, plays once, and the only response is the greeting',async()=>{
+test('connected cue precedes the automatic report and plays once after tools are configured',async()=>{
  const f=fixture(true,null);let connected=0
  f.c.state.status='connected';f.c.meter={connected:()=>connected++,pending(){}}
  f.c.dc.send=text=>f.sent.push(JSON.parse(text))
- await f.c.sendSessionConfiguration()
- assert.equal(connected,0);assert.equal(f.c.state.connectionReady,undefined)
+ const preparing=f.c.sendSessionConfiguration();await tick()
+ assert.equal(connected,0)
  await f.c.handleRealtimeEvent({type:'session.updated',session:{tools:[]}})
  assert.equal(connected,0)
  const configured=f.sent.find(e=>e.type==='session.update').session
  await f.c.handleRealtimeEvent({type:'session.updated',session:configured})
  await f.c.handleRealtimeEvent({type:'session.updated',session:configured})
- assert.equal(connected,1);assert.equal(f.c.state.connectionReady,true);assert.equal(f.responses().length,1)
- assert.match(JSON.stringify(f.responses()[0]),/Greet them in one short/)
+ assert.equal(connected,1);assert.equal(f.c.state.connectionReady,true)
+ assert.equal(f.responses().length,0,'read summaries before speaking')
+ f.release();await preparing
+ assert.equal(f.responses().length,1)
+ assert.match(JSON.stringify(f.responses()[0]),/All six screenshots are captured/)
+ f.c.resetSessionReports()
 })
 
 test('a held tool has visible processing and one quiet cue, then clears its running state',async()=>{
@@ -597,51 +603,51 @@ test('a Session report goes one Project at a time and names the Project before i
   await f.c.handleToolCall({call_id:'group',name:'get_sessions_summary',arguments:'{"which":"working"}'})
   const answer=JSON.parse(f.sent.find(e=>e.item?.type==='function_call_output').item.output)
   assert.equal(answer.project,'alpha')
-  assert.deepEqual(answer.sessions.map(s=>s.session_id),['%1','%3','%5'],'the newest Project comes first, all of it together')
+  assert.deepEqual(answer.sessions.map(s=>s.session_id),['%1','%3'],'the newest Project starts with at most two Sessions')
   assert.match(answer.reporting_rule,/which Project these Sessions belong to/)
   await tick()
-  assert.deepEqual(reads,['%1','%3','%5','%2','%4'],'the next batch is the next Project, not a mix')
+  assert.deepEqual(reads,['%1','%3','%5'],'the remaining Session of the same Project is prepared first')
  })
 })
 
-for(const managed of [false,true])test(`Session reports speak three at a time and retain the actual spoken order (${managed?'managed':'direct'})`,async()=>{
+for(const managed of [false,true])test(`Session reports speak two at a time and retain the actual spoken order (${managed?'managed':'direct'})`,async()=>{
  const f=fixture(managed)
  let releaseNext;const nextReady=new Promise(resolve=>releaseNext=resolve);const reads=[]
- const rows=Array.from({length:6},(_,i)=>({id:`%${i+1}`,label:`Work ${String.fromCharCode(65+i)}`,assistant:'codex',state:'working',sessionId:`conversation-${i}`,activity:{at:100-i,known:true}}))
+ const rows=Array.from({length:4},(_,i)=>({id:`%${i+1}`,label:`Work ${String.fromCharCode(65+i)}`,assistant:'codex',state:'working',sessionId:`conversation-${i}`,activity:{at:100-i,known:true}}))
  f.c.toolDeps=()=>({sleep:async()=>{},now:()=>101,decide:async()=>assert.fail('a verified spoken reference must not ask a classifier'),fetch:async(path)=>{
   if(path==='/v1/sessions')return Response.json({sessions:rows})
-  if(path.startsWith('/v1/transcript?')){const id=new URLSearchParams(path.split('?')[1]).get('session');reads.push(id);if(Number(id.slice(1))>3)await nextReady;return Response.json({entries:[{role:'assistant',text:`Actual progress for ${id}`} ]})}
+  if(path.startsWith('/v1/transcript?')){const id=new URLSearchParams(path.split('?')[1]).get('session');reads.push(id);if(Number(id.slice(1))>2)await nextReady;return Response.json({entries:[{role:'assistant',text:`Actual progress for ${id}`} ]})}
   assert.fail(path)
  }})
  await withLedger(f,async()=>{
   await f.c.handleToolCall({call_id:'group',name:'get_sessions_summary',arguments:'{"which":"working"}'})
   const answer=JSON.parse(f.sent.find(e=>e.item?.type==='function_call_output').item.output)
-  assert.deepEqual(answer.sessions.map(s=>s.session_id),['%1','%2','%3'])
-  assert.equal(answer.more_pending,3);assert.equal(answer.remaining,undefined,'unspoken batch details stay out of this reply')
+  assert.deepEqual(answer.sessions.map(s=>s.session_id),['%1','%2'])
+  assert.equal(answer.more_pending,2);assert.equal(answer.remaining,undefined,'unspoken batch details stay out of this reply')
   await tick()
-  assert.deepEqual(reads,['%1','%2','%3','%4','%5','%6'],'only one next batch is prefetched')
+  assert.deepEqual(reads,['%1','%2','%3','%4'],'only one next batch is prefetched')
   await f.c.handleRealtimeEvent({type:'response.created',response:{id:'first-batch'}})
   await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
-  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Work A. Work B. Work C.'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Work A. Work B.'})
   await f.c.handleRealtimeEvent({type:'response.done',response:{id:'first-batch',status:'completed',output:[{type:'message'}]}})
   assert.equal(f.c.spokenSessions.resolve('the last session')?.target,undefined)
   const count=f.responses().length
   await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
-  assert.equal(f.c.spokenSessions.resolve('the last session').target.id,'%3')
+  assert.equal(f.c.spokenSessions.resolve('the last session').target.id,'%2')
   assert.equal(f.responses().length,count,'a held next read cannot invent a second report')
   releaseNext();await tick();await tick()
   assert.equal(f.responses().length,count+1)
   assert.equal(f.responses().at(-1).response.tool_choice,'none')
   await f.c.handleRealtimeEvent({type:'response.created',response:{id:'second-batch'}})
   await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
-  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Work F. Work D. Work E.'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Work D. Work C.'})
   await f.c.handleRealtimeEvent({type:'response.done',response:{id:'second-batch',status:'completed',output:[{type:'message'}]}})
   await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
-  assert.equal(f.c.spokenSessions.resolve('你講的第二個 Session').target.id,'%4')
+  assert.equal(f.c.spokenSessions.resolve('你講的第二個 Session').target.id,'%3')
   f.c.heardNow='你最後提到的那個 Session，讀一下摘要。'
   await f.c.handleToolCall({call_id:'follow-up',name:'get_session_summary',arguments:'{"session_id":"%2","said":"Work B"}'})
   const follow=JSON.parse(f.sent.find(e=>e.item?.call_id==='follow-up').item.output)
-  assert.equal(follow.session_id,'%5')
+  assert.equal(follow.session_id,'%3')
   f.c.resetSessionReports()
  })
 })
@@ -714,7 +720,7 @@ test('in a call the copilot reads its own length and cost, and hangs up after it
   assert.ok(sent.some(e => e.type === 'session.close'), 'GPT-Live is told the session is over')
 })
 
-test('a GPT-Live call configures its backend after start, greets once, and answers the backend with the same tools', async (t) => {
+test('a GPT-Live call configures its backend after start, starts its report, and answers the backend with the same tools', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
   const sent = [], reads = []
@@ -746,7 +752,7 @@ test('a GPT-Live call configures its backend after start, greets once, and answe
   const update = sent.find(e => e.type === 'session.update')
   assert.ok(update, 'the backend is configured once the session has started')
   assert.match(update.session.delegation.responses.instructions, /one Session/)
-  assert.equal(sent.filter(e => e.type === 'session.commentary.append').length, 1, 'one greeting')
+  assert.equal(sent.filter(e => e.type === 'session.commentary.append').length, 1, 'one initial report')
   assert.equal(c.state.connectionReady, true)
   assert.equal(sent.filter(e => e.type === 'response.create' && e.response).length, 0, 'no Realtime response is ever sent to GPT-Live')
 
@@ -1008,4 +1014,47 @@ test('a GPT-Live call placed from a Session opens on its summary at once and goe
   const fresh = await run({ latest: 'unused', keptAge: 60 })
   assert.equal(fresh.forks.length, 0, 'a summary at most five minutes old is the latest; nothing more is read')
   assert.equal(fresh.sent.length, 1)
+})
+
+test('a Live list report advances only after its named transcript and quiet window, then pauses for speech',async()=>{
+ globalThis.location={hash:'#session=%251'}
+ const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=3;f.c.liveStartGraceMs=8000;f.c.livePollMs=1
+ const rows=Array.from({length:4},(_,i)=>({id:`%${i+1}`,label:`Work ${String.fromCharCode(65+i)}`,state:'idle',sessionId:`conversation-${i}`,recap:{text:`Current summary ${i}`,at:Math.floor(Date.now()/1000),current:true}}))
+ const reads=[]
+ f.c.toolDeps=()=>({sleep:async()=>{},fetch:async path=>{
+  reads.push(path)
+  if(path==='/v1/sessions')return Response.json({sessions:rows})
+  if(path.startsWith('/v1/transcript?'))return Response.json({entries:[{role:'assistant',text:'Current progress'}]})
+  assert.fail(path)
+ }})
+ await f.c.configureLive();await tick()
+ assert.equal(f.c.focus,'%1','initial screen focus is captured before the list report starts')
+ const reports=()=>f.sent.filter(e=>e.type==='session.commentary.append')
+ assert.equal(reports().length,1)
+ assert.match(reports()[0].content,/Work A.*Work B/)
+ assert.doesNotMatch(reports()[0].content,/Work C/)
+ await new Promise(r=>setTimeout(r,4));assert.equal(reports().length,1,'prepared content is not already spoken')
+ f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Work A. Work B.'})
+ const deadline=Date.now()+3000
+ while(reports().length<2&&Date.now()<deadline)await new Promise(r=>setTimeout(r,5))
+ assert.equal(reports().length,2)
+ assert.match(reports()[1].content,/Work C.*Work D/)
+ f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:'等一下'})
+ assert.equal(f.c.sessionReports.hasPending(),true)
+ const before=reads.length
+ await new Promise(r=>setTimeout(r,8))
+ assert.equal(reports().length,2)
+ f.c.liveHeard.take()
+ f.c.continueSessionReport();await tick()
+ assert.equal(reads.length,before,'continuation reuses the prepared interrupted batch')
+ globalThis.location={hash:''}
+})
+
+test('speaking during a Live list summary read cancels automatic narration without creating work',async()=>{
+ const f=fixture(true,null);f.c.live=true
+ const preparing=f.c.configureLive();await tick()
+ f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:'先等一下'})
+ f.release();await preparing
+ assert.equal(f.sent.filter(e=>e.type==='session.commentary.append').length,0)
+ assert.equal(f.reads.some(r=>r.path.includes('copilot-work')),false)
 })

@@ -629,3 +629,17 @@ sent instructions from audible compliance and exact playback multipliers. This
 OpenAI voice path is independent of the native-agent filters. Synthetic protocol
 checks require no provider call; listening acceptance remains separate. The public
 website snapshot must follow this reviewed product revision after it lands.
+
+## Automatic briefing from the Session list (2026-11-16)
+
+The conditional `voice-list-briefing` entry records the list-only opening trigger.
+Both voice engines read current Session summaries, with person-owned waits and
+unresolved Notes first, then present one or two Sessions per batch. The runtime
+retains one prepared next batch and yields to speech or an explicit screen switch.
+Realtime playback evidence and GPT-Live transcript quiet-window evidence remain
+distinct; neither synthetic output proves listening comprehension. Recap mode and
+cache policy still govern any native assistant fork. No extra organizer, persistent
+input, answer or action approval is created by the implicit opening. The separate
+durable task allowance remains three. Both language explanations and the original
+reporting guidance reflect the two-Session bound. The public website snapshot must
+follow this reviewed product revision after it lands.

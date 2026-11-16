@@ -59,6 +59,7 @@ export interface ToolDeps {
   /** Call-local read identity. It is never authority for a mutation. */
   spokenReference?: (text:string)=>SpokenReference|undefined
   onRead?: (ref:SessionReference)=>void
+  summaryAttentionFirst?:boolean
   summaryLimit?:number
   summaryTargets?:readonly SessionReference[]
   summaryExclude?:readonly string[]
@@ -212,7 +213,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 
 【工具】
 - list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，未讀取逐字稿）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
-- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序；通話每次只介紹回傳的最多3個，其他批次由程式接續，不把所有項目壓成一句話。每個先說清楚它的名稱，再用日常語言解釋目的、進展及真正待決事項；不要只重念程式術語。使用者要繼續被打斷的介紹時設 continue_report=true，不要重新查清單。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
+- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序；通話每次只介紹回傳的最多2個，其他批次由程式接續，不把所有項目壓成一句話。每個先說清楚它的名稱，再用日常語言解釋目的、進展及真正待決事項；不要只重念程式術語。使用者要繼續被打斷的介紹時設 continue_report=true，不要重新查清單。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
 - get_session_summary：某個 Session 現在的摘要（它自己寫的 recap 與詳細版 recap_detail、最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」「目前為止完成了哪些事情、有哪些事情需要我決定」「報告這個 Session 的 summary」都先用這個。
 - get_session_recap：某個 Session 從開始到現在的完整經過。get_session_summary 沒有 recap_detail，而使用者問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」時用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
@@ -1365,14 +1366,29 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
   const changed:SessionReference[]=[]
   if(deps.summaryTargets)group=deps.summaryTargets.flatMap(ref=>{const row=uniqueSessionID(read.rows,ref.id);if(row&&sameReference(ref,row))return [row];changed.push(ref);return []})
   if(deps.summaryExclude)group=group.filter(row=>!deps.summaryExclude!.includes(row.id))
-  if(!deps.summaryTargets)group=groupByProject(group)
+  if(!deps.summaryTargets)group=deps.summaryAttentionFirst
+    ? [...groupByProject(group.filter(waits)), ...groupByProject(group.filter(row=>!waits(row)))]
+    : groupByProject(group)
   const shown = group.slice(0, deps.summaryLimit?Math.min(deps.summaryLimit,projectBatchSize(group.slice(0,SESSION_REPORT_SESSIONS))):LIST_LATEST_READS)
   const ref=(r:CopilotSessionRow):SessionReference=>({id:r.id,label:r.label,machine:r.machine,conversation:r.conversation,...(r.project?{project:r.project}:{})})
   const remaining=deps.summaryLimit?group.slice(shown.length,SESSION_REPORT_SESSIONS).map(ref):[]
   const recaps = new Map<string, SpokenRecap | undefined>()
+  const decisions = new Map<string, unknown>()
   const progress = await Promise.all(shown.map(async (r) => {
     const [words, recap]=await Promise.all([latestWords(deps,r), forkedRecap(deps,logs,r,fresh)])
     recaps.set(r.id, recap)
+    if(deps.summaryAttentionFirst && waits(r)) {
+      const [notes, question] = await Promise.all([
+        r.notes ? r.conversation ? notesForRows(deps,logs,[r],true).catch(()=>({error:'voice_notes_unavailable'})) : Promise.resolve({error:'voice_notes_conversation_unavailable'}) : Promise.resolve(undefined),
+        r.state==='waiting'&&!r.menu ? readQuestionRow(deps,r).catch(()=>({error:'voice_question_unavailable'})) : Promise.resolve(r),
+      ])
+      decisions.set(r.id,{
+        ...(notes ? { notes } : {}),
+        ...('error' in question ? {question_error:question.error} : question.menu&&question.choices?.length ? {
+          question:question.question??'',options:question.choices.map(c=>`${c.n}. ${c.label}`),expected_question:menuFingerprint(question.menu as unknown as Parameters<typeof menuFingerprint>[0]),
+        } : {}),
+      })
+    }
     if(deps.progress) await deps.progress(JSON.stringify({label:r.label,...progressFields(words)}))
     return words
   }))
@@ -1393,6 +1409,7 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
       ...recapFields(recaps.get(r.id), now, true),
       ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
       ...(r.question ? { question: r.question } : {}),
+      ...(decisions.has(r.id)?{needs_your_response:decisions.get(r.id)}:{}),
       ...progressFields(progress[i]),
     })}),
     ...(!deps.summaryLimit&&group.length > shown.length ? { not_read: group.length - shown.length } : {}),

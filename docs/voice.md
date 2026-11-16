@@ -405,10 +405,13 @@ are the same `runCopilotTool` a Realtime call runs.
 - **Tool results.** A finished backend `function_call` arrives inside a `response.event`
   envelope; the browser runs it and returns `response.item.create`, then `response.create` once
   nothing is pending.
-- **What it does not do yet.** The background work list, the program-paced Session report
-  batches and the opening handover of a clicked Session are Realtime-only;
-  a GPT-Live call greets once (`session.commentary.append`) and tells the live model when the
-  focus moves (`session.thinking.append`).
+- **Automatic list reports.** After configuration, a call from the list reads
+  current Session summaries, questions and unresolved Notes. Person-owned waits
+  come first; later batches contain one or two Sessions. Realtime uses playback
+  receipts; GPT-Live sends session-wide commentary and uses the existing transcript
+  quiet window. Missing named speech pauses continuation. Interruption and an
+  explicit screen switch supersede old queued reports. This is separate from the
+  background work planner, which remains a Realtime feature.
 
 **Speaking pace.** The machine’s saved speed also applies to GPT-Live. The four existing
 settings select slow (0.8), unhurried (0.9), normal (1.0) or quick (1.1) pacing instructions;
@@ -475,7 +478,7 @@ The assistant's conversation history and the identity used by a tool are distinc
 The call now records verified speaking order after playback, so “the last one”
 or “the second Session” can bind to a real identity before a fresh read. It does
 not ask a separate text model to guess that order. Unknown or changed identities
-need clarification. Group presentation uses two or three Sessions per response
+need clarification. Group presentation uses one or two Sessions per response
 and one next batch can read in parallel; an interruption pauses the presentation.
 These controls are independent of durable work approval and automatic task
 allowance. See [the workspace's presentation contract](voice-assistant-workspace.md#spoken-session-references-and-presentation-batches)

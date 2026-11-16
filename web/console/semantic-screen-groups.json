@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12485,
-  "riskKeys": 5415,
-  "nonRiskCount": 7070,
+  "englishContentKeys": 12490,
+  "riskKeys": 5419,
+  "nonRiskCount": 7071,
   "groups": [
     {
       "name": "acp / other",
@@ -7139,7 +7139,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 187,
+      "count": 188,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7291,6 +7291,7 @@
         "transparency.card.tool-library.title",
         "transparency.card.turn-todos.effect",
         "transparency.card.turn-todos.title",
+        "transparency.card.voice-list-briefing.title",
         "transparency.card.voice-live-pacing.title",
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",

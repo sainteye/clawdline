@@ -154,10 +154,13 @@ alone does not upgrade a paired machine. Direct calls keep their existing path.
 
 ## Quiet, evidence-backed call opening
 
-After the local ready cue, the general assistant says one short greeting and
-waits, without a read, durable input or planner turn; the greeting is dropped if
-the person speaks first (changed on 2026-11-13: silence after the tone read as a
-call that had not started). A call placed inside a Session
+After the local ready cue, a call started from the list automatically requests
+current Session summaries. Person-owned waits and unresolved Notes come first;
+other Sessions follow one or two at a time, grouped by Project within those
+priority groups. Both Realtime and GPT-Live use this path, with background work
+planning on or off. Speaking before the read finishes supersedes the opening;
+later interruptions pause the retained presentation. No greeting, persistent
+input or organizer turn is needed. A call placed inside a Session
 reads that exact Session's bounded recap and outstanding notes concurrently,
 then requests one short handover containing both results. The call does not
 route that implicit opening through the planner, narrate its internal stages,
@@ -418,8 +421,7 @@ On 所有機器 the page handed the copilot its rows without `cwd` or
 `project_key`, so every batch arrived with `project: ""` and Sessions of
 different Projects were read together unnamed (calls of 2026-11-14 01:04 and
 01:16); those rows now carry both (`copilotFleetRows`).
-A call's group report reads two or three Sessions for its current response
-(four remaining are split two and two). Only one next batch is prefetched while
+A call's group report reads at most two Sessions for its current response. Only one next batch is prefetched while
 that response is spoken. It is not sent to the reporter until the current
 batch's matched names finish playback. Interruption pauses subsequent speech;
 explicit presentation continuation resumes the retained batch. Unheard words
@@ -428,7 +430,7 @@ IDs. Every later read rechecks the captured identity instead of reading a pane's
 replacement. Each report covers at most 24 Sessions and explicitly discloses
 any unread overflow; it does not claim complete coverage beyond that window.
 This presentation queue is separate from the durable task allowance and grants
-no write approval. Neither reference tracking nor prefetch starts another model.
+no write approval. Reference tracking starts no model. Summary prefetch respects the existing recap setting and may request a fresh fork when that setting permits it.
 Separate spoken responses still consume the existing voice service normally.
 
 Synthetic held-read and event tests exercise sequencing, interruption and

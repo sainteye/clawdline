@@ -6986,7 +6986,7 @@
     "Name": "console.copilot_session_report_batch",
     "Class": "buffer",
     "Unit": "rows",
-    "Limit": 3,
+    "Limit": 2,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
