@@ -4167,7 +4167,7 @@
     "internal/app/projectassistant/provider_failure.go": "79cdabf8f144fcf7987e609b7b4db45b893be5e486d8ff3825e558d6cb4df1fd",
     "internal/app/projectassistant/routines.go": "0b5ec89d577827621ee3fac6b15bb709020b9a4e6b10187554c8fbbc632cb9ef",
     "internal/app/projectassistant/routines_human.go": "0cc5c47f243d6f8e8d5c3d2306f80fa70486b27f3f4f2fc8d260be39f96e0b4c",
-    "internal/app/projectassistant/runtime.go": "b35e7b784960b64db6b670d16f82413fc0f362dfba3d1f1f3d1e00f6ec621668",
+    "internal/app/projectassistant/runtime.go": "aeb5b752c0998b028b745fa4def6fe14d5a2ee2dfd5c4a2135c2c03e74a05bf9",
     "internal/app/projectassistant/session_handoff.go": "7f276e56758f01c05f875e398c18543743c281829a6b9798c9e532fda738393f",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
