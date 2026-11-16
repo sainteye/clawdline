@@ -55,6 +55,20 @@ const WORDS = {
         ['user', 'No complaints after two days. Roll it out to everyone and delete the old search.', 4000], ['report', '{searchDelivered}', 3000],
         ['assistant', 'Done. New search is at 100%, the flag is removed, and the old SQL search code and its tests are deleted (1,240 lines).', 3000]],
     },
+    // The recaps a GPT-Live take reads (record.mjs --live): `kept` is on the
+    // Session list, written a while ago; `latest` is what the Session writes
+    // of itself when the call asks for the latest.
+    recaps: {
+      checkout: { kept: 'Checkout redesign finished the single-page checkout with Apple Pay first; all 212 tests pass. It is waiting for you to choose: merge into main now, or wait for the design review.' },
+      webhooks: { kept: 'Payment webhooks made the Stripe handler idempotent and is building a retry queue with exponential backoff. Nothing for you yet.' },
+      emails: { kept: 'Order emails delivered: they render in dark mode, the Outlook logo has a PNG fallback, and 14 snapshot tests cover Gmail, Outlook and Apple Mail.' },
+      release: { kept: 'Release 2.4 bumped the versions and drafted the release notes. Three UI tests fail on iPad only, and it is waiting for you: skip them for 2.4, or fix them first.',
+        latest: 'Release 2.4 has bumped every version to 2.4.0 and drafted the notes. The UI suite passes on iPhone; CheckoutSheet, PhotoPicker and SettingsSplit fail on iPad only. It is waiting for you to choose: skip them for 2.4, or fix them first.',
+        sent: 'Release 2.4 got your message and is fixing the three iPad UI tests now; the release waits until they pass.' },
+      sync: { kept: 'Offline sync queues edits on disk and is writing conflict resolution for edits made on two devices. Nothing for you yet.' },
+      search: { kept: 'Search rebuild delivered: Meilisearch is live for every shopper and the old SQL search is gone.',
+        latest: 'Search rebuild replaced the slow SQL search with Meilisearch, kept the index in sync within two seconds, added typo tolerance and size and color filters, and cut p95 latency from 1.8 s to 120 ms under load. It shipped to 10% of shoppers, then to everyone, and removed 1,240 lines of old search code. Nothing is waiting for you.' },
+    },
     // What each voice says: [voice, words]. The copilot is marin; the person is cedar here and ash in Chinese.
     lines: {
       c0: ['marin', 'Hi! I can tell you how every Session on this machine is doing.'],
@@ -111,6 +125,17 @@ const WORDS = {
         ['user', '兩天都沒有客訴。全面開放，把舊的搜尋刪掉。', 4000], ['report', '{searchDelivered}', 3000],
         ['assistant', '完成。新搜尋已全面開放，功能開關已移除，舊的 SQL 搜尋程式和測試都刪掉了（1,240 行）。', 3000]],
     },
+    recaps: {
+      checkout: { kept: '結帳改版做好了單頁結帳，Apple Pay 排第一個，212 個測試全部通過。現在在等你決定：要現在合併到 main，還是等設計審查。' },
+      webhooks: { kept: '金流 Webhook 已經讓 Stripe 的處理可以重複執行，正在做指數退避的重試佇列。目前不需要你處理。' },
+      emails: { kept: '訂單通知信已經交付：深色模式顯示正常，Outlook 的 Logo 用 PNG 備援修好，還補了 14 個涵蓋 Gmail、Outlook 和 Apple Mail 的快照測試。' },
+      release: { kept: '2.4 版發布更新了版本號、寫好發布說明。有三個 UI 測試只在 iPad 上失敗，正在等你決定：2.4 先略過，還是先修好。',
+        latest: '2.4 版發布已經把版本號都改成 2.4.0，發布說明也寫好了。UI 測試在 iPhone 上全過，CheckoutSheet、PhotoPicker 和 SettingsSplit 只在 iPad 上失敗。現在等你決定：2.4 先略過，還是先修好。',
+        sent: '2.4 版發布收到你的訊息，正在修那三個 iPad UI 測試，測試通過前先不發布。' },
+      sync: { kept: '離線同步已經把修改存進磁碟佇列，正在寫兩台裝置同時修改的衝突處理。目前不需要你處理。' },
+      search: { kept: '搜尋重建已經交付：Meilisearch 對所有顧客上線，舊的 SQL 搜尋已經移除。',
+        latest: '搜尋重建把很慢的 SQL 搜尋換成 Meilisearch，商品變動兩秒內同步到索引，加上錯字容忍和尺寸、顏色篩選；壓力測試下 p95 延遲從 1.8 秒降到 120 毫秒。先開給一成顧客，再全面上線，舊的搜尋程式刪了 1,240 行。沒有在等你的事。' },
+    },
     lines: {
       c0: ['marin', '嗨，我可以跟你報告這台電腦上每個 Session 的狀況。'],
       p1: ['ash', '現在狀況怎麼樣？'],
@@ -139,7 +164,7 @@ const WORDS = {
 export const LANGS = Object.keys(WORDS)
 
 /** The story in `lang`, with the mutable part (whether the message has been sent). */
-export function story(lang) {
+export function story(lang, { live = false } = {}) {
   const w = WORDS[lang]
   if (!w) throw new Error(`no story in ${lang}; have ${LANGS.join(', ')}`)
   const now = Math.floor(Date.now() / 1000)
@@ -156,17 +181,25 @@ export function story(lang) {
   })
   const delivered = (title, secondsAgo) => ({ disposition: { evidence: 'authenticated_session_delivery', receiptAt: now - secondsAgo, scope: 'session', title } })
   const codex = { assistant: 'codex', isClaude: false }
+  // A GPT-Live take's list carries each Session's kept recap, written 20 minutes ago.
+  const kept = (key) => live && w.recaps?.[key] ? { recap: { text: w.recaps[key].kept, at: now - 1200, current: false } } : {}
+  const latest = (key) => {
+    const r = w.recaps?.[key]
+    if (!r) return ''
+    return key === 'release' && state.releaseSent ? r.sent : (r.latest ?? r.kept)
+  }
   return {
+    latest(id) { const key = Object.keys(IDS).find((k) => IDS[k] === id); return key ? latest(key) : '' },
     lang, words: w, state, places: PLACES, lines: w.lines, briefing: w.briefing, send: w.send,
     sessions: () => [
-      row('checkout', 2, { state: 'waiting', work_state: 'waiting_you', menu: menu(w.checkoutQ, w.checkoutOptions) }),
-      row('webhooks', 1, { ...codex, state: 'working', work_state: 'working', line: '14m' }),
-      row('emails', 25, delivered(w.emailsDelivered, 1500)),
-      row('release', state.releaseSent ? 0 : 4, { cwd: APP, ...codex, ...(state.releaseSent
+      row('checkout', 2, { ...kept('checkout'), state: 'waiting', work_state: 'waiting_you', menu: menu(w.checkoutQ, w.checkoutOptions) }),
+      row('webhooks', 1, { ...kept('webhooks'), ...codex, state: 'working', work_state: 'working', line: '14m' }),
+      row('emails', 25, { ...kept('emails'), ...delivered(w.emailsDelivered, 1500) }),
+      row('release', state.releaseSent ? 0 : 4, { ...kept('release'), cwd: APP, ...codex, ...(state.releaseSent
         ? { state: 'working', work_state: 'working', line: '0m' }
         : { state: 'waiting', work_state: 'waiting_you', menu: menu(w.releaseQ, w.releaseOptions) }) }),
-      row('sync', 6, { cwd: APP, state: 'working', work_state: 'working', line: '31m' }),
-      row('search', 50, delivered(w.searchDelivered, 3000)),
+      row('sync', 6, { ...kept('sync'), cwd: APP, state: 'working', work_state: 'working', line: '31m' }),
+      row('search', 50, { ...kept('search'), ...delivered(w.searchDelivered, 3000) }),
     ],
     transcript(id) {
       const key = Object.keys(IDS).find((k) => IDS[k] === id)

@@ -545,6 +545,8 @@ test("spoken choices find their option", () => {
   assert.equal((choiceOf(choices, "2") as { n: number }).n, 2)
   assert.equal((choiceOf(choices, "yes") as { n: number }).n, 1)
   assert.equal((choiceOf(choices, "tell claude") as { n: number }).n, 2)
+  assert.equal((choiceOf(choices, "2. No, and tell Claude what to do differently") as { n: number }).n, 2, "an option as it is listed")
+  assert.ok("error" in choiceOf(choices, "1. No, and tell Claude what to do differently"), "a number and a label that disagree")
   assert.ok("error" in choiceOf(choices, "3"))
 })
 

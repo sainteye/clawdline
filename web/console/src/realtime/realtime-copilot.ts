@@ -285,13 +285,17 @@ export class RealtimeCopilotClient {
     if (attempt !== this.attempt || hash !== location.hash) return
     if (!row || row.id === this.focus) return
     this.cancelOpening()
+    // The first Session a call finds on screen is only where it starts; a move
+    // from one to another is a switch (a call from the desktop list opened on
+    // its first Session and spoke it instead of answering, 2026-11-16).
+    const moved = !!this.focus
     this.focus = row.id
     if (this.dc && this.dc.readyState === 'open') {
       if (this.live) {
         this.sendLiveContext()
         this.dc.send(JSON.stringify(liveNote('thinking', `The person now has the Session "${row.label || row.id}" open on screen; "it" and "this" now mean that one.`)))
         // It is told about that Session from its summary, not from its name alone.
-        void this.openFromOrigin(true)
+        if (moved) void this.openFromOrigin(true)
       }
       else this.dc.send(JSON.stringify(screenFocusEvent(row)))
       this.addLog('info', nextWord('copilotLogFocus', { name: row.label || row.id }))
