@@ -6,8 +6,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -360,6 +362,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if mcpDecode(f.Params, &q) != nil {
 			return nil, refusal(pa.Invalid, "mcp_tool")
 		}
+		if q.Name == "browser_status" || q.Name == "browser_command" {
+			return s.browserTool(ctx, q.Name, q.Arguments), nil
+		}
 		value, err := s.tool(ctx, q.Name, q.Arguments)
 		if err != nil {
 			return mcpToolResult(map[string]string{"code": string(pa.Code(err))}, true), nil
@@ -551,6 +556,9 @@ func mcpTools() []any {
 		tool("send_file", "Explicitly share a regular file in your Project as an immutable chat snapshot (up to 100 MiB). Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "name": text()}, "idempotency_key", "path"),
 		tool("publish_artifact", "Publish self-contained HTML (inline CSS and JavaScript; up to 5 MiB). New artifacts need a title. To update one subject, reuse its artifact ID and publish the whole HTML. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "title": text(), "artifact": text()}, "idempotency_key", "path"),
 		tool("list_artifacts", "List your published HTML artifacts, newest first. Use the artifact ID to publish an updated whole snapshot.", map[string]any{}),
+		tool("browser_status", "Read your own browser state: the selected browser profile, whether the person stopped the browser channel, and only the tabs you opened. 讀取自己的瀏覽器狀態：選用的瀏覽器、是否被停止，以及只有自己開的分頁。", map[string]any{}),
+		tool("browser_command", "Run one browser operation in the Clawdline browser the person allowed for automatic use: open (args.url), read, click (args.label or args.x/args.y), type (args.text), key (args.key), scroll, screenshot, viewport, release or close. args.tab is optional and must be a tab you opened; omit it for your current tab. browser_mode may name only a browser automatic selection already allows. A refusal keeps its code: browser_stopped and browser_person_controlling mean wait for the person; browser_setup_required means ask them to set the browser up in Settings, Chrome. After browser_timeout the action may have happened: read the page before repeating it, and never repeat it in another browser.",
+			map[string]any{"op": map[string]any{"type": "string", "enum": []string{"open", "read", "click", "type", "key", "scroll", "screenshot", "viewport", "release", "close"}}, "args": map[string]any{"type": "object"}, "browser_mode": map[string]any{"type": "string", "enum": []string{"isolated", "user_chrome"}}}, "op"),
 		tool("send_message", "Publish an explicit message to this Bot conversation. Reuse its idempotency key after an uncertain response; do not invent a replacement key.", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
 		tool("dispatch_work", "Dispatch isolated work under the current Project policy. Unknown effects require receipt inspection, never automatic replay with a new key.", map[string]any{"idempotency_key": text(), "brief": text(), "claims": map[string]any{"type": "array", "items": text()}}, "idempotency_key", "brief", "claims"),
 		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval.", map[string]any{"task_id": text()}, "task_id"),
@@ -578,3 +586,85 @@ func mcpMemoryLines(entries []pa.MemoryEntry) []map[string]string {
 }
 
 var _ http.Handler = (*ownedMCPServer)(nil)
+
+// browserResultTooLarge refuses a page result that cannot fit in one owned MCP
+// frame. The command already ran; nothing was cut to make it fit.
+const browserResultTooLarge = "browser_result_too_large"
+
+// browserFrameMargin leaves room for the JSON-RPC envelope around a result.
+const browserFrameMargin = 1024
+
+func (s *ownedMCPServer) browserTool(ctx context.Context, name string, arguments json.RawMessage) any {
+	tools, ok := s.tools.(app.BrowserTools)
+	if !ok {
+		return mcpToolResult(map[string]string{"code": string(pa.Unsupported)}, true)
+	}
+	if name == "browser_status" {
+		if mcpDecode(mcpEmpty(arguments), &struct{}{}) != nil {
+			return mcpToolResult(map[string]string{"code": string(pa.Invalid)}, true)
+		}
+		status, err := tools.BrowserStatus(ctx)
+		if err != nil {
+			return browserFailureResult(err)
+		}
+		if status.Tabs == nil {
+			status.Tabs = []app.BrowserTab{}
+		}
+		return s.fit(mcpToolResult(status, false))
+	}
+	var q app.BrowserCommand
+	if mcpDecode(arguments, &q) != nil || q.Op == "" {
+		return mcpToolResult(map[string]string{"code": string(pa.Invalid)}, true)
+	}
+	if len(q.Args) == 0 || string(q.Args) == "null" {
+		q.Args = nil
+	}
+	result, err := tools.BrowserCommand(ctx, q)
+	if err != nil {
+		return browserFailureResult(err)
+	}
+	if q.Op == "screenshot" {
+		var shot struct {
+			Data string `json:"data"`
+			URL  string `json:"url"`
+		}
+		if json.Unmarshal(result.Value, &shot) != nil || shot.Data == "" {
+			return mcpToolResult(map[string]string{"code": "browser_page_error", "message": "the extension returned no image"}, true)
+		}
+		if _, e := base64.StdEncoding.DecodeString(shot.Data); e != nil {
+			return mcpToolResult(map[string]string{"code": "browser_page_error", "message": "the image was not valid base64"}, true)
+		}
+		caption, _ := json.Marshal(map[string]string{"op": "screenshot", "url": shot.URL})
+		return s.fit(map[string]any{"isError": false, "content": []any{
+			map[string]string{"type": "text", "text": string(caption)},
+			map[string]string{"type": "image", "data": shot.Data, "mimeType": "image/jpeg"},
+		}})
+	}
+	value := result.Value
+	if len(value) == 0 {
+		value = json.RawMessage("null")
+	}
+	return s.fit(mcpToolResult(map[string]any{"op": q.Op, "value": value}, false))
+}
+
+// fit returns the result, or a typed capacity refusal when its encoding would
+// exceed the existing owned MCP frame (which would otherwise become unknown).
+func (s *ownedMCPServer) fit(result any) any {
+	encoded, err := json.Marshal(result)
+	if err != nil || len(encoded)+browserFrameMargin > s.limits.FrameBytes {
+		return mcpToolResult(map[string]string{"code": browserResultTooLarge}, true)
+	}
+	return result
+}
+
+func browserFailureResult(err error) any {
+	var browser *app.BrowserFailure
+	if errors.As(err, &browser) {
+		out := map[string]string{"code": browser.Code}
+		if browser.Message != "" {
+			out["message"] = browser.Message
+		}
+		return mcpToolResult(out, true)
+	}
+	return mcpToolResult(map[string]string{"code": string(pa.Code(err))}, true)
+}

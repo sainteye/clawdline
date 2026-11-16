@@ -67,6 +67,9 @@ type NativeWork struct {
 	edit       func(context.Context, string, app.MemoryEdit) error
 	output     func(context.Context, string, app.OutputRequest) (pa.Output, error)
 	artifacts  func(context.Context) ([]app.ArtifactInfo, error)
+
+	browserStatus  func(context.Context) (app.BrowserStatus, error)
+	browserCommand func(context.Context, app.BrowserCommand) (app.BrowserResult, error)
 }
 
 func (w NativeWork) Routines(ctx context.Context, q app.RoutineRequest) (app.RoutineResult, error) {
@@ -127,6 +130,10 @@ type workLifetime struct {
 	unregister func()
 	stop       func() bool
 	once       sync.Once
+	// sealed is cancelled by invalidate, so a browser command still waiting
+	// for its host is withdrawn when this execution ends.
+	sealed context.Context
+	seal   context.CancelFunc
 }
 
 func (l *workLifetime) invalidate() {
@@ -137,7 +144,11 @@ func (l *workLifetime) invalidate() {
 	unregister, stop := l.unregister, l.stop
 	l.unregister = nil
 	l.stop = nil
+	seal := l.seal
 	l.mu.Unlock()
+	if seal != nil {
+		seal()
+	}
 	if stop != nil {
 		stop()
 	}
@@ -295,6 +306,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 	}
 	life := &workLifetime{}
+	life.sealed, life.seal = context.WithCancel(context.Background())
 	life.watching(context.AfterFunc(openCtx, life.invalidate))
 	bound := func(ctx context.Context) (context.Context, context.CancelFunc, error) {
 		life.used.Store(true)
@@ -495,6 +507,38 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		defer cancel()
 		_, e = r.EditMemory(ctx, q.Bot.Key, turnID, id, edit)
 		return e
+	}
+	owner := BrowserOwner(q.Binding.Fence, q.Binding.ForgottenThrough)
+	browser := h.o.Browser
+	browserBound := func(ctx context.Context) (context.Context, context.CancelFunc, error) {
+		if browser == nil || browser.Status == nil || browser.Command == nil {
+			return nil, nil, failure(pa.Disabled, "browser_tools")
+		}
+		if e := browserScope(q.Binding, turn); e != nil {
+			return nil, nil, e
+		}
+		ctx, done, e := bound(ctx)
+		if e != nil {
+			return nil, nil, e
+		}
+		stop := context.AfterFunc(life.sealed, done)
+		return ctx, func() { stop(); done() }, nil
+	}
+	tools.browserStatus = func(ctx context.Context) (app.BrowserStatus, error) {
+		ctx, cancel, e := browserBound(ctx)
+		if e != nil {
+			return app.BrowserStatus{}, e
+		}
+		defer cancel()
+		return browser.Status(ctx, owner)
+	}
+	tools.browserCommand = func(ctx context.Context, command app.BrowserCommand) (app.BrowserResult, error) {
+		ctx, cancel, e := browserBound(ctx)
+		if e != nil {
+			return app.BrowserResult{}, e
+		}
+		defer cancel()
+		return browser.Command(ctx, owner, command)
 	}
 	tools.send = func(ctx context.Context, id, text string) error {
 		ctx, cancel, e := bound(ctx)

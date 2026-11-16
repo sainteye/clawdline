@@ -11,10 +11,12 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/domain/auth"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
@@ -32,6 +34,10 @@ import (
 //   - POST /v1/browser/mute           {conversation, muted}; one Session's new-site notification, a person who may send
 //   - GET  /v1/browser/activity       ?conversation=; a Session's recent actions with a picture of each, a person who may read
 //   - GET  /v1/browser/screenshot     ?tab=N[&quality=Q]; the same view as a read, which Cloud carries
+//
+// A person's status, activity, audit, screenshot, control, person, open and
+// mute requests may name a Bot with bot_id and its current conversation
+// instead of a Session (browser_bot_target.go); every other route is unchanged.
 //   - GET/POST /v1/browser/settings   ordered automatic selection and new-site notifications; writing needs a person who may send
 //   - GET  /v1/browser/setup          the setup guide's read (browser_launch.go)
 //   - POST /v1/browser/launch         start Clawdline's own Chromium; a person who may send
@@ -115,25 +121,85 @@ func (s *Server) browserSetting(key string) bool {
 }
 
 // announceBrowserSite sends the person's chosen notification: once for each
-// site a Session starts operating. It never blocks the command that caused it.
+// site a Session or a Bot conversation starts operating. It never blocks the
+// command that caused it.
 func (s *Server) announceBrowserSite(n browserbridge.NewSite) {
 	if s.broker == nil || !s.browserSetting("browser_notify_new_site") {
 		return
 	}
 	go func() {
 		ctx := context.Background()
-		label, sessionID := "Session", ""
+		notice, ok := s.browserSiteNotice(ctx, n)
+		if !ok {
+			return
+		}
+		_, _ = s.broker.MachineNotify(ctx, notice.title, notice.body, notice.session)
+	}()
+}
+
+// browserNoticeLabelRunes keeps a Bot's name inside the notification title.
+const browserNoticeLabelRunes = 40
+
+// browserSiteNotice is one new-site notification's words and destination.
+type browserSiteNotice struct {
+	title, body string
+	// session is a terminal Session this machine watches, or empty: a Bot's
+	// notice never lands on a terminal Session.
+	session string
+	// bot and conversation name the Bot conversation whose tab reached the
+	// site; both are empty for a Session.
+	bot          pa.BotKey
+	conversation string
+}
+
+// browserSiteNotice words the notice for the owner that reached the site. A
+// Bot owner names that Bot from its current stored row; when no current Bot
+// derives the owner any longer (deleted, forgotten, another conversation),
+// nothing is sent rather than naming the wrong Bot or a Session.
+func (s *Server) browserSiteNotice(ctx context.Context, n browserbridge.NewSite) (browserSiteNotice, bool) {
+	language := s.productLanguage()
+	if strings.HasPrefix(n.Conversation, browserbridge.BotOwnerPrefix) {
+		p := &s.projectAssistants
+		p.mu.RLock()
+		h := p.host
+		p.mu.RUnlock()
+		if h == nil {
+			return browserSiteNotice{}, false
+		}
+		bot, found, err := h.BrowserOwnerBot(ctx, n.Conversation)
+		if err != nil || !found {
+			return browserSiteNotice{}, false
+		}
+		label := bot.Name
+		if label == "" {
+			label = bot.Key.BotID
+		}
+		// The title is held to 80 characters (notifyFields); a long name is
+		// cut so the notice is still sent.
+		if r := []rune(label); len(r) > browserNoticeLabelRunes {
+			label = string(r[:browserNoticeLabelRunes-1]) + "…"
+		}
+		return browserSiteNotice{
+			title:        productcopy.Format(language, "browser.bot_new_site.title", map[string]string{"label": label}),
+			body:         productcopy.Format(language, "browser.bot_new_site.body", map[string]string{"label": label, "site": n.Site}),
+			bot:          bot.Key,
+			conversation: bot.ConversationID,
+		}, true
+	}
+	label, sessionID := "Session", ""
+	if s.broker != nil {
 		if live, err := s.broker.LiveSession(ctx, n.Conversation); err == nil {
 			sessionID = live.ID
 			if live.Label != "" {
 				label = live.Label
 			}
 		}
-		language := s.productLanguage()
-		title := productcopy.Format(language, "browser.new_site.title", map[string]string{"label": label})
-		body := productcopy.Format(language, "browser.new_site.body", map[string]string{"site": n.Site})
-		_, _ = s.broker.MachineNotify(ctx, title, body, sessionID)
-	}()
+	}
+	return browserSiteNotice{
+		title:   productcopy.Format(language, "browser.new_site.title", map[string]string{"label": label}),
+		body:    productcopy.Format(language, "browser.new_site.body", map[string]string{"site": n.Site}),
+		session: sessionID,
+	}, true
 }
 
 func readBrowserBody(w http.ResponseWriter, r *http.Request, limit int64, into any) bool {
@@ -313,7 +379,7 @@ func (s *Server) browserStatusRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for key, values := range r.URL.Query() {
-		if key != "conversation" || len(values) != 1 || values[0] == "" {
+		if (key != "conversation" && key != "bot_id") || len(values) != 1 || values[0] == "" {
 			writeBrowserError(w, browserbridge.BadRequest)
 			return
 		}
@@ -323,13 +389,28 @@ func (s *Server) browserStatusRoute(w http.ResponseWriter, r *http.Request) {
 		writeBrowserError(w, browserbridge.BadRequest)
 		return
 	}
+	target, ok := browserTargetFrom(r.URL.Query().Get("bot_id"), conversation)
+	if !ok {
+		writeBrowserError(w, browserbridge.BadRequest)
+		return
+	}
+	owner := ""
+	if target.named() {
+		resolved, err := s.browserBotResolve(r.Context(), target.botID, target.conversation, false)
+		if err != nil {
+			writeBrowserTargetError(w, err)
+			return
+		}
+		owner = resolved.Owner
+		conversation = owner
+	}
 	policy, err := s.browserPolicy()
 	if err != nil {
 		writeBrowserError(w, browserbridge.StateWriteFailed)
 		return
 	}
 	mode, st, profiles := s.browsers().SelectedStatus(conversation, policy)
-	w.Header().Set("Cache-Control", "no-store")
+	st = browserStatusView(st, owner)
 	// person_open names the Chrome a person's own open would use (POST
 	// /v1/browser/open), or "" when none is connected; it is independent of
 	// the agent's automatic selection, which may be native tools.
@@ -337,7 +418,45 @@ func (s *Server) browserStatusRoute(w http.ResponseWriter, r *http.Request) {
 	if conversation != "" {
 		personOpen = s.browsers().PersonOpenMode(conversation, policy)
 	}
-	writeJSON(w, map[string]any{"ok": true, "mode": mode, "enabled": mode != "native" && profiles[mode].Ready, "person_open": personOpen, "extension_version": browserlaunch.EmbeddedVersion(), "person_navigate": true, "browser_policy": policy, "profiles": profiles, "notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st})
+	reply := map[string]any{"ok": true, "mode": mode, "enabled": mode != "native" && profiles[mode].Ready, "person_open": personOpen, "extension_version": browserlaunch.EmbeddedVersion(), "person_navigate": true, "browser_policy": policy, "profiles": profiles, "notify_new_site": s.browserSetting("browser_notify_new_site"), "status": st}
+	if target.named() {
+		// The view is published only while the same person still reaches
+		// the same owner.
+		if err := s.browserBotStill(r.Context(), target, false, owner); err != nil {
+			writeBrowserTargetError(w, err)
+			return
+		}
+		reply["owner"], reply["bot_id"], reply["conversation"] = owner, target.botID, target.conversation
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, reply)
+}
+
+// browserStatusView keeps a Bot's view to its own tabs and notification, and
+// keeps every Bot's tabs out of a view that named no Bot.
+func browserStatusView(st browserbridge.Status, owner string) browserbridge.Status {
+	if owner == "" {
+		return withoutBotTabs(st)
+	}
+	tabs := []browserbridge.TabInfo{}
+	persons := []int{}
+	for _, tab := range st.Tabs {
+		if tab.Conversation != owner {
+			continue
+		}
+		tabs = append(tabs, tab)
+		if tab.Person {
+			persons = append(persons, tab.Tab)
+		}
+	}
+	muted := []string{}
+	for _, conversation := range st.Muted {
+		if conversation == owner {
+			muted = append(muted, conversation)
+		}
+	}
+	st.Tabs, st.PersonTabs, st.Muted = tabs, persons, muted
+	return st
 }
 
 func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
@@ -359,6 +478,23 @@ func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "The Session or site to filter by is too long.")
 		return
 	}
+	target, ok := browserTargetFrom(q.Get("bot_id"), filter.Conversation)
+	if !ok || (q.Has("bot_id") && !target.named()) {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "A Bot is named with its bot_id and current conversation together.")
+		return
+	}
+	owner := ""
+	if target.named() {
+		resolved, err := s.browserBotResolve(r.Context(), target.botID, target.conversation, false)
+		if err != nil {
+			writeBrowserTargetError(w, err)
+			return
+		}
+		owner = resolved.Owner
+		filter.Conversation = owner
+	} else {
+		filter.Exclude = browserbridge.BotOwnerPrefix
+	}
 	if raw := q.Get("since"); raw != "" {
 		since, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || since < 0 {
@@ -368,6 +504,12 @@ func (s *Server) browserAuditRoute(w http.ResponseWriter, r *http.Request) {
 		filter.Since = since
 	}
 	rows, pruned := s.browsers().Find(filter, limit)
+	if target.named() {
+		if err := s.browserBotStill(r.Context(), target, false, owner); err != nil {
+			writeBrowserTargetError(w, err)
+			return
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	saved := ""
 	if err := s.browsers().JournalErr(); err != nil {
@@ -401,23 +543,31 @@ func (s *Server) browserStopRoute(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Mode   string `json:"browser_mode"`
-		Tab    int    `json:"tab"`
-		Person bool   `json:"person"`
+		Mode         string `json:"browser_mode"`
+		Tab          int    `json:"tab"`
+		Person       bool   `json:"person"`
+		BotID        string `json:"bot_id,omitempty"`
+		Conversation string `json:"conversation,omitempty"`
 	}
-	if !readBrowserBody(w, r, 256, &in) {
+	if !readBrowserBody(w, r, 1024, &in) {
 		return
 	}
 	if machineAuthed(r) || !maySend(r) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "Only a person's device that may send can take over a tab.")
 		return
 	}
-	if in.Tab <= 0 {
+	target, ok := browserTargetFrom(in.BotID, in.Conversation)
+	if in.Tab <= 0 || !ok || (!target.named() && in.Conversation != "") {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the tab to take over or hand back.")
 		return
 	}
-	if err := s.browsers().SetPersonControl(in.Mode, in.Tab, in.Person); err != nil {
-		writeBrowserError(w, err)
+	scope, _, err := s.browserPersonTarget(r.Context(), target, true)
+	if err != nil {
+		writeBrowserTargetError(w, err)
+		return
+	}
+	if err := s.browsers().SetPersonControlFor(scope, in.Mode, in.Tab, in.Person); err != nil {
+		writeBrowserTargetError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "tab": in.Tab, "person": in.Person})
@@ -428,10 +578,12 @@ func (s *Server) browserControlRoute(w http.ResponseWriter, r *http.Request) {
 // the person has taken over.
 func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Mode string          `json:"browser_mode"`
-		Op   string          `json:"op"`
-		Tab  int             `json:"tab"`
-		Args json.RawMessage `json:"args"`
+		Mode         string          `json:"browser_mode"`
+		Op           string          `json:"op"`
+		Tab          int             `json:"tab"`
+		Args         json.RawMessage `json:"args"`
+		BotID        string          `json:"bot_id,omitempty"`
+		Conversation string          `json:"conversation,omitempty"`
 	}
 	if !readBrowserBody(w, r, browserbridge.MaxArgBytes+4096, &in) {
 		return
@@ -449,9 +601,23 @@ func (s *Server) browserPersonRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
 		return
 	}
-	value, err := s.browsers().PersonDo(r.Context(), in.Mode, in.Op, in.Tab, in.Args)
+	target, ok := browserTargetFrom(in.BotID, in.Conversation)
+	if !ok || (!target.named() && in.Conversation != "") {
+		writeBrowserError(w, browserbridge.BadRequest)
+		return
+	}
+	write := in.Op != "screenshot"
+	scope, owner, err := s.browserPersonTarget(r.Context(), target, write)
 	if err != nil {
-		writeBrowserError(w, err)
+		writeBrowserTargetError(w, err)
+		return
+	}
+	value, err := s.browsers().PersonDoFor(r.Context(), scope, in.Mode, in.Op, in.Tab, in.Args)
+	if err == nil && target.named() {
+		err = s.browserBotStill(r.Context(), target, write, owner)
+	}
+	if err != nil {
+		writeBrowserTargetError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -468,6 +634,7 @@ func (s *Server) browserPersonOpenRoute(w http.ResponseWriter, r *http.Request) 
 		Conversation string `json:"conversation"`
 		URL          string `json:"url"`
 		Layout       string `json:"layout,omitempty"`
+		BotID        string `json:"bot_id,omitempty"`
 	}
 	if !readBrowserBody(w, r, browserbridge.MaxArgBytes+4096, &in) {
 		return
@@ -480,22 +647,38 @@ func (s *Server) browserPersonOpenRoute(w http.ResponseWriter, r *http.Request) 
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a device that may send.")
 		return
 	}
-	if s.broker == nil {
-		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved", "The live Session registry is unavailable.")
+	target, ok := browserTargetFrom(in.BotID, in.Conversation)
+	if !ok {
+		writeBrowserError(w, browserbridge.BadRequest)
 		return
 	}
-	if _, err := s.broker.LiveSession(r.Context(), in.Conversation); err != nil {
-		writeRefusal(w, http.StatusConflict, "session_unresolved", "A tab can be opened only for a live Session.")
-		return
+	var scope browserbridge.PersonTarget
+	conversation := in.Conversation
+	if target.named() {
+		// A Bot has no live Session; the Host resolves it instead.
+		var err error
+		if scope, conversation, err = s.browserPersonTarget(r.Context(), target, true); err != nil {
+			writeBrowserTargetError(w, err)
+			return
+		}
+	} else {
+		if s.broker == nil {
+			writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved", "The live Session registry is unavailable.")
+			return
+		}
+		if _, err := s.broker.LiveSession(r.Context(), in.Conversation); err != nil {
+			writeRefusal(w, http.StatusConflict, "session_unresolved", "A tab can be opened only for a live Session.")
+			return
+		}
 	}
 	policy, err := s.browserPolicy()
 	if err != nil {
 		writeBrowserError(w, browserbridge.StateWriteFailed)
 		return
 	}
-	value, err := s.browsers().PersonOpen(r.Context(), in.Conversation, in.URL, in.Layout, policy)
+	value, err := s.browsers().PersonOpenFor(r.Context(), scope, conversation, in.URL, in.Layout, policy)
 	if err != nil {
-		writeBrowserError(w, err)
+		writeBrowserTargetError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -513,6 +696,11 @@ func (s *Server) browserScreenshotRoute(w http.ResponseWriter, r *http.Request) 
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a person's device that may read.")
 		return
 	}
+	target, ok := browserTargetFrom(r.URL.Query().Get("bot_id"), r.URL.Query().Get("conversation"))
+	if !ok || (!target.named() && r.URL.Query().Has("conversation")) {
+		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "A Bot is named with its bot_id and current conversation together.")
+		return
+	}
 	tab, err := strconv.Atoi(r.URL.Query().Get("tab"))
 	if err != nil || tab <= 0 {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the tab to look at.")
@@ -522,9 +710,17 @@ func (s *Server) browserScreenshotRoute(w http.ResponseWriter, r *http.Request) 
 	if q, err := strconv.Atoi(r.URL.Query().Get("quality")); err == nil && q >= 20 && q <= 80 {
 		args = json.RawMessage(`{"quality":` + strconv.Itoa(q) + `}`)
 	}
-	value, err := s.browsers().PersonDo(r.Context(), r.URL.Query().Get("browser_mode"), "screenshot", tab, args)
+	scope, owner, err := s.browserPersonTarget(r.Context(), target, false)
 	if err != nil {
-		writeBrowserError(w, err)
+		writeBrowserTargetError(w, err)
+		return
+	}
+	value, err := s.browsers().PersonDoFor(r.Context(), scope, r.URL.Query().Get("browser_mode"), "screenshot", tab, args)
+	if err == nil && target.named() {
+		err = s.browserBotStill(r.Context(), target, false, owner)
+	}
+	if err != nil {
+		writeBrowserTargetError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -535,20 +731,31 @@ func (s *Server) browserMuteRoute(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Conversation string `json:"conversation"`
 		Muted        bool   `json:"muted"`
+		BotID        string `json:"bot_id,omitempty"`
 	}
-	if !readBrowserBody(w, r, 512, &in) {
+	if !readBrowserBody(w, r, 1024, &in) {
 		return
 	}
 	if machineAuthed(r) || !maySend(r) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "Only a person's device that may send can change a Session's notifications.")
 		return
 	}
-	if in.Conversation == "" || len(in.Conversation) > 128 {
+	target, ok := browserTargetFrom(in.BotID, in.Conversation)
+	if in.Conversation == "" || len(in.Conversation) > 128 || !ok {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the Session's conversation.")
 		return
 	}
-	if err := s.browsers().SetMuted(in.Conversation, in.Muted); err != nil {
-		writeBrowserError(w, err)
+	scope, owner, err := s.browserPersonTarget(r.Context(), target, true)
+	if err != nil {
+		writeBrowserTargetError(w, err)
+		return
+	}
+	key := in.Conversation
+	if target.named() {
+		key = owner
+	}
+	if err := s.browsers().SetMutedFor(scope, key, in.Muted); err != nil {
+		writeBrowserTargetError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "conversation": in.Conversation, "muted": in.Muted})
@@ -567,12 +774,30 @@ func (s *Server) browserActivityRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conversation := r.URL.Query().Get("conversation")
-	if conversation == "" || len(conversation) > 128 {
+	target, ok := browserTargetFrom(r.URL.Query().Get("bot_id"), conversation)
+	if conversation == "" || len(conversation) > 128 || !ok || (r.URL.Query().Has("bot_id") && !target.named()) {
 		writeRefusal(w, http.StatusBadRequest, "browser_bad_request", "Name the Session's conversation.")
 		return
 	}
+	owner := ""
+	if target.named() {
+		resolved, err := s.browserBotResolve(r.Context(), target.botID, target.conversation, false)
+		if err != nil {
+			writeBrowserTargetError(w, err)
+			return
+		}
+		owner = resolved.Owner
+		conversation = owner
+	}
+	rows := s.browsers().RecentActivity(conversation, browserbridge.MaxActivityThumbs)
+	if target.named() {
+		if err := s.browserBotStill(r.Context(), target, false, owner); err != nil {
+			writeBrowserTargetError(w, err)
+			return
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"ok": true, "rows": s.browsers().RecentActivity(conversation, browserbridge.MaxActivityThumbs)})
+	writeJSON(w, map[string]any{"ok": true, "rows": rows})
 }
 
 // browserSettingsRoute carries only browser priority, automatic switches and

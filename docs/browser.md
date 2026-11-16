@@ -74,6 +74,16 @@ whether the last write to disk failed.
 When `browser_notify_new_site` is on, the first successful action of a Session on a site
 (registrable domain) sends one notification through the agent-notification path.
 
+For a Bot's tab the owner is a Bot conversation (`bot-…`), not a Session. The daemon finds the
+current stored Bot whose conversation and forget epoch derive that owner
+(`projectassistanthost.Host.BrowserOwnerBot`) and words the notice with the Bot's name
+(`browser.bot_new_site.title`/`.body`, English and Taiwan Traditional Chinese), cut to 40
+characters so the title stays within the 80-character limit. Such a notice never names or lands
+on a terminal Session. When no current Bot derives the owner (deleted, forgotten, another
+conversation), nothing is sent rather than guessing. The push still lands on the console's front
+page: the broker's notification path carries only a Session as its destination, so opening that
+Bot's chat directly needs a Bot destination in `push.go` and the console (see "Not done").
+
 ## The live panel
 
 The Session's ⋯ menu has **Chrome tab** (`web/console/src/session/BrowserPanel.tsx`). It reads
@@ -139,6 +149,79 @@ and send access to take over and act:
 | `chrome-setup` | read | `GET /v1/browser/setup` |
 | `chrome-launch` | command | `POST /v1/browser/launch` |
 | `chrome-prepare` | command | `POST /v1/browser/prepare` (own extension files only) |
+
+## A Bot's tabs in the person's view
+
+A Bot (project assistant) is not a terminal Session. Its own turn drives the browser through its
+owned MCP tools under an owner the Host derives (`docs/project-assistants-browser.md`). From API
+level 74 the person's routes can name that Bot instead of a Session. This is backend status only:
+`BrowserPanel` still needs a Session row and does not yet pass a Bot target (see "Not done" below).
+
+**Target.** `bot_id` together with the Bot's current `conversation` (its `conversation_id`), on
+`GET /v1/browser/status`, `GET /v1/browser/activity`, `GET /v1/browser/audit`,
+`GET /v1/browser/screenshot`, `POST /v1/browser/control`, `POST /v1/browser/person`,
+`POST /v1/browser/open` and `POST /v1/browser/mute`. The machine is the daemon's own; there is no
+`machine_id`. Through Cloud the same `chrome-*` words carry the same two fields; a Bot without its
+conversation, a client-supplied owner or any other unknown field is refused by the decoder.
+
+**Resolution.** `projectassistanthost.Host.BrowserTarget` reads the person's authority through the
+same callback the Bot routes use (device gate, Cloud viewer grant, pairing) and checks it as the
+Bot Service checks a read or a send. The feature must be interactive. It then reads the stored Bot
+and its memory frontier (one row each, never a conversation export), requires the expected
+conversation, and returns `BrowserOwner(fence, forgotten_through)`. A client never supplies the
+owner. A machine token cannot name a Bot. A Bot hidden from the list stays reachable, as its chat
+does, so its person can still take over or close its tabs.
+
+**Authority per route.** status, activity, audit and screenshot need a device that may read and a
+Bot read. control, person input, open and mute need a device that may send and a Bot write, so a
+read-only device or a read-only Cloud grant can look but not act. `POST /v1/browser/person` with
+`op: "screenshot"` is a read.
+
+**Admission.** Every Bot-targeted tab action goes through `Profiles.PersonDoFor`,
+`SetPersonControlFor`, `PersonOpenFor` or `SetMutedFor` with a `PersonTarget{Owner, Admit}`. Under
+the selector fence, immediately before admission, `Admit` re-resolves the Bot and requires the same
+owner. The Bridge then compares the tab's owner with `Owner` under its own lock, with the effect,
+and again when a person's command answers, so a tab forgotten while its picture travels returns
+`browser_tab_other_session`. Reads (status, activity, audit, screenshot) re-resolve once more
+before the response is written. A forget, revoked device or grant, disabled feature, deleted Bot or
+changed conversation between the first resolution and these checks refuses the request. No SQL or
+service lock is held during browser I/O. The Host reads run under the selector fence, and no host
+wait does.
+
+**Scope.** A Bot target reaches only tabs whose owner is its derived owner, in the profile that
+owner selected: another Bot's, a Session's, an unowned isolated tab and an old forget epoch's tab
+answer `browser_tab_other_session` (or `browser_wrong_mode` for a tab no profile owns). A request
+that names no Bot cannot see or act on a Bot's tabs: untargeted status hides Bot-owned tabs and
+mutes, untargeted audit leaves Bot rows out (`AuditFilter.Exclude`), screenshot, person and control
+on a Bot-owned tab answer `browser_tab_other_session`, and a Session conversation spelled
+`bot-…` is a bad request. Stop, takeover epochs, `browser_take_over_first`, timeouts and the
+no-replay rule are the engine's unchanged rules.
+
+**Refusals.** A target that fails resolution answers in the Bot routes' own error shape
+(`{"contract_version":"project-assistants.v1","error":{"code":"pa_…","field":"…"}}`):
+`pa_invalid` 400, `pa_scope_denied`/`pa_disabled`/`pa_read_only`/`pa_revoked`/`pa_unpaired` 403,
+`pa_not_found` 404, `pa_stale_version` 409 (stale conversation, or a changed owner at admission or
+publication). A malformed target (a Bot without a conversation, a conversation without a Bot on a
+tab route, or `bot-…` as a Session) is `browser_bad_request` 400. The engine's own refusals keep
+their codes. `/v1/browser/commands` still requires a live Session; nothing here is an agent
+privilege, and no Bot tool capability reaches the console.
+
+**Status reply.** A targeted status adds `owner` (the derived key, for filtering
+`status.tabs[].conversation` and audit rows), `bot_id` and `conversation`; `status.tabs`,
+`person_tabs` and `muted` hold only that owner's entries. A console must check `api_level >= 74`
+on the source before naming a Bot, because an older daemon ignores the unknown GET fields and would
+answer with the machine-wide view.
+
+Tests: `internal/transport/http/browser_bot_target_test.go` (real HTTP gate, Host, SQLite, Profiles
+and Bridge with two Bots in two Projects, read-only and sending devices, a Session tab, a scripted
+native host, forget, feature off, deletion, and a forget while the host holds a picture),
+`internal/app/browserbridge/owned_test.go` (owner scope, failed admission, the fence, a late
+picture) and `internal/app/cloudops/browser_mode_test.go` (Cloud shapes).
+
+**Not done.** The console panel for a Bot (`BrowserPanel` with a Bot target, its mounting in the
+Bot chat, and the level-74 gate); a tap on a Bot's new-site notice opening that Bot's chat (the
+notice names the Bot but its push carries no Bot destination); real Chrome and native Claude Code / Codex acceptance; Cloud acceptance
+through a paired phone.
 
 ## The Settings block
 

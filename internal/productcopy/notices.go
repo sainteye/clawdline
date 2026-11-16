@@ -29,6 +29,8 @@ var notices = map[string][9]string{
 	"fanout.body":                {"{count} tasks finished; {failed} did not succeed.", "{count} 個任務已結束，其中 {failed} 個未成功。", "{count} 件のタスクが終了し、うち {failed} 件は成功しませんでした。", "{count} 个任务已结束，其中 {failed} 个未成功。", "작업 {count}개가 끝났고, 그중 {failed}개는 성공하지 못했습니다.", "Finalizaron {count} tareas; {failed} no se completaron correctamente.", "{count} tarefas terminaram; {failed} não foram concluídas com sucesso.", "{count} tâches sont terminées ; {failed} n’ont pas abouti.", "{count} Aufgaben sind abgeschlossen; {failed} waren nicht erfolgreich."},
 	"browser.new_site.title":     {"{label} is using a new site", "{label} 開始操作新網站"},
 	"browser.new_site.body":      {"{site}. Open the Session to watch or take over.", "{site}。打開 Session 即可查看畫面或接手。"},
+	"browser.bot_new_site.title": {"Bot {label} is using a new site", "Bot {label} 開始操作新網站"},
+	"browser.bot_new_site.body":  {"{site}. Open {label}'s chat in Bots to watch or take over.", "{site}。到 Bots 打開 {label} 的對話，即可查看畫面或接手。"},
 	"model_capacity.title":       {"Model at capacity: {label}", "模型容量不足：{label}"},
 	"model_capacity.body":        {"This Session stopped because the selected model is at capacity. Choose another model or retry in the Session.", "這個 Session 因所選模型容量不足而停住。請開啟 Session，換模型或重試。"},
 	"waiting.title":              {"Waiting for your answer: {label}", "等你回答：{label}", "回答を待っています：{label}", "等待你的回答：{label}", "답변을 기다리는 중: {label}", "Esperando tu respuesta: {label}", "Aguardando sua resposta: {label}", "En attente de votre réponse : {label}", "Wartet auf Ihre Antwort: {label}"},

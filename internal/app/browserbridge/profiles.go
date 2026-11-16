@@ -239,6 +239,19 @@ func (h *Profiles) selection(conversation string, policy browserpolicy.Policy) S
 }
 
 func (h *Profiles) DoSession(ctx context.Context, conversation, op string, args json.RawMessage, policy browserpolicy.Policy, requested string, explicit bool) (json.RawMessage, error) {
+	return h.doSession(ctx, conversation, op, args, policy, requested, explicit, false)
+}
+
+// DoOwned runs one command for a Host-derived owner that is not a terminal
+// Session (a Bot). It obeys the same policy, saved choice, stop, person
+// control, queue and audit as DoSession, but never takes an explicit choice
+// from its caller, acts only on tabs this owner opened in the chosen profile,
+// and never hands a host the command of a caller cancelled first.
+func (h *Profiles) DoOwned(ctx context.Context, owner, op string, args json.RawMessage, policy browserpolicy.Policy, requested string) (json.RawMessage, error) {
+	return h.doSession(ctx, owner, op, args, policy, requested, false, true)
+}
+
+func (h *Profiles) doSession(ctx context.Context, conversation, op string, args json.RawMessage, policy browserpolicy.Policy, requested string, explicit, strict bool) (json.RawMessage, error) {
 	h.mu.Lock()
 	if h.err != nil {
 		h.mu.Unlock()
@@ -318,6 +331,9 @@ func (h *Profiles) DoSession(ctx context.Context, conversation, op string, args 
 	if choice.Mode == browserpolicy.Native {
 		h.mu.Unlock()
 		return nil, NativeTools
+	}
+	if strict {
+		return b.DoOwnedWithAdmission(ctx, conversation, op, args, h.mu.Unlock)
 	}
 	return b.DoWithAdmission(ctx, conversation, op, args, h.mu.Unlock)
 }
@@ -541,8 +557,37 @@ func (h *Profiles) JournalErr() error {
 }
 
 func (h *Profiles) SetMuted(conversation string, muted bool) error {
+	return h.SetMutedFor(PersonTarget{}, conversation, muted)
+}
+
+// PersonTarget names whose tabs a person's request may reach. Owner, when
+// set, is the only tab owner it may act on or look at; with no Owner, tabs
+// whose owner begins with Exclude are out of reach. Admit, when set, runs
+// under the selector fence immediately before the effect is admitted, so an
+// authority the caller resolved earlier is checked again at that point; it
+// must not use this Profiles. No host wait ever happens under the fence.
+type PersonTarget struct {
+	Owner   string
+	Exclude string
+	Admit   func() error
+}
+
+func (t PersonTarget) scope() tabScope { return tabScope{owner: t.Owner, exclude: t.Exclude} }
+
+func (t PersonTarget) admit() error {
+	if t.Admit == nil {
+		return nil
+	}
+	return t.Admit()
+}
+
+// SetMutedFor is SetMuted after the target's admission check.
+func (h *Profiles) SetMutedFor(t PersonTarget, conversation string, muted bool) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if err := t.admit(); err != nil {
+		return err
+	}
 	for _, b := range h.channels {
 		if err := b.SetMuted(conversation, muted); err != nil {
 			return err
@@ -554,23 +599,44 @@ func (h *Profiles) SetMuted(conversation string, muted bool) error {
 func (h *Profiles) SelectionCount() int { h.mu.Lock(); defer h.mu.Unlock(); return len(h.selected) }
 
 func (h *Profiles) SetPersonControl(mode string, tab int, person bool) error {
+	return h.SetPersonControlFor(PersonTarget{}, mode, tab, person)
+}
+
+// SetPersonControlFor takes over or hands back a tab only inside the target.
+// The tab's owner is compared under the profile's own lock, together with
+// the control change itself.
+func (h *Profiles) SetPersonControlFor(t PersonTarget, mode string, tab int, person bool) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if err := t.admit(); err != nil {
+		return err
+	}
 	b, err := h.tabChannelLocked(mode, tab)
 	if err != nil {
 		return err
 	}
-	return b.SetPersonControlForMode(tab, person, b.Mode())
+	return b.setPersonControl(tab, person, b.Mode(), t.scope())
 }
 
 func (h *Profiles) PersonDo(ctx context.Context, mode, op string, tab int, args json.RawMessage) (json.RawMessage, error) {
+	return h.PersonDoFor(ctx, PersonTarget{}, mode, op, tab, args)
+}
+
+// PersonDoFor carries a person's look or input to a tab inside the target.
+// The owner is checked when the command is queued and again when its answer
+// arrives, so a forgotten or reassigned tab's late picture is not returned.
+func (h *Profiles) PersonDoFor(ctx context.Context, t PersonTarget, mode, op string, tab int, args json.RawMessage) (json.RawMessage, error) {
 	h.mu.Lock()
+	if err := t.admit(); err != nil {
+		h.mu.Unlock()
+		return nil, err
+	}
 	b, err := h.tabChannelLocked(mode, tab)
 	if err != nil {
 		h.mu.Unlock()
 		return nil, err
 	}
-	return b.PersonDoWithAdmission(ctx, op, tab, args, b.Mode(), h.mu.Unlock)
+	return b.personDoScoped(ctx, op, tab, args, b.Mode(), h.mu.Unlock, t.scope())
 }
 
 // personOpenModeLocked is the Chrome profile a person's own open uses: the
@@ -610,6 +676,12 @@ func (h *Profiles) PersonOpenMode(conversation string, policy browserpolicy.Poli
 // explicit one, so the agent continues in the same profile after hand back
 // even when automatic selection would have chosen native tools.
 func (h *Profiles) PersonOpen(ctx context.Context, conversation, address, layout string, policy browserpolicy.Policy) (json.RawMessage, error) {
+	return h.PersonOpenFor(ctx, PersonTarget{}, conversation, address, layout, policy)
+}
+
+// PersonOpenFor is PersonOpen after the target's admission check, which runs
+// under the selector fence before the choice is saved or the open admitted.
+func (h *Profiles) PersonOpenFor(ctx context.Context, t PersonTarget, conversation, address, layout string, policy browserpolicy.Policy) (json.RawMessage, error) {
 	if !webURL(address) || (layout != "" && layout != "mobile" && layout != "desktop") {
 		return nil, BadRequest
 	}
@@ -622,9 +694,13 @@ func (h *Profiles) PersonOpen(ctx context.Context, conversation, address, layout
 		h.mu.Unlock()
 		return nil, Stopped
 	}
-	if !policy.Valid() || conversation == "" || len(conversation) > 128 {
+	if !policy.Valid() || conversation == "" || len(conversation) > 128 || (t.Owner != "" && t.Owner != conversation) {
 		h.mu.Unlock()
 		return nil, BadRequest
+	}
+	if err := t.admit(); err != nil {
+		h.mu.Unlock()
+		return nil, err
 	}
 	mode := h.personOpenModeLocked(conversation, policy)
 	if mode == "" {
